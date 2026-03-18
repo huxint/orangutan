@@ -25,6 +25,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tomlplusplus)
 
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_Populate(xxhash)
+
 option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support (requires ixwebsocket)" ON)
 
 if(ORANGUTAN_ENABLE_QQ_CHANNEL)
@@ -78,6 +86,7 @@ add_library(orangutan_lib STATIC
     src/features/tools/builtin/register-builtin.cpp
     src/features/tools/core/command-sandbox.cpp
     src/features/tools/core/edit.cpp
+    src/features/tools/core/hashline.cpp
     src/features/tools/core/read.cpp
     src/features/tools/core/register-core.cpp
     src/features/tools/core/shell.cpp
@@ -95,7 +104,7 @@ add_library(orangutan_lib STATIC
     src/infra/subprocess/subprocess.cpp
 )
 
-target_include_directories(orangutan_lib PUBLIC src ${SQLITE3_INCLUDE_DIRS})
+target_include_directories(orangutan_lib PUBLIC src ${SQLITE3_INCLUDE_DIRS} ${xxhash_SOURCE_DIR})
 
 target_link_libraries(orangutan_lib PUBLIC
     nlohmann_json::nlohmann_json
@@ -151,6 +160,7 @@ if(BUILD_TESTING)
         tests/features/cron-parser-test.cpp
         tests/features/cron-store-test.cpp
         tests/features/cron-tool-test.cpp
+        tests/features/hashline-test.cpp
         tests/features/heartbeat-md-test.cpp
         tests/features/heartbeat-ok-test.cpp
         tests/features/heartbeat-scheduler-test.cpp
