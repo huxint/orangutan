@@ -1,53 +1,15 @@
 #include "infra/subprocess/subprocess.hpp"
+#include "test-helpers.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <string>
 #include <thread>
 
 using namespace orangutan;
-
-namespace {
-
-std::filesystem::path test_tmp_root() {
-    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "tmp" / "tests";
-    std::filesystem::create_directories(root);
-    return root;
-}
-
-class ScopedEnvVar {
-public:
-    ScopedEnvVar(const char *name, const std::string &value)
-    : name_(name) {
-        if (const auto *current = std::getenv(name); current != nullptr) {
-            had_previous_ = true;
-            previous_ = current;
-        }
-        setenv(name_.c_str(), value.c_str(), 1);
-    }
-
-    ~ScopedEnvVar() {
-        if (had_previous_) {
-            setenv(name_.c_str(), previous_.c_str(), 1);
-        } else {
-            unsetenv(name_.c_str());
-        }
-    }
-
-    ScopedEnvVar(const ScopedEnvVar &) = delete;
-    ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
-    ScopedEnvVar(ScopedEnvVar &&) = delete;
-    ScopedEnvVar &operator=(ScopedEnvVar &&) = delete;
-
-private:
-    std::string name_;
-    std::string previous_;
-    bool had_previous_ = false;
-};
-
-} // namespace
+using orangutan::testing::ScopedEnvVar;
+using orangutan::testing::test_tmp_root;
 
 // ── Basic execution ─────────────────────────────
 

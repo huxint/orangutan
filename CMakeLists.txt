@@ -135,6 +135,7 @@ if(BUILD_TESTING)
     include(GoogleTest)
 
     add_executable(orangutan_tests
+        tests/app/bootstrap-test.cpp
         tests/app/channel-serve-test.cpp
         tests/app/cli-ui-test.cpp
         tests/app/history-events-test.cpp
@@ -174,8 +175,10 @@ if(BUILD_TESTING)
         orangutan_lib
         GTest::gtest
         GTest::gtest_main
+        ${READLINE_LIBRARIES}
     )
 
+    target_include_directories(orangutan_tests PRIVATE tests)
     target_compile_definitions(orangutan_tests PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     gtest_discover_tests(orangutan_tests)
