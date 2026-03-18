@@ -49,10 +49,12 @@ public:
     explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
     [[nodiscard]]
-    ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager);
+    ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
 
     [[nodiscard]]
     bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
+
+    void shutdown();
 
 private:
     struct PendingApproval {
@@ -62,6 +64,7 @@ private:
         std::condition_variable cv;
         bool resolved = false;
         bool approved = false;
+        bool cancelled = false;
     };
 
     std::chrono::milliseconds timeout_;
@@ -69,6 +72,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
     std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
     std::uint64_t next_prompt_id_ = 0;
+    bool shutting_down_ = false;
 
     void clear_pending(const std::shared_ptr<PendingApproval> &pending);
 };

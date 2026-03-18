@@ -18,6 +18,24 @@ class JidTaskRunner {
 public:
     using Task = std::function<void()>;
 
+    class BlockingLease {
+    public:
+        BlockingLease() = default;
+        ~BlockingLease();
+
+        BlockingLease(const BlockingLease &) = delete;
+        BlockingLease &operator=(const BlockingLease &) = delete;
+        BlockingLease(BlockingLease &&other) noexcept;
+        BlockingLease &operator=(BlockingLease &&other) noexcept;
+
+    private:
+        friend class JidTaskRunner;
+
+        explicit BlockingLease(JidTaskRunner *runner);
+
+        JidTaskRunner *runner_ = nullptr;
+    };
+
     explicit JidTaskRunner(size_t worker_count);
     ~JidTaskRunner();
 
@@ -28,6 +46,9 @@ public:
 
     void submit(const std::string &jid, Task task);
     void shutdown(bool discard_pending = false);
+
+    [[nodiscard]]
+    BlockingLease acquire_blocking_lease();
 
     [[nodiscard]]
     size_t worker_count() const;
@@ -42,10 +63,15 @@ private:
     std::condition_variable cv_;
     std::unordered_map<std::string, Bucket> buckets_;
     std::queue<std::string> ready_jids_;
+    size_t base_worker_count_ = 0;
+    size_t desired_worker_count_ = 0;
+    size_t live_worker_count_ = 0;
     std::vector<std::thread> workers_;
     std::atomic<bool> stopping_{false};
     std::atomic<bool> discard_pending_{false};
 
+    void spawn_worker_locked();
+    void release_blocking_lease();
     void worker_loop();
 };
 

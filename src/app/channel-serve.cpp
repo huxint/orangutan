@@ -145,8 +145,7 @@ std::string format_pending_channel_approval_prompt(const std::vector<std::string
     return prompt.str();
 }
 
-std::vector<std::string> pending_request_ids_for_jid(const std::unordered_map<std::string, std::vector<std::string>> &pending_request_ids_by_jid,
-                                                     const std::string &jid) {
+std::vector<std::string> pending_request_ids_for_jid(const std::unordered_map<std::string, std::vector<std::string>> &pending_request_ids_by_jid, const std::string &jid) {
     const auto it = pending_request_ids_by_jid.find(jid);
     if (it == pending_request_ids_by_jid.end()) {
         return {};
@@ -209,8 +208,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
     if (memory_store != nullptr) {
         runtime->memory = std::make_unique<RuntimeMemory>(*memory_store, make_runtime_memory_context(identity, cfg.memory));
     }
-    auto tool_bootstrap =
-        register_runtime_tools(runtime->tools, runtime->memory.get(), runtime->workspace, &runtime->tool_context, custom_tools, mcp_servers, &cfg.permissions);
+    auto tool_bootstrap = register_runtime_tools(runtime->tools, runtime->memory.get(), runtime->workspace, &runtime->tool_context, custom_tools, mcp_servers, &cfg.permissions);
     runtime->mcp_manager = std::move(tool_bootstrap.mcp_manager);
     auto system_prompt = append_subagent_prompt_guidance(cfg.system_prompt, cfg.allowed_child_agents, false);
     runtime->agent = std::make_unique<AgentLoop>(*runtime->provider, runtime->tools, system_prompt, runtime->memory.get(), skills_prompt, hook_manager);
@@ -330,11 +328,10 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     if (message.content == "/status") {
-        deliver_command_reply(
-            message,
-            format_runtime_status(collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, runtime.current_session_id, runtime.agent_key,
-                                                        runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
-            channel_manager);
+        deliver_command_reply(message,
+                              format_runtime_status(collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, runtime.current_session_id, runtime.agent_key,
+                                                                           runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
+                              channel_manager);
         return true;
     }
 
@@ -401,34 +398,45 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 ChannelApprovalCoordinator::ChannelApprovalCoordinator(std::chrono::milliseconds timeout)
 : timeout_(timeout) {}
 
-ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager) {
+ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner) {
     if (!can_prompt_for_channel_approval(message)) {
         return {};
     }
 
-    return [this, message, &channel_manager](const ToolUseBlock &, const std::string &prompt_text) {
+    {
+        std::scoped_lock lock(mutex_);
+        if (shutting_down_) {
+            return {};
+        }
+    }
+
+    return [this, message, &channel_manager, task_runner](const ToolUseBlock &, const std::string &prompt_text) {
         auto pending = std::make_shared<PendingApproval>();
         {
             std::scoped_lock lock(mutex_);
+            if (shutting_down_) {
+                return false;
+            }
             pending->request_id = "shell-approval-" + std::to_string(++next_prompt_id_);
             pending->jid = message.jid;
             pending_by_request_id_[pending->request_id] = pending;
             pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
         }
 
-        auto reply = prompt_text + "\nRequest: " + pending->request_id + "\nReply with `" + pending->request_id + " yes` to allow or `" + pending->request_id +
-                     " no` to reject.";
+        auto reply = prompt_text + "\nRequest: " + pending->request_id + "\nReply with `" + pending->request_id + " yes` to allow or `" + pending->request_id + " no` to reject.";
         deliver_reply(message, reply, channel_manager);
 
+        auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
         std::unique_lock lock(pending->mutex);
         const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
             return pending->resolved;
         });
-        const auto approved = resolved && pending->approved;
+        const auto cancelled = resolved && pending->cancelled;
+        const auto approved = resolved && !cancelled && pending->approved;
         lock.unlock();
 
         clear_pending(pending);
-        if (!resolved) {
+        if (!resolved && !cancelled) {
             deliver_reply(message, "Shell approval timed out. The command was rejected.", channel_manager);
         }
         return approved;
@@ -466,9 +474,7 @@ bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &me
     }
 
     if (parsed.decision == ChannelApprovalDecision::invalid) {
-        deliver_reply(message,
-                      "Shell approval is pending. Reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.",
-                      channel_manager);
+        deliver_reply(message, "Shell approval is pending. Reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.", channel_manager);
         return true;
     }
 
@@ -479,6 +485,34 @@ bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &me
     }
     pending->cv.notify_all();
     return true;
+}
+
+void ChannelApprovalCoordinator::shutdown() {
+    std::vector<std::shared_ptr<PendingApproval>> pending;
+    {
+        std::scoped_lock lock(mutex_);
+        if (shutting_down_) {
+            return;
+        }
+        shutting_down_ = true;
+        pending.reserve(pending_by_request_id_.size());
+        for (const auto &[request_id, approval] : pending_by_request_id_) {
+            (void)request_id;
+            pending.push_back(approval);
+        }
+        pending_by_request_id_.clear();
+        pending_request_ids_by_jid_.clear();
+    }
+
+    for (const auto &approval : pending) {
+        {
+            std::scoped_lock lock(approval->mutex);
+            approval->resolved = true;
+            approval->approved = false;
+            approval->cancelled = true;
+        }
+        approval->cv.notify_all();
+    }
 }
 
 void ChannelApprovalCoordinator::clear_pending(const std::shared_ptr<PendingApproval> &pending) {
@@ -559,8 +593,8 @@ namespace {
 void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
                              std::mutex &runtimes_mutex, const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                              const std::unordered_map<std::string, std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                             SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, CronStore *cron_store,
-                             HeartbeatScheduler *heartbeat_scheduler, ChannelApprovalCoordinator &approval_coordinator) {
+                             SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler,
+                             ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner) {
     try {
         auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store, subagent_manager, cfg,
                                                hook_manager, cron_store, heartbeat_scheduler);
@@ -573,7 +607,7 @@ void process_channel_message(const InboundMessage &message, ChannelManager &chan
             runtime.agent->clear_history();
         }
 
-        runtime.tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager);
+        runtime.tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
         const auto reply = runtime.agent->run(message.content);
 
         // Skip session persistence for isolated heartbeat runs
@@ -590,6 +624,10 @@ void process_channel_message(const InboundMessage &message, ChannelManager &chan
         deliver_reply(message, reply, channel_manager);
     } catch (const std::exception &e) {
         spdlog::error("Failed to process message for jid '{}': {}", message.jid, e.what());
+        deliver_reply(message, "Error: " + std::string(e.what()), channel_manager);
+    } catch (...) {
+        spdlog::error("Failed to process message for jid '{}': unknown exception", message.jid);
+        deliver_reply(message, "Error: internal failure while processing the message.", channel_manager);
     }
 }
 
@@ -629,12 +667,13 @@ void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std:
         }
 
         task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store, &session_store, &subagent_manager,
-                                         &cfg, hook_manager, cron_store, heartbeat_scheduler, &approval_coordinator] {
+                                         &cfg, hook_manager, cron_store, heartbeat_scheduler, &approval_coordinator, &task_runner] {
             process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, subagent_manager, cfg,
-                                    hook_manager, cron_store, heartbeat_scheduler, approval_coordinator);
+                                    hook_manager, cron_store, heartbeat_scheduler, approval_coordinator, task_runner);
         });
     }
 
+    approval_coordinator.shutdown();
     task_runner.shutdown(true);
 
     std::scoped_lock lock(runtimes_mutex);

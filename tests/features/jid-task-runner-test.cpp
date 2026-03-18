@@ -127,3 +127,30 @@ TEST(JidTaskRunnerTest, ShutdownCanDiscardPendingTasks) {
     ASSERT_EQ(shutdown_future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
     EXPECT_FALSE(ran_second.load());
 }
+
+TEST(JidTaskRunnerTest, BlockingLeaseAllowsOtherJidsToRunWithSingleWorker) {
+    JidTaskRunner runner(1);
+
+    std::promise<void> alice_waiting;
+    std::promise<void> bob_started;
+    std::promise<void> release_alice;
+    auto alice_waiting_future = alice_waiting.get_future();
+    auto bob_started_future = bob_started.get_future();
+    auto release_alice_future = release_alice.get_future().share();
+
+    runner.submit("qqbot:c2c:alice", [&] {
+        auto blocking_lease = runner.acquire_blocking_lease();
+        alice_waiting.set_value();
+        release_alice_future.wait();
+    });
+
+    runner.submit("qqbot:c2c:bob", [&] {
+        bob_started.set_value();
+    });
+
+    ASSERT_EQ(alice_waiting_future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    ASSERT_EQ(bob_started_future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+
+    release_alice.set_value();
+    runner.shutdown();
+}

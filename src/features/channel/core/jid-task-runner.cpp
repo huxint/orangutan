@@ -6,16 +6,40 @@
 
 namespace orangutan {
 
-JidTaskRunner::JidTaskRunner(size_t worker_count) {
+JidTaskRunner::BlockingLease::BlockingLease(JidTaskRunner *runner)
+: runner_(runner) {}
+
+JidTaskRunner::BlockingLease::~BlockingLease() {
+    if (runner_ != nullptr) {
+        runner_->release_blocking_lease();
+    }
+}
+
+JidTaskRunner::BlockingLease::BlockingLease(BlockingLease &&other) noexcept
+: runner_(std::exchange(other.runner_, nullptr)) {}
+
+JidTaskRunner::BlockingLease &JidTaskRunner::BlockingLease::operator=(BlockingLease &&other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    if (runner_ != nullptr) {
+        runner_->release_blocking_lease();
+    }
+    runner_ = std::exchange(other.runner_, nullptr);
+    return *this;
+}
+
+JidTaskRunner::JidTaskRunner(size_t worker_count)
+: base_worker_count_(worker_count),
+  desired_worker_count_(worker_count) {
     if (worker_count == 0) {
         throw std::invalid_argument("JidTaskRunner requires at least one worker");
     }
 
     workers_.reserve(worker_count);
     for (size_t i = 0; i < worker_count; ++i) {
-        workers_.emplace_back([this] {
-            worker_loop();
-        });
+        spawn_worker_locked();
     }
 }
 
@@ -76,8 +100,37 @@ void JidTaskRunner::shutdown(bool discard_pending) {
     workers_.clear();
 }
 
+JidTaskRunner::BlockingLease JidTaskRunner::acquire_blocking_lease() {
+    std::scoped_lock lock(mutex_);
+    if (stopping_.load()) {
+        return {};
+    }
+
+    ++desired_worker_count_;
+    if (live_worker_count_ < desired_worker_count_) {
+        spawn_worker_locked();
+    }
+    cv_.notify_one();
+    return BlockingLease(this);
+}
+
 size_t JidTaskRunner::worker_count() const {
-    return workers_.size();
+    return base_worker_count_;
+}
+
+void JidTaskRunner::spawn_worker_locked() {
+    ++live_worker_count_;
+    workers_.emplace_back([this] {
+        worker_loop();
+    });
+}
+
+void JidTaskRunner::release_blocking_lease() {
+    std::scoped_lock lock(mutex_);
+    if (desired_worker_count_ > base_worker_count_) {
+        --desired_worker_count_;
+    }
+    cv_.notify_all();
 }
 
 void JidTaskRunner::worker_loop() {
@@ -88,11 +141,13 @@ void JidTaskRunner::worker_loop() {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [this] {
-                return stopping_.load() || !ready_jids_.empty();
+                return stopping_.load() || !ready_jids_.empty() || live_worker_count_ > desired_worker_count_;
             });
 
             if (ready_jids_.empty()) {
-                if (stopping_.load()) {
+                if (stopping_.load() || live_worker_count_ > desired_worker_count_) {
+                    --live_worker_count_;
+                    cv_.notify_all();
                     return;
                 }
                 continue;
