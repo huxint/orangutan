@@ -2,6 +2,7 @@
 #include "features/tools/runtime/runtime-loader.hpp"
 #include "core/tools/tool.hpp"
 #include "features/tools/script/script-loader.hpp"
+#include "features/tools/core/hashline.hpp"
 #include "features/memory/memory.hpp"
 #include "features/memory/runtime-memory.hpp"
 #include "infra/storage/subagent-run-store.hpp"
@@ -1602,4 +1603,61 @@ TEST_F(BuiltinToolsWorkspaceTest, ApplyPatchRegisteredInRegistry) {
         }
     }
     EXPECT_TRUE(found);
+}
+
+// ── HashlineToolsTest ────────────────────────────────
+
+class HashlineToolsTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
+        workspace_ = test_tmp_root() / "orangutan_hashline_test";
+        std::filesystem::remove_all(workspace_);
+        std::filesystem::create_directories(workspace_);
+        // Explicitly pass "hashline" — the default is "search_replace"
+        register_builtin_tools(registry_, nullptr, workspace_.string(), nullptr, nullptr, "hashline");
+    }
+
+    void TearDown() override {
+        tmp_env_.reset();
+        std::filesystem::remove_all(workspace_);
+    }
+
+    [[nodiscard]] const std::filesystem::path &workspace() const { return workspace_; }
+    [[nodiscard]] ToolRegistry &registry() { return registry_; }
+
+private:
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
+    std::filesystem::path workspace_;
+    ToolRegistry registry_;
+};
+
+TEST_F(HashlineToolsTest, ReadOutputHasHashTags) {
+    std::ofstream(workspace() / "test.txt") << "hello world\nfoo bar\n";
+
+    const auto result = registry().execute({.id = "r1", .name = "read", .input = {{"path", "test.txt"}}});
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("1#"), std::string::npos);
+    EXPECT_NE(result.content.find(":hello world"), std::string::npos);
+    EXPECT_NE(result.content.find("2#"), std::string::npos);
+    EXPECT_NE(result.content.find(":foo bar"), std::string::npos);
+}
+
+TEST_F(HashlineToolsTest, ReadWithOffsetUsesOriginalLineNumbers) {
+    std::ofstream(workspace() / "offset.txt") << "line1\nline2\nline3\nline4\n";
+
+    const auto result = registry().execute({.id = "r2", .name = "read", .input = {{"path", "offset.txt"}, {"offset", 3}, {"limit", 1}}});
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("3#"), std::string::npos);
+    EXPECT_NE(result.content.find(":line3"), std::string::npos);
+}
+
+TEST_F(HashlineToolsTest, ReadMultiPathHasHashTags) {
+    std::ofstream(workspace() / "a.txt") << "aaa\n";
+    std::ofstream(workspace() / "b.txt") << "bbb\n";
+
+    const auto result = registry().execute({.id = "r3", .name = "read", .input = {{"paths", json::array({"a.txt", "b.txt"})}}});
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("=== "), std::string::npos);
+    EXPECT_NE(result.content.find("1#"), std::string::npos);
 }

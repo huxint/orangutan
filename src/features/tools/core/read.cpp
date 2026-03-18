@@ -1,4 +1,5 @@
 #include "features/tools/core/internal.hpp"
+#include "features/tools/core/hashline.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -28,7 +29,7 @@ bool is_binary_file(const std::filesystem::path &path) {
     });
 }
 
-std::string read_single_file(const std::filesystem::path &path, int offset, int limit) {
+std::string read_single_file(const std::filesystem::path &path, int offset, int limit, std::string_view edit_mode) {
     spdlog::info("  [tool] read: {}", path.string());
 
     if (!std::filesystem::exists(path)) {
@@ -67,7 +68,11 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
 
     std::ostringstream out;
     for (int i = start; i <= end; ++i) {
-        out << std::setw(num_width) << i << '\t' << lines[static_cast<size_t>(i - 1)] << '\n';
+        if (edit_mode == "hashline") {
+            out << format_hashline(lines[static_cast<size_t>(i - 1)], static_cast<size_t>(i)) << '\n';
+        } else {
+            out << std::setw(num_width) << i << '\t' << lines[static_cast<size_t>(i - 1)] << '\n';
+        }
     }
 
     if (end < total_lines) {
@@ -77,7 +82,7 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
     return out.str();
 }
 
-std::string read_file(const json &input, const std::filesystem::path &workspace_root) {
+std::string read_file(const json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
     const bool has_path = input.contains("path") && !input["path"].is_null();
     const bool has_paths = input.contains("paths") && !input["paths"].is_null();
 
@@ -99,7 +104,7 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 
     if (has_path) {
         const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root);
-        return read_single_file(path, offset, limit);
+        return read_single_file(path, offset, limit, edit_mode);
     }
 
     const auto &paths = input.at("paths");
@@ -112,7 +117,7 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
         out << "=== " << path.string() << " ===\n";
 
         try {
-            out << read_single_file(path, offset, limit);
+            out << read_single_file(path, offset, limit, edit_mode);
         } catch (const std::exception &e) {
             out << "Error: " << e.what() << '\n';
         }
@@ -123,7 +128,8 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 
 } // namespace
 
-void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
+void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
+                        std::string_view edit_mode) {
     registry.register_tool(
         {.definition =
              {.name = "read",
@@ -139,8 +145,8 @@ void register_read_tool(ToolRegistry &registry, const std::filesystem::path &wor
                        {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
                      {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                      {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
-         .execute = [workspace_root](const json &input) {
-             return read_file(input, workspace_root);
+         .execute = [workspace_root, mode = std::string(edit_mode)](const json &input) {
+             return read_file(input, workspace_root, mode);
          }});
 }
 
