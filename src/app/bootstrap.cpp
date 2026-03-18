@@ -94,6 +94,7 @@ struct CliOptions {
     bool dump_session = false;
     bool event_stream = false;
     bool serve_mode = false;
+    std::string edit_mode;
     bool verbose = false;
     bool resume_requested = false;
 };
@@ -121,6 +122,7 @@ void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_
     app.add_option("-r,--resume", options.resume_session, "Resume a saved session (ID, 'latest', or omit to pick)")->expected(0, 1)->default_str("");
     resume_flag = app.get_option("--resume");
     app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
+    app.add_option("--edit-mode", options.edit_mode, "Edit tool mode: hashline or search_replace");
 }
 
 void configure_logging(bool verbose) {
@@ -501,7 +503,10 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     options.resume_requested = resume_flag->count() > 0;
 
     configure_logging(options.verbose);
-    const auto cfg = orangutan::Config::load();
+    auto cfg = orangutan::Config::load();
+    if (!options.edit_mode.empty()) {
+        cfg.edit_mode = options.edit_mode;
+    }
     if (!validate_initial_options(options)) {
         return 1;
     }
@@ -580,7 +585,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     const auto approval_callback = make_cli_approval_callback(!options.event_stream && !options.serve_mode);
     tool_context.approval_callback = approval_callback;
     auto tool_bootstrap = orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers,
-                                                            &runtime_cfg.permissions, approval_callback);
+                                                            &runtime_cfg.permissions, approval_callback, cfg.edit_mode);
     (void)tool_bootstrap;
     const auto system_prompt = orangutan::append_subagent_prompt_guidance(runtime_cfg.system_prompt, runtime_cfg.allowed_child_agents, false);
 
