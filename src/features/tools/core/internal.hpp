@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/tools/permissions.hpp"
 #include "core/tools/tool.hpp"
 
 #include <filesystem>
@@ -70,7 +71,7 @@ inline std::filesystem::path resolve_tool_working_dir(const std::string &working
     return resolved;
 }
 
-void register_shell_tool(ToolRegistry &registry, const std::string &workspace);
+void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions);
 void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
 void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);

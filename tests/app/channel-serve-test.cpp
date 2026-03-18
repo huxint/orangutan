@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
@@ -87,6 +88,7 @@ public:
     }
 
     void send_message(const std::string &jid, const std::string &text) override {
+        std::scoped_lock lock(mutex_);
         sent_messages_.emplace_back(jid, text);
     }
 
@@ -103,7 +105,8 @@ public:
     }
 
     [[nodiscard]]
-    const std::vector<std::pair<std::string, std::string>> &sent_messages() const {
+    std::vector<std::pair<std::string, std::string>> sent_messages() const {
+        std::scoped_lock lock(mutex_);
         return sent_messages_;
     }
 
@@ -112,6 +115,7 @@ private:
     std::string jid_prefix_;
     MessageCallback on_message_;
     bool connected_ = false;
+    mutable std::mutex mutex_;
     std::vector<std::pair<std::string, std::string>> sent_messages_;
 };
 
@@ -177,6 +181,19 @@ protected:
         return std::ranges::any_of(lines, [&needle](const std::string &line) {
             return line.find(needle) != std::string::npos;
         });
+    }
+
+    [[nodiscard]]
+    static std::string extract_request_id(const std::string &message) {
+        const auto marker = std::string("Request: ");
+        const auto start = message.find(marker);
+        if (start == std::string::npos) {
+            return {};
+        }
+
+        const auto value_start = start + marker.size();
+        const auto value_end = message.find('\n', value_start);
+        return message.substr(value_start, value_end == std::string::npos ? std::string::npos : value_end - value_start);
     }
 
     [[nodiscard]]
@@ -321,6 +338,98 @@ TEST_F(ChannelServeTest, DeliversCommandReplyToCliWithoutCallingChannelSend) {
     EXPECT_NO_THROW(app::deliver_command_reply(message, "Current agent: assistant", manager));
     EXPECT_TRUE(qq->sent_messages().empty());
     EXPECT_TRUE(contains_line(sink->lines(), "Current agent: assistant"));
+}
+
+TEST_F(ChannelServeTest, ChannelApprovalCoordinatorPromptsAndAcceptsReplies) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    const InboundMessage request{
+        .jid = "qqbot:c2c:42",
+        .content = "run shell",
+    };
+    auto callback = coordinator.make_callback(request, manager);
+    ASSERT_TRUE(static_cast<bool>(callback));
+
+    auto future = std::async(std::launch::async, [&callback] {
+        return callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+    });
+
+    for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    const auto sent_messages = qq->sent_messages();
+    ASSERT_FALSE(sent_messages.empty());
+    EXPECT_EQ(sent_messages[0].first, "qqbot:c2c:42");
+    const auto request_id = extract_request_id(sent_messages[0].second);
+    EXPECT_FALSE(request_id.empty());
+    EXPECT_NE(sent_messages[0].second.find(request_id + " yes"), std::string::npos);
+
+    EXPECT_TRUE(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " yes"}, manager));
+    EXPECT_TRUE(future.get());
+}
+
+TEST_F(ChannelServeTest, ChannelApprovalCoordinatorConsumesInvalidRepliesWhileWaiting) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    const InboundMessage request{
+        .jid = "qqbot:c2c:99",
+        .content = "run shell",
+    };
+    auto callback = coordinator.make_callback(request, manager);
+    ASSERT_TRUE(static_cast<bool>(callback));
+
+    auto future = std::async(std::launch::async, [&callback] {
+        return callback(ToolUseBlock{.id = "deny-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+    });
+
+    for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    auto sent_messages = qq->sent_messages();
+    ASSERT_FALSE(sent_messages.empty());
+    const auto request_id = extract_request_id(sent_messages.front().second);
+    ASSERT_FALSE(request_id.empty());
+
+    EXPECT_TRUE(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "maybe"}, manager));
+    sent_messages = qq->sent_messages();
+    ASSERT_GE(sent_messages.size(), 2U);
+    EXPECT_NE(sent_messages.back().second.find(request_id + " yes"), std::string::npos);
+
+    EXPECT_TRUE(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "shell-approval-999 no"}, manager));
+    sent_messages = qq->sent_messages();
+    ASSERT_GE(sent_messages.size(), 3U);
+    EXPECT_NE(sent_messages.back().second.find("Shell approval is pending"), std::string::npos);
+
+    EXPECT_TRUE(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " no"}, manager));
+    EXPECT_FALSE(future.get());
+}
+
+TEST_F(ChannelServeTest, ChannelApprovalCoordinatorDisablesPromptsWhenRepliesCannotReturnToSameConversation) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+
+    EXPECT_FALSE(static_cast<bool>(coordinator.make_callback(InboundMessage{
+        .jid = "heartbeat:nightly",
+        .reply_target = "qqbot:c2c:42",
+    }, manager)));
+
+    EXPECT_FALSE(static_cast<bool>(coordinator.make_callback(InboundMessage{
+        .jid = "qqbot:c2c:42",
+        .reply_target = "qqbot:c2c:other",
+    }, manager)));
 }
 
 } // namespace

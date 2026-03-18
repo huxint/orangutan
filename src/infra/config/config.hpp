@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/tools/permissions.hpp"
+
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -14,6 +16,10 @@ struct AgentConfig {
     std::string api_key;
     std::string system_prompt;
     std::string workspace;
+    ToolPermissionSettings permissions{
+        .sandbox_mode = ToolSandboxMode::isolated,
+        .shell_approval = ToolApprovalPolicy::ask,
+    };
     std::vector<std::string> subagents;
 };
 
@@ -38,6 +44,12 @@ struct Config {
     // [tools] section
     std::vector<std::string> allowed_tools;
     std::vector<std::string> denied_tools;
+
+    // [permissions] section
+    ToolPermissionSettings permissions{
+        .sandbox_mode = ToolSandboxMode::isolated,
+        .shell_approval = ToolApprovalPolicy::ask,
+    };
 
     // [session] section
     bool auto_save = true;

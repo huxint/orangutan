@@ -3,6 +3,30 @@
 [session]
 auto_save = true
 
+[permissions]
+# Tool execution sandbox for shell and custom script tools:
+#   isolated       = bubblewrap sandbox, workspace writable, network isolated
+#   workspace-write = run on the host but force cwd into the workspace
+#   disabled       = no extra process sandboxing
+sandbox_mode = "isolated"
+
+# Shell approval policy:
+#   ask   = prompt in interactive CLI and channel runtimes, deny where prompting is unavailable
+#   allow = run shell commands without prompting
+#   deny  = disable the shell tool entirely
+shell_approval_policy = "ask"
+
+# Optional explicit tool allow/deny lists.
+# allowed_tools = ["read", "write", "edit", "shell"]
+# denied_tools = ["shell"]
+
+# Optional shell command substrings to reject before execution.
+denied_shell_commands = [
+  "rm -rf /",
+  "shutdown",
+  "reboot",
+]
+
 [memory]
 # Ranked recall and curated capture are always on.
 # This section only controls the optional workspace Markdown mirror.
@@ -53,6 +77,13 @@ api_key = "${ANTHROPIC_API_KEY}"
 workspace = "~/.orangutan/workspace/coder"
 system_prompt = "You focus on code changes, debugging, and implementation details."
 subagents = ["research"]
+
+[agents.coder.permissions]
+# Agent-specific permissions inherit the top-level [permissions] defaults and override
+# only the keys you set here.
+sandbox_mode = "isolated"
+shell_approval_policy = "ask"
+denied_shell_commands = ["git push", "rm -rf /"]
 
 [agents.research]
 provider = "anthropic"

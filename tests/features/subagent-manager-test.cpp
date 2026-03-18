@@ -1,5 +1,6 @@
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"
+#include "core/providers/provider.hpp"
 #include "features/subagent/subagent-manager.hpp"
 
 #include <array>
@@ -12,6 +13,37 @@
 #include <thread>
 
 using namespace orangutan;
+
+namespace {
+
+class ScriptedProvider final : public Provider {
+public:
+    using Step = std::function<LLMResponse(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &)>;
+
+    explicit ScriptedProvider(std::vector<Step> steps)
+    : steps_(std::move(steps)) {}
+
+    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        throw std::runtime_error("chat should not be used in this test");
+    }
+
+    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &, int) override {
+        if (next_step_ >= steps_.size()) {
+            throw std::runtime_error("no scripted response available");
+        }
+        return steps_[next_step_++](system_prompt, messages, tools);
+    }
+
+    std::string name() const override {
+        return "scripted-provider";
+    }
+
+private:
+    std::vector<Step> steps_;
+    size_t next_step_ = 0;
+};
+
+} // namespace
 
 class SubagentManagerTest : public ::testing::Test {
 protected:
@@ -174,6 +206,79 @@ TEST_F(SubagentManagerTest, WaitCanTimeOutCleanly) {
     ASSERT_EQ(completed.state, SubagentWaitState::completed);
     ASSERT_TRUE(completed.run.has_value());
     EXPECT_EQ(completed.run->status, SubagentRunStatus::succeeded);
+}
+
+TEST_F(SubagentManagerTest, RealChildInheritsCallerApprovalCallback) {
+    SessionStore session_store(db_path().string());
+    SubagentRunStore run_store(db_path().string());
+
+    ToolPermissionSettings child_permissions;
+    child_permissions.sandbox_mode = ToolSandboxMode::disabled;
+    child_permissions.shell_approval = ToolApprovalPolicy::ask;
+
+    std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
+    child_configs.emplace("coder", SubagentChildRuntimeConfig{
+                                       .agent_key = "coder",
+                                       .provider_name = "child-provider",
+                                       .api_key = "unused",
+                                       .model = "child-model",
+                                       .base_url = "https://example.test",
+                                       .system_prompt = "Child base prompt.",
+                                       .workspace_root = std::filesystem::temp_directory_path().string(),
+                                       .permissions = child_permissions,
+                                   });
+
+    bool prompted = false;
+    SubagentManager manager(run_store, SubagentExecutionEnvironment{
+                                          .agent_configs = &child_configs,
+                                          .session_store = &session_store,
+                                          .memory_store = nullptr,
+                                          .provider_factory =
+                                              [&](const SubagentChildRuntimeConfig &) {
+                                                  auto steps = std::vector<ScriptedProvider::Step>{
+                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                          return LLMResponse{
+                                                              .stop_reason = "tool_use",
+                                                              .content = {ToolUseBlock{.id = "child-shell", .name = "shell", .input = {{"command", "echo child"}}}},
+                                                          };
+                                                      },
+                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                          return LLMResponse{
+                                                              .stop_reason = "end_turn",
+                                                              .content = {TextBlock{.text = "child completed"}},
+                                                          };
+                                                      },
+                                                  };
+                                                  return std::make_unique<ScriptedProvider>(std::move(steps));
+                                              },
+                                      });
+
+    auto caller = sample_caller_context(std::string{});
+    caller.session_id = std::nullopt;
+    caller.allowed_child_agents = {"coder"};
+    caller.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+        prompted = true;
+        EXPECT_EQ(call.name, "shell");
+        EXPECT_NE(prompt_text.find("echo child"), std::string::npos);
+        return true;
+    };
+
+    const auto spawn_result = manager.spawn(SubagentSpawnRequest{
+        .caller = caller,
+        .child_agent_key = "coder",
+        .task_summary = "Run a child shell command",
+    });
+    ASSERT_TRUE(spawn_result.accepted);
+
+    const auto wait_result = manager.wait(SubagentWaitRequest{
+        .run_id = spawn_result.run_id,
+        .timeout = std::chrono::seconds{1},
+        .caller = caller,
+    });
+    ASSERT_EQ(wait_result.state, SubagentWaitState::completed);
+    ASSERT_TRUE(wait_result.run.has_value());
+    EXPECT_EQ(wait_result.run->status, SubagentRunStatus::succeeded);
+    EXPECT_TRUE(prompted);
 }
 
 TEST_F(SubagentManagerTest, ConstructorDoesNotAbandonStaleRunsAndExplicitCleanupDoes) {

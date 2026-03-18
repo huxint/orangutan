@@ -660,6 +660,120 @@ TEST(RuntimeToolLoaderTest, RegistersUsableMemoryAndSubagentToolsTogether) {
     std::filesystem::remove(session_db);
 }
 
+TEST(RuntimeToolLoaderTest, DeniedToolsAreHiddenAndBlockedByPolicy) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.denied_tools = {"shell"};
+
+    const auto result = register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
+    const auto defs = registry.definitions();
+
+    EXPECT_EQ(result.mcp_tool_count, 0);
+    EXPECT_EQ(result.mcp_manager, nullptr);
+    EXPECT_FALSE(has_tool_named(defs, "shell"));
+    EXPECT_TRUE(has_tool_named(defs, "read"));
+
+    const auto shell_result = registry.execute(ToolUseBlock{
+        .id = "deny-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(shell_result.is_error);
+    EXPECT_NE(shell_result.content.find("permission policy"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, ShellApprovalAskBlocksWhenPromptUnavailable) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::ask;
+
+    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
+
+    const auto shell_result = registry.execute(ToolUseBlock{
+        .id = "ask-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(shell_result.is_error);
+    EXPECT_NE(shell_result.content.find("requires approval"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, ShellApprovalCallbackCanAllowCommand) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::ask;
+
+    bool prompted = false;
+    (void)register_runtime_tools(
+        registry, nullptr, {}, nullptr, {}, {}, &permissions,
+        [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+            prompted = true;
+            EXPECT_EQ(call.name, "shell");
+            EXPECT_NE(prompt_text.find("echo hello"), std::string::npos);
+            return true;
+        });
+
+    const auto shell_result = registry.execute(ToolUseBlock{
+        .id = "allow-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(prompted);
+    EXPECT_FALSE(shell_result.is_error);
+    EXPECT_NE(shell_result.content.find("hello"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, UsesDynamicApprovalCallbackFromToolContext) {
+    SubagentRunStore run_store(":memory:");
+    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::ask;
+    auto tool_context = make_runtime_tool_context(&manager);
+    bool prompted = false;
+
+    (void)register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions);
+    tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+        prompted = true;
+        EXPECT_EQ(call.name, "shell");
+        EXPECT_NE(prompt_text.find("echo hello"), std::string::npos);
+        return true;
+    };
+
+    const auto shell_result = registry.execute(ToolUseBlock{
+        .id = "context-allow-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(prompted);
+    EXPECT_FALSE(shell_result.is_error);
+    EXPECT_NE(shell_result.content.find("hello"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, BlockedShellCommandsAreRejectedByPolicy) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::allow;
+    permissions.denied_shell_commands = {"rm -rf", "shutdown"};
+
+    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
+
+    const auto shell_result = registry.execute(ToolUseBlock{
+        .id = "blocked-shell",
+        .name = "shell",
+        .input = {{"command", "rm -rf build"}},
+    });
+    EXPECT_TRUE(shell_result.is_error);
+    EXPECT_NE(shell_result.content.find("matched 'rm -rf'"), std::string::npos);
+}
+
 TEST_F(ScriptToolsTest, LsListsDirectory) {
     const auto tmp_dir = std::filesystem::temp_directory_path() / "orangutan_ls_test";
     std::filesystem::create_directories(tmp_dir);

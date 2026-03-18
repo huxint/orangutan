@@ -36,16 +36,33 @@ void ToolRegistry::register_tool(Tool tool) {
     tools_.insert_or_assign(std::move(name), std::move(tool));
 }
 
+void ToolRegistry::set_execution_guard(ExecutionGuard guard) {
+    execution_guard_ = std::move(guard);
+}
+
+void ToolRegistry::set_definition_filter(DefinitionFilter filter) {
+    definition_filter_ = std::move(filter);
+}
+
 std::vector<ToolDef> ToolRegistry::definitions() const {
     std::vector<ToolDef> defs;
     defs.reserve(tools_.size());
     for (const auto &[_, tool] : tools_) {
+        if (definition_filter_ && !definition_filter_(tool.definition)) {
+            continue;
+        }
         defs.push_back(tool.definition);
     }
     return defs;
 }
 
 ToolResultBlock ToolRegistry::execute(const ToolUseBlock &call) const {
+    if (execution_guard_) {
+        if (auto blocked = execution_guard_(call); blocked.has_value()) {
+            return *blocked;
+        }
+    }
+
     auto it = tools_.find(call.name);
     if (it == tools_.end()) {
         return {.tool_use_id = call.id, .content = "Error: unknown tool '" + call.name + "'", .is_error = true};

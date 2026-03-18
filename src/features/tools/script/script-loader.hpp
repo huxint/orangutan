@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/tools/permissions.hpp"
 #include "infra/config/config.hpp"
 #include "core/tools/tool.hpp"
 
@@ -23,6 +24,7 @@ json generate_input_schema(const std::unordered_map<std::string, std::string> &s
 
 
 // Register user-defined script tools from config into the registry.
-void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace = {});
+void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace = {},
+                           const ToolPermissionSettings *permissions = nullptr);
 
 } // namespace orangutan

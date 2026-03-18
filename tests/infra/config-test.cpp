@@ -19,6 +19,9 @@ TEST(ConfigTest, DefaultValues) {
     EXPECT_TRUE(cfg.workspace.empty());
     EXPECT_TRUE(cfg.allowed_tools.empty());
     EXPECT_TRUE(cfg.denied_tools.empty());
+    EXPECT_EQ(cfg.permissions.sandbox_mode, ToolSandboxMode::isolated);
+    EXPECT_EQ(cfg.permissions.shell_approval, ToolApprovalPolicy::ask);
+    EXPECT_TRUE(cfg.permissions.denied_shell_commands.empty());
     EXPECT_TRUE(cfg.auto_save);
     EXPECT_FALSE(cfg.memory.mirror_enabled);
     EXPECT_EQ(cfg.memory.mirror_file, "MEMORY.md");
@@ -83,6 +86,35 @@ denied = ["shell"]
     EXPECT_EQ(cfg.allowed_tools[2], "ls");
     ASSERT_EQ(cfg.denied_tools.size(), 1);
     EXPECT_EQ(cfg.denied_tools[0], "shell");
+    ASSERT_EQ(cfg.permissions.allowed_tools.size(), 3);
+    EXPECT_EQ(cfg.permissions.allowed_tools[0], "read");
+    EXPECT_EQ(cfg.permissions.allowed_tools[1], "write");
+    EXPECT_EQ(cfg.permissions.allowed_tools[2], "ls");
+    ASSERT_EQ(cfg.permissions.denied_tools.size(), 1);
+    EXPECT_EQ(cfg.permissions.denied_tools[0], "shell");
+}
+
+TEST_F(ConfigFileTest, ParsesPermissionsSection) {
+    auto path = write_config(R"toml(
+[permissions]
+sandbox_mode = "workspace-write"
+shell_approval_policy = "deny"
+allowed_tools = ["read", "write"]
+denied_tools = ["shell"]
+denied_shell_commands = ["rm -rf", "shutdown"]
+)toml");
+
+    const auto cfg = Config::load_from(path);
+    EXPECT_EQ(cfg.permissions.sandbox_mode, ToolSandboxMode::workspace_write);
+    EXPECT_EQ(cfg.permissions.shell_approval, ToolApprovalPolicy::deny);
+    ASSERT_EQ(cfg.permissions.allowed_tools.size(), 2);
+    EXPECT_EQ(cfg.permissions.allowed_tools[0], "read");
+    EXPECT_EQ(cfg.permissions.allowed_tools[1], "write");
+    ASSERT_EQ(cfg.permissions.denied_tools.size(), 1);
+    EXPECT_EQ(cfg.permissions.denied_tools[0], "shell");
+    ASSERT_EQ(cfg.permissions.denied_shell_commands.size(), 2);
+    EXPECT_EQ(cfg.permissions.denied_shell_commands[0], "rm -rf");
+    EXPECT_EQ(cfg.permissions.denied_shell_commands[1], "shutdown");
 }
 
 TEST_F(ConfigFileTest, ParsesCustomToolsSection) {
@@ -241,6 +273,54 @@ agent = "coder"
     EXPECT_EQ(cfg.qq_bots[0].agent, "default");
     EXPECT_EQ(cfg.qq_bots[1].name, "coder-bot");
     EXPECT_EQ(cfg.qq_bots[1].agent, "coder");
+}
+
+TEST_F(ConfigFileTest, AgentPermissionsInheritGlobalDefaultsAndAllowOverrides) {
+    auto path = write_config(R"toml(
+[permissions]
+sandbox_mode = "isolated"
+shell_approval_policy = "ask"
+allowed_tools = ["read", "write"]
+denied_shell_commands = ["rm -rf"]
+
+[agents.default]
+model = "default-model"
+
+[agents.default.permissions]
+shell_approval_policy = "allow"
+allowed_tools = ["read"]
+
+[agents.coder]
+model = "coder-model"
+
+[agents.coder.permissions]
+sandbox_mode = "workspace-write"
+denied_tools = ["shell"]
+denied_shell_commands = ["curl"]
+)toml");
+
+    const auto cfg = Config::load_from(path);
+    ASSERT_TRUE(cfg.agents.contains("default"));
+    ASSERT_TRUE(cfg.agents.contains("coder"));
+
+    const auto &default_agent = cfg.agents.at("default");
+    EXPECT_EQ(default_agent.permissions.sandbox_mode, ToolSandboxMode::isolated);
+    EXPECT_EQ(default_agent.permissions.shell_approval, ToolApprovalPolicy::allow);
+    ASSERT_EQ(default_agent.permissions.allowed_tools.size(), 1);
+    EXPECT_EQ(default_agent.permissions.allowed_tools[0], "read");
+    ASSERT_EQ(default_agent.permissions.denied_shell_commands.size(), 1);
+    EXPECT_EQ(default_agent.permissions.denied_shell_commands[0], "rm -rf");
+
+    const auto &coder_agent = cfg.agents.at("coder");
+    EXPECT_EQ(coder_agent.permissions.sandbox_mode, ToolSandboxMode::workspace_write);
+    EXPECT_EQ(coder_agent.permissions.shell_approval, ToolApprovalPolicy::ask);
+    ASSERT_EQ(coder_agent.permissions.allowed_tools.size(), 2);
+    EXPECT_EQ(coder_agent.permissions.allowed_tools[0], "read");
+    EXPECT_EQ(coder_agent.permissions.allowed_tools[1], "write");
+    ASSERT_EQ(coder_agent.permissions.denied_tools.size(), 1);
+    EXPECT_EQ(coder_agent.permissions.denied_tools[0], "shell");
+    ASSERT_EQ(coder_agent.permissions.denied_shell_commands.size(), 1);
+    EXPECT_EQ(coder_agent.permissions.denied_shell_commands[0], "curl");
 }
 
 TEST_F(ConfigFileTest, ParsesSecuritySection) {

@@ -53,6 +53,7 @@ add_library(orangutan_lib STATIC
     src/core/providers/anthropic-provider.cpp
     src/core/providers/openai-provider.cpp
     src/core/providers/sse-parser.cpp
+    src/core/tools/permissions.cpp
     src/core/tools/registry.cpp
     src/features/agent/agent-loop.cpp
     src/features/channel/core/channel.cpp
@@ -74,6 +75,7 @@ add_library(orangutan_lib STATIC
     src/features/subagent/subagent-manager.cpp
     src/features/tools/builtin/cron.cpp
     src/features/tools/builtin/register-builtin.cpp
+    src/features/tools/core/command-sandbox.cpp
     src/features/tools/core/edit.cpp
     src/features/tools/core/read.cpp
     src/features/tools/core/register-core.cpp

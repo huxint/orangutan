@@ -28,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -127,6 +128,29 @@ void configure_logging(bool verbose) {
     spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::info);
 }
 
+orangutan::ToolApprovalCallback make_cli_approval_callback(bool allow_prompting) {
+    if (!allow_prompting || isatty(STDIN_FILENO) == 0 || isatty(STDOUT_FILENO) == 0) {
+        return {};
+    }
+
+    return [](const orangutan::ToolUseBlock &, const std::string &prompt_text) {
+        std::cout << "\n" << prompt_text << "\nApprove? [y/N]: " << std::flush;
+        std::string answer;
+        if (!std::getline(std::cin, answer)) {
+            return false;
+        }
+
+        std::string normalized;
+        normalized.reserve(answer.size());
+        for (const auto ch : answer) {
+            if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
+                normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+            }
+        }
+        return normalized == "y" || normalized == "yes";
+    };
+}
+
 bool validate_initial_options(const CliOptions &options) {
     if (options.serve_mode && (!options.message.empty() || options.event_stream || options.dump_session)) {
         std::cerr << "Error: --serve cannot be combined with single-message or event-stream flags.\n";
@@ -214,6 +238,7 @@ std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig
                                       .cli_runtime_key = cli_identity.runtime_key,
                                       .cli_memory_scope = cli_identity.memory_scope,
                                       .memory = cfg.memory,
+                                      .permissions = agent_cfg.permissions,
                                       .allowed_child_agents = agent_cfg.subagents,
                                   });
     }
@@ -233,6 +258,7 @@ build_subagent_child_runtime_configs(const std::unordered_map<std::string, orang
                                       .system_prompt = runtime_cfg.system_prompt,
                                       .workspace_root = runtime_cfg.workspace_root,
                                       .memory = runtime_cfg.memory,
+                                      .permissions = runtime_cfg.permissions,
                                       .allowed_child_agents = runtime_cfg.allowed_child_agents,
                                   });
     }
@@ -525,6 +551,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         .cli_runtime_key = cli_identity.runtime_key,
         .cli_memory_scope = cli_identity.memory_scope,
         .memory = cfg.memory,
+        .permissions = maybe_selected_agent->permissions,
         .allowed_child_agents = maybe_selected_agent->subagents,
     };
 
@@ -543,7 +570,11 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         .raw_caller_id = "cli:local",
     };
     orangutan::RuntimeMemory runtime_memory(*memory_store, orangutan::make_runtime_memory_context(cli_identity, runtime_cfg.memory));
-    auto tool_bootstrap = orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers);
+    const auto approval_callback = make_cli_approval_callback(!options.event_stream && !options.serve_mode);
+    tool_context.approval_callback = approval_callback;
+    auto tool_bootstrap =
+        orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers, &runtime_cfg.permissions,
+                                          approval_callback);
     (void)tool_bootstrap;
     const auto system_prompt = orangutan::append_subagent_prompt_guidance(runtime_cfg.system_prompt, runtime_cfg.allowed_child_agents, false);
 

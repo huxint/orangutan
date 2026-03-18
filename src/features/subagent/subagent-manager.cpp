@@ -2,6 +2,7 @@
 
 #include "features/agent/agent-loop.hpp"
 #include "features/memory/runtime-memory.hpp"
+#include "features/tools/runtime/runtime-loader.hpp"
 #include "core/providers/provider.hpp"
 #include "infra/storage/session-store.hpp"
 #include "app/runtime/memory-context.hpp"
@@ -298,6 +299,7 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
         .subagent_manager = this,
         .runtime_origin = request.caller.runtime_origin,
         .raw_caller_id = request.caller.raw_caller_id,
+        .approval_callback = request.caller.approval_callback,
     };
     std::optional<RuntimeMemory> child_memory;
     RuntimeMemory *child_runtime_memory = nullptr;
@@ -305,7 +307,8 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
         child_memory.emplace(*memory_store_, make_runtime_memory_context(request.child_identity, maybe_child_config->memory));
         child_runtime_memory = &*child_memory;
     }
-    register_builtin_tools(child_tools, child_runtime_memory, request.child_identity.workspace, &tool_context);
+    (void)register_runtime_tools(child_tools, child_runtime_memory, request.child_identity.workspace, &tool_context, {}, {}, &maybe_child_config->permissions,
+                                 request.caller.approval_callback);
 
     auto child_prompt = append_subagent_prompt_guidance(maybe_child_config->system_prompt, maybe_child_config->allowed_child_agents, true);
     AgentLoop child_agent(*provider, child_tools, child_prompt, child_runtime_memory);

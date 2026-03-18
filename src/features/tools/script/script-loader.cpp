@@ -1,5 +1,6 @@
 #include "features/tools/script/script-loader.hpp"
 
+#include "features/tools/core/command-sandbox.hpp"
 #include "features/tools/core/internal.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
@@ -78,23 +79,26 @@ json generate_input_schema(const std::unordered_map<std::string, std::string> &s
 
 // ── Script Tool Execution ───────────────────────
 
-static SubprocessResult execute_script(const std::string &command, const std::string &working_dir, int timeout_seconds) {
-    return run_subprocess({.command = command, .timeout = std::chrono::seconds(timeout_seconds), .working_dir = working_dir});
+static SubprocessResult execute_script(const std::string &command, const std::string &workspace, const std::string &working_dir, int timeout_seconds,
+                                       ToolSandboxMode sandbox_mode) {
+    const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
+    return run_subprocess({.command = sandboxed.command, .timeout = std::chrono::seconds(timeout_seconds), .working_dir = sandboxed.working_dir});
 }
 
 // ── Tool Registration Helpers ───────────────────
 
-static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace) {
+static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionSettings *permissions) {
     return Tool{
         .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
-        .execute = [config, workspace](const json &input) -> std::string {
+        .execute = [config, workspace, permissions](const json &input) -> std::string {
             std::string command = substitute_params(config.command, input, config.input_schema);
             const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
             const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
+            const auto sandbox_mode = permissions != nullptr ? permissions->sandbox_mode : ToolSandboxMode::disabled;
 
             spdlog::debug("  [script-tool] {}: {}", config.name, command);
 
-            auto result = execute_script(command, work_dir, config.timeout);
+            auto result = execute_script(command, workspace, work_dir, config.timeout, sandbox_mode);
 
             if (!result.stderr_output.empty()) {
                 spdlog::debug("  [script-tool] {} stderr: {}", config.name, result.stderr_output);
@@ -126,7 +130,8 @@ static Tool make_script_tool(const ScriptToolConfig &config, const std::string &
 
 // ── User Script Tools ───────────────────────────
 
-void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace) {
+void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace,
+                           const ToolPermissionSettings *permissions) {
     if (tools.empty()) {
         return;
     }
@@ -143,7 +148,7 @@ void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolC
         }
 
         spdlog::info("Registering script tool '{}': {}", config.name, config.command);
-        registry.register_tool(make_script_tool(config, workspace));
+        registry.register_tool(make_script_tool(config, workspace, permissions));
         ++registered;
     }
 

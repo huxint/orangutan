@@ -85,6 +85,7 @@ static AgentConfig make_agent_config_from_legacy(const Config &cfg) {
         .api_key = cfg.api_key,
         .system_prompt = cfg.system_prompt,
         .workspace = cfg.workspace,
+        .permissions = cfg.permissions,
         .subagents = {},
     };
 }
@@ -149,6 +150,7 @@ static Config parse_tools_section(const toml::table &tbl, Config cfg) {
         for (const auto &item : *arr) {
             if (auto s = item.value<std::string>()) {
                 cfg.allowed_tools.push_back(*s);
+                cfg.permissions.allowed_tools.push_back(*s);
             }
         }
     }
@@ -156,9 +158,68 @@ static Config parse_tools_section(const toml::table &tbl, Config cfg) {
         for (const auto &item : *arr) {
             if (auto s = item.value<std::string>()) {
                 cfg.denied_tools.push_back(*s);
+                cfg.permissions.denied_tools.push_back(*s);
             }
         }
     }
+
+    return cfg;
+}
+
+static void apply_permissions_table(const toml::table &permissions, ToolPermissionSettings &settings) {
+    if (auto v = permissions["sandbox_mode"].value<std::string>()) {
+        const auto expanded = expand_env_vars(*v);
+        if (const auto parsed = parse_tool_sandbox_mode(expanded); parsed.has_value()) {
+            settings.sandbox_mode = *parsed;
+        } else {
+            spdlog::warn("Unknown permissions.sandbox_mode '{}', keeping default '{}'", expanded, to_string(settings.sandbox_mode));
+        }
+    }
+
+    if (auto v = permissions["shell_approval_policy"].value<std::string>()) {
+        const auto expanded = expand_env_vars(*v);
+        if (const auto parsed = parse_tool_approval_policy(expanded); parsed.has_value()) {
+            settings.shell_approval = *parsed;
+        } else {
+            spdlog::warn("Unknown permissions.shell_approval_policy '{}', keeping default '{}'", expanded, to_string(settings.shell_approval));
+        }
+    }
+
+    if (const auto *arr = permissions["allowed_tools"].as_array()) {
+        settings.allowed_tools.clear();
+        for (const auto &item : *arr) {
+            if (auto s = item.value<std::string>()) {
+                settings.allowed_tools.push_back(expand_env_vars(*s));
+            }
+        }
+    }
+
+    if (const auto *arr = permissions["denied_tools"].as_array()) {
+        settings.denied_tools.clear();
+        for (const auto &item : *arr) {
+            if (auto s = item.value<std::string>()) {
+                settings.denied_tools.push_back(expand_env_vars(*s));
+            }
+        }
+    }
+
+    if (const auto *arr = permissions["denied_shell_commands"].as_array()) {
+        settings.denied_shell_commands.clear();
+        for (const auto &item : *arr) {
+            if (auto s = item.value<std::string>()) {
+                settings.denied_shell_commands.push_back(expand_env_vars(*s));
+            }
+        }
+    }
+}
+
+static Config parse_permissions_section(const toml::table &tbl, Config cfg) {
+    const auto *permissions = tbl["permissions"].as_table();
+    if (permissions == nullptr) {
+        return cfg;
+    }
+
+    apply_permissions_table(*permissions, cfg.permissions);
 
     return cfg;
 }
@@ -243,6 +304,9 @@ static Config parse_agents_section(const toml::table &tbl, Config cfg) {
         }
         if (auto v = (*agent)["workspace"].value<std::string>()) {
             agent_cfg.workspace = *v;
+        }
+        if (const auto *permissions = (*agent)["permissions"].as_table()) {
+            apply_permissions_table(*permissions, agent_cfg.permissions);
         }
         agent_cfg.subagents.clear();
         if (const auto *arr = (*agent)["subagents"].as_array()) {
@@ -539,6 +603,7 @@ static Config parse_toml(const toml::table &tbl) {
     Config cfg;
     cfg = parse_agent_section(tbl, std::move(cfg));
     cfg = parse_tools_section(tbl, std::move(cfg));
+    cfg = parse_permissions_section(tbl, std::move(cfg));
     cfg = parse_session_section(tbl, std::move(cfg));
     cfg = parse_memory_section(tbl, std::move(cfg));
     cfg = parse_qq_section(tbl, std::move(cfg));
@@ -620,17 +685,18 @@ Config Config::load_from(const std::string &path) {
 }
 
 bool Config::is_tool_allowed(const std::string &name) const {
-    // Denied list takes precedence
-    if (std::ranges::find(denied_tools, name) != denied_tools.end()) {
-        return false;
+    auto effective = permissions;
+    for (const auto &tool : allowed_tools) {
+        if (std::ranges::find(effective.allowed_tools, tool) == effective.allowed_tools.end()) {
+            effective.allowed_tools.push_back(tool);
+        }
     }
-
-    // Empty allowed list means all tools are allowed
-    if (allowed_tools.empty()) {
-        return true;
+    for (const auto &tool : denied_tools) {
+        if (std::ranges::find(effective.denied_tools, tool) == effective.denied_tools.end()) {
+            effective.denied_tools.push_back(tool);
+        }
     }
-
-    return std::ranges::find(allowed_tools, name) != allowed_tools.end();
+    return orangutan::is_tool_allowed(effective, name);
 }
 
 std::optional<AgentConfig> Config::find_agent(const std::string &key) const {

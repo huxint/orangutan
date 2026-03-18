@@ -1,137 +1,70 @@
 #include "features/tools/core/internal.hpp"
+#include "features/tools/core/command-sandbox.hpp"
+#include "infra/subprocess/subprocess.hpp"
 
-#include <array>
-#include <cerrno>
-#include <cstring>
+#include <filesystem>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include <string_view>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace orangutan {
 namespace {
 
-struct ShellCommandResult {
-    std::string output;
-    int exit_code = 0;
-};
-
-ShellCommandResult run_command(const std::string &command, const std::string &working_dir = {}) {
-    const auto write_all = [](int fd, std::string_view text) {
-        size_t written = 0;
-        while (written < text.size()) {
-            const auto pending = text.substr(written);
-            const auto count = write(fd, pending.data(), pending.size());
-            if (count > 0) {
-                written += static_cast<size_t>(count);
-                continue;
-            }
-            if (count < 0 && errno == EINTR) {
-                continue;
-            }
-            break;
-        }
-    };
-    const auto write_child_error = [&write_all](std::string_view operation, std::string_view path) {
-        std::string message(operation);
-        message += '(';
-        message += path;
-        message += ") failed: ";
-        message += std::strerror(errno);
-        message += '\n';
-        write_all(STDERR_FILENO, message);
-    };
-
-    std::array<int, 2> pipe_fd{};
-    if (pipe(pipe_fd.data()) == -1) {
-        throw std::runtime_error("pipe() failed");
-    }
-
-    const pid_t pid = fork();
-    if (pid == -1) {
-        close(pipe_fd[0]);
-        close(pipe_fd[1]);
-        throw std::runtime_error("fork() failed");
-    }
-
-    if (pid == 0) {
-        close(pipe_fd[0]);
-        dup2(pipe_fd[1], STDOUT_FILENO);
-        dup2(pipe_fd[1], STDERR_FILENO);
-        close(pipe_fd[1]);
-
-        if (!working_dir.empty() && chdir(working_dir.c_str()) != 0) {
-            write_child_error("chdir", working_dir);
-            _exit(127);
-        }
-
-        auto shell_command = command;
-        auto shell_name = std::to_array("sh");
-        auto shell_flag = std::to_array("-c");
-        std::array<char *, 4> shell_argv = {
-            shell_name.data(),
-            shell_flag.data(),
-            shell_command.data(),
-            nullptr,
-        };
-        execv("/bin/sh", shell_argv.data());
-        _exit(127);
-    }
-
-    close(pipe_fd[1]);
-
-    std::string output;
-    std::array<char, 4096> buffer{};
-    ssize_t bytes = 0;
-    while ((bytes = read(pipe_fd[0], buffer.data(), buffer.size())) > 0) {
-        output.append(buffer.data(), static_cast<size_t>(bytes));
-    }
-    close(pipe_fd[0]);
-
-    int status = 0;
-    waitpid(pid, &status, 0);
-
-    return {
-        .output = std::move(output),
-        .exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1,
-    };
-}
-
-std::string run_shell(const json &input, const std::string &workspace) {
+std::string run_shell(const json &input, const std::string &workspace, const ToolPermissionSettings *permissions) {
     const auto command = input.at("command").get<std::string>();
     const auto resolved_workspace = resolve_tool_working_dir({}, std::filesystem::path(workspace));
     const auto working_dir = resolved_workspace.empty() ? std::string{} : resolved_workspace.string();
+    const auto sandbox_mode = permissions != nullptr ? permissions->sandbox_mode : ToolSandboxMode::disabled;
+    const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
 
-    if (working_dir.empty()) {
+    if (sandboxed.working_dir.empty()) {
         spdlog::info("  [tool] shell: {}", command);
     } else {
-        spdlog::info("  [tool] shell (cwd={}): {}", working_dir, command);
+        spdlog::info("  [tool] shell (cwd={}): {}", sandboxed.working_dir, command);
     }
 
-    auto [result, exit_code] = run_command(command, working_dir);
-    if (exit_code != 0) {
-        result += "\n[exit code: " + std::to_string(exit_code) + "]";
+    auto result = run_subprocess({
+        .command = sandboxed.command,
+        .timeout = std::chrono::seconds(30),
+        .working_dir = sandboxed.working_dir,
+        .use_shell = true,
+    });
+
+    if (result.timed_out) {
+        throw std::runtime_error("shell command timed out after 30 seconds");
+    }
+
+    std::string output = result.stdout_output;
+    if (!result.stderr_output.empty()) {
+        if (!output.empty() && output.back() != '\n') {
+            output += '\n';
+        }
+        output += result.stderr_output;
+    }
+    if (result.exit_code != 0) {
+        if (!output.empty() && output.back() != '\n') {
+            output += '\n';
+        }
+        output += "[exit code: " + std::to_string(result.exit_code) + "]";
     }
 
     constexpr size_t max_output = 8192;
-    if (result.size() > max_output) {
-        result = result.substr(0, max_output) + "\n... (truncated, total " + std::to_string(result.size()) + " bytes)";
+    if (output.size() > max_output) {
+        output = output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
     }
 
-    return result;
+    return output;
 }
 
 } // namespace
 
-void register_shell_tool(ToolRegistry &registry, const std::string &workspace) {
+void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions) {
     registry.register_tool({.definition = {.name = "shell",
-                                           .description = "Execute a shell command and return its output.",
+                                           .description = "Execute a shell command within the configured sandbox and return its output.",
                                            .input_schema = {{"type", "object"},
                                                             {"properties", {{"command", {{"type", "string"}, {"description", "The shell command to execute"}}}}},
                                                             {"required", json::array({"command"})}}},
-                            .execute = [workspace](const json &input) {
-                                return run_shell(input, workspace);
+                            .execute = [workspace, permissions](const json &input) {
+                                return run_shell(input, workspace, permissions);
                             }});
 }
 

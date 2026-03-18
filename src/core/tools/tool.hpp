@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/tools/permissions.hpp"
 #include "core/types.hpp"
 
 #include <functional>
@@ -27,6 +28,7 @@ struct ToolRuntimeContext {
     std::string raw_caller_id;
     CronStore *cron_store = nullptr;
     HeartbeatScheduler *heartbeat_scheduler = nullptr;
+    ToolApprovalCallback approval_callback;
 };
 
 struct Tool {
@@ -36,7 +38,12 @@ struct Tool {
 
 class ToolRegistry {
 public:
+    using ExecutionGuard = std::function<std::optional<ToolResultBlock>(const ToolUseBlock &call)>;
+    using DefinitionFilter = std::function<bool(const ToolDef &definition)>;
+
     void register_tool(Tool tool);
+    void set_execution_guard(ExecutionGuard guard);
+    void set_definition_filter(DefinitionFilter filter);
 
     std::vector<ToolDef> definitions() const;
 
@@ -44,9 +51,11 @@ public:
 
 private:
     std::unordered_map<std::string, Tool> tools_;
+    ExecutionGuard execution_guard_;
+    DefinitionFilter definition_filter_;
 };
 
 void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
-                            const ToolRuntimeContext *tool_context = nullptr);
+                            const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr);
 
 } // namespace orangutan

@@ -33,6 +33,7 @@ struct SubagentCallerContext {
     std::optional<std::string> session_id;
     std::vector<std::string> allowed_child_agents;
     bool is_child_run = false;
+    ToolApprovalCallback approval_callback;
 };
 
 struct SubagentSpawnRequest {
@@ -69,6 +70,7 @@ struct SubagentChildRuntimeConfig {
     std::string system_prompt;
     std::string workspace_root;
     Config::MemoryConfig memory;
+    ToolPermissionSettings permissions;
     std::vector<std::string> allowed_child_agents;
 };
 

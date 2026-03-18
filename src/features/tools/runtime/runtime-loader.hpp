@@ -16,6 +16,8 @@ struct RuntimeToolBootstrapResult {
 
 RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace,
                                                   const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
-                                                  const std::vector<Config::McpServerConfig> &mcp_servers);
+                                                  const std::vector<Config::McpServerConfig> &mcp_servers,
+                                                  const ToolPermissionSettings *permissions = nullptr,
+                                                  ToolApprovalCallback approval_callback = {});
 
 } // namespace orangutan

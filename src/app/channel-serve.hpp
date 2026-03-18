@@ -9,6 +9,11 @@
 #include "features/subagent/subagent-manager.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,7 +39,37 @@ struct AgentRuntimeConfig {
     std::string cli_runtime_key;
     std::string cli_memory_scope;
     Config::MemoryConfig memory;
+    ToolPermissionSettings permissions;
     std::vector<std::string> allowed_child_agents;
+};
+
+class ChannelApprovalCoordinator {
+public:
+    explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
+
+    [[nodiscard]]
+    ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager);
+
+    [[nodiscard]]
+    bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
+
+private:
+    struct PendingApproval {
+        std::string request_id;
+        std::string jid;
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool resolved = false;
+        bool approved = false;
+    };
+
+    std::chrono::milliseconds timeout_;
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
+    std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
+    std::uint64_t next_prompt_id_ = 0;
+
+    void clear_pending(const std::shared_ptr<PendingApproval> &pending);
 };
 
 [[nodiscard]]

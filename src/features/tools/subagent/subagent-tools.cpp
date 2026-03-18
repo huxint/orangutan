@@ -83,6 +83,7 @@ SubagentCallerContext make_subagent_caller_context(const ToolRuntimeContext &too
         .session_id = current_parent_session_id(tool_context),
         .allowed_child_agents = tool_context.allowed_child_agents,
         .is_child_run = tool_context.is_child_run,
+        .approval_callback = tool_context.approval_callback,
     };
 }
 
