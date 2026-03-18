@@ -20,6 +20,28 @@ struct HashMismatch {
     std::string actual;
 };
 
+enum class HashlineEditOp {
+    replace,
+    insert_after,
+    insert_before,
+    del, // "delete" is a C++ keyword
+};
+
+struct HashlineEdit {
+    HashlineEditOp op;
+    std::string anchor;                // "LINE#HASH" -- optional for insert_after/insert_before
+    std::string end_anchor;            // optional, for range operations
+    std::vector<std::string> content;
+};
+
+struct HashlineEditResult {
+    bool ok = false;
+    std::string error;
+    std::string warnings;
+    std::vector<std::string> lines;
+    size_t edits_applied = 0;
+};
+
 // Compute 2-char hash for a line using xxHash32.
 // Symbol-only lines (no alphanumeric chars) use line_number as seed;
 // all other lines use seed=0.
@@ -36,5 +58,10 @@ Anchor parse_anchor(std::string_view anchor_str);
 // Returns std::nullopt if valid, or a HashMismatch describing the problem.
 std::optional<HashMismatch> validate_anchor(const Anchor &anchor,
                                              const std::vector<std::string> &lines);
+
+// Apply a batch of hashline edits to a vector of lines.
+// Returns a result with the modified lines or an error description.
+HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
+                                         const std::vector<HashlineEdit> &edits);
 
 } // namespace orangutan

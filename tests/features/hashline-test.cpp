@@ -136,3 +136,272 @@ TEST(HashlineTest, ValidateAnchorOutOfRange) {
     ASSERT_TRUE(mismatch.has_value());
     EXPECT_EQ(mismatch->line, 5);
 }
+
+// Helper: build anchor string for a line
+static std::string anchor_for(const std::string &content, size_t line_number) {
+    return std::to_string(line_number) + "#" + compute_line_hash(content, line_number);
+}
+
+// ── Edit operations ─────────────────────────────
+
+TEST(HashlineEditTest, ReplaceSingleLine) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .content = {"XXX"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[1], "XXX");
+}
+
+TEST(HashlineEditTest, ReplaceRange) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .end_anchor = anchor_for("ccc", 3),
+        .content = {"NEW"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "NEW");
+    EXPECT_EQ(result.lines[2], "ddd");
+}
+
+TEST(HashlineEditTest, InsertAfterWithAnchor) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::insert_after,
+        .anchor = anchor_for("aaa", 1),
+        .content = {"INSERTED"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[1], "INSERTED");
+}
+
+TEST(HashlineEditTest, InsertAfterWithoutAnchorAppendsToEOF) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::insert_after,
+        .content = {"APPENDED"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[2], "APPENDED");
+}
+
+TEST(HashlineEditTest, InsertBeforeWithAnchor) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::insert_before,
+        .anchor = anchor_for("bbb", 2),
+        .content = {"INSERTED"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[1], "INSERTED");
+    EXPECT_EQ(result.lines[2], "bbb");
+}
+
+TEST(HashlineEditTest, InsertBeforeWithoutAnchorPrependsToBOF) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::insert_before,
+        .content = {"PREPENDED"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 3);
+    EXPECT_EQ(result.lines[0], "PREPENDED");
+}
+
+TEST(HashlineEditTest, DeleteSingleLine) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::del,
+        .anchor = anchor_for("bbb", 2),
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 2);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "ccc");
+}
+
+TEST(HashlineEditTest, DeleteRange) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::del,
+        .anchor = anchor_for("bbb", 2),
+        .end_anchor = anchor_for("ccc", 3),
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 2);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "ddd");
+}
+
+TEST(HashlineEditTest, MultipleEditsBottomUp) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB"}},
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("ddd", 4), .content = {"DDD"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.lines[1], "BBB");
+    EXPECT_EQ(result.lines[3], "DDD");
+}
+
+TEST(HashlineEditTest, ReplaceWithEmptyContentDeletesLine) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .content = {},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 2);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "ccc");
+}
+
+// ── Error cases ─────────────────────────────────
+
+TEST(HashlineEditTest, HashMismatchReturnsError) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = "2#ZZ",
+        .content = {"XXX"},
+    }};
+    auto actual_hash = compute_line_hash("bbb", 2);
+    if (actual_hash == "ZZ") {
+        GTEST_SKIP() << "Hash collision with ZZ";
+    }
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("mismatch"), std::string::npos);
+}
+
+TEST(HashlineEditTest, HashMismatchErrorIncludesContextLines) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = "3#ZZ",
+        .content = {"XXX"},
+    }};
+    auto actual_hash = compute_line_hash("ccc", 3);
+    if (actual_hash == "ZZ") {
+        GTEST_SKIP() << "Hash collision with ZZ";
+    }
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find(">>>"), std::string::npos);
+    EXPECT_NE(result.error.find(actual_hash), std::string::npos);
+    EXPECT_NE(result.error.find("bbb"), std::string::npos);
+    EXPECT_NE(result.error.find("ddd"), std::string::npos);
+}
+
+TEST(HashlineEditTest, OverlappingEditsReturnsError) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"X"}},
+        {.op = HashlineEditOp::del, .anchor = anchor_for("ccc", 3)},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("overlapping"), std::string::npos);
+}
+
+TEST(HashlineEditTest, ConflictingEditsReturnsError) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    auto a = anchor_for("bbb", 2);
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = a, .content = {"XXX"}},
+        {.op = HashlineEditOp::replace, .anchor = a, .content = {"YYY"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("conflicting"), std::string::npos);
+}
+
+TEST(HashlineEditTest, InvalidRangeReturnsError) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("ccc", 3),
+        .end_anchor = anchor_for("aaa", 1),
+        .content = {"X"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("<="), std::string::npos);
+}
+
+// ── Content auto-stripping ──────────────────────
+
+TEST(HashlineEditTest, ContentAutoStrippingRemovesHashPrefixes) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .content = {"10#KQ:replaced line"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.lines[1], "replaced line");
+    EXPECT_NE(result.warnings.find("stripped"), std::string::npos);
+}
+
+TEST(HashlineEditTest, PartialHashPrefixDoesNotStrip) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .content = {"10#KQ:line with prefix", "plain line without prefix"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.lines[1], "10#KQ:line with prefix");
+    EXPECT_EQ(result.lines[2], "plain line without prefix");
+}
+
+// ── Noop detection ──────────────────────────────
+
+TEST(HashlineEditTest, NoopReplaceSameContent) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    std::vector<HashlineEdit> edits = {{
+        .op = HashlineEditOp::replace,
+        .anchor = anchor_for("bbb", 2),
+        .content = {"bbb"},
+    }};
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    EXPECT_NE(result.warnings.find("Noop"), std::string::npos);
+}
+
+// ── Deduplication ───────────────────────────────
+
+TEST(HashlineEditTest, DuplicateIdenticalEditsAreDeduplicated) {
+    std::vector<std::string> lines = {"aaa", "bbb"};
+    auto a = anchor_for("bbb", 2);
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = a, .content = {"XXX"}},
+        {.op = HashlineEditOp::replace, .anchor = a, .content = {"XXX"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.lines[1], "XXX");
+}
