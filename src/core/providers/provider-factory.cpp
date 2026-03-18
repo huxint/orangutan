@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -76,13 +77,13 @@ public:
     [[nodiscard]]
     std::string name() const override {
         std::scoped_lock lock(mutex_);
-        return endpoints_[active_index_].provider_name.empty() ? std::string("anthropic") : endpoints_[active_index_].provider_name;
+        return endpoints_[preferred_index_].provider_name.empty() ? std::string("anthropic") : endpoints_[preferred_index_].provider_name;
     }
 
     [[nodiscard]]
     std::string current_model() const override {
         std::scoped_lock lock(mutex_);
-        return endpoints_[active_index_].model;
+        return endpoints_[preferred_index_].model;
     }
 
     [[nodiscard]]
@@ -95,45 +96,83 @@ private:
     std::vector<ProviderEndpoint> endpoints_;
     ProviderFactory factory_;
     mutable std::mutex mutex_;
-    size_t active_index_ = 0;
-    std::shared_ptr<Provider> active_provider_;
+    size_t preferred_index_ = 0;
+    std::vector<std::weak_ptr<Provider>> providers_;
+    std::shared_ptr<Provider> preferred_provider_;
     ProviderUsageStats usage_;
 
-    std::shared_ptr<Provider> active_provider_locked() {
-        if (!active_provider_) {
-            active_provider_ = std::move(factory_(endpoints_[active_index_]));
+    std::shared_ptr<Provider> provider_for_index_locked(size_t index) {
+        if (providers_.empty()) {
+            providers_.resize(endpoints_.size());
         }
-        return active_provider_;
+
+        if (index == preferred_index_ && preferred_provider_) {
+            return preferred_provider_;
+        }
+
+        if (auto existing = providers_[index].lock()) {
+            if (index == preferred_index_) {
+                preferred_provider_ = existing;
+            }
+            return existing;
+        }
+
+        auto created = factory_(endpoints_[index]);
+        if (!created) {
+            throw std::runtime_error("Failed to create provider for model '" + endpoints_[index].model + "'.");
+        }
+
+        auto provider = std::shared_ptr<Provider>(std::move(created));
+        providers_[index] = provider;
+        if (index == preferred_index_) {
+            preferred_provider_ = provider;
+        }
+        return provider;
     }
 
     template <typename Fn>
     LLMResponse execute_with_fallback(Fn &&fn) {
         std::vector<std::string> errors;
+        size_t attempt_index = 0;
         {
             std::scoped_lock lock(mutex_);
             ++usage_.logical_requests;
+            attempt_index = preferred_index_;
         }
 
         while (true) {
             try {
                 std::unique_lock lock(mutex_);
                 ++usage_.attempt_count;
-                auto provider = active_provider_locked();
+                auto provider = provider_for_index_locked(attempt_index);
                 lock.unlock();
-                return fn(*provider);
+                return std::forward<Fn>(fn)(*provider);
             } catch (const NonRetryableProviderError &) {
                 std::scoped_lock lock(mutex_);
                 ++usage_.failed_attempts;
                 throw;
             } catch (const std::exception &error) {
+                const auto failed_model = endpoints_[attempt_index].model;
+                std::optional<size_t> next_index;
+                std::string next_model;
+
                 std::scoped_lock lock(mutex_);
                 ++usage_.failed_attempts;
 
                 std::ostringstream message;
-                message << endpoints_[active_index_].model << ": " << error.what();
+                message << failed_model << ": " << error.what();
                 errors.push_back(message.str());
 
-                if (active_index_ + 1 >= endpoints_.size()) {
+                if (attempt_index + 1 < endpoints_.size()) {
+                    const auto candidate_index = attempt_index + 1;
+                    next_index = candidate_index;
+                    next_model = endpoints_[candidate_index].model;
+                    if (candidate_index > preferred_index_) {
+                        preferred_provider_.reset();
+                        preferred_index_ = candidate_index;
+                        ++usage_.fallback_switches;
+                    }
+                } else {
                     std::ostringstream summary;
                     summary << "All configured models failed";
                     if (!errors.empty()) {
@@ -146,11 +185,8 @@ private:
                     throw std::runtime_error(summary.str());
                 }
 
-                const auto previous_model = endpoints_[active_index_].model;
-                ++active_index_;
-                active_provider_.reset();
-                ++usage_.fallback_switches;
-                spdlog::warn("Model '{}' failed, falling back to '{}': {}", previous_model, endpoints_[active_index_].model, error.what());
+                spdlog::warn("Model '{}' failed, falling back to '{}': {}", failed_model, next_model, error.what());
+                attempt_index = *next_index;
             }
         }
     }
@@ -192,8 +228,8 @@ std::unique_ptr<Provider> create_provider(const std::string &provider_name, cons
     return create_provider_with_fallbacks(provider_name, api_key, model, base_url, {});
 }
 
-std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model,
-                                                         const std::string &base_url, const std::vector<std::string> &fallback_models, ProviderFactory factory) {
+std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
+                                                         const std::vector<std::string> &fallback_models, ProviderFactory factory) {
     return std::make_unique<FallbackProvider>(build_provider_chain(provider_name, api_key, model, base_url, fallback_models), std::move(factory));
 }
 
