@@ -7,6 +7,7 @@
 #include "infra/storage/subagent-run-store.hpp"
 #include "infra/storage/session-store.hpp"
 #include "features/subagent/subagent-manager.hpp"
+#include "test-helpers.hpp"
 
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include <thread>
 
 using namespace orangutan;
+using orangutan::testing::test_tmp_root;
 
 namespace {
 
@@ -25,12 +27,6 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
     return std::ranges::any_of(definitions, [&](const ToolDef &definition) {
         return definition.name == name;
     });
-}
-
-std::filesystem::path test_tmp_root() {
-    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "tmp" / "tests";
-    std::filesystem::create_directories(root);
-    return root;
 }
 
 json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
@@ -55,8 +51,7 @@ json start_background_process(ToolRegistry &registry, const std::string &command
     return json::parse(result.content);
 }
 
-json wait_for_background_process(ToolRegistry &registry, const std::string &process_id,
-                                 std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+json wait_for_background_process(ToolRegistry &registry, const std::string &process_id, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     json last_snapshot;
 
@@ -96,35 +91,7 @@ ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::stri
     };
 }
 
-class ScopedEnvVar {
-public:
-    ScopedEnvVar(const char *name, const std::string &value)
-    : name_(name) {
-        if (const auto *current = std::getenv(name); current != nullptr) {
-            had_previous_ = true;
-            previous_ = current;
-        }
-        setenv(name_.c_str(), value.c_str(), 1);
-    }
-
-    ~ScopedEnvVar() {
-        if (had_previous_) {
-            setenv(name_.c_str(), previous_.c_str(), 1);
-        } else {
-            unsetenv(name_.c_str());
-        }
-    }
-
-    ScopedEnvVar(const ScopedEnvVar &) = delete;
-    ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
-    ScopedEnvVar(ScopedEnvVar &&) = delete;
-    ScopedEnvVar &operator=(ScopedEnvVar &&) = delete;
-
-private:
-    std::string name_;
-    std::string previous_;
-    bool had_previous_ = false;
-};
+using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
 } // namespace
 
@@ -543,6 +510,46 @@ TEST_F(BuiltinToolsTest, ReadFileOffsetBeyondEOF) {
     std::filesystem::remove(tmp);
 }
 
+TEST_F(BuiltinToolsTest, ReadRejectsNonPositiveOffset) {
+    const auto tmp = test_tmp_root() / "orangutan_invalid_offset_test.txt";
+    {
+        std::ofstream ofs(tmp);
+        ofs << "line1\n";
+    }
+
+    const ToolUseBlock call{
+        .id = "id_invalid_offset",
+        .name = "read",
+        .input = {{"path", tmp.string()}, {"offset", 0}},
+    };
+    const auto result = registry().execute(call);
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("offset"), std::string::npos);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(BuiltinToolsTest, ReadRejectsNonPositiveLimit) {
+    const auto tmp = test_tmp_root() / "orangutan_invalid_limit_test.txt";
+    {
+        std::ofstream ofs(tmp);
+        ofs << "line1\n";
+    }
+
+    const ToolUseBlock call{
+        .id = "id_invalid_limit",
+        .name = "read",
+        .input = {{"path", tmp.string()}, {"limit", 0}},
+    };
+    const auto result = registry().execute(call);
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("limit"), std::string::npos);
+
+    std::filesystem::remove(tmp);
+}
+
 // ── read tool — binary detection ────────────────
 
 TEST_F(BuiltinToolsTest, ReadBinaryFileReturnsMetadata) {
@@ -668,19 +675,18 @@ protected:
     void SetUp() override {
         tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
         register_builtin_tools(registry_);
-        register_script_tools(registry_,
-                              {{
-                                  .name = "ls",
-                                  .description = "List files",
-                                  .command = "ls -la ${path}",
-                                  .input_schema = {{"path", "string"}},
-                              },
-                               {
-                                   .name = "grep",
-                                   .description = "Search files",
-                                   .command = "rg --color=never -n ${pattern} ${path}",
-                                   .input_schema = {{"pattern", "string"}, {"path", "string"}},
-                               }});
+        register_script_tools(registry_, {{
+                                              .name = "ls",
+                                              .description = "List files",
+                                              .command = "ls -la ${path}",
+                                              .input_schema = {{"path", "string"}},
+                                          },
+                                          {
+                                              .name = "grep",
+                                              .description = "Search files",
+                                              .command = "rg --color=never -n ${pattern} ${path}",
+                                              .input_schema = {{"pattern", "string"}, {"path", "string"}},
+                                          }});
     }
 
     [[nodiscard]]
@@ -851,14 +857,12 @@ TEST(RuntimeToolLoaderTest, ShellApprovalCallbackCanAllowCommand) {
     permissions.shell_approval = ToolApprovalPolicy::ask;
 
     bool prompted = false;
-    (void)register_runtime_tools(
-        registry, nullptr, {}, nullptr, {}, {}, &permissions,
-        [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
-            prompted = true;
-            EXPECT_EQ(call.name, "shell");
-            EXPECT_NE(prompt_text.find("echo hello"), std::string::npos);
-            return true;
-        });
+    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+        prompted = true;
+        EXPECT_EQ(call.name, "shell");
+        EXPECT_NE(prompt_text.find("echo hello"), std::string::npos);
+        return true;
+    });
 
     const auto shell_result = registry.execute(ToolUseBlock{
         .id = "allow-shell",
@@ -917,6 +921,91 @@ TEST(RuntimeToolLoaderTest, BlockedShellCommandsAreRejectedByPolicy) {
     });
     EXPECT_TRUE(shell_result.is_error);
     EXPECT_NE(shell_result.content.find("matched 'rm -rf'"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, ScriptToolsRespectShellApprovalPolicy) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::deny;
+
+    const std::vector<Config::ScriptToolConfig> custom_tools = {{
+        .name = "echo_custom",
+        .description = "Echo custom",
+        .command = "echo custom",
+    }};
+
+    (void)register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions);
+
+    const auto result = registry.execute(ToolUseBlock{
+        .id = "deny-script-shell",
+        .name = "echo_custom",
+        .input = json::object(),
+    });
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("approval policy"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, ScriptToolsRespectDeniedShellCommands) {
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::allow;
+    permissions.denied_shell_commands = {"rm -rf"};
+
+    const std::vector<Config::ScriptToolConfig> custom_tools = {{
+        .name = "wipe",
+        .description = "Dangerous command",
+        .command = "rm -rf ${path}",
+        .input_schema = {{"path", "string"}},
+    }};
+
+    (void)register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions);
+
+    const auto result = registry.execute(ToolUseBlock{
+        .id = "deny-script-command",
+        .name = "wipe",
+        .input = {{"path", "build"}},
+    });
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("matched 'rm -rf'"), std::string::npos);
+}
+
+TEST(RuntimeToolLoaderTest, ScriptToolsUseDynamicApprovalCallbackFromToolContext) {
+    SubagentRunStore run_store(":memory:");
+    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+
+    ToolRegistry registry;
+    ToolPermissionSettings permissions;
+    permissions.sandbox_mode = ToolSandboxMode::disabled;
+    permissions.shell_approval = ToolApprovalPolicy::ask;
+    auto tool_context = make_runtime_tool_context(&manager);
+    bool prompted = false;
+
+    const std::vector<Config::ScriptToolConfig> custom_tools = {{
+        .name = "echo_custom",
+        .description = "Echo custom",
+        .command = "echo custom",
+    }};
+
+    (void)register_runtime_tools(registry, nullptr, {}, &tool_context, custom_tools, {}, &permissions);
+    tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+        prompted = true;
+        EXPECT_EQ(call.name, "echo_custom");
+        EXPECT_NE(prompt_text.find("echo custom"), std::string::npos);
+        return true;
+    };
+
+    const auto result = registry.execute(ToolUseBlock{
+        .id = "allow-script-shell",
+        .name = "echo_custom",
+        .input = json::object(),
+    });
+    EXPECT_TRUE(prompted);
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("custom"), std::string::npos);
 }
 
 TEST_F(ScriptToolsTest, LsListsDirectory) {
@@ -1124,10 +1213,7 @@ TEST_F(BuiltinToolsWorkspaceTest, ShellRunsInsideWorkspace) {
 TEST_F(BuiltinToolsWorkspaceTest, ShellBackgroundReturnsProcessAndPollsToCompletion) {
     std::filesystem::create_directories(workspace() / "ops");
 
-    const auto start_payload = start_background_process(
-        registry(),
-        "printf 'tick\\n'; sleep 0.2; pwd; printf 'tock\\n'",
-        "ops");
+    const auto start_payload = start_background_process(registry(), "printf 'tick\\n'; sleep 0.2; pwd; printf 'tock\\n'", "ops");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
     EXPECT_FALSE(process_id.empty());
@@ -1142,9 +1228,7 @@ TEST_F(BuiltinToolsWorkspaceTest, ShellBackgroundReturnsProcessAndPollsToComplet
 }
 
 TEST_F(BuiltinToolsWorkspaceTest, ProcessListIncludesRunningBackgroundProcess) {
-    const auto start_payload = start_background_process(
-        registry(),
-        "python3 -c \"import time; print('ready', flush=True); time.sleep(10)\"");
+    const auto start_payload = start_background_process(registry(), "python3 -c \"import time; print('ready', flush=True); time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
     const auto list_result = registry().execute(ToolUseBlock{
@@ -1172,9 +1256,7 @@ TEST_F(BuiltinToolsWorkspaceTest, ProcessListIncludesRunningBackgroundProcess) {
 }
 
 TEST_F(BuiltinToolsWorkspaceTest, ProcessKillStopsBackgroundProcess) {
-    const auto start_payload = start_background_process(
-        registry(),
-        "python3 -c \"import time; time.sleep(10)\"");
+    const auto start_payload = start_background_process(registry(), "python3 -c \"import time; time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
     const auto kill_result = registry().execute(ToolUseBlock{
@@ -1280,7 +1362,6 @@ TEST_F(BuiltinToolsWorkspaceConfigAccessTest, HomeFilesOutsideOrangutanConfigRem
     EXPECT_TRUE(result.is_error);
     EXPECT_NE(result.content.find("workspace sandbox"), std::string::npos);
 }
-
 
 // ── edit tool (patch-based) ─────────────────────
 

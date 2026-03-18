@@ -120,8 +120,7 @@ std::optional<std::string> blocked_shell_command_pattern(const ToolPermissionSet
     return std::nullopt;
 }
 
-std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings,
-                                                        const ToolApprovalCallback &approval_callback) {
+std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback) {
     if (!is_tool_allowed(settings, call.name)) {
         return blocked_result(call, "Tool '" + call.name + "' blocked by permission policy.");
     }
@@ -131,7 +130,16 @@ std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call
         return std::nullopt;
     }
 
-    if (auto blocked_pattern = blocked_shell_command_pattern(settings, *maybe_command); blocked_pattern.has_value()) {
+    return evaluate_shell_command_permission(call, settings, *maybe_command, approval_callback);
+}
+
+std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, std::string_view command,
+                                                                 const ToolApprovalCallback &approval_callback) {
+    if (!is_tool_allowed(settings, call.name)) {
+        return blocked_result(call, "Tool '" + call.name + "' blocked by permission policy.");
+    }
+
+    if (auto blocked_pattern = blocked_shell_command_pattern(settings, command); blocked_pattern.has_value()) {
         return blocked_result(call, "Shell command blocked by permission policy: matched '" + *blocked_pattern + "'.");
     }
 
@@ -150,8 +158,9 @@ std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call
 
     std::ostringstream prompt;
     prompt << "Shell command approval required.\n";
+    prompt << "Tool: " << call.name << '\n';
     prompt << "Sandbox mode: " << to_string(settings.sandbox_mode) << '\n';
-    prompt << "Command: " << *maybe_command;
+    prompt << "Command: " << command;
     if (!approval_callback(call, prompt.str())) {
         return blocked_result(call, "Shell command rejected by user.");
     }

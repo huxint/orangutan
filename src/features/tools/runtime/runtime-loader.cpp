@@ -19,26 +19,23 @@ bool should_expose_tool(const ToolPermissionSettings &settings, const std::strin
     return true;
 }
 
-void apply_permission_policy(ToolRegistry &registry, const ToolPermissionSettings &settings, const ToolRuntimeContext *tool_context,
-                             ToolApprovalCallback approval_callback) {
+void apply_permission_policy(ToolRegistry &registry, const ToolPermissionSettings &settings, const ToolRuntimeContext *tool_context, ToolApprovalCallback approval_callback) {
     registry.set_definition_filter([settings](const ToolDef &definition) {
         return should_expose_tool(settings, definition.name);
     });
     registry.set_execution_guard([settings, approval_callback = std::move(approval_callback), tool_context](const ToolUseBlock &call) {
-        const auto &active_callback =
-            tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
+        const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
         return evaluate_tool_permission(call, settings, active_callback);
     });
 }
 
 } // namespace
 
-RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace,
-                                                  const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
-                                                  const std::vector<Config::McpServerConfig> &mcp_servers,
+RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
+                                                  const std::vector<Config::ScriptToolConfig> &custom_tools, const std::vector<Config::McpServerConfig> &mcp_servers,
                                                   const ToolPermissionSettings *permissions, ToolApprovalCallback approval_callback) {
     register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions);
-    register_script_tools(registry, custom_tools, workspace, permissions);
+    register_script_tools(registry, custom_tools, workspace, permissions, tool_context, approval_callback);
 
     if (permissions != nullptr) {
         apply_permission_policy(registry, *permissions, tool_context, std::move(approval_callback));

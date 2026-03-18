@@ -51,7 +51,10 @@ bool is_tool_allowed(const ToolPermissionSettings &settings, std::string_view na
 std::optional<std::string> blocked_shell_command_pattern(const ToolPermissionSettings &settings, std::string_view command);
 
 [[nodiscard]]
-std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings,
-                                                        const ToolApprovalCallback &approval_callback = {});
+std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, std::string_view command,
+                                                                 const ToolApprovalCallback &approval_callback = {});
+
+[[nodiscard]]
+std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback = {});
 
 } // namespace orangutan

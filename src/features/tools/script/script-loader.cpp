@@ -87,14 +87,27 @@ static SubprocessResult execute_script(const std::string &command, const std::st
 
 // ── Tool Registration Helpers ───────────────────
 
-static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionSettings *permissions) {
+static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionSettings *permissions, const ToolRuntimeContext *tool_context,
+                             ToolApprovalCallback approval_callback) {
     return Tool{
         .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
-        .execute = [config, workspace, permissions](const json &input) -> std::string {
+        .execute = [config, workspace, permissions, tool_context, approval_callback = std::move(approval_callback)](const json &input) -> std::string {
             std::string command = substitute_params(config.command, input, config.input_schema);
             const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
             const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
             const auto sandbox_mode = permissions != nullptr ? permissions->sandbox_mode : ToolSandboxMode::disabled;
+            const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
+
+            if (permissions != nullptr) {
+                const ToolUseBlock synthetic_call{
+                    .id = config.name,
+                    .name = config.name,
+                    .input = input,
+                };
+                if (auto blocked = evaluate_shell_command_permission(synthetic_call, *permissions, command, active_callback); blocked.has_value()) {
+                    throw std::runtime_error(blocked->content);
+                }
+            }
 
             spdlog::debug("  [script-tool] {}: {}", config.name, command);
 
@@ -118,8 +131,7 @@ static Tool make_script_tool(const ScriptToolConfig &config, const std::string &
 
             constexpr size_t max_output = 8192;
             if (result.stdout_output.size() > max_output) {
-                result.stdout_output =
-                    result.stdout_output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(result.stdout_output.size()) + " bytes)";
+                result.stdout_output = result.stdout_output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(result.stdout_output.size()) + " bytes)";
             }
 
             return result.stdout_output;
@@ -127,11 +139,10 @@ static Tool make_script_tool(const ScriptToolConfig &config, const std::string &
     };
 }
 
-
 // ── User Script Tools ───────────────────────────
 
-void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace,
-                           const ToolPermissionSettings *permissions) {
+void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace, const ToolPermissionSettings *permissions,
+                           const ToolRuntimeContext *tool_context, const ToolApprovalCallback &approval_callback) {
     if (tools.empty()) {
         return;
     }
@@ -148,7 +159,7 @@ void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolC
         }
 
         spdlog::info("Registering script tool '{}': {}", config.name, config.command);
-        registry.register_tool(make_script_tool(config, workspace, permissions));
+        registry.register_tool(make_script_tool(config, workspace, permissions, tool_context, approval_callback));
         ++registered;
     }
 
