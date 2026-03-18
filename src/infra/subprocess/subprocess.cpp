@@ -161,6 +161,15 @@ CapturedOutput read_output_tail(const std::filesystem::path &path, size_t max_by
     return captured;
 }
 
+size_t file_size_or_zero(const std::filesystem::path &path) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<size_t>(size);
+}
+
 pid_t spawn_background_subprocess(const SubprocessConfig &config, const std::filesystem::path &stdout_path, const std::filesystem::path &stderr_path) {
     if (!config.stdin_data.empty()) {
         throw std::runtime_error("background subprocesses do not support stdin data");
@@ -228,6 +237,7 @@ pid_t spawn_background_subprocess(const SubprocessConfig &config, const std::fil
         _exit(127);
     }
 
+    (void)setpgid(pid, pid);
     return pid;
 }
 
@@ -320,6 +330,8 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
         _exit(127);
     }
 
+    (void)setpgid(pid, pid);
+
     // Parent: close child-side pipe ends
     close(stdout_pipe[1]);
     close(stderr_pipe[1]);
@@ -328,7 +340,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
     if (need_stdin_pipe) {
         close(stdin_pipe[0]);
         if (!set_nonblocking(stdin_pipe[1])) {
-            (void)kill(pid, SIGKILL);
+            signal_process(pid, SIGKILL);
             close(stdin_pipe[1]);
             close(stdout_pipe[0]);
             close(stderr_pipe[0]);
@@ -338,7 +350,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
     }
 
     if (!set_nonblocking(stdout_pipe[0]) || !set_nonblocking(stderr_pipe[0])) {
-        (void)kill(pid, SIGKILL);
+        signal_process(pid, SIGKILL);
         if (need_stdin_pipe) {
             close(stdin_pipe[1]);
         }
@@ -441,9 +453,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
     // Kill and reap
     if (result.timed_out || fatal_error) {
         if (!child_exited) {
-            if (killpg(pid, SIGKILL) == -1 && errno == ESRCH) {
-                (void)kill(pid, SIGKILL);
-            }
+            signal_process(pid, SIGKILL);
         }
         waitpid(pid, nullptr, 0);
         result.exit_code = -1;
@@ -479,6 +489,11 @@ struct BackgroundProcessManager::Impl {
     uint64_t next_id = 0;
     std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
 
+    Impl(const Impl &) = delete;
+    Impl &operator=(const Impl &) = delete;
+    Impl(Impl &&) = delete;
+    Impl &operator=(Impl &&) = delete;
+
     Impl() {
         std::filesystem::create_directories(temp_root);
     }
@@ -498,7 +513,7 @@ struct BackgroundProcessManager::Impl {
     }
 
     [[nodiscard]]
-    BackgroundProcessSummary summarize_entry(const std::shared_ptr<ProcessEntry> &entry) const {
+    static BackgroundProcessSummary summarize_entry(const std::shared_ptr<ProcessEntry> &entry) {
         BackgroundProcessSummary summary;
         {
             std::scoped_lock lock(entry->mutex);
@@ -512,22 +527,20 @@ struct BackgroundProcessManager::Impl {
             summary.signal_number = entry->signal_number;
         }
 
-        std::error_code ec;
-        summary.stdout_bytes = std::filesystem::exists(entry->stdout_path, ec) && !ec ? std::filesystem::file_size(entry->stdout_path, ec) : 0;
-        ec.clear();
-        summary.stderr_bytes = std::filesystem::exists(entry->stderr_path, ec) && !ec ? std::filesystem::file_size(entry->stderr_path, ec) : 0;
+        summary.stdout_bytes = file_size_or_zero(entry->stdout_path);
+        summary.stderr_bytes = file_size_or_zero(entry->stderr_path);
         return summary;
     }
 
     [[nodiscard]]
-    BackgroundProcessSnapshot snapshot_entry(const std::shared_ptr<ProcessEntry> &entry) const {
+    static BackgroundProcessSnapshot snapshot_entry(const std::shared_ptr<ProcessEntry> &entry) {
         auto snapshot = BackgroundProcessSnapshot{summarize_entry(entry)};
-        const auto stdout_capture = read_output_tail(entry->stdout_path);
+        auto stdout_capture = read_output_tail(entry->stdout_path);
         snapshot.stdout_output = std::move(stdout_capture.text);
         snapshot.stdout_truncated = stdout_capture.truncated;
         snapshot.stdout_bytes = stdout_capture.total_bytes;
 
-        const auto stderr_capture = read_output_tail(entry->stderr_path);
+        auto stderr_capture = read_output_tail(entry->stderr_path);
         snapshot.stderr_output = std::move(stderr_capture.text);
         snapshot.stderr_truncated = stderr_capture.truncated;
         snapshot.stderr_bytes = stderr_capture.total_bytes;
@@ -535,7 +548,7 @@ struct BackgroundProcessManager::Impl {
     }
 
     [[nodiscard]]
-    BackgroundProcessSnapshot terminate_entry(const std::shared_ptr<ProcessEntry> &entry) {
+    static BackgroundProcessSnapshot terminate_entry(const std::shared_ptr<ProcessEntry> &entry) {
         pid_t pid = -1;
         bool already_stopped = false;
         {
@@ -616,29 +629,37 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
         throw;
     }
 
-    std::thread([entry]() {
-        int status = 0;
-        pid_t waited = -1;
-        do {
-            waited = waitpid(entry->pid, &status, 0);
-        } while (waited == -1 && errno == EINTR);
-
-        {
-            std::scoped_lock lock(entry->mutex);
-            entry->running = false;
-            if (waited == -1) {
-                entry->exit_code = -1;
-            } else if (WIFEXITED(status)) {
-                entry->exit_code = WEXITSTATUS(status);
-            } else if (WIFSIGNALED(status)) {
-                entry->signal_number = WTERMSIG(status);
-                entry->exit_code = 128 + WTERMSIG(status);
-            } else {
-                entry->exit_code = -1;
+    try {
+        std::thread([entry]() {
+            int status = 0;
+            pid_t waited = waitpid(entry->pid, &status, 0);
+            while (waited == -1 && errno == EINTR) {
+                waited = waitpid(entry->pid, &status, 0);
             }
-        }
-        entry->cv.notify_all();
-    }).detach();
+
+            {
+                std::scoped_lock lock(entry->mutex);
+                entry->running = false;
+                entry->exit_code = -1;
+                if (waited != -1) {
+                    if (WIFEXITED(status)) {
+                        entry->exit_code = WEXITSTATUS(status);
+                    } else if (WIFSIGNALED(status)) {
+                        entry->signal_number = WTERMSIG(status);
+                        entry->exit_code = 128 + WTERMSIG(status);
+                    }
+                }
+            }
+            entry->cv.notify_all();
+        }).detach();
+    } catch (...) {
+        signal_process(entry->pid, SIGKILL);
+        waitpid(entry->pid, nullptr, 0);
+        std::error_code ec;
+        std::filesystem::remove(entry->stdout_path, ec);
+        std::filesystem::remove(entry->stderr_path, ec);
+        throw;
+    }
 
     {
         std::scoped_lock lock(impl_->mutex);
@@ -646,7 +667,7 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
         impl_->entries_by_id.insert_or_assign(entry->process_id, entry);
     }
 
-    return impl_->summarize_entry(entry);
+    return Impl::summarize_entry(entry);
 }
 
 std::vector<BackgroundProcessSummary> BackgroundProcessManager::list() const {
@@ -659,7 +680,7 @@ std::vector<BackgroundProcessSummary> BackgroundProcessManager::list() const {
     std::vector<BackgroundProcessSummary> summaries;
     summaries.reserve(entries.size());
     for (const auto &entry : entries) {
-        summaries.push_back(impl_->summarize_entry(entry));
+        summaries.push_back(Impl::summarize_entry(entry));
     }
     return summaries;
 }
@@ -669,7 +690,7 @@ BackgroundProcessSnapshot BackgroundProcessManager::poll(const std::string &proc
     if (entry == nullptr) {
         throw std::runtime_error("background process not found: " + process_id);
     }
-    return impl_->snapshot_entry(entry);
+    return Impl::snapshot_entry(entry);
 }
 
 BackgroundProcessSnapshot BackgroundProcessManager::kill(const std::string &process_id) {
@@ -677,7 +698,7 @@ BackgroundProcessSnapshot BackgroundProcessManager::kill(const std::string &proc
     if (entry == nullptr) {
         throw std::runtime_error("background process not found: " + process_id);
     }
-    return impl_->terminate_entry(entry);
+    return Impl::terminate_entry(entry);
 }
 
 } // namespace orangutan

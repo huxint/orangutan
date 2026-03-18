@@ -27,6 +27,12 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
     });
 }
 
+std::filesystem::path test_tmp_root() {
+    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "tmp" / "tests";
+    std::filesystem::create_directories(root);
+    return root;
+}
+
 json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
     json input = {
         {"command", command},
@@ -54,7 +60,7 @@ json wait_for_background_process(ToolRegistry &registry, const std::string &proc
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     json last_snapshot;
 
-    do {
+    while (std::chrono::steady_clock::now() < deadline) {
         const auto result = registry.execute(ToolUseBlock{
             .id = "poll-background",
             .name = "process_poll",
@@ -71,7 +77,7 @@ json wait_for_background_process(ToolRegistry &registry, const std::string &proc
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    } while (std::chrono::steady_clock::now() < deadline);
+    }
 
     ADD_FAILURE() << "background process did not finish in time: " << process_id;
     return last_snapshot;
@@ -216,6 +222,7 @@ TEST(ToolRegistryTest, DuplicateRegistrationReplacesExistingExecutor) {
 class BuiltinToolsTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
         register_builtin_tools(registry_);
     }
 
@@ -225,19 +232,22 @@ protected:
     }
 
 private:
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
     ToolRegistry registry_;
 };
 
 class BuiltinToolsWorkspaceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        workspace_ = std::filesystem::temp_directory_path() / "orangutan_tool_workspace_test";
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
+        workspace_ = test_tmp_root() / "orangutan_tool_workspace_test";
         std::filesystem::remove_all(workspace_);
         std::filesystem::create_directories(workspace_);
         register_builtin_tools(registry_, nullptr, workspace_.string());
     }
 
     void TearDown() override {
+        tmp_env_.reset();
         std::filesystem::remove_all(workspace_);
     }
 
@@ -252,6 +262,7 @@ protected:
     }
 
 private:
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
     std::filesystem::path workspace_;
     ToolRegistry registry_;
 };
@@ -259,7 +270,8 @@ private:
 class BuiltinToolsWorkspaceConfigAccessTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temp_root_ = std::filesystem::temp_directory_path() / "orangutan_tool_config_access_test";
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
+        temp_root_ = test_tmp_root() / "orangutan_tool_config_access_test";
         home_ = temp_root_ / "home";
         workspace_ = temp_root_ / "workspace";
         std::filesystem::remove_all(temp_root_);
@@ -271,6 +283,7 @@ protected:
 
     void TearDown() override {
         home_env_.reset();
+        tmp_env_.reset();
         std::filesystem::remove_all(temp_root_);
     }
 
@@ -285,6 +298,7 @@ protected:
     }
 
 private:
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
     std::filesystem::path temp_root_;
     std::filesystem::path home_;
     std::filesystem::path workspace_;
@@ -353,7 +367,7 @@ TEST_F(BuiltinToolsTest, ShellReportsNonZeroExitCode) {
 }
 
 TEST_F(BuiltinToolsTest, ReadFileReturnsLineNumberedContents) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_test.txt";
     {
         std::ofstream ofs(tmp);
         ofs << "aaa\nbbb\nccc\n";
@@ -390,7 +404,7 @@ TEST_F(BuiltinToolsTest, ReadFileMissingReturnsError) {
 // ── write tool ──────────────────────────────────
 
 TEST_F(BuiltinToolsTest, WriteCreatesFile) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_write_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_write_test.txt";
     std::filesystem::remove(tmp); // ensure clean state
 
     const ToolUseBlock call{
@@ -412,8 +426,8 @@ TEST_F(BuiltinToolsTest, WriteCreatesFile) {
 }
 
 TEST_F(BuiltinToolsTest, WriteCreatesParentDirectories) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_test_dir" / "sub" / "file.txt";
-    std::filesystem::remove_all(std::filesystem::temp_directory_path() / "orangutan_test_dir");
+    const auto tmp = test_tmp_root() / "orangutan_test_dir" / "sub" / "file.txt";
+    std::filesystem::remove_all(test_tmp_root() / "orangutan_test_dir");
 
     const ToolUseBlock call{
         .id = "id_wf2",
@@ -425,13 +439,13 @@ TEST_F(BuiltinToolsTest, WriteCreatesParentDirectories) {
     EXPECT_FALSE(result.is_error);
     EXPECT_TRUE(std::filesystem::exists(tmp));
 
-    std::filesystem::remove_all(std::filesystem::temp_directory_path() / "orangutan_test_dir");
+    std::filesystem::remove_all(test_tmp_root() / "orangutan_test_dir");
 }
 
 // ── read tool — offset/limit ────────────────────
 
 TEST_F(BuiltinToolsTest, ReadFileWithOffset) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_offset_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_offset_test.txt";
     {
         std::ofstream ofs(tmp);
         for (int i = 1; i <= 20; ++i) {
@@ -456,7 +470,7 @@ TEST_F(BuiltinToolsTest, ReadFileWithOffset) {
 }
 
 TEST_F(BuiltinToolsTest, ReadFileWithLimit) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_limit_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_limit_test.txt";
     {
         std::ofstream ofs(tmp);
         for (int i = 1; i <= 100; ++i) {
@@ -483,7 +497,7 @@ TEST_F(BuiltinToolsTest, ReadFileWithLimit) {
 }
 
 TEST_F(BuiltinToolsTest, ReadFileWithOffsetAndLimit) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_offlim_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_offlim_test.txt";
     {
         std::ofstream ofs(tmp);
         for (int i = 1; i <= 500; ++i) {
@@ -509,7 +523,7 @@ TEST_F(BuiltinToolsTest, ReadFileWithOffsetAndLimit) {
 }
 
 TEST_F(BuiltinToolsTest, ReadFileOffsetBeyondEOF) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_eof_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_eof_test.txt";
     {
         std::ofstream ofs(tmp);
         ofs << "only\nthree\nlines\n";
@@ -532,7 +546,7 @@ TEST_F(BuiltinToolsTest, ReadFileOffsetBeyondEOF) {
 // ── read tool — binary detection ────────────────
 
 TEST_F(BuiltinToolsTest, ReadBinaryFileReturnsMetadata) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_binary_test.bin";
+    const auto tmp = test_tmp_root() / "orangutan_binary_test.bin";
     {
         std::ofstream ofs(tmp, std::ios::binary);
         ofs << "header";
@@ -556,7 +570,7 @@ TEST_F(BuiltinToolsTest, ReadBinaryFileReturnsMetadata) {
 }
 
 TEST_F(BuiltinToolsTest, ReadTextFileReadsNormally) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_text_test.txt";
+    const auto tmp = test_tmp_root() / "orangutan_text_test.txt";
     {
         std::ofstream ofs(tmp);
         ofs << "just text\nno nulls\n";
@@ -579,8 +593,8 @@ TEST_F(BuiltinToolsTest, ReadTextFileReadsNormally) {
 // ── read tool — multi-path ──────────────────────
 
 TEST_F(BuiltinToolsTest, ReadMultipleFiles) {
-    const auto tmp_a = std::filesystem::temp_directory_path() / "orangutan_multi_a.txt";
-    const auto tmp_b = std::filesystem::temp_directory_path() / "orangutan_multi_b.txt";
+    const auto tmp_a = test_tmp_root() / "orangutan_multi_a.txt";
+    const auto tmp_b = test_tmp_root() / "orangutan_multi_b.txt";
     {
         std::ofstream(tmp_a) << "content_a\n";
         std::ofstream(tmp_b) << "content_b\n";
@@ -604,7 +618,7 @@ TEST_F(BuiltinToolsTest, ReadMultipleFiles) {
 }
 
 TEST_F(BuiltinToolsTest, ReadMultiPathOneFailsContinuesOthers) {
-    const auto tmp = std::filesystem::temp_directory_path() / "orangutan_multi_ok.txt";
+    const auto tmp = test_tmp_root() / "orangutan_multi_ok.txt";
     {
         std::ofstream(tmp) << "good content\n";
     }
@@ -652,6 +666,7 @@ TEST_F(BuiltinToolsTest, ReadNeitherPathNorPathsReturnsError) {
 class ScriptToolsTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
         register_builtin_tools(registry_);
         register_script_tools(registry_,
                               {{
@@ -674,6 +689,7 @@ protected:
     }
 
 private:
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
     ToolRegistry registry_;
 };
 
@@ -706,8 +722,8 @@ TEST(RuntimeToolLoaderTest, RegistersUsableMemoryAndSubagentToolsTogether) {
     ToolRegistry registry;
     // Real child execution is covered in SubagentIntegrationTest; this regression test only checks that runtime bootstrap wires usable memory and subagent control tools together
     // in one registry.
-    const auto memory_db = std::filesystem::temp_directory_path() / "orangutan_runtime_tool_loader_memory.db";
-    const auto session_db = std::filesystem::temp_directory_path() / "orangutan_runtime_tool_loader_sessions.db";
+    const auto memory_db = test_tmp_root() / "orangutan_runtime_tool_loader_memory.db";
+    const auto session_db = test_tmp_root() / "orangutan_runtime_tool_loader_sessions.db";
     std::filesystem::remove(memory_db);
     std::filesystem::remove(session_db);
 
@@ -904,7 +920,7 @@ TEST(RuntimeToolLoaderTest, BlockedShellCommandsAreRejectedByPolicy) {
 }
 
 TEST_F(ScriptToolsTest, LsListsDirectory) {
-    const auto tmp_dir = std::filesystem::temp_directory_path() / "orangutan_ls_test";
+    const auto tmp_dir = test_tmp_root() / "orangutan_ls_test";
     std::filesystem::create_directories(tmp_dir);
     std::filesystem::create_directories(tmp_dir / "subdir");
     {
@@ -939,7 +955,7 @@ TEST_F(ScriptToolsTest, LsMissingPathReturnsError) {
 // ── grep tool (default script tool) ─────────────
 
 TEST_F(ScriptToolsTest, GrepFindsPattern) {
-    const auto tmp_dir = std::filesystem::temp_directory_path() / "orangutan_grep_test";
+    const auto tmp_dir = test_tmp_root() / "orangutan_grep_test";
     std::filesystem::create_directories(tmp_dir);
     {
         std::ofstream(tmp_dir / "a.txt") << "hello world\nfoo bar\n";
@@ -963,7 +979,7 @@ TEST_F(ScriptToolsTest, GrepFindsPattern) {
 }
 
 TEST_F(ScriptToolsTest, GrepNoMatchesReturnsError) {
-    const auto tmp_dir = std::filesystem::temp_directory_path() / "orangutan_grep_test2";
+    const auto tmp_dir = test_tmp_root() / "orangutan_grep_test2";
     std::filesystem::create_directories(tmp_dir);
     {
         std::ofstream(tmp_dir / "a.txt") << "hello\n";
@@ -1141,7 +1157,7 @@ TEST_F(BuiltinToolsWorkspaceTest, ProcessListIncludesRunningBackgroundProcess) {
     const auto list_payload = json::parse(list_result.content);
     ASSERT_TRUE(list_payload.contains("processes"));
     const auto &processes = list_payload.at("processes");
-    const auto it = std::find_if(processes.begin(), processes.end(), [&](const json &process) {
+    const auto it = std::ranges::find_if(processes, [&](const json &process) {
         return process.at("process_id").get<std::string>() == process_id;
     });
     ASSERT_NE(it, processes.end());

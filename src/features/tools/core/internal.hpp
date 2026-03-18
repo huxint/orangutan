@@ -47,7 +47,7 @@ inline std::filesystem::path expand_tool_home_path(const std::filesystem::path &
     }
 
     if (raw == "~") {
-        return std::filesystem::path(home);
+        return {home};
     }
 
     return std::filesystem::path(home) / raw.substr(2);
@@ -76,7 +76,7 @@ inline std::filesystem::path resolve_tool_path(const std::filesystem::path &path
         throw std::runtime_error("path is empty");
     }
 
-    const auto expanded = expand_tool_home_path(path);
+    auto expanded = expand_tool_home_path(path);
     if (workspace_root.empty()) {
         return expanded;
     }

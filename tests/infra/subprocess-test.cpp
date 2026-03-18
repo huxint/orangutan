@@ -1,12 +1,53 @@
 #include "infra/subprocess/subprocess.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <string>
 #include <thread>
 
 using namespace orangutan;
+
+namespace {
+
+std::filesystem::path test_tmp_root() {
+    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "tmp" / "tests";
+    std::filesystem::create_directories(root);
+    return root;
+}
+
+class ScopedEnvVar {
+public:
+    ScopedEnvVar(const char *name, const std::string &value)
+    : name_(name) {
+        if (const auto *current = std::getenv(name); current != nullptr) {
+            had_previous_ = true;
+            previous_ = current;
+        }
+        setenv(name_.c_str(), value.c_str(), 1);
+    }
+
+    ~ScopedEnvVar() {
+        if (had_previous_) {
+            setenv(name_.c_str(), previous_.c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+    }
+
+    ScopedEnvVar(const ScopedEnvVar &) = delete;
+    ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
+    ScopedEnvVar(ScopedEnvVar &&) = delete;
+    ScopedEnvVar &operator=(ScopedEnvVar &&) = delete;
+
+private:
+    std::string name_;
+    std::string previous_;
+    bool had_previous_ = false;
+};
+
+} // namespace
 
 // ── Basic execution ─────────────────────────────
 
@@ -73,9 +114,15 @@ TEST(SubprocessTest, TimeoutStillAppliesAfterChildClosesOutput) {
 // ── Working directory ───────────────────────────
 
 TEST(SubprocessTest, WorkingDirectory) {
-    auto result = run_subprocess({.command = "pwd", .working_dir = "/tmp"});
+    const auto working_dir = test_tmp_root() / "subprocess-working-dir";
+    std::filesystem::remove_all(working_dir);
+    std::filesystem::create_directories(working_dir);
+
+    auto result = run_subprocess({.command = "pwd", .working_dir = working_dir.string()});
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_EQ(result.stdout_output, "/tmp\n");
+    EXPECT_EQ(result.stdout_output, working_dir.string() + "\n");
+
+    std::filesystem::remove_all(working_dir);
 }
 
 // ── Pipe deadlock regression ────────────────────
@@ -110,6 +157,7 @@ TEST(SubprocessTest, LargeStdinAndStdoutDoNotDeadlock) {
 }
 
 TEST(SubprocessTest, BackgroundManagerCapturesOutputAndExit) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
     BackgroundProcessManager manager;
     const auto summary = manager.start(
         {
@@ -123,13 +171,13 @@ TEST(SubprocessTest, BackgroundManagerCapturesOutputAndExit) {
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     BackgroundProcessSnapshot snapshot;
-    do {
+    while (std::chrono::steady_clock::now() < deadline) {
         snapshot = manager.poll(summary.process_id);
         if (!snapshot.running) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    } while (std::chrono::steady_clock::now() < deadline);
+    }
 
     EXPECT_FALSE(snapshot.running);
     EXPECT_EQ(snapshot.exit_code, 0);
@@ -138,6 +186,7 @@ TEST(SubprocessTest, BackgroundManagerCapturesOutputAndExit) {
 }
 
 TEST(SubprocessTest, BackgroundManagerKillStopsRunningProcess) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
     BackgroundProcessManager manager;
     const auto summary = manager.start(
         {
@@ -150,4 +199,58 @@ TEST(SubprocessTest, BackgroundManagerKillStopsRunningProcess) {
     EXPECT_FALSE(snapshot.running);
     EXPECT_TRUE(snapshot.kill_requested);
     EXPECT_TRUE(snapshot.signal_number.has_value());
+}
+
+TEST(SubprocessTest, BackgroundManagerKillAfterCompletionDoesNotDeadlock) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    BackgroundProcessManager manager;
+    const auto summary = manager.start(
+        {
+            .command = "printf 'done\\n'",
+            .use_shell = true,
+        },
+        "completed process");
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto snapshot = manager.poll(summary.process_id);
+        if (!snapshot.running) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+
+    const auto kill_start = std::chrono::steady_clock::now();
+    const auto snapshot = manager.kill(summary.process_id);
+    const auto elapsed = std::chrono::steady_clock::now() - kill_start;
+
+    EXPECT_FALSE(snapshot.running);
+    EXPECT_EQ(snapshot.exit_code, 0);
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 1000);
+}
+
+TEST(SubprocessTest, BackgroundManagerShutdownDoesNotDeadlockAfterCompletedProcess) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    const auto start = std::chrono::steady_clock::now();
+
+    {
+        BackgroundProcessManager manager;
+        const auto summary = manager.start(
+            {
+                .command = "python3 -c \"import time; print('done', flush=True); time.sleep(0.1)\"",
+                .use_shell = true,
+            },
+            "python3 shutdown test");
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto snapshot = manager.poll(summary.process_id);
+            if (!snapshot.running) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+    }
+
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count(), 2);
 }
