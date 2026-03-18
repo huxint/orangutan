@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <string>
+#include <thread>
 
 using namespace orangutan;
 
@@ -106,4 +107,47 @@ TEST(SubprocessTest, LargeStdinAndStdoutDoNotDeadlock) {
     EXPECT_FALSE(result.timed_out);
     EXPECT_EQ(result.stdout_output.size(), 100000);
     EXPECT_EQ(result.stderr_output, "100000");
+}
+
+TEST(SubprocessTest, BackgroundManagerCapturesOutputAndExit) {
+    BackgroundProcessManager manager;
+    const auto summary = manager.start(
+        {
+            .command = "python3 -c \"import time; print('tick', flush=True); time.sleep(0.2); print('tock', flush=True)\"",
+            .use_shell = true,
+        },
+        "python3 background test");
+
+    EXPECT_FALSE(summary.process_id.empty());
+    EXPECT_TRUE(summary.running);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    BackgroundProcessSnapshot snapshot;
+    do {
+        snapshot = manager.poll(summary.process_id);
+        if (!snapshot.running) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    EXPECT_FALSE(snapshot.running);
+    EXPECT_EQ(snapshot.exit_code, 0);
+    EXPECT_NE(snapshot.stdout_output.find("tick"), std::string::npos);
+    EXPECT_NE(snapshot.stdout_output.find("tock"), std::string::npos);
+}
+
+TEST(SubprocessTest, BackgroundManagerKillStopsRunningProcess) {
+    BackgroundProcessManager manager;
+    const auto summary = manager.start(
+        {
+            .command = "python3 -c \"import time; time.sleep(10)\"",
+            .use_shell = true,
+        },
+        "python3 kill test");
+
+    const auto snapshot = manager.kill(summary.process_id);
+    EXPECT_FALSE(snapshot.running);
+    EXPECT_TRUE(snapshot.kill_requested);
+    EXPECT_TRUE(snapshot.signal_number.has_value());
 }

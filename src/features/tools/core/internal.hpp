@@ -2,9 +2,11 @@
 
 #include "core/tools/permissions.hpp"
 #include "core/tools/tool.hpp"
+#include "infra/subprocess/subprocess.hpp"
 
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -110,7 +112,9 @@ inline std::filesystem::path resolve_tool_working_dir(const std::string &working
     return resolved;
 }
 
-void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions);
+void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
+                         const std::shared_ptr<BackgroundProcessManager> &process_manager);
+void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
 void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
 void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);

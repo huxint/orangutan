@@ -10,10 +10,12 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <thread>
 
 using namespace orangutan;
 
@@ -23,6 +25,56 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
     return std::ranges::any_of(definitions, [&](const ToolDef &definition) {
         return definition.name == name;
     });
+}
+
+json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
+    json input = {
+        {"command", command},
+        {"background", true},
+    };
+    if (!working_dir.empty()) {
+        input["working_dir"] = working_dir;
+    }
+
+    const auto result = registry.execute(ToolUseBlock{
+        .id = "background-shell",
+        .name = "shell",
+        .input = std::move(input),
+    });
+    EXPECT_FALSE(result.is_error);
+    if (result.is_error) {
+        return {};
+    }
+
+    return json::parse(result.content);
+}
+
+json wait_for_background_process(ToolRegistry &registry, const std::string &process_id,
+                                 std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    json last_snapshot;
+
+    do {
+        const auto result = registry.execute(ToolUseBlock{
+            .id = "poll-background",
+            .name = "process_poll",
+            .input = {{"process_id", process_id}},
+        });
+        EXPECT_FALSE(result.is_error);
+        if (result.is_error) {
+            return {};
+        }
+
+        last_snapshot = json::parse(result.content);
+        if (!last_snapshot.value("running", true)) {
+            return last_snapshot;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    ADD_FAILURE() << "background process did not finish in time: " << process_id;
+    return last_snapshot;
 }
 
 ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::string *current_session_id = nullptr, std::vector<std::string> allowed_child_agents = {"reviewer"}) {
@@ -242,8 +294,11 @@ private:
 
 TEST_F(BuiltinToolsTest, RegistersExpectedCoreTools) {
     const auto defs = registry().definitions();
-    EXPECT_EQ(defs.size(), 4);
+    EXPECT_EQ(defs.size(), 7);
     EXPECT_TRUE(has_tool_named(defs, "shell"));
+    EXPECT_TRUE(has_tool_named(defs, "process_list"));
+    EXPECT_TRUE(has_tool_named(defs, "process_poll"));
+    EXPECT_TRUE(has_tool_named(defs, "process_kill"));
     EXPECT_TRUE(has_tool_named(defs, "read"));
     EXPECT_TRUE(has_tool_named(defs, "write"));
     EXPECT_TRUE(has_tool_named(defs, "edit"));
@@ -636,6 +691,9 @@ TEST(RuntimeToolLoaderTest, RegistersBuiltinAndCustomToolsOnly) {
     EXPECT_EQ(result.mcp_tool_count, 0);
     EXPECT_EQ(result.mcp_manager, nullptr);
     EXPECT_TRUE(has_tool_named(defs, "shell"));
+    EXPECT_TRUE(has_tool_named(defs, "process_list"));
+    EXPECT_TRUE(has_tool_named(defs, "process_poll"));
+    EXPECT_TRUE(has_tool_named(defs, "process_kill"));
     EXPECT_TRUE(has_tool_named(defs, "read"));
     EXPECT_TRUE(has_tool_named(defs, "write"));
     EXPECT_TRUE(has_tool_named(defs, "edit"));
@@ -674,6 +732,9 @@ TEST(RuntimeToolLoaderTest, RegistersUsableMemoryAndSubagentToolsTogether) {
             EXPECT_EQ(result.mcp_tool_count, 0);
             EXPECT_EQ(result.mcp_manager, nullptr);
             EXPECT_TRUE(has_tool_named(defs, "shell"));
+            EXPECT_TRUE(has_tool_named(defs, "process_list"));
+            EXPECT_TRUE(has_tool_named(defs, "process_poll"));
+            EXPECT_TRUE(has_tool_named(defs, "process_kill"));
             EXPECT_TRUE(has_tool_named(defs, "read"));
             EXPECT_FALSE(has_tool_named(defs, "ls"));
             EXPECT_FALSE(has_tool_named(defs, "grep"));
@@ -1042,6 +1103,76 @@ TEST_F(BuiltinToolsWorkspaceTest, ShellRunsInsideWorkspace) {
 
     EXPECT_FALSE(result.is_error);
     EXPECT_NE(result.content.find(workspace().string()), std::string::npos);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, ShellBackgroundReturnsProcessAndPollsToCompletion) {
+    std::filesystem::create_directories(workspace() / "ops");
+
+    const auto start_payload = start_background_process(
+        registry(),
+        "printf 'tick\\n'; sleep 0.2; pwd; printf 'tock\\n'",
+        "ops");
+    const auto process_id = start_payload.at("process_id").get<std::string>();
+
+    EXPECT_FALSE(process_id.empty());
+    EXPECT_TRUE(start_payload.at("running").get<bool>());
+
+    const auto snapshot = wait_for_background_process(registry(), process_id);
+    EXPECT_EQ(snapshot.at("status").get<std::string>(), "completed");
+    EXPECT_EQ(snapshot.at("exit_code").get<int>(), 0);
+    EXPECT_NE(snapshot.at("stdout").get<std::string>().find("tick"), std::string::npos);
+    EXPECT_NE(snapshot.at("stdout").get<std::string>().find((workspace() / "ops").string()), std::string::npos);
+    EXPECT_NE(snapshot.at("stdout").get<std::string>().find("tock"), std::string::npos);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, ProcessListIncludesRunningBackgroundProcess) {
+    const auto start_payload = start_background_process(
+        registry(),
+        "python3 -c \"import time; print('ready', flush=True); time.sleep(10)\"");
+    const auto process_id = start_payload.at("process_id").get<std::string>();
+
+    const auto list_result = registry().execute(ToolUseBlock{
+        .id = "list-background",
+        .name = "process_list",
+        .input = json::object(),
+    });
+    ASSERT_FALSE(list_result.is_error);
+
+    const auto list_payload = json::parse(list_result.content);
+    ASSERT_TRUE(list_payload.contains("processes"));
+    const auto &processes = list_payload.at("processes");
+    const auto it = std::find_if(processes.begin(), processes.end(), [&](const json &process) {
+        return process.at("process_id").get<std::string>() == process_id;
+    });
+    ASSERT_NE(it, processes.end());
+    EXPECT_TRUE(it->at("running").get<bool>());
+
+    const auto kill_result = registry().execute(ToolUseBlock{
+        .id = "kill-after-list",
+        .name = "process_kill",
+        .input = {{"process_id", process_id}},
+    });
+    EXPECT_FALSE(kill_result.is_error);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, ProcessKillStopsBackgroundProcess) {
+    const auto start_payload = start_background_process(
+        registry(),
+        "python3 -c \"import time; time.sleep(10)\"");
+    const auto process_id = start_payload.at("process_id").get<std::string>();
+
+    const auto kill_result = registry().execute(ToolUseBlock{
+        .id = "kill-background",
+        .name = "process_kill",
+        .input = {{"process_id", process_id}},
+    });
+    ASSERT_FALSE(kill_result.is_error);
+
+    const auto kill_payload = json::parse(kill_result.content);
+    EXPECT_FALSE(kill_payload.at("running").get<bool>());
+    EXPECT_TRUE(kill_payload.at("kill_requested").get<bool>());
+    EXPECT_NE(kill_payload.at("status").get<std::string>(), "running");
+    EXPECT_FALSE(kill_payload.at("signal_number").is_null());
 }
 
 TEST_F(BuiltinToolsWorkspaceTest, ApplyPatchRejectsPathsOutsideWorkspace) {

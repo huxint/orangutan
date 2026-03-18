@@ -1,7 +1,10 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace orangutan {
 
@@ -22,5 +25,52 @@ struct SubprocessResult {
 
 // Run a subprocess with poll-based I/O multiplexing, deadline timeout, and process group cleanup.
 SubprocessResult run_subprocess(const SubprocessConfig &config);
+
+struct BackgroundProcessSummary {
+    std::string process_id;
+    std::string command;
+    std::string working_dir;
+    int pid = -1;
+    bool running = false;
+    bool kill_requested = false;
+    std::optional<int> exit_code;
+    std::optional<int> signal_number;
+    size_t stdout_bytes = 0;
+    size_t stderr_bytes = 0;
+};
+
+struct BackgroundProcessSnapshot : BackgroundProcessSummary {
+    std::string stdout_output;
+    std::string stderr_output;
+    bool stdout_truncated = false;
+    bool stderr_truncated = false;
+};
+
+class BackgroundProcessManager {
+public:
+    BackgroundProcessManager();
+    ~BackgroundProcessManager();
+
+    BackgroundProcessManager(const BackgroundProcessManager &) = delete;
+    BackgroundProcessManager &operator=(const BackgroundProcessManager &) = delete;
+    BackgroundProcessManager(BackgroundProcessManager &&) noexcept;
+    BackgroundProcessManager &operator=(BackgroundProcessManager &&) noexcept;
+
+    [[nodiscard]]
+    BackgroundProcessSummary start(const SubprocessConfig &config, const std::string &display_command);
+
+    [[nodiscard]]
+    std::vector<BackgroundProcessSummary> list() const;
+
+    [[nodiscard]]
+    BackgroundProcessSnapshot poll(const std::string &process_id) const;
+
+    [[nodiscard]]
+    BackgroundProcessSnapshot kill(const std::string &process_id);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 } // namespace orangutan
