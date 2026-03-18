@@ -3,6 +3,7 @@
 #include "core/tools/permissions.hpp"
 #include "core/tools/tool.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -32,18 +33,56 @@ inline bool is_path_within_workspace(const std::filesystem::path &path, const st
     return true;
 }
 
+inline std::filesystem::path expand_tool_home_path(const std::filesystem::path &path) {
+    const auto raw = path.string();
+    if (raw != "~" && !raw.starts_with("~/")) {
+        return path;
+    }
+
+    const auto *home = std::getenv("HOME");
+    if (home == nullptr || std::string_view{home}.empty()) {
+        throw std::runtime_error("HOME is not set, cannot expand path: " + raw);
+    }
+
+    if (raw == "~") {
+        return std::filesystem::path(home);
+    }
+
+    return std::filesystem::path(home) / raw.substr(2);
+}
+
+inline std::filesystem::path orangutan_config_root() {
+    const auto *home = std::getenv("HOME");
+    if (home == nullptr || std::string_view{home}.empty()) {
+        return {};
+    }
+
+    return normalize_tool_path(std::filesystem::path(home) / ".orangutan");
+}
+
+inline bool is_tool_path_allowed(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
+    if (!workspace_root.empty() && is_path_within_workspace(path, workspace_root)) {
+        return true;
+    }
+
+    const auto config_root = orangutan_config_root();
+    return !config_root.empty() && is_path_within_workspace(path, config_root);
+}
+
 inline std::filesystem::path resolve_tool_path(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
     if (path.empty()) {
         throw std::runtime_error("path is empty");
     }
+
+    const auto expanded = expand_tool_home_path(path);
     if (workspace_root.empty()) {
-        return path;
+        return expanded;
     }
 
     const auto normalized_workspace = normalize_tool_path(workspace_root);
-    const auto candidate = path.is_absolute() ? path : normalized_workspace / path;
+    const auto candidate = expanded.is_absolute() ? expanded : normalized_workspace / expanded;
     const auto normalized_candidate = normalize_tool_path(candidate);
-    if (!is_path_within_workspace(normalized_candidate, normalized_workspace)) {
+    if (!is_tool_path_allowed(normalized_candidate, normalized_workspace)) {
         throw std::runtime_error("path escapes workspace sandbox: " + path.string());
     }
 

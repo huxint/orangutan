@@ -246,12 +246,13 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
 void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
     registry.register_tool(
         {.definition = {.name = "edit",
-                        .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace. All hunks are validated before any file is written.",
+                        .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan configuration area. All hunks are validated before any file is written.",
                         .input_schema = {{"type", "object"},
                                          {"properties",
                                           {{"patch",
                                             {{"type", "string"},
-                                             {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk markers"}}}}},
+                                             {"description",
+                                              "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
                                          {"required", json::array({"patch"})}}},
          .execute = [workspace_root](const json &input) {
              return execute_edit_tool(input, workspace_root);

@@ -10,8 +10,10 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 
 using namespace orangutan;
 
@@ -35,6 +37,36 @@ ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::stri
         .raw_caller_id = "cli:local",
     };
 }
+
+class ScopedEnvVar {
+public:
+    ScopedEnvVar(const char *name, const std::string &value)
+    : name_(name) {
+        if (const auto *current = std::getenv(name); current != nullptr) {
+            had_previous_ = true;
+            previous_ = current;
+        }
+        setenv(name_.c_str(), value.c_str(), 1);
+    }
+
+    ~ScopedEnvVar() {
+        if (had_previous_) {
+            setenv(name_.c_str(), previous_.c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+    }
+
+    ScopedEnvVar(const ScopedEnvVar &) = delete;
+    ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
+    ScopedEnvVar(ScopedEnvVar &&) = delete;
+    ScopedEnvVar &operator=(ScopedEnvVar &&) = delete;
+
+private:
+    std::string name_;
+    std::string previous_;
+    bool had_previous_ = false;
+};
 
 } // namespace
 
@@ -169,6 +201,42 @@ protected:
 
 private:
     std::filesystem::path workspace_;
+    ToolRegistry registry_;
+};
+
+class BuiltinToolsWorkspaceConfigAccessTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        temp_root_ = std::filesystem::temp_directory_path() / "orangutan_tool_config_access_test";
+        home_ = temp_root_ / "home";
+        workspace_ = temp_root_ / "workspace";
+        std::filesystem::remove_all(temp_root_);
+        std::filesystem::create_directories(home_ / ".orangutan");
+        std::filesystem::create_directories(workspace_);
+        home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
+        register_builtin_tools(registry_, nullptr, workspace_.string());
+    }
+
+    void TearDown() override {
+        home_env_.reset();
+        std::filesystem::remove_all(temp_root_);
+    }
+
+    [[nodiscard]]
+    const std::filesystem::path &home() const {
+        return home_;
+    }
+
+    [[nodiscard]]
+    ToolRegistry &registry() {
+        return registry_;
+    }
+
+private:
+    std::filesystem::path temp_root_;
+    std::filesystem::path home_;
+    std::filesystem::path workspace_;
+    std::unique_ptr<ScopedEnvVar> home_env_;
     ToolRegistry registry_;
 };
 
@@ -996,6 +1064,74 @@ TEST_F(BuiltinToolsWorkspaceTest, ApplyPatchRejectsPathsOutsideWorkspace) {
     EXPECT_EQ(content, "outside\n");
 
     std::filesystem::remove(outside_path);
+}
+
+TEST_F(BuiltinToolsWorkspaceConfigAccessTest, ReadAllowsOrangutanConfigOutsideWorkspace) {
+    const auto config_path = home() / ".orangutan" / "config.toml";
+    std::ofstream(config_path) << "[agent]\nmodel = \"claude\"\n";
+
+    const auto result = registry().execute({
+        .id = "cfg_read",
+        .name = "read",
+        .input = {{"path", "~/.orangutan/config.toml"}},
+    });
+
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("model = \"claude\""), std::string::npos);
+}
+
+TEST_F(BuiltinToolsWorkspaceConfigAccessTest, WriteAllowsOrangutanConfigOutsideWorkspace) {
+    const auto config_path = home() / ".orangutan" / "config.toml";
+
+    const auto result = registry().execute({
+        .id = "cfg_write",
+        .name = "write",
+        .input = {{"path", "~/.orangutan/config.toml"}, {"content", "[agent]\nmodel = \"gpt\"\n"}},
+    });
+
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(config_path);
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "[agent]\nmodel = \"gpt\"\n");
+}
+
+TEST_F(BuiltinToolsWorkspaceConfigAccessTest, EditAllowsOrangutanConfigOutsideWorkspace) {
+    const auto config_path = home() / ".orangutan" / "config.toml";
+    std::ofstream(config_path) << "[agent]\nmodel = \"claude\"\n";
+
+    const std::string patch = "*** ~/.orangutan/config.toml\n"
+                              "<<<<<<< SEARCH\n"
+                              "model = \"claude\"\n"
+                              "=======\n"
+                              "model = \"gpt\"\n"
+                              ">>>>>>> REPLACE\n";
+
+    const auto result = registry().execute({
+        .id = "cfg_edit",
+        .name = "edit",
+        .input = {{"patch", patch}},
+    });
+
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(config_path);
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "[agent]\nmodel = \"gpt\"\n");
+}
+
+TEST_F(BuiltinToolsWorkspaceConfigAccessTest, HomeFilesOutsideOrangutanConfigRemainBlocked) {
+    const auto other_home_file = home() / "notes.txt";
+    std::ofstream(other_home_file) << "private\n";
+
+    const auto result = registry().execute({
+        .id = "cfg_block",
+        .name = "read",
+        .input = {{"path", "~/notes.txt"}},
+    });
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("workspace sandbox"), std::string::npos);
 }
 
 
