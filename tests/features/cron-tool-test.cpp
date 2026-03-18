@@ -2,50 +2,84 @@
 #include "features/cron/store.hpp"
 #include "features/heartbeat/scheduler.hpp"
 #include "features/tools/builtin/cron.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <memory>
 
 using namespace orangutan;
+using orangutan::testing::ScopedEnvVar;
+using orangutan::testing::test_tmp_root;
 
 namespace {
 
 class CronToolTest : public ::testing::Test {
 protected:
-    std::string store_path;
-    std::unique_ptr<CronStore> store;
-    std::unique_ptr<HeartbeatScheduler> scheduler;
-    ToolRuntimeContext ctx{};
-    ToolRegistry registry;
-    int fire_count = 0;
-    std::string last_fired_name;
-
     void SetUp() override {
-        store_path = std::string(std::getenv("HOME")) + "/.orangutan/test-cron-tool/jobs.json";
-        std::filesystem::remove_all(std::filesystem::path(store_path).parent_path());
+        tmp_env_ = std::make_unique<ScopedEnvVar>("TMPDIR", test_tmp_root().string());
+        store_path_ = (test_tmp_root() / "test-cron-tool" / "jobs.json").string();
+        std::filesystem::remove_all(std::filesystem::path(store_path_).parent_path());
 
-        store = std::make_unique<CronStore>(store_path);
-        scheduler = std::make_unique<HeartbeatScheduler>([this](const HeartbeatJob &job) {
-            ++fire_count;
-            last_fired_name = job.name;
+        store_ = std::make_unique<CronStore>(store_path_);
+        scheduler_ = std::make_unique<HeartbeatScheduler>([this](const HeartbeatJob &job) {
+            ++fire_count_;
+            last_fired_name_ = job.name;
         });
 
-        ctx.cron_store = store.get();
-        ctx.heartbeat_scheduler = scheduler.get();
-        register_cron_tool(registry, &ctx);
+        ctx_.cron_store = store_.get();
+        ctx_.heartbeat_scheduler = scheduler_.get();
+        register_cron_tool(registry_, &ctx_);
     }
 
     void TearDown() override {
-        std::filesystem::remove_all(std::filesystem::path(store_path).parent_path());
+        tmp_env_.reset();
+        std::filesystem::remove_all(std::filesystem::path(store_path_).parent_path());
     }
 
     std::string exec(const json &input) {
         ToolUseBlock call;
         call.name = "cron";
         call.input = input;
-        auto result = registry.execute(call);
+        auto result = registry_.execute(call);
         return result.content;
     }
+
+    [[nodiscard]]
+    const std::string &store_path() const {
+        return store_path_;
+    }
+
+    [[nodiscard]]
+    CronStore &store() const {
+        return *store_;
+    }
+
+    [[nodiscard]]
+    HeartbeatScheduler &scheduler() const {
+        return *scheduler_;
+    }
+
+    [[nodiscard]]
+    int fire_count() const {
+        return fire_count_;
+    }
+
+    [[nodiscard]]
+    const std::string &last_fired_name() const {
+        return last_fired_name_;
+    }
+
+private:
+    std::string store_path_;
+    std::unique_ptr<ScopedEnvVar> tmp_env_;
+    std::unique_ptr<CronStore> store_;
+    std::unique_ptr<HeartbeatScheduler> scheduler_;
+    ToolRuntimeContext ctx_{};
+    ToolRegistry registry_;
+    int fire_count_ = 0;
+    std::string last_fired_name_;
 };
 
 } // namespace
@@ -53,8 +87,8 @@ protected:
 TEST_F(CronToolTest, AddCreatesJob) {
     auto result = exec({{"op", "add"}, {"name", "test"}, {"cron", "* * * * *"}, {"prompt", "hello"}});
     EXPECT_NE(result.find("Added cron job 'test'"), std::string::npos);
-    EXPECT_TRUE(scheduler->has_job("test"));
-    EXPECT_EQ(store->jobs().size(), 1);
+    EXPECT_TRUE(scheduler().has_job("test"));
+    EXPECT_EQ(store().jobs().size(), 1);
 }
 
 TEST_F(CronToolTest, AddDuplicateFails) {
@@ -72,13 +106,31 @@ TEST_F(CronToolTest, RemoveDynamicJob) {
     exec({{"op", "add"}, {"name", "removable"}, {"cron", "* * * * *"}, {"prompt", "x"}});
     auto result = exec({{"op", "remove"}, {"name", "removable"}});
     EXPECT_NE(result.find("Removed"), std::string::npos);
-    EXPECT_FALSE(scheduler->has_job("removable"));
+    EXPECT_FALSE(scheduler().has_job("removable"));
+}
+
+TEST_F(CronToolTest, RemoveRollbackRestoresSchedulerWhenPersistenceFails) {
+    exec({{"op", "add"}, {"name", "removable"}, {"cron", "* * * * *"}, {"prompt", "x"}});
+
+    const auto blocked_root = test_tmp_root() / "test-cron-tool-blocked";
+    std::filesystem::remove_all(blocked_root);
+    std::filesystem::rename(std::filesystem::path(store_path()).parent_path(), blocked_root);
+    std::ofstream(std::filesystem::path(store_path()).parent_path()) << "not a directory";
+
+    const auto result = exec({{"op", "remove"}, {"name", "removable"}});
+    EXPECT_NE(result.find("failed to persist removal"), std::string::npos);
+    EXPECT_TRUE(scheduler().has_job("removable"));
+    ASSERT_EQ(store().jobs().size(), 1);
+    EXPECT_EQ(store().jobs()[0].name, "removable");
+
+    std::filesystem::remove(std::filesystem::path(store_path()).parent_path());
+    std::filesystem::rename(blocked_root, std::filesystem::path(store_path()).parent_path());
 }
 
 TEST_F(CronToolTest, RemoveStaticJobFails) {
     auto expr = parse_cron("* * * * *");
     ASSERT_TRUE(expr.has_value());
-    scheduler->add_job("static", *expr, "default", "cli", "prompt", false);
+    scheduler().add_job("static", *expr, "default", "cli", "prompt", false);
 
     auto result = exec({{"op", "remove"}, {"name", "static"}});
     EXPECT_NE(result.find("static (config) job"), std::string::npos);
@@ -105,8 +157,8 @@ TEST_F(CronToolTest, RunFiresImmediately) {
     exec({{"op", "add"}, {"name", "runner"}, {"cron", "0 0 1 1 *"}, {"prompt", "go"}});
     auto result = exec({{"op", "run"}, {"name", "runner"}});
     EXPECT_NE(result.find("Fired job"), std::string::npos);
-    EXPECT_EQ(fire_count, 1);
-    EXPECT_EQ(last_fired_name, "runner");
+    EXPECT_EQ(fire_count(), 1);
+    EXPECT_EQ(last_fired_name(), "runner");
 }
 
 TEST_F(CronToolTest, RunNonexistentFails) {

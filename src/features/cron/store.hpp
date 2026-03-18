@@ -22,7 +22,8 @@ public:
     std::vector<CronJobEntry> load() const;
 
     /// Save all jobs to disk atomically (write to temp file, rename).
-    void save(const std::vector<CronJobEntry> &jobs) const;
+    [[nodiscard]]
+    bool save(const std::vector<CronJobEntry> &jobs) const;
 
     /// Add a job and persist. Returns false if name already exists.
     bool add(const CronJobEntry &entry);
@@ -38,7 +39,8 @@ private:
     std::string path_;
     std::vector<CronJobEntry> jobs_;
 
-    void ensure_directory() const;
+    [[nodiscard]]
+    bool ensure_directory() const;
 };
 
 } // namespace orangutan

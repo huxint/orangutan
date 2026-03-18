@@ -8,7 +8,8 @@
 
 namespace orangutan {
 
-CronStore::CronStore(std::string path) : path_(std::move(path)) {
+CronStore::CronStore(std::string path)
+: path_(std::move(path)) {
     jobs_ = load();
 }
 
@@ -59,12 +60,14 @@ std::vector<CronJobEntry> CronStore::load() const {
     }
 }
 
-void CronStore::save(const std::vector<CronJobEntry> &jobs) const {
+bool CronStore::save(const std::vector<CronJobEntry> &jobs) const {
     if (path_.empty()) {
-        return;
+        return true;
     }
 
-    ensure_directory();
+    if (!ensure_directory()) {
+        return false;
+    }
 
     auto json = nlohmann::json::array();
     for (const auto &job : jobs) {
@@ -83,7 +86,7 @@ void CronStore::save(const std::vector<CronJobEntry> &jobs) const {
         std::ofstream file(temp_path);
         if (!file.is_open()) {
             spdlog::error("Failed to open temp file for cron store: '{}'", temp_path);
-            return;
+            return false;
         }
         file << json.dump(2);
     }
@@ -93,7 +96,10 @@ void CronStore::save(const std::vector<CronJobEntry> &jobs) const {
     if (ec) {
         spdlog::error("Failed to rename temp cron store file: {}", ec.message());
         std::filesystem::remove(temp_path, ec);
+        return false;
     }
+
+    return true;
 }
 
 bool CronStore::add(const CronJobEntry &entry) {
@@ -102,19 +108,29 @@ bool CronStore::add(const CronJobEntry &entry) {
         return false;
     }
 
-    jobs_.push_back(entry);
-    save(jobs_);
+    auto updated_jobs = jobs_;
+    updated_jobs.push_back(entry);
+    if (!save(updated_jobs)) {
+        return false;
+    }
+
+    jobs_ = std::move(updated_jobs);
     return true;
 }
 
 bool CronStore::remove(const std::string &name) {
-    auto it = std::ranges::find(jobs_, name, &CronJobEntry::name);
-    if (it == jobs_.end()) {
+    auto updated_jobs = jobs_;
+    auto it = std::ranges::find(updated_jobs, name, &CronJobEntry::name);
+    if (it == updated_jobs.end()) {
         return false;
     }
 
-    jobs_.erase(it);
-    save(jobs_);
+    updated_jobs.erase(it);
+    if (!save(updated_jobs)) {
+        return false;
+    }
+
+    jobs_ = std::move(updated_jobs);
     return true;
 }
 
@@ -122,15 +138,18 @@ const std::vector<CronJobEntry> &CronStore::jobs() const {
     return jobs_;
 }
 
-void CronStore::ensure_directory() const {
+bool CronStore::ensure_directory() const {
     auto dir = std::filesystem::path(path_).parent_path();
     if (!dir.empty()) {
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
         if (ec) {
             spdlog::error("Failed to create cron store directory '{}': {}", dir.string(), ec.message());
+            return false;
         }
     }
+
+    return true;
 }
 
 } // namespace orangutan

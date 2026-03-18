@@ -90,6 +90,12 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 
     const int offset = input.value("offset", 1);
     const int limit = input.value("limit", 2000);
+    if (offset < 1) {
+        throw std::runtime_error("'offset' must be >= 1");
+    }
+    if (limit < 1) {
+        throw std::runtime_error("'limit' must be >= 1");
+    }
 
     if (has_path) {
         const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root);
@@ -119,21 +125,20 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 
 void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
     registry.register_tool(
-        {.definition = {.name = "read",
-                        .description = "Read file contents within the current workspace or ~/.orangutan configuration area with line numbers. Supports offset/limit for pagination, binary detection, and multi-path reading.",
-                        .input_schema =
-                            {{"type", "object"},
-                             {"properties",
-                              {{"path",
-                                {{"type", "string"},
-                                 {"description",
-                                  "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
-                               {"paths",
-                                {{"type", "array"},
-                                 {"items", {{"type", "string"}}},
-                                 {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
-                               {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
-                               {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
+        {.definition =
+             {.name = "read",
+              .description = "Read file contents within the current workspace or ~/.orangutan configuration area with line numbers. Supports offset/limit for pagination, binary "
+                             "detection, and multi-path reading.",
+              .input_schema =
+                  {{"type", "object"},
+                   {"properties",
+                    {{"path", {{"type", "string"}, {"description", "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
+                     {"paths",
+                      {{"type", "array"},
+                       {"items", {{"type", "string"}}},
+                       {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
+                     {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
+                     {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
          .execute = [workspace_root](const json &input) {
              return read_file(input, workspace_root);
          }});

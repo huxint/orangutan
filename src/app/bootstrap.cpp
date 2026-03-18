@@ -289,11 +289,15 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
         return true;
     }
 
+    if (isatty(STDIN_FILENO) == 0 || isatty(STDOUT_FILENO) == 0) {
+        resume_session = sessions[0].id;
+        return true;
+    }
+
     std::cout << "Available sessions:\n";
     for (size_t index = 0; index < sessions.size(); ++index) {
         const auto &session = sessions[index];
-        std::cout << "  [" << (index + 1) << "] " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count
-                  << " messages)\n";
+        std::cout << "  [" << (index + 1) << "] " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count << " messages)\n";
     }
     std::cout << "\nEnter number (or press Enter for latest): " << std::flush;
 
@@ -405,7 +409,7 @@ int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::Messag
     auto &stop_requested = signal_stop_requested();
     stop_requested.store(false);
     auto channel_task_runner = std::make_unique<orangutan::JidTaskRunner>(orangutan::app::default_serve_worker_count());
-    spdlog::info("Starting {} channel worker(s)", channel_task_runner->worker_count());
+    spdlog::info("Starting channel executor (configured concurrency hint: {})", channel_task_runner->worker_count());
 
     static constexpr std::string_view heartbeat_protocol_suffix = "\n\n---\n"
                                                                   "HEARTBEAT PROTOCOL: If everything looks fine and nothing needs attention, "
@@ -575,9 +579,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     orangutan::RuntimeMemory runtime_memory(*memory_store, orangutan::make_runtime_memory_context(cli_identity, runtime_cfg.memory));
     const auto approval_callback = make_cli_approval_callback(!options.event_stream && !options.serve_mode);
     tool_context.approval_callback = approval_callback;
-    auto tool_bootstrap =
-        orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers, &runtime_cfg.permissions,
-                                          approval_callback);
+    auto tool_bootstrap = orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers,
+                                                            &runtime_cfg.permissions, approval_callback);
     (void)tool_bootstrap;
     const auto system_prompt = orangutan::append_subagent_prompt_guidance(runtime_cfg.system_prompt, runtime_cfg.allowed_child_agents, false);
 
@@ -638,8 +641,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     }
 
     if (!options.message.empty()) {
-        return orangutan::app::run_single_message(agent, *provider, *session_store, cfg, options.message, options.event_stream, current_session_id,
-                                                  runtime_cfg.model, runtime_cfg.cli_memory_scope, emit_json_event, std::cerr);
+        return orangutan::app::run_single_message(agent, *provider, *session_store, cfg, options.message, options.event_stream, current_session_id, runtime_cfg.model,
+                                                  runtime_cfg.cli_memory_scope, emit_json_event, std::cerr);
     }
 
     orangutan::app::run_repl(agent, *provider, *session_store, runtime_cfg.model, runtime_cfg.fallback_models, cfg, current_session_id, runtime_cfg.agent_key,

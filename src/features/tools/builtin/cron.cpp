@@ -62,11 +62,21 @@ std::string handle_cron_remove(const json &input, CronStore *store, HeartbeatSch
         return "Error: no job named '" + name + "' exists.";
     }
 
+    const auto jobs = scheduler->jobs();
+    const auto it = std::ranges::find(jobs, name, &HeartbeatJob::name);
+    if (it == jobs.end()) {
+        return "Error: no job named '" + name + "' exists.";
+    }
+    const auto &job = *it;
+
     if (!scheduler->remove_job(name)) {
         return "Error: job '" + name + "' is a static (config) job and cannot be removed at runtime.";
     }
 
-    store->remove(name);
+    if (!store->remove(name)) {
+        scheduler->add_job(job.name, job.cron_expr, job.agent, job.channel, job.prompt, true);
+        return "Error: failed to persist removal of job '" + name + "'.";
+    }
     return "Removed cron job '" + name + "'.";
 }
 
@@ -79,7 +89,7 @@ std::string handle_cron_list(HeartbeatScheduler *scheduler) {
     std::string result;
     for (const auto &job : jobs) {
         auto next = format_next_fire(job.cron_expr);
-        auto source = job.dynamic ? "dynamic" : "config";
+        const auto *source = job.dynamic ? "dynamic" : "config";
         result += "- " + job.name + " [" + source + "] next: " + next + "\n";
         result += "  agent=" + job.agent + " channel=" + job.channel + "\n";
     }
@@ -128,25 +138,29 @@ void register_cron_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_c
     }
 
     registry.register_tool({
-        .definition = {
-            .name = "cron",
-            .description = "Manage cron-based heartbeat jobs at runtime. Operations: add, remove, list, run.",
-            .input_schema = {
-                {"type", "object"},
-                {"properties", {
-                    {"op", {{"type", "string"}, {"description", "Operation: add, remove, list, run"}, {"enum", json::array({"add", "remove", "list", "run"})}}},
-                    {"name", {{"type", "string"}, {"description", "Job name (required for add/remove/run)"}}},
-                    {"cron", {{"type", "string"}, {"description", "Cron expression, e.g. '*/5 * * * *' (required for add)"}}},
-                    {"prompt", {{"type", "string"}, {"description", "Prompt text for the heartbeat job (required for add)"}}},
-                    {"agent", {{"type", "string"}, {"description", "Agent to use (default: 'default')"}}},
-                    {"channel", {{"type", "string"}, {"description", "Reply channel (default: 'cli')"}}},
-                }},
-                {"required", json::array({"op"})},
+        .definition =
+            {
+                .name = "cron",
+                .description = "Manage cron-based heartbeat jobs at runtime. Operations: add, remove, list, run.",
+                .input_schema =
+                    {
+                        {"type", "object"},
+                        {"properties",
+                         {
+                             {"op", {{"type", "string"}, {"description", "Operation: add, remove, list, run"}, {"enum", json::array({"add", "remove", "list", "run"})}}},
+                             {"name", {{"type", "string"}, {"description", "Job name (required for add/remove/run)"}}},
+                             {"cron", {{"type", "string"}, {"description", "Cron expression, e.g. '*/5 * * * *' (required for add)"}}},
+                             {"prompt", {{"type", "string"}, {"description", "Prompt text for the heartbeat job (required for add)"}}},
+                             {"agent", {{"type", "string"}, {"description", "Agent to use (default: 'default')"}}},
+                             {"channel", {{"type", "string"}, {"description", "Reply channel (default: 'cli')"}}},
+                         }},
+                        {"required", json::array({"op"})},
+                    },
             },
-        },
-        .execute = [tool_context](const json &input) {
-            return execute_cron_tool(input, tool_context);
-        },
+        .execute =
+            [tool_context](const json &input) {
+                return execute_cron_tool(input, tool_context);
+            },
     });
 }
 
