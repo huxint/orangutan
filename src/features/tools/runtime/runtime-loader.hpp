@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace orangutan {
 
@@ -18,6 +19,7 @@ RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, Runtim
                                                   const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                   const std::vector<Config::McpServerConfig> &mcp_servers,
                                                   const ToolPermissionSettings *permissions = nullptr,
-                                                  ToolApprovalCallback approval_callback = {});
+                                                  ToolApprovalCallback approval_callback = {},
+                                                  std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan

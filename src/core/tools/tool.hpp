@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -56,6 +57,7 @@ private:
 };
 
 void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
-                            const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr);
+                            const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr,
+                            std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan
