@@ -1661,3 +1661,124 @@ TEST_F(HashlineToolsTest, ReadMultiPathHasHashTags) {
     EXPECT_NE(result.content.find("=== "), std::string::npos);
     EXPECT_NE(result.content.find("1#"), std::string::npos);
 }
+
+// ── Hashline edit tests ──────────────────────────────
+
+TEST_F(HashlineToolsTest, EditReplaceSingleLine) {
+    std::ofstream(workspace() / "target.cpp") << "int main() {\n    return 0;\n}\n";
+
+    auto hash = orangutan::compute_line_hash("    return 0;", 2);
+    std::string anchor = "2#" + hash;
+
+    json edits = json::array({{{"op", "replace"}, {"anchor", anchor}, {"content", json::array({"    return 42;"})}}});
+
+    const auto result = registry().execute({.id = "e1", .name = "edit", .input = {{"path", "target.cpp"}, {"edits", edits}}});
+    EXPECT_FALSE(result.is_error);
+    EXPECT_NE(result.content.find("Applied"), std::string::npos);
+
+    std::ifstream ifs(workspace() / "target.cpp");
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "int main() {\n    return 42;\n}\n");
+}
+
+TEST_F(HashlineToolsTest, EditDeleteLine) {
+    std::ofstream(workspace() / "del.txt") << "aaa\nbbb\nccc\n";
+
+    auto hash = orangutan::compute_line_hash("bbb", 2);
+    json edits = json::array({{{"op", "delete"}, {"anchor", "2#" + hash}}});
+
+    const auto result = registry().execute({.id = "e2", .name = "edit", .input = {{"path", "del.txt"}, {"edits", edits}}});
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(workspace() / "del.txt");
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "aaa\nccc\n");
+}
+
+TEST_F(HashlineToolsTest, EditInsertAfterEOF) {
+    std::ofstream(workspace() / "ins.txt") << "aaa\nbbb\n";
+
+    json edits = json::array({{{"op", "insert_after"}, {"content", json::array({"ccc"})}}});
+
+    const auto result = registry().execute({.id = "e3", .name = "edit", .input = {{"path", "ins.txt"}, {"edits", edits}}});
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(workspace() / "ins.txt");
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "aaa\nbbb\nccc\n");
+}
+
+TEST_F(HashlineToolsTest, EditHashMismatchReturnsErrorWithContext) {
+    std::ofstream(workspace() / "stale.txt") << "aaa\nbbb\nccc\n";
+
+    json edits = json::array({{{"op", "replace"}, {"anchor", "2#ZZ"}, {"content", json::array({"XXX"})}}});
+
+    auto actual_hash = orangutan::compute_line_hash("bbb", 2);
+    if (actual_hash == "ZZ") {
+        GTEST_SKIP() << "Hash collision";
+    }
+
+    const auto result = registry().execute({.id = "e4", .name = "edit", .input = {{"path", "stale.txt"}, {"edits", edits}}});
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("mismatch"), std::string::npos);
+    EXPECT_NE(result.content.find(actual_hash), std::string::npos);
+}
+
+TEST_F(HashlineToolsTest, EditContentAsStringIsSplitOnNewlines) {
+    std::ofstream(workspace() / "str.txt") << "aaa\nbbb\n";
+
+    auto hash = orangutan::compute_line_hash("bbb", 2);
+    json edits = json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
+
+    const auto result = registry().execute({.id = "e5", .name = "edit", .input = {{"path", "str.txt"}, {"edits", edits}}});
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(workspace() / "str.txt");
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "aaa\nline1\nline2\n");
+}
+
+TEST_F(HashlineToolsTest, EditMissingAnchorForReplaceReturnsError) {
+    std::ofstream(workspace() / "missing.txt") << "aaa\n";
+
+    json edits = json::array({{{"op", "replace"}, {"content", json::array({"XXX"})}}});
+
+    const auto result = registry().execute({.id = "e6", .name = "edit", .input = {{"path", "missing.txt"}, {"edits", edits}}});
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("requires"), std::string::npos);
+}
+
+// ── Mode switching: schema differs between modes ──
+
+TEST_F(HashlineToolsTest, EditToolDescriptionMentionsHashAnchors) {
+    const auto defs = registry().definitions();
+    for (const auto &def : defs) {
+        if (def.name == "edit") {
+            EXPECT_NE(def.description.find("hash"), std::string::npos);
+            EXPECT_TRUE(def.input_schema.contains("properties"));
+            EXPECT_TRUE(def.input_schema["properties"].contains("edits"));
+            return;
+        }
+    }
+    FAIL() << "edit tool not found in registry";
+}
+
+TEST(ModeSwitch, SearchReplaceEditToolDescriptionMentionsPatch) {
+    ToolRegistry sr_registry;
+    auto sr_workspace = orangutan::testing::test_tmp_root() / "orangutan_sr_mode_test";
+    std::filesystem::create_directories(sr_workspace);
+    register_builtin_tools(sr_registry, nullptr, sr_workspace.string(), nullptr, nullptr, "search_replace");
+
+    const auto defs = sr_registry.definitions();
+    for (const auto &def : defs) {
+        if (def.name == "edit") {
+            EXPECT_NE(def.description.find("patch"), std::string::npos);
+            EXPECT_TRUE(def.input_schema.contains("properties"));
+            EXPECT_TRUE(def.input_schema["properties"].contains("patch"));
+            std::filesystem::remove_all(sr_workspace);
+            return;
+        }
+    }
+    std::filesystem::remove_all(sr_workspace);
+    FAIL() << "edit tool not found in registry";
+}

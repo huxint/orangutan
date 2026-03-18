@@ -1,4 +1,5 @@
 #include "features/tools/core/internal.hpp"
+#include "features/tools/core/hashline.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -219,6 +220,100 @@ void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePa
     }
 }
 
+std::string execute_hashline_edit(const json &input, const std::filesystem::path &workspace_root) {
+    const auto path_str = input.at("path").get<std::string>();
+    const auto &edits_json = input.at("edits");
+    spdlog::info("  [tool] edit (hashline): {} edits on {}", edits_json.size(), path_str);
+
+    auto resolved_path = resolve_tool_path(std::filesystem::path(path_str), workspace_root);
+
+    if (!std::filesystem::exists(resolved_path)) {
+        throw std::runtime_error("file not found: " + path_str);
+    }
+
+    // Read file into lines
+    std::vector<std::string> lines;
+    {
+        std::ifstream ifs(resolved_path);
+        if (!ifs) {
+            throw std::runtime_error("cannot open file: " + path_str);
+        }
+        std::string line;
+        while (std::getline(ifs, line)) {
+            lines.push_back(std::move(line));
+        }
+    }
+
+    // Convert JSON edits to HashlineEdit structs
+    std::vector<HashlineEdit> edits;
+    edits.reserve(edits_json.size());
+    for (const auto &edit_json : edits_json) {
+        HashlineEdit edit;
+
+        const auto op_str = edit_json.at("op").get<std::string>();
+        if (op_str == "replace") {
+            edit.op = HashlineEditOp::replace;
+        } else if (op_str == "insert_after") {
+            edit.op = HashlineEditOp::insert_after;
+        } else if (op_str == "insert_before") {
+            edit.op = HashlineEditOp::insert_before;
+        } else if (op_str == "delete") {
+            edit.op = HashlineEditOp::del;
+        } else {
+            throw std::runtime_error("unknown edit op: " + op_str);
+        }
+
+        if (edit_json.contains("anchor")) {
+            edit.anchor = edit_json.at("anchor").get<std::string>();
+        }
+        if (edit_json.contains("end_anchor")) {
+            edit.end_anchor = edit_json.at("end_anchor").get<std::string>();
+        }
+
+        if (edit_json.contains("content")) {
+            const auto &content = edit_json.at("content");
+            if (content.is_string()) {
+                // Split string content on newlines
+                const auto content_str = content.get<std::string>();
+                std::istringstream stream(content_str);
+                std::string segment;
+                while (std::getline(stream, segment)) {
+                    edit.content.push_back(std::move(segment));
+                }
+            } else if (content.is_array()) {
+                for (const auto &item : content) {
+                    edit.content.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        edits.push_back(std::move(edit));
+    }
+
+    auto result = apply_hashline_edits(lines, edits);
+    if (!result.ok) {
+        throw std::runtime_error(result.error);
+    }
+
+    // Write modified lines back to file
+    {
+        std::ofstream ofs(resolved_path);
+        if (!ofs) {
+            throw std::runtime_error("cannot write file: " + path_str);
+        }
+        for (const auto &line : result.lines) {
+            ofs << line << '\n';
+        }
+    }
+
+    std::string summary = "Applied " + std::to_string(result.edits_applied) +
+                           (result.edits_applied == 1 ? " edit" : " edits") + " to " + path_str;
+    if (!result.warnings.empty()) {
+        summary += "\nWarnings: " + result.warnings;
+    }
+    return summary;
+}
+
 std::string execute_edit_tool(const json &input, const std::filesystem::path &workspace_root) {
     const auto patch = input.at("patch").get<std::string>();
     spdlog::info("  [tool] edit: {} bytes", patch.size());
@@ -243,20 +338,55 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
 
 } // namespace
 
-void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
-    registry.register_tool(
-        {.definition = {.name = "edit",
-                        .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan configuration area. All hunks are validated before any file is written.",
-                        .input_schema = {{"type", "object"},
-                                         {"properties",
-                                          {{"patch",
-                                            {{"type", "string"},
-                                             {"description",
-                                              "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
-                                         {"required", json::array({"patch"})}}},
-         .execute = [workspace_root](const json &input) {
-             return execute_edit_tool(input, workspace_root);
-         }});
+void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
+                        std::string_view edit_mode) {
+    if (edit_mode == "hashline") {
+        registry.register_tool(
+            {.definition = {.name = "edit",
+                            .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
+                                           "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
+                                           "\n"
+                                           "Operations:\n"
+                                           "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
+                                           "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
+                                           "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
+                                           "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
+                                           "\n"
+                                           "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
+                            .input_schema = {{"type", "object"},
+                                             {"properties",
+                                              {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
+                                               {"edits",
+                                                {{"type", "array"},
+                                                 {"items",
+                                                  {{"type", "object"},
+                                                   {"properties",
+                                                    {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
+                                                     {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
+                                                     {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
+                                                     {"content",
+                                                      {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
+                                                       {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
+                                                   {"required", json::array({"op"})}}}}}}},
+                                             {"required", json::array({"path", "edits"})}}},
+             .execute = [workspace_root](const json &input) {
+                 return execute_hashline_edit(input, workspace_root);
+             }});
+    } else {
+        registry.register_tool(
+            {.definition = {.name = "edit",
+                            .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan configuration area. All hunks are validated before any file is written.",
+                            .input_schema = {{"type", "object"},
+                                             {"properties",
+                                              {{"patch",
+                                                {{"type", "string"},
+                                                 {"description",
+                                                  "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
+                                             {"required", json::array({"patch"})}}},
+             .execute = [workspace_root](const json &input) {
+                 return execute_edit_tool(input, workspace_root);
+             }});
+    }
 }
 
 } // namespace orangutan
