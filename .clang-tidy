@@ -1,0 +1,47 @@
+---
+# clang-tidy 配置 — orangutan 项目
+# 全量推荐检查: Core Guidelines, modernize, bugprone, performance, readability
+
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -readability-redundant-access-specifiers,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-init-variables,
+  -performance-enum-size,
+  -readability-function-cognitive-complexity,
+  -readability-named-parameter,
+  -readability-container-data-pointer,
+  -modernize-use-nodiscard,
+  -bugprone-unchecked-optional-access
+
+WarningsAsErrors: ''
+
+CheckOptions:
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.EnumConstantCase
+    value: lower_case
+
+HeaderFilterRegex: 'src/.*\.hpp$'

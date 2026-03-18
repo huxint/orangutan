@@ -1,0 +1,85 @@
+# Copy this file to ~/.orangutan/config.toml and fill in your real values.
+
+[session]
+auto_save = true
+
+[memory]
+# Ranked recall and curated capture are always on.
+# This section only controls the optional workspace Markdown mirror.
+mirror_enabled = false
+mirror_file = "MEMORY.md"
+journal_dir = "memory"
+
+[security]
+# Allow the local CLI plus all chats handled by the named QQ bots below.
+allow = [
+  "cli:*",
+  "qqbot:primary:*",
+  "qqbot:coder-bot:*",
+  "qqbot:research-bot:*",
+]
+deny = []
+
+# No script tools are loaded by default. Uncomment examples like these only if you want them exposed.
+# [[tools.custom]]
+# name = "ls"
+# description = "List the contents of a directory."
+# command = "ls -la ${path}"
+# [tools.custom.input_schema]
+# path = "string"
+#
+# [[tools.custom]]
+# name = "grep"
+# description = "Search for a text pattern in files recursively."
+# command = "rg --color=never -n ${pattern} ${path}"
+# [tools.custom.input_schema]
+# pattern = "string"
+# path = "string"
+
+[agents.default]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+base_url = "https://api.anthropic.com"
+api_key = "${ANTHROPIC_API_KEY}"
+workspace = "~/.orangutan/workspace/default"
+system_prompt = "You are the default general assistant."
+subagents = ["coder", "research"]
+
+[agents.coder]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+base_url = "https://api.anthropic.com"
+api_key = "${ANTHROPIC_API_KEY}"
+workspace = "~/.orangutan/workspace/coder"
+system_prompt = "You focus on code changes, debugging, and implementation details."
+subagents = ["research"]
+
+[agents.research]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+base_url = "https://api.anthropic.com"
+api_key = "${ANTHROPIC_API_KEY}"
+workspace = "~/.orangutan/workspace/research"
+system_prompt = "You focus on analysis, investigation, and planning."
+subagents = []
+
+[[qq_bots]]
+name = "primary"
+app_id = "QQ_APP_ID_PRIMARY"
+client_secret = "QQ_CLIENT_SECRET_PRIMARY"
+agent = "default"
+
+[[qq_bots]]
+name = "coder-bot"
+app_id = "QQ_APP_ID_CODER"
+client_secret = "QQ_CLIENT_SECRET_CODER"
+agent = "coder"
+
+[[qq_bots]]
+name = "research-bot"
+app_id = "QQ_APP_ID_RESEARCH"
+client_secret = "QQ_CLIENT_SECRET_RESEARCH"
+agent = "research"
+
+# Legacy single-bot mode is still supported via [qq], but new deployments
+# should prefer [[qq_bots]] so each bot can bind to its own agent.

@@ -1,0 +1,10 @@
+.cache/
+.vscode/
+.worktrees/
+.codex/
+.opencode/
+.claude/
+tmp/
+build/
+compile_commands.json
+orangutan

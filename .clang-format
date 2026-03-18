@@ -1,0 +1,107 @@
+---
+# 语言设置
+Language: Cpp                           # 指定语言为C++
+Standard: Latest                        # 使用最新的C++标准
+
+# 基本设置
+DisableFormat: false                    # 不禁用格式化功能
+
+# 缩进设置
+IndentWidth: 4                          # 缩进宽度为4个空格
+ContinuationIndentWidth: 4              # 续行缩进宽度为4个空格
+AccessModifierOffset: -4                # 访问修饰符(public, private等)相对缩进-4个空格
+
+# 对齐设置
+AlignAfterOpenBracket: Align            # 在开括号后不对齐参数，使用缩进
+AlignOperands: Align                    # 对齐操作数
+AlignTrailingComments: true             # 对齐尾随注释
+
+# 换行设置
+ColumnLimit: 180                        # 限制每行180字符数
+MaxEmptyLinesToKeep: 1                  # 最多保留1个空行
+BreakBeforeBraces: Attach               # 左花括号不换行，紧跟在语句后
+BreakBeforeBinaryOperators: None        # 二元操作符前是否换行, 建议为None
+BreakBeforeConceptDeclarations: Always  # 概念声明前是否换行, 建议Always
+BreakTemplateDeclarations: Yes         # 模板声明换行
+
+AllowShortEnumsOnASingleLine: false
+
+# 大括号换行详细设置
+BraceWrapping:
+  AfterCaseLabel: true                  # switch语句中的case标签后换行
+  AfterClass: true                      # 类定义后换行
+  AfterControlStatement: Always         # 控制语句后总是换行
+  AfterEnum: true                       # 枚举定义后换行
+  AfterFunction: true                   # 函数定义后换行
+  AfterNamespace: true                  # 命名空间定义后换行
+  AfterStruct: true                     # 结构体定义后换行
+  AfterUnion: true                      # 联合体定义后换行
+  AfterExternBlock: true                # extern块后换行
+  BeforeCatch: false                    # catch关键字前不换行
+  BeforeElse: true                      # else关键字前换行
+  BeforeLambdaBody: false               # Lambda函数体前不换行
+  BeforeWhile: false                    # while关键字前不换行
+  IndentBraces: false                   # 不缩进大括号
+  SplitEmptyFunction: false             # 空函数不换行
+  SplitEmptyRecord: false               # 空记录不换行
+  SplitEmptyNamespace: false            # 空命名空间不换行
+
+# Switch 语句设置
+IndentCaseLabels: true                  # switch 语句中的 case 标签增加缩进
+
+# 参数和列表打包设置
+BinPackArguments: true                  # 打包参数，尽量保持在同一行
+BinPackParameters: true                 # 打包参数，尽量保持在同一行
+
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# 构造函数初始化设置
+ConstructorInitializerIndentWidth: 0    # 构造函数初始化列表不额外缩进
+PackConstructorInitializers: Never      # 构造函数初始化列表不打包，每个初始化占一行
+SpaceBeforeCtorInitializerColon: false  # 构造函数初始化列表:前是否加space(true/false), 建议false
+AllowAllConstructorInitializersOnNextLine: false  # 构造函数的舒适化列表不换行
+
+# 指针和引用对齐
+PointerAlignment: Right                 # 指针符号(*)右对齐(靠近变量名)
+ReferenceAlignment: Pointer             # 引用符号(&)与指针对齐方式相同
+
+# 命名空间设置
+NamespaceIndentation: None               # 命名空间内容缩进所有级别
+FixNamespaceComments: true              # 自动修复命名空间注释
+
+# 头文件设置
+SortIncludes: false                     # 不排序头文件
+
+# 短语句处理设置
+AllowShortIfStatementsOnASingleLine: Never      # 允许短的if语句保持在同一行
+AllowShortLoopsOnASingleLine: false             # 允许短的循环保持在同一行
+AllowShortBlocksOnASingleLine: Never            # 允许短的代码块保持在同一行
+AllowShortCaseLabelsOnASingleLine: false        # 允许短的case标签放在同一行
+AllowShortFunctionsOnASingleLine: Empty         # 允许短的函数放在同一行: None, InlineOnly, Empty, Inline, All
+AllowShortLambdasOnASingleLine: Empty           # 不允许短的Lambdas语句保持在同一行
+
+# 模板相关设置
+SpaceAfterTemplateKeyword: true         # template关键字后面是否加space(true/false), 建议true
+SpacesInAngles: Never                   # <>里面是否增加space, 不建议, 配置成Never即可
+IndentRequiresClause: true              # 模板require是否缩进
+RequiresClausePosition: OwnLine         # 模板中的require语句位置, 建议OwnLine
+
+# 特殊语法设置
+SpaceBeforeRangeBasedForLoopColon: true         # 在基于冒号的范围循环之前添加空格
+Cpp11BracedListStyle: true                      # 去除C++11的列表初始化的大括号{后和}前的空格
+SpaceBeforeCpp11BracedList: false               # c++11的统一初始化列表的大括号中是否添加space(true/false), 建议false
+SpacesInContainerLiterals: false                # 容器初始化列表[]/{}里面是否增加space, 不建议(跟C++11风格保持一致)
+SpaceAfterLogicalNot: false                     # 逻辑非操作(!)后面是否加space(true/false), 比较诡异, 建议false
+InsertBraces: true                              # 是否在代码块中(if/else/for/do/while)强制插入大括号
+RemoveBracesLLVM: false                         # 是否移除多余的{}, 不建议
+
+# 注释设置
+SpacesBeforeTrailingComments: 1         # 尾随注释前保留1个空格
+ReflowComments: true                   # 重新排版注释
+
+# 其他设置
+UseTab: Never                           # 从不使用制表符，只使用空格
+TabWidth: 4                             # 制表符宽度为4个空格
+DeriveLineEnding: true                  # 自动推导行结束符
+
+BreakAfterAttributes: Always            # 属性换行

@@ -1,0 +1,326 @@
+#include "app/channel-serve.hpp"
+#include "features/channel/core/channel.hpp"
+
+#include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
+#include <memory>
+#include <mutex>
+#include <spdlog/logger.h>
+#include <spdlog/pattern_formatter.h>
+#include <spdlog/sinks/base_sink.h>
+#include <spdlog/spdlog.h>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+using namespace orangutan;
+
+namespace {
+
+class MemorySink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    [[nodiscard]]
+    std::vector<std::string> lines() const {
+        std::scoped_lock lock(lines_mutex_);
+        return lines_;
+    }
+
+protected:
+    void sink_it_(const spdlog::details::log_msg &msg) override {
+        spdlog::memory_buf_t formatted;
+        formatter_->format(msg, formatted);
+        std::scoped_lock lock(lines_mutex_);
+        lines_.emplace_back(formatted.data(), formatted.size());
+    }
+
+    void flush_() override {}
+
+private:
+    mutable std::mutex lines_mutex_;
+    std::vector<std::string> lines_;
+};
+
+class ScopedDefaultLogger {
+public:
+    explicit ScopedDefaultLogger(const std::shared_ptr<MemorySink> &sink)
+    : previous_(spdlog::default_logger()),
+      previous_level_(spdlog::get_level()) {
+        logger_ = std::make_shared<spdlog::logger>("channel-serve-test", sink);
+        logger_->set_pattern("%l %v");
+        spdlog::set_default_logger(logger_);
+        spdlog::set_level(spdlog::level::debug);
+    }
+
+    ~ScopedDefaultLogger() {
+        spdlog::set_default_logger(previous_);
+        spdlog::set_level(previous_level_);
+    }
+
+    ScopedDefaultLogger(const ScopedDefaultLogger &) = delete;
+    ScopedDefaultLogger &operator=(const ScopedDefaultLogger &) = delete;
+    ScopedDefaultLogger(ScopedDefaultLogger &&) = delete;
+    ScopedDefaultLogger &operator=(ScopedDefaultLogger &&) = delete;
+
+private:
+    std::shared_ptr<spdlog::logger> logger_;
+    std::shared_ptr<spdlog::logger> previous_;
+    spdlog::level::level_enum previous_level_;
+};
+
+class FakeChannel final : public Channel {
+public:
+    FakeChannel(std::string channel_name, std::string jid_prefix)
+    : name_(std::move(channel_name)),
+      jid_prefix_(std::move(jid_prefix)) {}
+
+    std::string name() const override {
+        return name_;
+    }
+
+    void connect(MessageCallback on_message) override {
+        connected_ = true;
+        on_message_ = std::move(on_message);
+    }
+
+    void send_message(const std::string &jid, const std::string &text) override {
+        sent_messages_.emplace_back(jid, text);
+    }
+
+    void disconnect() override {
+        connected_ = false;
+    }
+
+    bool owns_jid(const std::string &jid) const override {
+        return jid.starts_with(jid_prefix_);
+    }
+
+    bool is_connected() const override {
+        return connected_;
+    }
+
+    [[nodiscard]]
+    const std::vector<std::pair<std::string, std::string>> &sent_messages() const {
+        return sent_messages_;
+    }
+
+private:
+    std::string name_;
+    std::string jid_prefix_;
+    MessageCallback on_message_;
+    bool connected_ = false;
+    std::vector<std::pair<std::string, std::string>> sent_messages_;
+};
+
+class ScopedEnvVar {
+public:
+    ScopedEnvVar(const char *name, const std::string &value)
+    : name_(name) {
+        const char *current = std::getenv(name);
+        if (current != nullptr) {
+            had_previous_ = true;
+            previous_ = current;
+        }
+        setenv(name, value.c_str(), 1);
+    }
+
+    ~ScopedEnvVar() {
+        if (had_previous_) {
+            setenv(name_.c_str(), previous_.c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+    }
+
+    ScopedEnvVar(const ScopedEnvVar &) = delete;
+    ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
+    ScopedEnvVar(ScopedEnvVar &&) = delete;
+    ScopedEnvVar &operator=(ScopedEnvVar &&) = delete;
+
+private:
+    std::string name_;
+    std::string previous_;
+    bool had_previous_ = false;
+};
+
+class ChannelServeTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        temp_root_ = std::filesystem::temp_directory_path() / "orangutan_channel_serve_test";
+        home_root_ = temp_root_ / "home";
+        workspace_root_ = temp_root_ / "workspace";
+        std::filesystem::remove_all(temp_root_);
+        std::filesystem::create_directories(home_root_);
+        std::filesystem::create_directories(workspace_root_);
+    }
+
+    void TearDown() override {
+        std::filesystem::remove_all(temp_root_);
+    }
+
+    static void write_skill(const std::filesystem::path &base_dir, const std::string &dir_name, const std::string &skill_name, const std::string &body) {
+        const auto skill_dir = base_dir / dir_name;
+        std::filesystem::create_directories(skill_dir);
+        std::ofstream out(skill_dir / "SKILL.md");
+        out << "+++\n";
+        out << "name = \"" << skill_name << "\"\n";
+        out << "description = \"test skill\"\n";
+        out << "+++\n\n";
+        out << body << "\n";
+    }
+
+    [[nodiscard]]
+    static bool contains_line(const std::vector<std::string> &lines, const std::string &needle) {
+        return std::ranges::any_of(lines, [&needle](const std::string &line) {
+            return line.find(needle) != std::string::npos;
+        });
+    }
+
+    [[nodiscard]]
+    const std::filesystem::path &temp_root() const {
+        return temp_root_;
+    }
+
+    [[nodiscard]]
+    const std::filesystem::path &home_root() const {
+        return home_root_;
+    }
+
+    [[nodiscard]]
+    const std::filesystem::path &workspace_root() const {
+        return workspace_root_;
+    }
+
+private:
+    std::filesystem::path temp_root_;
+    std::filesystem::path home_root_;
+    std::filesystem::path workspace_root_;
+};
+
+TEST_F(ChannelServeTest, ResolvesAgentOverrideAheadOfQqRouting) {
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "ping",
+        .agent_override = "assistant",
+    };
+    const std::unordered_map<std::string, std::string> qq_bot_agents{{"bot-a", "qq-agent"}};
+
+    EXPECT_EQ(app::resolve_agent_key_for_message(message, qq_bot_agents), "assistant");
+}
+
+TEST_F(ChannelServeTest, DeliversCliReplyWithoutCallingChannelSend) {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger(sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "cli",
+    };
+
+    EXPECT_EQ(app::resolve_reply_target(message), "cli");
+    EXPECT_NO_THROW(app::deliver_reply(message, "done", manager));
+    EXPECT_TRUE(qq->sent_messages().empty());
+    EXPECT_TRUE(contains_line(sink->lines(), "done"));
+}
+
+TEST_F(ChannelServeTest, EmptyReplyTargetFallsBackToCli) {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger(sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "",
+    };
+
+    EXPECT_EQ(app::resolve_reply_target(message), "cli");
+    EXPECT_NO_THROW(app::deliver_reply(message, "fallback", manager));
+    EXPECT_TRUE(qq->sent_messages().empty());
+    EXPECT_TRUE(contains_line(sink->lines(), "fallback"));
+}
+
+TEST_F(ChannelServeTest, DeliversExplicitOutboundJidThroughOwningChannel) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "qqbot:c2c:42",
+    };
+
+    EXPECT_EQ(app::resolve_reply_target(message), "qqbot:c2c:42");
+    EXPECT_NO_THROW(app::deliver_reply(message, "sent", manager));
+    ASSERT_EQ(qq->sent_messages().size(), 1);
+    EXPECT_EQ(qq->sent_messages()[0].first, "qqbot:c2c:42");
+    EXPECT_EQ(qq->sent_messages()[0].second, "sent");
+}
+
+TEST_F(ChannelServeTest, LogsUnownedOutboundJidWithoutThrowing) {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger(sink);
+    ChannelManager manager;
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "qqbot:c2c:missing",
+    };
+
+    EXPECT_NO_THROW(app::deliver_reply(message, "still complete", manager));
+    EXPECT_TRUE(contains_line(sink->lines(), "qqbot:c2c:missing"));
+}
+
+TEST_F(ChannelServeTest, BuildsSkillPromptForEffectiveAgentWorkspace) {
+    write_skill(home_root() / ".orangutan" / "skills", "home-skill", "home-skill", "Home skill body");
+    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    Config cfg;
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "assistant",
+        .system_prompt = "You are the assistant.",
+        .workspace_root = workspace_root().string(),
+    };
+
+    const auto prompt = app::build_skill_prompt_for_runtime(cfg, runtime_cfg);
+    EXPECT_NE(prompt.find("## Active Skills"), std::string::npos);
+    EXPECT_NE(prompt.find("### home-skill"), std::string::npos);
+    EXPECT_NE(prompt.find("### workspace-skill"), std::string::npos);
+}
+
+TEST_F(ChannelServeTest, DeliversCommandReplyToCliWithoutCallingChannelSend) {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger(sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "/agent",
+        .reply_target = "cli",
+    };
+
+    EXPECT_NO_THROW(app::deliver_command_reply(message, "Current agent: assistant", manager));
+    EXPECT_TRUE(qq->sent_messages().empty());
+    EXPECT_TRUE(contains_line(sink->lines(), "Current agent: assistant"));
+}
+
+} // namespace
