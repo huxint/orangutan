@@ -28,6 +28,13 @@ TEST(ConfigTest, DefaultValues) {
     EXPECT_EQ(cfg.memory.journal_dir, "memory");
 }
 
+// ── edit_mode config ────────────────────────────
+
+TEST(ConfigTest, DefaultEditModeIsHashline) {
+    const Config cfg;
+    EXPECT_EQ(cfg.edit_mode, "hashline");
+}
+
 // ── Load from TOML ─────────────────────────────
 
 class ConfigFileTest : public ::testing::Test {
@@ -609,4 +616,24 @@ model = "gpt-4"
 
     const auto cfg = Config::load_from(path);
     EXPECT_TRUE(cfg.api_key.empty());
+}
+
+// ── edit_mode parsing ───────────────────────────
+
+TEST_F(ConfigFileTest, ParsesEditModeFromToolsSection) {
+    auto path = write_config(R"toml(
+[tools]
+edit_mode = "search_replace"
+)toml");
+    auto cfg = Config::load_from(path);
+    EXPECT_EQ(cfg.edit_mode, "search_replace");
+}
+
+TEST_F(ConfigFileTest, EditModeDefaultsToHashlineWhenNotSpecified) {
+    auto path = write_config(R"toml(
+[agent]
+model = "test-model"
+)toml");
+    auto cfg = Config::load_from(path);
+    EXPECT_EQ(cfg.edit_mode, "hashline");
 }

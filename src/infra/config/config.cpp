@@ -176,6 +176,10 @@ static Config parse_tools_section(const toml::table &tbl, Config cfg) {
         }
     }
 
+    if (auto mode = (*tools)["edit_mode"].value<std::string>()) {
+        cfg.edit_mode = *mode;
+    }
+
     return cfg;
 }
 

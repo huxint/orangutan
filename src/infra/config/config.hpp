@@ -46,6 +46,7 @@ struct Config {
     // [tools] section
     std::vector<std::string> allowed_tools;
     std::vector<std::string> denied_tools;
+    std::string edit_mode = "hashline";  // "hashline" | "search_replace"
 
     // [permissions] section
     ToolPermissionSettings permissions{
