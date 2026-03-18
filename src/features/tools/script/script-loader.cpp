@@ -1,7 +1,9 @@
 #include "features/tools/script/script-loader.hpp"
 
+#include "features/tools/core/internal.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
+#include <filesystem>
 #include <regex>
 #include <spdlog/spdlog.h>
 
@@ -87,7 +89,8 @@ static Tool make_script_tool(const ScriptToolConfig &config, const std::string &
         .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
         .execute = [config, workspace](const json &input) -> std::string {
             std::string command = substitute_params(config.command, input, config.input_schema);
-            std::string work_dir = config.working_dir.empty() ? workspace : config.working_dir;
+            const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
+            const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
 
             spdlog::debug("  [script-tool] {}: {}", config.name, command);
 

@@ -246,7 +246,7 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
 void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
     registry.register_tool(
         {.definition = {.name = "edit",
-                        .description = "Apply a multi-file, multi-hunk search/replace patch atomically. All hunks are validated before any file is written.",
+                        .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace. All hunks are validated before any file is written.",
                         .input_schema = {{"type", "object"},
                                          {"properties",
                                           {{"patch",

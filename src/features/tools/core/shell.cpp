@@ -100,13 +100,16 @@ ShellCommandResult run_command(const std::string &command, const std::string &wo
 
 std::string run_shell(const json &input, const std::string &workspace) {
     const auto command = input.at("command").get<std::string>();
-    if (workspace.empty()) {
+    const auto resolved_workspace = resolve_tool_working_dir({}, std::filesystem::path(workspace));
+    const auto working_dir = resolved_workspace.empty() ? std::string{} : resolved_workspace.string();
+
+    if (working_dir.empty()) {
         spdlog::info("  [tool] shell: {}", command);
     } else {
-        spdlog::info("  [tool] shell (cwd={}): {}", workspace, command);
+        spdlog::info("  [tool] shell (cwd={}): {}", working_dir, command);
     }
 
-    auto [result, exit_code] = run_command(command, workspace);
+    auto [result, exit_code] = run_command(command, working_dir);
     if (exit_code != 0) {
         result += "\n[exit code: " + std::to_string(exit_code) + "]";
     }

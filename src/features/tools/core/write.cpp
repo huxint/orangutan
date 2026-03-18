@@ -36,10 +36,12 @@ std::string write_file(const json &input, const std::filesystem::path &workspace
 
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
     registry.register_tool({.definition = {.name = "write",
-                                           .description = "Write content to a file, creating parent directories if needed.",
+                                           .description = "Write content to a file inside the current workspace, creating parent directories if needed.",
                                            .input_schema = {{"type", "object"},
                                                             {"properties",
-                                                             {{"path", {{"type", "string"}, {"description", "File path to write to"}}},
+                                                             {{"path",
+                                                               {{"type", "string"},
+                                                                {"description", "Workspace-relative file path, or an absolute path that stays inside the workspace"}}},
                                                               {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
                                                             {"required", json::array({"path", "content"})}}},
                             .execute = [workspace_root](const json &input) {

@@ -801,6 +801,55 @@ TEST_F(BuiltinToolsWorkspaceTest, RelativePathsResolveAgainstWorkspace) {
     EXPECT_NE(read_result.content.find("ship it"), std::string::npos);
 }
 
+TEST_F(BuiltinToolsWorkspaceTest, AbsolutePathsInsideWorkspaceRemainAllowed) {
+    const auto file_path = workspace() / "notes" / "absolute.txt";
+    std::filesystem::create_directories(file_path.parent_path());
+    std::ofstream(file_path) << "inside sandbox\n";
+
+    const ToolUseBlock read_call{
+        .id = "id_ws_abs_read",
+        .name = "read",
+        .input = {{"path", file_path.string()}},
+    };
+    const auto read_result = registry().execute(read_call);
+
+    EXPECT_FALSE(read_result.is_error);
+    EXPECT_NE(read_result.content.find("inside sandbox"), std::string::npos);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, ReadRejectsAbsolutePathOutsideWorkspace) {
+    const auto outside_path = workspace().parent_path() / "orangutan_escape_read.txt";
+    std::ofstream(outside_path) << "outside sandbox\n";
+
+    const ToolUseBlock read_call{
+        .id = "id_ws_escape_read",
+        .name = "read",
+        .input = {{"path", outside_path.string()}},
+    };
+    const auto read_result = registry().execute(read_call);
+
+    EXPECT_TRUE(read_result.is_error);
+    EXPECT_NE(read_result.content.find("workspace sandbox"), std::string::npos);
+
+    std::filesystem::remove(outside_path);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, WriteRejectsTraversalOutsideWorkspace) {
+    const auto outside_path = workspace().parent_path() / "orangutan_escape_write.txt";
+    std::filesystem::remove(outside_path);
+
+    const ToolUseBlock write_call{
+        .id = "id_ws_escape_write",
+        .name = "write",
+        .input = {{"path", "../orangutan_escape_write.txt"}, {"content", "escaped"}},
+    };
+    const auto write_result = registry().execute(write_call);
+
+    EXPECT_TRUE(write_result.is_error);
+    EXPECT_NE(write_result.content.find("workspace sandbox"), std::string::npos);
+    EXPECT_FALSE(std::filesystem::exists(outside_path));
+}
+
 TEST_F(BuiltinToolsWorkspaceTest, ShellRunsInsideWorkspace) {
     const ToolUseBlock call{
         .id = "id_ws_shell",
@@ -811,6 +860,28 @@ TEST_F(BuiltinToolsWorkspaceTest, ShellRunsInsideWorkspace) {
 
     EXPECT_FALSE(result.is_error);
     EXPECT_NE(result.content.find(workspace().string()), std::string::npos);
+}
+
+TEST_F(BuiltinToolsWorkspaceTest, ApplyPatchRejectsPathsOutsideWorkspace) {
+    const auto outside_path = workspace().parent_path() / "orangutan_escape_patch.cpp";
+    std::ofstream(outside_path) << "outside\n";
+
+    const std::string patch = "*** ../orangutan_escape_patch.cpp\n"
+                              "<<<<<<< SEARCH\n"
+                              "outside\n"
+                              "=======\n"
+                              "still outside\n"
+                              ">>>>>>> REPLACE\n";
+
+    const auto result = registry().execute({.id = "ap_escape", .name = "edit", .input = {{"patch", patch}}});
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("workspace sandbox"), std::string::npos);
+
+    std::ifstream ifs(outside_path);
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "outside\n");
+
+    std::filesystem::remove(outside_path);
 }
 
 

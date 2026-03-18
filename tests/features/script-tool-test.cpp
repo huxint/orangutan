@@ -1,6 +1,7 @@
 #include "features/tools/script/script-loader.hpp"
 
 #include <gtest/gtest.h>
+#include <filesystem>
 
 using namespace orangutan;
 
@@ -213,4 +214,33 @@ TEST(ScriptToolTest, ExecuteCommandNotFound) {
     };
     auto result = registry.execute(call);
     EXPECT_TRUE(result.is_error);
+}
+
+TEST(ScriptToolTest, RejectsWorkingDirectoryOutsideWorkspace) {
+    const auto root = std::filesystem::temp_directory_path() / "orangutan_script_tool_workspace_test";
+    const auto workspace = root / "workspace";
+    const auto outside = root / "outside";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(workspace);
+    std::filesystem::create_directories(outside);
+
+    ToolRegistry registry;
+    std::vector<ScriptToolConfig> tools = {{
+        .name = "pwd-tool",
+        .description = "Print working directory",
+        .command = "pwd",
+        .working_dir = "../outside",
+    }};
+    register_script_tools(registry, tools, workspace.string());
+
+    ToolUseBlock call{
+        .id = "id_ws_escape",
+        .name = "pwd-tool",
+        .input = json::object(),
+    };
+    auto result = registry.execute(call);
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("workspace sandbox"), std::string::npos);
+
+    std::filesystem::remove_all(root);
 }

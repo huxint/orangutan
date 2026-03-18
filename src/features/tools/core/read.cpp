@@ -120,13 +120,15 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
     registry.register_tool(
         {.definition = {.name = "read",
-                        .description = "Read file contents with line numbers. Supports offset/limit for pagination, binary detection, and multi-path reading.",
+                        .description = "Read file contents within the current workspace with line numbers. Supports offset/limit for pagination, binary detection, and multi-path reading.",
                         .input_schema =
                             {{"type", "object"},
                              {"properties",
-                              {{"path", {{"type", "string"}, {"description", "Absolute or workspace-relative file path"}}},
+                              {{"path", {{"type", "string"}, {"description", "Workspace-relative file path, or an absolute path that stays inside the workspace"}}},
                                {"paths",
-                                {{"type", "array"}, {"items", {{"type", "string"}}}, {"description", "Array of file paths to read (use instead of 'path' for multi-file reads)"}}},
+                                {{"type", "array"},
+                                 {"items", {{"type", "string"}}},
+                                 {"description", "Array of workspace-confined file paths to read (use instead of 'path' for multi-file reads)"}}},
                                {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                                {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
          .execute = [workspace_root](const json &input) {
