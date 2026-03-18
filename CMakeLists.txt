@@ -52,6 +52,7 @@ add_library(orangutan_lib STATIC
     src/app/single-shot.cpp
     src/core/providers/anthropic-provider.cpp
     src/core/providers/openai-provider.cpp
+    src/core/providers/provider-factory.cpp
     src/core/providers/sse-parser.cpp
     src/core/tools/permissions.cpp
     src/core/tools/registry.cpp
@@ -140,6 +141,7 @@ if(BUILD_TESTING)
         tests/app/identity-test.cpp
         tests/app/session-workflow-test.cpp
         tests/app/single-shot-test.cpp
+        tests/core/provider-fallback-test.cpp
         tests/core/sse-parser-test.cpp
         tests/core/tool-registry-test.cpp
         tests/core/types-test.cpp

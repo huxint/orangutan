@@ -72,6 +72,39 @@ workspace = "/tmp/orangutan-workspace"
     EXPECT_EQ(cfg.workspace, "/tmp/orangutan-workspace");
 }
 
+TEST_F(ConfigFileTest, ParsesFallbackModelsWithInheritanceAndOverrides) {
+    setenv("ORANGUTAN_TEST_FALLBACK", "global-fallback-b", 1);
+
+    auto path = write_config(R"toml(
+[agent]
+model = "primary-model"
+fallback_models = ["global-fallback-a", "${ORANGUTAN_TEST_FALLBACK}"]
+
+[agents.default]
+model = "default-model"
+
+[agents.coder]
+model = "coder-model"
+fallback_models = ["coder-fallback-a", "coder-fallback-b"]
+)toml");
+
+    const auto cfg = Config::load_from(path);
+    ASSERT_EQ(cfg.fallback_models.size(), 2U);
+    EXPECT_EQ(cfg.fallback_models[0], "global-fallback-a");
+    EXPECT_EQ(cfg.fallback_models[1], "global-fallback-b");
+
+    ASSERT_TRUE(cfg.agents.contains("default"));
+    ASSERT_TRUE(cfg.agents.contains("coder"));
+    ASSERT_EQ(cfg.agents.at("default").fallback_models.size(), 2U);
+    EXPECT_EQ(cfg.agents.at("default").fallback_models[0], "global-fallback-a");
+    EXPECT_EQ(cfg.agents.at("default").fallback_models[1], "global-fallback-b");
+    ASSERT_EQ(cfg.agents.at("coder").fallback_models.size(), 2U);
+    EXPECT_EQ(cfg.agents.at("coder").fallback_models[0], "coder-fallback-a");
+    EXPECT_EQ(cfg.agents.at("coder").fallback_models[1], "coder-fallback-b");
+
+    unsetenv("ORANGUTAN_TEST_FALLBACK");
+}
+
 TEST_F(ConfigFileTest, ParsesToolsSection) {
     auto path = write_config(R"toml(
 [tools]

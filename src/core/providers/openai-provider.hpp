@@ -23,6 +23,11 @@ public:
         return "openai";
     }
 
+    [[nodiscard]]
+    std::string current_model() const override {
+        return model_;
+    }
+
 private:
     std::string api_key_;
     std::string model_;

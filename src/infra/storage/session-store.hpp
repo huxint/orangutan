@@ -40,10 +40,10 @@ public:
     std::string create_empty(const std::string &model, const std::string &scope_key = {});
 
     // Update an existing session's messages (keeps same ID)
-    void update(const std::string &session_id, const std::vector<Message> &messages);
+    void update(const std::string &session_id, const std::vector<Message> &messages, const std::string &model = {});
 
     // Append messages starting at start_index to an existing session
-    void append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index);
+    void append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const std::string &model = {});
 
     // Load a session's messages by ID
     std::vector<Message> load(const std::string &session_id);

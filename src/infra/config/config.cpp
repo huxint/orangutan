@@ -81,6 +81,7 @@ static AgentConfig make_agent_config_from_legacy(const Config &cfg) {
     return {
         .provider = cfg.provider,
         .model = cfg.model,
+        .fallback_models = cfg.fallback_models,
         .base_url = cfg.base_url,
         .api_key = cfg.api_key,
         .system_prompt = cfg.system_prompt,
@@ -98,6 +99,10 @@ static void expand_agent_config(AgentConfig &cfg) {
     cfg.system_prompt = expand_env_vars(cfg.system_prompt);
     cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
 
+    for (auto &fallback_model : cfg.fallback_models) {
+        fallback_model = expand_env_vars(fallback_model);
+    }
+
     for (auto &subagent : cfg.subagents) {
         subagent = expand_env_vars(subagent);
     }
@@ -114,6 +119,14 @@ static Config parse_agent_section(const toml::table &tbl, Config cfg) {
     }
     if (auto v = (*agent)["model"].value<std::string>()) {
         cfg.model = *v;
+    }
+    if (const auto *arr = (*agent)["fallback_models"].as_array()) {
+        cfg.fallback_models.clear();
+        for (const auto &item : *arr) {
+            if (auto s = item.value<std::string>()) {
+                cfg.fallback_models.push_back(*s);
+            }
+        }
     }
     if (auto v = (*agent)["base_url"].value<std::string>()) {
         cfg.base_url = *v;
@@ -292,6 +305,14 @@ static Config parse_agents_section(const toml::table &tbl, Config cfg) {
         }
         if (auto v = (*agent)["model"].value<std::string>()) {
             agent_cfg.model = *v;
+        }
+        if (const auto *arr = (*agent)["fallback_models"].as_array()) {
+            agent_cfg.fallback_models.clear();
+            for (const auto &item : *arr) {
+                if (auto s = item.value<std::string>()) {
+                    agent_cfg.fallback_models.push_back(*s);
+                }
+            }
         }
         if (auto v = (*agent)["base_url"].value<std::string>()) {
             agent_cfg.base_url = *v;
@@ -623,6 +644,9 @@ static Config parse_toml(const toml::table &tbl) {
     cfg.provider = expand_env_vars(cfg.provider);
     cfg.system_prompt = expand_env_vars(cfg.system_prompt);
     cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
+    for (auto &fallback_model : cfg.fallback_models) {
+        fallback_model = expand_env_vars(fallback_model);
+    }
     cfg.memory.mirror_file = expand_home_path(expand_env_vars(cfg.memory.mirror_file));
     cfg.memory.journal_dir = expand_home_path(expand_env_vars(cfg.memory.journal_dir));
     cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);

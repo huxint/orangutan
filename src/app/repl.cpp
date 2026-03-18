@@ -2,6 +2,7 @@
 
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
+#include "core/providers/provider.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 
@@ -73,7 +74,7 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
                   HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
     if (!persist_session(agent, store, model, current_session_id, scope_key)) {
-        std::cout << "Nothing to save (empty history).\n\n";
+        std::cout << "💤 Nothing to save (empty history).\n\n";
         return;
     }
 
@@ -82,10 +83,10 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
     }
 
     if (updating_existing) {
-        std::cout << "Session updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
+        std::cout << "💾 Session updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
         return;
     }
-    std::cout << "Session saved: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
+    std::cout << "💾 Session saved: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
 }
 
 void load_session(const std::string &requested_session_id, AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &scope_key,
@@ -100,7 +101,7 @@ void load_session(const std::string &requested_session_id, AgentLoop &agent, Ses
     std::cout << result.status << "\n\n";
 }
 
-void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id) {
+void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model) {
     const auto result = agent.compress_history();
     if (!result.compacted) {
         std::cout << result.status << "\n\n";
@@ -108,15 +109,17 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
     }
 
     if (!current_session_id.empty()) {
-        store.update(current_session_id, agent.history());
+        store.update(current_session_id, agent.history(), model);
     }
 
-    std::cout << "Compressed history: " << result.messages_before << " -> " << result.messages_after << " messages.\n\n";
+    std::cout << "🗜️ Compressed history: " << result.messages_before << " -> " << result.messages_after << " messages.\n\n";
 }
 
-bool handle_slash_command(const std::string &line, AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, bool &quit, const Config &cfg,
-                          const std::string &agent_key, const std::string &scope_key, const SkillLoader *skill_loader, const ToolRegistry *tool_registry,
-                          HookManager *hook_manager) {
+bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
+                          const std::vector<std::string> &fallback_models, std::string &current_session_id, bool &quit, const Config &cfg, const std::string &agent_key,
+                          const std::string &scope_key, const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
+    const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
+
     if (line == "/quit" || line == "/exit") {
         quit = true;
         return true;
@@ -127,13 +130,13 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, SessionStor
     }
     if (line == "/new") {
         const auto previous_message_count = agent.history().size();
-        const auto result = start_new_session(agent, store, model, current_session_id, scope_key);
+        const auto result = start_new_session(agent, store, active_model, current_session_id, scope_key);
         dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
         std::cout << describe_new_session_result(result, false) << "\n\n";
         return true;
     }
     if (line == "/compress") {
-        compress_session(agent, store, current_session_id);
+        compress_session(agent, store, current_session_id, active_model);
         return true;
     }
     if (line == "/clear") {
@@ -147,14 +150,14 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, SessionStor
     }
     if (line == "/session") {
         if (current_session_id.empty()) {
-            std::cout << "No active session.\n\n";
+            std::cout << "💤 No active session.\n\n";
         } else {
-            std::cout << "Current session: " << current_session_id << "\n\n";
+            std::cout << "🧵 Current session: " << current_session_id << "\n\n";
         }
         return true;
     }
     if (line == "/save") {
-        save_session(agent, store, model, current_session_id, scope_key, hook_manager);
+        save_session(agent, store, active_model, current_session_id, scope_key, hook_manager);
         return true;
     }
     if (line == "/sessions") {
@@ -162,7 +165,13 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, SessionStor
         return true;
     }
     if (line == "/agent") {
-        std::cout << "Current agent: " << agent_key << "\n\n";
+        std::cout << "🤖 Current agent: " << agent_key << "\n\n";
+        return true;
+    }
+    if (line == "/status") {
+        std::cout << format_runtime_status(
+                         collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key))
+                  << "\n\n";
         return true;
     }
     if (line == "/agents") {
@@ -222,8 +231,9 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, SessionStor
 
 } // namespace
 
-void run_repl(AgentLoop &agent, SessionStore &store, const std::string &model, const Config &cfg, std::string &current_session_id, const std::string &agent_key,
-              const std::string &scope_key, const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
+void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
+              const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key,
+              const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
     std::cout << "Orangutan v0.1.0\n";
     std::cout << "Type /help for commands, Ctrl+D to quit\n\n";
 
@@ -242,7 +252,8 @@ void run_repl(AgentLoop &agent, SessionStore &store, const std::string &model, c
 
         bool quit = false;
         if (line[0] == '/' &&
-            handle_slash_command(line, agent, store, model, current_session_id, quit, cfg, agent_key, scope_key, skill_loader, tool_registry, hook_manager)) {
+            handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key, skill_loader,
+                                 tool_registry, hook_manager)) {
             if (quit) {
                 break;
             }
@@ -264,13 +275,14 @@ void run_repl(AgentLoop &agent, SessionStore &store, const std::string &model, c
     }
 
     if (cfg.auto_save && !agent.history().empty()) {
+        const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
         if (!current_session_id.empty()) {
-            store.update(current_session_id, agent.history());
-            std::cout << "\nSession updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
+            store.update(current_session_id, agent.history(), active_model);
+            std::cout << "\n💾 Session updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
         } else {
-            current_session_id = store.save(agent.history(), model, scope_key);
+            current_session_id = store.save(agent.history(), active_model, scope_key);
             dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-            std::cout << "\nAuto-saved session: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
+            std::cout << "\n💾 Auto-saved session: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
         }
     }
 

@@ -63,6 +63,8 @@ deny = []
 [agents.default]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
+# Optional same-provider fallback chain, tried in order when the primary model fails.
+# fallback_models = ["claude-opus-4-20250514"]
 base_url = "https://api.anthropic.com"
 api_key = "${ANTHROPIC_API_KEY}"
 workspace = "~/.orangutan/workspace/default"

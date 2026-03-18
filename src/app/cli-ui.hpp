@@ -1,12 +1,32 @@
 #pragma once
 
 #include "features/agent/agent-loop.hpp"
+#include "core/providers/provider.hpp"
+#include "core/tools/tool.hpp"
 #include "infra/config/config.hpp"
 #include "infra/storage/session-store.hpp"
 
 #include <string>
+#include <vector>
 
 namespace orangutan::app {
+
+struct RuntimeStatusSnapshot {
+    std::string agent_key;
+    std::string provider_name;
+    std::string current_model;
+    std::string configured_model;
+    std::vector<std::string> fallback_models;
+    std::string current_session_id;
+    std::string scope_key;
+    size_t history_messages = 0;
+    size_t user_messages = 0;
+    size_t assistant_messages = 0;
+    size_t tool_call_count = 0;
+    size_t tool_error_count = 0;
+    size_t registered_tool_count = 0;
+    ProviderUsageStats provider_usage;
+};
 
 [[nodiscard]]
 std::string repl_help_text();
@@ -22,5 +42,11 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
 std::string render_history_summary(const AgentLoop &agent);
 [[nodiscard]]
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key = {});
+[[nodiscard]]
+RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
+                                            const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models = {},
+                                            const std::string &scope_key = {});
+[[nodiscard]]
+std::string format_runtime_status(const RuntimeStatusSnapshot &status);
 
 } // namespace orangutan::app

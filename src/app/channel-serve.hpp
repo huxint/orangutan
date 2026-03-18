@@ -33,6 +33,7 @@ struct AgentRuntimeConfig {
     std::string provider_name;
     std::string api_key;
     std::string model;
+    std::vector<std::string> fallback_models;
     std::string base_url;
     std::string system_prompt;
     std::string workspace_root;

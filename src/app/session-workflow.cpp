@@ -21,7 +21,7 @@ bool persist_session(AgentLoop &agent, SessionStore &store, const std::string &m
     }
 
     if (!current_session_id.empty()) {
-        store.update(current_session_id, history);
+        store.update(current_session_id, history, model);
     } else {
         current_session_id = store.save(history, model, scope_key);
     }
@@ -70,14 +70,14 @@ LoadSessionResult load_session_into_agent(const std::string &requested_session_i
 
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session) {
     if (!result.had_history) {
-        return "Started a new session.";
+        return "✨ Started a new session.";
     }
 
     std::string message;
     if (result.distillation.distilled) {
-        message = "Started a new session. Distilled " + std::to_string(result.distillation.memories_stored) + " long-term memories.";
+        message = "✨ Started a new session. Distilled " + std::to_string(result.distillation.memories_stored) + " long-term memories.";
     } else {
-        message = "Started a new session. " + result.distillation.status;
+        message = "✨ Started a new session. " + result.distillation.status;
     }
 
     if (mention_previous_session) {

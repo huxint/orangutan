@@ -138,6 +138,17 @@ void insert_session(sqlite::Database &db, const std::string &session_id, const s
     (void)insert_session_stmt.step();
 }
 
+void update_session_model(sqlite::Database &db, const std::string &session_id, const std::string &model) {
+    if (model.empty()) {
+        return;
+    }
+
+    sqlite::Statement stmt(db, "UPDATE sessions SET model = ? WHERE id = ?");
+    stmt.bind_text(1, model);
+    stmt.bind_text(2, session_id);
+    (void)stmt.step();
+}
+
 bool session_exists(sqlite::Database &db, const std::string &session_id) {
     sqlite::Statement stmt(db, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1");
     stmt.bind_text(1, session_id);
@@ -241,9 +252,11 @@ std::string SessionStore::create_empty(const std::string &model, const std::stri
     return session_id;
 }
 
-void SessionStore::update(const std::string &session_id, const std::vector<Message> &messages) {
+void SessionStore::update(const std::string &session_id, const std::vector<Message> &messages, const std::string &model) {
     std::scoped_lock lock(mutex_);
     sqlite::Transaction tx(db_);
+
+    update_session_model(db_, session_id, model);
 
     sqlite::Statement delete_messages(db_, "DELETE FROM messages WHERE session_id = ?");
     delete_messages.bind_text(1, session_id);
@@ -255,13 +268,14 @@ void SessionStore::update(const std::string &session_id, const std::vector<Messa
     spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
 }
 
-void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index) {
+void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const std::string &model) {
     std::scoped_lock lock(mutex_);
     if (start_index > messages.size()) {
         throw std::runtime_error("append start_index is out of range");
     }
 
     sqlite::Transaction tx(db_);
+    update_session_model(db_, session_id, model);
     write_messages(db_, session_id, messages, start_index);
     tx.commit();
 

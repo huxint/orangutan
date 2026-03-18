@@ -232,6 +232,7 @@ std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig
                                       .provider_name = agent_cfg.provider,
                                       .api_key = resolved_agent_api_key,
                                       .model = agent_cfg.model,
+                                      .fallback_models = agent_cfg.fallback_models,
                                       .base_url = agent_cfg.base_url,
                                       .system_prompt = agent_cfg.system_prompt,
                                       .workspace_root = resolved_workspace_root,
@@ -254,6 +255,7 @@ build_subagent_child_runtime_configs(const std::unordered_map<std::string, orang
                                       .provider_name = runtime_cfg.provider_name,
                                       .api_key = runtime_cfg.api_key,
                                       .model = runtime_cfg.model,
+                                      .fallback_models = runtime_cfg.fallback_models,
                                       .base_url = runtime_cfg.base_url,
                                       .system_prompt = runtime_cfg.system_prompt,
                                       .workspace_root = runtime_cfg.workspace_root,
@@ -545,6 +547,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         .provider_name = maybe_selected_agent->provider,
         .api_key = api_key,
         .model = maybe_selected_agent->model,
+        .fallback_models = maybe_selected_agent->fallback_models,
         .base_url = maybe_selected_agent->base_url,
         .system_prompt = maybe_selected_agent->system_prompt,
         .workspace_root = *maybe_workspace,
@@ -556,7 +559,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     };
 
     std::string current_session_id;
-    auto provider = orangutan::create_provider(runtime_cfg.provider_name, api_key, runtime_cfg.model, runtime_cfg.base_url);
+    auto provider = orangutan::create_provider_with_fallbacks(runtime_cfg.provider_name, api_key, runtime_cfg.model, runtime_cfg.base_url, runtime_cfg.fallback_models);
     orangutan::ToolRegistry tools;
     auto tool_context = orangutan::ToolRuntimeContext{
         .runtime_key = cli_identity.runtime_key,
@@ -635,11 +638,11 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     }
 
     if (!options.message.empty()) {
-        return orangutan::app::run_single_message(agent, *session_store, cfg, options.message, options.event_stream, current_session_id, runtime_cfg.model,
-                                                  runtime_cfg.cli_memory_scope, emit_json_event, std::cerr);
+        return orangutan::app::run_single_message(agent, *provider, *session_store, cfg, options.message, options.event_stream, current_session_id,
+                                                  runtime_cfg.model, runtime_cfg.cli_memory_scope, emit_json_event, std::cerr);
     }
 
-    orangutan::app::run_repl(agent, *session_store, runtime_cfg.model, cfg, current_session_id, runtime_cfg.agent_key, runtime_cfg.cli_memory_scope, &skill_loader, &tools,
-                             &hook_manager);
+    orangutan::app::run_repl(agent, *provider, *session_store, runtime_cfg.model, runtime_cfg.fallback_models, cfg, current_session_id, runtime_cfg.agent_key,
+                             runtime_cfg.cli_memory_scope, &skill_loader, &tools, &hook_manager);
     return 0;
 }

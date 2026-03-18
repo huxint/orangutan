@@ -346,6 +346,29 @@ TEST_F(SessionStoreTest, AppendAddsOnlyNewMessages) {
     EXPECT_EQ(last_text->text, "Doing well.");
 }
 
+TEST_F(SessionStoreTest, UpdateAndAppendCanRefreshStoredModelMetadata) {
+    SessionStore store(db_path().string());
+
+    std::vector<Message> messages = {
+        Message::user_text("Hello"),
+        Message::assistant_text("Hi there!"),
+    };
+
+    const auto session_id = store.save(messages, "model-a", "scope:test");
+    store.update(session_id, messages, "model-b");
+
+    auto sessions = store.list_sessions("scope:test");
+    ASSERT_EQ(sessions.size(), 1U);
+    EXPECT_EQ(sessions[0].model, "model-b");
+
+    messages.push_back(Message::user_text("How are you?"));
+    store.append(session_id, messages, 2, "model-c");
+
+    sessions = store.list_sessions("scope:test");
+    ASSERT_EQ(sessions.size(), 1U);
+    EXPECT_EQ(sessions[0].model, "model-c");
+}
+
 TEST_F(SessionStoreTest, MigratesLegacySchemaForScopeAndCompositeBindingKey) {
     sqlite3 *db = nullptr;
     ASSERT_EQ(sqlite3_open(db_path().string().c_str(), &db), SQLITE_OK);

@@ -1,7 +1,5 @@
 #include "core/providers/anthropic-provider.hpp"
 #include "core/providers/http.hpp"
-#include "core/providers/openai-provider.hpp"
-
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>
@@ -225,23 +223,6 @@ LLMResponse AnthropicProvider::parse_response(const json &resp) {
     }
 
     return result;
-}
-
-// ── Provider factory ────────────────────────────
-
-std::unique_ptr<Provider> create_provider(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url) {
-    if (provider_name == "anthropic" || provider_name.empty()) {
-        auto url = base_url.empty() ? "https://api.anthropic.com" : base_url;
-        return std::make_unique<AnthropicProvider>(api_key, model, url);
-    }
-
-    // "openai" covers OpenAI, Ollama, vLLM, LM Studio, OpenRouter
-    if (provider_name == "openai") {
-        auto url = base_url.empty() ? "https://api.openai.com" : base_url;
-        return std::make_unique<OpenAiProvider>(api_key, model, url);
-    }
-
-    throw std::runtime_error("Unknown provider: " + provider_name + ". Supported: anthropic, openai");
 }
 
 } // namespace orangutan

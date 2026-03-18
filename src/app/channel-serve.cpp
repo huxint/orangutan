@@ -53,7 +53,8 @@ struct ConversationRuntime {
     ToolRuntimeContext tool_context;
     std::string runtime_key;
     std::string agent_key;
-    std::string model;
+    std::string configured_model;
+    std::vector<std::string> fallback_models;
     std::string workspace;
     std::string memory_scope;
     std::string session_scope_key;
@@ -185,7 +186,8 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
     auto runtime = std::make_unique<ConversationRuntime>();
     runtime->runtime_key = identity.runtime_key;
     runtime->agent_key = cfg.agent_key;
-    runtime->model = cfg.model;
+    runtime->configured_model = cfg.model;
+    runtime->fallback_models = cfg.fallback_models;
     runtime->workspace = identity.workspace;
     runtime->memory_scope = identity.memory_scope;
     runtime->session_scope_key = identity.runtime_key.empty() ? cfg.cli_runtime_key : identity.runtime_key;
@@ -203,7 +205,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
         .cron_store = cron_store,
         .heartbeat_scheduler = heartbeat_scheduler,
     };
-    runtime->provider = create_provider(cfg.provider_name, cfg.api_key, cfg.model, cfg.base_url);
+    runtime->provider = create_provider_with_fallbacks(cfg.provider_name, cfg.api_key, cfg.model, cfg.base_url, cfg.fallback_models);
     if (memory_store != nullptr) {
         runtime->memory = std::make_unique<RuntimeMemory>(*memory_store, make_runtime_memory_context(identity, cfg.memory));
     }
@@ -226,13 +228,16 @@ void persist_channel_session(const std::string &jid, ConversationRuntime &runtim
 
     const bool created_session = runtime.current_session_id.empty();
     if (runtime.current_session_id.empty()) {
-        runtime.current_session_id = session_store.save(history, runtime.model, runtime.session_scope_key);
+        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+        runtime.current_session_id = session_store.save(history, active_model, runtime.session_scope_key);
         runtime.persisted_message_count = history.size();
     } else if (history.size() > runtime.persisted_message_count) {
-        session_store.append(runtime.current_session_id, history, runtime.persisted_message_count);
+        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+        session_store.append(runtime.current_session_id, history, runtime.persisted_message_count, active_model);
         runtime.persisted_message_count = history.size();
     } else {
-        session_store.update(runtime.current_session_id, history);
+        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+        session_store.update(runtime.current_session_id, history, active_model);
         runtime.persisted_message_count = history.size();
     }
 
@@ -299,7 +304,8 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
     if (message.content == "/new") {
         const auto previous_message_count = runtime.agent->history().size();
-        const auto result = start_new_session(*runtime.agent, session_store, runtime.model, runtime.current_session_id, runtime.session_scope_key);
+        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+        const auto result = start_new_session(*runtime.agent, session_store, active_model, runtime.current_session_id, runtime.session_scope_key);
         dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
         runtime.current_session_id.clear();
         session_store.clear_jid(message.jid, runtime.agent_key);
@@ -319,7 +325,16 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     if (message.content == "/agent") {
-        deliver_command_reply(message, "Current agent: " + runtime.agent_key, channel_manager);
+        deliver_command_reply(message, "🤖 Current agent: " + runtime.agent_key, channel_manager);
+        return true;
+    }
+
+    if (message.content == "/status") {
+        deliver_command_reply(
+            message,
+            format_runtime_status(collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, runtime.current_session_id, runtime.agent_key,
+                                                        runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
+            channel_manager);
         return true;
     }
 
@@ -361,7 +376,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
         runtime.persisted_message_count = runtime.agent->history().size();
         session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
-        deliver_command_reply(message, "Resumed session: " + runtime.current_session_id, channel_manager);
+        deliver_command_reply(message, "🧵 Resumed session: " + runtime.current_session_id, channel_manager);
         return true;
     }
 
@@ -376,7 +391,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     persist_channel_session(message.jid, runtime, session_store);
-    deliver_command_reply(message, "Compressed history: " + std::to_string(result.messages_before) + " -> " + std::to_string(result.messages_after) + " messages.",
+    deliver_command_reply(message, "🗜️ Compressed history: " + std::to_string(result.messages_before) + " -> " + std::to_string(result.messages_after) + " messages.",
                           channel_manager);
     return true;
 }

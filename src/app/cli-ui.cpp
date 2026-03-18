@@ -8,6 +8,7 @@ namespace orangutan::app {
 std::string repl_help_text() {
     return "Commands:\n"
            "  /help            - show this help\n"
+           "  /status          - show active model and runtime status\n"
            "  /new             - save current session and start a new one\n"
            "  /compress        - summarize older history and keep recent messages verbatim\n"
            "  /clear           - clear conversation history\n"
@@ -28,6 +29,7 @@ std::string repl_help_text() {
 std::string channel_help_text() {
     return "Commands:\n"
            "/help - show this help\n"
+           "/status - show active model and runtime status\n"
            "/new - start a new session\n"
            "/compress - summarize older history\n"
            "/session - show the current session id\n"
@@ -69,9 +71,9 @@ std::string format_agent_list(const Config &cfg, const std::string &current_agen
 
 std::string format_current_session(const std::string &current_session_id, const std::string &agent_key) {
     if (current_session_id.empty()) {
-        return "No active session. Send a message to start one.";
+        return "💤 No active session yet. Send a message to start one.";
     }
-    return "Current session: " + current_session_id + " (agent: " + agent_key + ')';
+    return "🧵 Current session: " + current_session_id + " (agent: " + agent_key + ')';
 }
 
 std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, const std::string &current_session_id) {
@@ -80,7 +82,7 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
     }
 
     std::ostringstream out;
-    out << "Saved sessions for this conversation:\n";
+    out << "🗂️ Saved sessions for this conversation:\n";
     constexpr size_t max_sessions_to_show = 10;
     const auto count = std::min(max_sessions_to_show, sessions.size());
     for (size_t index = 0; index < count; ++index) {
@@ -134,11 +136,80 @@ std::string render_saved_sessions(SessionStore &store, const std::string &scope_
     }
 
     std::ostringstream out;
-    out << "Saved sessions:\n";
+    out << "🗂️ Saved sessions:\n";
     for (const auto &session : sessions) {
         out << "  " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count << " messages)\n";
     }
     out << '\n';
+    return out.str();
+}
+
+RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
+                                            const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models,
+                                            const std::string &scope_key) {
+    RuntimeStatusSnapshot status{
+        .agent_key = agent_key,
+        .provider_name = provider.name(),
+        .current_model = provider.current_model().empty() ? configured_model : provider.current_model(),
+        .configured_model = configured_model,
+        .fallback_models = fallback_models,
+        .current_session_id = current_session_id,
+        .scope_key = scope_key,
+        .history_messages = agent.history().size(),
+        .provider_usage = provider.usage(),
+    };
+
+    for (const auto &message : agent.history()) {
+        if (message.role == "user") {
+            ++status.user_messages;
+        } else if (message.role == "assistant") {
+            ++status.assistant_messages;
+        }
+
+        for (const auto &block : message.content) {
+            if (std::get_if<ToolUseBlock>(&block) != nullptr) {
+                ++status.tool_call_count;
+            } else if (const auto *result = std::get_if<ToolResultBlock>(&block); result != nullptr && result->is_error) {
+                ++status.tool_error_count;
+            }
+        }
+    }
+
+    if (tool_registry != nullptr) {
+        status.registered_tool_count = tool_registry->definitions().size();
+    }
+
+    return status;
+}
+
+std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
+    std::ostringstream out;
+    out << "📊 Status:\n";
+    out << "- agent: " << status.agent_key << '\n';
+    out << "- provider: " << status.provider_name << '\n';
+    out << "- model: " << status.current_model << '\n';
+    if (!status.configured_model.empty() && status.configured_model != status.current_model) {
+        out << "- configured model: " << status.configured_model << '\n';
+    }
+    if (!status.fallback_models.empty()) {
+        out << "- fallback models: ";
+        for (size_t index = 0; index < status.fallback_models.size(); ++index) {
+            if (index > 0) {
+                out << ", ";
+            }
+            out << status.fallback_models[index];
+        }
+        out << '\n';
+    }
+    out << "- session: " << (status.current_session_id.empty() ? "none" : status.current_session_id) << '\n';
+    if (!status.scope_key.empty()) {
+        out << "- scope: " << status.scope_key << '\n';
+    }
+    out << "- usage: llm_requests=" << status.provider_usage.logical_requests << ", attempts=" << status.provider_usage.attempt_count
+        << ", fallbacks=" << status.provider_usage.fallback_switches << ", failed_attempts=" << status.provider_usage.failed_attempts
+        << ", tool_calls=" << status.tool_call_count << ", tool_errors=" << status.tool_error_count << '\n';
+    out << "- history: messages=" << status.history_messages << ", user=" << status.user_messages << ", assistant=" << status.assistant_messages << '\n';
+    out << "- tools: registered=" << status.registered_tool_count;
     return out.str();
 }
 

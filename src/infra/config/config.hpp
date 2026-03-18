@@ -12,6 +12,7 @@ namespace orangutan {
 struct AgentConfig {
     std::string provider = "anthropic";
     std::string model = "claude-sonnet-4-20250514";
+    std::vector<std::string> fallback_models;
     std::string base_url = "https://api.anthropic.com";
     std::string api_key;
     std::string system_prompt;
@@ -34,6 +35,7 @@ struct Config {
     // [agent] section
     std::string provider = "anthropic";
     std::string model = "claude-sonnet-4-20250514";
+    std::vector<std::string> fallback_models;
     std::string base_url = "https://api.anthropic.com";
     std::string api_key;
     double temperature = 1.0;

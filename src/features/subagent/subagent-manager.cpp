@@ -43,7 +43,7 @@ SubagentManager::SubagentManager(SubagentRunStore &run_store, SubagentExecutionE
   provider_factory_(std::move(environment.provider_factory)) {
     if (provider_factory_ == nullptr) {
         provider_factory_ = [](const SubagentChildRuntimeConfig &config) {
-            return create_provider(config.provider_name, config.api_key, config.model, config.base_url);
+            return create_provider_with_fallbacks(config.provider_name, config.api_key, config.model, config.base_url, config.fallback_models);
         };
     }
 }
@@ -287,6 +287,10 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
     }
 
     auto provider = provider_factory_(*maybe_child_config);
+    const auto resolve_active_model = [&provider, &maybe_child_config]() {
+        const auto current_model = provider->current_model();
+        return current_model.empty() ? maybe_child_config->model : current_model;
+    };
     ToolRegistry child_tools;
     auto current_session_id = request.child_session_id;
     auto tool_context = ToolRuntimeContext{
@@ -312,12 +316,12 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
 
     auto child_prompt = append_subagent_prompt_guidance(maybe_child_config->system_prompt, maybe_child_config->allowed_child_agents, true);
     AgentLoop child_agent(*provider, child_tools, child_prompt, child_runtime_memory);
-    const auto persist_history = [this, &request](const std::vector<Message> &history) {
-        session_store_->update(request.child_session_id, history);
+    const auto persist_history = [this, &request, &resolve_active_model](const std::vector<Message> &history) {
+        session_store_->update(request.child_session_id, history, resolve_active_model());
     };
 
     const auto final_output = child_agent.run(request.task_summary, {}, {}, persist_history);
-    session_store_->update(request.child_session_id, child_agent.history());
+    session_store_->update(request.child_session_id, child_agent.history(), resolve_active_model());
     return SubagentWorkerResult{
         .status = SubagentRunStatus::succeeded,
         .final_summary = final_output,
