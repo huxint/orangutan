@@ -33,4 +33,9 @@ void handle_list_skills(const httplib::Request &req, httplib::Response &res, Ski
 void handle_system_status(const httplib::Request &req, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
                           const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
 
+void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, ToolRegistry *tool_registry, std::mutex &sessions_mutex,
+                 std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
+void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
+                       std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
+
 } // namespace orangutan::web

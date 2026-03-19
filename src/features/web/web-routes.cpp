@@ -4,6 +4,7 @@
 #include "infra/config/config.hpp"
 #include "core/tools/tool.hpp"
 #include "features/skills/skill-loader.hpp"
+#include "core/providers/provider.hpp"
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -225,4 +226,163 @@ void handle_system_status(const httplib::Request & /*req*/, httplib::Response &r
     res.set_content(body.dump(), "application/json");
 }
 
+void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, ToolRegistry * /*tool_registry*/, std::mutex &sessions_mutex,
+                 std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+    if (config == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"config not available"})", "application/json");
+        return;
+    }
+
+    nlohmann::json input;
+    try {
+        input = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::parse_error &) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid JSON"})", "application/json");
+        return;
+    }
+
+    if (!input.contains("message") || !input["message"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'message' field"})", "application/json");
+        return;
+    }
+
+    auto message = input.at("message").get<std::string>();
+    auto session_id = input.value("session_id", std::string{});
+
+    if (session_id.empty() && store != nullptr) {
+        session_id = store->create_empty(config->model);
+    }
+    if (session_id.empty()) {
+        session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    }
+
+    auto provider = create_provider(config->provider, config->api_key, config->model, config->base_url);
+    auto tools = std::make_unique<ToolRegistry>();
+    register_builtin_tools(*tools);
+
+    auto session = std::make_unique<WebSessionState>();
+    session->session_id = session_id;
+    session->provider = std::move(provider);
+    session->tools = std::move(tools);
+    session->agent = std::make_unique<AgentLoop>(*session->provider, *session->tools, config->system_prompt);
+
+    auto *abort_flag = &session->abort_requested;
+    session->tools->set_execution_guard([abort_flag](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
+        if (abort_flag->load()) {
+            return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
+        }
+        return std::nullopt;
+    });
+
+    auto *agent_ptr = session->agent.get();
+    auto *session_ptr = session.get();
+
+    {
+        std::lock_guard lock(sessions_mutex);
+        sessions[session_id] = std::move(session);
+    }
+
+    auto captured_session_id = session_id;
+    auto *store_ptr = store;
+
+    res.set_chunked_content_provider(
+        "text/event-stream", [agent_ptr, session_ptr, store_ptr, captured_session_id, message, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+            // Send session event
+            auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
+            auto sse_session = "event: session\ndata: " + session_event + "\n\n";
+            sink.write(sse_session.c_str(), sse_session.size());
+
+            session_ptr->running = true;
+            try {
+                agent_ptr->run(
+                    message,
+                    // StreamCallback
+                    [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
+                        if (session_ptr->abort_requested) {
+                            return;
+                        }
+                        if (event_type == "text_delta") {
+                            auto payload = nlohmann::json({{"text", data["text"]}}).dump();
+                            auto sse = "event: text\ndata: " + payload + "\n\n";
+                            sink.write(sse.c_str(), sse.size());
+                        }
+                    },
+                    // ToolEventCallback
+                    [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+                        if (session_ptr->abort_requested) {
+                            return;
+                        }
+                        nlohmann::json payload;
+                        if (event_type == "tool_start") {
+                            payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
+                            auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
+                            sink.write(sse.c_str(), sse.size());
+                        } else if (event_type == "tool_end" && result != nullptr) {
+                            payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
+                            auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
+                            sink.write(sse.c_str(), sse.size());
+                        }
+                    });
+
+                auto done_sse = std::string("event: done\ndata: {}\n\n");
+                sink.write(done_sse.c_str(), done_sse.size());
+            } catch (const std::exception &e) {
+                auto err = nlohmann::json({{"error", e.what()}}).dump();
+                auto sse = "event: error\ndata: " + err + "\n\n";
+                sink.write(sse.c_str(), sse.size());
+            }
+
+            session_ptr->running = false;
+
+            // Save session to store
+            if (store_ptr != nullptr) {
+                try {
+                    store_ptr->update(captured_session_id, agent_ptr->history());
+                } catch (const std::exception &e) {
+                    spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
+                }
+            }
+
+            // Clean up session
+            {
+                std::lock_guard lock(sessions_mutex);
+                sessions.erase(captured_session_id);
+            }
+
+            sink.done();
+            return false;
+        });
+}
+
+void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
+                       std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+    nlohmann::json input;
+    try {
+        input = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::parse_error &) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid JSON"})", "application/json");
+        return;
+    }
+
+    if (!input.contains("session_id") || !input["session_id"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'session_id' field"})", "application/json");
+        return;
+    }
+
+    auto session_id = input.at("session_id").get<std::string>();
+    std::lock_guard lock(sessions_mutex);
+    auto it = sessions.find(session_id);
+    if (it != sessions.end()) {
+        it->second->abort_requested = true;
+        res.set_content(R"({"status":"abort_requested"})", "application/json");
+    } else {
+        res.status = 404;
+        res.set_content(R"({"error":"session not found"})", "application/json");
+    }
+}
 } // namespace orangutan::web

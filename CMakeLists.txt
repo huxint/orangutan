@@ -193,6 +193,7 @@ if(BUILD_TESTING)
         tests/features/subagent-tools-test.cpp
         tests/features/web-server-test.cpp
         tests/features/web-routes-test.cpp
+        tests/features/web-chat-test.cpp
         tests/infra/config-test.cpp
         tests/infra/config-secret-test.cpp
         tests/infra/session-store-test.cpp

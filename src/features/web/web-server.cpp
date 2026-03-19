@@ -121,6 +121,14 @@ void WebServer::setup_routes() {
         web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_);
     });
 
+    server_.Post("/api/chat", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_chat(req, res, config_, session_store_, tool_registry_, sessions_mutex_, sessions_);
+    });
+
+    server_.Post("/api/chat/abort", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_chat_abort(req, res, sessions_mutex_, sessions_);
+    });
+
     if (!static_dir_.empty()) {
         server_.set_mount_point("/", static_dir_);
     }
