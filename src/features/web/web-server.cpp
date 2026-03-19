@@ -1,4 +1,5 @@
 #include "features/web/web-server.hpp"
+#include "features/web/web-routes.hpp"
 #include <spdlog/spdlog.h>
 
 namespace orangutan {
@@ -53,6 +54,19 @@ void WebServer::set_static_dir(const std::string &path) {
     static_dir_ = path;
 }
 
+void WebServer::set_session_store(SessionStore *store) {
+    session_store_ = store;
+}
+void WebServer::set_config(Config *config) {
+    config_ = config;
+}
+void WebServer::set_tool_registry(ToolRegistry *registry) {
+    tool_registry_ = registry;
+}
+void WebServer::set_skill_loader(SkillLoader *loader) {
+    skill_loader_ = loader;
+}
+
 void WebServer::setup_routes() {
     server_.set_pre_routing_handler([this](const httplib::Request &req, httplib::Response &res) {
         if (!static_dir_.empty()) {
@@ -69,6 +83,42 @@ void WebServer::setup_routes() {
 
     server_.Get("/api/health", [](const httplib::Request &, httplib::Response &res) {
         res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
+    server_.Get(R"(/api/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_get_session(req, res, session_store_);
+    });
+
+    server_.Delete(R"(/api/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_delete_session(req, res, session_store_);
+    });
+
+    server_.Get("/api/sessions", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_sessions(req, res, session_store_);
+    });
+
+    server_.Get("/api/config", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_get_config(req, res, config_);
+    });
+
+    server_.Put("/api/config", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_put_config(req, res, config_);
+    });
+
+    server_.Get("/api/tools", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_tools(req, res, tool_registry_);
+    });
+
+    server_.Get("/api/agents", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_agents(req, res, config_);
+    });
+
+    server_.Get("/api/skills", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_skills(req, res, skill_loader_);
+    });
+
+    server_.Get("/api/system/status", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_);
     });
 
     if (!static_dir_.empty()) {

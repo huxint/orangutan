@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 
 #include <spdlog/spdlog.h>
@@ -200,6 +201,103 @@ std::optional<AgentConfig> Config::find_agent(const std::string &key) const {
         return it->second;
     }
     return std::nullopt;
+}
+
+void Config::save_to(const std::string &path) const {
+    toml::table tbl;
+
+    // [agent] section
+    toml::table agent_tbl;
+    agent_tbl.insert("provider", provider);
+    agent_tbl.insert("model", model);
+    agent_tbl.insert("base_url", base_url);
+    agent_tbl.insert("temperature", temperature);
+    agent_tbl.insert("max_iterations", static_cast<int64_t>(max_iterations));
+    agent_tbl.insert("max_tokens", static_cast<int64_t>(max_tokens));
+    if (!system_prompt.empty()) {
+        agent_tbl.insert("system_prompt", system_prompt);
+    }
+    if (!workspace.empty()) {
+        agent_tbl.insert("workspace", workspace);
+    }
+    if (!fallback_models.empty()) {
+        toml::array arr;
+        for (const auto &m : fallback_models) {
+            arr.push_back(m);
+        }
+        agent_tbl.insert("fallback_models", std::move(arr));
+    }
+    // Note: api_key intentionally omitted from save_to for security
+    tbl.insert("agent", std::move(agent_tbl));
+
+    // [tools] section
+    toml::table tools_tbl;
+    tools_tbl.insert("edit_mode", edit_mode);
+    if (!allowed_tools.empty()) {
+        toml::array arr;
+        for (const auto &t : allowed_tools) {
+            arr.push_back(t);
+        }
+        tools_tbl.insert("allowed", std::move(arr));
+    }
+    if (!denied_tools.empty()) {
+        toml::array arr;
+        for (const auto &t : denied_tools) {
+            arr.push_back(t);
+        }
+        tools_tbl.insert("denied", std::move(arr));
+    }
+    tbl.insert("tools", std::move(tools_tbl));
+
+    // [session] section
+    toml::table session_tbl;
+    session_tbl.insert("auto_save", auto_save);
+    tbl.insert("session", std::move(session_tbl));
+
+    // [memory] section
+    toml::table memory_tbl;
+    memory_tbl.insert("mirror_enabled", memory.mirror_enabled);
+    memory_tbl.insert("mirror_file", memory.mirror_file);
+    memory_tbl.insert("journal_dir", memory.journal_dir);
+    tbl.insert("memory", std::move(memory_tbl));
+
+    // [security] section
+    if (!allow.empty() || !deny.empty()) {
+        toml::table security_tbl;
+        if (!allow.empty()) {
+            toml::array arr;
+            for (const auto &a : allow) {
+                arr.push_back(a);
+            }
+            security_tbl.insert("allow", std::move(arr));
+        }
+        if (!deny.empty()) {
+            toml::array arr;
+            for (const auto &d : deny) {
+                arr.push_back(d);
+            }
+            security_tbl.insert("deny", std::move(arr));
+        }
+        tbl.insert("security", std::move(security_tbl));
+    }
+
+    // [skills] section
+    if (!skill_paths.empty()) {
+        toml::table skills_tbl;
+        toml::array arr;
+        for (const auto &p : skill_paths) {
+            arr.push_back(p);
+        }
+        skills_tbl.insert("paths", std::move(arr));
+        tbl.insert("skills", std::move(skills_tbl));
+    }
+
+    // Write to file
+    std::ofstream ofs(path);
+    if (!ofs) {
+        throw std::runtime_error("Cannot open file for writing: " + path);
+    }
+    ofs << tbl;
 }
 
 } // namespace orangutan

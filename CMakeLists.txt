@@ -116,6 +116,7 @@ add_library(orangutan_lib STATIC
     src/infra/storage/sqlite.cpp
     src/infra/storage/subagent-run-store.cpp
     src/features/web/web-server.cpp
+    src/features/web/web-routes.cpp
     src/infra/subprocess/subprocess.cpp
 )
 
@@ -162,6 +163,7 @@ if(BUILD_TESTING)
 
     add_executable(orangutan_tests
         tests/app/bootstrap-test.cpp
+        tests/app/bootstrap-web-test.cpp
         tests/app/channel-serve-test.cpp
         tests/app/cli-ui-test.cpp
         tests/app/history-events-test.cpp
@@ -190,12 +192,14 @@ if(BUILD_TESTING)
         tests/features/subagent-manager-test.cpp
         tests/features/subagent-tools-test.cpp
         tests/features/web-server-test.cpp
+        tests/features/web-routes-test.cpp
         tests/infra/config-test.cpp
         tests/infra/config-secret-test.cpp
         tests/infra/session-store-test.cpp
         tests/infra/sqlite-test.cpp
         tests/infra/subagent-run-store-test.cpp
         tests/infra/subprocess-test.cpp
+        tests/infra/config-save-test.cpp
         tests/integration/hook-integration-test.cpp
         tests/integration/subagent-integration-test.cpp
     )

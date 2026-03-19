@@ -137,6 +137,9 @@ struct Config {
 
     [[nodiscard]]
     std::optional<AgentConfig> find_agent(const std::string &key) const;
+
+    // Serialize config to TOML and write to file
+    void save_to(const std::string &path) const;
 };
 
 // Expand ${VAR_NAME} patterns in a string with environment variable values.
