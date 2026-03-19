@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    echo "pre-commit: clang-format not found in PATH" >&2
+    exit 1
+fi
+
+mapfile -d '' staged_files < <(
+    git diff --cached --name-only --diff-filter=ACMR -z -- \
+        '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx'
+)
+
+if ((${#staged_files[@]} == 0)); then
+    exit 0
+fi
+
+unstaged_files=()
+for file in "${staged_files[@]}"; do
+    if ! git diff --quiet -- "${file}"; then
+        unstaged_files+=("${file}")
+    fi
+done
+
+if ((${#unstaged_files[@]} > 0)); then
+    echo "pre-commit: refusing to format files with unstaged changes:" >&2
+    printf '  %s\n' "${unstaged_files[@]}" >&2
+    echo "Stage or stash those changes, then commit again." >&2
+    exit 1
+fi
+
+clang-format -i -- "${staged_files[@]}"
+git add -- "${staged_files[@]}"
