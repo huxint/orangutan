@@ -4,6 +4,7 @@
 #include "app/runtime/identity.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "infra/config/config.hpp"
+#include "infra/config/secret-protection.hpp"
 #include "infra/storage/session-store.hpp"
 #include "test-helpers.hpp"
 
@@ -91,12 +92,16 @@ protected:
     }
 
     void write_config() const {
+        write_config_with_api_key("test-key");
+    }
+
+    void write_config_with_api_key(const std::string &api_key) const {
         std::ofstream out(config_path());
         out << "[agents.default]\n";
         out << "provider = \"openai\"\n";
         out << "model = \"gpt-test\"\n";
         out << "base_url = \"https://example.test\"\n";
-        out << "api_key = \"test-key\"\n";
+        out << "api_key = \"" << api_key << "\"\n";
         out << "workspace = \"" << workspace_root_.string() << "\"\n";
         out << "system_prompt = \"You are a test agent.\"\n";
     }
@@ -124,6 +129,55 @@ protected:
     [[nodiscard]]
     const std::filesystem::path &workspace_root() const {
         return workspace_root_;
+    }
+
+    struct RunResult {
+        int exit_code = 0;
+        std::string output;
+    };
+
+    [[nodiscard]]
+    RunResult invoke_bootstrap(std::vector<std::string> argv_storage, const std::string &stdin_content = {}) const {
+        std::array<int, 2> stdin_pipe{};
+        EXPECT_EQ(::pipe(stdin_pipe.data()), 0);
+        if (!stdin_content.empty()) {
+            EXPECT_EQ(::write(stdin_pipe[1], stdin_content.data(), stdin_content.size()), static_cast<ssize_t>(stdin_content.size()));
+        }
+        ::close(stdin_pipe[1]);
+
+        std::array<int, 2> output_pipe{};
+        EXPECT_EQ(::pipe(output_pipe.data()), 0);
+
+        int exit_code = 0;
+        {
+            ScopedFdRedirect redirect_stdin(STDIN_FILENO, stdin_pipe[0]);
+            ScopedFdRedirect redirect_stdout(STDOUT_FILENO, output_pipe[1]);
+            ScopedFdRedirect redirect_stderr(STDERR_FILENO, output_pipe[1]);
+            ::close(stdin_pipe[0]);
+            ::close(output_pipe[1]);
+
+            std::vector<char *> argv;
+            argv.reserve(argv_storage.size() + 1);
+            for (auto &arg : argv_storage) {
+                argv.push_back(arg.data());
+            }
+            argv.push_back(nullptr);
+
+            exit_code = app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data());
+        }
+
+        std::string output;
+        std::array<char, 256> buffer{};
+        ssize_t read_bytes = 0;
+        while ((read_bytes = ::read(output_pipe[0], buffer.data(), buffer.size())) > 0) {
+            output.append(buffer.data(), static_cast<size_t>(read_bytes));
+        }
+        ::close(output_pipe[0]);
+
+        return {
+            .exit_code = exit_code,
+            .output = std::move(output),
+        };
     }
 
 private:
@@ -218,6 +272,65 @@ TEST_F(BootstrapTest, BuildSubagentChildRuntimeConfigsPropagatesEditMode) {
     auto it = child_configs.find("default");
     ASSERT_NE(it, child_configs.end());
     EXPECT_EQ(it->second.edit_mode, "search_replace");
+}
+
+TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {
+    const auto protected_key = protect_config_secret("test-key", "cli-password", "agents.api_key");
+    write_config_with_api_key(protected_key);
+    create_sessions();
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    const auto result = invoke_bootstrap({
+        "orangutan",
+        "--agent",
+        "default",
+        "--config-password",
+        "cli-password",
+        "--resume",
+        "--event-stream",
+        "--dump-session",
+    });
+
+    EXPECT_EQ(result.exit_code, 0);
+}
+
+TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithEnvironmentPasswordHeadless) {
+    const auto protected_key = protect_config_secret("test-key", "env-password", "agents.api_key");
+    write_config_with_api_key(protected_key);
+    create_sessions();
+    ScopedEnvVar home_env("HOME", home_root().string());
+    ScopedEnvVar password_env("ORANGUTAN_CONFIG_PASSWORD", "env-password");
+
+    const auto result = invoke_bootstrap({
+        "orangutan",
+        "--agent",
+        "default",
+        "--resume",
+        "--event-stream",
+        "--dump-session",
+    });
+
+    EXPECT_EQ(result.exit_code, 0);
+}
+
+TEST_F(BootstrapTest, RunBootstrapFailsWithoutPasswordForProtectedConfigHeadless) {
+    const auto protected_key = protect_config_secret("test-key", "missing-password", "agents.api_key");
+    write_config_with_api_key(protected_key);
+    create_sessions();
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    const auto result = invoke_bootstrap({
+        "orangutan",
+        "--agent",
+        "default",
+        "--resume",
+        "--event-stream",
+        "--dump-session",
+    });
+
+    EXPECT_EQ(result.exit_code, 1);
+    EXPECT_NE(result.output.find("--config-password"), std::string::npos);
+    EXPECT_NE(result.output.find("ORANGUTAN_CONFIG_PASSWORD"), std::string::npos);
 }
 
 } // namespace

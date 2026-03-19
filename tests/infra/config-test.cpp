@@ -617,6 +617,79 @@ model = "gpt-4"
     EXPECT_TRUE(cfg.api_key.empty());
 }
 
+TEST_F(ConfigFileTest, LoadsProtectedLegacyAgentApiKeyWithExplicitPassword) {
+    const auto protected_key = protect_config_secret("sk-protected-legacy", "legacy-password", "agent.api_key");
+
+    auto path = write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
+
+    const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                 .password_override = "legacy-password",
+                                             });
+    EXPECT_EQ(cfg.api_key, "sk-protected-legacy");
+    ASSERT_TRUE(cfg.agents.contains("default"));
+    EXPECT_EQ(cfg.agents.at("default").api_key, "sk-protected-legacy");
+}
+
+TEST_F(ConfigFileTest, LoadsProtectedConfiguredAgentApiKeyFromEnvironmentPassword) {
+    const auto protected_key = protect_config_secret("sk-protected-agent", "env-password", "agents.api_key");
+    setenv("ORANGUTAN_CONFIG_PASSWORD", "env-password", 1);
+
+    auto path = write_config("[agents.default]\napi_key = \"" + protected_key + "\"\n");
+
+    const auto cfg = Config::load_from(path);
+    ASSERT_TRUE(cfg.agents.contains("default"));
+    EXPECT_EQ(cfg.agents.at("default").api_key, "sk-protected-agent");
+
+    unsetenv("ORANGUTAN_CONFIG_PASSWORD");
+}
+
+TEST_F(ConfigFileTest, NamedAgentsCanInheritProtectedLegacyApiKey) {
+    const auto protected_key = protect_config_secret("sk-inherited-agent", "inherit-password", "agent.api_key");
+
+    auto path = write_config(R"toml(
+[agent]
+api_key = ")toml" + protected_key +
+                             R"toml("
+model = "legacy-model"
+
+[agents.coder]
+model = "coder-model"
+)toml");
+
+    const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                 .password_override = "inherit-password",
+                                             });
+    ASSERT_TRUE(cfg.agents.contains("coder"));
+    EXPECT_EQ(cfg.agents.at("coder").api_key, "sk-inherited-agent");
+}
+
+TEST_F(ConfigFileTest, LoadsProtectedQqClientSecretWithExplicitPassword) {
+    const auto protected_secret = protect_config_secret("qq-secret-value", "qq-password", "qq.client_secret");
+
+    auto path = write_config(R"toml(
+[agents.default]
+model = "test-model"
+api_key = "test-key"
+
+[qq]
+app_id = "qq-app"
+)toml" + std::string("client_secret = \"") +
+                             protected_secret + "\"\n");
+
+    const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                 .password_override = "qq-password",
+                                             });
+    ASSERT_EQ(cfg.qq_bots.size(), 1U);
+    EXPECT_EQ(cfg.qq_bots[0].client_secret, "qq-secret-value");
+}
+
+TEST_F(ConfigFileTest, ThrowsWhenProtectedSecretHasNoPasswordSource) {
+    const auto protected_key = protect_config_secret("sk-no-password", "expected-password", "agent.api_key");
+    auto path = write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
+
+    EXPECT_THROW((void)Config::load_from(path), ConfigSecretProtectionError);
+}
+
 // ── edit_mode parsing ───────────────────────────
 
 TEST_F(ConfigFileTest, ParsesEditModeFromToolsSection) {

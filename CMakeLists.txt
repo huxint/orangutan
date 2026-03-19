@@ -12,6 +12,7 @@ find_package(spdlog REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(READLINE REQUIRED readline)
@@ -36,7 +37,6 @@ FetchContent_Populate(xxhash)
 option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support (requires ixwebsocket)" ON)
 
 if(ORANGUTAN_ENABLE_QQ_CHANNEL)
-    find_package(OpenSSL REQUIRED)
     set(USE_TLS ON CACHE BOOL "Enable TLS for ixwebsocket" FORCE)
     set(USE_OPEN_SSL ON CACHE BOOL "Use OpenSSL for ixwebsocket TLS" FORCE)
     FetchContent_Declare(
@@ -98,6 +98,10 @@ add_library(orangutan_lib STATIC
     src/features/tools/script/script-loader.cpp
     src/features/tools/subagent/subagent-tools.cpp
     src/infra/config/config.cpp
+    src/infra/config/secret-fields.cpp
+    src/infra/config/secret-protection-crypto.cpp
+    src/infra/config/secret-protection-file.cpp
+    src/infra/config/secret-protection-password.cpp
     src/infra/storage/session-store.cpp
     src/infra/storage/sqlite.cpp
     src/infra/storage/subagent-run-store.cpp
@@ -112,6 +116,7 @@ target_link_libraries(orangutan_lib PUBLIC
     CURL::libcurl
     tomlplusplus::tomlplusplus
     Threads::Threads
+    OpenSSL::Crypto
     ${SQLITE3_LIBRARIES}
 )
 
@@ -173,6 +178,7 @@ if(BUILD_TESTING)
         tests/features/subagent-manager-test.cpp
         tests/features/subagent-tools-test.cpp
         tests/infra/config-test.cpp
+        tests/infra/config-secret-test.cpp
         tests/infra/session-store-test.cpp
         tests/infra/sqlite-test.cpp
         tests/infra/subagent-run-store-test.cpp

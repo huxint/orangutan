@@ -19,6 +19,7 @@
 #include "features/subagent/subagent-manager.hpp"
 #include "features/tools/runtime/runtime-loader.hpp"
 #include "infra/config/config.hpp"
+#include "infra/config/secret-protection.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"
 
@@ -98,8 +99,11 @@ struct CliOptions {
     bool event_stream = false;
     bool serve_mode = false;
     std::string edit_mode;
+    std::string config_password;
+    std::string protect_config_path;
     bool verbose = false;
     bool resume_requested = false;
+    bool protect_config_requested = false;
 };
 
 std::atomic<bool> &signal_stop_requested() {
@@ -111,7 +115,7 @@ void handle_signal(int /*signum*/) {
     signal_stop_requested().store(true);
 }
 
-void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_flag) {
+void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_flag, CLI::Option *&protect_flag) {
     app.add_option("-k,--api-key", options.api_key, "API key (or set ANTHROPIC_API_KEY / LLM_API_KEY env)");
     app.add_option("--model", options.cli_model, "Model to use");
     app.add_option("-b,--base-url", options.cli_base_url, "API base URL");
@@ -126,10 +130,20 @@ void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_
     resume_flag = app.get_option("--resume");
     app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
     app.add_option("--edit-mode", options.edit_mode, "Edit tool mode: hashline or search_replace");
+    app.add_option("--config-password", options.config_password, "Password used to unlock or protect encrypted config secrets");
+    app.add_option("--protect-config-secrets", options.protect_config_path,
+                   "Rewrite supported plaintext config secrets in place and exit. Optional argument: config path; defaults to ~/.orangutan/config.toml")
+        ->expected(0, 1)
+        ->default_str("");
+    protect_flag = app.get_option("--protect-config-secrets");
 }
 
 void configure_logging(bool verbose) {
-    spdlog::set_default_logger(spdlog::stderr_color_mt("orangutan"));
+    auto logger = spdlog::get("orangutan");
+    if (logger == nullptr) {
+        logger = spdlog::stderr_color_mt("orangutan");
+    }
+    spdlog::set_default_logger(std::move(logger));
     spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::info);
 }
 
@@ -162,7 +176,48 @@ bool validate_initial_options(const CliOptions &options) {
         std::println(std::cerr, "Error: --serve cannot be combined with single-message or event-stream flags.");
         return false;
     }
+    if (options.protect_config_requested &&
+        (options.serve_mode || options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session || !options.api_key.empty())) {
+        std::println(std::cerr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
+        return false;
+    }
     return true;
+}
+
+int run_protect_config_mode(const CliOptions &options) {
+    auto path = options.protect_config_path.empty() ? orangutan::default_orangutan_config_path() : options.protect_config_path;
+    if (path.empty()) {
+        std::println(std::cerr, "Error: could not resolve the default config path.");
+        return 1;
+    }
+    if (!std::filesystem::exists(path)) {
+        std::println(std::cerr, "Error: config file not found: {}", path);
+        return 1;
+    }
+
+    try {
+        orangutan::ConfigSecretOptions secret_options{
+            .password_override = options.config_password,
+            .allow_interactive_password = true,
+        };
+        const auto password = orangutan::resolve_config_secret_password(secret_options);
+        const auto result = orangutan::protect_config_file_secrets(path, password);
+        if (!result.modified) {
+            std::println("No eligible plaintext config secrets found in {}.", path);
+            return 0;
+        }
+
+        (void)orangutan::Config::load_from(path, orangutan::ConfigSecretOptions{
+                                                     .password_override = password,
+                                                 });
+
+        std::println("Protected {} config secret(s) in {}", result.protected_count, path);
+        std::println("Backup written to {}", result.backup_path.string());
+        return 0;
+    } catch (const orangutan::ConfigSecretProtectionError &e) {
+        std::println(std::cerr, "Error: {}", e.what());
+        return 1;
+    }
 }
 
 std::optional<orangutan::AgentConfig> resolve_selected_agent(const orangutan::Config &cfg, const CliOptions &options) {
@@ -523,16 +578,31 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     CliOptions options;
     CLI::App app{"orangutan - your local AI assistant"};
     CLI::Option *resume_flag = nullptr;
-    configure_cli_app(app, options, resume_flag);
+    CLI::Option *protect_flag = nullptr;
+    configure_cli_app(app, options, resume_flag, protect_flag);
     CLI11_PARSE(app, argc, argv);
     options.resume_requested = resume_flag->count() > 0;
+    options.protect_config_requested = protect_flag->count() > 0;
 
     configure_logging(options.verbose);
-    auto cfg = orangutan::Config::load();
-    apply_cli_edit_mode_override(cfg, options.edit_mode);
     if (!validate_initial_options(options)) {
         return 1;
     }
+    if (options.protect_config_requested) {
+        return run_protect_config_mode(options);
+    }
+
+    orangutan::Config cfg;
+    try {
+        cfg = orangutan::Config::load(orangutan::ConfigSecretOptions{
+            .password_override = options.config_password,
+            .allow_interactive_password = true,
+        });
+    } catch (const orangutan::ConfigSecretProtectionError &e) {
+        std::println(std::cerr, "Error: {}", e.what());
+        return 1;
+    }
+    apply_cli_edit_mode_override(cfg, options.edit_mode);
 
     const auto maybe_selected_agent = resolve_selected_agent(cfg, options);
     if (!maybe_selected_agent.has_value()) {

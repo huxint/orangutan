@@ -1,4 +1,7 @@
 # Copy this file to ~/.orangutan/config.toml and fill in your real values.
+# For secrets, prefer environment variables or encrypt supported values in place with:
+#   orangutan --protect-config-secrets
+# Unlock protected values with --config-password or ORANGUTAN_CONFIG_PASSWORD.
 
 [session]
 auto_save = true
@@ -66,6 +69,7 @@ model = "claude-sonnet-4-20250514"
 # Optional same-provider fallback chain, tried in order when the primary model fails.
 # fallback_models = ["claude-opus-4-20250514"]
 base_url = "https://api.anthropic.com"
+# api_key may be either ${ENV_VAR} or an encrypted enc:v1:... string.
 api_key = "${ANTHROPIC_API_KEY}"
 workspace = "~/.orangutan/workspace/default"
 system_prompt = "You are the default general assistant."
@@ -75,6 +79,7 @@ subagents = ["coder", "research"]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 base_url = "https://api.anthropic.com"
+# api_key may be either ${ENV_VAR} or an encrypted enc:v1:... string.
 api_key = "${ANTHROPIC_API_KEY}"
 workspace = "~/.orangutan/workspace/coder"
 system_prompt = "You focus on code changes, debugging, and implementation details."
@@ -91,6 +96,7 @@ denied_shell_commands = ["git push", "rm -rf /"]
 provider = "anthropic"
 model = "claude-sonnet-4-20250514"
 base_url = "https://api.anthropic.com"
+# api_key may be either ${ENV_VAR} or an encrypted enc:v1:... string.
 api_key = "${ANTHROPIC_API_KEY}"
 workspace = "~/.orangutan/workspace/research"
 system_prompt = "You focus on analysis, investigation, and planning."
@@ -99,18 +105,21 @@ subagents = []
 [[qq_bots]]
 name = "primary"
 app_id = "QQ_APP_ID_PRIMARY"
+# client_secret may be either a plaintext placeholder during setup or an encrypted enc:v1:... string in real configs.
 client_secret = "QQ_CLIENT_SECRET_PRIMARY"
 agent = "default"
 
 [[qq_bots]]
 name = "coder-bot"
 app_id = "QQ_APP_ID_CODER"
+# client_secret may be either a plaintext placeholder during setup or an encrypted enc:v1:... string in real configs.
 client_secret = "QQ_CLIENT_SECRET_CODER"
 agent = "coder"
 
 [[qq_bots]]
 name = "research-bot"
 app_id = "QQ_APP_ID_RESEARCH"
+# client_secret may be either a plaintext placeholder during setup or an encrypted enc:v1:... string in real configs.
 client_secret = "QQ_CLIENT_SECRET_RESEARCH"
 agent = "research"
 

@@ -1,13 +1,50 @@
 #include "infra/config/config.hpp"
+#include "infra/config/secret-fields.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.hpp>
 
 namespace orangutan {
+
+namespace {
+
+class ConfigPasswordResolver {
+public:
+    explicit ConfigPasswordResolver(const ConfigSecretOptions &options)
+    : options_(options) {}
+
+    [[nodiscard]]
+    const std::string &resolve() {
+        if (!cached_password_.has_value()) {
+            cached_password_ = resolve_config_secret_password(options_);
+        }
+        return *cached_password_;
+    }
+
+private:
+    const ConfigSecretOptions &options_;
+    std::optional<std::string> cached_password_;
+};
+
+void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver) {
+    if (value.empty()) {
+        return;
+    }
+
+    if (is_protected_config_secret(value)) {
+        value = reveal_config_secret(value, resolver.resolve(), field_kind, display_field);
+        return;
+    }
+
+    value = expand_env_vars(value);
+}
+
+} // namespace
 
 std::string expand_env_vars(const std::string &input) {
     std::string result;
@@ -69,14 +106,6 @@ std::string expand_home_path(const std::string &input) {
     return std::string(home) + input.substr(1);
 }
 
-static std::string default_config_path() {
-    const char *home = std::getenv("HOME");
-    if (home == nullptr) {
-        return {};
-    }
-    return std::string(home) + "/.orangutan/config.toml";
-}
-
 static AgentConfig make_agent_config_from_legacy(const Config &cfg) {
     return {
         .provider = cfg.provider,
@@ -93,7 +122,6 @@ static AgentConfig make_agent_config_from_legacy(const Config &cfg) {
 }
 
 static void expand_agent_config(AgentConfig &cfg) {
-    cfg.api_key = expand_env_vars(cfg.api_key);
     cfg.base_url = expand_env_vars(cfg.base_url);
     cfg.model = expand_env_vars(cfg.model);
     cfg.provider = expand_env_vars(cfg.provider);
@@ -628,7 +656,7 @@ static Config parse_heartbeat_section(const toml::table &tbl, Config cfg) {
     return cfg;
 }
 
-static Config parse_toml(const toml::table &tbl) {
+static Config parse_toml(const toml::table &tbl, const ConfigSecretOptions &secret_options) {
     Config cfg;
     cfg = parse_agent_section(tbl, std::move(cfg));
     cfg = parse_tools_section(tbl, std::move(cfg));
@@ -636,17 +664,10 @@ static Config parse_toml(const toml::table &tbl) {
     cfg = parse_session_section(tbl, std::move(cfg));
     cfg = parse_memory_section(tbl, std::move(cfg));
     cfg = parse_qq_section(tbl, std::move(cfg));
-    cfg = parse_agents_section(tbl, std::move(cfg));
-    cfg = parse_qq_bots_section(tbl, std::move(cfg));
-    cfg = parse_security_section(tbl, std::move(cfg));
-    cfg = parse_skills_section(tbl, std::move(cfg));
-    cfg = parse_custom_tools_section(tbl, std::move(cfg));
-    cfg = parse_mcp_section(tbl, std::move(cfg));
-    cfg = parse_hooks_section(tbl, std::move(cfg));
-    cfg = parse_heartbeat_section(tbl, std::move(cfg));
 
-    // Expand environment variables in all string config values
-    cfg.api_key = expand_env_vars(cfg.api_key);
+    ConfigPasswordResolver password_resolver(secret_options);
+
+    resolve_secret_field(cfg.api_key, legacy_agent_api_key_field().field_kind, "agent.api_key", password_resolver);
     cfg.base_url = expand_env_vars(cfg.base_url);
     cfg.model = expand_env_vars(cfg.model);
     cfg.provider = expand_env_vars(cfg.provider);
@@ -658,15 +679,25 @@ static Config parse_toml(const toml::table &tbl) {
     cfg.memory.mirror_file = expand_home_path(expand_env_vars(cfg.memory.mirror_file));
     cfg.memory.journal_dir = expand_home_path(expand_env_vars(cfg.memory.journal_dir));
     cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);
-    cfg.qq_client_secret = expand_env_vars(cfg.qq_client_secret);
+    resolve_secret_field(cfg.qq_client_secret, qq_client_secret_field().field_kind, "qq.client_secret", password_resolver);
+
+    cfg = parse_agents_section(tbl, std::move(cfg));
+    cfg = parse_qq_bots_section(tbl, std::move(cfg));
+    cfg = parse_security_section(tbl, std::move(cfg));
+    cfg = parse_skills_section(tbl, std::move(cfg));
+    cfg = parse_custom_tools_section(tbl, std::move(cfg));
+    cfg = parse_mcp_section(tbl, std::move(cfg));
+    cfg = parse_hooks_section(tbl, std::move(cfg));
+    cfg = parse_heartbeat_section(tbl, std::move(cfg));
 
     if (cfg.agents.empty() || !cfg.agents.contains("default")) {
         cfg.agents.insert_or_assign("default", make_agent_config_from_legacy(cfg));
     }
 
     for (auto &[key, agent_cfg] : cfg.agents) {
+        const auto display_field = "agents." + key + ".api_key";
+        resolve_secret_field(agent_cfg.api_key, named_agent_api_key_field().field_kind, display_field, password_resolver);
         expand_agent_config(agent_cfg);
-        (void)key;
     }
 
     if (cfg.qq_bots.empty() && (!cfg.qq_app_id.empty() || !cfg.qq_client_secret.empty())) {
@@ -678,10 +709,12 @@ static Config parse_toml(const toml::table &tbl) {
         });
     }
 
-    for (auto &bot : cfg.qq_bots) {
+    for (size_t index = 0; index < cfg.qq_bots.size(); ++index) {
+        auto &bot = cfg.qq_bots[index];
         bot.name = expand_env_vars(bot.name);
         bot.app_id = expand_env_vars(bot.app_id);
-        bot.client_secret = expand_env_vars(bot.client_secret);
+        const auto display_field = "qq_bots[" + std::to_string(index) + "].client_secret";
+        resolve_secret_field(bot.client_secret, qq_bot_client_secret_field().field_kind, display_field, password_resolver);
         bot.agent = expand_env_vars(bot.agent);
 
         if (bot.agent.empty()) {
@@ -695,18 +728,20 @@ static Config parse_toml(const toml::table &tbl) {
     return cfg;
 }
 
-Config Config::load() {
-    auto path = default_config_path();
+Config Config::load(const ConfigSecretOptions &secret_options) {
+    auto path = default_orangutan_config_path();
     if (path.empty() || !std::filesystem::exists(path)) {
         return {};
     }
-    return load_from(path);
+    return load_from(path, secret_options);
 }
 
-Config Config::load_from(const std::string &path) {
+Config Config::load_from(const std::string &path, const ConfigSecretOptions &secret_options) {
     try {
         auto tbl = toml::parse_file(path);
-        return parse_toml(tbl);
+        return parse_toml(tbl, secret_options);
+    } catch (const ConfigSecretProtectionError &) {
+        throw;
     } catch (const toml::parse_error &e) {
         spdlog::warn("Failed to parse config file {}: {}", path, e.what());
         return {};

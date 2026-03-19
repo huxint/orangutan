@@ -1,7 +1,9 @@
 #pragma once
 
+#include "infra/config/secret-protection.hpp"
 #include "core/tools/permissions.hpp"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -124,10 +126,10 @@ struct Config {
 
     // Load config from ~/.orangutan/config.toml (if it exists)
     // Returns a Config with defaults if file is missing
-    static Config load();
+    static Config load(const ConfigSecretOptions &secret_options = {});
 
     // Load config from a specific path (for testing)
-    static Config load_from(const std::string &path);
+    static Config load_from(const std::string &path, const ConfigSecretOptions &secret_options = {});
 
     // Check if a tool is permitted by the allow/deny lists
     [[nodiscard]]
