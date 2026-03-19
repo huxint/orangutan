@@ -160,7 +160,7 @@ orangutan::ToolApprovalCallback make_cli_approval_callback(bool allow_prompting)
 
 bool validate_initial_options(const CliOptions &options) {
     if (options.serve_mode && (!options.message.empty() || options.event_stream || options.dump_session)) {
-        std::println(stderr, "Error: --serve cannot be combined with single-message or event-stream flags.");
+        std::println(std::cerr, "Error: --serve cannot be combined with single-message or event-stream flags.");
         return false;
     }
     return true;
@@ -169,7 +169,7 @@ bool validate_initial_options(const CliOptions &options) {
 std::optional<orangutan::AgentConfig> resolve_selected_agent(const orangutan::Config &cfg, const CliOptions &options) {
     const auto maybe_selected_agent = cfg.find_agent(options.cli_agent_key);
     if (!maybe_selected_agent.has_value()) {
-        std::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
+        std::println(std::cerr, "Error: unknown agent: {}", options.cli_agent_key);
         return std::nullopt;
     }
 
@@ -197,7 +197,7 @@ std::optional<std::string> resolve_agent_workspace(const orangutan::AgentConfig 
         }
         return workspace;
     } catch (const std::exception &e) {
-        std::println(stderr, "Error: {}", e.what());
+        std::println(std::cerr, "Error: {}", e.what());
         return std::nullopt;
     }
 }
@@ -207,7 +207,7 @@ std::unique_ptr<Store> create_store(const char *name) {
     try {
         return std::make_unique<Store>();
     } catch (const std::exception &e) {
-        std::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
+        std::println(std::cerr, "Error: failed to initialize {}: {}", name, e.what());
         return nullptr;
     }
 }
@@ -222,7 +222,7 @@ orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg
         agent_cfg_wrapper.api_key = agent_cfg.api_key;
         const auto resolved_agent_api_key = resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
         if (resolved_agent_api_key.empty()) {
-            std::println(stderr, "Error: API key required for agent '{}'.", agent_key);
+            std::println(std::cerr, "Error: API key required for agent '{}'.", agent_key);
             return std::nullopt;
         }
 
@@ -230,7 +230,7 @@ orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg
         try {
             resolved_workspace_root = orangutan::resolve_workspace_root(agent_cfg.workspace);
         } catch (const std::exception &e) {
-            std::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
+            std::println(std::cerr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
             return std::nullopt;
         }
 
@@ -293,8 +293,8 @@ std::unordered_map<std::string, std::string> build_qq_bot_agents(const orangutan
 
 bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &sessions, std::string &resume_session) {
     if (sessions.empty()) {
-        std::println(stderr, "Error: no saved sessions to resume.");
-        std::println(stderr, "Start a conversation first - sessions are auto-saved on exit.");
+        std::println(std::cerr, "Error: no saved sessions to resume.");
+        std::println(std::cerr, "Start a conversation first - sessions are auto-saved on exit.");
         return false;
     }
 
@@ -326,13 +326,13 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
     try {
         const auto idx = std::stoul(choice) - 1;
         if (idx >= sessions.size()) {
-            std::println(stderr, "Invalid selection.");
+            std::println(std::cerr, "Invalid selection.");
             return false;
         }
         resume_session = sessions[idx].id;
         return true;
     } catch (const std::exception &) {
-        std::println(stderr, "Invalid selection.");
+        std::println(std::cerr, "Invalid selection.");
         return false;
     }
 }
@@ -352,7 +352,7 @@ bool restore_requested_session(const CliOptions &options, orangutan::SessionStor
 
     try {
         if (!runtime_cfg.cli_memory_scope.empty() && !session_store.session_belongs_to_scope(resume_session, runtime_cfg.cli_memory_scope)) {
-            std::println(stderr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
+            std::println(std::cerr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
             return false;
         }
         auto messages = session_store.load(resume_session);
@@ -363,14 +363,14 @@ bool restore_requested_session(const CliOptions &options, orangutan::SessionStor
         }
         return true;
     } catch (const std::exception &) {
-        std::println(stderr, "Error: session not found: {}", resume_session);
+        std::println(std::cerr, "Error: session not found: {}", resume_session);
         auto sessions = session_store.list_sessions(runtime_cfg.cli_memory_scope);
         if (sessions.empty()) {
-            std::println(stderr, "No saved sessions available.");
+            std::println(std::cerr, "No saved sessions available.");
         } else {
-            std::println(stderr, "Available sessions:");
+            std::println(std::cerr, "Available sessions:");
             for (const auto &session : sessions) {
-                std::println(stderr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
+                std::println(std::cerr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
             }
         }
         return false;
@@ -391,22 +391,22 @@ std::string merge_stdin_message(std::string message) {
 
 bool validate_runtime_mode_options(const CliOptions &options, bool has_current_session) {
     if (options.serve_mode && !options.message.empty()) {
-        std::println(stderr, "Error: --serve cannot be combined with --message or piped stdin.");
+        std::println(std::cerr, "Error: --serve cannot be combined with --message or piped stdin.");
         return false;
     }
     if (options.event_stream && options.message.empty() && !options.dump_session) {
-        std::println(stderr, "Error: --event-stream requires --message or piped stdin.");
+        std::println(std::cerr, "Error: --event-stream requires --message or piped stdin.");
         return false;
     }
     if (!options.dump_session) {
         return true;
     }
     if (!options.event_stream) {
-        std::println(stderr, "Error: --dump-session requires --event-stream.");
+        std::println(std::cerr, "Error: --dump-session requires --event-stream.");
         return false;
     }
     if (!has_current_session) {
-        std::println(stderr, "Error: --dump-session requires --resume.");
+        std::println(std::cerr, "Error: --dump-session requires --resume.");
         return false;
     }
     return true;
@@ -417,7 +417,7 @@ int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::Messag
                    const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
                    orangutan::SubagentManager &subagent_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager) {
     if (!channel_manager.has_channels() && cfg.heartbeat_jobs.empty()) {
-        std::println(stderr, "Error: --serve requires at least one configured channel or heartbeat job.");
+        std::println(std::cerr, "Error: --serve requires at least one configured channel or heartbeat job.");
         return 1;
     }
 
@@ -486,7 +486,7 @@ int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::Messag
             message_queue.push(message);
         });
     } catch (const std::exception &e) {
-        std::println(stderr, "Error: failed to start configured channels: {}", e.what());
+        std::println(std::cerr, "Error: failed to start configured channels: {}", e.what());
         channel_manager.disconnect_all();
         return 1;
     }
@@ -538,8 +538,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     selected_agent_cfg.api_key = maybe_selected_agent->api_key;
     const auto api_key = resolve_api_key(options.api_key, selected_agent_cfg);
     if (api_key.empty()) {
-        std::println(stderr, "Error: API key required.");
-        std::println(stderr, "Set ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
+        std::println(std::cerr, "Error: API key required.");
+        std::println(std::cerr, "Set ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
         return 1;
     }
 

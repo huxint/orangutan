@@ -273,7 +273,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         try {
             agent.run(line);
         } catch (const std::exception &e) {
-            std::print(stderr, "Error: {}\n\n", e.what());
+            std::print(std::cerr, "Error: {}\n\n", e.what());
         }
     }
 
