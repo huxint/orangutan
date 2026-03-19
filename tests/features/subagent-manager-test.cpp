@@ -238,28 +238,28 @@ TEST_F(SubagentManagerTest, RealChildInheritsCallerApprovalCallback) {
 
     bool prompted = false;
     SubagentManager manager(run_store, SubagentExecutionEnvironment{
-                                          .agent_configs = &child_configs,
-                                          .session_store = &session_store,
-                                          .memory_store = nullptr,
-                                          .provider_factory =
-                                              [&](const SubagentChildRuntimeConfig &) {
-                                                  auto steps = std::vector<ScriptedProvider::Step>{
-                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
-                                                          return LLMResponse{
-                                                              .stop_reason = "tool_use",
-                                                              .content = {ToolUseBlock{.id = "child-shell", .name = "shell", .input = {{"command", "echo child"}}}},
-                                                          };
-                                                      },
-                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
-                                                          return LLMResponse{
-                                                              .stop_reason = "end_turn",
-                                                              .content = {TextBlock{.text = "child completed"}},
-                                                          };
-                                                      },
-                                                  };
-                                                  return std::make_unique<ScriptedProvider>(std::move(steps));
-                                              },
-                                      });
+                                           .agent_configs = &child_configs,
+                                           .session_store = &session_store,
+                                           .memory_store = nullptr,
+                                           .provider_factory =
+                                               [&](const SubagentChildRuntimeConfig &) {
+                                                   auto steps = std::vector<ScriptedProvider::Step>{
+                                                       [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                           return LLMResponse{
+                                                               .stop_reason = "tool_use",
+                                                               .content = {ToolUseBlock{.id = "child-shell", .name = "shell", .input = {{"command", "echo child"}}}},
+                                                           };
+                                                       },
+                                                       [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                           return LLMResponse{
+                                                               .stop_reason = "end_turn",
+                                                               .content = {TextBlock{.text = "child completed"}},
+                                                           };
+                                                       },
+                                                   };
+                                                   return std::make_unique<ScriptedProvider>(std::move(steps));
+                                               },
+                                       });
 
     auto caller = sample_caller_context(std::string{});
     caller.session_id = std::nullopt;
@@ -306,39 +306,39 @@ TEST_F(SubagentManagerTest, RealChildUsesConfiguredHashlineEditMode) {
                                    });
 
     SubagentManager manager(run_store, SubagentExecutionEnvironment{
-                                          .agent_configs = &child_configs,
-                                          .session_store = &session_store,
-                                          .memory_store = nullptr,
-                                          .provider_factory =
-                                              [&](const SubagentChildRuntimeConfig &) {
-                                                  auto steps = std::vector<ScriptedProvider::Step>{
-                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
-                                                          const auto *edit_tool = find_tool(tools, "edit");
-                                                          EXPECT_NE(edit_tool, nullptr);
-                                                          if (edit_tool != nullptr) {
-                                                              EXPECT_NE(edit_tool->description.find("hash"), std::string::npos);
-                                                              EXPECT_TRUE(edit_tool->input_schema.contains("properties"));
-                                                              if (edit_tool->input_schema.contains("properties")) {
-                                                                  EXPECT_TRUE(edit_tool->input_schema["properties"].contains("edits"));
-                                                                  EXPECT_FALSE(edit_tool->input_schema["properties"].contains("patch"));
-                                                              }
-                                                          }
+                                           .agent_configs = &child_configs,
+                                           .session_store = &session_store,
+                                           .memory_store = nullptr,
+                                           .provider_factory =
+                                               [&](const SubagentChildRuntimeConfig &) {
+                                                   auto steps = std::vector<ScriptedProvider::Step>{
+                                                       [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
+                                                           const auto *edit_tool = find_tool(tools, "edit");
+                                                           EXPECT_NE(edit_tool, nullptr);
+                                                           if (edit_tool != nullptr) {
+                                                               EXPECT_NE(edit_tool->description.find("hash"), std::string::npos);
+                                                               EXPECT_TRUE(edit_tool->input_schema.contains("properties"));
+                                                               if (edit_tool->input_schema.contains("properties")) {
+                                                                   EXPECT_TRUE(edit_tool->input_schema["properties"].contains("edits"));
+                                                                   EXPECT_FALSE(edit_tool->input_schema["properties"].contains("patch"));
+                                                               }
+                                                           }
 
-                                                          const auto *read_tool = find_tool(tools, "read");
-                                                          EXPECT_NE(read_tool, nullptr);
-                                                          if (read_tool != nullptr) {
-                                                              EXPECT_NE(read_tool->description.find("line numbers"), std::string::npos);
-                                                          }
+                                                           const auto *read_tool = find_tool(tools, "read");
+                                                           EXPECT_NE(read_tool, nullptr);
+                                                           if (read_tool != nullptr) {
+                                                               EXPECT_NE(read_tool->description.find("line numbers"), std::string::npos);
+                                                           }
 
-                                                          return LLMResponse{
-                                                              .stop_reason = "end_turn",
-                                                              .content = {TextBlock{.text = "child completed"}},
-                                                          };
-                                                      },
-                                                  };
-                                                  return std::make_unique<ScriptedProvider>(std::move(steps));
-                                              },
-                                      });
+                                                           return LLMResponse{
+                                                               .stop_reason = "end_turn",
+                                                               .content = {TextBlock{.text = "child completed"}},
+                                                           };
+                                                       },
+                                                   };
+                                                   return std::make_unique<ScriptedProvider>(std::move(steps));
+                                               },
+                                       });
 
     auto caller = sample_caller_context(std::string{});
     caller.session_id = std::nullopt;

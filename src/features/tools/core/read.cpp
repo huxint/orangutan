@@ -128,8 +128,7 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
 
 } // namespace
 
-void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
-                        std::string_view edit_mode) {
+void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
     registry.register_tool(
         {.definition =
              {.name = "read",

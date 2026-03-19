@@ -14,7 +14,6 @@
 
 namespace orangutan {
 
-
 struct HeartbeatJob {
     std::string name;
     CronExpr cron_expr;

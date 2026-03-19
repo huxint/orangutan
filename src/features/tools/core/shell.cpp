@@ -110,12 +110,13 @@ std::string run_shell(const json &input, const std::string &workspace, const Too
         spdlog::info("  [tool] shell background (cwd={}): {}", effective_working_dir, command);
     }
 
-    const auto summary = process_manager->start({
-        .command = sandboxed.command,
-        .working_dir = effective_working_dir,
-        .use_shell = true,
-    },
-                                               command);
+    const auto summary = process_manager->start(
+        {
+            .command = sandboxed.command,
+            .working_dir = effective_working_dir,
+            .use_shell = true,
+        },
+        command);
     auto payload = process_summary_json(summary);
     payload["message"] = "Process started in background. Use process_poll, process_list, or process_kill to manage it.";
     return payload.dump(2);
@@ -164,23 +165,25 @@ void register_process_tools(ToolRegistry &registry, const std::shared_ptr<Backgr
                                 return list_processes(process_manager);
                             }});
 
-    registry.register_tool({.definition = {.name = "process_poll",
-                                           .description = "Get the latest status and captured output for a background process.",
-                                           .input_schema = {{"type", "object"},
-                                                            {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
-                                                            {"required", json::array({"process_id"})}}},
-                            .execute = [process_manager](const json &input) {
-                                return poll_process(input, process_manager);
-                            }});
+    registry.register_tool(
+        {.definition = {.name = "process_poll",
+                        .description = "Get the latest status and captured output for a background process.",
+                        .input_schema = {{"type", "object"},
+                                         {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
+                                         {"required", json::array({"process_id"})}}},
+         .execute = [process_manager](const json &input) {
+             return poll_process(input, process_manager);
+         }});
 
-    registry.register_tool({.definition = {.name = "process_kill",
-                                           .description = "Stop a background process and return its latest status.",
-                                           .input_schema = {{"type", "object"},
-                                                            {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
-                                                            {"required", json::array({"process_id"})}}},
-                            .execute = [process_manager](const json &input) {
-                                return kill_process(input, process_manager);
-                            }});
+    registry.register_tool(
+        {.definition = {.name = "process_kill",
+                        .description = "Stop a background process and return its latest status.",
+                        .input_schema = {{"type", "object"},
+                                         {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
+                                         {"required", json::array({"process_id"})}}},
+         .execute = [process_manager](const json &input) {
+             return kill_process(input, process_manager);
+         }});
 }
 
 } // namespace orangutan

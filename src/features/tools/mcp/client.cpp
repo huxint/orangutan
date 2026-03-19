@@ -181,14 +181,13 @@ void McpClient::connect() {
     spawn_process();
 
     try {
-        const auto result = send_request(
-            "initialize",
-            {
-                {"protocolVersion", protocol_version},
-                {"capabilities", json::object()},
-                {"clientInfo", {{"name", "orangutan"}, {"version", "0.1.0"}}},
-            },
-            initialize_timeout);
+        const auto result = send_request("initialize",
+                                         {
+                                             {"protocolVersion", protocol_version},
+                                             {"capabilities", json::object()},
+                                             {"clientInfo", {{"name", "orangutan"}, {"version", "0.1.0"}}},
+                                         },
+                                         initialize_timeout);
 
         const auto server_protocol = result.value("protocolVersion", std::string{});
         if (!server_protocol.empty() && server_protocol != protocol_version) {

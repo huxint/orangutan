@@ -16,9 +16,12 @@ namespace orangutan {
 using EventNameEntry = std::pair<HookEvent, std::string_view>;
 
 constexpr std::array<EventNameEntry, 6> event_names = {{
-    {HookEvent::before_tool_call, "before_tool_call"}, {HookEvent::after_tool_call, "after_tool_call"},
-    {HookEvent::message_received, "message_received"}, {HookEvent::message_sending, "message_sending"},
-    {HookEvent::session_start, "session_start"},       {HookEvent::session_end, "session_end"},
+    {HookEvent::before_tool_call, "before_tool_call"},
+    {HookEvent::after_tool_call, "after_tool_call"},
+    {HookEvent::message_received, "message_received"},
+    {HookEvent::message_sending, "message_sending"},
+    {HookEvent::session_start, "session_start"},
+    {HookEvent::session_end, "session_end"},
 }};
 
 std::string hook_event_to_string(HookEvent event) {
@@ -88,7 +91,9 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
                 });
             }
 
-            std::ranges::sort(event_hooks, [](const HookDef &a, const HookDef &b) { return a.filename < b.filename; });
+            std::ranges::sort(event_hooks, [](const HookDef &a, const HookDef &b) {
+                return a.filename < b.filename;
+            });
 
             auto &existing = hooks_[*event];
             for (const auto &hook : event_hooks) {

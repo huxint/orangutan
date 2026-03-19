@@ -1623,8 +1623,14 @@ protected:
         std::filesystem::remove_all(workspace_);
     }
 
-    [[nodiscard]] const std::filesystem::path &workspace() const { return workspace_; }
-    [[nodiscard]] ToolRegistry &registry() { return registry_; }
+    [[nodiscard]]
+    const std::filesystem::path &workspace() const {
+        return workspace_;
+    }
+    [[nodiscard]]
+    ToolRegistry &registry() {
+        return registry_;
+    }
 
 private:
     std::unique_ptr<ScopedEnvVar> tmp_env_;

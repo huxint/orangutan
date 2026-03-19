@@ -87,11 +87,11 @@ TEST(ScriptToolTest, SubstituteMultipleParams) {
 TEST(ScriptToolTest, RegisterUserScriptToolsLetsConfigChooseToolNames) {
     ToolRegistry registry;
     std::vector<ScriptToolConfig> tools = {{
-        .name = "ls",
-        .description = "User-selected ls",
-        .command = "exa -la ${path}",
-        .input_schema = {{"path", "string"}},
-    },
+                                               .name = "ls",
+                                               .description = "User-selected ls",
+                                               .command = "exa -la ${path}",
+                                               .input_schema = {{"path", "string"}},
+                                           },
                                            {
                                                .name = "grep",
                                                .description = "User-selected grep",

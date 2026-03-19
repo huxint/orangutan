@@ -3,9 +3,8 @@
 
 namespace orangutan {
 
-void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace,
-                            const ToolRuntimeContext *tool_context, const ToolPermissionSettings *permissions,
-                            std::string_view edit_mode) {
+void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
+                            const ToolPermissionSettings *permissions, std::string_view edit_mode) {
     register_builtin_core_tools(registry, workspace, permissions, edit_mode);
     register_builtin_subagent_tools(registry, tool_context);
     register_cron_tool(registry, tool_context);

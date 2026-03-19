@@ -145,8 +145,8 @@ std::string render_saved_sessions(SessionStore &store, const std::string &scope_
 }
 
 RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
-                                            const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models,
-                                            const std::string &scope_key) {
+                                             const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models,
+                                             const std::string &scope_key) {
     RuntimeStatusSnapshot status{
         .agent_key = agent_key,
         .provider_name = provider.name(),
@@ -206,8 +206,8 @@ std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
         out << "- scope: " << status.scope_key << '\n';
     }
     out << "- usage: llm_requests=" << status.provider_usage.logical_requests << ", attempts=" << status.provider_usage.attempt_count
-        << ", fallbacks=" << status.provider_usage.fallback_switches << ", failed_attempts=" << status.provider_usage.failed_attempts
-        << ", tool_calls=" << status.tool_call_count << ", tool_errors=" << status.tool_error_count << '\n';
+        << ", fallbacks=" << status.provider_usage.fallback_switches << ", failed_attempts=" << status.provider_usage.failed_attempts << ", tool_calls=" << status.tool_call_count
+        << ", tool_errors=" << status.tool_error_count << '\n';
     out << "- history: messages=" << status.history_messages << ", user=" << status.user_messages << ", assistant=" << status.assistant_messages << '\n';
     out << "- tools: registered=" << status.registered_tool_count;
     return out.str();

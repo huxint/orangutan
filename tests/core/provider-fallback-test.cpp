@@ -316,23 +316,22 @@ TEST(ProviderFallbackTest, LatePrimaryFailureStillFallsBackAfterAnotherRequestSw
     };
 
     std::atomic<size_t> fallback_attempts{0};
-    auto provider = create_provider_with_fallbacks(
-        "openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
-        [primary_state, &fallback_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
-            if (endpoint.model == "gpt-primary") {
-                return std::make_unique<DelayedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
-            }
+    auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
+                                                   [primary_state, &fallback_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
+                                                       if (endpoint.model == "gpt-primary") {
+                                                           return std::make_unique<DelayedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
+                                                       }
 
-            return std::make_unique<StubProvider>(
-                endpoint.provider_name, endpoint.model,
-                [&fallback_attempts]() -> LLMResponse {
-                    ++fallback_attempts;
-                    return text_response("fallback response");
-                },
-                [](const StreamCallback &) -> LLMResponse {
-                    throw std::runtime_error("stream should not be used");
-                });
-        });
+                                                       return std::make_unique<StubProvider>(
+                                                           endpoint.provider_name, endpoint.model,
+                                                           [&fallback_attempts]() -> LLMResponse {
+                                                               ++fallback_attempts;
+                                                               return text_response("fallback response");
+                                                           },
+                                                           [](const StreamCallback &) -> LLMResponse {
+                                                               throw std::runtime_error("stream should not be used");
+                                                           });
+                                                   });
 
     auto first_result = std::async(std::launch::async, [&provider] {
         return provider->chat("", {}, {}, 1024);
@@ -520,37 +519,36 @@ TEST(ProviderFallbackTest, LatePrimaryFailureKeepsItsOwnFallbackOrder) {
     std::atomic<size_t> fallback_a_attempts{0};
     std::atomic<size_t> fallback_b_attempts{0};
 
-    auto provider =
-        create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback-a", "gpt-fallback-b"},
-                                       [primary_state, &fallback_a_attempts, &fallback_b_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
-                                           if (endpoint.model == "gpt-primary") {
-                                               return std::make_unique<OrderedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
-                                           }
-
-                                           if (endpoint.model == "gpt-fallback-a") {
-                                               return std::make_unique<StubProvider>(
-                                                   endpoint.provider_name, endpoint.model,
-                                                   [&fallback_a_attempts]() -> LLMResponse {
-                                                       if (++fallback_a_attempts == 1) {
-                                                           throw std::runtime_error("fallback-a unavailable");
+    auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback-a", "gpt-fallback-b"},
+                                                   [primary_state, &fallback_a_attempts, &fallback_b_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
+                                                       if (endpoint.model == "gpt-primary") {
+                                                           return std::make_unique<OrderedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
                                                        }
-                                                       return text_response("fallback-a");
-                                                   },
-                                                   [](const StreamCallback &) -> LLMResponse {
-                                                       throw std::runtime_error("stream should not be used");
-                                                   });
-                                           }
 
-                                           return std::make_unique<StubProvider>(
-                                               endpoint.provider_name, endpoint.model,
-                                               [&fallback_b_attempts]() -> LLMResponse {
-                                                   ++fallback_b_attempts;
-                                                   return text_response("fallback-b");
-                                               },
-                                               [](const StreamCallback &) -> LLMResponse {
-                                                   throw std::runtime_error("stream should not be used");
-                                               });
-                                       });
+                                                       if (endpoint.model == "gpt-fallback-a") {
+                                                           return std::make_unique<StubProvider>(
+                                                               endpoint.provider_name, endpoint.model,
+                                                               [&fallback_a_attempts]() -> LLMResponse {
+                                                                   if (++fallback_a_attempts == 1) {
+                                                                       throw std::runtime_error("fallback-a unavailable");
+                                                                   }
+                                                                   return text_response("fallback-a");
+                                                               },
+                                                               [](const StreamCallback &) -> LLMResponse {
+                                                                   throw std::runtime_error("stream should not be used");
+                                                               });
+                                                       }
+
+                                                       return std::make_unique<StubProvider>(
+                                                           endpoint.provider_name, endpoint.model,
+                                                           [&fallback_b_attempts]() -> LLMResponse {
+                                                               ++fallback_b_attempts;
+                                                               return text_response("fallback-b");
+                                                           },
+                                                           [](const StreamCallback &) -> LLMResponse {
+                                                               throw std::runtime_error("stream should not be used");
+                                                           });
+                                                   });
 
     auto first_result = std::async(std::launch::async, [&provider] {
         return provider->chat("", {}, {}, 1024);

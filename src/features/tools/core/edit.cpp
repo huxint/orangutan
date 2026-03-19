@@ -327,8 +327,7 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
         write_lines(ofs, result.lines, had_trailing_newline);
     }
 
-    std::string summary = "Applied " + std::to_string(result.edits_applied) +
-                           (result.edits_applied == 1 ? " edit" : " edits") + " to " + path_str;
+    std::string summary = "Applied " + std::to_string(result.edits_applied) + (result.edits_applied == 1 ? " edit" : " edits") + " to " + path_str;
     if (!result.warnings.empty()) {
         summary += "\nWarnings: " + result.warnings;
     }
@@ -359,54 +358,52 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
 
 } // namespace
 
-void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
-                        std::string_view edit_mode) {
+void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
     if (edit_mode == "hashline") {
-        registry.register_tool(
-            {.definition = {.name = "edit",
-                            .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
-                                           "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
-                                           "\n"
-                                           "Operations:\n"
-                                           "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
-                                           "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
-                                           "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
-                                           "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
-                                           "\n"
-                                           "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
-                            .input_schema = {{"type", "object"},
-                                             {"properties",
-                                              {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
-                                               {"edits",
-                                                {{"type", "array"},
-                                                 {"items",
-                                                  {{"type", "object"},
-                                                   {"properties",
-                                                    {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
-                                                     {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
-                                                     {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
-                                                     {"content",
-                                                      {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
-                                                       {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
-                                                   {"required", json::array({"op"})}}}}}}},
-                                             {"required", json::array({"path", "edits"})}}},
-             .execute = [workspace_root](const json &input) {
-                 return execute_hashline_edit(input, workspace_root);
-             }});
+        registry.register_tool({.definition = {.name = "edit",
+                                               .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
+                                                              "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
+                                                              "\n"
+                                                              "Operations:\n"
+                                                              "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
+                                                              "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
+                                                              "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
+                                                              "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
+                                                              "\n"
+                                                              "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
+                                               .input_schema = {{"type", "object"},
+                                                                {"properties",
+                                                                 {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
+                                                                  {"edits",
+                                                                   {{"type", "array"},
+                                                                    {"items",
+                                                                     {{"type", "object"},
+                                                                      {"properties",
+                                                                       {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
+                                                                        {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
+                                                                        {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
+                                                                        {"content",
+                                                                         {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
+                                                                          {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
+                                                                      {"required", json::array({"op"})}}}}}}},
+                                                                {"required", json::array({"path", "edits"})}}},
+                                .execute = [workspace_root](const json &input) {
+                                    return execute_hashline_edit(input, workspace_root);
+                                }});
     } else {
-        registry.register_tool(
-            {.definition = {.name = "edit",
-                            .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan configuration area. All hunks are validated before any file is written.",
-                            .input_schema = {{"type", "object"},
-                                             {"properties",
-                                              {{"patch",
-                                                {{"type", "string"},
-                                                 {"description",
-                                                  "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
-                                             {"required", json::array({"patch"})}}},
-             .execute = [workspace_root](const json &input) {
-                 return execute_edit_tool(input, workspace_root);
-             }});
+        registry.register_tool({.definition = {.name = "edit",
+                                               .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan "
+                                                              "configuration area. All hunks are validated before any file is written.",
+                                               .input_schema = {{"type", "object"},
+                                                                {"properties",
+                                                                 {{"patch",
+                                                                   {{"type", "string"},
+                                                                    {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
+                                                                                    "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
+                                                                {"required", json::array({"patch"})}}},
+                                .execute = [workspace_root](const json &input) {
+                                    return execute_edit_tool(input, workspace_root);
+                                }});
     }
 }
 

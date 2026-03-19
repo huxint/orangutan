@@ -75,8 +75,7 @@ std::optional<std::string> read_input_line() {
     return line;
 }
 
-void save_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key,
-                  HookManager *hook_manager) {
+void save_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key, HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
     if (!persist_session(agent, store, model, current_session_id, scope_key)) {
         std::print("💤 Nothing to save (empty history).\n\n");
@@ -175,8 +174,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/status") {
         std::print("{}\n\n",
-                   format_runtime_status(
-                       collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)));
+                   format_runtime_status(collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)));
         return true;
     }
     if (line == "/agents") {
@@ -198,8 +196,9 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
                 std::println("    source: {}", skill.source_path);
                 if (!skill.tools.empty()) {
                     std::print("    tools: ");
-                    auto joined_tools = skill.tools |
-                                        std::views::transform([](const std::string &tool) -> std::string_view { return tool; }) |
+                    auto joined_tools = skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
+                                            return tool;
+                                        }) |
                                         std::views::join_with(std::string_view{", "});
                     std::ranges::copy(joined_tools, std::ostreambuf_iterator<char>(std::cout));
                     std::println("");
@@ -235,8 +234,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
 } // namespace
 
 void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
-              const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key,
-              const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
+              const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const SkillLoader *skill_loader,
+              const ToolRegistry *tool_registry, HookManager *hook_manager) {
     std::println("Orangutan v0.1.0");
     std::print("Type /help for commands, Ctrl+D to quit\n\n");
 
@@ -254,9 +253,8 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         }
 
         bool quit = false;
-        if (line[0] == '/' &&
-            handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key, skill_loader,
-                                 tool_registry, hook_manager)) {
+        if (line[0] == '/' && handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key,
+                                                   skill_loader, tool_registry, hook_manager)) {
             if (quit) {
                 break;
             }

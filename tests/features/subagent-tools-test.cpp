@@ -138,12 +138,13 @@ TEST_F(SubagentToolsTest, SpawnRejectsAgentOutsideAllowlist) {
     const auto result = registry.execute(ToolUseBlock{
         .id = "spawn-reject",
         .name = "subagent_spawn",
-        .input = {
-            {"child_agent_key", "coder"},
-            {"child_scope_key", "scope:child"},
-            {"child_session_id", child_session_id},
-            {"task_summary", "Investigate failing parser tests"},
-        },
+        .input =
+            {
+                {"child_agent_key", "coder"},
+                {"child_scope_key", "scope:child"},
+                {"child_session_id", child_session_id},
+                {"task_summary", "Investigate failing parser tests"},
+            },
     });
 
     const auto payload = parse_tool_json(result);
@@ -171,12 +172,13 @@ TEST_F(SubagentToolsTest, StatusAndWaitReturnStructuredJsonResponses) {
     const auto spawn_result = registry.execute(ToolUseBlock{
         .id = "spawn-ok",
         .name = "subagent_spawn",
-        .input = {
-            {"child_agent_key", "coder"},
-            {"child_scope_key", "scope:child"},
-            {"child_session_id", child_session_id},
-            {"task_summary", "Investigate failing parser tests"},
-        },
+        .input =
+            {
+                {"child_agent_key", "coder"},
+                {"child_scope_key", "scope:child"},
+                {"child_session_id", child_session_id},
+                {"task_summary", "Investigate failing parser tests"},
+            },
     });
     const auto spawn_payload = parse_tool_json(spawn_result);
     ASSERT_TRUE(spawn_payload.at("accepted").get<bool>());
@@ -197,10 +199,11 @@ TEST_F(SubagentToolsTest, StatusAndWaitReturnStructuredJsonResponses) {
     const auto wait_result = registry.execute(ToolUseBlock{
         .id = "wait-ok",
         .name = "subagent_wait",
-        .input = {
-            {"run_id", run_id},
-            {"timeout_ms", 1000},
-        },
+        .input =
+            {
+                {"run_id", run_id},
+                {"timeout_ms", 1000},
+            },
     });
     const auto wait_payload = parse_tool_json(wait_result);
     EXPECT_EQ(wait_payload.at("state").get<std::string>(), "completed");
@@ -229,12 +232,13 @@ TEST_F(SubagentToolsTest, StatusAndWaitHideRunsFromOtherRuntimes) {
     const auto spawn_result = parent_registry.execute(ToolUseBlock{
         .id = "spawn-owner",
         .name = "subagent_spawn",
-        .input = {
-            {"child_agent_key", "coder"},
-            {"child_scope_key", "scope:child"},
-            {"child_session_id", child_session_id},
-            {"task_summary", "Investigate failing parser tests"},
-        },
+        .input =
+            {
+                {"child_agent_key", "coder"},
+                {"child_scope_key", "scope:child"},
+                {"child_session_id", child_session_id},
+                {"task_summary", "Investigate failing parser tests"},
+            },
     });
     const auto spawn_payload = parse_tool_json(spawn_result);
     ASSERT_TRUE(spawn_payload.at("accepted").get<bool>());
@@ -258,10 +262,11 @@ TEST_F(SubagentToolsTest, StatusAndWaitHideRunsFromOtherRuntimes) {
     const auto wait_result = other_registry.execute(ToolUseBlock{
         .id = "wait-other",
         .name = "subagent_wait",
-        .input = {
-            {"run_id", run_id},
-            {"timeout_ms", 10},
-        },
+        .input =
+            {
+                {"run_id", run_id},
+                {"timeout_ms", 10},
+            },
     });
     const auto wait_payload = parse_tool_json(wait_result);
     EXPECT_EQ(wait_payload.at("state").get<std::string>(), "not_found");

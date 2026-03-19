@@ -124,10 +124,10 @@ TEST_F(SessionWorkflowTest, StartNewSessionWritesMirrorArtifactsWhenEnabled) {
     std::filesystem::remove_all(workspace);
     std::filesystem::create_directories(workspace);
     RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{
-                                       .scope = "scope:test",
-                                       .workspace = workspace.string(),
-                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                                   });
+                                                   .scope = "scope:test",
+                                                   .workspace = workspace.string(),
+                                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                               });
     SessionStore session_store(session_db_path().string());
     AgentLoop loop(provider, tools, {}, &runtime_memory);
 

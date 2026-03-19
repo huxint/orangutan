@@ -208,8 +208,8 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
     if (memory_store != nullptr) {
         runtime->memory = std::make_unique<RuntimeMemory>(*memory_store, make_runtime_memory_context(identity, cfg.memory));
     }
-    auto tool_bootstrap = register_runtime_tools(runtime->tools, runtime->memory.get(), runtime->workspace, &runtime->tool_context, custom_tools, mcp_servers,
-                                                 &cfg.permissions, {}, cfg.edit_mode);
+    auto tool_bootstrap =
+        register_runtime_tools(runtime->tools, runtime->memory.get(), runtime->workspace, &runtime->tool_context, custom_tools, mcp_servers, &cfg.permissions, {}, cfg.edit_mode);
     runtime->mcp_manager = std::move(tool_bootstrap.mcp_manager);
     auto system_prompt = append_subagent_prompt_guidance(cfg.system_prompt, cfg.allowed_child_agents, false);
     runtime->agent = std::make_unique<AgentLoop>(*runtime->provider, runtime->tools, system_prompt, runtime->memory.get(), skills_prompt, hook_manager);

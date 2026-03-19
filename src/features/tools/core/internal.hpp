@@ -116,10 +116,8 @@ inline std::filesystem::path resolve_tool_working_dir(const std::string &working
 void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
                          const std::shared_ptr<BackgroundProcessManager> &process_manager);
 void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
-void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
-                        std::string_view edit_mode = "search_replace");
+void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
-void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root,
-                        std::string_view edit_mode = "search_replace");
+void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan

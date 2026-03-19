@@ -1,7 +1,6 @@
 #include "features/memory/memory-extract.hpp"
 #include "features/memory/memory-search.hpp"
 
-
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -93,8 +92,7 @@ size_t utf8_char_len(std::string_view input, size_t pos) {
 
 // Extract up to max_codepoints complete UTF-8 code points starting at byte offset,
 // stopping at whitespace or any of the given terminator strings.
-std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints,
-                             std::span<const std::string_view> terminators) {
+std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints, std::span<const std::string_view> terminators) {
     std::string result;
     size_t pos = start;
     size_t count = 0;
@@ -132,8 +130,7 @@ std::string extract_utf8_run(std::string_view input, size_t start, size_t max_co
 
 // Like extract_utf8_run but allows spaces within (for sentence-level captures).
 // Stops at newline or any terminator.
-std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints,
-                                  std::span<const std::string_view> terminators) {
+std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints, std::span<const std::string_view> terminators) {
     std::string result;
     size_t pos = start;
     size_t count = 0;
@@ -273,8 +270,7 @@ bool should_attempt_auto_capture(const std::string &text) {
 
     const bool looks_question = trimmed.contains('?') || trimmed.contains("？");
     return !(looks_question &&
-             (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") ||
-              trimmed.contains("记忆")));
+             (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") || trimmed.contains("记忆")));
 }
 std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     std::vector<AutoCandidate> candidates;
@@ -308,9 +304,9 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     const auto push_chinese_name = [&candidates, &trimmed]() {
         const auto pos = find_after_any(trimmed, {
-            "\xe6\x88\x91\xe5\x8f\xab", // 我叫
-            "\xe6\x88\x91\xe6\x98\xaf", // 我是
-        });
+                                                     "\xe6\x88\x91\xe5\x8f\xab", // 我叫
+                                                     "\xe6\x88\x91\xe6\x98\xaf", // 我是
+                                                 });
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -324,9 +320,9 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     const auto push_chinese_project = [&candidates, &trimmed]() {
         const auto pos = find_after_any(trimmed, {
-            "\xe6\x88\x91\xe4\xbb\xac\xe5\x9c\xa8\xe5\x81\x9a", // 我们在做
-            "\xe5\xbd\x93\xe5\x89\x8d\xe9\xa1\xb9\xe7\x9b\xae\xe6\x98\xaf", // 当前项目是
-        });
+                                                     "\xe6\x88\x91\xe4\xbb\xac\xe5\x9c\xa8\xe5\x81\x9a",             // 我们在做
+                                                     "\xe5\xbd\x93\xe5\x89\x8d\xe9\xa1\xb9\xe7\x9b\xae\xe6\x98\xaf", // 当前项目是
+                                                 });
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -340,9 +336,9 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     const auto push_chinese_prefer = [&candidates, &trimmed]() {
         const auto pos = find_after_any(trimmed, {
-            "\xe6\x88\x91\xe6\x9b\xb4\xe5\x96\x9c\xe6\xac\xa2", // 我更喜欢
-            "\xe6\x88\x91\xe5\x96\x9c\xe6\xac\xa2",             // 我喜欢
-        });
+                                                     "\xe6\x88\x91\xe6\x9b\xb4\xe5\x96\x9c\xe6\xac\xa2", // 我更喜欢
+                                                     "\xe6\x88\x91\xe5\x96\x9c\xe6\xac\xa2",             // 我喜欢
+                                                 });
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -356,9 +352,9 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     const auto push_chinese_remember = [&candidates, &trimmed]() {
         auto pos = find_after_any(trimmed, {
-            "\xe8\xaf\xb7\xe8\xae\xb0\xe4\xbd\x8f", // 请记住
-            "\xe8\xae\xb0\xe4\xbd\x8f",             // 记住
-        });
+                                               "\xe8\xaf\xb7\xe8\xae\xb0\xe4\xbd\x8f", // 请记住
+                                               "\xe8\xae\xb0\xe4\xbd\x8f",             // 记住
+                                           });
         if (pos == std::string_view::npos) {
             return false;
         }

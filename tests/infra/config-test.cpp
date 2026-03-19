@@ -251,7 +251,6 @@ journal_dir = "journals"
     EXPECT_EQ(cfg.memory.journal_dir, "journals");
 }
 
-
 TEST_F(ConfigFileTest, ParsesQqSection) {
     auto path = write_config(R"toml(
 [qq]

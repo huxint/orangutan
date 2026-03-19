@@ -78,9 +78,10 @@ TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     ToolRegistry tools;
     tools.register_tool({
         .definition = {.name = "shell", .description = "run shell", .input_schema = json::object()},
-        .execute = [](const json &) {
-            return std::string{"ok"};
-        },
+        .execute =
+            [](const json &) {
+                return std::string{"ok"};
+            },
     });
 
     AgentLoop agent(provider, tools);

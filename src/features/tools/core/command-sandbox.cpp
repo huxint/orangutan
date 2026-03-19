@@ -106,8 +106,7 @@ SandboxedCommand prepare_isolated_command(const std::string &command, const std:
 
 } // namespace
 
-SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir,
-                                           ToolSandboxMode sandbox_mode) {
+SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, ToolSandboxMode sandbox_mode) {
     switch (sandbox_mode) {
         case ToolSandboxMode::disabled:
             return {

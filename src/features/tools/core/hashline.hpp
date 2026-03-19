@@ -29,8 +29,8 @@ enum class HashlineEditOp {
 
 struct HashlineEdit {
     HashlineEditOp op;
-    std::string anchor;                // "LINE#HASH" -- optional for insert_after/insert_before
-    std::string end_anchor;            // optional, for range operations
+    std::string anchor;     // "LINE#HASH" -- optional for insert_after/insert_before
+    std::string end_anchor; // optional, for range operations
     std::vector<std::string> content;
 };
 
@@ -56,12 +56,10 @@ Anchor parse_anchor(std::string_view anchor_str);
 
 // Validate an anchor against a vector of lines.
 // Returns std::nullopt if valid, or a HashMismatch describing the problem.
-std::optional<HashMismatch> validate_anchor(const Anchor &anchor,
-                                             const std::vector<std::string> &lines);
+std::optional<HashMismatch> validate_anchor(const Anchor &anchor, const std::vector<std::string> &lines);
 
 // Apply a batch of hashline edits to a vector of lines.
 // Returns a result with the modified lines or an error description.
-HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
-                                         const std::vector<HashlineEdit> &edits);
+HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, const std::vector<HashlineEdit> &edits);
 
 } // namespace orangutan

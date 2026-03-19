@@ -138,8 +138,7 @@ protected:
         const auto destination = hook_root() / relative_path;
         std::filesystem::create_directories(destination.parent_path());
         std::filesystem::copy_file(fixture_root() / relative_path, destination, std::filesystem::copy_options::overwrite_existing);
-        std::filesystem::permissions(destination,
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+        std::filesystem::permissions(destination, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
                                      std::filesystem::perm_options::replace);
     }
 
@@ -149,8 +148,7 @@ protected:
         std::ofstream out(destination);
         out << body;
         out.close();
-        std::filesystem::permissions(destination,
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+        std::filesystem::permissions(destination, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
                                      std::filesystem::perm_options::replace);
     }
 

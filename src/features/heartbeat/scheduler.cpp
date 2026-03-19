@@ -6,7 +6,6 @@
 
 namespace orangutan {
 
-
 HeartbeatScheduler::HeartbeatScheduler(JobCallback callback)
 : callback_(std::move(callback)) {}
 

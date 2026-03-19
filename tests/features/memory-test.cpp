@@ -487,7 +487,6 @@ TEST_F(MemoryStoreTest, AutoCaptureEmojiProducesValidUtf8) {
     });
 }
 
-
 TEST_F(MemoryStoreTest, StatsExposeJournalEntriesSeparately) {
     MemoryStore store(db_path().string());
     store.remember("project.current", "orangutan memory refactor", "project", {}, "session:distilled", 0.9);
@@ -505,10 +504,10 @@ TEST_F(MemoryStoreTest, RuntimeMemoryRefreshesManagedSnapshotForDurableMemories)
 
     MemoryStore store(db_path().string());
     RuntimeMemory runtime(store, RuntimeMemoryContext{
-                                   .scope = "scope:test",
-                                   .workspace = workspace.string(),
-                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                               });
+                                     .scope = "scope:test",
+                                     .workspace = workspace.string(),
+                                     .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                 });
 
     runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
 
@@ -529,10 +528,10 @@ TEST_F(MemoryStoreTest, RuntimeMemoryDisabledMirrorDoesNotCreateSnapshot) {
 
     MemoryStore store(db_path().string());
     RuntimeMemory runtime(store, RuntimeMemoryContext{
-                                   .scope = "scope:test",
-                                   .workspace = workspace.string(),
-                                   .mirror = {.enabled = false, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                               });
+                                     .scope = "scope:test",
+                                     .workspace = workspace.string(),
+                                     .mirror = {.enabled = false, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                 });
 
     runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
     EXPECT_FALSE(std::filesystem::exists(workspace / "MEMORY.md"));
@@ -553,10 +552,10 @@ TEST_F(MemoryStoreTest, RuntimeMemorySkipsMalformedManagedSection) {
 
     MemoryStore store(db_path().string());
     RuntimeMemory runtime(store, RuntimeMemoryContext{
-                                   .scope = "scope:test",
-                                   .workspace = workspace.string(),
-                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                               });
+                                     .scope = "scope:test",
+                                     .workspace = workspace.string(),
+                                     .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                 });
     runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
 
     const auto refresh = runtime.refresh_mirror();
@@ -572,12 +571,11 @@ TEST_F(MemoryStoreTest, RuntimeMemorySkipsRefreshWhenManagedMarkersAreDuplicated
     std::filesystem::create_directories(workspace);
     const auto snapshot = workspace / "MEMORY.md";
 
-    const std::string original =
-        "User notes\n"
-        "<!-- ORANGUTAN:MEMORY:BEGIN -->\n"
-        "old generated block\n"
-        "<!-- ORANGUTAN:MEMORY:END -->\n"
-        "stray marker <!-- ORANGUTAN:MEMORY:BEGIN -->\n";
+    const std::string original = "User notes\n"
+                                 "<!-- ORANGUTAN:MEMORY:BEGIN -->\n"
+                                 "old generated block\n"
+                                 "<!-- ORANGUTAN:MEMORY:END -->\n"
+                                 "stray marker <!-- ORANGUTAN:MEMORY:BEGIN -->\n";
     {
         std::ofstream out(snapshot);
         out << original;
@@ -585,10 +583,10 @@ TEST_F(MemoryStoreTest, RuntimeMemorySkipsRefreshWhenManagedMarkersAreDuplicated
 
     MemoryStore store(db_path().string());
     RuntimeMemory runtime(store, RuntimeMemoryContext{
-                                   .scope = "scope:test",
-                                   .workspace = workspace.string(),
-                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                               });
+                                     .scope = "scope:test",
+                                     .workspace = workspace.string(),
+                                     .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                 });
     runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
 
     const auto refresh = runtime.refresh_mirror();
@@ -605,10 +603,10 @@ TEST_F(MemoryStoreTest, RuntimeMemoryStoresJournalSummaryAndAppendsDailyJournalF
 
     MemoryStore store(db_path().string());
     RuntimeMemory runtime(store, RuntimeMemoryContext{
-                                   .scope = "scope:test",
-                                   .workspace = workspace.string(),
-                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                               });
+                                     .scope = "scope:test",
+                                     .workspace = workspace.string(),
+                                     .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                 });
 
     const auto result = runtime.store_journal_summary("Reviewed ranking and mirror behavior.");
     EXPECT_TRUE(result.stored);
@@ -645,15 +643,15 @@ TEST_F(MemoryStoreTest, RuntimeMemoryMirrorRefreshIsScopeAware) {
 
     MemoryStore store(db_path().string());
     RuntimeMemory alpha(store, RuntimeMemoryContext{
-                              .scope = "scope:alpha",
-                              .workspace = workspace.string(),
-                              .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                          });
+                                   .scope = "scope:alpha",
+                                   .workspace = workspace.string(),
+                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                               });
     RuntimeMemory beta(store, RuntimeMemoryContext{
-                             .scope = "scope:beta",
-                             .workspace = workspace.string(),
-                             .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                         });
+                                  .scope = "scope:beta",
+                                  .workspace = workspace.string(),
+                                  .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                              });
 
     alpha.remember("project.current", "alpha memory", "project", "session:distilled", 0.9);
     beta.remember("project.current", "beta memory", "project", "session:distilled", 0.9);

@@ -66,8 +66,7 @@ protected:
 // Factory: create a provider by name
 std::unique_ptr<Provider> create_provider(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url);
 
-std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model,
-                                                         const std::string &base_url, const std::vector<std::string> &fallback_models,
-                                                         ProviderFactory factory = {});
+std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
+                                                         const std::vector<std::string> &fallback_models, ProviderFactory factory = {});
 
 } // namespace orangutan

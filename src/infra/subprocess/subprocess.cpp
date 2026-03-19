@@ -124,7 +124,8 @@ void signal_process(pid_t pid, int signal_number) {
     }
 }
 
-[[nodiscard]] std::string make_process_token() {
+[[nodiscard]]
+std::string make_process_token() {
     static std::atomic<uint64_t> counter{0};
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();

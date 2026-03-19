@@ -35,19 +35,19 @@ std::string write_file(const json &input, const std::filesystem::path &workspace
 } // namespace
 
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
-    registry.register_tool({.definition = {.name = "write",
-                                           .description = "Write content to a file inside the current workspace or ~/.orangutan configuration area, creating parent directories if needed.",
-                                           .input_schema = {{"type", "object"},
-                                                            {"properties",
-                                                             {{"path",
-                                                               {{"type", "string"},
-                                                                {"description",
-                                                                 "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
-                                                              {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
-                                                            {"required", json::array({"path", "content"})}}},
-                            .execute = [workspace_root](const json &input) {
-                                return write_file(input, workspace_root);
-                            }});
+    registry.register_tool(
+        {.definition = {.name = "write",
+                        .description = "Write content to a file inside the current workspace or ~/.orangutan configuration area, creating parent directories if needed.",
+                        .input_schema = {{"type", "object"},
+                                         {"properties",
+                                          {{"path",
+                                            {{"type", "string"},
+                                             {"description", "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
+                                           {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
+                                         {"required", json::array({"path", "content"})}}},
+         .execute = [workspace_root](const json &input) {
+             return write_file(input, workspace_root);
+         }});
 }
 
 } // namespace orangutan

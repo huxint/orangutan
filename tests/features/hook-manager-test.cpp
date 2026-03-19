@@ -22,8 +22,7 @@ void ensure_fixture_scripts_are_executable(const std::filesystem::path &root) {
         if (!entry.is_regular_file()) {
             continue;
         }
-        std::filesystem::permissions(entry.path(),
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+        std::filesystem::permissions(entry.path(), std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
                                      std::filesystem::perm_options::replace);
     }
 }
@@ -216,10 +215,8 @@ TEST(HookManagerTest, ShadowingPreservesDirectoryOrderForDistinctHooks) {
 
     std::filesystem::create_directories(global_dir / "after_tool_call");
     {
-        std::ofstream(global_dir / "after_tool_call" / "02-global.sh")
-            << "#!/bin/sh\nprintf 'global\\n' >> " << log_path.string() << "\nexit 0\n";
-        std::ofstream(global_dir / "after_tool_call" / "03-shared.sh")
-            << "#!/bin/sh\nprintf 'old-shared\\n' >> " << log_path.string() << "\nexit 0\n";
+        std::ofstream(global_dir / "after_tool_call" / "02-global.sh") << "#!/bin/sh\nprintf 'global\\n' >> " << log_path.string() << "\nexit 0\n";
+        std::ofstream(global_dir / "after_tool_call" / "03-shared.sh") << "#!/bin/sh\nprintf 'old-shared\\n' >> " << log_path.string() << "\nexit 0\n";
     }
     std::filesystem::permissions(global_dir / "after_tool_call" / "02-global.sh",
                                  std::filesystem::perms::owner_exec | std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
@@ -228,10 +225,8 @@ TEST(HookManagerTest, ShadowingPreservesDirectoryOrderForDistinctHooks) {
 
     std::filesystem::create_directories(workspace_dir / "after_tool_call");
     {
-        std::ofstream(workspace_dir / "after_tool_call" / "01-workspace.sh")
-            << "#!/bin/sh\nprintf 'workspace\\n' >> " << log_path.string() << "\nexit 0\n";
-        std::ofstream(workspace_dir / "after_tool_call" / "03-shared.sh")
-            << "#!/bin/sh\nprintf 'new-shared\\n' >> " << log_path.string() << "\nexit 0\n";
+        std::ofstream(workspace_dir / "after_tool_call" / "01-workspace.sh") << "#!/bin/sh\nprintf 'workspace\\n' >> " << log_path.string() << "\nexit 0\n";
+        std::ofstream(workspace_dir / "after_tool_call" / "03-shared.sh") << "#!/bin/sh\nprintf 'new-shared\\n' >> " << log_path.string() << "\nexit 0\n";
     }
     std::filesystem::permissions(workspace_dir / "after_tool_call" / "01-workspace.sh",
                                  std::filesystem::perms::owner_exec | std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);

@@ -56,8 +56,7 @@ private:
     DefinitionFilter definition_filter_;
 };
 
-void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
-                            const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr,
-                            std::string_view edit_mode = "search_replace");
+void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {}, const ToolRuntimeContext *tool_context = nullptr,
+                            const ToolPermissionSettings *permissions = nullptr, std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan

@@ -23,11 +23,9 @@ using orangutan::testing::ScopedEnvVar;
 
 namespace orangutan::app::detail {
 
-std::optional<std::unordered_map<std::string, AgentRuntimeConfig>>
-build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override);
+std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override);
 
-std::unordered_map<std::string, SubagentChildRuntimeConfig>
-build_subagent_child_runtime_configs(const std::unordered_map<std::string, AgentRuntimeConfig> &agent_runtime_configs);
+std::unordered_map<std::string, SubagentChildRuntimeConfig> build_subagent_child_runtime_configs(const std::unordered_map<std::string, AgentRuntimeConfig> &agent_runtime_configs);
 
 } // namespace orangutan::app::detail
 
@@ -156,12 +154,7 @@ TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
         ::close(output_pipe[1]);
 
         std::vector<std::string> argv_storage{
-            "orangutan",
-            "--agent",
-            "default",
-            "--resume",
-            "--event-stream",
-            "--dump-session",
+            "orangutan", "--agent", "default", "--resume", "--event-stream", "--dump-session",
         };
         std::vector<char *> argv;
         argv.reserve(argv_storage.size() + 1);
@@ -189,14 +182,14 @@ TEST_F(BootstrapTest, BuildAgentRuntimeConfigsUsesPerAgentEditMode) {
                                       .edit_mode = "hashline",
                                   });
     cfg.agents.emplace("coder", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-coder",
-                                      .base_url = "https://example.test",
-                                      .api_key = "coder-key",
-                                      .system_prompt = "You are a coder agent.",
-                                      .workspace = workspace_root().string(),
-                                      .edit_mode = "search_replace",
-                                  });
+                                    .provider = "openai",
+                                    .model = "gpt-coder",
+                                    .base_url = "https://example.test",
+                                    .api_key = "coder-key",
+                                    .system_prompt = "You are a coder agent.",
+                                    .workspace = workspace_root().string(),
+                                    .edit_mode = "search_replace",
+                                });
 
     const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
     ASSERT_TRUE(runtime_configs.has_value());

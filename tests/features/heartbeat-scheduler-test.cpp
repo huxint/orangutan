@@ -27,7 +27,6 @@ void wait_until_not_near_minute_boundary() {
     }
 }
 
-
 std::filesystem::path make_test_path(std::string_view filename) {
     return std::filesystem::temp_directory_path() / filename;
 }
@@ -231,7 +230,6 @@ TEST(HeartbeatSchedulerTest, DestructorStopsScheduler) {
     }
     // If destructor doesn't stop, this would hang
 }
-
 
 // ── remove_job / has_job tests ──────────────────
 

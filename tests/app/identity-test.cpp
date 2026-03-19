@@ -116,7 +116,6 @@ TEST_F(RuntimeIdentityTest, ParentPromptGuidanceMentionsStatusPollingTool) {
     EXPECT_NE(prompt.find("poll later with `subagent_status`"), std::string::npos);
 }
 
-
 TEST_F(RuntimeIdentityTest, MakeRuntimeMemoryContextResolvesWorkspaceRelativeMirrorPaths) {
     Config::MemoryConfig memory_cfg;
     memory_cfg.mirror_enabled = true;

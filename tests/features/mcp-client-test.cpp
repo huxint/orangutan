@@ -12,8 +12,7 @@ namespace {
 
 std::string mock_server_path() {
     auto path = std::filesystem::path(SOURCE_DIR) / "tests" / "fixtures" / "mcp" / "mock-server.sh";
-    std::filesystem::permissions(path,
-                                 std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec,
+    std::filesystem::permissions(path, std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec,
                                  std::filesystem::perm_options::add);
     return path.string();
 }

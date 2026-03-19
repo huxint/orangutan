@@ -17,10 +17,9 @@ namespace orangutan {
 
 namespace {
 
-constexpr std::string_view default_system_prompt =
-    "You are Orangutan, a helpful AI assistant that can use tools to help the user. You run on the user's local machine.\n"
-    "When you need to run commands or read files, use the provided tools.\n"
-    "Be concise and helpful.";
+constexpr std::string_view default_system_prompt = "You are Orangutan, a helpful AI assistant that can use tools to help the user. You run on the user's local machine.\n"
+                                                   "When you need to run commands or read files, use the provided tools.\n"
+                                                   "Be concise and helpful.";
 
 void emit_history_checkpoint(const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint, const std::vector<Message> &history) {
     if (on_history_checkpoint) {
@@ -203,8 +202,7 @@ static ResponseParts split_response(const LLMResponse &response) {
     return parts;
 }
 
-AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt, RuntimeMemory *memory,
-                     std::string skills_prompt, HookManager *hook_manager)
+AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
 : provider_(provider),
   tools_(tools),
   system_prompt_(system_prompt.empty() ? std::string(default_system_prompt) : system_prompt),

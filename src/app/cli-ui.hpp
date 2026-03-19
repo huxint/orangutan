@@ -44,8 +44,8 @@ std::string render_history_summary(const AgentLoop &agent);
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key = {});
 [[nodiscard]]
 RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
-                                            const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models = {},
-                                            const std::string &scope_key = {});
+                                             const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models = {},
+                                             const std::string &scope_key = {});
 [[nodiscard]]
 std::string format_runtime_status(const RuntimeStatusSnapshot &status);
 

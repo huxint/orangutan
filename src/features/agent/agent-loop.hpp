@@ -30,8 +30,8 @@ public:
         std::string status;
     };
 
-    AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt = "", RuntimeMemory *memory = nullptr,
-              std::string skills_prompt = {}, HookManager *hook_manager = nullptr);
+    AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt = "", RuntimeMemory *memory = nullptr, std::string skills_prompt = {},
+              HookManager *hook_manager = nullptr);
 
     // Process one user message: run the ReAct loop until final text response
     std::string run(const std::string &user_input, const StreamCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},

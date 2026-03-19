@@ -24,8 +24,7 @@ void RuntimeMemory::remember(const std::string &key, const std::string &content,
     refresh_mirror_after_write();
 }
 
-void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, bool merge, const std::string &source,
-                           double importance) {
+void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, bool merge, const std::string &source, double importance) {
     store_.update(key, content, category, context_.scope, merge, source, importance);
     refresh_mirror_after_write();
 }
@@ -122,9 +121,10 @@ bool RuntimeMemory::query_requests_journal(std::string_view query) {
     const auto trimmed_query = memory_detail::trim_copy(std::string(query));
     const auto normalized = memory_detail::normalize_ascii(trimmed_query);
     const auto trimmed_view = std::string_view(trimmed_query);
-    return std::ranges::any_of(normalized_keywords, [&normalized](std::string_view keyword) {
-               return normalized.contains(keyword);
-           }) ||
+    return std::ranges::any_of(normalized_keywords,
+                               [&normalized](std::string_view keyword) {
+                                   return normalized.contains(keyword);
+                               }) ||
            std::ranges::any_of(raw_keywords, [trimmed_view](std::string_view keyword) {
                return trimmed_view.contains(keyword);
            });
