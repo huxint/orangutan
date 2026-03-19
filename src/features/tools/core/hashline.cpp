@@ -162,6 +162,43 @@ struct ResolvedEdit {
     std::vector<std::string> content;
 };
 
+struct RangeEditGroup {
+    size_t start_line;
+    size_t end_line;
+    std::vector<std::string> before_content;
+    std::vector<std::string> replacement_content;
+    std::vector<std::string> after_content;
+    size_t edit_count = 0;
+    size_t order = 0;
+};
+
+struct AnchorInsertGroup {
+    size_t line;
+    std::vector<std::string> before_content;
+    std::vector<std::string> after_content;
+    size_t edit_count = 0;
+    size_t order = 0;
+};
+
+enum class ApplyGroupKind {
+    range,
+    anchor,
+    append,
+    prepend,
+};
+
+struct ApplyGroup {
+    ApplyGroupKind kind;
+    size_t sort_line;
+    size_t start_line = 0;
+    size_t end_line = 0;
+    std::vector<std::string> before_content;
+    std::vector<std::string> replacement_content;
+    std::vector<std::string> after_content;
+    size_t edit_count = 0;
+    size_t order = 0;
+};
+
 // Format context lines around a mismatch for error messages.
 std::string format_mismatch_context(const std::vector<std::string> &lines,
                                      const HashMismatch &mm) {
@@ -192,17 +229,12 @@ std::pair<size_t, size_t> effective_range(const ResolvedEdit &e) {
     return {start, end};
 }
 
-int edit_priority(HashlineEditOp op) {
-    switch (op) {
-    case HashlineEditOp::replace:
-    case HashlineEditOp::del:
-        return 2;
-    case HashlineEditOp::insert_after:
-        return 1;
-    case HashlineEditOp::insert_before:
-        return 0;
-    }
-    return 0;
+bool is_range_edit(HashlineEditOp op) {
+    return op == HashlineEditOp::replace || op == HashlineEditOp::del;
+}
+
+void append_content(std::vector<std::string> &target, const std::vector<std::string> &content) {
+    target.insert(target.end(), content.begin(), content.end());
 }
 
 } // namespace
@@ -413,88 +445,192 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
     // Remove noop edits
     std::erase_if(resolved, [](const ResolvedEdit &re) { return re.index == SIZE_MAX; });
 
-    // Step 8: Sort edits bottom-up
-    std::sort(resolved.begin(), resolved.end(), [](const ResolvedEdit &a, const ResolvedEdit &b) {
-        // Anchor-less operations: EOF appends sort first (highest), BOF prepends sort last (lowest)
-        bool a_has_anchor = a.start_line.has_value();
-        bool b_has_anchor = b.start_line.has_value();
+    // Step 8: Group edits by the original lines they target so inserts stay attached to
+    // the intended anchors even when a same-line replace/delete also fires in this batch.
+    std::vector<RangeEditGroup> range_groups;
+    std::vector<AnchorInsertGroup> anchor_groups;
+    std::vector<ResolvedEdit> anchorless_edits;
+    range_groups.reserve(resolved.size());
+    anchor_groups.reserve(resolved.size());
+    anchorless_edits.reserve(resolved.size());
 
-        if (!a_has_anchor && !b_has_anchor) {
-            // Among anchor-less: EOF appends (insert_after) before BOF prepends (insert_before)
-            if (a.op != b.op) {
-                return a.op == HashlineEditOp::insert_after;
+    for (const auto &re : resolved) {
+        if (!is_range_edit(re.op)) {
+            continue;
+        }
+
+        auto start = *re.start_line;
+        auto end = re.end_line.value_or(start);
+        range_groups.push_back({
+            .start_line = start,
+            .end_line = end,
+            .before_content = {},
+            .replacement_content = re.op == HashlineEditOp::replace ? re.content : std::vector<std::string>{},
+            .after_content = {},
+            .edit_count = 1,
+            .order = re.index,
+        });
+    }
+
+    for (const auto &re : resolved) {
+        if (is_range_edit(re.op)) {
+            continue;
+        }
+
+        if (!re.start_line.has_value()) {
+            anchorless_edits.push_back(re);
+            continue;
+        }
+
+        const auto line = *re.start_line;
+        bool attached_to_range = false;
+        for (auto &group : range_groups) {
+            if (re.op == HashlineEditOp::insert_before) {
+                if (line == group.start_line) {
+                    append_content(group.before_content, re.content);
+                    ++group.edit_count;
+                    group.order = std::min(group.order, re.index);
+                    attached_to_range = true;
+                    break;
+                }
+                if (group.start_line < line && line <= group.end_line) {
+                    return {.ok = false,
+                            .error = "insert_before at line " + std::to_string(line) +
+                                     " targets a line inside edit range " +
+                                     std::to_string(group.start_line) + "-" +
+                                     std::to_string(group.end_line)};
+                }
+                continue;
             }
-            return false;
+
+            if (line == group.end_line) {
+                append_content(group.after_content, re.content);
+                ++group.edit_count;
+                group.order = std::min(group.order, re.index);
+                attached_to_range = true;
+                break;
+            }
+            if (group.start_line <= line && line < group.end_line) {
+                return {.ok = false,
+                        .error = "insert_after at line " + std::to_string(line) +
+                                 " targets a line inside edit range " +
+                                 std::to_string(group.start_line) + "-" +
+                                 std::to_string(group.end_line)};
+            }
         }
-        if (!a_has_anchor) {
-            // a is anchor-less
-            return a.op == HashlineEditOp::insert_after; // EOF sorts first, BOF sorts last
-        }
-        if (!b_has_anchor) {
-            return b.op != HashlineEditOp::insert_after; // opposite logic
+        if (attached_to_range) {
+            continue;
         }
 
-        auto a_line = *a.start_line;
-        auto b_line = *b.start_line;
-        if (a_line != b_line) {
-            return a_line > b_line; // higher lines first
+        auto it = std::ranges::find_if(anchor_groups, [line](const AnchorInsertGroup &group) {
+            return group.line == line;
+        });
+        if (it == anchor_groups.end()) {
+            anchor_groups.push_back({
+                .line = line,
+                .before_content = {},
+                .after_content = {},
+                .edit_count = 0,
+                .order = re.index,
+            });
+            it = std::prev(anchor_groups.end());
         }
-        // Same line: replace/delete > insert_after > insert_before
-        return edit_priority(a.op) > edit_priority(b.op);
+
+        if (re.op == HashlineEditOp::insert_before) {
+            append_content(it->before_content, re.content);
+        } else {
+            append_content(it->after_content, re.content);
+        }
+        ++it->edit_count;
+        it->order = std::min(it->order, re.index);
+    }
+
+    std::vector<ApplyGroup> apply_groups;
+    apply_groups.reserve(range_groups.size() + anchor_groups.size() + anchorless_edits.size());
+    for (auto &group : range_groups) {
+        apply_groups.push_back({
+            .kind = ApplyGroupKind::range,
+            .sort_line = group.start_line,
+            .start_line = group.start_line,
+            .end_line = group.end_line,
+            .before_content = std::move(group.before_content),
+            .replacement_content = std::move(group.replacement_content),
+            .after_content = std::move(group.after_content),
+            .edit_count = group.edit_count,
+            .order = group.order,
+        });
+    }
+    for (auto &group : anchor_groups) {
+        apply_groups.push_back({
+            .kind = ApplyGroupKind::anchor,
+            .sort_line = group.line,
+            .start_line = group.line,
+            .end_line = group.line,
+            .before_content = std::move(group.before_content),
+            .replacement_content = {},
+            .after_content = std::move(group.after_content),
+            .edit_count = group.edit_count,
+            .order = group.order,
+        });
+    }
+    for (const auto &re : anchorless_edits) {
+        apply_groups.push_back({
+            .kind = re.op == HashlineEditOp::insert_after ? ApplyGroupKind::append : ApplyGroupKind::prepend,
+            .sort_line = re.op == HashlineEditOp::insert_after ? SIZE_MAX : 0,
+            .start_line = 0,
+            .end_line = 0,
+            .before_content = {},
+            .replacement_content = re.content,
+            .after_content = {},
+            .edit_count = 1,
+            .order = re.index,
+        });
+    }
+
+    std::ranges::stable_sort(apply_groups, [](const ApplyGroup &a, const ApplyGroup &b) {
+        if (a.sort_line != b.sort_line) {
+            return a.sort_line > b.sort_line;
+        }
+        return a.order < b.order;
     });
 
-    // Step 9: Apply edits bottom-up
+    // Step 9: Apply grouped edits bottom-up
     auto result_lines = lines;
     size_t edits_applied = 0;
 
-    for (const auto &re : resolved) {
-        switch (re.op) {
-        case HashlineEditOp::replace: {
-            auto start = *re.start_line; // 1-based
-            auto end = re.end_line.value_or(start);
-            auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(start - 1);
-            auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(end);
+    for (const auto &group : apply_groups) {
+        switch (group.kind) {
+        case ApplyGroupKind::range: {
+            auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1);
+            auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.end_line);
+            std::vector<std::string> combined;
+            combined.reserve(group.before_content.size() + group.replacement_content.size() + group.after_content.size());
+            append_content(combined, group.before_content);
+            append_content(combined, group.replacement_content);
+            append_content(combined, group.after_content);
             result_lines.erase(begin_it, end_it);
-            result_lines.insert(result_lines.begin() + static_cast<std::ptrdiff_t>(start - 1),
-                                re.content.begin(), re.content.end());
-            ++edits_applied;
+            result_lines.insert(result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1),
+                                combined.begin(), combined.end());
+            edits_applied += group.edit_count;
             break;
         }
-        case HashlineEditOp::insert_after: {
-            if (re.start_line.has_value()) {
-                auto pos = *re.start_line; // 1-based, insert after this line
-                result_lines.insert(
-                    result_lines.begin() + static_cast<std::ptrdiff_t>(pos),
-                    re.content.begin(), re.content.end());
-            } else {
-                // No anchor -- append to end
-                result_lines.insert(result_lines.end(), re.content.begin(), re.content.end());
-            }
-            ++edits_applied;
+        case ApplyGroupKind::anchor: {
+            const auto line_index = static_cast<std::ptrdiff_t>(group.start_line - 1);
+            result_lines.insert(result_lines.begin() + line_index + 1,
+                                group.after_content.begin(), group.after_content.end());
+            result_lines.insert(result_lines.begin() + line_index,
+                                group.before_content.begin(), group.before_content.end());
+            edits_applied += group.edit_count;
             break;
         }
-        case HashlineEditOp::insert_before: {
-            if (re.start_line.has_value()) {
-                auto pos = *re.start_line; // 1-based, insert before this line
-                result_lines.insert(
-                    result_lines.begin() + static_cast<std::ptrdiff_t>(pos - 1),
-                    re.content.begin(), re.content.end());
-            } else {
-                // No anchor -- prepend to beginning
-                result_lines.insert(result_lines.begin(), re.content.begin(), re.content.end());
-            }
-            ++edits_applied;
+        case ApplyGroupKind::append:
+            result_lines.insert(result_lines.end(), group.replacement_content.begin(), group.replacement_content.end());
+            edits_applied += group.edit_count;
             break;
-        }
-        case HashlineEditOp::del: {
-            auto start = *re.start_line; // 1-based
-            auto end = re.end_line.value_or(start);
-            auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(start - 1);
-            auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(end);
-            result_lines.erase(begin_it, end_it);
-            ++edits_applied;
+        case ApplyGroupKind::prepend:
+            result_lines.insert(result_lines.begin(), group.replacement_content.begin(), group.replacement_content.end());
+            edits_applied += group.edit_count;
             break;
-        }
         }
     }
 

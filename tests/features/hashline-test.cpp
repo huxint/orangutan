@@ -263,6 +263,54 @@ TEST(HashlineEditTest, MultipleEditsBottomUp) {
     EXPECT_EQ(result.lines[3], "DDD");
 }
 
+TEST(HashlineEditTest, DeleteAndInsertAfterSameAnchorKeepsInsertionAtDeletedLocation) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::del, .anchor = anchor_for("ccc", 3)},
+        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ccc", 3), .content = {"XXX"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 4);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "bbb");
+    EXPECT_EQ(result.lines[2], "XXX");
+    EXPECT_EQ(result.lines[3], "ddd");
+}
+
+TEST(HashlineEditTest, ReplaceAndInsertAfterSameAnchorUsesReplacementBoundary) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB-1", "BBB-2"}},
+        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("bbb", 2), .content = {"TAIL"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 5);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "BBB-1");
+    EXPECT_EQ(result.lines[2], "BBB-2");
+    EXPECT_EQ(result.lines[3], "TAIL");
+    EXPECT_EQ(result.lines[4], "ccc");
+}
+
+TEST(HashlineEditTest, RangeReplaceAcceptsBoundaryInserts) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
+        {.op = HashlineEditOp::insert_before, .anchor = anchor_for("bbb", 2), .content = {"PRE"}},
+        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ddd", 4), .content = {"POST"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.lines.size(), 5);
+    EXPECT_EQ(result.lines[0], "aaa");
+    EXPECT_EQ(result.lines[1], "PRE");
+    EXPECT_EQ(result.lines[2], "MID");
+    EXPECT_EQ(result.lines[3], "POST");
+    EXPECT_EQ(result.lines[4], "eee");
+}
+
 TEST(HashlineEditTest, ReplaceWithEmptyContentDeletesLine) {
     std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     std::vector<HashlineEdit> edits = {{
@@ -348,6 +396,17 @@ TEST(HashlineEditTest, InvalidRangeReturnsError) {
     auto result = apply_hashline_edits(lines, edits);
     EXPECT_FALSE(result.ok);
     EXPECT_NE(result.error.find("<="), std::string::npos);
+}
+
+TEST(HashlineEditTest, InsertInsideReplaceRangeReturnsError) {
+    std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
+    std::vector<HashlineEdit> edits = {
+        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
+        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ccc", 3), .content = {"TAIL"}},
+    };
+    auto result = apply_hashline_edits(lines, edits);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("inside edit range 2-4"), std::string::npos);
 }
 
 // ── Content auto-stripping ──────────────────────

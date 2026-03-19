@@ -1681,6 +1681,20 @@ TEST_F(HashlineToolsTest, EditReplaceSingleLine) {
     EXPECT_EQ(content, "int main() {\n    return 42;\n}\n");
 }
 
+TEST_F(HashlineToolsTest, EditPreservesMissingFinalNewline) {
+    std::ofstream(workspace() / "noeol.txt") << "aaa\nbbb";
+
+    auto hash = orangutan::compute_line_hash("bbb", 2);
+    json edits = json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", json::array({"ccc"})}}});
+
+    const auto result = registry().execute({.id = "e1b", .name = "edit", .input = {{"path", "noeol.txt"}, {"edits", edits}}});
+    EXPECT_FALSE(result.is_error);
+
+    std::ifstream ifs(workspace() / "noeol.txt");
+    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "aaa\nccc");
+}
+
 TEST_F(HashlineToolsTest, EditDeleteLine) {
     std::ofstream(workspace() / "del.txt") << "aaa\nbbb\nccc\n";
 

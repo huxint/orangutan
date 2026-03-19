@@ -6,6 +6,7 @@
 #include <fstream>
 #include <ranges>
 #include <spdlog/spdlog.h>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -31,6 +32,21 @@ struct ValidatedFile {
     std::vector<std::pair<size_t, size_t>> match_positions;
     bool is_new_file = false;
 };
+
+void write_lines(std::ostream &out, std::span<const std::string> lines, bool trailing_newline) {
+    if (lines.empty()) {
+        return;
+    }
+
+    out.write(lines.front().data(), static_cast<std::streamsize>(lines.front().size()));
+    for (const auto &line : lines | std::views::drop(1)) {
+        out.put('\n');
+        out.write(line.data(), static_cast<std::streamsize>(line.size()));
+    }
+    if (trailing_newline) {
+        out.put('\n');
+    }
+}
 
 std::vector<FilePatch> parse_patch(std::string_view patch) {
     if (patch.empty()) {
@@ -233,14 +249,21 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
 
     // Read file into lines
     std::vector<std::string> lines;
+    bool had_trailing_newline = false;
     {
         std::ifstream ifs(resolved_path);
         if (!ifs) {
             throw std::runtime_error("cannot open file: " + path_str);
         }
+        std::ostringstream content_stream;
+        content_stream << ifs.rdbuf();
+        auto content = content_stream.str();
+        had_trailing_newline = !content.empty() && content.back() == '\n';
+
+        std::istringstream line_stream(content);
         std::string line;
-        while (std::getline(ifs, line)) {
-            lines.push_back(std::move(line));
+        while (std::getline(line_stream, line)) {
+            lines.push_back(line);
         }
     }
 
@@ -301,9 +324,7 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
         if (!ofs) {
             throw std::runtime_error("cannot write file: " + path_str);
         }
-        for (const auto &line : result.lines) {
-            ofs << line << '\n';
-        }
+        write_lines(ofs, result.lines, had_trailing_newline);
     }
 
     std::string summary = "Applied " + std::to_string(result.edits_applied) +
