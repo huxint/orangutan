@@ -633,6 +633,30 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         return 1;
     }
 
+    // --web-only: start web server and block — no API key or agent setup needed
+    if (options.web_only) {
+        auto session_store = create_store<orangutan::SessionStore>("session store");
+        orangutan::WebServer web_server;
+        web_server.set_static_dir(options.web_dir);
+        web_server.set_config(&cfg);
+        if (session_store != nullptr) {
+            web_server.set_session_store(session_store.get());
+        }
+        if (options.web_host != "127.0.0.1") {
+            spdlog::warn("Web server binding to {} — accessible from network", options.web_host);
+        }
+        web_server.start(options.web_host, options.web_port);
+        std::println("Web UI available at http://{}:{}", options.web_host, web_server.port());
+        auto &stop = signal_stop_requested();
+        std::signal(SIGINT, handle_signal);
+        std::signal(SIGTERM, handle_signal);
+        while (!stop.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        web_server.stop();
+        return 0;
+    }
+
     orangutan::Config selected_agent_cfg = cfg;
     selected_agent_cfg.api_key = maybe_selected_agent->api_key;
     const auto api_key = resolve_api_key(options.api_key, selected_agent_cfg);
@@ -759,25 +783,16 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     }
 
     std::unique_ptr<orangutan::WebServer> web_server;
-    if (options.web_mode || options.web_only) {
+    if (options.web_mode) {
         web_server = std::make_unique<orangutan::WebServer>();
         web_server->set_static_dir(options.web_dir);
+        web_server->set_config(&cfg);
+        web_server->set_session_store(session_store.get());
         if (options.web_host != "127.0.0.1") {
             spdlog::warn("Web server binding to {} — accessible from network", options.web_host);
         }
         web_server->start(options.web_host, options.web_port);
         std::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
-    }
-
-    if (options.web_only) {
-        auto &stop = signal_stop_requested();
-        std::signal(SIGINT, handle_signal);
-        std::signal(SIGTERM, handle_signal);
-        while (!stop.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        web_server->stop();
-        return 0;
     }
 
     if (!options.message.empty()) {
