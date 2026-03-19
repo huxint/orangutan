@@ -22,10 +22,11 @@ namespace {
 struct HashDict {
     std::array<std::array<char, 2>, 256> entries;
 
-    consteval HashDict() : entries{} {
+    consteval HashDict()
+    : entries{} {
         for (size_t i = 0; i < 256; ++i) {
-            entries.at(i).at(0) = hash_alphabet.at(i >> 4);
-            entries.at(i).at(1) = hash_alphabet.at(i & 0xF);
+            entries[i][0] = hash_alphabet[i >> 4];
+            entries[i][1] = hash_alphabet[i & 0xF];
         }
     }
 };
@@ -56,8 +57,8 @@ std::string compute_line_hash(std::string_view line, size_t line_number) {
     const auto processed = preprocess_line(line);
     const auto seed = static_cast<XXH32_hash_t>(is_symbol_only(processed) ? line_number : 0);
     const auto hash = XXH32(processed.data(), processed.size(), seed) & 0xFF;
-    const auto &entry = hash_dict.entries.at(hash);
-    return {entry.data(), entry.size()};
+    const auto &entry = hash_dict.entries[hash];
+    return {entry[0], entry[1]};
 }
 
 std::string format_hashline(std::string_view line, size_t line_number) {
@@ -101,8 +102,7 @@ Anchor parse_anchor(std::string_view anchor_str) {
     return Anchor{.line = line_number, .hash = std::string(hash_part)};
 }
 
-std::optional<HashMismatch> validate_anchor(const Anchor &anchor,
-                                             const std::vector<std::string> &lines) {
+std::optional<HashMismatch> validate_anchor(const Anchor &anchor, const std::vector<std::string> &lines) {
     if (anchor.line < 1 || anchor.line > lines.size()) {
         return HashMismatch{.line = anchor.line, .expected = anchor.hash, .actual = ""};
     }
@@ -155,7 +155,7 @@ std::optional<size_t> match_hashline_prefix(std::string_view s) {
 
 // Internal resolved edit with parsed anchors
 struct ResolvedEdit {
-    size_t index;               // original index in edits vector
+    size_t index; // original index in edits vector
     HashlineEditOp op;
     std::optional<size_t> start_line; // 1-based, from anchor
     std::optional<size_t> end_line;   // 1-based, from end_anchor
@@ -200,8 +200,7 @@ struct ApplyGroup {
 };
 
 // Format context lines around a mismatch for error messages.
-std::string format_mismatch_context(const std::vector<std::string> &lines,
-                                     const HashMismatch &mm) {
+std::string format_mismatch_context(const std::vector<std::string> &lines, const HashMismatch &mm) {
     std::ostringstream oss;
     auto line_idx = mm.line - 1; // 0-based
     // 2 lines of context before
@@ -209,8 +208,7 @@ std::string format_mismatch_context(const std::vector<std::string> &lines,
         oss << "  " << format_hashline(lines[ctx], ctx + 1) << "\n";
     }
     // The mismatched line
-    oss << ">>> " << format_hashline(lines[line_idx], line_idx + 1)
-        << "  // <-- actual content\n";
+    oss << ">>> " << format_hashline(lines[line_idx], line_idx + 1) << "  // <-- actual content\n";
     // 2 lines of context after
     for (size_t ctx = line_idx + 1; ctx < std::min(lines.size(), line_idx + 3); ++ctx) {
         oss << "  " << format_hashline(lines[ctx], ctx + 1) << "\n";
@@ -239,8 +237,7 @@ void append_content(std::vector<std::string> &target, const std::vector<std::str
 
 } // namespace
 
-HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
-                                         const std::vector<HashlineEdit> &edits) {
+HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, const std::vector<HashlineEdit> &edits) {
     if (edits.empty()) {
         return {.ok = true, .lines = lines};
     }
@@ -256,22 +253,22 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
 
         // Validate required fields per op type
         switch (edit.op) {
-        case HashlineEditOp::replace:
-            if (edit.anchor.empty()) {
-                return {.ok = false, .error = "replace edit requires anchor"};
-            }
-            break;
-        case HashlineEditOp::insert_before:
-        case HashlineEditOp::insert_after:
-            // anchor optional (missing anchor inserts at BOF/EOF depending on op)
-            break;
-        case HashlineEditOp::del:
-            if (edit.anchor.empty()) {
-                return {.ok = false, .error = "delete edit requires anchor"};
-            }
-            break;
-        default:
-            std::unreachable();
+            case HashlineEditOp::replace:
+                if (edit.anchor.empty()) {
+                    return {.ok = false, .error = "replace edit requires anchor"};
+                }
+                break;
+            case HashlineEditOp::insert_before:
+            case HashlineEditOp::insert_after:
+                // anchor optional (missing anchor inserts at BOF/EOF depending on op)
+                break;
+            case HashlineEditOp::del:
+                if (edit.anchor.empty()) {
+                    return {.ok = false, .error = "delete edit requires anchor"};
+                }
+                break;
+            default:
+                std::unreachable();
         }
 
         // Parse primary anchor
@@ -284,8 +281,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                     mismatches.push_back(*mm);
                 }
             } catch (const std::runtime_error &e) {
-                return {.ok = false,
-                        .error = "invalid anchor '" + edit.anchor + "': " + e.what()};
+                return {.ok = false, .error = "invalid anchor '" + edit.anchor + "': " + e.what()};
             }
         }
 
@@ -299,8 +295,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                     mismatches.push_back(*mm);
                 }
             } catch (const std::runtime_error &e) {
-                return {.ok = false,
-                        .error = "invalid end_anchor '" + edit.end_anchor + "': " + e.what()};
+                return {.ok = false, .error = "invalid end_anchor '" + edit.end_anchor + "': " + e.what()};
             }
         }
 
@@ -311,9 +306,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
     if (!mismatches.empty()) {
         std::ostringstream oss;
         for (const auto &mm : mismatches) {
-            oss << "Hash mismatch at line " << mm.line
-                << ": expected " << mm.expected << ", got "
-                << (mm.actual.empty() ? "out-of-range" : mm.actual) << "\n";
+            oss << "Hash mismatch at line " << mm.line << ": expected " << mm.expected << ", got " << (mm.actual.empty() ? "out-of-range" : mm.actual) << "\n";
             if (!mm.actual.empty()) {
                 oss << format_mismatch_context(lines, mm);
             }
@@ -325,10 +318,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
     for (const auto &re : resolved) {
         if (re.start_line.has_value() && re.end_line.has_value()) {
             if (*re.end_line < *re.start_line) {
-                return {.ok = false,
-                        .error = "end_anchor line must be >= anchor line (got " +
-                                 std::to_string(*re.end_line) + " <= " +
-                                 std::to_string(*re.start_line) + ")"};
+                return {.ok = false, .error = "end_anchor line must be >= anchor line (got " + std::to_string(*re.end_line) + " <= " + std::to_string(*re.start_line) + ")"};
             }
         }
     }
@@ -352,14 +342,15 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                 } else {
                     // Conflicting
                     auto line_num = a.start_line.value_or(0);
-                    return {.ok = false,
-                            .error = "conflicting edits at line " + std::to_string(line_num)};
+                    return {.ok = false, .error = "conflicting edits at line " + std::to_string(line_num)};
                 }
             }
         }
     }
     // Remove deduplicated entries
-    std::erase_if(resolved, [](const ResolvedEdit &re) { return re.index == SIZE_MAX; });
+    std::erase_if(resolved, [](const ResolvedEdit &re) {
+        return re.index == SIZE_MAX;
+    });
 
     // Step 4: Detect overlapping ranges (only for replace/delete that occupy line ranges)
     for (size_t i = 0; i < resolved.size(); ++i) {
@@ -381,10 +372,8 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
             // Check overlap: ranges [a_start, a_end] and [b_start, b_end]
             if (a_start <= b_end && b_start <= a_end) {
                 return {.ok = false,
-                        .error = "overlapping edits at lines " +
-                                 std::to_string(a_start) + "-" + std::to_string(a_end) +
-                                 " and " +
-                                 std::to_string(b_start) + "-" + std::to_string(b_end)};
+                        .error = "overlapping edits at lines " + std::to_string(a_start) + "-" + std::to_string(a_end) + " and " + std::to_string(b_start) + "-" +
+                                 std::to_string(b_end)};
             }
         }
     }
@@ -452,14 +441,15 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                 if (!warnings.empty()) {
                     warnings += "\n";
                 }
-                warnings += "Noop: line " + std::to_string(start) +
-                            " already has the specified content";
+                warnings += "Noop: line " + std::to_string(start) + " already has the specified content";
                 re.index = SIZE_MAX; // mark for skip
             }
         }
     }
     // Remove noop edits
-    std::erase_if(resolved, [](const ResolvedEdit &re) { return re.index == SIZE_MAX; });
+    std::erase_if(resolved, [](const ResolvedEdit &re) {
+        return re.index == SIZE_MAX;
+    });
 
     // Step 8: Group edits by the original lines they target so inserts stay attached to
     // the intended anchors even when a same-line replace/delete also fires in this batch.
@@ -511,9 +501,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                 }
                 if (group.start_line < line && line <= group.end_line) {
                     return {.ok = false,
-                            .error = "insert_before at line " + std::to_string(line) +
-                                     " targets a line inside edit range " +
-                                     std::to_string(group.start_line) + "-" +
+                            .error = "insert_before at line " + std::to_string(line) + " targets a line inside edit range " + std::to_string(group.start_line) + "-" +
                                      std::to_string(group.end_line)};
                 }
                 continue;
@@ -528,9 +516,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
             }
             if (group.start_line <= line && line < group.end_line) {
                 return {.ok = false,
-                        .error = "insert_after at line " + std::to_string(line) +
-                                 " targets a line inside edit range " +
-                                 std::to_string(group.start_line) + "-" +
+                        .error = "insert_after at line " + std::to_string(line) + " targets a line inside edit range " + std::to_string(group.start_line) + "-" +
                                  std::to_string(group.end_line)};
             }
         }
@@ -616,46 +602,40 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
 
     for (const auto &group : apply_groups) {
         switch (group.kind) {
-        case ApplyGroupKind::range: {
-            auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1);
-            auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.end_line);
-            std::vector<std::string> combined;
-            combined.reserve(group.before_content.size() + group.replacement_content.size() + group.after_content.size());
-            append_content(combined, group.before_content);
-            append_content(combined, group.replacement_content);
-            append_content(combined, group.after_content);
-            result_lines.erase(begin_it, end_it);
-            result_lines.insert(result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1),
-                                combined.begin(), combined.end());
-            edits_applied += group.edit_count;
-            break;
-        }
-        case ApplyGroupKind::anchor: {
-            const auto line_index = static_cast<std::ptrdiff_t>(group.start_line - 1);
-            result_lines.insert(result_lines.begin() + line_index + 1,
-                                group.after_content.begin(), group.after_content.end());
-            result_lines.insert(result_lines.begin() + line_index,
-                                group.before_content.begin(), group.before_content.end());
-            edits_applied += group.edit_count;
-            break;
-        }
-        case ApplyGroupKind::append:
-            result_lines.insert(result_lines.end(), group.replacement_content.begin(), group.replacement_content.end());
-            edits_applied += group.edit_count;
-            break;
-        case ApplyGroupKind::prepend:
-            result_lines.insert(result_lines.begin(), group.replacement_content.begin(), group.replacement_content.end());
-            edits_applied += group.edit_count;
-            break;
-        default:
-            std::unreachable();
+            case ApplyGroupKind::range: {
+                auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1);
+                auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.end_line);
+                std::vector<std::string> combined;
+                combined.reserve(group.before_content.size() + group.replacement_content.size() + group.after_content.size());
+                append_content(combined, group.before_content);
+                append_content(combined, group.replacement_content);
+                append_content(combined, group.after_content);
+                result_lines.erase(begin_it, end_it);
+                result_lines.insert(result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1), combined.begin(), combined.end());
+                edits_applied += group.edit_count;
+                break;
+            }
+            case ApplyGroupKind::anchor: {
+                const auto line_index = static_cast<std::ptrdiff_t>(group.start_line - 1);
+                result_lines.insert(result_lines.begin() + line_index + 1, group.after_content.begin(), group.after_content.end());
+                result_lines.insert(result_lines.begin() + line_index, group.before_content.begin(), group.before_content.end());
+                edits_applied += group.edit_count;
+                break;
+            }
+            case ApplyGroupKind::append:
+                result_lines.insert(result_lines.end(), group.replacement_content.begin(), group.replacement_content.end());
+                edits_applied += group.edit_count;
+                break;
+            case ApplyGroupKind::prepend:
+                result_lines.insert(result_lines.begin(), group.replacement_content.begin(), group.replacement_content.end());
+                edits_applied += group.edit_count;
+                break;
+            default:
+                std::unreachable();
         }
     }
 
-    return {.ok = true,
-            .warnings = warnings,
-            .lines = std::move(result_lines),
-            .edits_applied = edits_applied};
+    return {.ok = true, .warnings = warnings, .lines = std::move(result_lines), .edits_applied = edits_applied};
 }
 
 } // namespace orangutan
