@@ -3,10 +3,12 @@
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/runtime-memory.hpp"
 
+#include <cstdio>
 #include <cctype>
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <regex>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -39,11 +41,13 @@ static StreamCallback make_stream_callback(bool &first_text, bool human_output, 
     return [&first_text, human_output, &on_event](const std::string &event_type, const json &data) {
         if (event_type == "text_delta") {
             if (human_output && first_text) {
-                std::cout << "\n" << color_green << "orangutan> " << color_reset << std::flush;
+                std::print("\n{}orangutan> {}", color_green, color_reset);
+                std::fflush(stdout);
                 first_text = false;
             }
             if (human_output) {
-                std::cout << data["text"].get<std::string>() << std::flush;
+                std::print("{}", data["text"].get<std::string>());
+                std::fflush(stdout);
             }
         }
         if (on_event && (event_type == "text_delta" || event_type == "tool_call_start")) {
@@ -261,7 +265,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
             loop_detected = true;
         }
         if (human_output) {
-            std::cout << "  " << color_cyan << "-> " << call.name << color_reset << '\n';
+            std::println("  {}-> {}{}", color_cyan, call.name, color_reset);
         }
         if (on_tool_event) {
             on_tool_event("tool_started", call, nullptr);
@@ -341,13 +345,15 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
                 final_text += handle_continuation(effective_system_prompt, first_text, human_output, on_stream_event, on_tool_event, on_history_checkpoint);
             }
             if (human_output && !first_text) {
-                std::cout << "\n\n" << std::flush;
+                std::print("\n\n");
+                std::fflush(stdout);
             }
             break;
         }
 
         if (human_output && !first_text) {
-            std::cout << '\n' << std::flush;
+            std::print("\n");
+            std::fflush(stdout);
         }
 
         // Execute tools and check for loops

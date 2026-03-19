@@ -3,6 +3,7 @@
 #include "core/providers/provider.hpp"
 #include "features/subagent/subagent-manager.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -42,6 +43,13 @@ private:
     std::vector<Step> steps_;
     size_t next_step_ = 0;
 };
+
+const ToolDef *find_tool(const std::vector<ToolDef> &tools, const std::string &name) {
+    const auto it = std::ranges::find_if(tools, [&](const ToolDef &tool) {
+        return tool.name == name;
+    });
+    return it == tools.end() ? nullptr : &*it;
+}
 
 } // namespace
 
@@ -279,6 +287,78 @@ TEST_F(SubagentManagerTest, RealChildInheritsCallerApprovalCallback) {
     ASSERT_TRUE(wait_result.run.has_value());
     EXPECT_EQ(wait_result.run->status, SubagentRunStatus::succeeded);
     EXPECT_TRUE(prompted);
+}
+
+TEST_F(SubagentManagerTest, RealChildUsesConfiguredHashlineEditMode) {
+    SessionStore session_store(db_path().string());
+    SubagentRunStore run_store(db_path().string());
+
+    std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
+    child_configs.emplace("coder", SubagentChildRuntimeConfig{
+                                       .agent_key = "coder",
+                                       .provider_name = "child-provider",
+                                       .api_key = "unused",
+                                       .model = "child-model",
+                                       .base_url = "https://example.test",
+                                       .system_prompt = "Child base prompt.",
+                                       .workspace_root = std::filesystem::temp_directory_path().string(),
+                                       .edit_mode = "hashline",
+                                   });
+
+    SubagentManager manager(run_store, SubagentExecutionEnvironment{
+                                          .agent_configs = &child_configs,
+                                          .session_store = &session_store,
+                                          .memory_store = nullptr,
+                                          .provider_factory =
+                                              [&](const SubagentChildRuntimeConfig &) {
+                                                  auto steps = std::vector<ScriptedProvider::Step>{
+                                                      [&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
+                                                          const auto *edit_tool = find_tool(tools, "edit");
+                                                          EXPECT_NE(edit_tool, nullptr);
+                                                          if (edit_tool != nullptr) {
+                                                              EXPECT_NE(edit_tool->description.find("hash"), std::string::npos);
+                                                              EXPECT_TRUE(edit_tool->input_schema.contains("properties"));
+                                                              if (edit_tool->input_schema.contains("properties")) {
+                                                                  EXPECT_TRUE(edit_tool->input_schema["properties"].contains("edits"));
+                                                                  EXPECT_FALSE(edit_tool->input_schema["properties"].contains("patch"));
+                                                              }
+                                                          }
+
+                                                          const auto *read_tool = find_tool(tools, "read");
+                                                          EXPECT_NE(read_tool, nullptr);
+                                                          if (read_tool != nullptr) {
+                                                              EXPECT_NE(read_tool->description.find("line numbers"), std::string::npos);
+                                                          }
+
+                                                          return LLMResponse{
+                                                              .stop_reason = "end_turn",
+                                                              .content = {TextBlock{.text = "child completed"}},
+                                                          };
+                                                      },
+                                                  };
+                                                  return std::make_unique<ScriptedProvider>(std::move(steps));
+                                              },
+                                      });
+
+    auto caller = sample_caller_context(std::string{});
+    caller.session_id = std::nullopt;
+    caller.allowed_child_agents = {"coder"};
+
+    const auto spawn_result = manager.spawn(SubagentSpawnRequest{
+        .caller = caller,
+        .child_agent_key = "coder",
+        .task_summary = "Inspect available tools",
+    });
+    ASSERT_TRUE(spawn_result.accepted);
+
+    const auto wait_result = manager.wait(SubagentWaitRequest{
+        .run_id = spawn_result.run_id,
+        .timeout = std::chrono::seconds{1},
+        .caller = caller,
+    });
+    ASSERT_EQ(wait_result.state, SubagentWaitState::completed);
+    ASSERT_TRUE(wait_result.run.has_value());
+    EXPECT_EQ(wait_result.run->status, SubagentRunStatus::succeeded);
 }
 
 TEST_F(SubagentManagerTest, ConstructorDoesNotAbandonStaleRunsAndExplicitCleanupDoes) {

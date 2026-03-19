@@ -312,7 +312,7 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
         child_runtime_memory = &*child_memory;
     }
     (void)register_runtime_tools(child_tools, child_runtime_memory, request.child_identity.workspace, &tool_context, {}, {}, &maybe_child_config->permissions,
-                                 request.caller.approval_callback);
+                                 request.caller.approval_callback, maybe_child_config->edit_mode);
 
     auto child_prompt = append_subagent_prompt_guidance(maybe_child_config->system_prompt, maybe_child_config->allowed_child_agents, true);
     AgentLoop child_agent(*provider, child_tools, child_prompt, child_runtime_memory);

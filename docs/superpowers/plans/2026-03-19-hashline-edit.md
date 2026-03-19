@@ -6,7 +6,7 @@
 
 **Architecture:** Dual-mode system — both `hashline` and existing `search_replace` edit modes coexist, switchable via config (default: `hashline`). A new `hashline` module handles hash computation (xxHash32, 2-char encoding), anchor parsing/validation, and edit application. The `edit_mode` string is threaded through the registration chain from config → `register_runtime_tools` → `register_builtin_tools` → `register_builtin_core_tools` → `register_read_tool` / `register_edit_tool`.
 
-**Tech Stack:** C++20, xxHash (header-only via FetchContent), GoogleTest, CMake
+**Tech Stack:** C++23, xxHash (header-only via FetchContent), GoogleTest, CMake
 
 **Spec:** `docs/superpowers/specs/2026-03-19-hashline-edit-design.md`
 

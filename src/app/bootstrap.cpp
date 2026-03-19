@@ -2,6 +2,7 @@
 
 #include "app/channel-serve.hpp"
 #include "app/repl.hpp"
+#include "app/runtime-config-builders.hpp"
 #include "app/single-shot.hpp"
 #include "app/runtime/identity.hpp"
 #include "app/runtime/memory-context.hpp"
@@ -29,11 +30,13 @@
 #include <chrono>
 #include <csignal>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <print>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -79,7 +82,8 @@ std::string resolve_api_key(const std::string &cli_key, const orangutan::Config 
 }
 
 void emit_json_event(const orangutan::json &event) {
-    std::cout << event.dump() << '\n' << std::flush;
+    std::println("{}", event.dump());
+    std::fflush(stdout);
 }
 
 struct CliOptions {
@@ -136,7 +140,8 @@ orangutan::ToolApprovalCallback make_cli_approval_callback(bool allow_prompting)
     }
 
     return [](const orangutan::ToolUseBlock &, const std::string &prompt_text) {
-        std::cout << "\n" << prompt_text << "\nApprove? [y/N]: " << std::flush;
+        std::print("\n{}\nApprove? [y/N]: ", prompt_text);
+        std::fflush(stdout);
         std::string answer;
         if (!std::getline(std::cin, answer)) {
             return false;
@@ -155,7 +160,7 @@ orangutan::ToolApprovalCallback make_cli_approval_callback(bool allow_prompting)
 
 bool validate_initial_options(const CliOptions &options) {
     if (options.serve_mode && (!options.message.empty() || options.event_stream || options.dump_session)) {
-        std::cerr << "Error: --serve cannot be combined with single-message or event-stream flags.\n";
+        std::println(stderr, "Error: --serve cannot be combined with single-message or event-stream flags.");
         return false;
     }
     return true;
@@ -164,7 +169,7 @@ bool validate_initial_options(const CliOptions &options) {
 std::optional<orangutan::AgentConfig> resolve_selected_agent(const orangutan::Config &cfg, const CliOptions &options) {
     const auto maybe_selected_agent = cfg.find_agent(options.cli_agent_key);
     if (!maybe_selected_agent.has_value()) {
-        std::cerr << "Error: unknown agent: " << options.cli_agent_key << '\n';
+        std::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
         return std::nullopt;
     }
 
@@ -192,7 +197,7 @@ std::optional<std::string> resolve_agent_workspace(const orangutan::AgentConfig 
         }
         return workspace;
     } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << '\n';
+        std::println(stderr, "Error: {}", e.what());
         return std::nullopt;
     }
 }
@@ -202,20 +207,22 @@ std::unique_ptr<Store> create_store(const char *name) {
     try {
         return std::make_unique<Store>();
     } catch (const std::exception &e) {
-        std::cerr << "Error: failed to initialize " << name << ": " << e.what() << '\n';
+        std::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
         return nullptr;
     }
 }
 
-std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig>> build_agent_runtime_configs(const orangutan::Config &cfg,
-                                                                                                               const std::string &cli_api_key_override) {
+} // namespace
+
+std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig>>
+orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override) {
     std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> result;
     for (const auto &[agent_key, agent_cfg] : cfg.agents) {
         orangutan::Config agent_cfg_wrapper = cfg;
         agent_cfg_wrapper.api_key = agent_cfg.api_key;
         const auto resolved_agent_api_key = resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
         if (resolved_agent_api_key.empty()) {
-            std::cerr << "Error: API key required for agent '" << agent_key << "'.\n";
+            std::println(stderr, "Error: API key required for agent '{}'.", agent_key);
             return std::nullopt;
         }
 
@@ -223,7 +230,7 @@ std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig
         try {
             resolved_workspace_root = orangutan::resolve_workspace_root(agent_cfg.workspace);
         } catch (const std::exception &e) {
-            std::cerr << "Error: failed to resolve workspace for agent '" << agent_key << "': " << e.what() << '\n';
+            std::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
             return std::nullopt;
         }
 
@@ -238,6 +245,7 @@ std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig
                                       .base_url = agent_cfg.base_url,
                                       .system_prompt = agent_cfg.system_prompt,
                                       .workspace_root = resolved_workspace_root,
+                                      .edit_mode = cfg.edit_mode,
                                       .cli_runtime_key = cli_identity.runtime_key,
                                       .cli_memory_scope = cli_identity.memory_scope,
                                       .memory = cfg.memory,
@@ -249,7 +257,8 @@ std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig
 }
 
 std::unordered_map<std::string, orangutan::SubagentChildRuntimeConfig>
-build_subagent_child_runtime_configs(const std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> &agent_runtime_configs) {
+orangutan::app::detail::build_subagent_child_runtime_configs(
+    const std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> &agent_runtime_configs) {
     std::unordered_map<std::string, orangutan::SubagentChildRuntimeConfig> result;
     for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
         result.emplace(agent_key, orangutan::SubagentChildRuntimeConfig{
@@ -261,6 +270,7 @@ build_subagent_child_runtime_configs(const std::unordered_map<std::string, orang
                                       .base_url = runtime_cfg.base_url,
                                       .system_prompt = runtime_cfg.system_prompt,
                                       .workspace_root = runtime_cfg.workspace_root,
+                                      .edit_mode = runtime_cfg.edit_mode,
                                       .memory = runtime_cfg.memory,
                                       .permissions = runtime_cfg.permissions,
                                       .allowed_child_agents = runtime_cfg.allowed_child_agents,
@@ -268,6 +278,8 @@ build_subagent_child_runtime_configs(const std::unordered_map<std::string, orang
     }
     return result;
 }
+
+namespace {
 
 std::unordered_map<std::string, std::string> build_qq_bot_agents(const orangutan::Config &cfg) {
     std::unordered_map<std::string, std::string> qq_bot_agents;
@@ -281,8 +293,8 @@ std::unordered_map<std::string, std::string> build_qq_bot_agents(const orangutan
 
 bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &sessions, std::string &resume_session) {
     if (sessions.empty()) {
-        std::cerr << "Error: no saved sessions to resume.\n"
-                  << "Start a conversation first - sessions are auto-saved on exit.\n";
+        std::println(stderr, "Error: no saved sessions to resume.");
+        std::println(stderr, "Start a conversation first - sessions are auto-saved on exit.");
         return false;
     }
 
@@ -296,12 +308,13 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
         return true;
     }
 
-    std::cout << "Available sessions:\n";
+    std::println("Available sessions:");
     for (size_t index = 0; index < sessions.size(); ++index) {
         const auto &session = sessions[index];
-        std::cout << "  [" << (index + 1) << "] " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count << " messages)\n";
+        std::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
     }
-    std::cout << "\nEnter number (or press Enter for latest): " << std::flush;
+    std::print("\nEnter number (or press Enter for latest): ");
+    std::fflush(stdout);
 
     std::string choice;
     std::getline(std::cin, choice);
@@ -313,13 +326,13 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
     try {
         const auto idx = std::stoul(choice) - 1;
         if (idx >= sessions.size()) {
-            std::cerr << "Invalid selection.\n";
+            std::println(stderr, "Invalid selection.");
             return false;
         }
         resume_session = sessions[idx].id;
         return true;
     } catch (const std::exception &) {
-        std::cerr << "Invalid selection.\n";
+        std::println(stderr, "Invalid selection.");
         return false;
     }
 }
@@ -339,25 +352,25 @@ bool restore_requested_session(const CliOptions &options, orangutan::SessionStor
 
     try {
         if (!runtime_cfg.cli_memory_scope.empty() && !session_store.session_belongs_to_scope(resume_session, runtime_cfg.cli_memory_scope)) {
-            std::cerr << "Error: session does not belong to agent '" << options.cli_agent_key << "'.\n";
+            std::println(stderr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
             return false;
         }
         auto messages = session_store.load(resume_session);
         agent.set_history(std::move(messages));
         current_session_id = resume_session;
         if (!options.event_stream) {
-            std::cout << "Resumed session: " << resume_session << '\n';
+            std::println("Resumed session: {}", resume_session);
         }
         return true;
     } catch (const std::exception &) {
-        std::cerr << "Error: session not found: " << resume_session << '\n';
+        std::println(stderr, "Error: session not found: {}", resume_session);
         auto sessions = session_store.list_sessions(runtime_cfg.cli_memory_scope);
         if (sessions.empty()) {
-            std::cerr << "No saved sessions available.\n";
+            std::println(stderr, "No saved sessions available.");
         } else {
-            std::cerr << "Available sessions:\n";
+            std::println(stderr, "Available sessions:");
             for (const auto &session : sessions) {
-                std::cerr << "  " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count << " messages)\n";
+                std::println(stderr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
             }
         }
         return false;
@@ -378,22 +391,22 @@ std::string merge_stdin_message(std::string message) {
 
 bool validate_runtime_mode_options(const CliOptions &options, bool has_current_session) {
     if (options.serve_mode && !options.message.empty()) {
-        std::cerr << "Error: --serve cannot be combined with --message or piped stdin.\n";
+        std::println(stderr, "Error: --serve cannot be combined with --message or piped stdin.");
         return false;
     }
     if (options.event_stream && options.message.empty() && !options.dump_session) {
-        std::cerr << "Error: --event-stream requires --message or piped stdin.\n";
+        std::println(stderr, "Error: --event-stream requires --message or piped stdin.");
         return false;
     }
     if (!options.dump_session) {
         return true;
     }
     if (!options.event_stream) {
-        std::cerr << "Error: --dump-session requires --event-stream.\n";
+        std::println(stderr, "Error: --dump-session requires --event-stream.");
         return false;
     }
     if (!has_current_session) {
-        std::cerr << "Error: --dump-session requires --resume.\n";
+        std::println(stderr, "Error: --dump-session requires --resume.");
         return false;
     }
     return true;
@@ -404,7 +417,7 @@ int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::Messag
                    const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
                    orangutan::SubagentManager &subagent_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager) {
     if (!channel_manager.has_channels() && cfg.heartbeat_jobs.empty()) {
-        std::cerr << "Error: --serve requires at least one configured channel or heartbeat job.\n";
+        std::println(stderr, "Error: --serve requires at least one configured channel or heartbeat job.");
         return 1;
     }
 
@@ -473,7 +486,7 @@ int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::Messag
             message_queue.push(message);
         });
     } catch (const std::exception &e) {
-        std::cerr << "Error: failed to start configured channels: " << e.what() << '\n';
+        std::println(stderr, "Error: failed to start configured channels: {}", e.what());
         channel_manager.disconnect_all();
         return 1;
     }
@@ -525,8 +538,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     selected_agent_cfg.api_key = maybe_selected_agent->api_key;
     const auto api_key = resolve_api_key(options.api_key, selected_agent_cfg);
     if (api_key.empty()) {
-        std::cerr << "Error: API key required.\n"
-                  << "Set ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key\n";
+        std::println(stderr, "Error: API key required.");
+        std::println(stderr, "Set ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
         return 1;
     }
 
@@ -537,12 +550,12 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         return 1;
     }
 
-    const auto maybe_agent_runtime_configs = build_agent_runtime_configs(cfg, options.api_key);
+    const auto maybe_agent_runtime_configs = detail::build_agent_runtime_configs(cfg, options.api_key);
     if (!maybe_agent_runtime_configs.has_value()) {
         return 1;
     }
     const auto qq_bot_agents = build_qq_bot_agents(cfg);
-    const auto subagent_child_runtime_configs = build_subagent_child_runtime_configs(*maybe_agent_runtime_configs);
+    const auto subagent_child_runtime_configs = detail::build_subagent_child_runtime_configs(*maybe_agent_runtime_configs);
     orangutan::SubagentManager subagent_manager(*subagent_run_store, orangutan::SubagentExecutionEnvironment{
                                                                          .agent_configs = &subagent_child_runtime_configs,
                                                                          .session_store = session_store.get(),
@@ -560,6 +573,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         .base_url = maybe_selected_agent->base_url,
         .system_prompt = maybe_selected_agent->system_prompt,
         .workspace_root = *maybe_workspace,
+        .edit_mode = cfg.edit_mode,
         .cli_runtime_key = cli_identity.runtime_key,
         .cli_memory_scope = cli_identity.memory_scope,
         .memory = cfg.memory,

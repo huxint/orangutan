@@ -1,4 +1,5 @@
 #include "app/bootstrap.hpp"
+#include "app/runtime-config-builders.hpp"
 
 #include "app/runtime/identity.hpp"
 #include "infra/storage/session-store.hpp"
@@ -11,6 +12,7 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unistd.h>
 #include <vector>
 
@@ -109,6 +111,11 @@ protected:
         return home_root_;
     }
 
+    [[nodiscard]]
+    const std::filesystem::path &workspace_root() const {
+        return workspace_root_;
+    }
+
 private:
     std::filesystem::path temp_root_;
     std::filesystem::path home_root_;
@@ -155,6 +162,44 @@ TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
     }
 
     ::close(output_pipe[0]);
+}
+
+TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPropagatesEditMode) {
+    Config cfg;
+    cfg.edit_mode = "search_replace";
+    cfg.agents.emplace("default", AgentConfig{
+                                      .provider = "openai",
+                                      .model = "gpt-test",
+                                      .base_url = "https://example.test",
+                                      .api_key = "test-key",
+                                      .system_prompt = "You are a test agent.",
+                                      .workspace = workspace_root().string(),
+                                  });
+
+    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+    ASSERT_TRUE(runtime_configs.has_value());
+    auto it = runtime_configs->find("default");
+    ASSERT_NE(it, runtime_configs->end());
+    EXPECT_EQ(it->second.edit_mode, "search_replace");
+}
+
+TEST_F(BootstrapTest, BuildSubagentChildRuntimeConfigsPropagatesEditMode) {
+    std::unordered_map<std::string, app::AgentRuntimeConfig> runtime_configs;
+    runtime_configs.emplace("default", app::AgentRuntimeConfig{
+                                           .agent_key = "default",
+                                           .provider_name = "openai",
+                                           .api_key = "test-key",
+                                           .model = "gpt-test",
+                                           .base_url = "https://example.test",
+                                           .system_prompt = "You are a test agent.",
+                                           .workspace_root = workspace_root().string(),
+                                           .edit_mode = "search_replace",
+                                       });
+
+    const auto child_configs = app::detail::build_subagent_child_runtime_configs(runtime_configs);
+    auto it = child_configs.find("default");
+    ASSERT_NE(it, child_configs.end());
+    EXPECT_EQ(it->second.edit_mode, "search_replace");
 }
 
 } // namespace

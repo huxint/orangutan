@@ -70,6 +70,7 @@ struct SubagentChildRuntimeConfig {
     std::string base_url;
     std::string system_prompt;
     std::string workspace_root;
+    std::string edit_mode = "hashline";
     Config::MemoryConfig memory;
     ToolPermissionSettings permissions;
     std::vector<std::string> allowed_child_agents;

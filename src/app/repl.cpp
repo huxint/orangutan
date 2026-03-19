@@ -6,10 +6,15 @@
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <print>
+#include <ranges>
 
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -21,7 +26,7 @@ namespace {
 using ReadlinePtr = std::unique_ptr<char, decltype(&std::free)>;
 
 std::string read_multiline() {
-    std::cout << "Multi-line mode. Enter an empty line to finish.\n";
+    std::println("Multi-line mode. Enter an empty line to finish.");
     std::string result;
 
     while (true) {
@@ -74,7 +79,7 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
                   HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
     if (!persist_session(agent, store, model, current_session_id, scope_key)) {
-        std::cout << "💤 Nothing to save (empty history).\n\n";
+        std::print("💤 Nothing to save (empty history).\n\n");
         return;
     }
 
@@ -83,10 +88,10 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
     }
 
     if (updating_existing) {
-        std::cout << "💾 Session updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
+        std::print("💾 Session updated: {} (use -r {} to resume)\n\n", current_session_id, current_session_id);
         return;
     }
-    std::cout << "💾 Session saved: " << current_session_id << " (use -r " << current_session_id << " to resume)\n\n";
+    std::print("💾 Session saved: {} (use -r {} to resume)\n\n", current_session_id, current_session_id);
 }
 
 void load_session(const std::string &requested_session_id, AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &scope_key,
@@ -98,13 +103,13 @@ void load_session(const std::string &requested_session_id, AgentLoop &agent, Ses
         dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
         dispatch_session_start(hook_manager, current_session_id, agent.history().size());
     }
-    std::cout << result.status << "\n\n";
+    std::print("{}\n\n", result.status);
 }
 
 void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model) {
     const auto result = agent.compress_history();
     if (!result.compacted) {
-        std::cout << result.status << "\n\n";
+        std::print("{}\n\n", result.status);
         return;
     }
 
@@ -112,7 +117,7 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
         store.update(current_session_id, agent.history(), model);
     }
 
-    std::cout << "🗜️ Compressed history: " << result.messages_before << " -> " << result.messages_after << " messages.\n\n";
+    std::print("🗜️ Compressed history: {} -> {} messages.\n\n", result.messages_before, result.messages_after);
 }
 
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
@@ -125,14 +130,14 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line == "/help") {
-        std::cout << repl_help_text();
+        std::print("{}", repl_help_text());
         return true;
     }
     if (line == "/new") {
         const auto previous_message_count = agent.history().size();
         const auto result = start_new_session(agent, store, active_model, current_session_id, scope_key);
         dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
-        std::cout << describe_new_session_result(result, false) << "\n\n";
+        std::print("{}\n\n", describe_new_session_result(result, false));
         return true;
     }
     if (line == "/compress") {
@@ -141,18 +146,18 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/clear") {
         agent.clear_history();
-        std::cout << "History cleared.\n\n";
+        std::print("History cleared.\n\n");
         return true;
     }
     if (line == "/history") {
-        std::cout << render_history_summary(agent);
+        std::print("{}", render_history_summary(agent));
         return true;
     }
     if (line == "/session") {
         if (current_session_id.empty()) {
-            std::cout << "💤 No active session.\n\n";
+            std::print("💤 No active session.\n\n");
         } else {
-            std::cout << "🧵 Current session: " << current_session_id << "\n\n";
+            std::print("🧵 Current session: {}\n\n", current_session_id);
         }
         return true;
     }
@@ -161,21 +166,21 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line == "/sessions") {
-        std::cout << render_saved_sessions(store, scope_key);
+        std::print("{}", render_saved_sessions(store, scope_key));
         return true;
     }
     if (line == "/agent") {
-        std::cout << "🤖 Current agent: " << agent_key << "\n\n";
+        std::print("🤖 Current agent: {}\n\n", agent_key);
         return true;
     }
     if (line == "/status") {
-        std::cout << format_runtime_status(
-                         collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key))
-                  << "\n\n";
+        std::print("{}\n\n",
+                   format_runtime_status(
+                       collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)));
         return true;
     }
     if (line == "/agents") {
-        std::cout << format_agent_list(cfg, agent_key) << "\n\n";
+        std::print("{}\n\n", format_agent_list(cfg, agent_key));
         return true;
     }
     if (line.starts_with("/load ") || line.starts_with("/resume ")) {
@@ -185,40 +190,38 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/skills") {
         if (skill_loader == nullptr || skill_loader->active_skills().empty()) {
-            std::cout << "No skills loaded.\n\n";
+            std::print("No skills loaded.\n\n");
         } else {
-            std::cout << "Loaded skills:\n";
+            std::println("Loaded skills:");
             for (const auto &skill : skill_loader->active_skills()) {
-                std::cout << "  " << skill.name << " — " << skill.description << "\n";
-                std::cout << "    source: " << skill.source_path << "\n";
+                std::println("  {} — {}", skill.name, skill.description);
+                std::println("    source: {}", skill.source_path);
                 if (!skill.tools.empty()) {
-                    std::cout << "    tools: ";
-                    for (size_t i = 0; i < skill.tools.size(); ++i) {
-                        if (i > 0) {
-                            std::cout << ", ";
-                        }
-                        std::cout << skill.tools[i];
-                    }
-                    std::cout << "\n";
+                    std::print("    tools: ");
+                    auto joined_tools = skill.tools |
+                                        std::views::transform([](const std::string &tool) -> std::string_view { return tool; }) |
+                                        std::views::join_with(std::string_view{", "});
+                    std::ranges::copy(joined_tools, std::ostreambuf_iterator<char>(std::cout));
+                    std::println("");
                 }
             }
-            std::cout << "\n";
+            std::println("");
         }
         return true;
     }
     if (line == "/tools") {
         if (tool_registry == nullptr) {
-            std::cout << "No tool registry available.\n\n";
+            std::print("No tool registry available.\n\n");
         } else {
             const auto defs = tool_registry->definitions();
             if (defs.empty()) {
-                std::cout << "No tools registered.\n\n";
+                std::print("No tools registered.\n\n");
             } else {
-                std::cout << "Registered tools (" << defs.size() << "):\n";
+                std::println("Registered tools ({}):", defs.size());
                 for (const auto &def : defs) {
-                    std::cout << "  " << def.name << " — " << def.description << "\n";
+                    std::println("  {} — {}", def.name, def.description);
                 }
-                std::cout << "\n";
+                std::println("");
             }
         }
         return true;
@@ -234,8 +237,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
 void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
               const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key,
               const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
-    std::cout << "Orangutan v0.1.0\n";
-    std::cout << "Type /help for commands, Ctrl+D to quit\n\n";
+    std::println("Orangutan v0.1.0");
+    std::print("Type /help for commands, Ctrl+D to quit\n\n");
 
     dispatch_session_start(hook_manager, current_session_id, agent.history().size());
 
@@ -270,7 +273,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         try {
             agent.run(line);
         } catch (const std::exception &e) {
-            std::cerr << "Error: " << e.what() << "\n\n";
+            std::print(stderr, "Error: {}\n\n", e.what());
         }
     }
 
@@ -278,17 +281,17 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
         if (!current_session_id.empty()) {
             store.update(current_session_id, agent.history(), active_model);
-            std::cout << "\n💾 Session updated: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
+            std::print("\n💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         } else {
             current_session_id = store.save(agent.history(), active_model, scope_key);
             dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-            std::cout << "\n💾 Auto-saved session: " << current_session_id << " (use -r " << current_session_id << " to resume)\n";
+            std::print("\n💾 Auto-saved session: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         }
     }
 
     dispatch_session_end(hook_manager, current_session_id, agent.history().size());
 
-    std::cout << "\nBye!\n";
+    std::print("\nBye!\n");
 }
 
 } // namespace orangutan::app
