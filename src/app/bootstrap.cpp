@@ -8,6 +8,7 @@
 #include "core/providers/provider.hpp"
 #include "core/tools/tool.hpp"
 #include "features/agent/agent-loop.hpp"
+#include "features/web/web-server.hpp"
 #include "features/channel/core/message-queue.hpp"
 #include "features/cron/parser.hpp"
 #include "features/cron/store.hpp"
@@ -104,6 +105,11 @@ struct CliOptions {
     bool verbose = false;
     bool resume_requested = false;
     bool protect_config_requested = false;
+    bool web_mode = false;
+    bool web_only = false;
+    int web_port = 18080;
+    std::string web_host = "127.0.0.1";
+    std::string web_dir = "web/dist";
 };
 
 std::atomic<bool> &signal_stop_requested() {
@@ -136,6 +142,11 @@ void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_
         ->expected(0, 1)
         ->default_str("");
     protect_flag = app.get_option("--protect-config-secrets");
+    app.add_flag("--web", options.web_mode, "Start the web management UI server");
+    app.add_flag("--web-only", options.web_only, "Start only the web server (no REPL)");
+    app.add_option("--port", options.web_port, "Web server port (default: 18080)");
+    app.add_option("--web-host", options.web_host, "Web server bind address (default: 127.0.0.1)");
+    app.add_option("--web-dir", options.web_dir, "Path to web frontend static files");
 }
 
 void configure_logging(bool verbose) {
@@ -179,6 +190,14 @@ bool validate_initial_options(const CliOptions &options) {
     if (options.protect_config_requested &&
         (options.serve_mode || options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session || !options.api_key.empty())) {
         std::println(std::cerr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
+        return false;
+    }
+    if (options.web_only && options.web_mode) {
+        std::println(std::cerr, "Error: --web and --web-only are mutually exclusive.");
+        return false;
+    }
+    if (options.web_only && (!options.message.empty() || options.serve_mode)) {
+        std::println(std::cerr, "Error: --web-only cannot be combined with --message or --serve.");
         return false;
     }
     return true;
@@ -737,6 +756,28 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         orangutan::MessageQueue message_queue;
         return run_serve_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store, subagent_manager, cfg,
                               &hook_manager);
+    }
+
+    std::unique_ptr<orangutan::WebServer> web_server;
+    if (options.web_mode || options.web_only) {
+        web_server = std::make_unique<orangutan::WebServer>();
+        web_server->set_static_dir(options.web_dir);
+        if (options.web_host != "127.0.0.1") {
+            spdlog::warn("Web server binding to {} — accessible from network", options.web_host);
+        }
+        web_server->start(options.web_host, options.web_port);
+        std::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
+    }
+
+    if (options.web_only) {
+        auto &stop = signal_stop_requested();
+        std::signal(SIGINT, handle_signal);
+        std::signal(SIGTERM, handle_signal);
+        while (!stop.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        web_server->stop();
+        return 0;
     }
 
     if (!options.message.empty()) {

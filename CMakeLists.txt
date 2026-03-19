@@ -34,6 +34,14 @@ FetchContent_Declare(
 )
 FetchContent_Populate(xxhash)
 
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.18.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(httplib)
+
 option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support (requires ixwebsocket)" ON)
 
 if(ORANGUTAN_ENABLE_QQ_CHANNEL)
@@ -107,6 +115,8 @@ add_library(orangutan_lib STATIC
     src/infra/storage/session-store.cpp
     src/infra/storage/sqlite.cpp
     src/infra/storage/subagent-run-store.cpp
+    src/features/web/web-server.cpp
+    src/features/web/web-routes.cpp
     src/infra/subprocess/subprocess.cpp
 )
 
@@ -119,6 +129,7 @@ target_link_libraries(orangutan_lib PUBLIC
     tomlplusplus::tomlplusplus
     Threads::Threads
     OpenSSL::Crypto
+    httplib::httplib
     ${SQLITE3_LIBRARIES}
 )
 
@@ -152,6 +163,7 @@ if(BUILD_TESTING)
 
     add_executable(orangutan_tests
         tests/app/bootstrap-test.cpp
+        tests/app/bootstrap-web-test.cpp
         tests/app/channel-serve-test.cpp
         tests/app/cli-ui-test.cpp
         tests/app/history-events-test.cpp
@@ -179,12 +191,16 @@ if(BUILD_TESTING)
         tests/features/skill-loader-test.cpp
         tests/features/subagent-manager-test.cpp
         tests/features/subagent-tools-test.cpp
+        tests/features/web-server-test.cpp
+        tests/features/web-routes-test.cpp
+        tests/features/web-chat-test.cpp
         tests/infra/config-test.cpp
         tests/infra/config-secret-test.cpp
         tests/infra/session-store-test.cpp
         tests/infra/sqlite-test.cpp
         tests/infra/subagent-run-store-test.cpp
         tests/infra/subprocess-test.cpp
+        tests/infra/config-save-test.cpp
         tests/integration/hook-integration-test.cpp
         tests/integration/subagent-integration-test.cpp
     )
