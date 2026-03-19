@@ -98,6 +98,8 @@ add_library(orangutan_lib STATIC
     src/features/tools/script/script-loader.cpp
     src/features/tools/subagent/subagent-tools.cpp
     src/infra/config/config.cpp
+    src/infra/config/config-sections-core.cpp
+    src/infra/config/config-sections-integrations.cpp
     src/infra/config/secret-fields.cpp
     src/infra/config/secret-protection-crypto.cpp
     src/infra/config/secret-protection-file.cpp
