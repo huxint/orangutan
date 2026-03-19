@@ -715,12 +715,12 @@ Config Config::load_from(const std::string &path) {
 bool Config::is_tool_allowed(const std::string &name) const {
     auto effective = permissions;
     for (const auto &tool : allowed_tools) {
-        if (std::ranges::find(effective.allowed_tools, tool) == effective.allowed_tools.end()) {
+        if (!std::ranges::contains(effective.allowed_tools, tool)) {
             effective.allowed_tools.push_back(tool);
         }
     }
     for (const auto &tool : denied_tools) {
-        if (std::ranges::find(effective.denied_tools, tool) == effective.denied_tools.end()) {
+        if (!std::ranges::contains(effective.denied_tools, tool)) {
             effective.denied_tools.push_back(tool);
         }
     }

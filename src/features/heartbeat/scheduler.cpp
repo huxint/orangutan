@@ -52,7 +52,7 @@ bool HeartbeatScheduler::remove_job(const std::string &name) {
 
 bool HeartbeatScheduler::has_job(const std::string &name) const {
     std::scoped_lock lock(jobs_mutex_);
-    return std::ranges::any_of(jobs_, [&](const HeartbeatJob &j) { return j.name == name; });
+    return std::ranges::contains(jobs_, name, &HeartbeatJob::name);
 }
 
 void HeartbeatScheduler::set_heartbeat_md_path(std::string path) {

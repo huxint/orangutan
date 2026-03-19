@@ -3,6 +3,7 @@
 #include "features/memory/memory-search.hpp"
 
 #include <algorithm>
+#include <array>
 
 namespace orangutan {
 namespace {
@@ -50,10 +51,9 @@ std::vector<MemoryRecord> RuntimeMemory::prompt_memories(const std::string &quer
         return records;
     }
 
-    records.erase(std::remove_if(records.begin(), records.end(), [](const MemoryRecord &record) {
-                      return record.category == "journal";
-                  }),
-                  records.end());
+    std::erase_if(records, [](const MemoryRecord &record) {
+        return record.category == "journal";
+    });
     if (records.size() > limit) {
         records.resize(limit);
     }
@@ -107,19 +107,34 @@ JournalStoreResult RuntimeMemory::store_journal_summary(const std::string &summa
 }
 
 bool RuntimeMemory::query_requests_journal(std::string_view query) {
-    const auto normalized = memory_detail::normalize_ascii(memory_detail::trim_copy(std::string(query)));
-    return normalized.find("journal") != std::string::npos || normalized.find("diary") != std::string::npos ||
-           normalized.find("previous session") != std::string::npos || normalized.find("last session") != std::string::npos ||
-           normalized.find("recent session") != std::string::npos || std::string(query).find("日记") != std::string::npos ||
-           std::string(query).find("会话") != std::string::npos;
+    static constexpr auto normalized_keywords = std::to_array<std::string_view>({
+        "journal",
+        "diary",
+        "previous session",
+        "last session",
+        "recent session",
+    });
+    static constexpr auto raw_keywords = std::to_array<std::string_view>({
+        "日记",
+        "会话",
+    });
+
+    const auto trimmed_query = memory_detail::trim_copy(std::string(query));
+    const auto normalized = memory_detail::normalize_ascii(trimmed_query);
+    const auto trimmed_view = std::string_view(trimmed_query);
+    return std::ranges::any_of(normalized_keywords, [&normalized](std::string_view keyword) {
+               return normalized.contains(keyword);
+           }) ||
+           std::ranges::any_of(raw_keywords, [trimmed_view](std::string_view keyword) {
+               return trimmed_view.contains(keyword);
+           });
 }
 
 std::vector<MemoryRecord> RuntimeMemory::durable_records() const {
     auto records = store_.list(context_.scope, {}, 200);
-    records.erase(std::remove_if(records.begin(), records.end(), [](const MemoryRecord &record) {
-                      return record.category == "journal";
-                  }),
-                  records.end());
+    std::erase_if(records, [](const MemoryRecord &record) {
+        return record.category == "journal";
+    });
     return records;
 }
 

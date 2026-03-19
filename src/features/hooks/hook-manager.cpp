@@ -13,26 +13,24 @@ namespace orangutan {
 
 // ── Event name mapping ──────────────────────────
 
-constexpr std::array<std::pair<HookEvent, std::string_view>, 6> event_names = {{
+using EventNameEntry = std::pair<HookEvent, std::string_view>;
+
+constexpr std::array<EventNameEntry, 6> event_names = {{
     {HookEvent::before_tool_call, "before_tool_call"}, {HookEvent::after_tool_call, "after_tool_call"},
     {HookEvent::message_received, "message_received"}, {HookEvent::message_sending, "message_sending"},
     {HookEvent::session_start, "session_start"},       {HookEvent::session_end, "session_end"},
 }};
 
 std::string hook_event_to_string(HookEvent event) {
-    for (const auto &[e, name] : event_names) {
-        if (e == event) {
-            return std::string(name);
-        }
+    if (const auto it = std::ranges::find(event_names, event, &EventNameEntry::first); it != event_names.end()) {
+        return std::string(it->second);
     }
     return "unknown";
 }
 
-static std::optional<HookEvent> string_to_hook_event(const std::string &name) {
-    for (const auto &[e, n] : event_names) {
-        if (n == name) {
-            return e;
-        }
+static std::optional<HookEvent> string_to_hook_event(std::string_view name) {
+    if (const auto it = std::ranges::find(event_names, name, &EventNameEntry::second); it != event_names.end()) {
+        return it->first;
     }
     return std::nullopt;
 }
@@ -60,9 +58,9 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
         }
 
         for (const auto &entry : std::filesystem::directory_iterator(dir)) {
-                if (!entry.is_directory()) {
-                    continue;
-                }
+            if (!entry.is_directory()) {
+                continue;
+            }
 
             auto event_name = entry.path().filename().string();
             auto event = string_to_hook_event(event_name);
@@ -94,8 +92,7 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
 
             auto &existing = hooks_[*event];
             for (const auto &hook : event_hooks) {
-                auto shadowed = std::ranges::find(existing, hook.filename, &HookDef::filename);
-                if (shadowed != existing.end()) {
+                if (auto shadowed = std::ranges::find(existing, hook.filename, &HookDef::filename); shadowed != existing.end()) {
                     spdlog::debug("Hook '{}' for '{}' overridden by {}", hook.filename, event_name, hook.path);
                     existing.erase(shadowed);
                 }

@@ -99,21 +99,20 @@ std::string to_string(ToolApprovalPolicy policy) {
 }
 
 bool is_tool_allowed(const ToolPermissionSettings &settings, std::string_view name) {
-    const auto denied = std::ranges::find(settings.denied_tools, name);
-    if (denied != settings.denied_tools.end()) {
+    if (std::ranges::contains(settings.denied_tools, name)) {
         return false;
     }
     if (settings.allowed_tools.empty()) {
         return true;
     }
-    return std::ranges::find(settings.allowed_tools, name) != settings.allowed_tools.end();
+    return std::ranges::contains(settings.allowed_tools, name);
 }
 
 std::optional<std::string> blocked_shell_command_pattern(const ToolPermissionSettings &settings, std::string_view command) {
     const auto lowered_command = lowercase_copy(command);
     for (const auto &pattern : settings.denied_shell_commands) {
         const auto lowered_pattern = lowercase_copy(pattern);
-        if (!lowered_pattern.empty() && lowered_command.find(lowered_pattern) != std::string::npos) {
+        if (!lowered_pattern.empty() && lowered_command.contains(lowered_pattern)) {
             return pattern;
         }
     }

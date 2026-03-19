@@ -10,7 +10,7 @@ namespace orangutan::memory_detail {
 namespace {
 
 double substring_score(std::string_view haystack, std::string_view needle, double score) {
-    return haystack.find(needle) != std::string::npos ? score : 0.0;
+    return haystack.contains(needle) ? score : 0.0;
 }
 
 double exact_score(std::string_view left, std::string_view right, double score) {
@@ -164,10 +164,10 @@ std::string merge_memory_content(const std::string &existing, const std::string 
     if (trimmed_existing == trimmed_incoming) {
         return trimmed_existing;
     }
-    if (trimmed_existing.find(trimmed_incoming) != std::string::npos) {
+    if (trimmed_existing.contains(trimmed_incoming)) {
         return trimmed_existing;
     }
-    if (trimmed_incoming.find(trimmed_existing) != std::string::npos) {
+    if (trimmed_incoming.contains(trimmed_existing)) {
         return trimmed_incoming;
     }
 

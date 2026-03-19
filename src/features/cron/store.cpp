@@ -103,8 +103,7 @@ bool CronStore::save(const std::vector<CronJobEntry> &jobs) const {
 }
 
 bool CronStore::add(const CronJobEntry &entry) {
-    auto it = std::ranges::find(jobs_, entry.name, &CronJobEntry::name);
-    if (it != jobs_.end()) {
+    if (std::ranges::contains(jobs_, entry.name, &CronJobEntry::name)) {
         return false;
     }
 

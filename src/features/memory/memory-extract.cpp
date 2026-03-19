@@ -3,6 +3,7 @@
 
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <regex>
@@ -243,7 +244,7 @@ bool should_attempt_auto_capture(const std::string &text) {
     }
 
     const auto normalized = normalize_ascii(trimmed);
-    static const std::vector<std::string> exact_noise = {
+    static constexpr auto exact_noise = std::to_array<std::string_view>({
         "hi",
         "hello",
         "hey",
@@ -258,8 +259,8 @@ bool should_attempt_auto_capture(const std::string &text) {
         "cool",
         "continue",
         "please continue",
-    };
-    if (std::ranges::find(exact_noise, normalized) != exact_noise.end()) {
+    });
+    if (std::ranges::contains(exact_noise, std::string_view{normalized})) {
         return false;
     }
 
@@ -268,10 +269,10 @@ bool should_attempt_auto_capture(const std::string &text) {
         return false;
     }
 
-    const bool looks_question = trimmed.find('?') != std::string::npos || trimmed.find("？") != std::string::npos;
+    const bool looks_question = trimmed.contains('?') || trimmed.contains("？");
     if (looks_question &&
-        (normalized.find("remember") != std::string::npos || normalized.find("memory") != std::string::npos || trimmed.find("记住") != std::string::npos ||
-         trimmed.find("记得") != std::string::npos || trimmed.find("记忆") != std::string::npos)) {
+        (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") ||
+         trimmed.contains("记忆"))) {
         return false;
     }
 
