@@ -32,7 +32,7 @@ FetchContent_Declare(
     GIT_TAG        v0.8.3
     GIT_SHALLOW    TRUE
 )
-FetchContent_Populate(xxhash)
+FetchContent_MakeAvailable(xxhash)
 
 FetchContent_Declare(
     httplib
