@@ -22,6 +22,7 @@ struct AgentConfig {
         .shell_approval = ToolApprovalPolicy::ask,
     };
     std::vector<std::string> subagents;
+    std::string edit_mode = "hashline";
 };
 
 struct QqBotConfig {

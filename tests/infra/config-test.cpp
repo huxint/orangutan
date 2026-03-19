@@ -637,3 +637,23 @@ model = "test-model"
     auto cfg = Config::load_from(path);
     EXPECT_EQ(cfg.edit_mode, "hashline");
 }
+
+TEST_F(ConfigFileTest, AgentsInheritGlobalEditModeAndCanOverrideIt) {
+    auto path = write_config(R"toml(
+[tools]
+edit_mode = "search_replace"
+
+[agents.default]
+model = "default-model"
+
+[agents.coder]
+model = "coder-model"
+edit_mode = "hashline"
+)toml");
+
+    const auto cfg = Config::load_from(path);
+    ASSERT_TRUE(cfg.agents.contains("default"));
+    ASSERT_TRUE(cfg.agents.contains("coder"));
+    EXPECT_EQ(cfg.agents.at("default").edit_mode, "search_replace");
+    EXPECT_EQ(cfg.agents.at("coder").edit_mode, "hashline");
+}

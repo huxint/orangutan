@@ -164,9 +164,9 @@ TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
     ::close(output_pipe[0]);
 }
 
-TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPropagatesEditMode) {
+TEST_F(BootstrapTest, BuildAgentRuntimeConfigsUsesPerAgentEditMode) {
     Config cfg;
-    cfg.edit_mode = "search_replace";
+    cfg.edit_mode = "hashline";
     cfg.agents.emplace("default", AgentConfig{
                                       .provider = "openai",
                                       .model = "gpt-test",
@@ -174,13 +174,26 @@ TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPropagatesEditMode) {
                                       .api_key = "test-key",
                                       .system_prompt = "You are a test agent.",
                                       .workspace = workspace_root().string(),
+                                      .edit_mode = "hashline",
+                                  });
+    cfg.agents.emplace("coder", AgentConfig{
+                                      .provider = "openai",
+                                      .model = "gpt-coder",
+                                      .base_url = "https://example.test",
+                                      .api_key = "coder-key",
+                                      .system_prompt = "You are a coder agent.",
+                                      .workspace = workspace_root().string(),
+                                      .edit_mode = "search_replace",
                                   });
 
     const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
     ASSERT_TRUE(runtime_configs.has_value());
-    auto it = runtime_configs->find("default");
-    ASSERT_NE(it, runtime_configs->end());
-    EXPECT_EQ(it->second.edit_mode, "search_replace");
+    auto default_it = runtime_configs->find("default");
+    ASSERT_NE(default_it, runtime_configs->end());
+    EXPECT_EQ(default_it->second.edit_mode, "hashline");
+    auto coder_it = runtime_configs->find("coder");
+    ASSERT_NE(coder_it, runtime_configs->end());
+    EXPECT_EQ(coder_it->second.edit_mode, "search_replace");
 }
 
 TEST_F(BootstrapTest, BuildSubagentChildRuntimeConfigsPropagatesEditMode) {

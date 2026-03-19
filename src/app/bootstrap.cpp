@@ -245,7 +245,7 @@ orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg
                                       .base_url = agent_cfg.base_url,
                                       .system_prompt = agent_cfg.system_prompt,
                                       .workspace_root = resolved_workspace_root,
-                                      .edit_mode = cfg.edit_mode,
+                                      .edit_mode = agent_cfg.edit_mode,
                                       .cli_runtime_key = cli_identity.runtime_key,
                                       .cli_memory_scope = cli_identity.memory_scope,
                                       .memory = cfg.memory,
@@ -280,6 +280,18 @@ orangutan::app::detail::build_subagent_child_runtime_configs(
 }
 
 namespace {
+
+void apply_cli_edit_mode_override(orangutan::Config &cfg, std::string_view edit_mode) {
+    if (edit_mode.empty()) {
+        return;
+    }
+
+    cfg.edit_mode = std::string(edit_mode);
+    for (auto &[agent_key, agent_cfg] : cfg.agents) {
+        agent_cfg.edit_mode = cfg.edit_mode;
+        (void)agent_key;
+    }
+}
 
 std::unordered_map<std::string, std::string> build_qq_bot_agents(const orangutan::Config &cfg) {
     std::unordered_map<std::string, std::string> qq_bot_agents;
@@ -517,9 +529,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
 
     configure_logging(options.verbose);
     auto cfg = orangutan::Config::load();
-    if (!options.edit_mode.empty()) {
-        cfg.edit_mode = options.edit_mode;
-    }
+    apply_cli_edit_mode_override(cfg, options.edit_mode);
     if (!validate_initial_options(options)) {
         return 1;
     }
@@ -573,7 +583,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         .base_url = maybe_selected_agent->base_url,
         .system_prompt = maybe_selected_agent->system_prompt,
         .workspace_root = *maybe_workspace,
-        .edit_mode = cfg.edit_mode,
+        .edit_mode = maybe_selected_agent->edit_mode,
         .cli_runtime_key = cli_identity.runtime_key,
         .cli_memory_scope = cli_identity.memory_scope,
         .memory = cfg.memory,
@@ -599,7 +609,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     const auto approval_callback = make_cli_approval_callback(!options.event_stream && !options.serve_mode);
     tool_context.approval_callback = approval_callback;
     auto tool_bootstrap = orangutan::register_runtime_tools(tools, &runtime_memory, cli_identity.workspace, &tool_context, cfg.custom_tools, cfg.mcp_servers,
-                                                            &runtime_cfg.permissions, approval_callback, cfg.edit_mode);
+                                                            &runtime_cfg.permissions, approval_callback, runtime_cfg.edit_mode);
     (void)tool_bootstrap;
     const auto system_prompt = orangutan::append_subagent_prompt_guidance(runtime_cfg.system_prompt, runtime_cfg.allowed_child_agents, false);
 

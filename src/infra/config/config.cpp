@@ -88,6 +88,7 @@ static AgentConfig make_agent_config_from_legacy(const Config &cfg) {
         .workspace = cfg.workspace,
         .permissions = cfg.permissions,
         .subagents = {},
+        .edit_mode = cfg.edit_mode,
     };
 }
 
@@ -340,6 +341,9 @@ static Config parse_agents_section(const toml::table &tbl, Config cfg) {
                     agent_cfg.subagents.push_back(*s);
                 }
             }
+        }
+        if (auto v = (*agent)["edit_mode"].value<std::string>()) {
+            agent_cfg.edit_mode = *v;
         }
 
         cfg.agents.insert_or_assign(key, std::move(agent_cfg));
