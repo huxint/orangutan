@@ -17,7 +17,7 @@ std::string make_journal_key(const std::string &summary) {
 RuntimeMemory::RuntimeMemory(MemoryStore &store, RuntimeMemoryContext context, MemoryMirror mirror)
 : store_(store),
   context_(std::move(context)),
-  mirror_(std::move(mirror)) {}
+  mirror_(mirror) {}
 
 void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &source, double importance) {
     store_.remember(key, content, category, context_.scope, source, importance);
@@ -138,7 +138,7 @@ std::vector<MemoryRecord> RuntimeMemory::durable_records() const {
     return records;
 }
 
-void RuntimeMemory::refresh_mirror_after_write() {
+void RuntimeMemory::refresh_mirror_after_write() const {
     (void)refresh_mirror();
 }
 

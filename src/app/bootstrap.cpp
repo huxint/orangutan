@@ -2,7 +2,6 @@
 
 #include "app/channel-serve.hpp"
 #include "app/repl.hpp"
-#include "app/runtime-config-builders.hpp"
 #include "app/single-shot.hpp"
 #include "app/runtime/identity.hpp"
 #include "app/runtime/memory-context.hpp"
@@ -214,8 +213,10 @@ std::unique_ptr<Store> create_store(const char *name) {
 
 } // namespace
 
-std::optional<std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig>>
-orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override) {
+namespace orangutan::app::detail {
+
+std::optional<std::unordered_map<std::string, AgentRuntimeConfig>>
+build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override) {
     std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> result;
     for (const auto &[agent_key, agent_cfg] : cfg.agents) {
         orangutan::Config agent_cfg_wrapper = cfg;
@@ -256,9 +257,8 @@ orangutan::app::detail::build_agent_runtime_configs(const orangutan::Config &cfg
     return result;
 }
 
-std::unordered_map<std::string, orangutan::SubagentChildRuntimeConfig>
-orangutan::app::detail::build_subagent_child_runtime_configs(
-    const std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> &agent_runtime_configs) {
+std::unordered_map<std::string, SubagentChildRuntimeConfig>
+build_subagent_child_runtime_configs(const std::unordered_map<std::string, AgentRuntimeConfig> &agent_runtime_configs) {
     std::unordered_map<std::string, orangutan::SubagentChildRuntimeConfig> result;
     for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
         result.emplace(agent_key, orangutan::SubagentChildRuntimeConfig{
@@ -278,6 +278,8 @@ orangutan::app::detail::build_subagent_child_runtime_configs(
     }
     return result;
 }
+
+} // namespace orangutan::app::detail
 
 namespace {
 

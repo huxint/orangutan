@@ -6,7 +6,9 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
+#include <initializer_list>
 #include <regex>
+#include <span>
 #include <set>
 #include <vector>
 
@@ -92,7 +94,7 @@ size_t utf8_char_len(std::string_view input, size_t pos) {
 // Extract up to max_codepoints complete UTF-8 code points starting at byte offset,
 // stopping at whitespace or any of the given terminator strings.
 std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints,
-                             const std::vector<std::string_view> &terminators) {
+                             std::span<const std::string_view> terminators) {
     std::string result;
     size_t pos = start;
     size_t count = 0;
@@ -131,7 +133,7 @@ std::string extract_utf8_run(std::string_view input, size_t start, size_t max_co
 // Like extract_utf8_run but allows spaces within (for sentence-level captures).
 // Stops at newline or any terminator.
 std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints,
-                                  const std::vector<std::string_view> &terminators) {
+                                  std::span<const std::string_view> terminators) {
     std::string result;
     size_t pos = start;
     size_t count = 0;
@@ -168,18 +170,18 @@ std::string extract_utf8_sentence(std::string_view input, size_t start, size_t m
 }
 
 // CJK sentence terminators (as UTF-8 byte sequences).
-const std::vector<std::string_view> cjk_name_terminators = {
+constexpr auto cjk_name_terminators = std::to_array<std::string_view>({
     "\xe3\x80\x82", // 。
     "\xef\xbc\x81", // ！
     "\xef\xbc\x9f", // ？
     "\xef\xbc\x8c", // ，
-};
+});
 
-const std::vector<std::string_view> cjk_sentence_terminators = {
+constexpr auto cjk_sentence_terminators = std::to_array<std::string_view>({
     "\xe3\x80\x82", // 。
     "\xef\xbc\x81", // ！
     "\xef\xbc\x9f", // ？
-};
+});
 
 std::string make_slug(std::string_view value) {
     std::string slug;
@@ -225,8 +227,8 @@ size_t find_after(std::string_view text, std::string_view prefix) {
     return pos + prefix.size();
 }
 
-size_t find_after_any(std::string_view text, const std::vector<std::string_view> &prefixes) {
-    for (const auto &prefix : prefixes) {
+size_t find_after_any(std::string_view text, std::initializer_list<std::string_view> prefixes) {
+    for (std::string_view prefix : prefixes) {
         const auto pos = find_after(text, prefix);
         if (pos != std::string_view::npos) {
             return pos;
@@ -270,16 +272,10 @@ bool should_attempt_auto_capture(const std::string &text) {
     }
 
     const bool looks_question = trimmed.contains('?') || trimmed.contains("？");
-    if (looks_question &&
-        (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") ||
-         trimmed.contains("记忆"))) {
-        return false;
-    }
-
-    return true;
+    return !(looks_question &&
+             (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") ||
+              trimmed.contains("记忆")));
 }
-
-
 std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     std::vector<AutoCandidate> candidates;
     const auto trimmed = trim_copy(text);

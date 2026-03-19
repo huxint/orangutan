@@ -15,7 +15,7 @@
 
 namespace orangutan {
 
-constexpr std::string_view HASH_ALPHABET = "ZPMQVRWSNKTXJBYH";
+constexpr std::string_view hash_alphabet = "ZPMQVRWSNKTXJBYH";
 
 namespace {
 
@@ -24,13 +24,13 @@ struct HashDict {
 
     consteval HashDict() : entries{} {
         for (size_t i = 0; i < 256; ++i) {
-            entries[i][0] = HASH_ALPHABET[i >> 4];
-            entries[i][1] = HASH_ALPHABET[i & 0xF];
+            entries.at(i).at(0) = hash_alphabet.at(i >> 4);
+            entries.at(i).at(1) = hash_alphabet.at(i & 0xF);
         }
     }
 };
 
-constexpr HashDict HASH_DICT{};
+constexpr HashDict hash_dict{};
 
 bool is_symbol_only(std::string_view line) {
     return std::ranges::none_of(line, [](unsigned char ch) {
@@ -56,8 +56,8 @@ std::string compute_line_hash(std::string_view line, size_t line_number) {
     const auto processed = preprocess_line(line);
     const auto seed = static_cast<XXH32_hash_t>(is_symbol_only(processed) ? line_number : 0);
     const auto hash = XXH32(processed.data(), processed.size(), seed) & 0xFF;
-    const auto &entry = HASH_DICT.entries[hash];
-    return {entry[0], entry[1]};
+    const auto &entry = hash_dict.entries.at(hash);
+    return {entry.data(), entry.size()};
 }
 
 std::string format_hashline(std::string_view line, size_t line_number) {
@@ -80,8 +80,8 @@ Anchor parse_anchor(std::string_view anchor_str) {
 
     // Parse line number
     size_t line_number = 0;
-    auto [ptr, ec] = std::from_chars(line_part.data(), line_part.data() + line_part.size(), line_number);
-    if (ec != std::errc{} || ptr != line_part.data() + line_part.size()) {
+    auto [ptr, ec] = std::from_chars(line_part.begin(), line_part.end(), line_number);
+    if (ec != std::errc{} || ptr != line_part.end()) {
         throw std::runtime_error("anchor line number is not a valid integer");
     }
     if (line_number == 0) {
@@ -93,7 +93,7 @@ Anchor parse_anchor(std::string_view anchor_str) {
         throw std::runtime_error("anchor hash must be exactly 2 characters");
     }
     for (char ch : hash_part) {
-        if (HASH_ALPHABET.find(ch) == std::string_view::npos) {
+        if (!hash_alphabet.contains(ch)) {
             throw std::runtime_error("anchor hash contains invalid character");
         }
     }
@@ -124,10 +124,10 @@ namespace {
 std::optional<size_t> match_hashline_prefix(std::string_view s) {
     size_t pos = 0;
     // Must start with one or more digits
-    if (pos >= s.size() || !std::isdigit(static_cast<unsigned char>(s[pos]))) {
+    if (pos >= s.size() || std::isdigit(static_cast<unsigned char>(s[pos])) == 0) {
         return std::nullopt;
     }
-    while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+    while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos])) != 0) {
         ++pos;
     }
     // Must have '#'
@@ -139,8 +139,8 @@ std::optional<size_t> match_hashline_prefix(std::string_view s) {
     if (pos + 2 > s.size()) {
         return std::nullopt;
     }
-    for (int i = 0; i < 2; ++i) {
-        if (HASH_ALPHABET.find(s[pos + i]) == std::string_view::npos) {
+    for (size_t i = 0; i < 2; ++i) {
+        if (!hash_alphabet.contains(s.at(pos + i))) {
             return std::nullopt;
         }
     }
@@ -261,17 +261,17 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                 return {.ok = false, .error = "replace edit requires anchor"};
             }
             break;
-        case HashlineEditOp::insert_after:
-            // anchor optional (no anchor = EOF append)
-            break;
         case HashlineEditOp::insert_before:
-            // anchor optional (no anchor = BOF prepend)
+        case HashlineEditOp::insert_after:
+            // anchor optional (missing anchor inserts at BOF/EOF depending on op)
             break;
         case HashlineEditOp::del:
             if (edit.anchor.empty()) {
                 return {.ok = false, .error = "delete edit requires anchor"};
             }
             break;
+        default:
+            std::unreachable();
         }
 
         // Parse primary anchor
@@ -367,13 +367,17 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
             continue;
         }
         auto [a_start, a_end] = effective_range(resolved[i]);
-        if (a_start == 0) continue;
+        if (a_start == 0) {
+            continue;
+        }
         for (size_t j = i + 1; j < resolved.size(); ++j) {
             if (resolved[j].op != HashlineEditOp::replace && resolved[j].op != HashlineEditOp::del) {
                 continue;
             }
             auto [b_start, b_end] = effective_range(resolved[j]);
-            if (b_start == 0) continue;
+            if (b_start == 0) {
+                continue;
+            }
             // Check overlap: ranges [a_start, a_end] and [b_start, b_end]
             if (a_start <= b_end && b_start <= a_end) {
                 return {.ok = false,
@@ -388,11 +392,15 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
     // Step 6: Content auto-stripping
     std::string warnings;
     for (auto &re : resolved) {
-        if (re.content.empty()) continue;
+        if (re.content.empty()) {
+            continue;
+        }
         // Check if ALL non-empty content lines match the hashline prefix pattern
         bool all_match = true;
         for (const auto &line : re.content) {
-            if (line.empty()) continue;
+            if (line.empty()) {
+                continue;
+            }
             if (!match_hashline_prefix(line).has_value()) {
                 all_match = false;
                 break;
@@ -405,7 +413,9 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
             });
             if (has_non_empty) {
                 for (auto &line : re.content) {
-                    if (line.empty()) continue;
+                    if (line.empty()) {
+                        continue;
+                    }
                     auto pos = match_hashline_prefix(line);
                     if (pos.has_value()) {
                         line = line.substr(*pos);
@@ -420,8 +430,12 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
 
     // Step 7: Noop detection
     for (auto &re : resolved) {
-        if (re.op != HashlineEditOp::replace) continue;
-        if (!re.start_line.has_value()) continue;
+        if (re.op != HashlineEditOp::replace) {
+            continue;
+        }
+        if (!re.start_line.has_value()) {
+            continue;
+        }
         auto start = *re.start_line;
         auto end = re.end_line.value_or(start);
         // Check if content matches existing lines
@@ -435,7 +449,9 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
                 }
             }
             if (same) {
-                if (!warnings.empty()) warnings += "\n";
+                if (!warnings.empty()) {
+                    warnings += "\n";
+                }
                 warnings += "Noop: line " + std::to_string(start) +
                             " already has the specified content";
                 re.index = SIZE_MAX; // mark for skip
@@ -631,6 +647,8 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines,
             result_lines.insert(result_lines.begin(), group.replacement_content.begin(), group.replacement_content.end());
             edits_applied += group.edit_count;
             break;
+        default:
+            std::unreachable();
         }
     }
 

@@ -22,14 +22,14 @@ constexpr std::array<EventNameEntry, 6> event_names = {{
 }};
 
 std::string hook_event_to_string(HookEvent event) {
-    if (const auto it = std::ranges::find(event_names, event, &EventNameEntry::first); it != event_names.end()) {
+    if (const auto *const it = std::ranges::find(event_names, event, &EventNameEntry::first); it != event_names.end()) {
         return std::string(it->second);
     }
     return "unknown";
 }
 
 static std::optional<HookEvent> string_to_hook_event(std::string_view name) {
-    if (const auto it = std::ranges::find(event_names, name, &EventNameEntry::second); it != event_names.end()) {
+    if (const auto *const it = std::ranges::find(event_names, name, &EventNameEntry::second); it != event_names.end()) {
         return it->first;
     }
     return std::nullopt;

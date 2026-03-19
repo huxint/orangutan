@@ -73,7 +73,7 @@ private:
     [[nodiscard]]
     std::vector<MemoryRecord> durable_records() const;
 
-    void refresh_mirror_after_write();
+    void refresh_mirror_after_write() const;
 };
 
 } // namespace orangutan

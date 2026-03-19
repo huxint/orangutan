@@ -440,8 +440,8 @@ TEST_F(MemoryStoreTest, AutoCaptureChineseNameProducesValidUtf8) {
         (void)j.dump();
     });
     // The captured content should contain valid Chinese text.
-    if (name.find("(no memories found)") == std::string::npos) {
-        EXPECT_NE(name.find("\xe4\xb8\x80"), std::string::npos); // "一" present
+    if (!name.contains("(no memories found)")) {
+        EXPECT_TRUE(name.contains("\xe4\xb8\x80")); // "一" present
     }
 }
 

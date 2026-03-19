@@ -79,7 +79,7 @@ TEST(SkillLoaderTest, LoadsValidSkill) {
             EXPECT_EQ(skill.tools.size(), 2);
             EXPECT_EQ(skill.tools[0], "read");
             EXPECT_EQ(skill.tools[1], "grep");
-            EXPECT_TRUE(skill.body.find("test skill body") != std::string::npos);
+            EXPECT_TRUE(skill.body.contains("test skill body"));
         }
     }
     EXPECT_TRUE(found) << "Expected 'test-skill' to be loaded";
@@ -154,7 +154,7 @@ TEST(SkillLoaderTest, LaterDirectoryShadowsSameName) {
     for (const auto &skill : loader.active_skills()) {
         if (skill.name == "test-skill") {
             EXPECT_EQ(skill.description, "Overridden version of test-skill");
-            EXPECT_TRUE(skill.body.find("workspace override") != std::string::npos);
+            EXPECT_TRUE(skill.body.contains("workspace override"));
         }
     }
 }
@@ -176,8 +176,8 @@ TEST(SkillLoaderTest, BuildPromptSectionContainsSkills) {
     loader.load_from_directories({fixtures_dir().string()});
 
     auto section = loader.build_prompt_section();
-    EXPECT_TRUE(section.find("## Active Skills") != std::string::npos);
-    EXPECT_TRUE(section.find("### test-skill") != std::string::npos);
+    EXPECT_TRUE(section.contains("## Active Skills"));
+    EXPECT_TRUE(section.contains("### test-skill"));
 }
 
 TEST(SkillLoaderTest, LoadsFrontmatterWithEmbeddedDelimiterInTomlString) {
@@ -196,7 +196,7 @@ Body with embedded delimiter in frontmatter string.
 
     ASSERT_EQ(loader.active_skills().size(), 1);
     EXPECT_EQ(loader.active_skills()[0].name, "embedded-delimiter");
-    EXPECT_TRUE(loader.active_skills()[0].body.find("Body with embedded delimiter") != std::string::npos);
+    EXPECT_TRUE(loader.active_skills()[0].body.contains("Body with embedded delimiter"));
 
     fs::remove_all(temp_dir);
 }
@@ -220,7 +220,7 @@ Body after multiline string frontmatter.
 
     ASSERT_EQ(loader.active_skills().size(), 1);
     EXPECT_EQ(loader.active_skills()[0].name, "multiline-delimiter");
-    EXPECT_TRUE(loader.active_skills()[0].body.find("Body after multiline string frontmatter.") != std::string::npos);
+    EXPECT_TRUE(loader.active_skills()[0].body.contains("Body after multiline string frontmatter."));
 
     fs::remove_all(temp_dir);
 }

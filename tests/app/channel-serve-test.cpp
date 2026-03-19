@@ -151,7 +151,7 @@ protected:
     [[nodiscard]]
     static bool contains_line(const std::vector<std::string> &lines, const std::string &needle) {
         return std::ranges::any_of(lines, [&needle](const std::string &line) {
-            return line.find(needle) != std::string::npos;
+            return line.contains(needle);
         });
     }
 

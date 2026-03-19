@@ -33,7 +33,7 @@ bool detect_heartbeat_ok(const std::string &response, int ack_max_chars, std::st
         return false;
     }
 
-    if (static_cast<int>(remainder.size()) <= ack_max_chars) {
+    if (ack_max_chars >= 0 && remainder.size() <= static_cast<size_t>(ack_max_chars)) {
         if (out_stripped != nullptr) {
             *out_stripped = std::string(remainder);
         }
