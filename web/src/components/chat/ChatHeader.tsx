@@ -1,4 +1,4 @@
-import { Bot, Lock, Sparkles } from 'lucide-react'
+import { Bot, Lock } from 'lucide-react'
 import type { AgentSummary } from '../../api/client'
 import { AgentSessionSwitcher } from './AgentSessionSwitcher'
 import type { ChatSessionSummary } from './types'
@@ -12,18 +12,19 @@ interface ChatHeaderProps {
   onStartNewChat: () => void
 }
 
-function originSummary(session: ChatSessionSummary | null): string | null {
-  if (!session) return null
-  if (session.origin_kind === 'channel') {
-    return session.origin_ref || 'Channel session'
+function scopeLabel(session: ChatSessionSummary | null): string {
+  if (!session) {
+    return 'New conversation'
   }
-  if (session.origin_kind === 'cli') {
-    return 'CLI session'
+
+  switch (session.origin_kind) {
+    case 'channel':
+      return 'Channel session'
+    case 'cli':
+      return 'CLI session'
+    default:
+      return 'Web session'
   }
-  if (session.origin_kind === 'web') {
-    return 'Web session'
-  }
-  return session.origin_kind || null
 }
 
 export function ChatHeader({
@@ -35,46 +36,46 @@ export function ChatHeader({
   onStartNewChat,
 }: ChatHeaderProps) {
   return (
-    <div className="border-b border-border bg-bg/95 px-4 py-4 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl items-start justify-between gap-4">
+    <div className="border-b border-border bg-bg-surface/90">
+      <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-4 px-4 py-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-surface px-3 py-1 text-xs font-medium text-text-muted">
-              <Bot size={13} className="text-accent" />
-              {agent?.key ?? 'Loading agent'}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-2.5 py-1">
+              <Bot size={12} />
+              Agent
             </span>
-            {session && (
-              <span className="rounded-full border border-border bg-bg-surface px-3 py-1 text-xs text-text-muted">
-                {originSummary(session)}
-              </span>
-            )}
-            {readOnly && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 px-3 py-1 text-xs font-medium text-amber-300">
-                <Lock size={12} />
-                Read only
-              </span>
-            )}
+            <span className="rounded-full border border-border bg-bg px-2.5 py-1 text-text">
+              {agent?.key ?? 'Unknown'}
+            </span>
+            <span className="rounded-full border border-border bg-bg px-2.5 py-1">
+              {scopeLabel(session)}
+            </span>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h1 className="text-lg font-semibold tracking-tight text-text">
-              {agent?.key ?? 'Chat'}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-lg font-semibold text-text">
+              {agent?.key ?? 'Agent not found'}
             </h1>
             {agent && (
-              <span className="inline-flex items-center gap-1 text-sm text-text-muted">
-                <Sparkles size={14} className="text-accent" />
-                {agent.provider} / {agent.model}
-              </span>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                <span>{agent.provider}</span>
+                <span>{agent.model}</span>
+              </div>
             )}
           </div>
 
-          <div className="mt-1 text-sm text-text-muted">
-            {agent?.workspace ? `Workspace: ${agent.workspace}` : 'Select a session or start a new one for this agent.'}
-          </div>
+          {agent?.workspace && (
+            <div className="mt-1 truncate text-xs text-text-muted">
+              Workspace: {agent.workspace}
+            </div>
+          )}
 
           {readOnly && (
-            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2 text-sm text-amber-100">
-              <div className="font-medium text-amber-200">Channel session · read only</div>
+            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100">
+              <div className="flex items-center gap-2 font-medium text-amber-200">
+                <Lock size={14} />
+                Channel session · read only
+              </div>
               <div className="mt-1 text-amber-100/90">
                 View history here, but continue the conversation from its original channel.
               </div>

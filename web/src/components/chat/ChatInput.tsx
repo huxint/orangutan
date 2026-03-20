@@ -72,14 +72,6 @@ export function ChatInput({
 
   return (
     <div className="border-t border-border bg-bg p-4">
-      {readOnly && (
-        <div className="mx-auto mb-3 max-w-3xl rounded-lg border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100">
-          <div className="font-medium text-amber-200">Channel session · read only</div>
-          <div className="mt-1 text-amber-100/90">
-            View history here, but continue the conversation from its original channel.
-          </div>
-        </div>
-      )}
       {queuedMessages.length > 0 && (
         <div className="mx-auto mb-3 max-w-3xl rounded-lg border border-border bg-bg-surface/80 p-3">
           <div className="mb-2 flex items-center justify-between text-xs text-text-muted">
