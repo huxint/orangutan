@@ -23,7 +23,7 @@ export function SystemPage() {
 
   const load = () => {
     setError('')
-    apiFetch<SystemStatus>('/api/system').then(setStatus).catch(e => setError(e.message))
+    apiFetch<SystemStatus>('/api/system/status').then(setStatus).catch(e => setError(e.message))
   }
 
   useEffect(() => {
