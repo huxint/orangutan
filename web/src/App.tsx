@@ -17,9 +17,10 @@ export default function App() {
           <Sidebar />
           <main className="flex-1 overflow-hidden">
             <Routes>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/chat" element={<ChatView />} />
-              <Route path="/chat/:sessionId" element={<ChatView />} />
+              <Route path="/" element={<Navigate to="/chat/default" replace />} />
+              <Route path="/chat" element={<Navigate to="/chat/default" replace />} />
+              <Route path="/chat/:agentKey" element={<ChatView />} />
+              <Route path="/chat/:agentKey/:sessionId" element={<ChatView />} />
               <Route path="/config" element={<ConfigPage />} />
               <Route path="/tools" element={<ToolsPage />} />
               <Route path="/agents" element={<AgentsPage />} />
