@@ -1,4 +1,5 @@
 #include "features/web/web-routes.hpp"
+#include "app/bootstrap.hpp"
 #include "features/web/web-types.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/config/config.hpp"
@@ -9,6 +10,64 @@
 #include <spdlog/spdlog.h>
 
 namespace orangutan::web {
+
+namespace {
+
+bool session_is_read_only(const SessionInfo &session) {
+    return session.origin_kind == "channel";
+}
+
+SessionMetadata make_web_session_metadata(const std::string &agent_key, const AgentConfig &agent) {
+    return SessionMetadata{
+        .model = agent.model,
+        .scope_key = "agent:" + agent_key + "|web",
+        .agent_key = agent_key,
+        .origin_kind = "web",
+        .origin_ref = "web:local",
+    };
+}
+
+std::optional<AgentConfig> find_effective_agent(Config *config, const std::string &agent_key) {
+    if (config == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto effective_agents = app::detail::build_effective_agents(*config);
+    if (const auto it = effective_agents.find(agent_key); it != effective_agents.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+nlohmann::json session_to_json(const SessionInfo &session) {
+    return {
+        {"id", session.id},
+        {"created_at", session.created_at},
+        {"model", session.model},
+        {"scope_key", session.scope_key},
+        {"agent_key", session.agent_key},
+        {"origin_kind", session.origin_kind},
+        {"origin_ref", session.origin_ref},
+        {"message_count", session.message_count},
+        {"read_only", session_is_read_only(session)},
+    };
+}
+
+std::optional<SessionInfo> find_agent_session(SessionStore *store, const std::string &agent_key, const std::string &session_id) {
+    if (store == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto sessions = store->list_sessions_for_agent(agent_key);
+    for (const auto &session : sessions) {
+        if (session.id == session_id) {
+            return session;
+        }
+    }
+    return std::nullopt;
+}
+
+} // namespace
 
 void handle_list_sessions(const httplib::Request & /*req*/, httplib::Response &res, SessionStore *store) {
     if (store == nullptr) {
@@ -62,6 +121,103 @@ void handle_delete_session(const httplib::Request &req, httplib::Response &res, 
         return;
     }
     auto session_id = std::string(req.matches[1]);
+    store->remove(session_id);
+    res.set_content(R"({"status":"deleted"})", "application/json");
+}
+
+void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
+    if (config == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"config not available"})", "application/json");
+        return;
+    }
+    if (store == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"session store not available"})", "application/json");
+        return;
+    }
+
+    const auto agent_key = std::string(req.matches[1]);
+    if (!find_effective_agent(config, agent_key).has_value()) {
+        res.status = 404;
+        res.set_content(R"({"error":"agent not found"})", "application/json");
+        return;
+    }
+
+    auto arr = nlohmann::json::array();
+    for (const auto &session : store->list_sessions_for_agent(agent_key)) {
+        arr.push_back(session_to_json(session));
+    }
+    res.set_content(arr.dump(), "application/json");
+}
+
+void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
+    if (config == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"config not available"})", "application/json");
+        return;
+    }
+    if (store == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"session store not available"})", "application/json");
+        return;
+    }
+
+    const auto agent_key = std::string(req.matches[1]);
+    const auto session_id = std::string(req.matches[2]);
+    if (!find_effective_agent(config, agent_key).has_value()) {
+        res.status = 404;
+        res.set_content(R"({"error":"agent not found"})", "application/json");
+        return;
+    }
+
+    const auto session = find_agent_session(store, agent_key, session_id);
+    if (!session.has_value()) {
+        res.status = 404;
+        res.set_content(R"({"error":"session not found"})", "application/json");
+        return;
+    }
+
+    try {
+        auto arr = nlohmann::json::array();
+        for (const auto &message : store->load(session_id)) {
+            arr.push_back(message_to_json(message));
+        }
+
+        auto body = session_to_json(*session);
+        body["messages"] = arr;
+        res.set_content(body.dump(), "application/json");
+    } catch (const std::runtime_error &) {
+        res.status = 404;
+        res.set_content(R"({"error":"session not found"})", "application/json");
+    }
+}
+
+void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
+    if (config == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"config not available"})", "application/json");
+        return;
+    }
+    if (store == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"session store not available"})", "application/json");
+        return;
+    }
+
+    const auto agent_key = std::string(req.matches[1]);
+    const auto session_id = std::string(req.matches[2]);
+    if (!find_effective_agent(config, agent_key).has_value()) {
+        res.status = 404;
+        res.set_content(R"({"error":"agent not found"})", "application/json");
+        return;
+    }
+    if (!store->session_belongs_to_agent(session_id, agent_key)) {
+        res.status = 404;
+        res.set_content(R"({"error":"session not found"})", "application/json");
+        return;
+    }
+
     store->remove(session_id);
     res.set_content(R"({"status":"deleted"})", "application/json");
 }
@@ -175,7 +331,7 @@ void handle_list_agents(const httplib::Request & /*req*/, httplib::Response &res
         return;
     }
     auto arr = nlohmann::json::array();
-    for (const auto &[key, agent] : config->agents) {
+    for (const auto &[key, agent] : app::detail::build_effective_agents(*config)) {
         arr.push_back({
             {"key", key},
             {"provider", agent.provider},
@@ -184,6 +340,7 @@ void handle_list_agents(const httplib::Request & /*req*/, httplib::Response &res
             {"system_prompt", agent.system_prompt},
             {"workspace", agent.workspace},
             {"edit_mode", agent.edit_mode},
+            {"subagents", agent.subagents},
         });
     }
     res.set_content(arr.dump(), "application/json");
@@ -248,113 +405,164 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         res.set_content(R"({"error":"missing or invalid 'message' field"})", "application/json");
         return;
     }
+    if (!input.contains("agent_key") || !input["agent_key"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'agent_key' field"})", "application/json");
+        return;
+    }
 
     auto message = input.at("message").get<std::string>();
-    auto session_id = input.value("session_id", std::string{});
-
-    if (session_id.empty() && store != nullptr) {
-        session_id = store->create_empty(config->model);
+    const auto agent_key = input.at("agent_key").get<std::string>();
+    const auto maybe_agent = find_effective_agent(config, agent_key);
+    if (!maybe_agent.has_value()) {
+        res.status = 404;
+        res.set_content(R"({"error":"agent not found"})", "application/json");
+        return;
     }
-    if (session_id.empty()) {
-        session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    }
-
-    auto provider = create_provider(config->provider, config->api_key, config->model, config->base_url);
-    auto tools = std::make_unique<ToolRegistry>();
-    register_builtin_tools(*tools);
-
-    auto session = std::make_unique<WebSessionState>();
-    session->session_id = session_id;
-    session->provider = std::move(provider);
-    session->tools = std::move(tools);
-    session->agent = std::make_unique<AgentLoop>(*session->provider, *session->tools, config->system_prompt);
-
-    auto *abort_flag = &session->abort_requested;
-    session->tools->set_execution_guard([abort_flag](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
-        if (abort_flag->load()) {
-            return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
+    const auto metadata = make_web_session_metadata(agent_key, *maybe_agent);
+    std::string session_id;
+    if (input.contains("session_id") && !input["session_id"].is_null()) {
+        if (!input["session_id"].is_string()) {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid 'session_id' field"})", "application/json");
+            return;
         }
-        return std::nullopt;
-    });
-
-    auto *agent_ptr = session->agent.get();
-    auto *session_ptr = session.get();
-
-    {
-        std::lock_guard lock(sessions_mutex);
-        sessions[session_id] = std::move(session);
+        session_id = input.at("session_id").get<std::string>();
     }
 
-    auto captured_session_id = session_id;
-    auto *store_ptr = store;
+    if (!session_id.empty()) {
+        if (store == nullptr) {
+            res.status = 503;
+            res.set_content(R"({"error":"session store not available"})", "application/json");
+            return;
+        }
+        const auto existing_session = find_agent_session(store, agent_key, session_id);
+        if (!existing_session.has_value()) {
+            res.status = 404;
+            res.set_content(R"({"error":"session not found"})", "application/json");
+            return;
+        }
+        if (session_is_read_only(*existing_session)) {
+            res.status = 409;
+            res.set_content(R"({"error":"channel sessions are read-only in web chat"})", "application/json");
+            return;
+        }
+    }
 
-    res.set_chunked_content_provider(
-        "text/event-stream", [agent_ptr, session_ptr, store_ptr, captured_session_id, message, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
-            // Send session event
-            auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
-            auto sse_session = "event: session\ndata: " + session_event + "\n\n";
-            sink.write(sse_session.c_str(), sse_session.size());
+    try {
+        if (session_id.empty() && store != nullptr) {
+            session_id = store->create_empty(metadata);
+        }
+        if (session_id.empty()) {
+            session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        }
 
-            session_ptr->running = true;
-            try {
-                agent_ptr->run(
-                    message,
-                    // StreamCallback
-                    [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
-                        if (session_ptr->abort_requested) {
-                            return;
-                        }
-                        if (event_type == "text_delta") {
-                            auto payload = nlohmann::json({{"text", data["text"]}}).dump();
-                            auto sse = "event: text\ndata: " + payload + "\n\n";
-                            sink.write(sse.c_str(), sse.size());
-                        }
-                    },
-                    // ToolEventCallback
-                    [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
-                        if (session_ptr->abort_requested) {
-                            return;
-                        }
-                        nlohmann::json payload;
-                        if (event_type == "tool_start") {
-                            payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
-                            auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
-                            sink.write(sse.c_str(), sse.size());
-                        } else if (event_type == "tool_end" && result != nullptr) {
-                            payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
-                            auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
-                            sink.write(sse.c_str(), sse.size());
-                        }
-                    });
+        auto provider = create_provider(maybe_agent->provider, maybe_agent->api_key, maybe_agent->model, maybe_agent->base_url);
+        auto tools = std::make_unique<ToolRegistry>();
+        register_builtin_tools(*tools);
 
-                auto done_sse = std::string("event: done\ndata: {}\n\n");
-                sink.write(done_sse.c_str(), done_sse.size());
-            } catch (const std::exception &e) {
-                auto err = nlohmann::json({{"error", e.what()}}).dump();
-                auto sse = "event: error\ndata: " + err + "\n\n";
-                sink.write(sse.c_str(), sse.size());
+        auto session = std::make_unique<WebSessionState>();
+        session->session_id = session_id;
+        session->provider = std::move(provider);
+        session->tools = std::move(tools);
+        session->agent = std::make_unique<AgentLoop>(*session->provider, *session->tools, maybe_agent->system_prompt);
+
+        if (!session_id.empty() && store != nullptr) {
+            session->agent->set_history(store->load(session_id));
+        }
+
+        auto *abort_flag = &session->abort_requested;
+        session->tools->set_execution_guard([abort_flag](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
+            if (abort_flag->load()) {
+                return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
             }
-
-            session_ptr->running = false;
-
-            // Save session to store
-            if (store_ptr != nullptr) {
-                try {
-                    store_ptr->update(captured_session_id, agent_ptr->history());
-                } catch (const std::exception &e) {
-                    spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
-                }
-            }
-
-            // Clean up session
-            {
-                std::lock_guard lock(sessions_mutex);
-                sessions.erase(captured_session_id);
-            }
-
-            sink.done();
-            return false;
+            return std::nullopt;
         });
+
+        auto *agent_ptr = session->agent.get();
+        auto *session_ptr = session.get();
+
+        {
+            std::lock_guard lock(sessions_mutex);
+            sessions[session_id] = std::move(session);
+        }
+
+        auto captured_session_id = session_id;
+        auto *store_ptr = store;
+        auto captured_metadata = metadata;
+
+        res.set_chunked_content_provider(
+            "text/event-stream",
+            [agent_ptr, session_ptr, store_ptr, captured_session_id, captured_metadata, message, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                // Send session event
+                auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
+                auto sse_session = "event: session\ndata: " + session_event + "\n\n";
+                sink.write(sse_session.c_str(), sse_session.size());
+
+                session_ptr->running = true;
+                try {
+                    agent_ptr->run(
+                        message,
+                        // StreamCallback
+                        [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
+                            if (session_ptr->abort_requested) {
+                                return;
+                            }
+                            if (event_type == "text_delta") {
+                                auto payload = nlohmann::json({{"text", data["text"]}}).dump();
+                                auto sse = "event: text\ndata: " + payload + "\n\n";
+                                sink.write(sse.c_str(), sse.size());
+                            }
+                        },
+                        // ToolEventCallback
+                        [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+                            if (session_ptr->abort_requested) {
+                                return;
+                            }
+                            nlohmann::json payload;
+                            if (event_type == "tool_started" || event_type == "tool_start") {
+                                payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
+                                auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
+                                sink.write(sse.c_str(), sse.size());
+                            } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
+                                payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
+                                auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
+                                sink.write(sse.c_str(), sse.size());
+                            }
+                        });
+
+                    auto done_sse = std::string("event: done\ndata: {}\n\n");
+                    sink.write(done_sse.c_str(), done_sse.size());
+                } catch (const std::exception &e) {
+                    auto err = nlohmann::json({{"error", e.what()}}).dump();
+                    auto sse = "event: error\ndata: " + err + "\n\n";
+                    sink.write(sse.c_str(), sse.size());
+                }
+
+                session_ptr->running = false;
+
+                // Save session to store
+                if (store_ptr != nullptr) {
+                    try {
+                        store_ptr->update(captured_session_id, agent_ptr->history(), captured_metadata);
+                    } catch (const std::exception &e) {
+                        spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
+                    }
+                }
+
+                // Clean up session
+                {
+                    std::lock_guard lock(sessions_mutex);
+                    sessions.erase(captured_session_id);
+                }
+
+                sink.done();
+                return false;
+            });
+    } catch (const std::exception &e) {
+        res.status = 500;
+        res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+    }
 }
 
 void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,

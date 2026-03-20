@@ -22,6 +22,9 @@ namespace orangutan::web {
 void handle_list_sessions(const httplib::Request &req, httplib::Response &res, SessionStore *store);
 void handle_get_session(const httplib::Request &req, httplib::Response &res, SessionStore *store);
 void handle_delete_session(const httplib::Request &req, httplib::Response &res, SessionStore *store);
+void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
+void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
+void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
 
 void handle_get_config(const httplib::Request &req, httplib::Response &res, Config *config);
 void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config);
