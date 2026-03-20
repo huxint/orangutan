@@ -62,6 +62,7 @@ add_library(orangutan_lib STATIC
     src/app/cli-ui.cpp
     src/app/history-events.cpp
     src/app/repl.cpp
+    src/app/runtime/agent-runtime.cpp
     src/app/runtime/identity.cpp
     src/app/runtime/memory-context.cpp
     src/app/session-workflow.cpp
@@ -168,6 +169,7 @@ if(BUILD_TESTING)
         tests/app/cli-ui-test.cpp
         tests/app/history-events-test.cpp
         tests/app/identity-test.cpp
+        tests/app/runtime-agent-runtime-test.cpp
         tests/app/session-workflow-test.cpp
         tests/app/single-shot-test.cpp
         tests/core/provider-fallback-test.cpp
