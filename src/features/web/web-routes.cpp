@@ -1,12 +1,19 @@
 #include "features/web/web-routes.hpp"
+
 #include "app/bootstrap.hpp"
+#include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
-#include "features/web/web-types.hpp"
-#include "infra/storage/session-store.hpp"
-#include "infra/config/config.hpp"
-#include "core/tools/tool.hpp"
-#include "features/skills/skill-loader.hpp"
 #include "core/providers/provider.hpp"
+#include "core/tools/permissions.hpp"
+#include "features/agent/agent-loop.hpp"
+#include "features/web/web-types.hpp"
+#include "features/memory/memory.hpp"
+#include "features/skills/skill-loader.hpp"
+#include "features/subagent/subagent-manager.hpp"
+#include "infra/config/config.hpp"
+#include "infra/storage/session-store.hpp"
+#include "core/tools/tool.hpp"
+
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -28,7 +35,7 @@ SessionMetadata make_web_session_metadata(const std::string &agent_key, const Ag
     };
 }
 
-std::optional<AgentConfig> find_effective_agent(Config *config, const std::string &agent_key) {
+std::optional<AgentConfig> find_effective_agent(const Config *config, const std::string &agent_key) {
     if (config == nullptr) {
         return std::nullopt;
     }
@@ -52,6 +59,64 @@ std::string resolve_agent_workspace(const AgentConfig &agent, const std::string 
     } catch (const std::exception &e) {
         throw std::runtime_error("failed to resolve workspace for agent '" + agent_key + "': " + e.what());
     }
+}
+
+RuntimeIdentity derive_web_identity(const std::string &workspace_root, const std::string &agent_key) {
+    RuntimeIdentity identity{
+        .workspace = workspace_root,
+        .runtime_key = "agent:" + agent_key + "|web:local",
+        .memory_scope = "agent:" + agent_key + "|web",
+    };
+    return identity;
+}
+
+ToolApprovalCallback default_web_approval_callback() {
+    return [](const ToolUseBlock & /*call*/, const std::string & /*prompt_text*/) {
+        // Task 3 keeps approval callback parity in runtime context.
+        // Task 4 will replace this with request/response coordination.
+        return false;
+    };
+}
+
+AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
+                                                 std::string *current_session_id, SubagentManager *subagent_manager, ToolApprovalCallback approval_callback) {
+    const auto workspace_root = resolve_agent_workspace(agent, agent_key);
+    const auto api_key = resolve_agent_api_key(config, agent);
+    if (api_key.empty()) {
+        throw MissingApiKeyError("missing API key for agent '" + agent_key + "'");
+    }
+
+    auto effective_approval_callback = std::move(approval_callback);
+    if (!effective_approval_callback) {
+        effective_approval_callback = default_web_approval_callback();
+    }
+
+    AgentRuntimeBuildInput input{
+        .provider_name = agent.provider,
+        .api_key = api_key,
+        .model = agent.model,
+        .fallback_models = agent.fallback_models,
+        .base_url = agent.base_url,
+        .agent_key = agent_key,
+        .system_prompt = agent.system_prompt,
+        .workspace_root = workspace_root,
+        .edit_mode = agent.edit_mode,
+        .memory = config.memory,
+        .permissions = agent.permissions,
+        .allowed_child_agents = agent.subagents,
+        .identity = derive_web_identity(workspace_root, agent_key),
+        .memory_store = memory_store,
+        .current_session_id = current_session_id,
+        .subagent_manager = subagent_manager,
+        .runtime_origin = SubagentRuntimeOrigin::web,
+        .raw_caller_id = "web:local",
+        .approval_callback = effective_approval_callback,
+        .custom_tools = config.custom_tools,
+        .mcp_servers = config.mcp_servers,
+        .skill_paths = config.skill_paths,
+        .hook_paths = config.hook_paths,
+    };
+    return build_agent_runtime(input);
 }
 
 nlohmann::json session_to_json(const SessionInfo &session) {
@@ -83,6 +148,15 @@ std::optional<SessionInfo> find_agent_session(SessionStore *store, const std::st
 }
 
 } // namespace
+
+AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
+                                                    SubagentManager *subagent_manager, ToolApprovalCallback approval_callback) {
+    const auto maybe_agent = find_effective_agent(&config, agent_key);
+    if (!maybe_agent.has_value()) {
+        throw std::runtime_error("agent not found");
+    }
+    return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, std::move(approval_callback));
+}
 
 void handle_list_sessions(const httplib::Request & /*req*/, httplib::Response &res, SessionStore *store) {
     if (store == nullptr) {
@@ -403,8 +477,8 @@ void handle_system_status(const httplib::Request & /*req*/, httplib::Response &r
     res.set_content(body.dump(), "application/json");
 }
 
-void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, ToolRegistry * /*tool_registry*/, std::mutex &sessions_mutex,
-                 std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, MemoryStore *memory_store, SubagentManager *subagent_manager,
+                 ToolRegistry * /*tool_registry*/, std::mutex &sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
     if (config == nullptr) {
         res.status = 503;
         res.set_content(R"({"error":"config not available"})", "application/json");
@@ -477,34 +551,31 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
             session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         }
 
-        const auto workspace_root = resolve_agent_workspace(*maybe_agent, agent_key);
-        const auto api_key = resolve_agent_api_key(*config, *maybe_agent);
-        if (api_key.empty()) {
-            throw MissingApiKeyError("missing API key for agent '" + agent_key + "'");
-        }
-        auto provider = create_provider(maybe_agent->provider, api_key, maybe_agent->model, maybe_agent->base_url);
-        auto tools = std::make_unique<ToolRegistry>();
-        register_builtin_tools(*tools, nullptr, workspace_root, nullptr, nullptr, maybe_agent->edit_mode);
-
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
-        session->provider = std::move(provider);
-        session->tools = std::move(tools);
-        session->agent = std::make_unique<AgentLoop>(*session->provider, *session->tools, maybe_agent->system_prompt);
+        session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager));
+        if (session->agent() == nullptr) {
+            throw std::runtime_error("failed to initialize web runtime agent");
+        }
 
         if (!session_id.empty() && store != nullptr) {
-            session->agent->set_history(store->load(session_id));
+            session->agent()->set_history(store->load(session_id));
         }
 
         auto *abort_flag = &session->abort_requested;
-        session->tools->set_execution_guard([abort_flag](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
-            if (abort_flag->load()) {
-                return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
-            }
-            return std::nullopt;
-        });
+        const auto permissions = maybe_agent->permissions;
+        auto *tool_context = &session->runtime->tool_context;
+        if (auto *tools = session->tools(); tools != nullptr) {
+            tools->set_execution_guard([abort_flag, permissions, tool_context](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
+                if (abort_flag->load()) {
+                    return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
+                }
+                const auto &approval_callback = tool_context != nullptr ? tool_context->approval_callback : ToolApprovalCallback{};
+                return evaluate_tool_permission(call, permissions, approval_callback);
+            });
+        }
 
-        auto *agent_ptr = session->agent.get();
+        auto *agent_ptr = session->agent();
         auto *session_ptr = session.get();
 
         {

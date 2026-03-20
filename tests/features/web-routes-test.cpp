@@ -1,10 +1,16 @@
 #include "features/web/web-server.hpp"
+#include "features/web/web-routes.hpp"
+#include "features/hooks/hook-manager.hpp"
+#include "features/memory/memory.hpp"
+#include "features/subagent/subagent-manager.hpp"
 #include "infra/storage/session-store.hpp"
+#include "infra/storage/subagent-run-store.hpp"
 #include "infra/config/config.hpp"
 #include "test-helpers.hpp"
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 
@@ -48,6 +54,48 @@ orangutan::SessionMetadata make_session_metadata(std::string model, std::string 
         .origin_kind = std::move(origin_kind),
         .origin_ref = std::move(origin_ref),
     };
+}
+
+bool has_tool_named(const std::vector<orangutan::ToolDef> &definitions, const std::string &name) {
+    return std::ranges::any_of(definitions, [&name](const orangutan::ToolDef &definition) {
+        return definition.name == name;
+    });
+}
+
+orangutan::Config make_runtime_config(const std::filesystem::path &workspace_root) {
+    orangutan::Config cfg;
+    cfg.provider = "openai";
+    cfg.model = "gpt-test";
+    cfg.base_url = "https://example.test";
+    cfg.api_key = "test-key";
+    cfg.custom_tools.push_back(orangutan::Config::ScriptToolConfig{
+        .name = "custom_echo",
+        .description = "Custom echo tool",
+        .command = "echo hello",
+    });
+    cfg.agents["default"] = orangutan::AgentConfig{
+        .provider = "openai",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .api_key = "test-key",
+        .system_prompt = "You are a web runtime test agent.",
+        .workspace = workspace_root.string(),
+        .permissions =
+            {
+                .sandbox_mode = orangutan::ToolSandboxMode::isolated,
+                .shell_approval = orangutan::ToolApprovalPolicy::ask,
+            },
+        .subagents = {"coder"},
+    };
+    cfg.agents["coder"] = orangutan::AgentConfig{
+        .provider = "openai",
+        .model = "gpt-coder-test",
+        .base_url = "https://example.test",
+        .api_key = "test-key",
+        .system_prompt = "You are coder.",
+        .workspace = workspace_root.string(),
+    };
+    return cfg;
 }
 
 } // namespace
@@ -228,4 +276,82 @@ TEST_F(WebRoutesTest, SystemStatusReturnsUptime) {
     EXPECT_TRUE(body.contains("uptime_seconds"));
     EXPECT_TRUE(body.contains("active_web_sessions"));
     server.stop();
+}
+
+TEST_F(WebRoutesTest, SharedWebRuntimeBuildsWithParityContextAndTools) {
+    const auto workspace = temp_root_ / "runtime-workspace";
+    std::filesystem::create_directories(workspace);
+
+    auto cfg = make_runtime_config(workspace);
+    orangutan::MemoryStore memory_store((temp_root_ / "memory.db").string());
+    orangutan::SubagentRunStore run_store((temp_root_ / "subagent-runs.db").string());
+    orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
+        return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
+    });
+    std::string session_id = "web-session";
+
+    auto runtime =
+        orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, [](const orangutan::ToolUseBlock &, const std::string &) {
+            return false;
+        });
+
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "shell"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+    EXPECT_EQ(runtime.tool_context.runtime_origin, orangutan::SubagentRuntimeOrigin::web);
+    EXPECT_EQ(runtime.tool_context.raw_caller_id, "web:local");
+    EXPECT_EQ(runtime.tool_context.current_session_id, &session_id);
+    EXPECT_EQ(runtime.tool_context.allowed_child_agents, std::vector<std::string>({"coder"}));
+    EXPECT_TRUE(static_cast<bool>(runtime.tool_context.approval_callback));
+    EXPECT_TRUE(runtime.agent != nullptr);
+
+    const auto shell_result = runtime.tools.execute(orangutan::ToolUseBlock{
+        .id = "web-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(shell_result.is_error);
+    EXPECT_TRUE(shell_result.content.find("requires approval") != std::string::npos || shell_result.content.find("rejected by user") != std::string::npos);
+}
+
+TEST_F(WebRoutesTest, SharedWebRuntimeLoadsSkillsAndHooks) {
+    const auto workspace = temp_root_ / "skills-hooks-workspace";
+    const auto skill_root = workspace / "skills";
+    const auto hook_root = workspace / "hooks";
+    std::filesystem::create_directories(skill_root / "web-runtime-skill");
+    std::filesystem::create_directories(hook_root / "before_tool_call");
+
+    {
+        std::ofstream out(skill_root / "web-runtime-skill" / "SKILL.md");
+        out << "+++\n";
+        out << "name = \"web-runtime-skill\"\n";
+        out << "description = \"web runtime skill\"\n";
+        out << "+++\n\n";
+        out << "Use this skill for web runtime checks.\n";
+    }
+    {
+        const auto hook = hook_root / "before_tool_call" / "01-web-hook.sh";
+        std::ofstream out(hook);
+        out << "#!/bin/sh\n";
+        out << "exit 0\n";
+        out.close();
+        std::filesystem::permissions(hook, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+                                     std::filesystem::perm_options::replace);
+    }
+
+    auto cfg = make_runtime_config(workspace);
+    cfg.skill_paths = {skill_root.string()};
+    cfg.hook_paths = {hook_root.string()};
+    orangutan::MemoryStore memory_store((temp_root_ / "memory-skills.db").string());
+    orangutan::SubagentRunStore run_store((temp_root_ / "subagent-runs-skills.db").string());
+    orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
+        return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
+    });
+    std::string session_id = "web-session-skills";
+
+    auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager);
+
+    EXPECT_NE(runtime.skills_prompt.find("web-runtime-skill"), std::string::npos);
+    ASSERT_NE(runtime.hook_manager, nullptr);
+    EXPECT_EQ(runtime.hook_manager->hook_count(orangutan::HookEvent::before_tool_call), 1);
 }

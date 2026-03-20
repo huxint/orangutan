@@ -11,7 +11,9 @@
 
 namespace orangutan {
 
+class MemoryStore;
 class SessionStore;
+class SubagentManager;
 class ToolRegistry;
 class SkillLoader;
 struct Config;
@@ -35,6 +37,8 @@ public:
     void set_static_dir(const std::string &path);
 
     void set_session_store(SessionStore *store);
+    void set_memory_store(MemoryStore *store);
+    void set_subagent_manager(SubagentManager *manager);
     void set_config(Config *config);
     void set_config_save_path(const std::string &path);
     void set_tool_registry(ToolRegistry *registry);
@@ -48,6 +52,8 @@ private:
     std::atomic<bool> running_{false};
 
     SessionStore *session_store_ = nullptr;
+    MemoryStore *memory_store_ = nullptr;
+    SubagentManager *subagent_manager_ = nullptr;
     Config *config_ = nullptr;
     std::string config_save_path_;
     ToolRegistry *tool_registry_ = nullptr;

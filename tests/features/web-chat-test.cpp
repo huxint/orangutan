@@ -1,8 +1,14 @@
 #include "features/web/web-server.hpp"
+#include "features/web/web-routes.hpp"
 #include "infra/config/config.hpp"
+#include "features/hooks/hook-manager.hpp"
+#include "features/memory/memory.hpp"
+#include "features/subagent/subagent-manager.hpp"
 #include "infra/storage/session-store.hpp"
+#include "infra/storage/subagent-run-store.hpp"
 #include "test-helpers.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -44,6 +50,12 @@ Config make_config() {
         .system_prompt = "You are a coder agent.",
     };
     return config;
+}
+
+bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
+    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
+        return definition.name == name;
+    });
 }
 
 class WebChatStoreTest : public ::testing::Test {
@@ -234,6 +246,99 @@ TEST(WebChatTest, AbortEndpointRejectsMissingSessionId) {
     EXPECT_EQ(res->status, 400);
 
     server.stop();
+}
+
+TEST(WebChatTest, RuntimeBundleIncludesCustomAndMemoryTools) {
+    const auto workspace = orangutan::testing::test_tmp_root() / "web-chat-runtime-workspace";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(workspace);
+
+    auto config = make_config();
+    config.custom_tools.push_back(Config::ScriptToolConfig{
+        .name = "custom_echo",
+        .description = "Custom echo script tool",
+        .command = "echo hello",
+    });
+    config.agents["default"].workspace = workspace.string();
+    config.agents["default"].subagents = {"coder"};
+    config.agents["default"].permissions = {
+        .sandbox_mode = ToolSandboxMode::isolated,
+        .shell_approval = ToolApprovalPolicy::ask,
+    };
+    config.agents["coder"].workspace = workspace.string();
+
+    MemoryStore memory_store((workspace / "memory.db").string());
+    SubagentRunStore run_store((workspace / "runs.db").string());
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    std::string session_id = "web-chat-runtime-session";
+
+    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, [](const ToolUseBlock &, const std::string &) {
+        return false;
+    });
+
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+    EXPECT_EQ(runtime.tool_context.runtime_origin, SubagentRuntimeOrigin::web);
+    EXPECT_EQ(runtime.tool_context.raw_caller_id, "web:local");
+    EXPECT_EQ(runtime.tool_context.current_session_id, &session_id);
+    EXPECT_EQ(runtime.tool_context.allowed_child_agents, std::vector<std::string>({"coder"}));
+    EXPECT_TRUE(static_cast<bool>(runtime.tool_context.approval_callback));
+    EXPECT_TRUE(runtime.agent != nullptr);
+
+    const auto shell_result = runtime.tools.execute(ToolUseBlock{
+        .id = "web-shell",
+        .name = "shell",
+        .input = {{"command", "echo hello"}},
+    });
+    EXPECT_TRUE(shell_result.is_error);
+    EXPECT_TRUE(shell_result.content.find("requires approval") != std::string::npos || shell_result.content.find("rejected by user") != std::string::npos);
+}
+
+TEST(WebChatTest, RuntimeBundleLoadsSkillsAndHooksFromConfiguredPaths) {
+    const auto workspace = orangutan::testing::test_tmp_root() / "web-chat-runtime-skills-hooks";
+    const auto skill_root = workspace / "skills";
+    const auto hook_root = workspace / "hooks";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(skill_root / "web-chat-runtime-skill");
+    std::filesystem::create_directories(hook_root / "before_tool_call");
+
+    {
+        std::ofstream out(skill_root / "web-chat-runtime-skill" / "SKILL.md");
+        out << "+++\n";
+        out << "name = \"web-chat-runtime-skill\"\n";
+        out << "description = \"web chat runtime skill\"\n";
+        out << "+++\n\n";
+        out << "Skill body for web runtime tests.\n";
+    }
+    {
+        const auto hook = hook_root / "before_tool_call" / "01-web-chat-hook.sh";
+        std::ofstream out(hook);
+        out << "#!/bin/sh\n";
+        out << "exit 0\n";
+        out.close();
+        std::filesystem::permissions(hook, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+                                     std::filesystem::perm_options::replace);
+    }
+
+    auto config = make_config();
+    config.skill_paths = {skill_root.string()};
+    config.hook_paths = {hook_root.string()};
+    config.agents["default"].workspace = workspace.string();
+
+    MemoryStore memory_store((workspace / "memory.db").string());
+    SubagentRunStore run_store((workspace / "runs.db").string());
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    std::string session_id = "web-chat-skills-hooks";
+
+    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager);
+
+    EXPECT_NE(runtime.skills_prompt.find("web-chat-runtime-skill"), std::string::npos);
+    ASSERT_NE(runtime.hook_manager, nullptr);
+    EXPECT_EQ(runtime.hook_manager->hook_count(HookEvent::before_tool_call), 1);
 }
 
 } // namespace orangutan

@@ -1,10 +1,13 @@
 #pragma once
 
+#include "app/runtime/agent-runtime.hpp"
 #include <httplib.h>
 
 namespace orangutan {
 
+class MemoryStore;
 class SessionStore;
+class SubagentManager;
 class ToolRegistry;
 class SkillLoader;
 struct Config;
@@ -36,9 +39,17 @@ void handle_list_skills(const httplib::Request &req, httplib::Response &res, Ski
 void handle_system_status(const httplib::Request &req, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
                           const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
 
-void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, ToolRegistry *tool_registry, std::mutex &sessions_mutex,
-                 std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
+void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, MemoryStore *memory_store, SubagentManager *subagent_manager,
+                 ToolRegistry *tool_registry, std::mutex &sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
 void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
                        std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
+
+namespace detail {
+
+[[nodiscard]]
+AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
+                                            SubagentManager *subagent_manager, ToolApprovalCallback approval_callback = {});
+
+} // namespace detail
 
 } // namespace orangutan::web

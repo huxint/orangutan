@@ -13,6 +13,7 @@ using json = nlohmann::json;
 enum class SubagentRuntimeOrigin {
     cli,
     channel,
+    web,
 };
 
 // A single content block in a message (text or tool related)

@@ -343,8 +343,8 @@ bool maybe_skip_web_server_start_for_tests(orangutan::SessionStore *session_stor
 }
 
 WebServerRuntimeAttachments configure_web_server_runtime(orangutan::WebServer &web_server, const CliOptions &options, orangutan::Config &cfg,
-                                                         orangutan::SessionStore *session_store, orangutan::ToolRegistry *tool_registry = nullptr,
-                                                         orangutan::SkillLoader *skill_loader = nullptr) {
+                                                         orangutan::SessionStore *session_store, orangutan::MemoryStore *memory_store, orangutan::SubagentManager *subagent_manager,
+                                                         orangutan::ToolRegistry *tool_registry = nullptr, orangutan::SkillLoader *skill_loader = nullptr) {
     WebServerRuntimeAttachments attachments;
     web_server.set_static_dir(options.web_dir);
     web_server.set_config(&cfg);
@@ -352,6 +352,8 @@ WebServerRuntimeAttachments configure_web_server_runtime(orangutan::WebServer &w
         web_server.set_session_store(session_store);
         attachments.session_store_attached = true;
     }
+    web_server.set_memory_store(memory_store);
+    web_server.set_subagent_manager(subagent_manager);
     if (tool_registry != nullptr) {
         web_server.set_tool_registry(tool_registry);
         attachments.tool_registry_attached = true;
@@ -925,7 +927,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         }
 
         orangutan::WebServer web_server;
-        const auto attachments = configure_web_server_runtime(web_server, options, cfg, session_store.get(), runtime != nullptr ? &runtime->tools : nullptr, &skill_loader);
+        const auto attachments = configure_web_server_runtime(web_server, options, cfg, session_store.get(), memory_store.get(), subagent_manager.get(),
+                                                              runtime != nullptr ? &runtime->tools : nullptr, &skill_loader);
         if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), subagent_manager.get(), runtime.get(), &skill_loader,
                                                   attachments, runtime_build_error)) {
             return 0;
@@ -1026,7 +1029,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     std::unique_ptr<orangutan::WebServer> web_server;
     if (options.web_mode) {
         web_server = std::make_unique<orangutan::WebServer>();
-        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), &runtime.tools, &skill_loader);
+        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &subagent_manager, &runtime.tools, &skill_loader);
         if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), &subagent_manager, &runtime, &skill_loader, attachments)) {
             return 0;
         }
