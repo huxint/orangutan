@@ -4,13 +4,27 @@ import {
   getAgents,
   getAgentSession,
   getAgentSessions,
+  submitChatApproval,
   streamChat,
   type AgentSummary,
 } from '../../api/client'
+import { ApprovalPrompt } from './ApprovalPrompt'
 import { ChatHeader } from './ChatHeader'
 import { ChatInput } from './ChatInput'
 import { MessageList } from './MessageList'
-import type { ChatMessage, ChatSessionData, ChatSessionSummary, ContentBlock, SessionMessage } from './types'
+import type {
+  ApprovalRequest,
+  ChatErrorEvent,
+  ChatMessage,
+  ChatSessionData,
+  ChatSessionEvent,
+  ChatSessionSummary,
+  ChatTextEvent,
+  ChatToolEndEvent,
+  ChatToolStartEvent,
+  ContentBlock,
+  SessionMessage,
+} from './types'
 
 function appendAssistantBlock(content: ContentBlock[], block: ContentBlock): ContentBlock[] {
   if (block.type === 'text' && block.text) {
@@ -109,6 +123,8 @@ export function ChatView() {
   const [agentSessions, setAgentSessions] = useState<ChatSessionSummary[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null)
+  const [resolvingApproval, setResolvingApproval] = useState<'approve' | 'deny' | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -153,6 +169,8 @@ export function ChatView() {
     queuedMessagesRef.current = []
     flushQueuedMessageRef.current = false
     setQueuedMessages([])
+    setPendingApproval(null)
+    setResolvingApproval(null)
     setStreaming(false)
   }, [])
 
@@ -173,6 +191,8 @@ export function ChatView() {
     setSessionId(paramSessionId ?? null)
     setSessionMeta(null)
     setMessages([])
+    setPendingApproval(null)
+    setResolvingApproval(null)
     setError(null)
 
     getAgents()
@@ -220,6 +240,8 @@ export function ChatView() {
       setSessionId(null)
       setSessionMeta(null)
       setMessages([])
+      setPendingApproval(null)
+      setResolvingApproval(null)
       return () => {
         cancelled = true
       }
@@ -276,6 +298,8 @@ export function ChatView() {
       setStreaming(false)
       abortRef.current = null
       activeAssistantMessageIdRef.current = null
+      setPendingApproval(null)
+      setResolvingApproval(null)
       removeAssistantMessageIfEmpty(assistantMessageId)
       if (queuedMessagesRef.current.length > 0) {
         flushQueuedMessageRef.current = true
@@ -289,43 +313,57 @@ export function ChatView() {
       }
     }
 
-    streamChat(agentKey, sessionIdRef.current, text, (type, data: any) => {
+    streamChat(agentKey, sessionIdRef.current, text, (type, data) => {
       switch (type) {
-        case 'session':
-          activeSessionId = data.session_id
-          sessionIdRef.current = data.session_id
-          setSessionId(data.session_id)
+        case 'session': {
+          const sessionData = data as ChatSessionEvent
+          activeSessionId = sessionData.session_id
+          sessionIdRef.current = sessionData.session_id
+          setSessionId(sessionData.session_id)
           if (requestWasForNewSession) {
-            pendingSessionIdRef.current = data.session_id
-            navigate(`/chat/${agentKey}/${data.session_id}`, { replace: true })
+            pendingSessionIdRef.current = sessionData.session_id
+            navigate(`/chat/${agentKey}/${sessionData.session_id}`, { replace: true })
           }
           break
-        case 'text':
-          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, { type: 'text', text: data.text }))
+        }
+        case 'text': {
+          const textData = data as ChatTextEvent
+          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, { type: 'text', text: textData.text }))
           break
-        case 'tool_start':
+        }
+        case 'tool_start': {
+          const toolStartData = data as ChatToolStartEvent
           updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
             type: 'tool_use',
-            id: data.id,
-            name: data.name,
-            input: data.input,
+            id: toolStartData.id,
+            name: toolStartData.name,
+            input: toolStartData.input,
           }))
           break
-        case 'tool_end':
+        }
+        case 'tool_end': {
+          const toolEndData = data as ChatToolEndEvent
           updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
             type: 'tool_result',
-            tool_use_id: data.id,
-            content: data.content,
-            is_error: data.is_error,
+            tool_use_id: toolEndData.id,
+            content: toolEndData.content,
+            is_error: toolEndData.is_error,
           }))
+          break
+        }
+        case 'approval_request':
+          setPendingApproval(data as ApprovalRequest)
+          setResolvingApproval(null)
           break
         case 'done':
           finalizeRequest()
           break
-        case 'error':
-          setError(data.error)
+        case 'error': {
+          const errorData = data as ChatErrorEvent
+          setError(errorData.error)
           finalizeRequest()
           break
+        }
       }
     }, controller.signal).catch(streamError => {
       setError(streamError instanceof Error ? streamError.message : 'Request failed')
@@ -360,6 +398,26 @@ export function ChatView() {
     })
   }, [sessionMeta?.read_only])
 
+  const handleResolveApproval = useCallback((approved: boolean) => {
+    const activeSessionId = sessionIdRef.current
+    if (!activeSessionId || !pendingApproval) {
+      return
+    }
+
+    setError(null)
+    setResolvingApproval(approved ? 'approve' : 'deny')
+    submitChatApproval(activeSessionId, pendingApproval.request_id, approved)
+      .then(() => {
+        setPendingApproval(null)
+      })
+      .catch(approvalError => {
+        setError(approvalError instanceof Error ? approvalError.message : 'Failed to submit approval')
+      })
+      .finally(() => {
+        setResolvingApproval(null)
+      })
+  }, [pendingApproval])
+
   const handleAbort = useCallback(() => {
     abortRef.current?.abort()
 
@@ -383,6 +441,8 @@ export function ChatView() {
 
     activeAssistantMessageIdRef.current = null
     abortRef.current = null
+    setPendingApproval(null)
+    setResolvingApproval(null)
     setStreaming(false)
   }, [removeAssistantMessageIfEmpty])
 
@@ -410,6 +470,14 @@ export function ChatView() {
         onStartNewChat={handleStartNewChat}
       />
       <MessageList messages={messages} />
+      {pendingApproval && (
+        <ApprovalPrompt
+          approval={pendingApproval}
+          resolving={resolvingApproval}
+          onApprove={() => handleResolveApproval(true)}
+          onDeny={() => handleResolveApproval(false)}
+        />
+      )}
       {error && (
         <div className="bg-red-950/30 px-4 py-2 text-center text-sm text-red-400">
           {error}

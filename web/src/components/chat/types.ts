@@ -9,6 +9,14 @@ export interface ContentBlock {
   is_error?: boolean
 }
 
+export interface ApprovalRequest {
+  request_id: string
+  tool: string
+  command?: string
+  sandbox_mode: string
+  prompt: string
+}
+
 export interface SessionMessage {
   role: string
   content: ContentBlock[]
@@ -36,3 +44,39 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: ContentBlock[]
 }
+
+export interface ChatSessionEvent {
+  session_id: string
+}
+
+export interface ChatTextEvent {
+  text: string
+}
+
+export interface ChatToolStartEvent {
+  id: string
+  name: string
+  input: object
+}
+
+export interface ChatToolEndEvent {
+  id: string
+  name: string
+  content: string
+  is_error: boolean
+}
+
+export interface ChatErrorEvent {
+  error: string
+}
+
+export type ChatStreamEventType = 'session' | 'text' | 'tool_start' | 'tool_end' | 'approval_request' | 'done' | 'error'
+
+export type ChatStreamEventPayload =
+  | ChatSessionEvent
+  | ChatTextEvent
+  | ChatToolStartEvent
+  | ChatToolEndEvent
+  | ApprovalRequest
+  | ChatErrorEvent
+  | Record<string, never>

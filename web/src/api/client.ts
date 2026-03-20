@@ -1,4 +1,9 @@
-import type { ChatSessionData, ChatSessionSummary } from '../components/chat/types'
+import type {
+  ChatSessionData,
+  ChatSessionSummary,
+  ChatStreamEventPayload,
+  ChatStreamEventType,
+} from '../components/chat/types'
 
 const BASE = ''
 
@@ -58,11 +63,22 @@ export function getAgentSession(agentKey: string, sessionId: string): Promise<Ch
   return apiFetch<ChatSessionData>(`/api/agents/${encodeURIComponent(agentKey)}/sessions/${encodeURIComponent(sessionId)}`)
 }
 
+export function submitChatApproval(sessionId: string, requestId: string, approved: boolean): Promise<{ status: 'approved' | 'denied' }> {
+  return apiFetch<{ status: 'approved' | 'denied' }>('/api/chat/approval', {
+    method: 'POST',
+    body: JSON.stringify({
+      session_id: sessionId,
+      request_id: requestId,
+      approved,
+    }),
+  })
+}
+
 export function streamChat(
   agentKey: string,
   sessionId: string | null,
   message: string,
-  onEvent: (type: string, data: unknown) => void,
+  onEvent: (type: ChatStreamEventType, data: ChatStreamEventPayload) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -104,7 +120,11 @@ export function streamChat(
           for (const line of lines) {
             if (line.startsWith('event: ')) eventType = line.slice(7)
             else if (line.startsWith('data: ') && eventType) {
-              try { onEvent(eventType, JSON.parse(line.slice(6))) } catch { /* skip */ }
+              try {
+                onEvent(eventType as ChatStreamEventType, JSON.parse(line.slice(6)) as ChatStreamEventPayload)
+              } catch {
+                /* skip */
+              }
               eventType = ''
             }
           }
