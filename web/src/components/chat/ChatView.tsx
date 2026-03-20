@@ -3,158 +3,301 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { streamChat, apiFetch } from '../../api/client'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
-
-interface ContentBlock {
-  type: string
-  text?: string
-  id?: string
-  name?: string
-  input?: object
-  tool_use_id?: string
-  content?: string
-  is_error?: boolean
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: ContentBlock[]
-}
-
-interface ToolCall {
-  id: string
-  name: string
-  input: object
-  result?: { content: string; is_error: boolean }
-}
+import type { ChatMessage, ContentBlock } from './types'
 
 interface SessionData {
   id: string
   messages: { role: string; content: ContentBlock[] }[]
 }
 
+function appendAssistantBlock(content: ContentBlock[], block: ContentBlock): ContentBlock[] {
+  if (block.type === 'text' && block.text) {
+    const last = content.at(-1)
+    if (last?.type === 'text') {
+      return [...content.slice(0, -1), { ...last, text: (last.text ?? '') + block.text }]
+    }
+  }
+
+  if (block.type === 'tool_use' && block.id) {
+    const existingIndex = content.findIndex(item => item.type === 'tool_use' && item.id === block.id)
+    if (existingIndex >= 0) {
+      const next = [...content]
+      next[existingIndex] = block
+      return next
+    }
+  }
+
+  if (block.type === 'tool_result' && block.tool_use_id) {
+    const existingIndex = content.findIndex(item => item.type === 'tool_result' && item.tool_use_id === block.tool_use_id)
+    if (existingIndex >= 0) {
+      const next = [...content]
+      next[existingIndex] = block
+      return next
+    }
+  }
+
+  return [...content, block]
+}
+
 export function ChatView() {
   const { sessionId: paramSessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
 
+  const messageIdRef = useRef(0)
+  const nextMessageId = useCallback(() => {
+    messageIdRef.current += 1
+    return `chat-message-${messageIdRef.current}`
+  }, [])
+
+  const normalizeMessages = useCallback((sessionMessages: SessionData['messages']): ChatMessage[] => {
+    const normalized: ChatMessage[] = []
+    let currentAssistantId: string | null = null
+
+    for (const message of sessionMessages) {
+      if (message.role === 'assistant') {
+        if (!currentAssistantId) {
+          currentAssistantId = nextMessageId()
+          normalized.push({ id: currentAssistantId, role: 'assistant', content: [] })
+        }
+
+        normalized[normalized.length - 1] = {
+          ...normalized[normalized.length - 1],
+          content: message.content.reduce(appendAssistantBlock, normalized[normalized.length - 1].content),
+        }
+        continue
+      }
+
+      const userTextBlocks = message.content.filter(block => block.type === 'text' && block.text)
+      const toolResultBlocks = message.content.filter(block => block.type === 'tool_result' && block.tool_use_id)
+
+      if (toolResultBlocks.length > 0) {
+        if (!currentAssistantId) {
+          currentAssistantId = nextMessageId()
+          normalized.push({ id: currentAssistantId, role: 'assistant', content: [] })
+        }
+
+        normalized[normalized.length - 1] = {
+          ...normalized[normalized.length - 1],
+          content: toolResultBlocks.reduce(appendAssistantBlock, normalized[normalized.length - 1].content),
+        }
+      }
+
+      if (userTextBlocks.length > 0) {
+        currentAssistantId = null
+        normalized.push({ id: nextMessageId(), role: 'user', content: userTextBlocks })
+      }
+    }
+
+    return normalized.filter(message => message.content.length > 0)
+  }, [nextMessageId])
+
   const [sessionId, setSessionId] = useState<string | null>(paramSessionId ?? null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [toolCalls, setToolCalls] = useState<Map<string, ToolCall>>(new Map())
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [streaming, setStreaming] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const sessionIdRef = useRef<string | null>(paramSessionId ?? null)
+  const pendingSessionIdRef = useRef<string | null>(null)
+  const queuedMessagesRef = useRef<string[]>([])
+  const flushQueuedMessageRef = useRef(false)
+  const activeAssistantMessageIdRef = useRef<string | null>(null)
+
+  const loadSession = useCallback((id: string) => {
+    return apiFetch<SessionData>(`/api/sessions/${id}`)
+      .then(data => {
+        setMessages(normalizeMessages(data.messages))
+        activeAssistantMessageIdRef.current = null
+      })
+  }, [normalizeMessages])
+
+  const updateAssistantMessage = useCallback((messageId: string, updater: (content: ContentBlock[]) => ContentBlock[]) => {
+    setMessages(prev => prev.map(message => (
+      message.id === messageId
+        ? { ...message, content: updater(message.content) }
+        : message
+    )))
+  }, [])
+
+  const removeAssistantMessageIfEmpty = useCallback((messageId: string) => {
+    setMessages(prev => prev.filter(message => message.id !== messageId || message.content.length > 0))
+  }, [])
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  useEffect(() => {
+    queuedMessagesRef.current = queuedMessages
+  }, [queuedMessages])
 
   useEffect(() => {
     if (!paramSessionId) {
+      pendingSessionIdRef.current = null
+      sessionIdRef.current = null
+      queuedMessagesRef.current = []
+      flushQueuedMessageRef.current = false
+      activeAssistantMessageIdRef.current = null
       setSessionId(null)
       setMessages([])
-      setToolCalls(new Map())
+      setQueuedMessages([])
+      setStreaming(false)
+      setError(null)
       return
     }
-    setSessionId(paramSessionId)
-    apiFetch<SessionData>(`/api/sessions/${paramSessionId}`)
-      .then(data => {
-        const msgs: ChatMessage[] = data.messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        setMessages(msgs)
 
-        const tc = new Map<string, ToolCall>()
-        for (const msg of data.messages) {
-          for (const block of msg.content) {
-            if (block.type === 'tool_use' && block.id) {
-              tc.set(block.id, { id: block.id, name: block.name!, input: block.input! })
-            }
-            if (block.type === 'tool_result' && block.tool_use_id) {
-              const existing = tc.get(block.tool_use_id)
-              if (existing) {
-                existing.result = { content: block.content ?? '', is_error: block.is_error ?? false }
-              }
-            }
-          }
-        }
-        setToolCalls(tc)
-      })
+    setSessionId(paramSessionId)
+    sessionIdRef.current = paramSessionId
+    if (pendingSessionIdRef.current === paramSessionId) {
+      return
+    }
+
+    loadSession(paramSessionId)
       .catch(() => { /* session not found */ })
-  }, [paramSessionId])
+  }, [paramSessionId, loadSession])
 
   const handleSend = useCallback((text: string) => {
     setError(null)
-    const userMsg: ChatMessage = { role: 'user', content: [{ type: 'text', text }] }
-    setMessages(prev => [...prev, userMsg])
+
+    const assistantMessageId = nextMessageId()
+    activeAssistantMessageIdRef.current = assistantMessageId
+
+    setMessages(prev => [
+      ...prev,
+      { id: nextMessageId(), role: 'user', content: [{ type: 'text', text }] },
+      { id: assistantMessageId, role: 'assistant', content: [] },
+    ])
     setStreaming(true)
-    setStreamingText('')
 
     const controller = new AbortController()
     abortRef.current = controller
 
-    let accum = ''
+    const requestWasForNewSession = !sessionIdRef.current
+    let activeSessionId = sessionIdRef.current
 
-    streamChat(sessionId, text, (type, data: any) => {
+    const finalizeRequest = () => {
+      setStreaming(false)
+      abortRef.current = null
+      activeAssistantMessageIdRef.current = null
+      removeAssistantMessageIfEmpty(assistantMessageId)
+      if (queuedMessagesRef.current.length > 0) {
+        flushQueuedMessageRef.current = true
+      }
+      if (requestWasForNewSession && activeSessionId) {
+        pendingSessionIdRef.current = null
+        void loadSession(activeSessionId).catch(() => {})
+      }
+    }
+
+    streamChat(sessionIdRef.current, text, (type, data: any) => {
       switch (type) {
         case 'session':
+          activeSessionId = data.session_id
+          sessionIdRef.current = data.session_id
           setSessionId(data.session_id)
-          navigate(`/chat/${data.session_id}`, { replace: true })
+          if (requestWasForNewSession) {
+            pendingSessionIdRef.current = data.session_id
+            navigate(`/chat/${data.session_id}`, { replace: true })
+          }
           break
         case 'text':
-          accum += data.text
-          setStreamingText(accum)
+          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, { type: 'text', text: data.text }))
           break
         case 'tool_start':
-          setToolCalls(prev => {
-            const next = new Map(prev)
-            next.set(data.id, { id: data.id, name: data.name, input: data.input })
-            return next
-          })
+          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
+            type: 'tool_use',
+            id: data.id,
+            name: data.name,
+            input: data.input,
+          }))
           break
         case 'tool_end':
-          setToolCalls(prev => {
-            const next = new Map(prev)
-            const tc = next.get(data.id)
-            if (tc) tc.result = { content: data.content, is_error: data.is_error }
-            return next
-          })
+          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
+            type: 'tool_result',
+            tool_use_id: data.id,
+            content: data.content,
+            is_error: data.is_error,
+          }))
           break
         case 'done':
-          if (accum) {
-            setMessages(prev => [...prev, { role: 'assistant', content: [{ type: 'text', text: accum }] }])
-          }
-          setStreamingText('')
-          setStreaming(false)
-          abortRef.current = null
+          finalizeRequest()
           break
         case 'error':
           setError(data.error)
-          setStreaming(false)
-          abortRef.current = null
+          finalizeRequest()
           break
       }
-    }, controller.signal).catch(() => {
-      setStreaming(false)
-      abortRef.current = null
+    }, controller.signal).catch(err => {
+      setError(err instanceof Error ? err.message : 'Request failed')
+      finalizeRequest()
     })
-  }, [sessionId, navigate])
+  }, [loadSession, navigate, nextMessageId, removeAssistantMessageIfEmpty, updateAssistantMessage])
+
+  useEffect(() => {
+    if (streaming || !flushQueuedMessageRef.current || queuedMessages.length === 0) {
+      if (!streaming && queuedMessages.length === 0) {
+        flushQueuedMessageRef.current = false
+      }
+      return
+    }
+
+    flushQueuedMessageRef.current = false
+    const [nextMessage, ...rest] = queuedMessages
+    queuedMessagesRef.current = rest
+    setQueuedMessages(rest)
+    handleSend(nextMessage)
+  }, [streaming, queuedMessages, handleSend])
+
+  const handleQueue = useCallback((text: string) => {
+    setQueuedMessages(prev => {
+      const next = [...prev, text]
+      queuedMessagesRef.current = next
+      return next
+    })
+  }, [])
 
   const handleAbort = useCallback(() => {
     abortRef.current?.abort()
-    fetch('/api/chat/abort', { method: 'POST' }).catch(() => {})
-    setStreaming(false)
-    if (streamingText) {
-      setMessages(prev => [...prev, { role: 'assistant', content: [{ type: 'text', text: streamingText }] }])
-      setStreamingText('')
+
+    const activeSessionId = sessionIdRef.current
+    if (activeSessionId) {
+      fetch('/api/chat/abort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: activeSessionId }),
+      }).catch(() => {})
     }
+
+    const activeAssistantMessageId = activeAssistantMessageIdRef.current
+    if (activeAssistantMessageId) {
+      removeAssistantMessageIfEmpty(activeAssistantMessageId)
+    }
+
+    if (queuedMessagesRef.current.length > 0) {
+      flushQueuedMessageRef.current = true
+    }
+
+    activeAssistantMessageIdRef.current = null
     abortRef.current = null
-  }, [streamingText])
+    setStreaming(false)
+  }, [removeAssistantMessageIfEmpty])
 
   return (
-    <div className="flex flex-col h-full">
-      <MessageList messages={messages} toolCalls={toolCalls} streamingText={streamingText || undefined} />
+    <div className="flex h-full flex-col">
+      <MessageList messages={messages} />
       {error && (
-        <div className="px-4 py-2 text-sm text-red-400 bg-red-950/30 text-center">
+        <div className="bg-red-950/30 px-4 py-2 text-center text-sm text-red-400">
           {error}
         </div>
       )}
-      <ChatInput onSend={handleSend} disabled={streaming} streaming={streaming} onAbort={handleAbort} />
+      <ChatInput
+        onSend={handleSend}
+        onQueue={handleQueue}
+        disabled={streaming}
+        streaming={streaming}
+        onAbort={handleAbort}
+        queuedMessages={queuedMessages}
+      />
     </div>
   )
 }

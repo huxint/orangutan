@@ -13,26 +13,36 @@ export function ToolCallCard({ name, input, result }: ToolCallCardProps) {
   const [open, setOpen] = useState(running)
 
   return (
-    <div className="border-l-2 border-accent rounded-r-lg bg-bg-surface my-2">
+    <div className="my-3 overflow-hidden rounded-xl border border-border bg-bg/70 shadow-sm">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-muted hover:text-text transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-text-muted transition-colors hover:text-text"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <Wrench size={14} className="text-accent" />
-        <span className="font-medium">{name}</span>
+        <span className="font-medium text-text">{name}</span>
         {running && <span className="ml-auto text-xs text-accent animate-pulse">running...</span>}
         {result?.is_error && <span className="ml-auto text-xs text-red-400">error</span>}
+        {result && !result.is_error && <span className="ml-auto text-xs text-text-muted">done</span>}
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2">
-          <pre className="text-xs rounded bg-bg p-2 overflow-x-auto text-text-muted">
+        <div className="space-y-2 border-t border-border px-3 py-3">
+          <div className="text-[11px] font-medium tracking-wide text-text-muted uppercase">Input</div>
+          <pre className="overflow-x-auto rounded-lg bg-bg px-3 py-2 text-xs text-text-muted">
             {JSON.stringify(input, null, 2)}
           </pre>
           {result && (
-            <pre className={`text-xs rounded bg-bg p-2 overflow-x-auto ${result.is_error ? 'text-red-400' : 'text-text-muted'}`}>
-              {result.content}
-            </pre>
+            <>
+              <div className="text-[11px] font-medium tracking-wide text-text-muted uppercase">Result</div>
+              <pre className={`overflow-x-auto rounded-lg bg-bg px-3 py-2 text-xs ${result.is_error ? 'text-red-400' : 'text-text-muted'}`}>
+                {result.content}
+              </pre>
+            </>
+          )}
+          {running && (
+            <div className="text-xs text-text-muted">
+              Waiting for tool result...
+            </div>
           )}
         </div>
       )}
