@@ -22,14 +22,6 @@
 using namespace orangutan;
 using orangutan::testing::ScopedEnvVar;
 
-namespace orangutan::app::detail {
-
-std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override);
-
-std::unordered_map<std::string, SubagentChildRuntimeConfig> build_subagent_child_runtime_configs(const std::unordered_map<std::string, AgentRuntimeConfig> &agent_runtime_configs);
-
-} // namespace orangutan::app::detail
-
 namespace {
 
 class ScopedFdRedirect {
@@ -117,8 +109,15 @@ protected:
             Message{.role = "user", .content = {TextBlock{.text = "second"}}},
             Message{.role = "assistant", .content = {TextBlock{.text = "reply two"}}},
         };
-        session_store.save(history_a, "gpt-test", cli_identity.memory_scope);
-        session_store.save(history_b, "gpt-test", cli_identity.memory_scope);
+        const SessionMetadata metadata{
+            .model = "gpt-test",
+            .scope_key = cli_identity.memory_scope,
+            .agent_key = "default",
+            .origin_kind = "cli",
+            .origin_ref = "cli:local",
+        };
+        session_store.save(history_a, metadata);
+        session_store.save(history_b, metadata);
     }
 
     [[nodiscard]]
@@ -253,6 +252,63 @@ TEST_F(BootstrapTest, BuildAgentRuntimeConfigsUsesPerAgentEditMode) {
     auto coder_it = runtime_configs->find("coder");
     ASSERT_NE(coder_it, runtime_configs->end());
     EXPECT_EQ(coder_it->second.edit_mode, "search_replace");
+}
+
+TEST_F(BootstrapTest, BuildEffectiveAgentsAddsLegacyDefaultWhenMissing) {
+    Config cfg;
+    cfg.provider = "openai";
+    cfg.model = "gpt-test";
+    cfg.base_url = "https://example.test";
+    cfg.api_key = "test-key";
+    cfg.workspace = workspace_root().string();
+
+    const auto agents = app::detail::build_effective_agents(cfg);
+    auto it = agents.find("default");
+    ASSERT_NE(it, agents.end());
+    EXPECT_EQ(it->second.model, "gpt-test");
+    EXPECT_EQ(it->second.workspace, workspace_root().string());
+}
+
+TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAddsLegacyDefaultWhenMissing) {
+    Config cfg;
+    cfg.provider = "openai";
+    cfg.model = "gpt-test";
+    cfg.base_url = "https://example.test";
+    cfg.api_key = "test-key";
+    cfg.workspace = workspace_root().string();
+
+    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+    ASSERT_TRUE(runtime_configs.has_value());
+    auto it = runtime_configs->find("default");
+    ASSERT_NE(it, runtime_configs->end());
+    EXPECT_EQ(it->second.agent_key, "default");
+    EXPECT_EQ(it->second.model, "gpt-test");
+}
+
+TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPreservesDefaultSubagents) {
+    Config cfg;
+    cfg.agents.emplace("default", AgentConfig{
+                                      .provider = "openai",
+                                      .model = "gpt-test",
+                                      .base_url = "https://example.test",
+                                      .api_key = "test-key",
+                                      .workspace = workspace_root().string(),
+                                      .subagents = {"coder"},
+                                  });
+    cfg.agents.emplace("coder", AgentConfig{
+                                    .provider = "openai",
+                                    .model = "gpt-coder",
+                                    .base_url = "https://example.test",
+                                    .api_key = "coder-key",
+                                    .workspace = workspace_root().string(),
+                                });
+
+    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+    ASSERT_TRUE(runtime_configs.has_value());
+    auto default_it = runtime_configs->find("default");
+    ASSERT_NE(default_it, runtime_configs->end());
+    ASSERT_EQ(default_it->second.allowed_child_agents.size(), 1U);
+    EXPECT_EQ(default_it->second.allowed_child_agents.front(), "coder");
 }
 
 TEST_F(BootstrapTest, BuildSubagentChildRuntimeConfigsPropagatesEditMode) {

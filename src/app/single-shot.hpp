@@ -16,6 +16,7 @@ using JsonEmitter = std::function<void(const json &event)>;
 void emit_session_history_dump(const std::vector<Message> &history, const std::string &current_session_id, const JsonEmitter &emit);
 
 int run_single_message(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
-                       std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const JsonEmitter &emit, std::ostream &error_stream);
+                       std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key, const JsonEmitter &emit,
+                       std::ostream &error_stream);
 
 } // namespace orangutan::app

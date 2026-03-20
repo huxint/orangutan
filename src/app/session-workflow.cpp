@@ -2,34 +2,44 @@
 
 namespace orangutan::app {
 
-std::optional<std::string> resolve_requested_session(SessionStore &store, const std::string &requested, const std::string &scope_key) {
+SessionMetadata make_cli_session_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key, const std::string &origin_ref) {
+    return SessionMetadata{
+        .model = model,
+        .scope_key = scope_key,
+        .agent_key = agent_key,
+        .origin_kind = "cli",
+        .origin_ref = origin_ref,
+    };
+}
+
+std::optional<std::string> resolve_requested_session(SessionStore &store, const std::string &requested, const std::string &scope_key, const std::string &agent_key) {
     if (requested != "latest") {
         return requested;
     }
 
-    const auto sessions = store.list_sessions(scope_key);
+    const auto sessions = !scope_key.empty() ? store.list_sessions(scope_key) : (!agent_key.empty() ? store.list_sessions_for_agent(agent_key) : store.list_sessions());
     if (sessions.empty()) {
         return std::nullopt;
     }
     return sessions.front().id;
 }
 
-bool persist_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key) {
+bool persist_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata) {
     const auto &history = agent.history();
     if (history.empty()) {
         return false;
     }
 
     if (!current_session_id.empty()) {
-        store.update(current_session_id, history, model);
+        store.update(current_session_id, history, metadata);
     } else {
-        current_session_id = store.save(history, model, scope_key);
+        current_session_id = store.save(history, metadata);
     }
 
     return true;
 }
 
-NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key) {
+NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata) {
     NewSessionResult result{
         .had_history = !agent.history().empty(),
         .distillation = {},
@@ -37,7 +47,7 @@ NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, const 
 
     if (result.had_history) {
         result.distillation = agent.distill_session_memory();
-        (void)persist_session(agent, store, model, current_session_id, scope_key);
+        (void)persist_session(agent, store, current_session_id, metadata);
         result.previous_session_id = current_session_id;
     }
 
@@ -47,13 +57,16 @@ NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, const 
 }
 
 LoadSessionResult load_session_into_agent(const std::string &requested_session_id, AgentLoop &agent, SessionStore &store, std::string &current_session_id,
-                                          const std::string &scope_key) {
-    const auto resolved_session_id = resolve_requested_session(store, requested_session_id, scope_key);
+                                          const std::string &scope_key, const std::string &agent_key) {
+    const auto resolved_session_id = resolve_requested_session(store, requested_session_id, scope_key, agent_key);
     if (!resolved_session_id.has_value()) {
         return {.loaded = false, .status = "Error: no saved sessions available in the current scope."};
     }
 
     const auto &target_session_id = *resolved_session_id;
+    if (!agent_key.empty() && !store.session_belongs_to_agent(target_session_id, agent_key)) {
+        return {.loaded = false, .status = "Error: session does not belong to the current agent."};
+    }
     if (!scope_key.empty() && !store.session_belongs_to_scope(target_session_id, scope_key)) {
         return {.loaded = false, .status = "Error: session does not belong to the current agent scope."};
     }

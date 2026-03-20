@@ -240,13 +240,14 @@ int run_protect_config_mode(const CliOptions &options) {
 }
 
 std::optional<orangutan::AgentConfig> resolve_selected_agent(const orangutan::Config &cfg, const CliOptions &options) {
-    const auto maybe_selected_agent = cfg.find_agent(options.cli_agent_key);
-    if (!maybe_selected_agent.has_value()) {
+    const auto effective_agents = orangutan::app::detail::build_effective_agents(cfg);
+    const auto agent_it = effective_agents.find(options.cli_agent_key);
+    if (agent_it == effective_agents.end()) {
         std::println(std::cerr, "Error: unknown agent: {}", options.cli_agent_key);
         return std::nullopt;
     }
 
-    auto selected_agent = *maybe_selected_agent;
+    auto selected_agent = agent_it->second;
     if (!options.cli_provider.empty()) {
         selected_agent.provider = options.cli_provider;
     }
@@ -289,9 +290,28 @@ std::unique_ptr<Store> create_store(const char *name) {
 
 namespace orangutan::app::detail {
 
+std::unordered_map<std::string, AgentConfig> build_effective_agents(const orangutan::Config &cfg) {
+    auto effective_agents = cfg.agents;
+    if (!effective_agents.contains("default")) {
+        effective_agents.insert_or_assign("default", orangutan::AgentConfig{
+                                                         .provider = cfg.provider,
+                                                         .model = cfg.model,
+                                                         .fallback_models = cfg.fallback_models,
+                                                         .base_url = cfg.base_url,
+                                                         .api_key = cfg.api_key,
+                                                         .system_prompt = cfg.system_prompt,
+                                                         .workspace = cfg.workspace,
+                                                         .permissions = cfg.permissions,
+                                                         .subagents = {},
+                                                         .edit_mode = cfg.edit_mode,
+                                                     });
+    }
+    return effective_agents;
+}
+
 std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const orangutan::Config &cfg, const std::string &cli_api_key_override) {
     std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> result;
-    for (const auto &[agent_key, agent_cfg] : cfg.agents) {
+    for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
         orangutan::Config agent_cfg_wrapper = cfg;
         agent_cfg_wrapper.api_key = agent_cfg.api_key;
         const auto resolved_agent_api_key = resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
@@ -797,7 +817,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
 
     if (!options.message.empty()) {
         return orangutan::app::run_single_message(agent, *provider, *session_store, cfg, options.message, options.event_stream, current_session_id, runtime_cfg.model,
-                                                  runtime_cfg.cli_memory_scope, emit_json_event, std::cerr);
+                                                  runtime_cfg.cli_memory_scope, runtime_cfg.agent_key, emit_json_event, std::cerr);
     }
 
     orangutan::app::run_repl(agent, *provider, *session_store, runtime_cfg.model, runtime_cfg.fallback_models, cfg, current_session_id, runtime_cfg.agent_key,

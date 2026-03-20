@@ -1,6 +1,7 @@
 #include "app/single-shot.hpp"
 
 #include "app/history-events.hpp"
+#include "app/session-workflow.hpp"
 
 #include <ostream>
 
@@ -95,18 +96,19 @@ void run_single_message_agent(AgentLoop &agent, const std::string &message, bool
 }
 
 void maybe_persist_single_message_session(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, std::string &current_session_id,
-                                          const std::string &configured_model, const std::string &scope_key, bool event_stream, const JsonEmitter &emit,
-                                          std::ostream &error_stream) {
+                                          const std::string &configured_model, const std::string &scope_key, const std::string &agent_key, bool event_stream,
+                                          const JsonEmitter &emit, std::ostream &error_stream) {
     if (!cfg.auto_save || agent.history().empty()) {
         return;
     }
 
     const auto active_model = resolve_active_model(provider, configured_model);
+    const auto metadata = make_cli_session_metadata(active_model, scope_key, agent_key);
     const bool has_existing_session = !current_session_id.empty();
     if (has_existing_session) {
-        session_store.update(current_session_id, agent.history(), active_model);
+        session_store.update(current_session_id, agent.history(), metadata);
     } else {
-        current_session_id = session_store.save(agent.history(), active_model, scope_key);
+        current_session_id = session_store.save(agent.history(), metadata);
     }
 
     if (event_stream) {
@@ -128,7 +130,8 @@ void emit_session_history_dump(const std::vector<Message> &history, const std::s
 }
 
 int run_single_message(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
-                       std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const JsonEmitter &emit, std::ostream &error_stream) {
+                       std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key, const JsonEmitter &emit,
+                       std::ostream &error_stream) {
     try {
         run_single_message_agent(agent, message, event_stream, current_session_id, emit);
     } catch (const std::exception &e) {
@@ -136,7 +139,7 @@ int run_single_message(AgentLoop &agent, const Provider &provider, SessionStore 
         return 1;
     }
 
-    maybe_persist_single_message_session(agent, provider, session_store, cfg, current_session_id, configured_model, scope_key, event_stream, emit, error_stream);
+    maybe_persist_single_message_session(agent, provider, session_store, cfg, current_session_id, configured_model, scope_key, agent_key, event_stream, emit, error_stream);
 
     if (event_stream) {
         emit(done_event(current_session_id));

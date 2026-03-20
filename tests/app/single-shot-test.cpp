@@ -99,7 +99,7 @@ TEST_F(SingleShotTest, RunSingleMessageEmitsEventsAndAutosavesSession) {
     std::vector<json> events;
     std::string current_session_id;
     const auto status = app::run_single_message(
-        agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test",
+        agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
         [&events](const json &event) {
             events.push_back(event);
         },
@@ -115,6 +115,9 @@ TEST_F(SingleShotTest, RunSingleMessageEmitsEventsAndAutosavesSession) {
     const auto sessions = store.list_sessions("scope:test");
     ASSERT_EQ(sessions.size(), 1U);
     EXPECT_EQ(sessions[0].model, "test-model");
+    EXPECT_EQ(sessions[0].agent_key, "default");
+    EXPECT_EQ(sessions[0].origin_kind, "cli");
+    EXPECT_EQ(sessions[0].origin_ref, "cli:local");
 }
 
 TEST_F(SingleShotTest, RunSingleMessageUsesDistinctToolCallAndToolExecutionEvents) {
@@ -135,7 +138,7 @@ TEST_F(SingleShotTest, RunSingleMessageUsesDistinctToolCallAndToolExecutionEvent
     std::vector<json> events;
     std::string current_session_id;
     const auto status = app::run_single_message(
-        agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test",
+        agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
         [&events](const json &event) {
             events.push_back(event);
         },

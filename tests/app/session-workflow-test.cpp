@@ -12,6 +12,10 @@ using namespace orangutan;
 
 namespace {
 
+SessionMetadata cli_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key) {
+    return app::make_cli_session_metadata(model, scope_key, agent_key);
+}
+
 class DistillingWorkflowProvider final : public Provider {
 public:
     LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
@@ -76,7 +80,7 @@ TEST_F(SessionWorkflowTest, StartNewSessionDistillsAndPersistsPreviousHistory) {
     });
 
     std::string current_session_id;
-    const auto result = app::start_new_session(loop, session_store, "test-model", current_session_id, "scope:test");
+    const auto result = app::start_new_session(loop, session_store, current_session_id, cli_metadata("test-model", "scope:test", "coder"));
 
     EXPECT_TRUE(result.had_history);
     EXPECT_TRUE(result.distillation.distilled);
@@ -86,6 +90,9 @@ TEST_F(SessionWorkflowTest, StartNewSessionDistillsAndPersistsPreviousHistory) {
     const auto sessions = session_store.list_sessions("scope:test");
     ASSERT_EQ(sessions.size(), 1);
     EXPECT_EQ(result.previous_session_id, sessions.front().id);
+    EXPECT_EQ(sessions.front().agent_key, "coder");
+    EXPECT_EQ(sessions.front().origin_kind, "cli");
+    EXPECT_EQ(sessions.front().origin_ref, "cli:local");
     const auto memory = memory_store.recall("project.current", "scope:test");
     EXPECT_NE(memory.find("orangutan refactor"), std::string::npos);
 }
@@ -96,9 +103,9 @@ TEST_F(SessionWorkflowTest, LoadSessionIntoAgentRejectsScopeMismatch) {
     SessionStore session_store(session_db_path().string());
     AgentLoop loop(provider, tools);
 
-    const auto session_id = session_store.save({Message::user_text("hello")}, "test-model", "scope:one");
+    const auto session_id = session_store.save({Message::user_text("hello")}, cli_metadata("test-model", "scope:one", "scope-one"));
     std::string current_session_id;
-    const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two");
+    const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
 
     EXPECT_FALSE(result.loaded);
     EXPECT_NE(result.status.find("does not belong"), std::string::npos);
@@ -107,13 +114,25 @@ TEST_F(SessionWorkflowTest, LoadSessionIntoAgentRejectsScopeMismatch) {
 
 TEST_F(SessionWorkflowTest, ResolveRequestedSessionSupportsLatest) {
     SessionStore session_store(session_db_path().string());
-    const auto first_id = session_store.save({Message::user_text("first")}, "test-model", "scope:test");
-    const auto second_id = session_store.save({Message::user_text("second")}, "test-model", "scope:test");
+    const auto first_id = session_store.save({Message::user_text("first")}, cli_metadata("test-model", "scope:test", "coder"));
+    const auto second_id = session_store.save({Message::user_text("second")}, cli_metadata("test-model", "scope:test", "coder"));
 
-    const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test");
+    const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
     ASSERT_TRUE(latest.has_value());
     EXPECT_NE(*latest, first_id);
     EXPECT_EQ(*latest, second_id);
+}
+
+TEST_F(SessionWorkflowTest, ResolveRequestedSessionUsesAgentOwnershipWhenScopeIsEmpty) {
+    SessionStore session_store(session_db_path().string());
+    session_store.save({Message::user_text("coder")}, cli_metadata("test-model", "agent:coder", "coder"));
+    const auto first_default = session_store.save({Message::user_text("first default")}, cli_metadata("test-model", "", "default"));
+    const auto second_default = session_store.save({Message::user_text("second default")}, cli_metadata("test-model", "", "default"));
+
+    const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
+    ASSERT_TRUE(latest.has_value());
+    EXPECT_NE(*latest, first_default);
+    EXPECT_EQ(*latest, second_default);
 }
 
 TEST_F(SessionWorkflowTest, StartNewSessionWritesMirrorArtifactsWhenEnabled) {
@@ -137,7 +156,7 @@ TEST_F(SessionWorkflowTest, StartNewSessionWritesMirrorArtifactsWhenEnabled) {
     });
 
     std::string current_session_id;
-    const auto result = app::start_new_session(loop, session_store, "test-model", current_session_id, "scope:test");
+    const auto result = app::start_new_session(loop, session_store, current_session_id, cli_metadata("test-model", "scope:test", "coder"));
     EXPECT_TRUE(result.distillation.distilled);
 
     const auto snapshot = workspace / "MEMORY.md";

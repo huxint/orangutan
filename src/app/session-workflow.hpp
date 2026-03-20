@@ -20,17 +20,20 @@ struct LoadSessionResult {
 };
 
 [[nodiscard]]
-std::optional<std::string> resolve_requested_session(SessionStore &store, const std::string &requested, const std::string &scope_key);
+std::optional<std::string> resolve_requested_session(SessionStore &store, const std::string &requested, const std::string &scope_key, const std::string &agent_key = {});
 
 [[nodiscard]]
-bool persist_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key = {});
+SessionMetadata make_cli_session_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key, const std::string &origin_ref = "cli:local");
 
 [[nodiscard]]
-NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key = {});
+bool persist_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata);
+
+[[nodiscard]]
+NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata);
 
 [[nodiscard]]
 LoadSessionResult load_session_into_agent(const std::string &requested_session_id, AgentLoop &agent, SessionStore &store, std::string &current_session_id,
-                                          const std::string &scope_key = {});
+                                          const std::string &scope_key = {}, const std::string &agent_key = {});
 
 [[nodiscard]]
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session);

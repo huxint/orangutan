@@ -75,9 +75,10 @@ std::optional<std::string> read_input_line() {
     return line;
 }
 
-void save_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key, HookManager *hook_manager) {
+void save_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key, const std::string &agent_key,
+                  HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
-    if (!persist_session(agent, store, model, current_session_id, scope_key)) {
+    if (!persist_session(agent, store, current_session_id, make_cli_session_metadata(model, scope_key, agent_key))) {
         std::print("💤 Nothing to save (empty history).\n\n");
         return;
     }
@@ -94,10 +95,10 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
 }
 
 void load_session(const std::string &requested_session_id, AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &scope_key,
-                  HookManager *hook_manager) {
+                  const std::string &agent_key, HookManager *hook_manager) {
     const auto previous_session_id = current_session_id;
     const auto previous_message_count = agent.history().size();
-    const auto result = load_session_into_agent(requested_session_id, agent, store, current_session_id, scope_key);
+    const auto result = load_session_into_agent(requested_session_id, agent, store, current_session_id, scope_key, agent_key);
     if (result.loaded && current_session_id != previous_session_id) {
         dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
         dispatch_session_start(hook_manager, current_session_id, agent.history().size());
@@ -105,7 +106,8 @@ void load_session(const std::string &requested_session_id, AgentLoop &agent, Ses
     std::print("{}\n\n", result.status);
 }
 
-void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model) {
+void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model, const std::string &scope_key,
+                      const std::string &agent_key) {
     const auto result = agent.compress_history();
     if (!result.compacted) {
         std::print("{}\n\n", result.status);
@@ -113,7 +115,7 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
     }
 
     if (!current_session_id.empty()) {
-        store.update(current_session_id, agent.history(), model);
+        store.update(current_session_id, agent.history(), make_cli_session_metadata(model, scope_key, agent_key));
     }
 
     std::print("🗜️ Compressed history: {} -> {} messages.\n\n", result.messages_before, result.messages_after);
@@ -134,13 +136,13 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/new") {
         const auto previous_message_count = agent.history().size();
-        const auto result = start_new_session(agent, store, active_model, current_session_id, scope_key);
+        const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
         dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
         std::print("{}\n\n", describe_new_session_result(result, false));
         return true;
     }
     if (line == "/compress") {
-        compress_session(agent, store, current_session_id, active_model);
+        compress_session(agent, store, current_session_id, active_model, scope_key, agent_key);
         return true;
     }
     if (line == "/clear") {
@@ -161,7 +163,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line == "/save") {
-        save_session(agent, store, active_model, current_session_id, scope_key, hook_manager);
+        save_session(agent, store, active_model, current_session_id, scope_key, agent_key, hook_manager);
         return true;
     }
     if (line == "/sessions") {
@@ -183,7 +185,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line.starts_with("/load ") || line.starts_with("/resume ")) {
         const auto session_id = line.starts_with("/resume ") ? line.substr(8) : line.substr(6);
-        load_session(session_id, agent, store, current_session_id, scope_key, hook_manager);
+        load_session(session_id, agent, store, current_session_id, scope_key, agent_key, hook_manager);
         return true;
     }
     if (line == "/skills") {
@@ -277,11 +279,12 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
 
     if (cfg.auto_save && !agent.history().empty()) {
         const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
+        const auto metadata = make_cli_session_metadata(active_model, scope_key, agent_key);
         if (!current_session_id.empty()) {
-            store.update(current_session_id, agent.history(), active_model);
+            store.update(current_session_id, agent.history(), metadata);
             std::print("\n💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         } else {
-            current_session_id = store.save(agent.history(), active_model, scope_key);
+            current_session_id = store.save(agent.history(), metadata);
             dispatch_session_start(hook_manager, current_session_id, agent.history().size());
             std::print("\n💾 Auto-saved session: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         }

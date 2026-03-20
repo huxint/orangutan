@@ -216,6 +216,16 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
     return runtime;
 }
 
+SessionMetadata make_channel_session_metadata(const ConversationRuntime &runtime, const std::string &jid, const std::string &model) {
+    return SessionMetadata{
+        .model = model,
+        .scope_key = runtime.session_scope_key,
+        .agent_key = runtime.agent_key,
+        .origin_kind = "channel",
+        .origin_ref = jid,
+    };
+}
+
 void persist_channel_session(const std::string &jid, ConversationRuntime &runtime, SessionStore &session_store) {
     const auto &history = runtime.agent->history();
     if (history.empty()) {
@@ -226,17 +236,16 @@ void persist_channel_session(const std::string &jid, ConversationRuntime &runtim
     }
 
     const bool created_session = runtime.current_session_id.empty();
+    const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+    const auto metadata = make_channel_session_metadata(runtime, jid, active_model);
     if (runtime.current_session_id.empty()) {
-        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
-        runtime.current_session_id = session_store.save(history, active_model, runtime.session_scope_key);
+        runtime.current_session_id = session_store.save(history, metadata);
         runtime.persisted_message_count = history.size();
     } else if (history.size() > runtime.persisted_message_count) {
-        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
-        session_store.append(runtime.current_session_id, history, runtime.persisted_message_count, active_model);
+        session_store.append(runtime.current_session_id, history, runtime.persisted_message_count, metadata);
         runtime.persisted_message_count = history.size();
     } else {
-        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
-        session_store.update(runtime.current_session_id, history, active_model);
+        session_store.update(runtime.current_session_id, history, metadata);
         runtime.persisted_message_count = history.size();
     }
 
@@ -304,7 +313,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     if (message.content == "/new") {
         const auto previous_message_count = runtime.agent->history().size();
         const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
-        const auto result = start_new_session(*runtime.agent, session_store, active_model, runtime.current_session_id, runtime.session_scope_key);
+        const auto result = start_new_session(*runtime.agent, session_store, runtime.current_session_id, make_channel_session_metadata(runtime, message.jid, active_model));
         dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
         runtime.current_session_id.clear();
         session_store.clear_jid(message.jid, runtime.agent_key);
@@ -350,7 +359,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
         const auto previous_session_id = runtime.current_session_id;
         const auto previous_message_count = runtime.agent->history().size();
-        const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key);
+        const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
         if (!resolved_session_id.has_value()) {
             deliver_command_reply(message, "No saved sessions available in this scope.", channel_manager);
             return true;
@@ -361,7 +370,8 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
             return true;
         }
 
-        const auto load_result = load_session_into_agent(*resolved_session_id, *runtime.agent, session_store, runtime.current_session_id, runtime.session_scope_key);
+        const auto load_result =
+            load_session_into_agent(*resolved_session_id, *runtime.agent, session_store, runtime.current_session_id, runtime.session_scope_key, runtime.agent_key);
         if (!load_result.loaded) {
             deliver_command_reply(message, load_result.status, channel_manager);
             return true;
