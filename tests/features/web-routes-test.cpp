@@ -1,23 +1,41 @@
 #include "features/web/web-server.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/config/config.hpp"
+#include "test-helpers.hpp"
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <filesystem>
+#include <memory>
+
+using orangutan::testing::ScopedEnvVar;
+using orangutan::testing::test_tmp_root;
 
 class WebRoutesTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        temp_root_ = test_tmp_root() / ("web-routes-" + std::to_string(getpid()));
+        home_root_ = temp_root_ / "home";
+        std::filesystem::remove_all(temp_root_);
+        std::filesystem::create_directories(home_root_ / ".orangutan");
+        home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_root_.string());
         db_path_ = "/tmp/orangutan-web-test-" + std::to_string(getpid()) + ".db";
         session_store_ = std::make_unique<orangutan::SessionStore>(db_path_);
     }
     void TearDown() override {
         session_store_.reset();
         std::filesystem::remove(db_path_);
+        home_env_.reset();
+        std::filesystem::remove_all(temp_root_);
+    }
+    std::filesystem::path temp_root_;
+    std::filesystem::path home_root_;
+    std::filesystem::path config_path() const {
+        return home_root_ / ".orangutan" / "config.toml";
     }
     std::string db_path_;
     std::unique_ptr<orangutan::SessionStore> session_store_;
+    std::unique_ptr<ScopedEnvVar> home_env_;
 };
 
 namespace {
@@ -101,12 +119,14 @@ TEST_F(WebRoutesTest, PutConfigUpdatesModel) {
     cfg.model = "old-model";
     orangutan::WebServer server;
     server.set_config(&cfg);
+    server.set_config_save_path(config_path().string());
     server.start("127.0.0.1", 0);
     httplib::Client cli("127.0.0.1", server.port());
     auto res = cli.Put("/api/config", R"({"model":"new-model"})", "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
     EXPECT_EQ(cfg.model, "new-model");
+    ASSERT_TRUE(std::filesystem::exists(config_path()));
     server.stop();
 }
 

@@ -84,6 +84,9 @@ void WebServer::set_session_store(SessionStore *store) {
 void WebServer::set_config(Config *config) {
     config_ = config;
 }
+void WebServer::set_config_save_path(const std::string &path) {
+    config_save_path_ = path;
+}
 void WebServer::set_tool_registry(ToolRegistry *registry) {
     tool_registry_ = registry;
 }
@@ -134,7 +137,7 @@ void WebServer::setup_routes() {
     });
 
     server_.Put("/api/config", [this](const httplib::Request &req, httplib::Response &res) {
-        web::handle_put_config(req, res, config_);
+        web::handle_put_config(req, res, config_, config_save_path_.empty() ? nullptr : &config_save_path_);
     });
 
     server_.Get("/api/tools", [this](const httplib::Request &req, httplib::Response &res) {

@@ -46,6 +46,27 @@
 #include <spdlog/spdlog.h>
 #include <unistd.h>
 
+namespace orangutan::app::detail {
+
+std::string resolve_api_key(const std::string &cli_api_key_override, const Config &cfg) {
+    if (!cli_api_key_override.empty()) {
+        return cli_api_key_override;
+    }
+    const char *env_key = std::getenv("ANTHROPIC_API_KEY");
+    if (env_key == nullptr) {
+        env_key = std::getenv("LLM_API_KEY");
+    }
+    if (env_key != nullptr) {
+        return env_key;
+    }
+    if (!cfg.api_key.empty()) {
+        return cfg.api_key;
+    }
+    return {};
+}
+
+} // namespace orangutan::app::detail
+
 namespace {
 
 std::string read_stdin_if_piped() {
@@ -65,21 +86,12 @@ std::string read_stdin_if_piped() {
     return content;
 }
 
-std::string resolve_api_key(const std::string &cli_key, const orangutan::Config &cfg) {
-    if (!cli_key.empty()) {
-        return cli_key;
+std::string default_workspace_hint() {
+    const char *home = std::getenv("HOME");
+    if (home == nullptr || std::string_view{home}.empty()) {
+        return {};
     }
-    const char *env_key = std::getenv("ANTHROPIC_API_KEY");
-    if (env_key == nullptr) {
-        env_key = std::getenv("LLM_API_KEY");
-    }
-    if (env_key != nullptr) {
-        return env_key;
-    }
-    if (!cfg.api_key.empty()) {
-        return cfg.api_key;
-    }
-    return {};
+    return (std::filesystem::path(home) / ".orangutan" / "workspace" / "main").lexically_normal().string();
 }
 
 void emit_json_event(const orangutan::json &event) {
@@ -122,7 +134,7 @@ void handle_signal(int /*signum*/) {
 }
 
 void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_flag, CLI::Option *&protect_flag) {
-    app.add_option("-k,--api-key", options.api_key, "API key (or set ANTHROPIC_API_KEY / LLM_API_KEY env)");
+    app.add_option("-k,--api-key", options.api_key, "API key (or configure agent.api_key, or set ANTHROPIC_API_KEY / LLM_API_KEY env)");
     app.add_option("--model", options.cli_model, "Model to use");
     app.add_option("-b,--base-url", options.cli_base_url, "API base URL");
     app.add_option("-p,--provider", options.cli_provider, "LLM provider (anthropic, openai)");
@@ -306,6 +318,12 @@ std::unordered_map<std::string, AgentConfig> build_effective_agents(const orangu
                                                          .edit_mode = cfg.edit_mode,
                                                      });
     }
+    for (auto &[agent_key, agent_cfg] : effective_agents) {
+        if (agent_cfg.workspace.empty()) {
+            agent_cfg.workspace = default_workspace_hint();
+        }
+        (void)agent_key;
+    }
     return effective_agents;
 }
 
@@ -314,9 +332,10 @@ std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_r
     for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
         orangutan::Config agent_cfg_wrapper = cfg;
         agent_cfg_wrapper.api_key = agent_cfg.api_key;
-        const auto resolved_agent_api_key = resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
+        const auto resolved_agent_api_key = orangutan::app::detail::resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
         if (resolved_agent_api_key.empty()) {
-            std::println(std::cerr, "Error: API key required for agent '{}'.", agent_key);
+            std::println(std::cerr, "Error: missing API key for agent '{}'.", agent_key);
+            std::println(std::cerr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
             return std::nullopt;
         }
 
@@ -679,10 +698,10 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
 
     orangutan::Config selected_agent_cfg = cfg;
     selected_agent_cfg.api_key = maybe_selected_agent->api_key;
-    const auto api_key = resolve_api_key(options.api_key, selected_agent_cfg);
+    const auto api_key = orangutan::app::detail::resolve_api_key(options.api_key, selected_agent_cfg);
     if (api_key.empty()) {
-        std::println(std::cerr, "Error: API key required.");
-        std::println(std::cerr, "Set ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
+        std::println(std::cerr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
+        std::println(std::cerr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
         return 1;
     }
 

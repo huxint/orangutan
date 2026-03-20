@@ -64,11 +64,9 @@ export function ChatHeader({
             )}
           </div>
 
-          {agent?.workspace && (
-            <div className="mt-1 truncate text-xs text-text-muted">
-              Workspace: {agent.workspace}
-            </div>
-          )}
+          <div className="mt-1 truncate text-xs text-text-muted">
+            Workspace: {agent?.workspace || 'No workspace configured'}
+          </div>
 
           {readOnly && (
             <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100">

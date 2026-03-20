@@ -269,6 +269,30 @@ TEST_F(BootstrapTest, BuildEffectiveAgentsAddsLegacyDefaultWhenMissing) {
     EXPECT_EQ(it->second.workspace, workspace_root().string());
 }
 
+TEST_F(BootstrapTest, BuildEffectiveAgentsAssignsDefaultWorkspaceWhenMissing) {
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    Config cfg;
+    cfg.provider = "openai";
+    cfg.model = "gpt-test";
+    cfg.base_url = "https://example.test";
+    cfg.api_key = "test-key";
+    cfg.agents.emplace("coder", AgentConfig{
+                                    .provider = "openai",
+                                    .model = "gpt-coder",
+                                    .base_url = "https://example.test",
+                                    .api_key = "coder-key",
+                                });
+
+    const auto agents = app::detail::build_effective_agents(cfg);
+    const auto expected = (home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
+
+    ASSERT_EQ(agents.count("default"), 1U);
+    ASSERT_EQ(agents.count("coder"), 1U);
+    EXPECT_EQ(agents.at("default").workspace, expected);
+    EXPECT_EQ(agents.at("coder").workspace, expected);
+}
+
 TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAddsLegacyDefaultWhenMissing) {
     Config cfg;
     cfg.provider = "openai";
@@ -283,6 +307,28 @@ TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAddsLegacyDefaultWhenMissing) {
     ASSERT_NE(it, runtime_configs->end());
     EXPECT_EQ(it->second.agent_key, "default");
     EXPECT_EQ(it->second.model, "gpt-test");
+}
+
+TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAssignsDefaultWorkspaceWhenMissing) {
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    Config cfg;
+    cfg.agents.emplace("default", AgentConfig{
+                                      .provider = "openai",
+                                      .model = "gpt-test",
+                                      .base_url = "https://example.test",
+                                      .api_key = "test-key",
+                                  });
+
+    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+    ASSERT_TRUE(runtime_configs.has_value());
+    auto it = runtime_configs->find("default");
+    ASSERT_NE(it, runtime_configs->end());
+
+    const auto expected = std::filesystem::weakly_canonical(home_root() / ".orangutan" / "workspace" / "main").string();
+    EXPECT_EQ(it->second.workspace_root, expected);
+    EXPECT_TRUE(std::filesystem::exists(expected));
+    EXPECT_TRUE(std::filesystem::is_directory(expected));
 }
 
 TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPreservesDefaultSubagents) {

@@ -36,6 +36,7 @@ public:
 
     void set_session_store(SessionStore *store);
     void set_config(Config *config);
+    void set_config_save_path(const std::string &path);
     void set_tool_registry(ToolRegistry *registry);
     void set_skill_loader(SkillLoader *loader);
 
@@ -48,6 +49,7 @@ private:
 
     SessionStore *session_store_ = nullptr;
     Config *config_ = nullptr;
+    std::string config_save_path_;
     ToolRegistry *tool_registry_ = nullptr;
     SkillLoader *skill_loader_ = nullptr;
     std::chrono::steady_clock::time_point start_time_ = std::chrono::steady_clock::now();

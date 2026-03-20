@@ -1,5 +1,6 @@
 #include "app/runtime/identity.hpp"
 
+#include <cstdlib>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -77,14 +78,18 @@ std::string normalize_path(const std::filesystem::path &path) {
     return canonical.string();
 }
 
+std::string default_workspace_root_path() {
+    const char *home = std::getenv("HOME");
+    if (home == nullptr || std::string_view{home}.empty()) {
+        throw std::runtime_error("HOME is not set; unable to resolve default workspace '~/.orangutan/workspace/main'");
+    }
+    return normalize_path(std::filesystem::path(home) / ".orangutan" / "workspace" / "main");
+}
+
 } // namespace
 
 std::string resolve_workspace_root(const std::string &workspace) {
-    if (workspace.empty()) {
-        return {};
-    }
-
-    std::filesystem::path path(workspace);
+    std::filesystem::path path = workspace.empty() ? std::filesystem::path(default_workspace_root_path()) : std::filesystem::path(workspace);
     if (!path.is_absolute()) {
         path = std::filesystem::absolute(path);
     }

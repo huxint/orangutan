@@ -19,6 +19,17 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+std::string resolved_provider_name(const ProviderEndpoint &endpoint) {
+    return endpoint.provider_name.empty() ? std::string("anthropic") : endpoint.provider_name;
+}
+
+void ensure_api_key_present(const ProviderEndpoint &endpoint) {
+    if (!endpoint.api_key.empty()) {
+        return;
+    }
+    throw MissingApiKeyError("missing API key for provider '" + resolved_provider_name(endpoint) + "' model '" + endpoint.model + "'");
+}
+
 std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
     if (endpoint.provider_name == "anthropic" || endpoint.provider_name.empty()) {
         const auto url = endpoint.base_url.empty() ? std::string("https://api.anthropic.com") : endpoint.base_url;
@@ -117,6 +128,7 @@ private:
             return existing;
         }
 
+        ensure_api_key_present(endpoints_[index]);
         auto created = factory_(endpoints_[index]);
         if (!created) {
             throw std::runtime_error("Failed to create provider for model '" + endpoints_[index].model + "'.");
@@ -148,6 +160,10 @@ private:
                 lock.unlock();
                 return std::forward<Fn>(fn)(*provider);
             } catch (const NonRetryableProviderError &) {
+                std::scoped_lock lock(mutex_);
+                ++usage_.failed_attempts;
+                throw;
+            } catch (const MissingApiKeyError &) {
                 std::scoped_lock lock(mutex_);
                 ++usage_.failed_attempts;
                 throw;

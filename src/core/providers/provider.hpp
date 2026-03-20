@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,11 @@ struct ProviderEndpoint {
 };
 
 using ProviderFactory = std::function<std::unique_ptr<class Provider>(const ProviderEndpoint &)>;
+
+class MissingApiKeyError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 // Abstract provider interface — all LLM backends implement this
 class Provider {

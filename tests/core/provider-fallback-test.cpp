@@ -99,6 +99,34 @@ TEST(ProviderFallbackTest, FallsBackToNextModelAndTracksUsage) {
     EXPECT_EQ(usage.fallback_switches, 1U);
 }
 
+TEST(ProviderFallbackTest, RejectsMissingApiKeyBeforeInstantiatingProviders) {
+    bool factory_called = false;
+
+    auto provider = create_provider_with_fallbacks("openai", "", "gpt-primary", "https://example.test", {"gpt-fallback"},
+                                                   [&factory_called](const ProviderEndpoint &) -> std::unique_ptr<Provider> {
+                                                       factory_called = true;
+                                                       return nullptr;
+                                                   });
+
+    EXPECT_THROW(
+        {
+            try {
+                static_cast<void>(provider->chat("", {}, {}, 1024));
+            } catch (const MissingApiKeyError &error) {
+                EXPECT_STREQ(error.what(), "missing API key for provider 'openai' model 'gpt-primary'");
+                throw;
+            }
+        },
+        MissingApiKeyError);
+    EXPECT_FALSE(factory_called);
+
+    const auto usage = provider->usage();
+    EXPECT_EQ(usage.logical_requests, 1U);
+    EXPECT_EQ(usage.attempt_count, 1U);
+    EXPECT_EQ(usage.failed_attempts, 1U);
+    EXPECT_EQ(usage.fallback_switches, 0U);
+}
+
 TEST(ProviderFallbackTest, DoesNotFallbackAfterStreamingOutputHasStarted) {
     size_t primary_stream_attempts = 0;
     size_t fallback_stream_attempts = 0;

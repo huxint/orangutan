@@ -1,6 +1,7 @@
 #include "app/runtime/identity.hpp"
 #include "app/runtime/memory-context.hpp"
 #include "infra/config/config.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -47,6 +48,25 @@ TEST_F(RuntimeIdentityTest, ResolveWorkspaceRootCreatesMissingDirectory) {
     EXPECT_TRUE(std::filesystem::exists(resolved));
     EXPECT_TRUE(std::filesystem::is_directory(resolved));
     EXPECT_EQ(resolved, std::filesystem::weakly_canonical(missing).string());
+}
+
+TEST_F(RuntimeIdentityTest, ResolveWorkspaceRootDefaultsToMainWorkspaceWhenUnset) {
+    auto home_root = workspace_root() / "home";
+    std::filesystem::create_directories(home_root);
+    orangutan::testing::ScopedEnvVar home_env("HOME", home_root.string());
+
+    auto resolved = resolve_workspace_root("");
+    const auto expected = std::filesystem::weakly_canonical(home_root / ".orangutan" / "workspace" / "main").string();
+
+    EXPECT_EQ(resolved, expected);
+    EXPECT_TRUE(std::filesystem::exists(expected));
+    EXPECT_TRUE(std::filesystem::is_directory(expected));
+}
+
+TEST_F(RuntimeIdentityTest, ResolveWorkspaceRootRejectsMissingHomeForDefaultWorkspace) {
+    orangutan::testing::ScopedEnvVar home_env("HOME", "");
+
+    EXPECT_THROW(resolve_workspace_root(""), std::runtime_error);
 }
 
 TEST_F(RuntimeIdentityTest, ResolveWorkspaceRootRejectsRegularFile) {

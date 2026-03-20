@@ -1,8 +1,10 @@
 #include "features/web/web-server.hpp"
 #include "infra/config/config.hpp"
 #include "infra/storage/session-store.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -112,6 +114,52 @@ TEST(WebChatTest, ChatEndpointRejectsMissingAgentKey) {
     EXPECT_EQ(res->status, 400);
 
     server.stop();
+}
+
+TEST(WebChatTest, ChatEndpointRejectsMissingApiKey) {
+    orangutan::testing::ScopedEnvVar anthropic_api_key("ANTHROPIC_API_KEY", "");
+    orangutan::testing::ScopedEnvVar llm_api_key("LLM_API_KEY", "");
+
+    WebServer server;
+    Config config = make_config();
+    config.api_key.clear();
+    config.agents["default"].api_key.clear();
+    server.set_config(&config);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    auto res = cli.Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    auto body = nlohmann::json::parse(res->body);
+    EXPECT_EQ(body["error"], "missing API key for agent 'default'");
+
+    server.stop();
+}
+
+TEST(WebChatTest, ChatEndpointRejectsInvalidWorkspaceConfig) {
+    const auto workspace_file = orangutan::testing::test_tmp_root() / "web-chat-invalid-workspace";
+    std::filesystem::remove(workspace_file);
+    {
+        std::ofstream out(workspace_file);
+        out << "not a directory\n";
+    }
+
+    WebServer server;
+    Config config = make_config();
+    config.agents["default"].workspace = workspace_file.string();
+    server.set_config(&config);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    auto res = cli.Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 500);
+    auto body = nlohmann::json::parse(res->body);
+    EXPECT_NE(body["error"].get<std::string>().find("failed to resolve workspace for agent 'default'"), std::string::npos);
+
+    server.stop();
+    std::filesystem::remove(workspace_file);
 }
 
 TEST_F(WebChatStoreTest, ChatEndpointRejectsReadOnlyChannelSession) {

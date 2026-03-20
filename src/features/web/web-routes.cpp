@@ -1,5 +1,6 @@
 #include "features/web/web-routes.hpp"
 #include "app/bootstrap.hpp"
+#include "app/runtime/identity.hpp"
 #include "features/web/web-types.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/config/config.hpp"
@@ -37,6 +38,20 @@ std::optional<AgentConfig> find_effective_agent(Config *config, const std::strin
         return it->second;
     }
     return std::nullopt;
+}
+
+std::string resolve_agent_api_key(const Config &config, const AgentConfig &agent) {
+    Config agent_cfg_wrapper = config;
+    agent_cfg_wrapper.api_key = agent.api_key;
+    return app::detail::resolve_api_key("", agent_cfg_wrapper);
+}
+
+std::string resolve_agent_workspace(const AgentConfig &agent, const std::string &agent_key) {
+    try {
+        return orangutan::resolve_workspace_root(agent.workspace);
+    } catch (const std::exception &e) {
+        throw std::runtime_error("failed to resolve workspace for agent '" + agent_key + "': " + e.what());
+    }
 }
 
 nlohmann::json session_to_json(const SessionInfo &session) {
@@ -253,7 +268,7 @@ void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res,
     res.set_content(body.dump(), "application/json");
 }
 
-void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config) {
+void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::string *config_save_path) {
     if (config == nullptr) {
         res.status = 503;
         res.set_content(R"({"error":"config not available"})", "application/json");
@@ -300,7 +315,12 @@ void handle_put_config(const httplib::Request &req, httplib::Response &res, Conf
         config->auto_save = input["auto_save"].get<bool>();
     }
 
-    auto config_path = expand_home_path("~/.orangutan/config.toml");
+    const auto config_path = (config_save_path != nullptr && !config_save_path->empty()) ? *config_save_path : default_orangutan_config_path();
+    if (config_path.empty()) {
+        res.status = 500;
+        res.set_content(R"({"error":"unable to resolve config save path"})", "application/json");
+        return;
+    }
     config->save_to(config_path);
 
     res.set_content(R"({"status":"saved"})", "application/json");
@@ -457,9 +477,14 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
             session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         }
 
-        auto provider = create_provider(maybe_agent->provider, maybe_agent->api_key, maybe_agent->model, maybe_agent->base_url);
+        const auto workspace_root = resolve_agent_workspace(*maybe_agent, agent_key);
+        const auto api_key = resolve_agent_api_key(*config, *maybe_agent);
+        if (api_key.empty()) {
+            throw MissingApiKeyError("missing API key for agent '" + agent_key + "'");
+        }
+        auto provider = create_provider(maybe_agent->provider, api_key, maybe_agent->model, maybe_agent->base_url);
         auto tools = std::make_unique<ToolRegistry>();
-        register_builtin_tools(*tools);
+        register_builtin_tools(*tools, nullptr, workspace_root, nullptr, nullptr, maybe_agent->edit_mode);
 
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
@@ -559,6 +584,9 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
                 sink.done();
                 return false;
             });
+    } catch (const MissingApiKeyError &e) {
+        res.status = 400;
+        res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
     } catch (const std::exception &e) {
         res.status = 500;
         res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
