@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <gtest/gtest.h>
 #include <optional>
@@ -36,14 +37,22 @@ using orangutan::testing::ScopedEnvVar;
 
 namespace orangutan::app::detail {
 
-struct WebRuntimeAttachmentInspection {
+struct WebStartupInspection {
     bool has_session_store = false;
-    bool has_tool_registry = false;
-    bool has_skill_loader = false;
+    bool has_memory_store = false;
+    bool has_subagent_run_store = false;
+    bool has_subagent_manager = false;
+    bool has_runtime_bundle = false;
+    bool has_runtime_agent = false;
+    bool attached_session_store = false;
+    bool attached_tool_registry = false;
+    bool attached_skill_loader = false;
+    std::vector<ToolDef> tool_definitions;
+    std::vector<std::string> active_skill_names;
 };
-WebRuntimeAttachmentInspection configure_web_server_runtime_for_tests(orangutan::WebServer &web_server, const std::string &web_dir, orangutan::Config &cfg,
-                                                                      orangutan::SessionStore *session_store, orangutan::ToolRegistry *tool_registry,
-                                                                      orangutan::SkillLoader *skill_loader);
+
+void set_web_startup_inspection_callback_for_tests(std::function<bool(const WebStartupInspection &)> callback);
+void clear_web_startup_inspection_callback_for_tests();
 
 } // namespace orangutan::app::detail
 
@@ -56,6 +65,59 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
 }
 
 namespace bootstrap_detail = orangutan::app::detail;
+class ScopedWebStartupInspectionCapture {
+public:
+    ScopedWebStartupInspectionCapture() {
+        bootstrap_detail::set_web_startup_inspection_callback_for_tests([this](const bootstrap_detail::WebStartupInspection &inspection) {
+            inspection_ = inspection;
+            return true;
+        });
+    }
+
+    ~ScopedWebStartupInspectionCapture() {
+        bootstrap_detail::clear_web_startup_inspection_callback_for_tests();
+    }
+
+    ScopedWebStartupInspectionCapture(const ScopedWebStartupInspectionCapture &) = delete;
+    ScopedWebStartupInspectionCapture &operator=(const ScopedWebStartupInspectionCapture &) = delete;
+    ScopedWebStartupInspectionCapture(ScopedWebStartupInspectionCapture &&) = delete;
+    ScopedWebStartupInspectionCapture &operator=(ScopedWebStartupInspectionCapture &&) = delete;
+
+    [[nodiscard]]
+    const std::optional<bootstrap_detail::WebStartupInspection> &inspection() const {
+        return inspection_;
+    }
+
+private:
+    std::optional<bootstrap_detail::WebStartupInspection> inspection_;
+};
+class ScopedUnsetEnvVar {
+public:
+    explicit ScopedUnsetEnvVar(const char *name)
+    : name_(name) {
+        if (const auto *current = std::getenv(name); current != nullptr) {
+            previous_ = current;
+        }
+        unsetenv(name_.c_str());
+    }
+
+    ~ScopedUnsetEnvVar() {
+        if (previous_.has_value()) {
+            setenv(name_.c_str(), previous_->c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+    }
+
+    ScopedUnsetEnvVar(const ScopedUnsetEnvVar &) = delete;
+    ScopedUnsetEnvVar &operator=(const ScopedUnsetEnvVar &) = delete;
+    ScopedUnsetEnvVar(ScopedUnsetEnvVar &&) = delete;
+    ScopedUnsetEnvVar &operator=(ScopedUnsetEnvVar &&) = delete;
+
+private:
+    std::string name_;
+    std::optional<std::string> previous_;
+};
 
 struct BootstrapRunResult {
     int exit_code = 0;
@@ -274,38 +336,6 @@ private:
     std::string output_;
     std::optional<BootstrapRunResult> finished_;
 };
-
-AgentRuntimeBundle build_cli_runtime_bundle(const Config &cfg, const app::AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, std::string *current_session_id,
-                                            SubagentManager *subagent_manager) {
-    return build_agent_runtime(AgentRuntimeBuildInput{
-        .provider_name = runtime_cfg.provider_name,
-        .api_key = runtime_cfg.api_key,
-        .model = runtime_cfg.model,
-        .fallback_models = runtime_cfg.fallback_models,
-        .base_url = runtime_cfg.base_url,
-        .agent_key = runtime_cfg.agent_key,
-        .system_prompt = runtime_cfg.system_prompt,
-        .workspace_root = runtime_cfg.workspace_root,
-        .edit_mode = runtime_cfg.edit_mode,
-        .memory = runtime_cfg.memory,
-        .permissions = runtime_cfg.permissions,
-        .allowed_child_agents = runtime_cfg.allowed_child_agents,
-        .identity = derive_cli_identity(runtime_cfg.workspace_root, runtime_cfg.agent_key),
-        .memory_store = memory_store,
-        .current_session_id = current_session_id,
-        .subagent_manager = subagent_manager,
-        .runtime_origin = SubagentRuntimeOrigin::cli,
-        .raw_caller_id = "cli:local",
-        .custom_tools = cfg.custom_tools,
-        .mcp_servers = cfg.mcp_servers,
-        .skill_paths = cfg.skill_paths,
-        .hook_paths = cfg.hook_paths,
-    });
-}
-
-void load_skill_loader(SkillLoader &skill_loader, const Config &cfg, const std::string &workspace_root) {
-    skill_loader.load_from_directories(resolve_skill_directories(cfg.skill_paths, workspace_root));
-}
 
 class BootstrapTest : public ::testing::Test {
 protected:
@@ -657,79 +687,56 @@ TEST_F(BootstrapTest, ReplRuntimeListsMemoryToolsAndSkills) {
     EXPECT_NE(result.output.find("workspace-skill"), std::string::npos);
 }
 
-TEST_F(BootstrapTest, WebModeExposesRuntimeToolsAndSkills) {
+TEST_F(BootstrapTest, WebModeBuildsAndAttachesRealBootstrapRuntimeDependencies) {
+    write_config();
     write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
     ScopedEnvVar home_env("HOME", home_root().string());
-    Config cfg;
-    cfg.agents.emplace("default", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-test",
-                                      .base_url = "https://example.test",
-                                      .api_key = "test-key",
-                                      .system_prompt = "You are a test agent.",
-                                      .workspace = workspace_root().string(),
-                                  });
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    const auto runtime_cfg = runtime_configs->at("default");
+    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+    ScopedWebStartupInspectionCapture inspection_capture;
 
-    MemoryStore memory_store((temp_root() / "memory-web.db").string());
-    SessionStore session_store((temp_root() / "sessions-web.db").string());
-    SubagentRunStore run_store((temp_root() / "runs-web.db").string());
-    const auto child_configs = app::detail::build_subagent_child_runtime_configs(*runtime_configs);
-    SubagentManager subagent_manager(run_store, SubagentExecutionEnvironment{
-                                                    .agent_configs = &child_configs,
-                                                    .session_store = &session_store,
-                                                    .memory_store = &memory_store,
-                                                });
-    std::string current_session_id;
-    auto runtime = build_cli_runtime_bundle(cfg, runtime_cfg, &memory_store, &current_session_id, &subagent_manager);
-    SkillLoader skill_loader;
-    load_skill_loader(skill_loader, cfg, runtime_cfg.workspace_root);
+    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web", "--port", "0"});
 
-    WebServer server;
-    const auto inspection = bootstrap_detail::configure_web_server_runtime_for_tests(server, "web/dist", cfg, &session_store, &runtime.tools, &skill_loader);
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
+    ASSERT_EQ(result.exit_code, 0) << result.output;
+    ASSERT_TRUE(inspection_capture.inspection().has_value());
+    const auto &inspection = *inspection_capture.inspection();
     EXPECT_TRUE(inspection.has_session_store);
-    EXPECT_TRUE(inspection.has_tool_registry);
-    EXPECT_TRUE(inspection.has_skill_loader);
-    EXPECT_FALSE(skill_loader.active_skills().empty());
-    EXPECT_EQ(skill_loader.active_skills().front().name, "workspace-skill");
+    EXPECT_TRUE(inspection.has_memory_store);
+    EXPECT_TRUE(inspection.has_subagent_run_store);
+    EXPECT_TRUE(inspection.has_subagent_manager);
+    EXPECT_TRUE(inspection.has_runtime_bundle);
+    EXPECT_TRUE(inspection.has_runtime_agent);
+    EXPECT_TRUE(inspection.attached_session_store);
+    EXPECT_TRUE(inspection.attached_tool_registry);
+    EXPECT_TRUE(inspection.attached_skill_loader);
+    EXPECT_TRUE(has_tool_named(inspection.tool_definitions, "memory_list"));
+    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
 }
 
-TEST_F(BootstrapTest, WebOnlyExposesRuntimeToolsAndSkills) {
+TEST_F(BootstrapTest, WebOnlyCreatesWebAssemblyDependenciesWithoutApiKey) {
+    write_config_with_api_key("");
     write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
     ScopedEnvVar home_env("HOME", home_root().string());
-    Config cfg;
-    cfg.agents.emplace("default", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-test",
-                                      .base_url = "https://example.test",
-                                      .api_key = "test-key",
-                                      .system_prompt = "You are a test agent.",
-                                      .workspace = workspace_root().string(),
-                                  });
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    const auto runtime_cfg = runtime_configs->at("default");
+    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+    ScopedWebStartupInspectionCapture inspection_capture;
 
-    MemoryStore memory_store((temp_root() / "memory-web-only.db").string());
-    SessionStore session_store((temp_root() / "sessions-web-only.db").string());
-    SubagentRunStore run_store((temp_root() / "runs-web-only.db").string());
-    SubagentManager subagent_manager(run_store, SubagentExecutionEnvironment{});
-    std::string current_session_id;
-    auto runtime = build_cli_runtime_bundle(cfg, runtime_cfg, &memory_store, &current_session_id, &subagent_manager);
-    SkillLoader skill_loader;
-    load_skill_loader(skill_loader, cfg, runtime_cfg.workspace_root);
+    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web-only", "--port", "0"});
 
-    WebServer server;
-    const auto inspection = bootstrap_detail::configure_web_server_runtime_for_tests(server, "web/dist", cfg, &session_store, &runtime.tools, &skill_loader);
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
+    ASSERT_EQ(result.exit_code, 0) << result.output;
+    ASSERT_TRUE(inspection_capture.inspection().has_value());
+    const auto &inspection = *inspection_capture.inspection();
     EXPECT_TRUE(inspection.has_session_store);
-    EXPECT_TRUE(inspection.has_tool_registry);
-    EXPECT_TRUE(inspection.has_skill_loader);
-    EXPECT_FALSE(skill_loader.active_skills().empty());
-    EXPECT_EQ(skill_loader.active_skills().front().name, "workspace-skill");
+    EXPECT_TRUE(inspection.has_memory_store);
+    EXPECT_TRUE(inspection.has_subagent_run_store);
+    EXPECT_TRUE(inspection.has_subagent_manager);
+    EXPECT_FALSE(inspection.has_runtime_bundle);
+    EXPECT_FALSE(inspection.has_runtime_agent);
+    EXPECT_TRUE(inspection.attached_session_store);
+    EXPECT_FALSE(inspection.attached_tool_registry);
+    EXPECT_TRUE(inspection.attached_skill_loader);
+    EXPECT_TRUE(inspection.tool_definitions.empty());
+    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
 }
 
 TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {
