@@ -45,6 +45,17 @@ struct AgentRuntimeConfig {
     std::vector<std::string> allowed_child_agents;
 };
 
+struct ConversationRuntimeInspection {
+    std::vector<ToolDef> tool_definitions;
+    SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+    std::string raw_caller_id;
+    bool has_agent = false;
+    bool has_hook_manager = false;
+    std::string session_scope_key;
+    std::string configured_model;
+    std::vector<std::string> fallback_models;
+};
+
 class ChannelApprovalCoordinator {
 public:
     explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
@@ -93,6 +104,15 @@ void deliver_command_reply(const InboundMessage &message, const std::string &rep
 
 [[nodiscard]]
 std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
+
+namespace detail {
+
+[[nodiscard]]
+ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
+                                                           const std::string &raw_caller_id, orangutan::HookManager *hook_manager = nullptr, CronStore *cron_store = nullptr,
+                                                           HeartbeatScheduler *heartbeat_scheduler = nullptr);
+
+} // namespace detail
 
 void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
 

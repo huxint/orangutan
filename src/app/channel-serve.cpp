@@ -1,7 +1,7 @@
 #include "app/channel-serve.hpp"
 
+#include "app/runtime/agent-runtime.hpp"
 #include "features/agent/agent-loop.hpp"
-#include "features/memory/runtime-memory.hpp"
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
 #include "features/channel/platforms/qq.hpp"
@@ -44,13 +44,8 @@ struct ParsedChannelApprovalReply {
 };
 
 struct ConversationRuntime {
-    std::unique_ptr<Provider> provider;
-    ToolRegistry tools;
-    std::unique_ptr<McpManager> mcp_manager;
-    std::unique_ptr<RuntimeMemory> memory;
-    std::unique_ptr<AgentLoop> agent;
+    std::unique_ptr<AgentRuntimeBundle> runtime;
     HookManager *hook_manager = nullptr;
-    ToolRuntimeContext tool_context;
     std::string runtime_key;
     std::string agent_key;
     std::string configured_model;
@@ -60,6 +55,36 @@ struct ConversationRuntime {
     std::string session_scope_key;
     std::string current_session_id;
     size_t persisted_message_count = 0;
+
+    [[nodiscard]]
+    Provider *provider() const {
+        return runtime != nullptr ? runtime->provider.get() : nullptr;
+    }
+
+    [[nodiscard]]
+    ToolRegistry &tools() {
+        return runtime->tools;
+    }
+
+    [[nodiscard]]
+    const ToolRegistry &tools() const {
+        return runtime->tools;
+    }
+
+    [[nodiscard]]
+    ToolRuntimeContext &tool_context() {
+        return runtime->tool_context;
+    }
+
+    [[nodiscard]]
+    AgentLoop &agent() {
+        return *runtime->agent;
+    }
+
+    [[nodiscard]]
+    const AgentLoop &agent() const {
+        return *runtime->agent;
+    }
 };
 
 std::string extract_qq_bot_name(const std::string &jid) {
@@ -178,10 +203,9 @@ ChannelApprovalDecision parse_channel_approval_decision(const std::string &conte
     return parse_channel_approval_decision(std::string_view{normalized});
 }
 
-std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
-                                                               SubagentManager &subagent_manager, const std::string &raw_caller_id, const std::string &skills_prompt,
-                                                               const std::vector<Config::ScriptToolConfig> &custom_tools, const std::vector<Config::McpServerConfig> &mcp_servers,
-                                                               HookManager *hook_manager, CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler) {
+std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
+                                                               SubagentManager &subagent_manager, const std::string &raw_caller_id, HookManager *hook_manager,
+                                                               CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler) {
     auto runtime = std::make_unique<ConversationRuntime>();
     runtime->runtime_key = identity.runtime_key;
     runtime->agent_key = cfg.agent_key;
@@ -190,29 +214,40 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const AgentRuntim
     runtime->workspace = identity.workspace;
     runtime->memory_scope = identity.memory_scope;
     runtime->session_scope_key = identity.runtime_key.empty() ? cfg.cli_runtime_key : identity.runtime_key;
-    runtime->hook_manager = hook_manager;
-    runtime->tool_context = ToolRuntimeContext{
-        .runtime_key = identity.runtime_key,
+    AgentRuntimeBuildInput input{
+        .provider_name = cfg.provider_name,
+        .api_key = cfg.api_key,
+        .model = cfg.model,
+        .fallback_models = cfg.fallback_models,
+        .base_url = cfg.base_url,
         .agent_key = cfg.agent_key,
-        .scope_key = identity.memory_scope,
-        .current_session_id = &runtime->current_session_id,
+        .system_prompt = cfg.system_prompt,
+        .workspace_root = cfg.workspace_root,
+        .edit_mode = cfg.edit_mode,
+        .memory = cfg.memory,
+        .permissions = cfg.permissions,
         .allowed_child_agents = cfg.allowed_child_agents,
-        .is_child_run = false,
+        .identity = identity,
+        .memory_store = memory_store,
+        .current_session_id = &runtime->current_session_id,
         .subagent_manager = &subagent_manager,
         .runtime_origin = SubagentRuntimeOrigin::channel,
         .raw_caller_id = raw_caller_id,
         .cron_store = cron_store,
         .heartbeat_scheduler = heartbeat_scheduler,
+        .custom_tools = app_cfg.custom_tools,
+        .mcp_servers = app_cfg.mcp_servers,
+        .skill_paths = app_cfg.skill_paths,
+        .hook_paths = app_cfg.hook_paths,
     };
-    runtime->provider = create_provider_with_fallbacks(cfg.provider_name, cfg.api_key, cfg.model, cfg.base_url, cfg.fallback_models);
-    if (memory_store != nullptr) {
-        runtime->memory = std::make_unique<RuntimeMemory>(*memory_store, make_runtime_memory_context(identity, cfg.memory));
+    runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
+    if (hook_manager != nullptr) {
+        runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools, runtime->runtime->system_prompt, runtime->runtime->memory.get(),
+                                                              runtime->runtime->skills_prompt, hook_manager);
+        runtime->hook_manager = hook_manager;
+    } else {
+        runtime->hook_manager = runtime->runtime->hook_manager.get();
     }
-    auto tool_bootstrap =
-        register_runtime_tools(runtime->tools, runtime->memory.get(), runtime->workspace, &runtime->tool_context, custom_tools, mcp_servers, &cfg.permissions, {}, cfg.edit_mode);
-    runtime->mcp_manager = std::move(tool_bootstrap.mcp_manager);
-    auto system_prompt = append_subagent_prompt_guidance(cfg.system_prompt, cfg.allowed_child_agents, false);
-    runtime->agent = std::make_unique<AgentLoop>(*runtime->provider, runtime->tools, system_prompt, runtime->memory.get(), skills_prompt, hook_manager);
     return runtime;
 }
 
@@ -227,7 +262,7 @@ SessionMetadata make_channel_session_metadata(const ConversationRuntime &runtime
 }
 
 void persist_channel_session(const std::string &jid, ConversationRuntime &runtime, SessionStore &session_store) {
-    const auto &history = runtime.agent->history();
+    const auto &history = runtime.agent().history();
     if (history.empty()) {
         session_store.clear_jid(jid, runtime.agent_key);
         runtime.current_session_id.clear();
@@ -236,7 +271,7 @@ void persist_channel_session(const std::string &jid, ConversationRuntime &runtim
     }
 
     const bool created_session = runtime.current_session_id.empty();
-    const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
+    const auto active_model = runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
     const auto metadata = make_channel_session_metadata(runtime, jid, active_model);
     if (runtime.current_session_id.empty()) {
         runtime.current_session_id = session_store.save(history, metadata);
@@ -271,9 +306,7 @@ ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unorder
         }
 
         auto identity = derive_channel_identity(cfg_it->second.workspace_root, jid, agent_key);
-        auto skill_prompt = build_skill_prompt_for_runtime(cfg, cfg_it->second);
-        auto runtime = make_conversation_runtime(cfg_it->second, memory_store, identity, subagent_manager, jid, skill_prompt, cfg.custom_tools, cfg.mcp_servers, hook_manager,
-                                                 cron_store, heartbeat_scheduler);
+        auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, subagent_manager, jid, hook_manager, cron_store, heartbeat_scheduler);
         if (!message.isolated) {
             if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
                 try {
@@ -281,11 +314,11 @@ ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unorder
                         spdlog::warn("Session {} does not belong to runtime scope '{}' for jid '{}' agent '{}'", *session_id, runtime->session_scope_key, jid, agent_key);
                         session_store.clear_jid(jid, agent_key);
                     } else {
-                        runtime->agent->set_history(session_store.load(*session_id));
+                        runtime->agent().set_history(session_store.load(*session_id));
                         runtime->current_session_id = *session_id;
-                        runtime->persisted_message_count = runtime->agent->history().size();
+                        runtime->persisted_message_count = runtime->agent().history().size();
                         spdlog::info("Restored session {} for jid '{}' agent '{}'", *session_id, jid, agent_key);
-                        dispatch_session_start(runtime->hook_manager, runtime->current_session_id, runtime->agent->history().size());
+                        dispatch_session_start(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
                     }
                 } catch (const std::exception &e) {
                     spdlog::warn("Failed to restore session {} for jid '{}' agent '{}': {}", *session_id, jid, agent_key, e.what());
@@ -311,9 +344,9 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     if (message.content == "/new") {
-        const auto previous_message_count = runtime.agent->history().size();
-        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : runtime.configured_model;
-        const auto result = start_new_session(*runtime.agent, session_store, runtime.current_session_id, make_channel_session_metadata(runtime, message.jid, active_model));
+        const auto previous_message_count = runtime.agent().history().size();
+        const auto active_model = runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
+        const auto result = start_new_session(runtime.agent(), session_store, runtime.current_session_id, make_channel_session_metadata(runtime, message.jid, active_model));
         dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
         runtime.current_session_id.clear();
         session_store.clear_jid(message.jid, runtime.agent_key);
@@ -339,7 +372,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
     if (message.content == "/status") {
         deliver_command_reply(message,
-                              format_runtime_status(collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, runtime.current_session_id, runtime.agent_key,
+                              format_runtime_status(collect_runtime_status(runtime.agent(), *runtime.provider(), &runtime.tools(), runtime.current_session_id, runtime.agent_key,
                                                                            runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
                               channel_manager);
         return true;
@@ -358,7 +391,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         }
 
         const auto previous_session_id = runtime.current_session_id;
-        const auto previous_message_count = runtime.agent->history().size();
+        const auto previous_message_count = runtime.agent().history().size();
         const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
         if (!resolved_session_id.has_value()) {
             deliver_command_reply(message, "No saved sessions available in this scope.", channel_manager);
@@ -371,7 +404,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         }
 
         const auto load_result =
-            load_session_into_agent(*resolved_session_id, *runtime.agent, session_store, runtime.current_session_id, runtime.session_scope_key, runtime.agent_key);
+            load_session_into_agent(*resolved_session_id, runtime.agent(), session_store, runtime.current_session_id, runtime.session_scope_key, runtime.agent_key);
         if (!load_result.loaded) {
             deliver_command_reply(message, load_result.status, channel_manager);
             return true;
@@ -379,10 +412,10 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
         if (previous_session_id != runtime.current_session_id) {
             dispatch_session_end(runtime.hook_manager, previous_session_id, previous_message_count);
-            dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent->history().size());
+            dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent().history().size());
         }
 
-        runtime.persisted_message_count = runtime.agent->history().size();
+        runtime.persisted_message_count = runtime.agent().history().size();
         session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
         deliver_command_reply(message, "🧵 Resumed session: " + runtime.current_session_id, channel_manager);
         return true;
@@ -392,7 +425,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         return false;
     }
 
-    const auto result = runtime.agent->compress_history();
+    const auto result = runtime.agent().compress_history();
     if (!result.compacted) {
         deliver_command_reply(message, result.status, channel_manager);
         return true;
@@ -599,6 +632,28 @@ std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntime
     return skill_loader.build_prompt_section();
 }
 
+namespace detail {
+
+ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
+                                                           const std::string &raw_caller_id, HookManager *hook_manager, CronStore *cron_store,
+                                                           HeartbeatScheduler *heartbeat_scheduler) {
+    const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
+    auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, subagent_manager, raw_caller_id, hook_manager, cron_store, heartbeat_scheduler);
+
+    return ConversationRuntimeInspection{
+        .tool_definitions = runtime->tools().definitions(),
+        .runtime_origin = runtime->tool_context().runtime_origin,
+        .raw_caller_id = runtime->tool_context().raw_caller_id,
+        .has_agent = runtime->runtime != nullptr && runtime->runtime->agent != nullptr,
+        .has_hook_manager = runtime->hook_manager != nullptr,
+        .session_scope_key = runtime->session_scope_key,
+        .configured_model = runtime->configured_model,
+        .fallback_models = runtime->fallback_models,
+    };
+}
+
+} // namespace detail
+
 namespace {
 
 void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
@@ -615,11 +670,11 @@ void process_channel_message(const InboundMessage &message, ChannelManager &chan
 
         // Light context: clear history so agent runs with minimal context (system prompt + current message only)
         if (message.light_context) {
-            runtime.agent->clear_history();
+            runtime.agent().clear_history();
         }
 
-        runtime.tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
-        const auto reply = runtime.agent->run(message.content);
+        runtime.tool_context().approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
+        const auto reply = runtime.agent().run(message.content);
 
         // Skip session persistence for isolated heartbeat runs
         if (!message.isolated) {
@@ -690,7 +745,7 @@ void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std:
     std::scoped_lock lock(runtimes_mutex);
     for (auto &[runtime_key, runtime] : runtimes) {
         (void)runtime_key;
-        dispatch_session_end(runtime->hook_manager, runtime->current_session_id, runtime->agent->history().size());
+        dispatch_session_end(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
     }
 }
 

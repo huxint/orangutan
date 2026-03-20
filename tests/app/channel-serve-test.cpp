@@ -24,6 +24,12 @@ using namespace orangutan;
 
 namespace {
 
+bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
+    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
+        return definition.name == name;
+    });
+}
+
 class MemorySink final : public spdlog::sinks::base_sink<std::mutex> {
 public:
     [[nodiscard]]
@@ -292,6 +298,38 @@ TEST_F(ChannelServeTest, BuildsSkillPromptForEffectiveAgentWorkspace) {
     EXPECT_NE(prompt.find("## Active Skills"), std::string::npos);
     EXPECT_NE(prompt.find("### home-skill"), std::string::npos);
     EXPECT_NE(prompt.find("### workspace-skill"), std::string::npos);
+}
+
+TEST_F(ChannelServeTest, ConversationRuntimePreservesChannelContextAndSharedCapabilities) {
+    MemoryStore memory_store((temp_root() / "memory.db").string());
+    SubagentRunStore run_store((temp_root() / "runs.db").string());
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+
+    Config cfg;
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .fallback_models = {"gpt-fallback"},
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = workspace_root().string(),
+    };
+
+    const auto inspection = app::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
+
+    EXPECT_TRUE(has_tool_named(inspection.tool_definitions, "memory_list"));
+    EXPECT_EQ(inspection.runtime_origin, SubagentRuntimeOrigin::channel);
+    EXPECT_EQ(inspection.raw_caller_id, "qqbot:c2c:alice");
+    EXPECT_TRUE(inspection.has_agent);
+    EXPECT_TRUE(inspection.has_hook_manager);
+    EXPECT_EQ(inspection.session_scope_key, derive_channel_runtime_key("qqbot:c2c:alice", "default"));
+    EXPECT_EQ(inspection.configured_model, "gpt-test");
+    ASSERT_EQ(inspection.fallback_models.size(), 1U);
+    EXPECT_EQ(inspection.fallback_models.front(), "gpt-fallback");
 }
 
 TEST_F(ChannelServeTest, DeliversCommandReplyToCliWithoutCallingChannelSend) {
