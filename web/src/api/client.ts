@@ -1,3 +1,5 @@
+import type { ChatSessionData, ChatSessionSummary } from '../components/chat/types'
+
 const BASE = ''
 
 export interface AgentSummary {
@@ -41,14 +43,26 @@ export function getAgents(): Promise<AgentSummary[]> {
   return apiFetch<AgentSummary[]>('/api/agents')
 }
 
+export function getAgentSessions(agentKey: string): Promise<ChatSessionSummary[]> {
+  return apiFetch<ChatSessionSummary[]>(`/api/agents/${encodeURIComponent(agentKey)}/sessions`)
+}
+
+export function getAgentSession(agentKey: string, sessionId: string): Promise<ChatSessionData> {
+  return apiFetch<ChatSessionData>(`/api/agents/${encodeURIComponent(agentKey)}/sessions/${encodeURIComponent(sessionId)}`)
+}
+
 export function streamChat(
+  agentKey: string,
   sessionId: string | null,
   message: string,
   onEvent: (type: string, data: unknown) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const payload: { message: string; session_id?: string } = { message }
+    const payload: { agent_key: string; message: string; session_id?: string } = {
+      agent_key: agentKey,
+      message,
+    }
     if (sessionId) {
       payload.session_id = sessionId
     }

@@ -5,12 +5,23 @@ interface ChatInputProps {
   onSend: (text: string) => void
   onQueue?: (text: string) => void
   disabled?: boolean
+  readOnly?: boolean
+  placeholder?: string
   onAbort?: () => void
   streaming?: boolean
   queuedMessages?: string[]
 }
 
-export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queuedMessages = [] }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onQueue,
+  disabled,
+  readOnly,
+  placeholder = 'Send a message...',
+  onAbort,
+  streaming,
+  queuedMessages = [],
+}: ChatInputProps) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -30,19 +41,22 @@ export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queue
 
   function send() {
     const trimmed = text.trim()
-    if (!trimmed || disabled) return
+    if (!trimmed || disabled || readOnly) return
     onSend(trimmed)
     clearInput()
   }
 
   function queue() {
     const trimmed = text.trim()
-    if (!trimmed || !streaming || !onQueue) return
+    if (!trimmed || !streaming || !onQueue || readOnly) return
     onQueue(trimmed)
     clearInput()
   }
 
   function onKey(e: KeyboardEvent) {
+    if (readOnly) {
+      return
+    }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && streaming && text.trim()) {
       e.preventDefault()
       queue()
@@ -58,6 +72,14 @@ export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queue
 
   return (
     <div className="border-t border-border bg-bg p-4">
+      {readOnly && (
+        <div className="mx-auto mb-3 max-w-3xl rounded-lg border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100">
+          <div className="font-medium text-amber-200">Channel session · read only</div>
+          <div className="mt-1 text-amber-100/90">
+            View history here, but continue the conversation from its original channel.
+          </div>
+        </div>
+      )}
       {queuedMessages.length > 0 && (
         <div className="mx-auto mb-3 max-w-3xl rounded-lg border border-border bg-bg-surface/80 p-3">
           <div className="mb-2 flex items-center justify-between text-xs text-text-muted">
@@ -80,9 +102,10 @@ export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queue
           value={text}
           onChange={e => { setText(e.target.value); resize() }}
           onKeyDown={onKey}
-          placeholder="Send a message..."
+          placeholder={placeholder}
           rows={1}
-          className="flex-1 resize-none rounded-lg border border-border bg-bg-surface px-3 py-2 text-text placeholder:text-text-muted focus:outline-none focus:border-accent"
+          disabled={readOnly}
+          className="flex-1 resize-none rounded-lg border border-border bg-bg-surface px-3 py-2 text-text placeholder:text-text-muted focus:outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
         />
         {streaming ? (
           <button
@@ -95,7 +118,7 @@ export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queue
         ) : (
           <button
             onClick={send}
-            disabled={disabled || !text.trim()}
+            disabled={disabled || readOnly || !text.trim()}
             className="shrink-0 rounded-lg bg-accent p-2 text-white hover:opacity-90 transition-colors disabled:opacity-40"
             title="Send"
           >
@@ -103,7 +126,7 @@ export function ChatInput({ onSend, onQueue, disabled, onAbort, streaming, queue
           </button>
         )}
       </div>
-      {streaming && (
+      {streaming && !readOnly && (
         <div className="mx-auto mt-2 flex max-w-3xl items-center justify-between text-xs text-text-muted">
           <span>Continue typing. Press Ctrl+Enter or Cmd+Enter to queue this draft.</span>
           {queuedMessages.length > 0 && <span>{queuedMessages.length} queued</span>}
