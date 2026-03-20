@@ -13,7 +13,7 @@ function buildTree(agents: AgentSummary[]) {
   const referencedChildren = new Set<string>()
 
   for (const agent of agents) {
-    for (const childKey of agent.subagents) {
+    for (const childKey of agent.subagents ?? []) {
       if (agentMap.has(childKey)) {
         referencedChildren.add(childKey)
       }
@@ -25,7 +25,7 @@ function buildTree(agents: AgentSummary[]) {
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(agent => ({
       agent,
-      children: agent.subagents
+      children: (agent.subagents ?? [])
         .map(childKey => agentMap.get(childKey))
         .filter((child): child is AgentSummary => Boolean(child))
         .sort((a, b) => a.key.localeCompare(b.key)),
@@ -72,7 +72,7 @@ export function AgentTree({ agents, currentAgentKey, onSelectAgent }: AgentTreeP
   for (const agent of agents) {
     childMap.set(
       agent.key,
-      agent.subagents
+      (agent.subagents ?? [])
         .map(childKey => agents.find(candidate => candidate.key === childKey))
         .filter((child): child is AgentSummary => Boolean(child))
         .sort((a, b) => a.key.localeCompare(b.key)),

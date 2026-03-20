@@ -175,8 +175,8 @@ export function ChatView() {
     setMessages([])
     setError(null)
 
-    Promise.all([getAgents(), getAgentSessions(agentKey)])
-      .then(([agents, sessions]) => {
+    getAgents()
+      .then(agents => {
         if (cancelled) return
 
         const selectedAgent = agents.find(candidate => candidate.key === agentKey) ?? null
@@ -188,7 +188,16 @@ export function ChatView() {
         }
 
         setAgent(selectedAgent)
-        setAgentSessions(sortSessions(sessions))
+        return getAgentSessions(agentKey)
+          .then(sessions => {
+            if (cancelled) return
+            setAgentSessions(sortSessions(sessions))
+          })
+          .catch(fetchError => {
+            if (cancelled) return
+            setAgentSessions([])
+            setError(fetchError instanceof Error ? fetchError.message : 'Failed to load sessions')
+          })
       })
       .catch(fetchError => {
         if (cancelled) return

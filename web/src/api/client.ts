@@ -13,6 +13,10 @@ export interface AgentSummary {
   subagents: string[]
 }
 
+interface RawAgentSummary extends Omit<AgentSummary, 'subagents'> {
+  subagents?: string[]
+}
+
 async function getErrorMessage(res: Response): Promise<string> {
   const text = await res.text()
   if (!text) return `HTTP ${res.status}`
@@ -40,7 +44,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export function getAgents(): Promise<AgentSummary[]> {
-  return apiFetch<AgentSummary[]>('/api/agents')
+  return apiFetch<RawAgentSummary[]>('/api/agents').then(agents => agents.map(agent => ({
+    ...agent,
+    subagents: Array.isArray(agent.subagents) ? agent.subagents : [],
+  })))
 }
 
 export function getAgentSessions(agentKey: string): Promise<ChatSessionSummary[]> {
