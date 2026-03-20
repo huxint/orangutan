@@ -147,6 +147,46 @@ std::optional<SessionInfo> find_agent_session(SessionStore *store, const std::st
     return std::nullopt;
 }
 
+std::optional<std::string> extract_approval_command(const ToolUseBlock &call) {
+    if (!call.input.is_object()) {
+        return std::nullopt;
+    }
+    const auto it = call.input.find("command");
+    if (it == call.input.end() || !it->is_string()) {
+        return std::nullopt;
+    }
+    return it->get<std::string>();
+}
+
+std::string make_approval_request_id() {
+    static std::atomic<uint64_t> next_request_id{1};
+    return "approval-" + std::to_string(next_request_id.fetch_add(1, std::memory_order_relaxed));
+}
+
+json approval_payload(const WebPendingApproval &approval) {
+    json payload = {
+        {"request_id", approval.request_id},
+        {"tool", approval.tool},
+        {"sandbox_mode", approval.sandbox_mode},
+        {"prompt", approval.prompt},
+    };
+    if (approval.command.has_value()) {
+        payload["command"] = *approval.command;
+    }
+    return payload;
+}
+
+void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool cancelled) {
+    std::lock_guard lock(approval.mutex);
+    if (approval.resolved) {
+        return;
+    }
+    approval.resolved = true;
+    approval.approved = approved;
+    approval.cancelled = cancelled;
+    approval.condition.notify_all();
+}
+
 } // namespace
 
 AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
@@ -156,6 +196,73 @@ AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const 
         throw std::runtime_error("agent not found");
     }
     return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, std::move(approval_callback));
+}
+
+bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
+                                WebApprovalEventEmitter event_emitter, std::function<bool()> stream_open, std::chrono::milliseconds timeout) {
+    auto approval = std::make_shared<WebPendingApproval>();
+    approval->request_id = make_approval_request_id();
+    approval->tool = call.name;
+    approval->command = extract_approval_command(call);
+    approval->sandbox_mode = to_string(sandbox_mode);
+    approval->prompt = prompt_text;
+
+    {
+        std::lock_guard sessions_lock(sessions_mutex);
+        if (session.abort_requested.load()) {
+            return false;
+        }
+        if (session.pending_approval != nullptr && !session.pending_approval->resolved) {
+            return false;
+        }
+        session.pending_approval = approval;
+    }
+
+    if (event_emitter && !event_emitter("approval_request", approval_payload(*approval))) {
+        resolve_pending_approval(*approval, false, true);
+    }
+
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::unique_lock approval_lock(approval->mutex);
+    while (!approval->resolved) {
+        if (stream_open && !stream_open()) {
+            approval->resolved = true;
+            approval->approved = false;
+            approval->cancelled = true;
+            break;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            approval->resolved = true;
+            approval->approved = false;
+            approval->cancelled = true;
+            break;
+        }
+
+        const auto wait_for = std::min(std::chrono::milliseconds(100), std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+        approval->condition.wait_for(approval_lock, wait_for, [&approval] {
+            return approval->resolved;
+        });
+    }
+    const bool approved = approval->approved;
+    approval_lock.unlock();
+
+    {
+        std::lock_guard sessions_lock(sessions_mutex);
+        if (session.pending_approval == approval) {
+            session.pending_approval.reset();
+        }
+    }
+
+    return approved;
+}
+
+void detail::cancel_pending_approval(WebSessionState &session) {
+    if (session.pending_approval == nullptr) {
+        return;
+    }
+    resolve_pending_approval(*session.pending_approval, false, true);
 }
 
 void handle_list_sessions(const httplib::Request & /*req*/, httplib::Response &res, SessionStore *store) {
@@ -553,7 +660,17 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
-        session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager));
+        auto *session_ptr = session.get();
+        auto approval_event_emitter = std::make_shared<detail::WebApprovalEventEmitter>();
+        auto approval_stream_open = std::make_shared<std::function<bool()>>();
+        session->runtime = std::make_unique<AgentRuntimeBundle>(
+            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager,
+                                             [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter,
+                                              approval_stream_open](const ToolUseBlock &call, const std::string &prompt_text) {
+                                                 return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
+                                                                                   approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
+                                                                                   approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
+                                             }));
         if (session->agent() == nullptr) {
             throw std::runtime_error("failed to initialize web runtime agent");
         }
@@ -576,7 +693,6 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         }
 
         auto *agent_ptr = session->agent();
-        auto *session_ptr = session.get();
 
         {
             std::lock_guard lock(sessions_mutex);
@@ -587,74 +703,93 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         auto *store_ptr = store;
         auto captured_metadata = metadata;
 
-        res.set_chunked_content_provider(
-            "text/event-stream",
-            [agent_ptr, session_ptr, store_ptr, captured_session_id, captured_metadata, message, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
-                // Send session event
-                auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
-                auto sse_session = "event: session\ndata: " + session_event + "\n\n";
-                sink.write(sse_session.c_str(), sse_session.size());
+        res.set_chunked_content_provider("text/event-stream",
+                                         [agent_ptr, session_ptr, store_ptr, captured_session_id, captured_metadata, message, approval_event_emitter, approval_stream_open,
+                                          &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                                             if (approval_event_emitter != nullptr) {
+                                                 *approval_event_emitter = [&sink](std::string_view event_name, const json &payload) {
+                                                     const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
+                                                     return sink.write(sse.c_str(), sse.size());
+                                                 };
+                                             }
+                                             if (approval_stream_open != nullptr) {
+                                                 *approval_stream_open = [&sink]() {
+                                                     return sink.is_writable == nullptr || sink.is_writable();
+                                                 };
+                                             }
 
-                session_ptr->running = true;
-                try {
-                    agent_ptr->run(
-                        message,
-                        // StreamCallback
-                        [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
-                            if (session_ptr->abort_requested) {
-                                return;
-                            }
-                            if (event_type == "text_delta") {
-                                auto payload = nlohmann::json({{"text", data["text"]}}).dump();
-                                auto sse = "event: text\ndata: " + payload + "\n\n";
-                                sink.write(sse.c_str(), sse.size());
-                            }
-                        },
-                        // ToolEventCallback
-                        [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
-                            if (session_ptr->abort_requested) {
-                                return;
-                            }
-                            nlohmann::json payload;
-                            if (event_type == "tool_started" || event_type == "tool_start") {
-                                payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
-                                auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
-                                sink.write(sse.c_str(), sse.size());
-                            } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
-                                payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
-                                auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
-                                sink.write(sse.c_str(), sse.size());
-                            }
-                        });
+                                             // Send session event
+                                             auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
+                                             auto sse_session = "event: session\ndata: " + session_event + "\n\n";
+                                             sink.write(sse_session.c_str(), sse_session.size());
 
-                    auto done_sse = std::string("event: done\ndata: {}\n\n");
-                    sink.write(done_sse.c_str(), done_sse.size());
-                } catch (const std::exception &e) {
-                    auto err = nlohmann::json({{"error", e.what()}}).dump();
-                    auto sse = "event: error\ndata: " + err + "\n\n";
-                    sink.write(sse.c_str(), sse.size());
-                }
+                                             session_ptr->running = true;
+                                             try {
+                                                 agent_ptr->run(
+                                                     message,
+                                                     // StreamCallback
+                                                     [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
+                                                         if (session_ptr->abort_requested) {
+                                                             return;
+                                                         }
+                                                         if (event_type == "text_delta") {
+                                                             auto payload = nlohmann::json({{"text", data["text"]}}).dump();
+                                                             auto sse = "event: text\ndata: " + payload + "\n\n";
+                                                             sink.write(sse.c_str(), sse.size());
+                                                         }
+                                                     },
+                                                     // ToolEventCallback
+                                                     [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+                                                         if (session_ptr->abort_requested) {
+                                                             return;
+                                                         }
+                                                         nlohmann::json payload;
+                                                         if (event_type == "tool_started" || event_type == "tool_start") {
+                                                             payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
+                                                             auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
+                                                             sink.write(sse.c_str(), sse.size());
+                                                         } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
+                                                             payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
+                                                             auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
+                                                             sink.write(sse.c_str(), sse.size());
+                                                         }
+                                                     });
 
-                session_ptr->running = false;
+                                                 auto done_sse = std::string("event: done\ndata: {}\n\n");
+                                                 sink.write(done_sse.c_str(), done_sse.size());
+                                             } catch (const std::exception &e) {
+                                                 auto err = nlohmann::json({{"error", e.what()}}).dump();
+                                                 auto sse = "event: error\ndata: " + err + "\n\n";
+                                                 sink.write(sse.c_str(), sse.size());
+                                             }
 
-                // Save session to store
-                if (store_ptr != nullptr) {
-                    try {
-                        store_ptr->update(captured_session_id, agent_ptr->history(), captured_metadata);
-                    } catch (const std::exception &e) {
-                        spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
-                    }
-                }
+                                             session_ptr->running = false;
+                                             detail::cancel_pending_approval(*session_ptr);
+                                             if (approval_event_emitter != nullptr) {
+                                                 *approval_event_emitter = {};
+                                             }
+                                             if (approval_stream_open != nullptr) {
+                                                 *approval_stream_open = {};
+                                             }
 
-                // Clean up session
-                {
-                    std::lock_guard lock(sessions_mutex);
-                    sessions.erase(captured_session_id);
-                }
+                                             // Save session to store
+                                             if (store_ptr != nullptr) {
+                                                 try {
+                                                     store_ptr->update(captured_session_id, agent_ptr->history(), captured_metadata);
+                                                 } catch (const std::exception &e) {
+                                                     spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
+                                                 }
+                                             }
 
-                sink.done();
-                return false;
-            });
+                                             // Clean up session
+                                             {
+                                                 std::lock_guard lock(sessions_mutex);
+                                                 sessions.erase(captured_session_id);
+                                             }
+
+                                             sink.done();
+                                             return false;
+                                         });
     } catch (const MissingApiKeyError &e) {
         res.status = 400;
         res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
@@ -686,10 +821,80 @@ void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std:
     auto it = sessions.find(session_id);
     if (it != sessions.end()) {
         it->second->abort_requested = true;
+        detail::cancel_pending_approval(*it->second);
         res.set_content(R"({"status":"abort_requested"})", "application/json");
     } else {
         res.status = 404;
         res.set_content(R"({"error":"session not found"})", "application/json");
     }
+}
+
+void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
+                          std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+    nlohmann::json input;
+    try {
+        input = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::parse_error &) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid JSON"})", "application/json");
+        return;
+    }
+
+    if (!input.contains("session_id") || !input["session_id"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'session_id' field"})", "application/json");
+        return;
+    }
+    if (!input.contains("request_id") || !input["request_id"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'request_id' field"})", "application/json");
+        return;
+    }
+    if (!input.contains("approved") || !input["approved"].is_boolean()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'approved' field"})", "application/json");
+        return;
+    }
+
+    const auto session_id = input.at("session_id").get<std::string>();
+    const auto request_id = input.at("request_id").get<std::string>();
+    const bool approved = input.at("approved").get<bool>();
+
+    std::shared_ptr<WebPendingApproval> pending;
+    {
+        std::lock_guard lock(sessions_mutex);
+        const auto it = sessions.find(session_id);
+        if (it == sessions.end()) {
+            res.status = 404;
+            res.set_content(R"({"error":"session not found"})", "application/json");
+            return;
+        }
+
+        pending = it->second->pending_approval;
+        if (pending == nullptr) {
+            res.status = 404;
+            res.set_content(R"({"error":"approval not found"})", "application/json");
+            return;
+        }
+    }
+
+    std::lock_guard approval_lock(pending->mutex);
+    if (pending->request_id != request_id) {
+        res.status = 404;
+        res.set_content(R"({"error":"approval not found"})", "application/json");
+        return;
+    }
+    if (pending->resolved) {
+        res.status = 409;
+        res.set_content(R"({"error":"approval already resolved"})", "application/json");
+        return;
+    }
+
+    pending->resolved = true;
+    pending->approved = approved;
+    pending->cancelled = !approved;
+    pending->condition.notify_all();
+    res.status = 200;
+    res.set_content((approved ? R"({"status":"approved"})" : R"({"status":"denied"})"), "application/json");
 }
 } // namespace orangutan::web

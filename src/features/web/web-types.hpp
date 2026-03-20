@@ -4,7 +4,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -12,15 +14,22 @@ namespace orangutan {
 
 struct WebPendingApproval {
     std::string request_id;
+    std::string tool;
+    std::optional<std::string> command;
+    std::string sandbox_mode;
+    std::string prompt;
     std::chrono::steady_clock::time_point requested_at = std::chrono::steady_clock::now();
     bool resolved = false;
     bool approved = false;
+    bool cancelled = false;
+    std::mutex mutex;
+    std::condition_variable condition;
 };
 
 struct WebSessionState {
     std::string session_id;
     std::unique_ptr<AgentRuntimeBundle> runtime;
-    std::optional<WebPendingApproval> pending_approval;
+    std::shared_ptr<WebPendingApproval> pending_approval;
     std::atomic<bool> abort_requested{false};
     std::atomic<bool> running{false};
 

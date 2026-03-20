@@ -182,6 +182,10 @@ void WebServer::setup_routes() {
         web::handle_chat(req, res, config_, session_store_, memory_store_, subagent_manager_, tool_registry_, sessions_mutex_, sessions_);
     });
 
+    server_.Post("/api/chat/approval", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_chat_approval(req, res, sessions_mutex_, sessions_);
+    });
+
     server_.Post("/api/chat/abort", [this](const httplib::Request &req, httplib::Response &res) {
         web::handle_chat_abort(req, res, sessions_mutex_, sessions_);
     });

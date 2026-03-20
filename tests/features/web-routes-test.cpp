@@ -11,8 +11,12 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <condition_variable>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <optional>
+#include <thread>
 
 using orangutan::testing::ScopedEnvVar;
 using orangutan::testing::test_tmp_root;
@@ -354,4 +358,133 @@ TEST_F(WebRoutesTest, SharedWebRuntimeLoadsSkillsAndHooks) {
     EXPECT_NE(runtime.skills_prompt.find("web-runtime-skill"), std::string::npos);
     ASSERT_NE(runtime.hook_manager, nullptr);
     EXPECT_EQ(runtime.hook_manager->hook_count(orangutan::HookEvent::before_tool_call), 1);
+}
+
+TEST_F(WebRoutesTest, ChatApprovalEndpointRejectsInvalidApprovalPayload) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
+
+    httplib::Request req;
+    req.body = R"({"session_id":"web-session","approved":true})";
+    httplib::Response res;
+
+    orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+
+    EXPECT_EQ(res.status, 400);
+    EXPECT_EQ(nlohmann::json::parse(res.body)["error"], "missing or invalid 'request_id' field");
+}
+
+TEST_F(WebRoutesTest, ChatApprovalEndpointApprovesPendingRequest) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
+    auto session = std::make_unique<orangutan::WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    std::mutex event_mutex;
+    std::condition_variable event_cv;
+    std::optional<std::string> event_name;
+    std::optional<nlohmann::json> event_payload;
+    std::promise<bool> approval_result;
+    auto approval_future = approval_result.get_future();
+
+    std::thread waiter([&] {
+        approval_result.set_value(orangutan::web::detail::await_web_approval(
+            *session_ptr, sessions_mutex, orangutan::ToolUseBlock{.id = "shell-approval", .name = "shell", .input = {{"command", "echo hello"}}},
+            orangutan::ToolSandboxMode::isolated, "Shell command approval required.",
+            [&](std::string_view current_event_name, const orangutan::json &payload) {
+                std::lock_guard lock(event_mutex);
+                event_name = std::string(current_event_name);
+                event_payload = payload;
+                event_cv.notify_one();
+                return true;
+            },
+            {}, std::chrono::seconds(5)));
+    });
+
+    {
+        std::unique_lock lock(event_mutex);
+        ASSERT_TRUE(event_cv.wait_for(lock, std::chrono::seconds(1), [&] {
+            return event_payload.has_value();
+        }));
+    }
+
+    ASSERT_TRUE(event_name.has_value());
+    ASSERT_TRUE(event_payload.has_value());
+    EXPECT_EQ(*event_name, "approval_request");
+    EXPECT_EQ((*event_payload)["tool"], "shell");
+    EXPECT_EQ((*event_payload)["sandbox_mode"], "isolated");
+    EXPECT_EQ((*event_payload)["command"], "echo hello");
+
+    httplib::Request req;
+    req.body =
+        nlohmann::json{
+            {"session_id", "web-session"},
+            {"request_id", (*event_payload)["request_id"]},
+            {"approved", true},
+        }
+            .dump();
+    httplib::Response res;
+
+    orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+
+    EXPECT_EQ(res.status, 200);
+    EXPECT_EQ(nlohmann::json::parse(res.body)["status"], "approved");
+    EXPECT_TRUE(approval_future.get());
+    waiter.join();
+}
+
+TEST_F(WebRoutesTest, ChatApprovalEndpointRejectsMismatchedRequestId) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
+    auto session = std::make_unique<orangutan::WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    std::promise<bool> approval_result;
+    auto approval_future = approval_result.get_future();
+    std::thread waiter([&] {
+        approval_result.set_value(orangutan::web::detail::await_web_approval(
+            *session_ptr, sessions_mutex, orangutan::ToolUseBlock{.id = "shell-approval", .name = "shell", .input = {{"command", "echo hello"}}},
+            orangutan::ToolSandboxMode::isolated, "Shell command approval required.",
+            [](std::string_view, const orangutan::json &) {
+                return true;
+            },
+            {}, std::chrono::seconds(5)));
+    });
+
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        {
+            std::lock_guard lock(sessions_mutex);
+            if (session_ptr->pending_approval != nullptr) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    {
+        std::lock_guard lock(sessions_mutex);
+        ASSERT_NE(session_ptr->pending_approval, nullptr);
+    }
+
+    httplib::Request req;
+    req.body =
+        nlohmann::json{
+            {"session_id", "web-session"},
+            {"request_id", "approval-mismatch"},
+            {"approved", true},
+        }
+            .dump();
+    httplib::Response res;
+
+    orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+
+    EXPECT_EQ(res.status, 404);
+    EXPECT_EQ(nlohmann::json::parse(res.body)["error"], "approval not found");
+
+    orangutan::web::detail::cancel_pending_approval(*session_ptr);
+    EXPECT_FALSE(approval_future.get());
+    waiter.join();
 }

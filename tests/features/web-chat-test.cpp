@@ -9,11 +9,15 @@
 #include "test-helpers.hpp"
 
 #include <algorithm>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <thread>
 
 namespace orangutan {
 
@@ -339,6 +343,163 @@ TEST(WebChatTest, RuntimeBundleLoadsSkillsAndHooksFromConfiguredPaths) {
     EXPECT_NE(runtime.skills_prompt.find("web-chat-runtime-skill"), std::string::npos);
     ASSERT_NE(runtime.hook_manager, nullptr);
     EXPECT_EQ(runtime.hook_manager->hook_count(HookEvent::before_tool_call), 1);
+}
+
+TEST(WebChatTest, PendingApprovalDenialReturnsFalse) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
+    auto session = std::make_unique<WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    std::optional<nlohmann::json> event_payload;
+    std::mutex event_mutex;
+    std::condition_variable event_cv;
+    std::promise<bool> approval_result;
+    auto approval_future = approval_result.get_future();
+
+    std::thread waiter([&] {
+        approval_result.set_value(web::detail::await_web_approval(
+            *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-deny", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+            "Shell command approval required.",
+            [&](std::string_view, const json &payload) {
+                std::lock_guard lock(event_mutex);
+                event_payload = payload;
+                event_cv.notify_one();
+                return true;
+            },
+            {}, std::chrono::seconds(5)));
+    });
+
+    {
+        std::unique_lock lock(event_mutex);
+        ASSERT_TRUE(event_cv.wait_for(lock, std::chrono::seconds(1), [&] {
+            return event_payload.has_value();
+        }));
+    }
+
+    httplib::Request req;
+    req.body =
+        nlohmann::json{
+            {"session_id", "web-session"},
+            {"request_id", (*event_payload)["request_id"]},
+            {"approved", false},
+        }
+            .dump();
+    httplib::Response res;
+    web::handle_chat_approval(req, res, sessions_mutex, sessions);
+
+    EXPECT_EQ(res.status, 200);
+    EXPECT_EQ(nlohmann::json::parse(res.body)["status"], "denied");
+    EXPECT_FALSE(approval_future.get());
+    waiter.join();
+}
+
+TEST(WebChatTest, AbortEndpointCancelsPendingApproval) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
+    auto session = std::make_unique<WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    std::promise<bool> approval_result;
+    auto approval_future = approval_result.get_future();
+    std::thread waiter([&] {
+        approval_result.set_value(web::detail::await_web_approval(
+            *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-abort", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+            "Shell command approval required.",
+            [](std::string_view, const json &) {
+                return true;
+            },
+            {}, std::chrono::seconds(5)));
+    });
+
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        {
+            std::lock_guard lock(sessions_mutex);
+            if (session_ptr->pending_approval != nullptr) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    {
+        std::lock_guard lock(sessions_mutex);
+        ASSERT_NE(session_ptr->pending_approval, nullptr);
+    }
+
+    httplib::Request req;
+    req.body = R"({"session_id":"web-session"})";
+    httplib::Response res;
+    web::handle_chat_abort(req, res, sessions_mutex, sessions);
+
+    EXPECT_EQ(nlohmann::json::parse(res.body)["status"], "abort_requested");
+    EXPECT_TRUE(session_ptr->abort_requested.load());
+    EXPECT_FALSE(approval_future.get());
+    waiter.join();
+}
+
+TEST(WebChatTest, PendingApprovalTimeoutBehavesAsDenied) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
+    auto session = std::make_unique<WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    auto approved = web::detail::await_web_approval(
+        *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-timeout", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+        "Shell command approval required.",
+        [](std::string_view, const json &) {
+            return true;
+        },
+        {}, std::chrono::milliseconds(50));
+
+    EXPECT_FALSE(approved);
+    std::lock_guard lock(sessions_mutex);
+    EXPECT_EQ(session_ptr->pending_approval, nullptr);
+}
+
+TEST(WebChatTest, PendingApprovalCleanupCancelsUnresolvedRequest) {
+    std::mutex sessions_mutex;
+    std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
+    auto session = std::make_unique<WebSessionState>();
+    session->session_id = "web-session";
+    auto *session_ptr = session.get();
+    sessions.emplace(session->session_id, std::move(session));
+
+    std::promise<bool> approval_result;
+    auto approval_future = approval_result.get_future();
+    std::thread waiter([&] {
+        approval_result.set_value(web::detail::await_web_approval(
+            *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-cleanup", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+            "Shell command approval required.",
+            [](std::string_view, const json &) {
+                return true;
+            },
+            {}, std::chrono::seconds(5)));
+    });
+
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        {
+            std::lock_guard lock(sessions_mutex);
+            if (session_ptr->pending_approval != nullptr) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    {
+        std::lock_guard lock(sessions_mutex);
+        ASSERT_NE(session_ptr->pending_approval, nullptr);
+    }
+
+    web::detail::cancel_pending_approval(*session_ptr);
+
+    EXPECT_FALSE(approval_future.get());
+    waiter.join();
 }
 
 } // namespace orangutan
