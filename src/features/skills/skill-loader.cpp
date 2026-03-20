@@ -16,7 +16,8 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr std::string_view frontmatter_delimiter = "+++";
+constexpr std::string_view toml_delimiter = "+++";
+constexpr std::string_view yaml_delimiter = "---";
 
 struct ParsedSkillFile {
     bool valid = false;
@@ -33,18 +34,23 @@ std::string read_file(const fs::path &path) {
     return buf.str();
 }
 
-bool is_delimiter_line(std::string_view line) {
+std::string_view strip_cr(std::string_view line) {
     if (!line.empty() && line.back() == '\r') {
         line.remove_suffix(1);
     }
-    return line == frontmatter_delimiter;
+    return line;
+}
+
+bool is_toml_delimiter(std::string_view line) {
+    return strip_cr(line) == toml_delimiter;
+}
+
+bool is_yaml_delimiter(std::string_view line) {
+    return strip_cr(line) == yaml_delimiter;
 }
 
 bool is_blank_line(std::string_view line) {
-    if (!line.empty() && line.back() == '\r') {
-        line.remove_suffix(1);
-    }
-    return std::ranges::all_of(line, [](unsigned char ch) {
+    return std::ranges::all_of(strip_cr(line), [](unsigned char ch) {
         return std::isspace(ch) != 0;
     });
 }
@@ -76,10 +82,90 @@ bool env_vars_satisfied(const std::vector<std::string> &env) {
     });
 }
 
+// Trim leading/trailing whitespace from a string_view
+std::string_view trim(std::string_view sv) {
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+        sv.remove_prefix(1);
+    }
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back()))) {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
+// Strip surrounding quotes (single or double) from a YAML value
+std::string strip_quotes(std::string_view sv) {
+    if (sv.size() >= 2) {
+        if ((sv.front() == '"' && sv.back() == '"') || (sv.front() == '\'' && sv.back() == '\'')) {
+            sv.remove_prefix(1);
+            sv.remove_suffix(1);
+        }
+    }
+    return std::string(sv);
+}
+
+// Parse simple YAML frontmatter: key: value, key: [a, b, c]
+SkillDef parse_yaml_frontmatter(const std::string &yaml_text, const std::string &source_path) {
+    SkillDef skill;
+    skill.source_path = source_path;
+
+    auto lines = split_lines(yaml_text);
+    for (const auto &line : lines) {
+        auto trimmed = trim(line);
+        if (trimmed.empty() || trimmed.front() == '#') {
+            continue;
+        }
+
+        auto colon_pos = trimmed.find(':');
+        if (colon_pos == std::string_view::npos) {
+            continue;
+        }
+
+        auto key = trim(trimmed.substr(0, colon_pos));
+        auto raw_value = trim(trimmed.substr(colon_pos + 1));
+
+        // Check for inline YAML array: [item1, item2]
+        auto parse_yaml_array = [](std::string_view val) -> std::vector<std::string> {
+            std::vector<std::string> result;
+            if (val.size() >= 2 && val.front() == '[' && val.back() == ']') {
+                val.remove_prefix(1);
+                val.remove_suffix(1);
+                auto str = std::string(val);
+                std::istringstream items{str};
+                std::string item;
+                while (std::getline(items, item, ',')) {
+                    auto t = trim(item);
+                    if (!t.empty()) {
+                        result.push_back(strip_quotes(t));
+                    }
+                }
+            }
+            return result;
+        };
+
+        if (key == "name") {
+            skill.name = strip_quotes(raw_value);
+        } else if (key == "description") {
+            skill.description = strip_quotes(raw_value);
+        } else if (key == "tools") {
+            skill.tools = parse_yaml_array(raw_value);
+        } else if (key == "env") {
+            skill.env = parse_yaml_array(raw_value);
+        }
+    }
+
+    return skill;
+}
+
+enum class FrontmatterFormat {
+    toml,
+    yaml
+};
+
 ParsedSkillFile parse_skill_file(const std::string &content, const std::string &source_path) {
     auto lines = split_lines(content);
     if (lines.empty()) {
-        spdlog::warn("Skill file has no TOML frontmatter: {}", source_path);
+        spdlog::warn("Skill file has no frontmatter: {}", source_path);
         return {};
     }
 
@@ -90,34 +176,66 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
         ++open_index;
     }
 
-    if (open_index == lines.size() || !is_delimiter_line(lines[open_index])) {
-        spdlog::warn("Skill file has no TOML frontmatter: {}", source_path);
+    if (open_index == lines.size()) {
+        spdlog::warn("Skill file has no frontmatter: {}", source_path);
         return {};
     }
 
-    std::ostringstream toml_buf;
-    bool found_closing_delimiter = false;
+    // Detect format by opening delimiter
+    FrontmatterFormat format{};
+    if (is_toml_delimiter(lines[open_index])) {
+        format = FrontmatterFormat::toml;
+    } else if (is_yaml_delimiter(lines[open_index])) {
+        format = FrontmatterFormat::yaml;
+    } else {
+        spdlog::warn("Skill file has no frontmatter: {}", source_path);
+        return {};
+    }
+
+    auto is_closing_delimiter = [format](std::string_view line) {
+        return format == FrontmatterFormat::toml ? is_toml_delimiter(line) : is_yaml_delimiter(line);
+    };
+
+    // Extract frontmatter content and body
+    std::ostringstream fm_buf;
+    bool found_closing = false;
     size_t body_start_index = lines.size();
-    for (size_t index = open_index + 1; index < lines.size(); ++index) {
-        if (is_delimiter_line(lines[index])) {
-            try {
-                auto parsed_frontmatter = toml::parse(toml_buf.str());
-                (void)parsed_frontmatter;
-                found_closing_delimiter = true;
+
+    if (format == FrontmatterFormat::toml) {
+        // TOML: try parsing at each delimiter to handle embedded +++ in strings
+        for (size_t index = open_index + 1; index < lines.size(); ++index) {
+            if (is_toml_delimiter(lines[index])) {
+                try {
+                    auto parsed = toml::parse(fm_buf.str());
+                    (void)parsed;
+                    found_closing = true;
+                    body_start_index = index + 1;
+                    break;
+                } catch (const toml::parse_error &) {
+                    fm_buf << lines[index] << '\n';
+                    continue;
+                }
+            }
+            fm_buf << lines[index] << '\n';
+        }
+    } else {
+        // YAML: simple close on first ---
+        for (size_t index = open_index + 1; index < lines.size(); ++index) {
+            if (is_yaml_delimiter(lines[index])) {
+                found_closing = true;
                 body_start_index = index + 1;
                 break;
-            } catch (const toml::parse_error &) {
-                continue;
             }
+            fm_buf << lines[index] << '\n';
         }
-        toml_buf << lines[index] << '\n';
     }
 
-    if (!found_closing_delimiter) {
-        spdlog::warn("Skill file has unclosed TOML frontmatter: {}", source_path);
+    if (!found_closing) {
+        spdlog::warn("Skill file has unclosed frontmatter: {}", source_path);
         return {};
     }
 
+    // Build body
     std::ostringstream body_buf;
     for (size_t index = body_start_index; index < lines.size(); ++index) {
         if (index != body_start_index) {
@@ -125,43 +243,52 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
         }
         body_buf << lines[index];
     }
-    auto toml_text = toml_buf.str();
+    auto fm_text = fm_buf.str();
     auto body = body_buf.str();
 
-    // Parse TOML frontmatter
-    toml::table tbl;
-    try {
-        tbl = toml::parse(toml_text);
-    } catch (const toml::parse_error &e) {
-        spdlog::warn("Invalid TOML frontmatter in {}: {}", source_path, e.what());
-        return {};
-    }
-
-    auto name = tbl["name"].value<std::string>();
-    auto description = tbl["description"].value<std::string>();
-    if (!name.has_value() || !description.has_value()) {
-        spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
-        return {};
-    }
-
     SkillDef skill;
-    skill.name = *name;
-    skill.description = *description;
-    skill.body = body;
-    skill.source_path = source_path;
 
-    if (const auto *tools_arr = tbl["tools"].as_array()) {
-        for (const auto &item : *tools_arr) {
-            if (auto s = item.value<std::string>()) {
-                skill.tools.push_back(*s);
+    if (format == FrontmatterFormat::toml) {
+        toml::table tbl;
+        try {
+            tbl = toml::parse(fm_text);
+        } catch (const toml::parse_error &e) {
+            spdlog::warn("Invalid TOML frontmatter in {}: {}", source_path, e.what());
+            return {};
+        }
+
+        auto name = tbl["name"].value<std::string>();
+        auto description = tbl["description"].value<std::string>();
+        if (!name.has_value() || !description.has_value()) {
+            spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
+            return {};
+        }
+
+        skill.name = *name;
+        skill.description = *description;
+        skill.body = body;
+        skill.source_path = source_path;
+
+        if (const auto *tools_arr = tbl["tools"].as_array()) {
+            for (const auto &item : *tools_arr) {
+                if (auto s = item.value<std::string>()) {
+                    skill.tools.push_back(*s);
+                }
             }
         }
-    }
-    if (const auto *env_arr = tbl["env"].as_array()) {
-        for (const auto &item : *env_arr) {
-            if (auto s = item.value<std::string>()) {
-                skill.env.push_back(*s);
+        if (const auto *env_arr = tbl["env"].as_array()) {
+            for (const auto &item : *env_arr) {
+                if (auto s = item.value<std::string>()) {
+                    skill.env.push_back(*s);
+                }
             }
+        }
+    } else {
+        skill = parse_yaml_frontmatter(fm_text, source_path);
+        skill.body = body;
+        if (skill.name.empty() || skill.description.empty()) {
+            spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
+            return {};
         }
     }
 

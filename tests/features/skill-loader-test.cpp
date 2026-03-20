@@ -297,6 +297,70 @@ alpha override body
     fs::remove_all(override_root);
 }
 
+TEST(SkillLoaderTest, LoadsYamlFrontmatter) {
+    SkillLoader loader;
+    loader.load_from_directories({fixtures_dir().string()});
+
+    bool found = false;
+    for (const auto &skill : loader.active_skills()) {
+        if (skill.name == "yaml-skill") {
+            found = true;
+            EXPECT_EQ(skill.description, "A skill using YAML frontmatter");
+            EXPECT_EQ(skill.tools.size(), 2);
+            EXPECT_EQ(skill.tools[0], "read");
+            EXPECT_EQ(skill.tools[1], "write");
+            EXPECT_TRUE(skill.body.contains("YAML skill body"));
+        }
+    }
+    EXPECT_TRUE(found) << "Expected 'yaml-skill' to be loaded";
+}
+
+TEST(SkillLoaderTest, LoadsYamlFrontmatterFromTempDir) {
+    const auto temp_dir = make_temp_dir("orangutan_skill_loader_yaml");
+    write_skill(temp_dir, "yaml-test", R"md(---
+name: my-yaml-skill
+description: Skill with YAML frontmatter
+tools: [shell, grep]
+env: []
+---
+YAML body content here.
+)md");
+
+    SkillLoader loader;
+    loader.load_from_directories({temp_dir.string()});
+
+    ASSERT_EQ(loader.active_skills().size(), 1);
+    EXPECT_EQ(loader.active_skills()[0].name, "my-yaml-skill");
+    EXPECT_EQ(loader.active_skills()[0].description, "Skill with YAML frontmatter");
+    EXPECT_EQ(loader.active_skills()[0].tools.size(), 2);
+    EXPECT_EQ(loader.active_skills()[0].tools[0], "shell");
+    EXPECT_EQ(loader.active_skills()[0].tools[1], "grep");
+    EXPECT_TRUE(loader.active_skills()[0].body.contains("YAML body content"));
+
+    fs::remove_all(temp_dir);
+}
+
+TEST(SkillLoaderTest, LoadsYamlWithQuotedValues) {
+    const auto temp_dir = make_temp_dir("orangutan_skill_loader_yaml_quoted");
+    write_skill(temp_dir, "quoted-yaml", R"md(---
+name: "quoted-skill"
+description: 'Single-quoted description'
+tools: ["read", 'write']
+---
+Quoted values body.
+)md");
+
+    SkillLoader loader;
+    loader.load_from_directories({temp_dir.string()});
+
+    ASSERT_EQ(loader.active_skills().size(), 1);
+    EXPECT_EQ(loader.active_skills()[0].name, "quoted-skill");
+    EXPECT_EQ(loader.active_skills()[0].description, "Single-quoted description");
+    EXPECT_EQ(loader.active_skills()[0].tools.size(), 2);
+
+    fs::remove_all(temp_dir);
+}
+
 TEST(SkillLoaderTest, BuildPromptSectionUsesDeterministicSkillOrder) {
     const auto temp_dir = make_temp_dir("orangutan_skill_loader_prompt_order");
 
