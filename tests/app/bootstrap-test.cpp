@@ -49,10 +49,13 @@ struct WebStartupInspection {
     bool attached_skill_loader = false;
     std::vector<ToolDef> tool_definitions;
     std::vector<std::string> active_skill_names;
+    std::string runtime_build_error;
 };
 
 void set_web_startup_inspection_callback_for_tests(std::function<bool(const WebStartupInspection &)> callback);
 void clear_web_startup_inspection_callback_for_tests();
+void set_web_runtime_build_callback_for_tests(std::function<void()> callback);
+void clear_web_runtime_build_callback_for_tests();
 
 } // namespace orangutan::app::detail
 
@@ -117,6 +120,27 @@ public:
 private:
     std::string name_;
     std::optional<std::string> previous_;
+};
+class ScopedWebRuntimeBuildFailureInjection {
+public:
+    explicit ScopedWebRuntimeBuildFailureInjection(std::string message)
+    : message_(std::move(message)) {
+        bootstrap_detail::set_web_runtime_build_callback_for_tests([message = message_]() {
+            throw std::runtime_error(message);
+        });
+    }
+
+    ~ScopedWebRuntimeBuildFailureInjection() {
+        bootstrap_detail::clear_web_runtime_build_callback_for_tests();
+    }
+
+    ScopedWebRuntimeBuildFailureInjection(const ScopedWebRuntimeBuildFailureInjection &) = delete;
+    ScopedWebRuntimeBuildFailureInjection &operator=(const ScopedWebRuntimeBuildFailureInjection &) = delete;
+    ScopedWebRuntimeBuildFailureInjection(ScopedWebRuntimeBuildFailureInjection &&) = delete;
+    ScopedWebRuntimeBuildFailureInjection &operator=(ScopedWebRuntimeBuildFailureInjection &&) = delete;
+
+private:
+    std::string message_;
 };
 
 struct BootstrapRunResult {
@@ -737,6 +761,34 @@ TEST_F(BootstrapTest, WebOnlyCreatesWebAssemblyDependenciesWithoutApiKey) {
     EXPECT_TRUE(inspection.attached_skill_loader);
     EXPECT_TRUE(inspection.tool_definitions.empty());
     EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
+}
+
+TEST_F(BootstrapTest, WebOnlyStartsAdminUiWhenRuntimeAssemblyFails) {
+    write_config();
+    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+    ScopedEnvVar home_env("HOME", home_root().string());
+    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+    ScopedWebStartupInspectionCapture inspection_capture;
+    ScopedWebRuntimeBuildFailureInjection build_failure("injected web-only runtime failure");
+
+    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web-only", "--port", "0"});
+
+    ASSERT_EQ(result.exit_code, 0) << result.output;
+    ASSERT_TRUE(inspection_capture.inspection().has_value());
+    const auto &inspection = *inspection_capture.inspection();
+    EXPECT_TRUE(inspection.has_session_store);
+    EXPECT_TRUE(inspection.has_memory_store);
+    EXPECT_TRUE(inspection.has_subagent_run_store);
+    EXPECT_TRUE(inspection.has_subagent_manager);
+    EXPECT_FALSE(inspection.has_runtime_bundle);
+    EXPECT_FALSE(inspection.has_runtime_agent);
+    EXPECT_TRUE(inspection.attached_session_store);
+    EXPECT_FALSE(inspection.attached_tool_registry);
+    EXPECT_TRUE(inspection.attached_skill_loader);
+    EXPECT_TRUE(inspection.tool_definitions.empty());
+    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
+    EXPECT_NE(inspection.runtime_build_error.find("injected web-only runtime failure"), std::string::npos);
 }
 
 TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {

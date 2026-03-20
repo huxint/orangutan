@@ -63,12 +63,19 @@ struct WebStartupInspection {
     bool attached_skill_loader = false;
     std::vector<ToolDef> tool_definitions;
     std::vector<std::string> active_skill_names;
+    std::string runtime_build_error;
 };
 
 using WebStartupInspectionCallback = std::function<bool(const WebStartupInspection &)>;
+using WebRuntimeBuildCallback = std::function<void()>;
 
 WebStartupInspectionCallback &web_startup_inspection_callback() {
     static WebStartupInspectionCallback callback;
+    return callback;
+}
+
+WebRuntimeBuildCallback &web_runtime_build_callback() {
+    static WebRuntimeBuildCallback callback;
     return callback;
 }
 
@@ -99,6 +106,21 @@ void set_web_startup_inspection_callback_for_tests(WebStartupInspectionCallback 
 
 void clear_web_startup_inspection_callback_for_tests() {
     web_startup_inspection_callback() = {};
+}
+
+void set_web_runtime_build_callback_for_tests(WebRuntimeBuildCallback callback) {
+    web_runtime_build_callback() = callback;
+}
+
+void clear_web_runtime_build_callback_for_tests() {
+    web_runtime_build_callback() = {};
+}
+
+void maybe_inject_web_runtime_build_failure_for_tests() {
+    auto &callback = web_runtime_build_callback();
+    if (callback) {
+        callback();
+    }
 }
 
 bool inspect_web_startup_for_tests(const WebStartupInspection &inspection) {
@@ -294,7 +316,7 @@ std::vector<std::string> collect_active_skill_names(const orangutan::SkillLoader
 orangutan::app::detail::WebStartupInspection build_web_startup_inspection(orangutan::SessionStore *session_store, orangutan::MemoryStore *memory_store,
                                                                           orangutan::SubagentRunStore *subagent_run_store, orangutan::SubagentManager *subagent_manager,
                                                                           const orangutan::AgentRuntimeBundle *runtime, orangutan::SkillLoader *skill_loader,
-                                                                          const WebServerRuntimeAttachments &attachments) {
+                                                                          const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error) {
     orangutan::app::detail::WebStartupInspection inspection;
     inspection.has_session_store = session_store != nullptr;
     inspection.has_memory_store = memory_store != nullptr;
@@ -309,14 +331,15 @@ orangutan::app::detail::WebStartupInspection build_web_startup_inspection(orangu
         inspection.tool_definitions = runtime->tools.definitions();
     }
     inspection.active_skill_names = collect_active_skill_names(skill_loader);
+    inspection.runtime_build_error = std::string(runtime_build_error);
     return inspection;
 }
 
 bool maybe_skip_web_server_start_for_tests(orangutan::SessionStore *session_store, orangutan::MemoryStore *memory_store, orangutan::SubagentRunStore *subagent_run_store,
                                            orangutan::SubagentManager *subagent_manager, const orangutan::AgentRuntimeBundle *runtime, orangutan::SkillLoader *skill_loader,
-                                           const WebServerRuntimeAttachments &attachments) {
+                                           const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error = {}) {
     return orangutan::app::detail::inspect_web_startup_for_tests(
-        build_web_startup_inspection(session_store, memory_store, subagent_run_store, subagent_manager, runtime, skill_loader, attachments));
+        build_web_startup_inspection(session_store, memory_store, subagent_run_store, subagent_manager, runtime, skill_loader, attachments, runtime_build_error));
 }
 
 WebServerRuntimeAttachments configure_web_server_runtime(orangutan::WebServer &web_server, const CliOptions &options, orangutan::Config &cfg,
@@ -866,38 +889,45 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
 
         std::unique_ptr<orangutan::AgentRuntimeBundle> runtime;
         std::string current_session_id;
+        std::string runtime_build_error;
         if (!api_key.empty()) {
-            runtime = std::make_unique<orangutan::AgentRuntimeBundle>(orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
-                .provider_name = runtime_cfg.provider_name,
-                .api_key = runtime_cfg.api_key,
-                .model = runtime_cfg.model,
-                .fallback_models = runtime_cfg.fallback_models,
-                .base_url = runtime_cfg.base_url,
-                .agent_key = runtime_cfg.agent_key,
-                .system_prompt = runtime_cfg.system_prompt,
-                .workspace_root = runtime_cfg.workspace_root,
-                .edit_mode = runtime_cfg.edit_mode,
-                .memory = runtime_cfg.memory,
-                .permissions = runtime_cfg.permissions,
-                .allowed_child_agents = runtime_cfg.allowed_child_agents,
-                .identity = cli_identity,
-                .memory_store = memory_store.get(),
-                .current_session_id = &current_session_id,
-                .subagent_manager = subagent_manager.get(),
-                .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
-                .raw_caller_id = "cli:local",
-                .custom_tools = cfg.custom_tools,
-                .mcp_servers = cfg.mcp_servers,
-                .skill_paths = cfg.skill_paths,
-                .hook_paths = cfg.hook_paths,
-            }));
-            log_loaded_hooks(resolve_runtime_hook_dirs(cfg, runtime_cfg.workspace_root), *runtime->hook_manager);
+            try {
+                orangutan::app::detail::maybe_inject_web_runtime_build_failure_for_tests();
+                runtime = std::make_unique<orangutan::AgentRuntimeBundle>(orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
+                    .provider_name = runtime_cfg.provider_name,
+                    .api_key = runtime_cfg.api_key,
+                    .model = runtime_cfg.model,
+                    .fallback_models = runtime_cfg.fallback_models,
+                    .base_url = runtime_cfg.base_url,
+                    .agent_key = runtime_cfg.agent_key,
+                    .system_prompt = runtime_cfg.system_prompt,
+                    .workspace_root = runtime_cfg.workspace_root,
+                    .edit_mode = runtime_cfg.edit_mode,
+                    .memory = runtime_cfg.memory,
+                    .permissions = runtime_cfg.permissions,
+                    .allowed_child_agents = runtime_cfg.allowed_child_agents,
+                    .identity = cli_identity,
+                    .memory_store = memory_store.get(),
+                    .current_session_id = &current_session_id,
+                    .subagent_manager = subagent_manager.get(),
+                    .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
+                    .raw_caller_id = "cli:local",
+                    .custom_tools = cfg.custom_tools,
+                    .mcp_servers = cfg.mcp_servers,
+                    .skill_paths = cfg.skill_paths,
+                    .hook_paths = cfg.hook_paths,
+                }));
+                log_loaded_hooks(resolve_runtime_hook_dirs(cfg, runtime_cfg.workspace_root), *runtime->hook_manager);
+            } catch (const std::exception &e) {
+                runtime_build_error = e.what();
+                spdlog::warn("Web-only runtime bootstrap failed; starting web UI without runtime tools: {}", runtime_build_error);
+            }
         }
 
         orangutan::WebServer web_server;
         const auto attachments = configure_web_server_runtime(web_server, options, cfg, session_store.get(), runtime != nullptr ? &runtime->tools : nullptr, &skill_loader);
         if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), subagent_manager.get(), runtime.get(), &skill_loader,
-                                                  attachments)) {
+                                                  attachments, runtime_build_error)) {
             return 0;
         }
         warn_if_nonlocal_web_host(options.web_host);
