@@ -54,6 +54,8 @@ struct AgentRuntimeBuildInput {
 struct AgentRuntimeBundle {
 private:
     std::unique_ptr<ToolRuntimeContext> tool_context_storage_;
+    std::unique_ptr<ToolRegistry> tools_storage_;
+    std::unique_ptr<ToolPermissionSettings> permissions_storage_;
 
 public:
     AgentRuntimeBundle();
@@ -67,7 +69,7 @@ public:
 
     std::unique_ptr<Provider> provider;
     std::unique_ptr<RuntimeMemory> memory;
-    ToolRegistry tools;
+    ToolRegistry &tools;
     ToolRuntimeContext &tool_context;
     std::unique_ptr<McpManager> mcp_manager;
     std::string system_prompt;

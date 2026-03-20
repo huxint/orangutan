@@ -6,12 +6,15 @@
 #include "test-helpers.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 using namespace orangutan;
 
@@ -25,10 +28,28 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
     });
 }
 
+std::string sanitize_path_component(std::string value) {
+    for (char &ch : value) {
+        if (std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '-' || ch == '_') {
+            continue;
+        }
+        ch = '_';
+    }
+    return value;
+}
+
 class RuntimeAgentRuntimeTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temp_root_ = std::filesystem::current_path() / "tmp" / "tests" / "runtime-agent-runtime";
+        std::string test_id = "runtime-agent-runtime";
+        if (const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info(); test_info != nullptr) {
+            test_id = sanitize_path_component(std::string(test_info->test_suite_name()) + "-" + test_info->name());
+        }
+
+        const auto nonce = static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count());
+        const auto run_id = test_id + "-" + std::to_string(static_cast<long long>(::getpid())) + "-" + std::to_string(nonce);
+
+        temp_root_ = std::filesystem::current_path() / "tmp" / "tests" / "runtime-agent-runtime" / run_id;
         home_root_ = temp_root_ / "home";
         workspace_root_ = temp_root_ / "workspace";
         std::filesystem::remove_all(temp_root_);
@@ -151,6 +172,35 @@ TEST_F(RuntimeAgentRuntimeTest, LoadsHooksFromDefaultResolvedHookDirectories) {
     ASSERT_NE(runtime.hook_manager, nullptr);
     EXPECT_EQ(runtime.hook_manager->hook_count(HookEvent::before_tool_call), 2);
     EXPECT_EQ(runtime.hook_manager->total_hooks(), 2);
+}
+
+TEST_F(RuntimeAgentRuntimeTest, KeepsToolRegistryStableAndPermissionsAliveAfterMove) {
+    auto moved_runtime = [this] {
+        auto input = make_input();
+        input.permissions.shell_approval = ToolApprovalPolicy::deny;
+        input.custom_tools.push_back(Config::ScriptToolConfig{
+            .name = "custom_echo",
+            .description = "Custom echo script tool",
+            .command = "echo hello",
+        });
+
+        auto runtime = build_agent_runtime(input);
+        EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+        const auto *tools_before_move = &runtime.tools;
+
+        auto moved = std::move(runtime);
+        EXPECT_EQ(&moved.tools, tools_before_move);
+        return moved;
+    }();
+
+    const auto result = moved_runtime.tools.execute(ToolUseBlock{
+        .id = "custom-echo",
+        .name = "custom_echo",
+        .input = json::object(),
+    });
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("Shell tool blocked by approval policy."), std::string::npos);
 }
 
 } // namespace

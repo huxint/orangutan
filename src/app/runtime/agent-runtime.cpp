@@ -34,15 +34,20 @@ std::vector<std::string> resolve_hook_directories(const AgentRuntimeBuildInput &
 
 AgentRuntimeBundle::AgentRuntimeBundle()
 : tool_context_storage_(std::make_unique<ToolRuntimeContext>()),
+  tools_storage_(std::make_unique<ToolRegistry>()),
+  permissions_storage_(std::make_unique<ToolPermissionSettings>()),
+  tools(*tools_storage_),
   tool_context(*tool_context_storage_) {}
 
 AgentRuntimeBundle::~AgentRuntimeBundle() = default;
 
 AgentRuntimeBundle::AgentRuntimeBundle(AgentRuntimeBundle &&other) noexcept
 : tool_context_storage_(other.tool_context_storage_ ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),
+  tools_storage_(other.tools_storage_ ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>()),
+  permissions_storage_(other.permissions_storage_ ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionSettings>()),
   provider(std::move(other.provider)),
   memory(std::move(other.memory)),
-  tools(std::move(other.tools)),
+  tools(*tools_storage_),
   tool_context(*tool_context_storage_),
   mcp_manager(std::move(other.mcp_manager)),
   system_prompt(std::move(other.system_prompt)),
@@ -74,8 +79,9 @@ AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         .approval_callback = input.approval_callback,
     };
 
+    *runtime.permissions_storage_ = input.permissions;
     auto tool_bootstrap = register_runtime_tools(runtime.tools, runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
-                                                 input.mcp_servers, &input.permissions, input.approval_callback, input.edit_mode);
+                                                 input.mcp_servers, runtime.permissions_storage_.get(), input.approval_callback, input.edit_mode);
     runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
     runtime.system_prompt = append_subagent_prompt_guidance(input.system_prompt, input.allowed_child_agents, input.is_child_run);
