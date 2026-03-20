@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, ChevronDown, MessageSquarePlus, Radio, TerminalSquare } from 'lucide-react'
+import { CalendarDays, ChevronDown, Plus, Radio, TerminalSquare } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '../../lib/utils'
 import type { ChatSessionSummary } from './types'
 
@@ -10,227 +11,139 @@ interface AgentSessionSwitcherProps {
   onStartNewChat: () => void
 }
 
-interface SessionGroup {
-  label: string
-  sessions: ChatSessionSummary[]
-}
-
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 function formatDateLabel(iso: string): string {
-  const current = new Date()
-  const today = new Date(current.getFullYear(), current.getMonth(), current.getDate())
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterday = new Date(today.getTime() - 86400000)
-  const value = new Date(iso)
-  const day = new Date(value.getFullYear(), value.getMonth(), value.getDate())
-
-  if (day.getTime() === today.getTime()) {
-    return 'Today'
-  }
-
-  if (day.getTime() === yesterday.getTime()) {
-    return 'Yesterday'
-  }
-
-  return value.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  const d = new Date(iso)
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  if (day.getTime() === today.getTime()) return 'Today'
+  if (day.getTime() === yesterday.getTime()) return 'Yesterday'
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function groupSessions(sessions: ChatSessionSummary[]): SessionGroup[] {
+function groupSessions(sessions: ChatSessionSummary[]) {
   const groups = new Map<string, ChatSessionSummary[]>()
-
-  for (const session of sessions) {
-    const label = formatDateLabel(session.created_at)
-    const existing = groups.get(label)
-    if (existing) {
-      existing.push(session)
-      continue
-    }
-
-    groups.set(label, [session])
+  for (const s of sessions) {
+    const label = formatDateLabel(s.created_at)
+    const arr = groups.get(label)
+    if (arr) arr.push(s)
+    else groups.set(label, [s])
   }
-
   return Array.from(groups.entries()).map(([label, items]) => ({ label, sessions: items }))
 }
 
-function sessionTitle(session: ChatSessionSummary): string {
-  if (session.preview?.trim()) {
-    return session.preview.trim()
-  }
-
-  if (session.origin_kind === 'channel' && session.origin_ref) {
-    return session.origin_ref
-  }
-
-  if (session.origin_kind === 'cli') {
-    return 'CLI conversation'
-  }
-
-  if (session.origin_kind === 'web') {
-    return 'Web conversation'
-  }
-
-  return session.id
+function sessionTitle(s: ChatSessionSummary): string {
+  if (s.preview?.trim()) return s.preview.trim()
+  if (s.origin_kind === 'channel' && s.origin_ref) return s.origin_ref
+  if (s.origin_kind === 'cli') return 'CLI conversation'
+  if (s.origin_kind === 'web') return 'Web conversation'
+  return s.id
 }
 
-function originBadge(session: ChatSessionSummary) {
-  switch (session.origin_kind) {
-    case 'channel':
-      return {
-        icon: Radio,
-        label: 'Channel',
-        className: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
-      }
-    case 'cli':
-      return {
-        icon: TerminalSquare,
-        label: 'CLI',
-        className: 'border-sky-500/20 bg-sky-500/10 text-sky-200',
-      }
-    default:
-      return {
-        icon: CalendarDays,
-        label: 'Web',
-        className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
-      }
+function originBadge(s: ChatSessionSummary) {
+  switch (s.origin_kind) {
+    case 'channel': return { icon: Radio, label: 'Channel', cls: 'bg-warning-dim text-warning' }
+    case 'cli': return { icon: TerminalSquare, label: 'CLI', cls: 'bg-blue-500/10 text-blue-400' }
+    default: return { icon: CalendarDays, label: 'Web', cls: 'bg-success-dim text-success' }
   }
 }
 
 export function AgentSessionSwitcher({
-  sessions,
-  currentSessionId,
-  onSelectSession,
-  onStartNewChat,
+  sessions, currentSessionId, onSelectSession, onStartNewChat,
 }: AgentSessionSwitcherProps) {
   const [open, setOpen] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
-
+  const ref = useRef<HTMLDivElement>(null)
   const groups = groupSessions(sessions)
-  const currentSession = sessions.find(session => session.id === currentSessionId) ?? null
 
   useEffect(() => {
-    if (!open) {
-      return
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!panelRef.current?.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
   return (
-    <div ref={panelRef} className="relative">
-      <div className="flex items-center gap-2">
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1.5">
         <button
-          type="button"
           onClick={onStartNewChat}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text transition-colors hover:bg-bg-elevated"
+          className="rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-secondary
+            hover:text-text hover:border-accent/20 transition-colors flex items-center gap-1"
         >
-          <MessageSquarePlus size={16} />
-          New Chat
+          <Plus size={13} />
+          New
         </button>
         <button
-          type="button"
-          onClick={() => setOpen(previous => !previous)}
-          className="inline-flex min-w-56 items-center justify-between gap-3 rounded-lg border border-border bg-bg px-3 py-2 text-left text-sm text-text transition-colors hover:bg-bg-elevated"
+          onClick={() => setOpen(p => !p)}
+          className="rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text-secondary
+            hover:text-text hover:border-accent/20 transition-colors flex items-center gap-1.5 min-w-[7rem]"
         >
-          <div className="min-w-0">
-            <div className="truncate font-medium">
-              {currentSession ? sessionTitle(currentSession) : 'Current agent sessions'}
-            </div>
-            <div className="mt-0.5 text-xs text-text-muted">
-              {sessions.length === 0 ? 'No sessions yet' : `${sessions.length} sessions`}
-            </div>
-          </div>
-          <ChevronDown size={16} className={cn('shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
+          <span className="truncate">{sessions.length} sessions</span>
+          <ChevronDown size={13} className={cn('shrink-0 transition-transform duration-200', open && 'rotate-180')} />
         </button>
       </div>
 
-      {open && (
-        <div className="absolute right-0 z-20 mt-2 w-[28rem] overflow-hidden rounded-2xl border border-border bg-bg-surface shadow-2xl">
-          <div className="border-b border-border px-4 py-3">
-            <div className="text-sm font-medium text-text">Sessions</div>
-            <div className="mt-1 text-xs text-text-muted">
-              All conversations for the current agent, across web, CLI, and channel origins.
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 z-30 mt-1.5 w-[24rem] rounded-xl border border-border bg-bg-elevated shadow-2xl overflow-hidden"
+          >
+            <div className="border-b border-border px-3 py-2.5">
+              <div className="text-xs font-semibold text-text">Sessions</div>
             </div>
-          </div>
 
-          {groups.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-text-muted">
-              No sessions for this agent yet.
-            </div>
-          ) : (
-            <div className="max-h-[24rem] overflow-y-auto px-2 py-2">
-              {groups.map(group => (
-                <div key={group.label} className="mb-3 last:mb-0">
-                  <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                    {group.label}
-                  </div>
-                  <div className="space-y-1">
-                    {group.sessions.map(session => {
-                      const badge = originBadge(session)
-                      const BadgeIcon = badge.icon
-
+            {groups.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-text-muted">No sessions yet.</div>
+            ) : (
+              <div className="max-h-80 overflow-y-auto p-1.5">
+                {groups.map(g => (
+                  <div key={g.label} className="mb-1.5 last:mb-0">
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-text-muted">
+                      {g.label}
+                    </div>
+                    {g.sessions.map(s => {
+                      const b = originBadge(s)
+                      const B = b.icon
+                      const active = s.id === currentSessionId
                       return (
                         <button
-                          key={session.id}
-                          type="button"
-                          onClick={() => {
-                            setOpen(false)
-                            onSelectSession(session.id)
-                          }}
+                          key={s.id}
+                          onClick={() => { setOpen(false); onSelectSession(s.id) }}
                           className={cn(
-                            'w-full rounded-xl border px-3 py-3 text-left transition-colors',
-                            session.id === currentSessionId
-                              ? 'border-accent/30 bg-accent-bg'
-                              : 'border-transparent hover:border-border hover:bg-bg',
+                            'w-full rounded-lg px-2.5 py-2 text-left transition-colors',
+                            active ? 'bg-accent-dim' : 'hover:bg-bg-surface',
                           )}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-text">
-                                {sessionTitle(session)}
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                                <span>{formatTime(session.created_at)}</span>
-                                <span>{session.model}</span>
-                                <span>{session.message_count} messages</span>
-                              </div>
-                            </div>
-                            <div className="shrink-0 text-xs text-text-muted">
-                              {session.read_only ? 'Read only' : 'Writable'}
-                            </div>
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]', badge.className)}>
-                              <BadgeIcon size={12} />
-                              {badge.label}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium text-text">{sessionTitle(s)}</span>
+                            <span className={cn('shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold', b.cls)}>
+                              <B size={9} />{b.label}
                             </span>
-                            {session.origin_ref && (
-                              <span className="rounded-full border border-border bg-bg px-2 py-0.5 text-[11px] text-text-muted">
-                                {session.origin_ref}
-                              </span>
-                            )}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-text-muted">
+                            {formatTime(s.created_at)} · {s.message_count} msgs
                           </div>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

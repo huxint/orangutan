@@ -1,6 +1,9 @@
+import { Children, isValidElement, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
 import { ToolCallCard } from './ToolCallCard'
 import type { ContentBlock } from './types'
 
@@ -9,43 +12,91 @@ interface MessageBubbleProps {
   content: ContentBlock[]
 }
 
+/**
+ * Detect if children contain a block-level element (like katex-display div).
+ * If so, we must render a <div> instead of <p> to avoid invalid HTML nesting
+ * which causes the browser to break the layout.
+ */
+function hasBlockChild(children: ReactNode): boolean {
+  return Children.toArray(children).some(child => {
+    if (!isValidElement(child)) return false
+    const props = child.props as Record<string, unknown>
+    // rehype-katex wraps display math in <span class="katex-display">
+    // but the real issue is any div/span that acts as block
+    if (typeof props.className === 'string' && props.className.includes('katex-display')) {
+      return true
+    }
+    // Also check for div type
+    if (child.type === 'div') return true
+    return false
+  })
+}
+
+/**
+ * Pre-process markdown so that $$ display math blocks have proper blank lines.
+ * remark-math requires $$ on its own line with blank lines before/after
+ * to treat it as "flow" (block-level display) math.
+ * AI responses often return $$formula$$ on a single line or without blank lines.
+ */
+function normalizeDisplayMath(text: string): string {
+  // Match all $$...$$ pairs (including multiline) and normalize them
+  let result = text.replace(/\$\$([\s\S]+?)\$\$/g, (_match, content: string) => {
+    const trimmed = content.trim()
+    return '\n\n$$\n' + trimmed + '\n$$\n\n'
+  })
+  // Clean up excessive blank lines
+  result = result.replace(/\n{3,}/g, '\n\n')
+  return result
+}
+
 function AssistantMarkdown({ text }: { text: string }) {
+  const processed = normalizeDisplayMath(text)
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[[rehypeHighlight], [rehypeKatex, { strict: false, trust: true, minRuleThickness: 0.06, output: 'htmlAndMathml' }]]}
       components={{
-        p({ children }) {
-          return <p className="my-3 leading-7 first:mt-0 last:mb-0">{children}</p>
+        p({ children, node, ...rest }) {
+          // If this paragraph contains display math, use div to avoid
+          // <p> containing block elements (invalid HTML → broken layout)
+          if (hasBlockChild(children)) {
+            return <div className="my-2.5 leading-[1.75] first:mt-0 last:mb-0" {...rest}>{children}</div>
+          }
+          return <p className="my-2.5 leading-[1.75] first:mt-0 last:mb-0" {...rest}>{children}</p>
         },
         h1({ children }) {
-          return <h1 className="mt-5 mb-3 text-xl font-semibold tracking-tight first:mt-0">{children}</h1>
+          return <h1 className="mt-6 mb-3 text-lg font-bold first:mt-0">{children}</h1>
         },
         h2({ children }) {
-          return <h2 className="mt-5 mb-3 text-lg font-semibold tracking-tight first:mt-0">{children}</h2>
+          return <h2 className="mt-5 mb-2.5 text-base font-bold first:mt-0">{children}</h2>
         },
         h3({ children }) {
-          return <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0">{children}</h3>
+          return <h3 className="mt-4 mb-2 text-sm font-bold first:mt-0">{children}</h3>
         },
         ul({ children }) {
-          return <ul className="my-3 list-disc space-y-1.5 pl-6 marker:text-text-muted">{children}</ul>
+          return <ul className="my-2.5 list-disc space-y-1 pl-5 marker:text-text-muted">{children}</ul>
         },
         ol({ children }) {
-          return <ol className="my-3 list-decimal space-y-1.5 pl-6 marker:text-text-muted">{children}</ol>
+          return <ol className="my-2.5 list-decimal space-y-1 pl-5 marker:text-text-muted">{children}</ol>
         },
         li({ children }) {
-          return <li className="leading-7">{children}</li>
+          return <li className="leading-[1.75]">{children}</li>
         },
         blockquote({ children }) {
           return (
-            <blockquote className="my-4 rounded-r-xl border-l-3 border-accent/70 bg-accent-bg px-4 py-3 text-[0.96rem] text-text/90">
+            <blockquote className="my-3 border-l-2 border-accent/40 pl-4 text-text-secondary italic">
               {children}
             </blockquote>
           )
         },
         a({ href, children }) {
           return (
-            <a href={href} className="font-medium text-accent underline decoration-accent/40 underline-offset-3 hover:decoration-accent">
+            <a
+              href={href}
+              className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent transition-colors"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               {children}
             </a>
           )
@@ -55,40 +106,38 @@ function AssistantMarkdown({ text }: { text: string }) {
         },
         table({ children }) {
           return (
-            <div className="my-4 overflow-x-auto rounded-xl border border-border">
-              <table className="min-w-full border-collapse text-sm">{children}</table>
+            <div className="my-3 overflow-x-auto rounded-lg border border-border">
+              <table className="min-w-full text-sm">{children}</table>
             </div>
           )
         },
         thead({ children }) {
-          return <thead className="bg-bg/70">{children}</thead>
+          return <thead className="bg-bg-surface">{children}</thead>
         },
         th({ children }) {
-          return <th className="border-b border-border px-3 py-2 text-left font-medium">{children}</th>
+          return <th className="border-b border-border px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary">{children}</th>
         },
         td({ children }) {
-          return <td className="border-t border-border px-3 py-2 align-top">{children}</td>
+          return <td className="border-t border-border-subtle px-3 py-2">{children}</td>
         },
         pre({ children }) {
           return (
-            <pre className="my-4 overflow-x-auto rounded-xl border border-border bg-bg px-4 py-3 text-[13px] leading-6 shadow-sm">
+            <pre className="my-3 overflow-x-auto rounded-lg bg-bg-elevated border border-border px-4 py-3 text-[13px] leading-relaxed">
               {children}
             </pre>
           )
         },
         code({ className, children, ...props }) {
-          const isInline = !className
-          if (isInline) {
+          if (!className) {
             return (
               <code
-                className="rounded-md border border-border bg-bg px-1.5 py-0.5 font-mono text-[0.92em] text-accent"
+                className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[0.88em] text-accent"
                 {...props}
               >
                 {children}
               </code>
             )
           }
-
           return <code className={className} {...props}>{children}</code>
         },
         strong({ children }) {
@@ -96,7 +145,7 @@ function AssistantMarkdown({ text }: { text: string }) {
         },
       }}
     >
-      {text}
+      {processed}
     </ReactMarkdown>
   )
 }
@@ -108,7 +157,7 @@ function renderAssistantBlocks(content: ContentBlock[]) {
   function flushTextBuffer() {
     if (!textBuffer) return
     blocks.push(
-      <div key={`text-${blocks.length}`} className="text-[15px] text-text">
+      <div key={`text-${blocks.length}`} className="text-[14.5px] text-text/90">
         <AssistantMarkdown text={textBuffer} />
       </div>,
     )
@@ -141,9 +190,7 @@ function renderAssistantBlocks(content: ContentBlock[]) {
         />,
       )
 
-      if (result) {
-        index += 1
-      }
+      if (result) index += 1
       continue
     }
 
@@ -166,11 +213,12 @@ function renderAssistantBlocks(content: ContentBlock[]) {
 
 export function MessageBubble({ role, content }: MessageBubbleProps) {
   if (role === 'user') {
-    const text = content.filter(block => block.type === 'text' && block.text).map(block => block.text).join('')
-
+    const text = content.filter(b => b.type === 'text' && b.text).map(b => b.text).join('')
     return (
       <div className="flex justify-end">
-        <div className="max-w-[78%] rounded-2xl bg-accent-bg px-4 py-3 text-text whitespace-pre-wrap shadow-sm ring-1 ring-accent/10">
+        <div className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[14.5px]
+          bg-accent text-white leading-relaxed whitespace-pre-wrap
+          shadow-[0_2px_12px_rgba(249,115,22,0.15)]">
           {text}
         </div>
       </div>
@@ -178,8 +226,10 @@ export function MessageBubble({ role, content }: MessageBubbleProps) {
   }
 
   return (
-    <div className="max-w-[82%]">
-      <div className="space-y-3 rounded-2xl border border-border/80 bg-bg-surface/70 px-4 py-3 shadow-sm">
+    <div className="max-w-[85%]">
+      <div className="space-y-2 rounded-2xl rounded-bl-sm
+        bg-bg-surface border border-border
+        px-4 py-3">
         {renderAssistantBlocks(content)}
       </div>
     </div>

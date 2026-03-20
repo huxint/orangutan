@@ -459,6 +459,12 @@ export function ChatView() {
   const readOnly = sessionMeta?.read_only ?? false
   const sessionLoading = Boolean(paramSessionId) && sessionMeta?.id !== paramSessionId
 
+  const handleSuggest = useCallback((text: string) => {
+    if (!readOnly && !streaming) {
+      handleSend(text)
+    }
+  }, [readOnly, streaming, handleSend])
+
   return (
     <div className="flex h-full flex-col">
       <ChatHeader
@@ -469,7 +475,7 @@ export function ChatView() {
         onSelectSession={handleSelectSession}
         onStartNewChat={handleStartNewChat}
       />
-      <MessageList messages={messages} />
+      <MessageList messages={messages} onSuggest={!readOnly && !streaming ? handleSuggest : undefined} />
       {pendingApproval && (
         <ApprovalPrompt
           approval={pendingApproval}
@@ -479,7 +485,7 @@ export function ChatView() {
         />
       )}
       {error && (
-        <div className="bg-red-950/30 px-4 py-2 text-center text-sm text-red-400">
+        <div className="mx-4 mb-2 rounded-xl bg-danger-bg px-4 py-2.5 text-center text-sm text-danger animate-fade-in">
           {error}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { Bot, Lock } from 'lucide-react'
+import { Bot, Lock, Globe } from 'lucide-react'
 import type { AgentSummary } from '../../api/client'
 import { AgentSessionSwitcher } from './AgentSessionSwitcher'
 import type { ChatSessionSummary } from './types'
@@ -13,17 +13,11 @@ interface ChatHeaderProps {
 }
 
 function scopeLabel(session: ChatSessionSummary | null): string {
-  if (!session) {
-    return 'New conversation'
-  }
-
+  if (!session) return 'New'
   switch (session.origin_kind) {
-    case 'channel':
-      return 'Channel session'
-    case 'cli':
-      return 'CLI session'
-    default:
-      return 'Web session'
+    case 'channel': return 'Channel'
+    case 'cli': return 'CLI'
+    default: return 'Web'
   }
 }
 
@@ -36,47 +30,30 @@ export function ChatHeader({
   onStartNewChat,
 }: ChatHeaderProps) {
   return (
-    <div className="border-b border-border bg-bg-surface/90">
-      <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-4 px-4 py-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-2.5 py-1">
-              <Bot size={12} />
-              Agent
-            </span>
-            <span className="rounded-full border border-border bg-bg px-2.5 py-1 text-text">
-              {agent?.key ?? 'Unknown'}
-            </span>
-            <span className="rounded-full border border-border bg-bg px-2.5 py-1">
-              {scopeLabel(session)}
-            </span>
+    <div className="shrink-0 border-b border-border bg-bg-surface/60 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-2.5">
+        <div className="min-w-0 flex items-center gap-2.5">
+          <div className="shrink-0 p-1.5 rounded-lg bg-accent-dim text-accent">
+            <Bot size={16} />
           </div>
-
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h1 className="text-lg font-semibold text-text">
-              {agent?.key ?? 'Agent not found'}
-            </h1>
-            {agent && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                <span>{agent.provider}</span>
-                <span>{agent.model}</span>
-              </div>
-            )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-text truncate">
+                {agent?.key ?? 'Unknown'}
+              </span>
+              <span className="text-[10px] text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded font-medium">
+                {agent?.model ?? ''}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+              <Globe size={9} />
+              <span>{scopeLabel(session)}</span>
+            </div>
           </div>
-
-          <div className="mt-1 truncate text-xs text-text-muted">
-            Workspace: {agent?.workspace || 'No workspace configured'}
-          </div>
-
           {readOnly && (
-            <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100">
-              <div className="flex items-center gap-2 font-medium text-amber-200">
-                <Lock size={14} />
-                Channel session · read only
-              </div>
-              <div className="mt-1 text-amber-100/90">
-                View history here, but continue the conversation from its original channel.
-              </div>
+            <div className="flex items-center gap-1 text-warning text-[11px] font-medium bg-warning-dim px-2 py-0.5 rounded-full">
+              <Lock size={10} />
+              Read-only
             </div>
           )}
         </div>
