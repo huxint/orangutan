@@ -177,6 +177,97 @@ TEST_F(SessionStoreTest, SessionBelongsToScopeChecksOwnership) {
     EXPECT_FALSE(store.session_belongs_to_scope(session_id, "scope:b"));
 }
 
+TEST_F(SessionStoreTest, SavePersistsExplicitSessionMetadata) {
+    SessionStore store(db_path().string());
+
+    const SessionMetadata metadata{
+        .model = "test-model",
+        .scope_key = "agent:coder",
+        .agent_key = "coder",
+        .origin_kind = "channel",
+        .origin_ref = "qqbot:c2c:alice",
+    };
+    const std::vector<Message> messages = {Message::user_text("Hello")};
+
+    const auto session_id = store.save(messages, metadata);
+
+    const auto sessions = store.list_sessions();
+    ASSERT_EQ(sessions.size(), 1U);
+    EXPECT_EQ(sessions[0].id, session_id);
+    EXPECT_EQ(sessions[0].model, metadata.model);
+    EXPECT_EQ(sessions[0].scope_key, metadata.scope_key);
+    EXPECT_EQ(sessions[0].agent_key, metadata.agent_key);
+    EXPECT_EQ(sessions[0].origin_kind, metadata.origin_kind);
+    EXPECT_EQ(sessions[0].origin_ref, metadata.origin_ref);
+}
+
+TEST_F(SessionStoreTest, CreateEmptyPersistsExplicitSessionMetadata) {
+    SessionStore store(db_path().string());
+
+    const SessionMetadata metadata{
+        .model = "test-model",
+        .scope_key = "agent:coder",
+        .agent_key = "coder",
+        .origin_kind = "channel",
+        .origin_ref = "qqbot:c2c:alice",
+    };
+
+    const auto session_id = store.create_empty(metadata);
+
+    const auto sessions = store.list_sessions();
+    ASSERT_EQ(sessions.size(), 1U);
+    EXPECT_EQ(sessions[0].id, session_id);
+    EXPECT_EQ(sessions[0].message_count, 0);
+    EXPECT_EQ(sessions[0].agent_key, metadata.agent_key);
+    EXPECT_EQ(sessions[0].origin_kind, metadata.origin_kind);
+    EXPECT_EQ(sessions[0].origin_ref, metadata.origin_ref);
+}
+
+TEST_F(SessionStoreTest, ListSessionsForAgentReturnsOnlyMatchingSessions) {
+    SessionStore store(db_path().string());
+
+    const std::vector<Message> messages = {Message::user_text("Hello")};
+    const SessionMetadata coder_metadata{
+        .model = "test-model-coder",
+        .scope_key = "agent:coder",
+        .agent_key = "coder",
+        .origin_kind = "channel",
+        .origin_ref = "qqbot:c2c:alice",
+    };
+    const SessionMetadata default_metadata{
+        .model = "test-model-default",
+        .scope_key = "agent:default",
+        .agent_key = "default",
+        .origin_kind = "web",
+        .origin_ref = "web:local",
+    };
+
+    const auto coder_session_id = store.save(messages, coder_metadata);
+    store.save(messages, default_metadata);
+
+    const auto coder_sessions = store.list_sessions_for_agent("coder");
+    ASSERT_EQ(coder_sessions.size(), 1U);
+    EXPECT_EQ(coder_sessions[0].id, coder_session_id);
+    EXPECT_EQ(coder_sessions[0].agent_key, "coder");
+}
+
+TEST_F(SessionStoreTest, SessionBelongsToAgentChecksOwnership) {
+    SessionStore store(db_path().string());
+
+    const std::vector<Message> messages = {Message::user_text("Hello")};
+    const SessionMetadata metadata{
+        .model = "test-model",
+        .scope_key = "agent:coder",
+        .agent_key = "coder",
+        .origin_kind = "channel",
+        .origin_ref = "qqbot:c2c:alice",
+    };
+    const auto session_id = store.save(messages, metadata);
+
+    EXPECT_TRUE(store.session_belongs_to_agent(session_id, "coder"));
+    EXPECT_FALSE(store.session_belongs_to_agent(session_id, "default"));
+}
+
 TEST_F(SessionStoreTest, RemoveDeletesSession) {
     SessionStore store(db_path().string());
 

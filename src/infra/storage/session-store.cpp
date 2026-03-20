@@ -130,11 +130,15 @@ void write_messages(sqlite::Database &db, const std::string &session_id, const s
     }
 }
 
-void insert_session(sqlite::Database &db, const std::string &session_id, const std::string &model, const std::string &scope_key) {
-    sqlite::Statement insert_session_stmt(db, "INSERT INTO sessions (id, model, scope_key) VALUES (?, ?, ?)");
+void insert_session(sqlite::Database &db, const std::string &session_id, const SessionMetadata &metadata) {
+    sqlite::Statement insert_session_stmt(db, "INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) "
+                                              "VALUES (?, ?, ?, ?, ?, ?)");
     insert_session_stmt.bind_text(1, session_id);
-    insert_session_stmt.bind_text(2, model);
-    insert_session_stmt.bind_text(3, scope_key);
+    insert_session_stmt.bind_text(2, metadata.model);
+    insert_session_stmt.bind_text(3, metadata.scope_key);
+    insert_session_stmt.bind_text(4, metadata.agent_key);
+    insert_session_stmt.bind_text(5, metadata.origin_kind);
+    insert_session_stmt.bind_text(6, metadata.origin_ref);
     (void)insert_session_stmt.step();
 }
 
@@ -146,6 +150,19 @@ void update_session_model(sqlite::Database &db, const std::string &session_id, c
     sqlite::Statement stmt(db, "UPDATE sessions SET model = ? WHERE id = ?");
     stmt.bind_text(1, model);
     stmt.bind_text(2, session_id);
+    (void)stmt.step();
+}
+
+void update_session_metadata(sqlite::Database &db, const std::string &session_id, const SessionMetadata &metadata) {
+    sqlite::Statement stmt(db, "UPDATE sessions "
+                               "SET model = ?, scope_key = ?, agent_key = ?, origin_kind = ?, origin_ref = ? "
+                               "WHERE id = ?");
+    stmt.bind_text(1, metadata.model);
+    stmt.bind_text(2, metadata.scope_key);
+    stmt.bind_text(3, metadata.agent_key);
+    stmt.bind_text(4, metadata.origin_kind);
+    stmt.bind_text(5, metadata.origin_ref);
+    stmt.bind_text(6, session_id);
     (void)stmt.step();
 }
 
@@ -177,6 +194,9 @@ void SessionStore::ensure_schema() {
             id TEXT PRIMARY KEY,
             model TEXT NOT NULL,
             scope_key TEXT NOT NULL DEFAULT '',
+            agent_key TEXT NOT NULL DEFAULT '',
+            origin_kind TEXT NOT NULL DEFAULT 'cli',
+            origin_ref TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS messages (
@@ -201,7 +221,11 @@ void SessionStore::ensure_schema() {
              "Failed to create session schema");
 
     ensure_column(db_, "sessions", "scope_key", "ALTER TABLE sessions ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''");
+    ensure_column(db_, "sessions", "agent_key", "ALTER TABLE sessions ADD COLUMN agent_key TEXT NOT NULL DEFAULT ''");
+    ensure_column(db_, "sessions", "origin_kind", "ALTER TABLE sessions ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'cli'");
+    ensure_column(db_, "sessions", "origin_ref", "ALTER TABLE sessions ADD COLUMN origin_ref TEXT NOT NULL DEFAULT ''");
     db_.exec("CREATE INDEX IF NOT EXISTS idx_sessions_scope_key ON sessions(scope_key, created_at DESC);", "Failed to create session scope index");
+    db_.exec("CREATE INDEX IF NOT EXISTS idx_sessions_agent_key ON sessions(agent_key, created_at DESC);", "Failed to create session agent index");
 
     const auto binding_schema = inspect_channel_binding_schema(db_);
     if (!binding_schema.has_agent_key || binding_schema.jid_pk_position != 1 || binding_schema.agent_key_pk_position != 2) {
@@ -227,11 +251,15 @@ std::string SessionStore::generate_uuid() {
 }
 
 std::string SessionStore::save(const std::vector<Message> &messages, const std::string &model, const std::string &scope_key) {
+    return save(messages, make_legacy_metadata(model, scope_key));
+}
+
+std::string SessionStore::save(const std::vector<Message> &messages, const SessionMetadata &metadata) {
     std::scoped_lock lock(mutex_);
     const auto session_id = generate_uuid();
     sqlite::Transaction tx(db_);
 
-    insert_session(db_, session_id, model, scope_key);
+    insert_session(db_, session_id, metadata);
 
     write_messages(db_, session_id, messages, 0);
 
@@ -241,11 +269,15 @@ std::string SessionStore::save(const std::vector<Message> &messages, const std::
 }
 
 std::string SessionStore::create_empty(const std::string &model, const std::string &scope_key) {
+    return create_empty(make_legacy_metadata(model, scope_key));
+}
+
+std::string SessionStore::create_empty(const SessionMetadata &metadata) {
     std::scoped_lock lock(mutex_);
     const auto session_id = generate_uuid();
     sqlite::Transaction tx(db_);
 
-    insert_session(db_, session_id, model, scope_key);
+    insert_session(db_, session_id, metadata);
 
     tx.commit();
     spdlog::info("Created empty session {}", session_id);
@@ -268,6 +300,22 @@ void SessionStore::update(const std::string &session_id, const std::vector<Messa
     spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
 }
 
+void SessionStore::update(const std::string &session_id, const std::vector<Message> &messages, const SessionMetadata &metadata) {
+    std::scoped_lock lock(mutex_);
+    sqlite::Transaction tx(db_);
+
+    update_session_metadata(db_, session_id, metadata);
+
+    sqlite::Statement delete_messages(db_, "DELETE FROM messages WHERE session_id = ?");
+    delete_messages.bind_text(1, session_id);
+    (void)delete_messages.step();
+
+    write_messages(db_, session_id, messages, 0);
+
+    tx.commit();
+    spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
+}
+
 void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const std::string &model) {
     std::scoped_lock lock(mutex_);
     if (start_index > messages.size()) {
@@ -276,6 +324,20 @@ void SessionStore::append(const std::string &session_id, const std::vector<Messa
 
     sqlite::Transaction tx(db_);
     update_session_model(db_, session_id, model);
+    write_messages(db_, session_id, messages, start_index);
+    tx.commit();
+
+    spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
+}
+
+void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const SessionMetadata &metadata) {
+    std::scoped_lock lock(mutex_);
+    if (start_index > messages.size()) {
+        throw std::runtime_error("append start_index is out of range");
+    }
+
+    sqlite::Transaction tx(db_);
+    update_session_metadata(db_, session_id, metadata);
     write_messages(db_, session_id, messages, start_index);
     tx.commit();
 
@@ -305,10 +367,10 @@ std::vector<Message> SessionStore::load(const std::string &session_id) {
 
 std::vector<SessionInfo> SessionStore::list_sessions(const std::string &scope_key) {
     std::scoped_lock lock(mutex_);
-    sqlite::Statement stmt(db_, scope_key.empty() ? "SELECT s.id, s.created_at, s.model, s.scope_key, COUNT(m.id) "
+    sqlite::Statement stmt(db_, scope_key.empty() ? "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
                                                     "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
                                                     "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC"
-                                                  : "SELECT s.id, s.created_at, s.model, s.scope_key, COUNT(m.id) "
+                                                  : "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
                                                     "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
                                                     "WHERE s.scope_key = ? "
                                                     "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC");
@@ -324,7 +386,34 @@ std::vector<SessionInfo> SessionStore::list_sessions(const std::string &scope_ke
             .created_at = stmt.column_text(1),
             .model = stmt.column_text(2),
             .scope_key = stmt.column_text(3),
-            .message_count = stmt.column_int(4),
+            .agent_key = stmt.column_text(4),
+            .origin_kind = stmt.column_text(5),
+            .origin_ref = stmt.column_text(6),
+            .message_count = stmt.column_int(7),
+        });
+    }
+    return sessions;
+}
+
+std::vector<SessionInfo> SessionStore::list_sessions_for_agent(const std::string &agent_key) {
+    std::scoped_lock lock(mutex_);
+    sqlite::Statement stmt(db_, "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                "WHERE s.agent_key = ? "
+                                "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC");
+    stmt.bind_text(1, agent_key);
+
+    std::vector<SessionInfo> sessions;
+    while (stmt.step()) {
+        sessions.push_back({
+            .id = stmt.column_text(0),
+            .created_at = stmt.column_text(1),
+            .model = stmt.column_text(2),
+            .scope_key = stmt.column_text(3),
+            .agent_key = stmt.column_text(4),
+            .origin_kind = stmt.column_text(5),
+            .origin_ref = stmt.column_text(6),
+            .message_count = stmt.column_int(7),
         });
     }
     return sessions;
@@ -394,6 +483,24 @@ bool SessionStore::session_belongs_to_scope(const std::string &session_id, const
     stmt.bind_text(1, session_id);
     stmt.bind_text(2, scope_key);
     return stmt.step();
+}
+
+bool SessionStore::session_belongs_to_agent(const std::string &session_id, const std::string &agent_key) {
+    std::scoped_lock lock(mutex_);
+    sqlite::Statement stmt(db_, "SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1");
+    stmt.bind_text(1, session_id);
+    stmt.bind_text(2, agent_key);
+    return stmt.step();
+}
+
+SessionMetadata SessionStore::make_legacy_metadata(const std::string &model, const std::string &scope_key) {
+    return SessionMetadata{
+        .model = model,
+        .scope_key = scope_key,
+        .agent_key = "",
+        .origin_kind = "cli",
+        .origin_ref = "",
+    };
 }
 
 } // namespace orangutan
