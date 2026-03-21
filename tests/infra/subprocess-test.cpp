@@ -4,8 +4,10 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -336,6 +338,98 @@ TEST(SubprocessTest, BackgroundCompletionCallbackExceptionsAreSwallowed) {
     EXPECT_FALSE(snapshot.running);
     EXPECT_EQ(snapshot.exit_code, 0);
     EXPECT_EQ(callback_count.load(std::memory_order_relaxed), 1);
+}
+
+TEST(SubprocessTest, BackgroundManagerRejectsReentrantStartDuringShutdown) {
+    EXPECT_EXIT(
+        {
+            ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+            std::atomic<bool> shutdown_started{false};
+            std::atomic<bool> callback_attempted{false};
+            std::atomic<bool> start_rejected{false};
+
+            BackgroundProcessManager *manager_ptr = nullptr;
+            auto manager = std::make_unique<BackgroundProcessManager>([&](const BackgroundProcessCompletionEvent &) {
+                if (!shutdown_started.load(std::memory_order_acquire)) {
+                    return;
+                }
+
+                callback_attempted.store(true, std::memory_order_release);
+                try {
+                    (void)manager_ptr->start(
+                        {
+                            .command = "/bin/true",
+                            .use_shell = false,
+                        },
+                        "shutdown reentrant start");
+                } catch (const std::exception &) {
+                    start_rejected.store(true, std::memory_order_release);
+                }
+            });
+            manager_ptr = manager.get();
+
+            (void)manager->start(
+                {
+                    .command = "python3 -c \"import time; time.sleep(10)\"",
+                    .use_shell = true,
+                },
+                "shutdown gate test",
+                {
+                    .publish_completion_event = true,
+                });
+
+            shutdown_started.store(true, std::memory_order_release);
+            manager.reset();
+
+            if (!callback_attempted.load(std::memory_order_acquire)) {
+                std::exit(2);
+            }
+            if (!start_rejected.load(std::memory_order_acquire)) {
+                std::exit(3);
+            }
+            std::exit(0);
+        },
+        ::testing::ExitedWithCode(0), "");
+}
+
+TEST(SubprocessTest, BackgroundManagerReclaimsWaitThreadsAcrossManyCompletedProcesses) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    std::atomic<int> callback_count{0};
+    BackgroundProcessManager manager([&](const BackgroundProcessCompletionEvent &) {
+        callback_count.fetch_add(1, std::memory_order_relaxed);
+    });
+
+    constexpr int iterations = 512;
+    for (int i = 0; i < iterations; ++i) {
+        const auto summary = manager.start(
+            {
+                .command = "/bin/true",
+                .use_shell = false,
+            },
+            "thread cleanup test",
+            {
+                .publish_completion_event = true,
+            });
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        BackgroundProcessSnapshot snapshot;
+        while (std::chrono::steady_clock::now() < deadline) {
+            snapshot = manager.poll(summary.process_id);
+            if (!snapshot.running) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        ASSERT_FALSE(snapshot.running) << "iteration " << i;
+        EXPECT_EQ(snapshot.exit_code, 0) << "iteration " << i;
+
+        const auto final_snapshot = manager.kill(summary.process_id);
+        EXPECT_FALSE(final_snapshot.running) << "iteration " << i;
+        EXPECT_EQ(final_snapshot.exit_code, 0) << "iteration " << i;
+    }
+
+    EXPECT_EQ(callback_count.load(std::memory_order_relaxed), iterations);
 }
 
 TEST(SubprocessTest, BackgroundManagerKillAfterCompletionDoesNotDeadlock) {

@@ -496,11 +496,14 @@ struct BackgroundProcessManager::Impl {
     };
 
     mutable std::mutex mutex;
+    std::condition_variable shutdown_cv;
     std::vector<std::shared_ptr<ProcessEntry>> entries;
     std::unordered_map<std::string, std::shared_ptr<ProcessEntry>> entries_by_id;
     uint64_t next_id = 0;
     std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
     BackgroundProcessManager::CompletionCallback completion_callback;
+    bool shutting_down = false;
+    size_t pending_starts = 0;
 
     Impl(const Impl &) = delete;
     Impl &operator=(const Impl &) = delete;
@@ -524,6 +527,37 @@ struct BackgroundProcessManager::Impl {
             return nullptr;
         }
         return it->second;
+    }
+
+    void begin_start(ProcessEntry &entry) {
+        std::scoped_lock lock(mutex);
+        if (shutting_down) {
+            throw std::runtime_error("background process manager is shutting down");
+        }
+        ++pending_starts;
+        entry.process_id = "proc-" + std::to_string(++next_id);
+    }
+
+    void finish_start() {
+        std::scoped_lock lock(mutex);
+        if (pending_starts > 0) {
+            --pending_starts;
+        }
+        shutdown_cv.notify_all();
+    }
+
+    void register_entry(const std::shared_ptr<ProcessEntry> &entry) {
+        std::scoped_lock lock(mutex);
+        if (shutting_down) {
+            throw std::runtime_error("background process manager is shutting down");
+        }
+        entries.push_back(entry);
+        try {
+            entries_by_id.insert_or_assign(entry->process_id, entry);
+        } catch (...) {
+            entries.pop_back();
+            throw;
+        }
     }
 
     [[nodiscard]]
@@ -556,10 +590,13 @@ struct BackgroundProcessManager::Impl {
         entries_by_id.erase(process_id);
     }
 
-    static void join_wait_thread(const std::shared_ptr<ProcessEntry> &entry) {
+    static void finalize_wait_thread(const std::shared_ptr<ProcessEntry> &entry) {
         std::thread wait_thread;
         {
             std::scoped_lock lock(entry->mutex);
+            if (entry->running) {
+                return;
+            }
             if (!entry->wait_thread.joinable()) {
                 return;
             }
@@ -601,7 +638,9 @@ struct BackgroundProcessManager::Impl {
             }
         }
         if (already_stopped) {
-            return snapshot_entry(entry);
+            auto snapshot = snapshot_entry(entry);
+            finalize_wait_thread(entry);
+            return snapshot;
         }
 
         signal_process(pid, SIGTERM);
@@ -618,13 +657,19 @@ struct BackgroundProcessManager::Impl {
             });
         }
         lock.unlock();
-        return snapshot_entry(entry);
+        auto snapshot = snapshot_entry(entry);
+        finalize_wait_thread(entry);
+        return snapshot;
     }
 
     void shutdown() {
         std::vector<std::shared_ptr<ProcessEntry>> active_entries;
         {
-            std::scoped_lock lock(mutex);
+            std::unique_lock lock(mutex);
+            shutting_down = true;
+            shutdown_cv.wait(lock, [this] {
+                return pending_starts == 0;
+            });
             active_entries = entries;
         }
 
@@ -633,7 +678,7 @@ struct BackgroundProcessManager::Impl {
         }
 
         for (const auto &entry : active_entries) {
-            join_wait_thread(entry);
+            finalize_wait_thread(entry);
         }
 
         std::error_code ec;
@@ -651,11 +696,21 @@ BackgroundProcessManager::BackgroundProcessManager(BackgroundProcessManager &&) 
 BackgroundProcessManager &BackgroundProcessManager::operator=(BackgroundProcessManager &&) noexcept = default;
 
 BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig &config, const std::string &display_command, BackgroundProcessCompletionPolicy completion) {
+    struct PendingStartGuard {
+        explicit PendingStartGuard(Impl &impl_ref)
+        : impl(impl_ref) {}
+
+        ~PendingStartGuard() {
+            impl.finish_start();
+        }
+
+        Impl &impl;
+    };
+
     auto entry = std::make_shared<Impl::ProcessEntry>();
-    {
-        std::scoped_lock lock(impl_->mutex);
-        entry->process_id = "proc-" + std::to_string(++impl_->next_id);
-    }
+    impl_->begin_start(*entry);
+    PendingStartGuard pending_start(*impl_);
+
     entry->command = display_command.empty() ? config.command : display_command;
     entry->working_dir = config.working_dir;
     entry->stdout_path = impl_->temp_root / (entry->process_id + ".stdout");
@@ -675,9 +730,7 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
     }
 
     try {
-        std::scoped_lock lock(impl_->mutex);
-        impl_->entries.push_back(entry);
-        impl_->entries_by_id.insert_or_assign(entry->process_id, entry);
+        impl_->register_entry(entry);
     } catch (...) {
         signal_process(entry->pid, SIGKILL);
         while (waitpid(entry->pid, nullptr, 0) == -1 && errno == EINTR) {
@@ -737,28 +790,31 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
             }
             entry->cv.notify_all();
 
-            if (!should_publish) {
-                return;
+            if (should_publish) {
+                bool completion_event_ready = true;
+                try {
+                    completion_event.stdout = to_output_metadata(read_output_tail(entry->stdout_path));
+                    completion_event.stderr = to_output_metadata(read_output_tail(entry->stderr_path));
+                } catch (const std::exception &ex) {
+                    spdlog::error("background process completion event build failed for {}: {}", entry->process_id, ex.what());
+                    completion_event_ready = false;
+                } catch (...) {
+                    spdlog::error("background process completion event build failed for {} with non-standard exception", entry->process_id);
+                    completion_event_ready = false;
+                }
+
+                if (completion_event_ready) {
+                    try {
+                        completion_callback(completion_event);
+                    } catch (const std::exception &ex) {
+                        spdlog::error("background process completion callback failed for {}: {}", entry->process_id, ex.what());
+                    } catch (...) {
+                        spdlog::error("background process completion callback failed for {} with non-standard exception", entry->process_id);
+                    }
+                }
             }
 
-            try {
-                completion_event.stdout = to_output_metadata(read_output_tail(entry->stdout_path));
-                completion_event.stderr = to_output_metadata(read_output_tail(entry->stderr_path));
-            } catch (const std::exception &ex) {
-                spdlog::error("background process completion event build failed for {}: {}", entry->process_id, ex.what());
-                return;
-            } catch (...) {
-                spdlog::error("background process completion event build failed for {} with non-standard exception", entry->process_id);
-                return;
-            }
-
-            try {
-                completion_callback(completion_event);
-            } catch (const std::exception &ex) {
-                spdlog::error("background process completion callback failed for {}: {}", entry->process_id, ex.what());
-            } catch (...) {
-                spdlog::error("background process completion callback failed for {} with non-standard exception", entry->process_id);
-            }
+            Impl::finalize_wait_thread(entry);
         });
     } catch (...) {
         impl_->erase_entry(entry->process_id);
