@@ -1,6 +1,7 @@
 #include "features/tools/core/internal.hpp"
 #include "features/tools/core/background-completion.hpp"
 #include "features/tools/core/command-sandbox.hpp"
+#include "features/memory/memory-extract.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -10,14 +11,56 @@
 namespace orangutan {
 namespace {
 
+size_t utf8_char_len(std::string_view input, size_t pos) {
+    if (pos >= input.size()) {
+        return 0;
+    }
+
+    const auto byte = static_cast<unsigned char>(input[pos]);
+    size_t expected = 0;
+    if (byte <= 0x7F) {
+        expected = 1;
+    } else if ((byte & 0xE0) == 0xC0) {
+        expected = 2;
+    } else if ((byte & 0xF0) == 0xE0) {
+        expected = 3;
+    } else if ((byte & 0xF8) == 0xF0) {
+        expected = 4;
+    } else {
+        return 0;
+    }
+    if (pos + expected > input.size()) {
+        return 0;
+    }
+    for (size_t i = 1; i < expected; ++i) {
+        if ((static_cast<unsigned char>(input[pos + i]) & 0xC0) != 0x80) {
+            return 0;
+        }
+    }
+    return expected;
+}
+
 std::string truncate_completion_prompt(std::string_view prompt) {
-    if (prompt.size() <= background_completion_prompt_max_chars) {
-        return std::string(prompt);
+    std::string sanitized = memory_detail::sanitize_utf8(prompt);
+    if (sanitized.size() <= background_completion_prompt_max_chars) {
+        return sanitized;
     }
-    if (background_completion_prompt_max_chars <= 3) {
-        return std::string(prompt.substr(0, background_completion_prompt_max_chars));
+
+    const size_t limit = background_completion_prompt_max_chars > 3 ? background_completion_prompt_max_chars - 3 : background_completion_prompt_max_chars;
+    size_t pos = 0;
+    while (pos < sanitized.size()) {
+        const size_t char_len = utf8_char_len(sanitized, pos);
+        if (char_len == 0 || pos + char_len > limit) {
+            break;
+        }
+        pos += char_len;
     }
-    return std::string(prompt.substr(0, background_completion_prompt_max_chars - 3)) + "...";
+
+    std::string truncated = sanitized.substr(0, pos);
+    if (background_completion_prompt_max_chars > 3) {
+        truncated += "...";
+    }
+    return truncated;
 }
 
 json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {

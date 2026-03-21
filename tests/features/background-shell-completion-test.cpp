@@ -226,7 +226,11 @@ TEST_F(BackgroundShellCompletionTest, ResumeCompletionPreservesPromptInInboxAndR
 }
 
 TEST_F(BackgroundShellCompletionTest, LargeResumePromptIsBoundedInPersistedAndResumePayload) {
-    const std::string prompt(background_completion_prompt_max_chars * 4, 'p');
+    const std::string prompt_unit = "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
+    std::string prompt;
+    for (size_t i = 0; i < background_completion_prompt_max_chars; ++i) {
+        prompt += prompt_unit;
+    }
     const auto start_payload = start_background_shell({
         {"command", "printf 'ready\\n'"},
         {"on_complete", {{"mode", "resume"}, {"prompt", prompt}}},
@@ -247,6 +251,7 @@ TEST_F(BackgroundShellCompletionTest, LargeResumePromptIsBoundedInPersistedAndRe
     EXPECT_LT(inbox_prompt.size(), prompt.size());
     EXPECT_LE(inbox_prompt.size(), background_completion_prompt_max_chars);
     EXPECT_TRUE(inbox_prompt.ends_with("..."));
+    EXPECT_NE(inbox_prompt.find(prompt_unit), std::string::npos);
     EXPECT_LE(items.front().body.size(), background_completion_payload_max_bytes);
     EXPECT_LE(resume_messages.front().size(), background_completion_payload_max_bytes);
 }
@@ -310,7 +315,68 @@ TEST_F(BackgroundShellCompletionTest, CompletionPayloadSummariesAreScrubbedBefor
     EXPECT_EQ(resume_payload.at("stderr").at("tail").get<std::string>().find(secret), std::string::npos);
 }
 
+TEST_F(BackgroundShellCompletionTest, CompletionTitlesAreScrubbedBeforePersistence) {
+    const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
+    BackgroundCompletionDispatcher dispatcher(&tool_context_);
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-title",
+        .command = "echo " + secret,
+        .working_dir = workspace_root_.string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "inbox"}},
+    });
+
+    const auto items = wait_for_inbox_size(1);
+    ASSERT_EQ(items.size(), 1U);
+    EXPECT_EQ(items.front().title.find(secret), std::string::npos);
+    EXPECT_NE(items.front().title.find("[REDACTED]"), std::string::npos);
+}
+
+TEST_F(BackgroundShellCompletionTest, InvalidUtf8OutputAndPromptStillProduceCompletionPayload) {
+    const std::string prompt = std::string("Prompt ") + "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80\xFF";
+    const std::string stdout_tail = std::string("ok") + "\xFF\xFE\xE4\xB8\xAD";
+    const std::string stderr_tail = std::string("err") + "\xFF";
+    BackgroundCompletionDispatcher dispatcher(&tool_context_);
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-invalid-utf8",
+        .command = std::string("printf '") + "\xE4\xBD\xA0" + "'",
+        .working_dir = workspace_root_.string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = stdout_tail, .total_bytes = stdout_tail.size(), .truncated = false},
+        .stderr = {.tail = stderr_tail, .total_bytes = stderr_tail.size(), .truncated = false},
+        .metadata =
+            {
+                {std::string(background_completion_mode_metadata_key), "resume"},
+                {std::string(background_completion_prompt_metadata_key), prompt},
+            },
+    });
+
+    const auto items = wait_for_inbox_size(1);
+    ASSERT_EQ(items.size(), 1U);
+    const auto resume_messages = wait_for_resume_messages_size(1);
+    ASSERT_EQ(resume_messages.size(), 1U);
+
+    const auto inbox_payload = json::parse(items.front().body);
+    const auto resume_payload = json::parse(resume_messages.front());
+    const std::string expected_prompt = "Prompt \xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
+    const std::string expected_stdout = "ok\xE4\xB8\xAD";
+    const std::string expected_stderr = "err";
+
+    EXPECT_EQ(inbox_payload.at("on_complete").at("prompt"), expected_prompt);
+    EXPECT_EQ(resume_payload.at("on_complete").at("prompt"), expected_prompt);
+    EXPECT_EQ(inbox_payload.at("stdout").at("tail"), expected_stdout);
+    EXPECT_EQ(resume_payload.at("stdout").at("tail"), expected_stdout);
+    EXPECT_EQ(inbox_payload.at("stderr").at("tail"), expected_stderr);
+    EXPECT_EQ(resume_payload.at("stderr").at("tail"), expected_stderr);
+}
+
 TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNotes) {
+    const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
     ToolRuntimeContext failing_context = tool_context_;
     failing_context.background_completion_runtime = make_test_background_completion_runtime_bindings(store_, [](const std::string &) {
         return std::optional<std::string>{"resume callback failed"};
@@ -319,7 +385,7 @@ TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNo
     BackgroundCompletionDispatcher dispatcher(&failing_context);
     dispatcher.dispatch(BackgroundProcessCompletionEvent{
         .process_id = "proc-test",
-        .command = "printf 'done\\n'",
+        .command = "echo " + secret,
         .working_dir = workspace_root_.string(),
         .pid = 1234,
         .terminal_status = BackgroundProcessTerminalStatus::exited,
@@ -343,6 +409,10 @@ TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNo
     EXPECT_EQ(completion.at("on_complete").at("mode"), "resume");
     EXPECT_EQ(failure.at("process_id"), "proc-test");
     EXPECT_EQ(failure.at("reason"), "resume callback failed");
+    EXPECT_EQ(completion_item->title.find(secret), std::string::npos);
+    EXPECT_EQ(failure_item->title.find(secret), std::string::npos);
+    EXPECT_NE(completion_item->title.find("[REDACTED]"), std::string::npos);
+    EXPECT_NE(failure_item->title.find("[REDACTED]"), std::string::npos);
 }
 
 } // namespace

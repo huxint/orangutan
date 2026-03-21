@@ -1,5 +1,6 @@
 #include "features/tools/core/background-completion.hpp"
 
+#include "features/memory/memory-extract.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/types.hpp"
 
@@ -26,6 +27,7 @@ constexpr size_t max_working_dir_chars = 1024;
 constexpr size_t max_failure_reason_chars = 512;
 constexpr size_t max_failure_payload_bytes = background_completion_payload_max_bytes * 2;
 constexpr size_t max_title_command_chars = 80;
+constexpr size_t max_inbox_title_chars = 160;
 
 std::string process_status(const BackgroundProcessCompletionEvent &event) {
     switch (event.terminal_status) {
@@ -42,27 +44,89 @@ std::string process_status(const BackgroundProcessCompletionEvent &event) {
     }
 }
 
-std::string truncate_payload_text(std::string_view text, size_t max_chars) {
-    if (text.size() <= max_chars) {
+size_t utf8_char_len(std::string_view input, size_t pos) {
+    if (pos >= input.size()) {
+        return 0;
+    }
+
+    const auto byte = static_cast<unsigned char>(input[pos]);
+    size_t expected = 0;
+    if (byte <= 0x7F) {
+        expected = 1;
+    } else if ((byte & 0xE0) == 0xC0) {
+        expected = 2;
+    } else if ((byte & 0xF0) == 0xE0) {
+        expected = 3;
+    } else if ((byte & 0xF8) == 0xF0) {
+        expected = 4;
+    } else {
+        return 0;
+    }
+    if (pos + expected > input.size()) {
+        return 0;
+    }
+    for (size_t i = 1; i < expected; ++i) {
+        if ((static_cast<unsigned char>(input[pos + i]) & 0xC0) != 0x80) {
+            return 0;
+        }
+    }
+    return expected;
+}
+
+std::string truncate_valid_utf8_prefix(std::string_view text, size_t max_bytes, bool append_ellipsis = true) {
+    if (text.size() <= max_bytes) {
         return std::string(text);
     }
-    if (max_chars <= 3) {
-        return std::string(text.substr(0, max_chars));
+    if (max_bytes == 0) {
+        return {};
     }
-    return std::string(text.substr(0, max_chars - 3)) + "...";
+
+    const std::string_view ellipsis = append_ellipsis && max_bytes > 3 ? std::string_view{"..."} : std::string_view{};
+    const size_t limit = max_bytes - ellipsis.size();
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t char_len = utf8_char_len(text, pos);
+        if (char_len == 0 || pos + char_len > limit) {
+            break;
+        }
+        pos += char_len;
+    }
+
+    std::string result(text.substr(0, pos));
+    result.append(ellipsis);
+    return result;
+}
+
+std::string sanitize_and_truncate_text(std::string_view text, size_t max_bytes, bool append_ellipsis = true) {
+    return truncate_valid_utf8_prefix(memory_detail::sanitize_utf8(text), max_bytes, append_ellipsis);
+}
+
+std::string sanitize_and_suffix_text(std::string_view text, size_t max_bytes) {
+    std::string sanitized = memory_detail::sanitize_utf8(text);
+    if (sanitized.size() <= max_bytes) {
+        return sanitized;
+    }
+
+    size_t start = sanitized.size() - max_bytes;
+    while (start < sanitized.size() && (static_cast<unsigned char>(sanitized[start]) & 0xC0) == 0x80) {
+        ++start;
+    }
+    return sanitized.substr(start);
+}
+
+std::string scrub_and_bound_title(std::string_view title) {
+    return sanitize_and_truncate_text(scrub_tool_output(memory_detail::sanitize_utf8(title)), max_inbox_title_chars);
 }
 
 std::string clip_command(std::string_view command) {
-    return truncate_payload_text(command, max_title_command_chars);
+    return sanitize_and_truncate_text(command, max_title_command_chars);
 }
 
 json summarize_output(const BackgroundProcessOutputMetadata &output) {
-    std::string tail = output.tail;
+    const std::string sanitized_tail = memory_detail::sanitize_utf8(output.tail);
+    std::string tail = sanitize_and_suffix_text(output.tail, max_output_summary_bytes);
     bool truncated = output.truncated;
-    if (tail.size() > max_output_summary_bytes) {
-        tail = tail.substr(tail.size() - max_output_summary_bytes);
-        truncated = true;
-    }
+    truncated = truncated || tail.size() < sanitized_tail.size();
 
     return {
         {"tail", std::move(tail)},
@@ -80,7 +144,7 @@ std::string completion_mode(const std::map<std::string, std::string> &metadata) 
 
 std::optional<std::string> completion_prompt(const std::map<std::string, std::string> &metadata) {
     if (const auto it = metadata.find(std::string(background_completion_prompt_metadata_key)); it != metadata.end()) {
-        return truncate_payload_text(it->second, background_completion_prompt_max_chars);
+        return sanitize_and_truncate_text(it->second, background_completion_prompt_max_chars);
     }
     return std::nullopt;
 }
@@ -88,11 +152,11 @@ std::optional<std::string> completion_prompt(const std::map<std::string, std::st
 json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
     json payload = {
         {"type", completion_message_type},
-        {"runtime_key", truncate_payload_text(runtime_key, max_runtime_key_chars)},
-        {"agent_key", truncate_payload_text(agent_key, max_agent_key_chars)},
-        {"process_id", truncate_payload_text(event.process_id, max_process_id_chars)},
-        {"command", truncate_payload_text(event.command, max_command_chars)},
-        {"working_dir", truncate_payload_text(event.working_dir, max_working_dir_chars)},
+        {"runtime_key", sanitize_and_truncate_text(runtime_key, max_runtime_key_chars)},
+        {"agent_key", sanitize_and_truncate_text(agent_key, max_agent_key_chars)},
+        {"process_id", sanitize_and_truncate_text(event.process_id, max_process_id_chars)},
+        {"command", sanitize_and_truncate_text(event.command, max_command_chars)},
+        {"working_dir", sanitize_and_truncate_text(event.working_dir, max_working_dir_chars)},
         {"pid", event.pid},
         {"status", process_status(event)},
         {"kill_requested", event.kill_requested},
@@ -109,14 +173,14 @@ json build_completion_payload(const BackgroundProcessCompletionEvent &event, std
 }
 
 std::string inbox_title_for_event(const BackgroundProcessCompletionEvent &event) {
-    return "Background process " + process_status(event) + ": " + clip_command(event.command);
+    return scrub_and_bound_title("Background process " + process_status(event) + ": " + clip_command(event.command));
 }
 
 std::string failure_reason_or_default(const std::optional<std::string> &reason) {
     if (!reason.has_value() || reason->empty()) {
         return "resume callback returned an unspecified failure";
     }
-    return truncate_payload_text(*reason, max_failure_reason_chars);
+    return sanitize_and_truncate_text(*reason, max_failure_reason_chars);
 }
 
 bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
@@ -196,10 +260,10 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
     const auto insert_resume_failure_note = [&](std::string_view reason) {
         const auto failure_payload = json{
             {"type", completion_resume_failure_type},
-            {"runtime_key", truncate_payload_text(runtime_key_, max_runtime_key_chars)},
-            {"agent_key", truncate_payload_text(agent_key_, max_agent_key_chars)},
-            {"process_id", truncate_payload_text(event.process_id, max_process_id_chars)},
-            {"reason", truncate_payload_text(reason, max_failure_reason_chars)},
+            {"runtime_key", sanitize_and_truncate_text(runtime_key_, max_runtime_key_chars)},
+            {"agent_key", sanitize_and_truncate_text(agent_key_, max_agent_key_chars)},
+            {"process_id", sanitize_and_truncate_text(event.process_id, max_process_id_chars)},
+            {"reason", sanitize_and_truncate_text(reason, max_failure_reason_chars)},
             {"completion", persisted_payload},
         };
         const auto failure_body = scrub_tool_output(failure_payload.dump(2));
@@ -212,7 +276,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
                                     .agent_key = agent_key_,
                                     .source_kind = std::string(inbox_source_kind),
                                     .source_run_id = event.process_id,
-                                    .title = "Background completion resume failed: " + clip_command(event.command),
+                                    .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
                                     .body = std::move(failure_body),
                                     .created_at = automation::to_unix_seconds(automation::Clock::now()),
                                 },
