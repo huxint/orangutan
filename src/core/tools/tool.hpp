@@ -22,23 +22,33 @@ class Runtime;
 class RuntimeMemory;
 class SubagentManager;
 using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
+using BackgroundCompletionOwnerToken = std::shared_ptr<void>;
 
 struct BackgroundCompletionRuntimeBindings {
     struct Snapshot {
+        BackgroundCompletionOwnerToken owner_guard;
         automation::Runtime *automation_runtime = nullptr;
         BackgroundCompletionResumeCallback resume_callback;
     };
 
     BackgroundCompletionRuntimeBindings() = default;
 
-    BackgroundCompletionRuntimeBindings(automation::Runtime *automation_runtime, BackgroundCompletionResumeCallback resume_callback = {})
-    : automation_runtime_(automation_runtime),
+    BackgroundCompletionRuntimeBindings(BackgroundCompletionOwnerToken owner_token, automation::Runtime *automation_runtime,
+                                        BackgroundCompletionResumeCallback resume_callback = {})
+    : owner_token_(std::move(owner_token)),
+      automation_runtime_(automation_runtime),
       resume_callback_(std::move(resume_callback)) {}
 
     [[nodiscard]]
     Snapshot snapshot() const {
         std::scoped_lock lock(mutex_);
+        auto owner_guard = owner_token_.lock();
+        if (owner_guard == nullptr) {
+            return {};
+        }
+
         return {
+            .owner_guard = std::move(owner_guard),
             .automation_runtime = automation_runtime_,
             .resume_callback = resume_callback_,
         };
@@ -46,24 +56,27 @@ struct BackgroundCompletionRuntimeBindings {
 
     void invalidate() {
         std::scoped_lock lock(mutex_);
+        owner_token_.reset();
         automation_runtime_ = nullptr;
         resume_callback_ = {};
     }
 
 private:
     mutable std::mutex mutex_;
+    std::weak_ptr<void> owner_token_;
     automation::Runtime *automation_runtime_ = nullptr;
     BackgroundCompletionResumeCallback resume_callback_;
 };
 
 [[nodiscard]]
-inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(automation::Runtime *automation_runtime,
+inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionOwnerToken owner_token,
+                                                                                                        automation::Runtime *automation_runtime,
                                                                                                         BackgroundCompletionResumeCallback resume_callback = {}) {
-    if (automation_runtime == nullptr) {
+    if (owner_token == nullptr || automation_runtime == nullptr) {
         return nullptr;
     }
 
-    return std::make_shared<BackgroundCompletionRuntimeBindings>(automation_runtime, std::move(resume_callback));
+    return std::make_shared<BackgroundCompletionRuntimeBindings>(std::move(owner_token), automation_runtime, std::move(resume_callback));
 }
 
 struct ToolRuntimeContext {

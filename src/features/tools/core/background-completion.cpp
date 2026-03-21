@@ -123,7 +123,8 @@ bool BackgroundCompletionDispatcher::supports_completion_routing() const {
         return false;
     }
 
-    return bindings->snapshot().automation_runtime != nullptr;
+    const auto snapshot = bindings->snapshot();
+    return snapshot.owner_guard != nullptr && snapshot.automation_runtime != nullptr;
 }
 
 bool BackgroundCompletionDispatcher::supports_resume_callback() const {
@@ -132,7 +133,8 @@ bool BackgroundCompletionDispatcher::supports_resume_callback() const {
         return false;
     }
 
-    return static_cast<bool>(bindings->snapshot().resume_callback);
+    const auto snapshot = bindings->snapshot();
+    return snapshot.owner_guard != nullptr && static_cast<bool>(snapshot.resume_callback);
 }
 
 void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionEvent &event) const {
@@ -142,7 +144,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
     }
 
     const auto runtime_snapshot = bindings->snapshot();
-    if (runtime_snapshot.automation_runtime == nullptr) {
+    if (runtime_snapshot.owner_guard == nullptr || runtime_snapshot.automation_runtime == nullptr) {
         return;
     }
 

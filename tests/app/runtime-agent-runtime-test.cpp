@@ -164,6 +164,63 @@ TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance
     EXPECT_NE(runtime.system_prompt.find("subagent_spawn"), std::string::npos);
 }
 
+TEST_F(RuntimeAgentRuntimeTest, RuntimeWithoutCompletionOwnerDoesNotEnableCompletionRouting) {
+    auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation-no-owner.db").string());
+    auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+
+    auto input = make_input();
+    input.automation_runtime = automation_runtime.get();
+    input.background_completion_resume = [](const std::string &) {
+        return std::optional<std::string>{};
+    };
+
+    auto runtime = build_agent_runtime(input);
+    const auto definitions = runtime.tools.definitions();
+    const auto *shell = find_tool_named(definitions, "shell");
+
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    EXPECT_EQ(runtime.tool_context.background_completion_runtime, nullptr);
+    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
+}
+
+TEST_F(RuntimeAgentRuntimeTest, RuntimeWithCompletionOwnerEnablesCompletionRoutingUntilOwnerExpires) {
+    auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation-with-owner.db").string());
+    auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+    auto completion_owner = std::make_shared<int>(1);
+
+    auto input = make_input();
+    input.automation_runtime = automation_runtime.get();
+    input.background_completion_owner = completion_owner;
+    input.background_completion_resume = [](const std::string &) {
+        return std::optional<std::string>{};
+    };
+
+    auto runtime = build_agent_runtime(input);
+    const auto definitions = runtime.tools.definitions();
+    const auto *shell = find_tool_named(definitions, "shell");
+
+    ASSERT_NE(runtime.tool_context.background_completion_runtime, nullptr);
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    EXPECT_TRUE(shell->input_schema["properties"].contains("on_complete"));
+
+    {
+        const auto live_snapshot = runtime.tool_context.background_completion_runtime->snapshot();
+        ASSERT_NE(live_snapshot.owner_guard, nullptr);
+        EXPECT_EQ(live_snapshot.automation_runtime, automation_runtime.get());
+        EXPECT_TRUE(static_cast<bool>(live_snapshot.resume_callback));
+    }
+
+    input.background_completion_owner.reset();
+    completion_owner.reset();
+
+    const auto expired_snapshot = runtime.tool_context.background_completion_runtime->snapshot();
+    EXPECT_EQ(expired_snapshot.owner_guard, nullptr);
+    EXPECT_EQ(expired_snapshot.automation_runtime, nullptr);
+    EXPECT_FALSE(static_cast<bool>(expired_snapshot.resume_callback));
+}
+
 TEST_F(RuntimeAgentRuntimeTest, LoadsSkillsPromptFromConfiguredSkillDirectory) {
     const auto skill_root = workspace_root() / "skills";
     write_skill(skill_root, "delegation", "delegation", "Always report concise delegation status.");
@@ -233,7 +290,9 @@ TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBefor
             auto input = make_input();
             auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation.db").string());
             auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+            auto completion_owner = std::make_shared<int>(1);
             input.automation_runtime = automation_runtime.get();
+            input.background_completion_owner = completion_owner;
             input.background_completion_resume = [](const std::string &) {
                 return std::optional<std::string>{};
             };
@@ -260,6 +319,8 @@ TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBefor
                     }
                 }
 
+                input.background_completion_owner.reset();
+                completion_owner.reset();
                 automation_runtime.reset();
                 automation_store.reset();
             }

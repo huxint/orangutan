@@ -50,6 +50,7 @@ struct AgentRuntimeBuildInput {
     std::vector<std::string> skill_paths;
     std::vector<std::string> hook_paths;
     BackgroundCompletionResumeCallback background_completion_resume;
+    BackgroundCompletionOwnerToken background_completion_owner;
 };
 
 struct AgentRuntimeBundle {
