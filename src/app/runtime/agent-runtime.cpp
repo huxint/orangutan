@@ -39,7 +39,11 @@ AgentRuntimeBundle::AgentRuntimeBundle()
   tools(*tools_storage_),
   tool_context(*tool_context_storage_) {}
 
-AgentRuntimeBundle::~AgentRuntimeBundle() = default;
+AgentRuntimeBundle::~AgentRuntimeBundle() {
+    if (tool_context_storage_ != nullptr) {
+        tool_context_storage_->invalidate_background_completion_runtime();
+    }
+}
 
 AgentRuntimeBundle::AgentRuntimeBundle(AgentRuntimeBundle &&other) noexcept
 : tool_context_storage_(other.tool_context_storage_ ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),

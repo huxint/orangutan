@@ -119,24 +119,37 @@ BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntime
 
 bool BackgroundCompletionDispatcher::supports_completion_routing() const {
     const auto bindings = background_completion_runtime_.lock();
-    return bindings != nullptr && bindings->automation_runtime != nullptr;
+    if (bindings == nullptr) {
+        return false;
+    }
+
+    return bindings->snapshot().automation_runtime != nullptr;
 }
 
 bool BackgroundCompletionDispatcher::supports_resume_callback() const {
     const auto bindings = background_completion_runtime_.lock();
-    return bindings != nullptr && static_cast<bool>(bindings->resume_callback);
+    if (bindings == nullptr) {
+        return false;
+    }
+
+    return static_cast<bool>(bindings->snapshot().resume_callback);
 }
 
 void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionEvent &event) const {
     const auto bindings = background_completion_runtime_.lock();
-    if (bindings == nullptr || bindings->automation_runtime == nullptr) {
+    if (bindings == nullptr) {
+        return;
+    }
+
+    const auto runtime_snapshot = bindings->snapshot();
+    if (runtime_snapshot.automation_runtime == nullptr) {
         return;
     }
 
     const auto payload = build_completion_payload(event, runtime_key_, agent_key_);
     const auto payload_text = scrub_tool_output(payload.dump(2));
     const auto persisted_payload = json::parse(payload_text);
-    auto &store = bindings->automation_runtime->store();
+    auto &store = runtime_snapshot.automation_runtime->store();
     (void)store.insert_inbox(automation::InboxItem{
         .agent_key = agent_key_,
         .source_kind = std::string(inbox_source_kind),
@@ -165,13 +178,13 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
         });
     };
 
-    if (!bindings->resume_callback) {
+    if (!runtime_snapshot.resume_callback) {
         insert_resume_failure_note("resume requested, but no background completion resume callback is registered");
         return;
     }
 
     try {
-        const auto error = bindings->resume_callback(payload_text);
+        const auto error = runtime_snapshot.resume_callback(payload_text);
         if (error.has_value()) {
             spdlog::warn("background completion resume callback failed for process {}: {}", event.process_id, *error);
             insert_resume_failure_note(failure_reason_or_default(error));

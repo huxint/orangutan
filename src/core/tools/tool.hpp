@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,8 +24,36 @@ class SubagentManager;
 using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
 
 struct BackgroundCompletionRuntimeBindings {
-    automation::Runtime *automation_runtime = nullptr;
-    BackgroundCompletionResumeCallback resume_callback;
+    struct Snapshot {
+        automation::Runtime *automation_runtime = nullptr;
+        BackgroundCompletionResumeCallback resume_callback;
+    };
+
+    BackgroundCompletionRuntimeBindings() = default;
+
+    BackgroundCompletionRuntimeBindings(automation::Runtime *automation_runtime, BackgroundCompletionResumeCallback resume_callback = {})
+    : automation_runtime_(automation_runtime),
+      resume_callback_(std::move(resume_callback)) {}
+
+    [[nodiscard]]
+    Snapshot snapshot() const {
+        std::scoped_lock lock(mutex_);
+        return {
+            .automation_runtime = automation_runtime_,
+            .resume_callback = resume_callback_,
+        };
+    }
+
+    void invalidate() {
+        std::scoped_lock lock(mutex_);
+        automation_runtime_ = nullptr;
+        resume_callback_ = {};
+    }
+
+private:
+    mutable std::mutex mutex_;
+    automation::Runtime *automation_runtime_ = nullptr;
+    BackgroundCompletionResumeCallback resume_callback_;
 };
 
 [[nodiscard]]
@@ -34,10 +63,7 @@ inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_comp
         return nullptr;
     }
 
-    auto bindings = std::make_shared<BackgroundCompletionRuntimeBindings>();
-    bindings->automation_runtime = automation_runtime;
-    bindings->resume_callback = std::move(resume_callback);
-    return bindings;
+    return std::make_shared<BackgroundCompletionRuntimeBindings>(automation_runtime, std::move(resume_callback));
 }
 
 struct ToolRuntimeContext {
@@ -53,6 +79,16 @@ struct ToolRuntimeContext {
     automation::Runtime *automation_runtime = nullptr;
     ToolApprovalCallback approval_callback;
     std::shared_ptr<BackgroundCompletionRuntimeBindings> background_completion_runtime;
+
+    void invalidate_background_completion_runtime() {
+        automation_runtime = nullptr;
+        if (background_completion_runtime == nullptr) {
+            return;
+        }
+
+        background_completion_runtime->invalidate();
+        background_completion_runtime.reset();
+    }
 };
 
 struct Tool {

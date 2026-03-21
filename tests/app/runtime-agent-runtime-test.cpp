@@ -1,6 +1,8 @@
 #include "app/runtime/agent-runtime.hpp"
 
 #include "app/runtime/identity.hpp"
+#include "features/automation/runtime.hpp"
+#include "features/automation/store.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
 #include "test-helpers.hpp"
@@ -221,6 +223,60 @@ TEST_F(RuntimeAgentRuntimeTest, KeepsToolRegistryStableAndPermissionsAliveAfterM
 
     EXPECT_TRUE(result.is_error);
     EXPECT_NE(result.content.find("Shell tool blocked by approval policy."), std::string::npos);
+}
+
+TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBeforeBackgroundShutdown) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+
+    EXPECT_EXIT(
+        {
+            auto input = make_input();
+            auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation.db").string());
+            auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+            input.automation_runtime = automation_runtime.get();
+            input.background_completion_resume = [](const std::string &) {
+                return std::optional<std::string>{};
+            };
+
+            std::shared_ptr<BackgroundCompletionRuntimeBindings> bindings;
+            int exit_code = 0;
+            {
+                auto runtime = build_agent_runtime(input);
+                bindings = runtime.tool_context.background_completion_runtime;
+                if (bindings == nullptr) {
+                    exit_code = 10;
+                } else {
+                    const auto result = runtime.tools.execute(ToolUseBlock{
+                        .id = "background-shutdown",
+                        .name = "shell",
+                        .input =
+                            {
+                                {"command", "sleep 30"},
+                                {"background", true},
+                            },
+                    });
+                    if (result.is_error) {
+                        exit_code = 11;
+                    }
+                }
+
+                automation_runtime.reset();
+                automation_store.reset();
+            }
+
+            if (bindings != nullptr) {
+                const auto snapshot = bindings->snapshot();
+                if (snapshot.automation_runtime != nullptr) {
+                    exit_code = 12;
+                }
+                if (static_cast<bool>(snapshot.resume_callback)) {
+                    exit_code = 13;
+                }
+            }
+
+            _exit(exit_code);
+        },
+        ::testing::ExitedWithCode(0), "");
 }
 
 } // namespace
