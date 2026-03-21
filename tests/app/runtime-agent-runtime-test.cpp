@@ -12,6 +12,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -130,6 +131,9 @@ private:
 
 TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance) {
     auto input = make_input();
+    input.background_completion_resume = [](const std::string &) {
+        return std::optional<std::string>{};
+    };
 
     auto runtime = build_agent_runtime(input);
 
@@ -138,6 +142,10 @@ TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance
     ASSERT_NE(runtime.memory, nullptr);
     EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
     EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "shell"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_list"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_poll"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_kill"));
+    EXPECT_TRUE(static_cast<bool>(runtime.tool_context.background_completion_resume));
     EXPECT_NE(runtime.system_prompt.find("subagent"), std::string::npos);
     EXPECT_NE(runtime.system_prompt.find("subagent_spawn"), std::string::npos);
 }

@@ -18,6 +18,7 @@ class Runtime;
 
 class RuntimeMemory;
 class SubagentManager;
+using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
 
 struct ToolRuntimeContext {
     std::string runtime_key;
@@ -31,6 +32,7 @@ struct ToolRuntimeContext {
     std::string raw_caller_id;
     automation::Runtime *automation_runtime = nullptr;
     ToolApprovalCallback approval_callback;
+    BackgroundCompletionResumeCallback background_completion_resume;
 };
 
 struct Tool {

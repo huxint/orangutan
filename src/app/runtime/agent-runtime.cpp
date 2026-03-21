@@ -76,6 +76,7 @@ AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         .raw_caller_id = input.raw_caller_id,
         .automation_runtime = input.automation_runtime,
         .approval_callback = input.approval_callback,
+        .background_completion_resume = input.background_completion_resume,
     };
 
     *runtime.permissions_storage_ = input.permissions;

@@ -14,6 +14,8 @@
 
 namespace orangutan {
 
+class BackgroundCompletionDispatcher;
+
 inline std::filesystem::path normalize_tool_path(const std::filesystem::path &path) {
     std::error_code ec;
     auto normalized = std::filesystem::weakly_canonical(path, ec);
@@ -113,8 +115,8 @@ inline std::filesystem::path resolve_tool_working_dir(const std::string &working
     return resolved;
 }
 
-void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
-                         const std::shared_ptr<BackgroundProcessManager> &process_manager);
+void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions, const ToolRuntimeContext *tool_context,
+                         const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager);
 void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
 void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
 void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);

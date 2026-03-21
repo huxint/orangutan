@@ -49,6 +49,7 @@ struct AgentRuntimeBuildInput {
     std::vector<Config::McpServerConfig> mcp_servers;
     std::vector<std::string> skill_paths;
     std::vector<std::string> hook_paths;
+    BackgroundCompletionResumeCallback background_completion_resume;
 };
 
 struct AgentRuntimeBundle {

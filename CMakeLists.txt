@@ -100,6 +100,7 @@ add_library(orangutan_lib STATIC
     src/features/tools/builtin/inbox.cpp
     src/features/tools/builtin/register-builtin.cpp
     src/features/tools/builtin/task.cpp
+    src/features/tools/core/background-completion.cpp
     src/features/tools/core/command-sandbox.cpp
     src/features/tools/core/edit.cpp
     src/features/tools/core/hashline.cpp
@@ -185,6 +186,7 @@ if(BUILD_TESTING)
         tests/core/types-test.cpp
         tests/features/agent-loop-test.cpp
         tests/features/automation-runtime-test.cpp
+        tests/features/background-shell-completion-test.cpp
         tests/features/automation-store-test.cpp
         tests/features/channel-test.cpp
         tests/features/cron-parser-test.cpp
