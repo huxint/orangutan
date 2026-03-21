@@ -162,6 +162,14 @@ CapturedOutput read_output_tail(const std::filesystem::path &path, size_t max_by
     return captured;
 }
 
+BackgroundProcessOutputMetadata to_output_metadata(CapturedOutput captured) {
+    return {
+        .tail = std::move(captured.text),
+        .total_bytes = captured.total_bytes,
+        .truncated = captured.truncated,
+    };
+}
+
 size_t file_size_or_zero(const std::filesystem::path &path) {
     std::error_code ec;
     const auto size = std::filesystem::file_size(path, ec);
@@ -482,6 +490,9 @@ struct BackgroundProcessManager::Impl {
         bool kill_requested = false;
         std::optional<int> exit_code;
         std::optional<int> signal_number;
+        BackgroundProcessCompletionPolicy completion_policy;
+        bool completion_published = false;
+        std::thread wait_thread;
     };
 
     mutable std::mutex mutex;
@@ -489,13 +500,15 @@ struct BackgroundProcessManager::Impl {
     std::unordered_map<std::string, std::shared_ptr<ProcessEntry>> entries_by_id;
     uint64_t next_id = 0;
     std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
+    BackgroundProcessManager::CompletionCallback completion_callback;
 
     Impl(const Impl &) = delete;
     Impl &operator=(const Impl &) = delete;
     Impl(Impl &&) = delete;
     Impl &operator=(Impl &&) = delete;
 
-    Impl() {
+    explicit Impl(BackgroundProcessManager::CompletionCallback callback)
+    : completion_callback(std::move(callback)) {
         std::filesystem::create_directories(temp_root);
     }
 
@@ -531,6 +544,32 @@ struct BackgroundProcessManager::Impl {
         summary.stdout_bytes = file_size_or_zero(entry->stdout_path);
         summary.stderr_bytes = file_size_or_zero(entry->stderr_path);
         return summary;
+    }
+
+    void erase_entry(const std::string &process_id) {
+        std::scoped_lock lock(mutex);
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                     [&process_id](const auto &entry) {
+                                         return entry->process_id == process_id;
+                                     }),
+                      entries.end());
+        entries_by_id.erase(process_id);
+    }
+
+    static void join_wait_thread(const std::shared_ptr<ProcessEntry> &entry) {
+        std::thread wait_thread;
+        {
+            std::scoped_lock lock(entry->mutex);
+            if (!entry->wait_thread.joinable()) {
+                return;
+            }
+            if (entry->wait_thread.get_id() == std::this_thread::get_id()) {
+                entry->wait_thread.detach();
+                return;
+            }
+            wait_thread = std::move(entry->wait_thread);
+        }
+        wait_thread.join();
     }
 
     [[nodiscard]]
@@ -593,13 +632,17 @@ struct BackgroundProcessManager::Impl {
             (void)terminate_entry(entry);
         }
 
+        for (const auto &entry : active_entries) {
+            join_wait_thread(entry);
+        }
+
         std::error_code ec;
         std::filesystem::remove_all(temp_root, ec);
     }
 };
 
-BackgroundProcessManager::BackgroundProcessManager()
-: impl_(std::make_unique<Impl>()) {}
+BackgroundProcessManager::BackgroundProcessManager(CompletionCallback completion_callback)
+: impl_(std::make_unique<Impl>(std::move(completion_callback))) {}
 
 BackgroundProcessManager::~BackgroundProcessManager() = default;
 
@@ -607,7 +650,7 @@ BackgroundProcessManager::BackgroundProcessManager(BackgroundProcessManager &&) 
 
 BackgroundProcessManager &BackgroundProcessManager::operator=(BackgroundProcessManager &&) noexcept = default;
 
-BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig &config, const std::string &display_command) {
+BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig &config, const std::string &display_command, BackgroundProcessCompletionPolicy completion) {
     auto entry = std::make_shared<Impl::ProcessEntry>();
     {
         std::scoped_lock lock(impl_->mutex);
@@ -617,6 +660,7 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
     entry->working_dir = config.working_dir;
     entry->stdout_path = impl_->temp_root / (entry->process_id + ".stdout");
     entry->stderr_path = impl_->temp_root / (entry->process_id + ".stderr");
+    entry->completion_policy = std::move(completion);
 
     std::ofstream(entry->stdout_path).close();
     std::ofstream(entry->stderr_path).close();
@@ -631,41 +675,100 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
     }
 
     try {
-        std::thread([entry]() {
-            int status = 0;
-            pid_t waited = waitpid(entry->pid, &status, 0);
-            while (waited == -1 && errno == EINTR) {
-                waited = waitpid(entry->pid, &status, 0);
-            }
-
-            {
-                std::scoped_lock lock(entry->mutex);
-                entry->running = false;
-                entry->exit_code = -1;
-                if (waited != -1) {
-                    if (WIFEXITED(status)) {
-                        entry->exit_code = WEXITSTATUS(status);
-                    } else if (WIFSIGNALED(status)) {
-                        entry->signal_number = WTERMSIG(status);
-                        entry->exit_code = 128 + WTERMSIG(status);
-                    }
-                }
-            }
-            entry->cv.notify_all();
-        }).detach();
+        std::scoped_lock lock(impl_->mutex);
+        impl_->entries.push_back(entry);
+        impl_->entries_by_id.insert_or_assign(entry->process_id, entry);
     } catch (...) {
         signal_process(entry->pid, SIGKILL);
-        waitpid(entry->pid, nullptr, 0);
+        while (waitpid(entry->pid, nullptr, 0) == -1 && errno == EINTR) {
+        }
         std::error_code ec;
         std::filesystem::remove(entry->stdout_path, ec);
         std::filesystem::remove(entry->stderr_path, ec);
         throw;
     }
 
-    {
-        std::scoped_lock lock(impl_->mutex);
-        impl_->entries.push_back(entry);
-        impl_->entries_by_id.insert_or_assign(entry->process_id, entry);
+    try {
+        std::scoped_lock lock(entry->mutex);
+        entry->wait_thread = std::thread([entry, completion_callback = impl_->completion_callback]() {
+            int status = 0;
+            pid_t waited = waitpid(entry->pid, &status, 0);
+            while (waited == -1 && errno == EINTR) {
+                waited = waitpid(entry->pid, &status, 0);
+            }
+            const int wait_error = waited == -1 ? errno : 0;
+            if (waited == -1) {
+                spdlog::warn("waitpid() failed for background process {} (pid {}): {}", entry->process_id, entry->pid, std::strerror(wait_error));
+            }
+
+            BackgroundProcessCompletionEvent completion_event;
+            bool should_publish = false;
+            {
+                std::scoped_lock entry_lock(entry->mutex);
+                entry->running = false;
+                entry->exit_code = -1;
+                entry->signal_number.reset();
+
+                auto terminal_status = BackgroundProcessTerminalStatus::unknown;
+                if (waited != -1) {
+                    if (WIFEXITED(status)) {
+                        entry->exit_code = WEXITSTATUS(status);
+                        terminal_status = BackgroundProcessTerminalStatus::exited;
+                    } else if (WIFSIGNALED(status)) {
+                        entry->signal_number = WTERMSIG(status);
+                        entry->exit_code = 128 + WTERMSIG(status);
+                        terminal_status = BackgroundProcessTerminalStatus::signaled;
+                    }
+                }
+
+                if (entry->completion_policy.publish_completion_event && !entry->completion_published && completion_callback) {
+                    entry->completion_published = true;
+                    completion_event.process_id = entry->process_id;
+                    completion_event.command = entry->command;
+                    completion_event.working_dir = entry->working_dir;
+                    completion_event.pid = static_cast<int>(entry->pid);
+                    completion_event.kill_requested = entry->kill_requested;
+                    completion_event.terminal_status = terminal_status;
+                    completion_event.exit_code = entry->exit_code;
+                    completion_event.signal_number = entry->signal_number;
+                    completion_event.metadata = entry->completion_policy.metadata;
+                    should_publish = true;
+                }
+            }
+            entry->cv.notify_all();
+
+            if (!should_publish) {
+                return;
+            }
+
+            try {
+                completion_event.stdout = to_output_metadata(read_output_tail(entry->stdout_path));
+                completion_event.stderr = to_output_metadata(read_output_tail(entry->stderr_path));
+            } catch (const std::exception &ex) {
+                spdlog::error("background process completion event build failed for {}: {}", entry->process_id, ex.what());
+                return;
+            } catch (...) {
+                spdlog::error("background process completion event build failed for {} with non-standard exception", entry->process_id);
+                return;
+            }
+
+            try {
+                completion_callback(completion_event);
+            } catch (const std::exception &ex) {
+                spdlog::error("background process completion callback failed for {}: {}", entry->process_id, ex.what());
+            } catch (...) {
+                spdlog::error("background process completion callback failed for {} with non-standard exception", entry->process_id);
+            }
+        });
+    } catch (...) {
+        impl_->erase_entry(entry->process_id);
+        signal_process(entry->pid, SIGKILL);
+        while (waitpid(entry->pid, nullptr, 0) == -1 && errno == EINTR) {
+        }
+        std::error_code ec;
+        std::filesystem::remove(entry->stdout_path, ec);
+        std::filesystem::remove(entry->stderr_path, ec);
+        throw;
     }
 
     return Impl::summarize_entry(entry);

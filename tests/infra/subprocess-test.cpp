@@ -1,9 +1,14 @@
 #include "infra/subprocess/subprocess.hpp"
 #include "test-helpers.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -147,6 +152,79 @@ TEST(SubprocessTest, BackgroundManagerCapturesOutputAndExit) {
     EXPECT_NE(snapshot.stdout_output.find("tock"), std::string::npos);
 }
 
+TEST(SubprocessTest, BackgroundManagerPublishesCompletionEventExactlyOnceWithBoundedOutput) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    constexpr size_t max_output_tail_bytes = 16384;
+    const std::string stdout_text = std::string(20000, 'O') + "stdout-tail\n";
+    const std::string stderr_text = std::string(19000, 'E') + "stderr-tail\n";
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    size_t callback_count = 0;
+    std::optional<BackgroundProcessCompletionEvent> completion_event;
+
+    BackgroundProcessManager manager([&](const BackgroundProcessCompletionEvent &event) {
+        std::scoped_lock lock(mutex);
+        ++callback_count;
+        completion_event = event;
+        cv.notify_all();
+    });
+
+    const auto summary = manager.start(
+        {
+            .command = "python3 -c \"import sys; sys.stdout.write('O'*20000 + 'stdout-tail\\n'); "
+                       "sys.stderr.write('E'*19000 + 'stderr-tail\\n')\"",
+            .use_shell = true,
+        },
+        "completion event test",
+        {
+            .publish_completion_event = true,
+            .metadata = {{"job", "completion-test"}, {"token", "abc123"}},
+        });
+
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&completion_event] {
+            return completion_event.has_value();
+        }));
+    }
+
+    const auto snapshot = manager.poll(summary.process_id);
+    EXPECT_FALSE(snapshot.running);
+    EXPECT_EQ(snapshot.exit_code, 0);
+
+    const auto kill_snapshot = manager.kill(summary.process_id);
+    EXPECT_FALSE(kill_snapshot.running);
+    EXPECT_EQ(kill_snapshot.exit_code, 0);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    std::scoped_lock lock(mutex);
+    ASSERT_EQ(callback_count, 1U);
+    ASSERT_TRUE(completion_event.has_value());
+
+    EXPECT_EQ(completion_event->process_id, summary.process_id);
+    EXPECT_EQ(completion_event->command, "completion event test");
+    EXPECT_EQ(completion_event->pid, summary.pid);
+    EXPECT_FALSE(completion_event->kill_requested);
+    EXPECT_EQ(completion_event->terminal_status, BackgroundProcessTerminalStatus::exited);
+    ASSERT_TRUE(completion_event->exit_code.has_value());
+    EXPECT_EQ(*completion_event->exit_code, 0);
+    EXPECT_FALSE(completion_event->signal_number.has_value());
+    EXPECT_EQ(completion_event->metadata.at("job"), "completion-test");
+    EXPECT_EQ(completion_event->metadata.at("token"), "abc123");
+
+    EXPECT_EQ(completion_event->stdout.total_bytes, stdout_text.size());
+    EXPECT_TRUE(completion_event->stdout.truncated);
+    EXPECT_EQ(completion_event->stdout.tail.size(), max_output_tail_bytes);
+    EXPECT_EQ(completion_event->stdout.tail, stdout_text.substr(stdout_text.size() - max_output_tail_bytes));
+
+    EXPECT_EQ(completion_event->stderr.total_bytes, stderr_text.size());
+    EXPECT_TRUE(completion_event->stderr.truncated);
+    EXPECT_EQ(completion_event->stderr.tail.size(), max_output_tail_bytes);
+    EXPECT_EQ(completion_event->stderr.tail, stderr_text.substr(stderr_text.size() - max_output_tail_bytes));
+}
+
 TEST(SubprocessTest, BackgroundManagerKillStopsRunningProcess) {
     ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
     BackgroundProcessManager manager;
@@ -161,6 +239,103 @@ TEST(SubprocessTest, BackgroundManagerKillStopsRunningProcess) {
     EXPECT_FALSE(snapshot.running);
     EXPECT_TRUE(snapshot.kill_requested);
     EXPECT_TRUE(snapshot.signal_number.has_value());
+}
+
+TEST(SubprocessTest, BackgroundCompletionCallbackCanReenterManagerKillOnSignal) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    std::mutex mutex;
+    std::condition_variable cv;
+    size_t callback_count = 0;
+    std::optional<BackgroundProcessCompletionEvent> completion_event;
+    std::optional<BackgroundProcessSnapshot> callback_snapshot;
+    BackgroundProcessManager *manager_ptr = nullptr;
+
+    BackgroundProcessManager manager([&](const BackgroundProcessCompletionEvent &event) {
+        auto snapshot = manager_ptr->kill(event.process_id);
+        std::scoped_lock lock(mutex);
+        ++callback_count;
+        completion_event = event;
+        callback_snapshot = std::move(snapshot);
+        cv.notify_all();
+    });
+    manager_ptr = &manager;
+
+    const auto summary = manager.start(
+        {
+            .command = "python3 -c \"import time; time.sleep(10)\"",
+            .use_shell = true,
+        },
+        "reentrant callback test",
+        {
+            .publish_completion_event = true,
+            .metadata = {{"mode", "signal"}},
+        });
+
+    const auto kill_snapshot = manager.kill(summary.process_id);
+    EXPECT_FALSE(kill_snapshot.running);
+    EXPECT_TRUE(kill_snapshot.kill_requested);
+    ASSERT_TRUE(kill_snapshot.signal_number.has_value());
+
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] {
+            return completion_event.has_value() && callback_snapshot.has_value();
+        }));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    std::scoped_lock lock(mutex);
+    ASSERT_EQ(callback_count, 1U);
+    ASSERT_TRUE(completion_event.has_value());
+    ASSERT_TRUE(callback_snapshot.has_value());
+
+    EXPECT_EQ(completion_event->process_id, summary.process_id);
+    EXPECT_TRUE(completion_event->kill_requested);
+    EXPECT_EQ(completion_event->terminal_status, BackgroundProcessTerminalStatus::signaled);
+    ASSERT_TRUE(completion_event->signal_number.has_value());
+    EXPECT_EQ(completion_event->signal_number, kill_snapshot.signal_number);
+    ASSERT_TRUE(completion_event->exit_code.has_value());
+    EXPECT_EQ(completion_event->metadata.at("mode"), "signal");
+
+    EXPECT_EQ(callback_snapshot->process_id, summary.process_id);
+    EXPECT_FALSE(callback_snapshot->running);
+    EXPECT_TRUE(callback_snapshot->kill_requested);
+    EXPECT_EQ(callback_snapshot->signal_number, completion_event->signal_number);
+}
+
+TEST(SubprocessTest, BackgroundCompletionCallbackExceptionsAreSwallowed) {
+    ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
+    std::atomic<int> callback_count{0};
+
+    BackgroundProcessManager manager([&](const BackgroundProcessCompletionEvent &) {
+        callback_count.fetch_add(1, std::memory_order_relaxed);
+        throw std::runtime_error("boom");
+    });
+
+    const auto summary = manager.start(
+        {
+            .command = "printf 'done\\n'",
+            .use_shell = true,
+        },
+        "throwing callback test",
+        {
+            .publish_completion_event = true,
+        });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    BackgroundProcessSnapshot snapshot;
+    while (std::chrono::steady_clock::now() < deadline) {
+        snapshot = manager.poll(summary.process_id);
+        if (!snapshot.running && callback_count.load(std::memory_order_relaxed) == 1) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+
+    EXPECT_FALSE(snapshot.running);
+    EXPECT_EQ(snapshot.exit_code, 0);
+    EXPECT_EQ(callback_count.load(std::memory_order_relaxed), 1);
 }
 
 TEST(SubprocessTest, BackgroundManagerKillAfterCompletionDoesNotDeadlock) {

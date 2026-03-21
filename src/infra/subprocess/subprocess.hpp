@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,9 +48,42 @@ struct BackgroundProcessSnapshot : BackgroundProcessSummary {
     bool stderr_truncated = false;
 };
 
+enum class BackgroundProcessTerminalStatus {
+    exited,
+    signaled,
+    unknown,
+};
+
+struct BackgroundProcessOutputMetadata {
+    std::string tail;
+    size_t total_bytes = 0;
+    bool truncated = false;
+};
+
+struct BackgroundProcessCompletionPolicy {
+    bool publish_completion_event = false;
+    std::map<std::string, std::string> metadata;
+};
+
+struct BackgroundProcessCompletionEvent {
+    std::string process_id;
+    std::string command;
+    std::string working_dir;
+    int pid = -1;
+    bool kill_requested = false;
+    BackgroundProcessTerminalStatus terminal_status = BackgroundProcessTerminalStatus::unknown;
+    std::optional<int> exit_code;
+    std::optional<int> signal_number;
+    BackgroundProcessOutputMetadata stdout;
+    BackgroundProcessOutputMetadata stderr;
+    std::map<std::string, std::string> metadata;
+};
+
 class BackgroundProcessManager {
 public:
-    BackgroundProcessManager();
+    using CompletionCallback = std::function<void(const BackgroundProcessCompletionEvent &)>;
+
+    explicit BackgroundProcessManager(CompletionCallback completion_callback = {});
     ~BackgroundProcessManager();
 
     BackgroundProcessManager(const BackgroundProcessManager &) = delete;
@@ -57,7 +92,7 @@ public:
     BackgroundProcessManager &operator=(BackgroundProcessManager &&) noexcept;
 
     [[nodiscard]]
-    BackgroundProcessSummary start(const SubprocessConfig &config, const std::string &display_command);
+    BackgroundProcessSummary start(const SubprocessConfig &config, const std::string &display_command, BackgroundProcessCompletionPolicy completion = {});
 
     [[nodiscard]]
     std::vector<BackgroundProcessSummary> list() const;
