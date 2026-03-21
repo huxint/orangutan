@@ -12,6 +12,13 @@
 
 namespace orangutan {
 
+struct WebCompletionResumeState {
+    std::mutex mutex;
+    AgentLoop *agent = nullptr;
+    std::string agent_key;
+    automation::Runtime *automation_runtime = nullptr;
+};
+
 struct WebPendingApproval {
     std::string request_id;
     std::string tool;
@@ -30,6 +37,7 @@ struct WebSessionState {
     std::string session_id;
     std::unique_ptr<AgentRuntimeBundle> runtime;
     std::shared_ptr<WebPendingApproval> pending_approval;
+    std::shared_ptr<WebCompletionResumeState> completion_resume_state;
     std::atomic<bool> abort_requested{false};
     std::atomic<bool> running{false};
 

@@ -1,5 +1,6 @@
 #include "features/web/web-routes.hpp"
 
+#include "app/single-shot.hpp"
 #include "features/automation/runtime.hpp"
 #include "app/bootstrap.hpp"
 #include "app/runtime/agent-runtime.hpp"
@@ -81,7 +82,7 @@ ToolApprovalCallback default_web_approval_callback() {
 
 AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
                                                  std::string *current_session_id, SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
-                                                 ToolApprovalCallback approval_callback) {
+                                                 ToolApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
     const auto workspace_root = resolve_agent_workspace(agent, agent_key);
     const auto api_key = resolve_agent_api_key(config, agent);
     if (api_key.empty()) {
@@ -118,6 +119,14 @@ AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const Age
         .mcp_servers = config.mcp_servers,
         .skill_paths = config.skill_paths,
         .hook_paths = config.hook_paths,
+        .background_completion_runtime =
+            automation_runtime != nullptr
+                ? make_background_completion_runtime_bindings(
+                      [automation_runtime](const automation::InboxItem &item) {
+                          (void)automation_runtime->store().insert_inbox(item);
+                      },
+                      completion_resume_state != nullptr ? detail::make_web_completion_resume_callback(completion_resume_state) : BackgroundCompletionResumeCallback{})
+                : nullptr,
     };
     return build_agent_runtime(input);
 }
@@ -250,12 +259,30 @@ void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool 
 } // namespace
 
 AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                    SubagentManager *subagent_manager, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback) {
+                                                    SubagentManager *subagent_manager, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
+                                                    std::shared_ptr<WebCompletionResumeState> completion_resume_state) {
     const auto maybe_agent = find_effective_agent(&config, agent_key);
     if (!maybe_agent.has_value()) {
         throw std::runtime_error("agent not found");
     }
-    return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime, std::move(approval_callback));
+    return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime, std::move(approval_callback),
+                                         completion_resume_state);
+}
+
+BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(std::weak_ptr<WebCompletionResumeState> weak_state) {
+    return [weak_state](const std::string &message) -> std::optional<std::string> {
+        const auto state = weak_state.lock();
+        if (!state) {
+            return "web session is no longer live";
+        }
+
+        std::scoped_lock lock(state->mutex);
+        if (state->agent == nullptr) {
+            return "web session is no longer live";
+        }
+
+        return orangutan::app::run_completion_resume_message(*state->agent, message, state->agent_key, state->automation_runtime, {}, true);
+    };
 }
 
 bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
@@ -816,20 +843,25 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
+        session->completion_resume_state = std::make_shared<WebCompletionResumeState>();
+        session->completion_resume_state->agent_key = agent_key;
+        session->completion_resume_state->automation_runtime = automation_runtime;
         auto *session_ptr = session.get();
         auto approval_event_emitter = std::make_shared<detail::WebApprovalEventEmitter>();
         auto approval_stream_open = std::make_shared<std::function<bool()>>();
-        session->runtime = std::make_unique<AgentRuntimeBundle>(
-            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
-                                             [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter,
-                                              approval_stream_open](const ToolUseBlock &call, const std::string &prompt_text) {
-                                                 return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
-                                                                                   approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
-                                                                                   approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-                                             }));
+        session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(
+            *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
+            [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUseBlock &call,
+                                                                                                                                               const std::string &prompt_text) {
+                return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
+                                                  approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
+                                                  approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
+            },
+            session->completion_resume_state));
         if (session->agent() == nullptr) {
             throw std::runtime_error("failed to initialize web runtime agent");
         }
+        session->completion_resume_state->agent = session->agent();
 
         if (!session_id.empty() && store != nullptr) {
             session->agent()->set_history(store->load(session_id));
@@ -928,6 +960,12 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
                                              }
                                              if (approval_stream_open != nullptr) {
                                                  *approval_stream_open = {};
+                                             }
+                                             if (session_ptr->completion_resume_state != nullptr) {
+                                                 std::scoped_lock lock(session_ptr->completion_resume_state->mutex);
+                                                 // Once the request-scoped web session is tearing down, later background completions
+                                                 // must downgrade to inbox-only failure notes instead of touching destroyed state.
+                                                 session_ptr->completion_resume_state->agent = nullptr;
                                              }
 
                                              // Save session to store

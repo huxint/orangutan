@@ -1,5 +1,6 @@
 #include "app/channel-serve.hpp"
 
+#include "app/single-shot.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/agent/agent-loop.hpp"
@@ -47,6 +48,7 @@ struct ParsedChannelApprovalReply {
 struct ConversationRuntime {
     std::unique_ptr<AgentRuntimeBundle> runtime;
     HookManager *hook_manager = nullptr;
+    std::shared_ptr<detail::ChannelCompletionResumeState> completion_resume_state;
     std::string runtime_key;
     std::string agent_key;
     std::string configured_model;
@@ -85,6 +87,21 @@ struct ConversationRuntime {
     [[nodiscard]]
     const AgentLoop &agent() const {
         return *runtime->agent;
+    }
+
+    ~ConversationRuntime() {
+        if (completion_resume_state == nullptr) {
+            return;
+        }
+        std::scoped_lock lock(completion_resume_state->mutex);
+        completion_resume_state->agent = nullptr;
+        completion_resume_state->provider = nullptr;
+        completion_resume_state->hook_manager = nullptr;
+        completion_resume_state->current_session_id = nullptr;
+        completion_resume_state->persisted_message_count = nullptr;
+        completion_resume_state->session_store = nullptr;
+        completion_resume_state->channel_manager = nullptr;
+        completion_resume_state->automation_runtime = nullptr;
     }
 };
 
@@ -208,6 +225,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
                                                                SubagentManager &subagent_manager, const std::string &raw_caller_id, HookManager *hook_manager,
                                                                automation::Runtime *automation_runtime) {
     auto runtime = std::make_unique<ConversationRuntime>();
+    auto completion_resume_state = std::make_shared<detail::ChannelCompletionResumeState>();
     runtime->runtime_key = identity.runtime_key;
     runtime->agent_key = cfg.agent_key;
     runtime->configured_model = cfg.model;
@@ -215,6 +233,11 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
     runtime->workspace = identity.workspace;
     runtime->memory_scope = identity.memory_scope;
     runtime->session_scope_key = identity.runtime_key.empty() ? cfg.cli_runtime_key : identity.runtime_key;
+    completion_resume_state->jid = raw_caller_id;
+    completion_resume_state->agent_key = cfg.agent_key;
+    completion_resume_state->configured_model = cfg.model;
+    completion_resume_state->session_scope_key = runtime->session_scope_key;
+    completion_resume_state->automation_runtime = automation_runtime;
     AgentRuntimeBuildInput input{
         .provider_name = cfg.provider_name,
         .api_key = cfg.api_key,
@@ -239,6 +262,12 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
         .mcp_servers = app_cfg.mcp_servers,
         .skill_paths = app_cfg.skill_paths,
         .hook_paths = app_cfg.hook_paths,
+        .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
+                                                                             [automation_runtime](const automation::InboxItem &item) {
+                                                                                 (void)automation_runtime->store().insert_inbox(item);
+                                                                             },
+                                                                             detail::make_channel_completion_resume_callback(completion_resume_state))
+                                                                       : nullptr,
     };
     runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
     if (hook_manager != nullptr) {
@@ -248,6 +277,12 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
     } else {
         runtime->hook_manager = runtime->runtime->hook_manager.get();
     }
+    completion_resume_state->agent = runtime->runtime->agent.get();
+    completion_resume_state->provider = runtime->runtime->provider.get();
+    completion_resume_state->hook_manager = runtime->hook_manager;
+    completion_resume_state->current_session_id = &runtime->current_session_id;
+    completion_resume_state->persisted_message_count = &runtime->persisted_message_count;
+    runtime->completion_resume_state = std::move(completion_resume_state);
     return runtime;
 }
 
@@ -258,6 +293,16 @@ SessionMetadata make_channel_session_metadata(const ConversationRuntime &runtime
         .agent_key = runtime.agent_key,
         .origin_kind = "channel",
         .origin_ref = jid,
+    };
+}
+
+SessionMetadata make_channel_session_metadata(const detail::ChannelCompletionResumeState &state, const std::string &model) {
+    return SessionMetadata{
+        .model = model,
+        .scope_key = state.session_scope_key,
+        .agent_key = state.agent_key,
+        .origin_kind = "channel",
+        .origin_ref = state.jid,
     };
 }
 
@@ -288,6 +333,40 @@ void persist_channel_session(const std::string &jid, ConversationRuntime &runtim
     if (created_session) {
         dispatch_session_start(runtime.hook_manager, runtime.current_session_id, history.size());
     }
+}
+
+std::optional<std::string> persist_channel_session(detail::ChannelCompletionResumeState &state) {
+    if (state.agent == nullptr || state.current_session_id == nullptr || state.persisted_message_count == nullptr || state.session_store == nullptr) {
+        return "channel runtime is no longer available";
+    }
+
+    const auto &history = state.agent->history();
+    if (history.empty()) {
+        state.session_store->clear_jid(state.jid, state.agent_key);
+        state.current_session_id->clear();
+        *state.persisted_message_count = 0;
+        return std::nullopt;
+    }
+
+    const bool created_session = state.current_session_id->empty();
+    const auto active_model = state.provider != nullptr && !state.provider->current_model().empty() ? state.provider->current_model() : state.configured_model;
+    const auto metadata = make_channel_session_metadata(state, active_model);
+    if (state.current_session_id->empty()) {
+        *state.current_session_id = state.session_store->save(history, metadata);
+        *state.persisted_message_count = history.size();
+    } else if (history.size() > *state.persisted_message_count) {
+        state.session_store->append(*state.current_session_id, history, *state.persisted_message_count, metadata);
+        *state.persisted_message_count = history.size();
+    } else {
+        state.session_store->update(*state.current_session_id, history, metadata);
+        *state.persisted_message_count = history.size();
+    }
+
+    state.session_store->bind_jid(state.jid, *state.current_session_id, state.agent_key);
+    if (created_session) {
+        dispatch_session_start(state.hook_manager, *state.current_session_id, history.size());
+    }
+    return std::nullopt;
 }
 
 ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
@@ -650,6 +729,33 @@ ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, co
     };
 }
 
+BackgroundCompletionResumeCallback make_channel_completion_resume_callback(std::weak_ptr<ChannelCompletionResumeState> weak_state) {
+    return [weak_state](const std::string &message) -> std::optional<std::string> {
+        const auto state = weak_state.lock();
+        if (!state) {
+            return "channel runtime is no longer available";
+        }
+
+        std::scoped_lock lock(state->mutex);
+        if (state->agent == nullptr) {
+            return "channel runtime is no longer available";
+        }
+
+        return run_completion_resume_message(
+            *state->agent, message, state->agent_key, state->automation_runtime,
+            [state](const std::string &reply) -> std::optional<std::string> {
+                if (const auto error = persist_channel_session(*state); error.has_value()) {
+                    return error;
+                }
+                if (state->channel_manager != nullptr) {
+                    deliver_reply(InboundMessage{.jid = state->jid}, reply, *state->channel_manager);
+                }
+                return std::nullopt;
+            },
+            true);
+    };
+}
+
 } // namespace detail
 
 namespace {
@@ -662,6 +768,12 @@ void process_channel_message(const InboundMessage &message, ChannelManager &chan
     try {
         auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store, subagent_manager, cfg,
                                                hook_manager, automation_runtime);
+        if (runtime.completion_resume_state != nullptr) {
+            std::scoped_lock lock(runtime.completion_resume_state->mutex);
+            runtime.completion_resume_state->session_store = &session_store;
+            runtime.completion_resume_state->channel_manager = &channel_manager;
+            runtime.completion_resume_state->jid = message.jid;
+        }
         automation::with_agent_execution_lease(automation_runtime, runtime.agent_key, [&] {
             if (handle_channel_session_command(message, runtime, session_store, channel_manager, cfg)) {
                 return;

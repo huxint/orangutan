@@ -1,6 +1,7 @@
 #pragma once
 
 #include "features/channel/core/channel.hpp"
+#include "core/tools/tool.hpp"
 #include "infra/config/config.hpp"
 #include "features/channel/core/jid-task-runner.hpp"
 #include "features/memory/memory.hpp"
@@ -20,7 +21,9 @@
 
 namespace orangutan {
 
+class AgentLoop;
 class HookManager;
+class Provider;
 namespace automation {
 class Runtime;
 }
@@ -108,10 +111,29 @@ std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntime
 
 namespace detail {
 
+struct ChannelCompletionResumeState {
+    std::mutex mutex;
+    AgentLoop *agent = nullptr;
+    Provider *provider = nullptr;
+    HookManager *hook_manager = nullptr;
+    std::string *current_session_id = nullptr;
+    size_t *persisted_message_count = nullptr;
+    SessionStore *session_store = nullptr;
+    ChannelManager *channel_manager = nullptr;
+    std::string jid;
+    std::string agent_key;
+    std::string configured_model;
+    std::string session_scope_key;
+    automation::Runtime *automation_runtime = nullptr;
+};
+
 [[nodiscard]]
 ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
                                                            const std::string &raw_caller_id, orangutan::HookManager *hook_manager = nullptr,
                                                            automation::Runtime *automation_runtime = nullptr);
+
+[[nodiscard]]
+BackgroundCompletionResumeCallback make_channel_completion_resume_callback(std::weak_ptr<ChannelCompletionResumeState> state);
 
 } // namespace detail
 

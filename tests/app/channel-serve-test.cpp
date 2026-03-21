@@ -1,6 +1,10 @@
 #include "app/channel-serve.hpp"
 #include "app/runtime/identity.hpp"
+#include "features/agent/agent-loop.hpp"
+#include "features/automation/runtime.hpp"
+#include "features/automation/store.hpp"
 #include "features/channel/core/channel.hpp"
+#include "features/tools/core/background-completion.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>
@@ -125,6 +129,33 @@ private:
     bool connected_ = false;
     mutable std::mutex mutex_;
     std::vector<std::pair<std::string, std::string>> sent_messages_;
+};
+
+class ScriptedProvider final : public Provider {
+public:
+    using Step = std::function<LLMResponse(const std::vector<Message> &)>;
+
+    explicit ScriptedProvider(std::vector<Step> steps)
+    : steps_(std::move(steps)) {}
+
+    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        throw std::runtime_error("chat should not be used in this test");
+    }
+
+    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        if (next_step_ >= steps_.size()) {
+            throw std::runtime_error("no scripted response available");
+        }
+        return steps_[next_step_++](messages);
+    }
+
+    std::string name() const override {
+        return "scripted-provider";
+    }
+
+private:
+    std::vector<Step> steps_;
+    size_t next_step_ = 0;
 };
 
 using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
@@ -617,6 +648,108 @@ TEST_F(ChannelServeTest, NewCommandUpdatesBoundSessionWithChannelMetadata) {
     EXPECT_EQ(sessions[0].agent_key, "default");
     EXPECT_EQ(sessions[0].origin_kind, "channel");
     EXPECT_EQ(sessions[0].origin_ref, jid);
+}
+
+TEST_F(ChannelServeTest, CompletionResumePersistsBoundSessionAndRepliesThroughChannel) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    auto automation_store = std::make_shared<automation::Store>((temp_root() / "automation.db").string());
+    automation::Runtime automation_runtime(*automation_store);
+    SessionStore session_store((temp_root() / "sessions.db").string());
+
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(workspace_root().string(), jid, "default");
+    std::vector<Message> history = {
+        Message::user_text("hello"),
+        Message::assistant_text("hi"),
+    };
+    const auto session_id = session_store.save(history, "gpt-test", identity.runtime_key);
+    session_store.bind_jid(jid, session_id, "default");
+
+    ToolRegistry tools;
+    ScriptedProvider provider({
+        [](const std::vector<Message> &messages) {
+            EXPECT_FALSE(messages.empty());
+            if (messages.empty()) {
+                return LLMResponse{};
+            }
+
+            EXPECT_EQ(messages.back().role, "user");
+            const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
+            EXPECT_NE(text, nullptr);
+            if (text != nullptr) {
+                EXPECT_NE(text->text.find("\"type\": \"background_process_completion\""), std::string::npos);
+            }
+
+            LLMResponse response;
+            response.stop_reason = "end_turn";
+            response.content.emplace_back(TextBlock{.text = "Background reply"});
+            return response;
+        },
+    });
+    AgentLoop agent(provider, tools, "You are a test agent.");
+    agent.set_history(history);
+
+    auto resume_state = std::make_shared<app::detail::ChannelCompletionResumeState>();
+    resume_state->agent = &agent;
+    resume_state->provider = &provider;
+    size_t persisted_message_count = history.size();
+    std::string current_session_id = session_id;
+    resume_state->current_session_id = &current_session_id;
+    resume_state->persisted_message_count = &persisted_message_count;
+    resume_state->session_store = &session_store;
+    resume_state->channel_manager = &manager;
+    resume_state->jid = jid;
+    resume_state->agent_key = "default";
+    resume_state->configured_model = "gpt-test";
+    resume_state->session_scope_key = identity.runtime_key;
+    resume_state->automation_runtime = &automation_runtime;
+
+    ToolRuntimeContext tool_context{
+        .runtime_key = identity.runtime_key,
+        .agent_key = "default",
+        .scope_key = identity.runtime_key,
+        .automation_runtime = &automation_runtime,
+        .background_completion_runtime = make_background_completion_runtime_bindings(
+            [automation_store](const automation::InboxItem &item) {
+                (void)automation_store->insert_inbox(item);
+            },
+            app::detail::make_channel_completion_resume_callback(resume_state)),
+    };
+    BackgroundCompletionDispatcher dispatcher(&tool_context);
+
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-channel",
+        .command = "printf 'done\\n'",
+        .working_dir = workspace_root().string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
+
+    const auto inbox_items = automation_runtime.list_inbox("default");
+    ASSERT_EQ(inbox_items.size(), 1U);
+    ASSERT_FALSE(qq->sent_messages().empty());
+    EXPECT_EQ(qq->sent_messages().front().first, jid);
+    EXPECT_EQ(qq->sent_messages().front().second, "Background reply");
+
+    const auto persisted_history = session_store.load(session_id);
+    ASSERT_EQ(current_session_id, session_id);
+    ASSERT_EQ(persisted_message_count, persisted_history.size());
+    ASSERT_GE(persisted_history.size(), 4U);
+    EXPECT_EQ(persisted_history.back().role, "assistant");
+    const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
+    ASSERT_NE(reply_text, nullptr);
+    EXPECT_EQ(reply_text->text, "Background reply");
+
+    const auto bound_session = session_store.bound_session_for_jid(jid, "default");
+    ASSERT_TRUE(bound_session.has_value());
+    EXPECT_EQ(*bound_session, session_id);
 }
 
 TEST_F(ChannelServeTest, RunChannelLoopRepliesWithRuntimeErrors) {

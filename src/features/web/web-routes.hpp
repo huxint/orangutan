@@ -11,6 +11,7 @@ class SubagentManager;
 class ToolRegistry;
 class SkillLoader;
 struct Config;
+struct WebCompletionResumeState;
 struct WebSessionState;
 namespace automation {
 class Runtime;
@@ -61,7 +62,11 @@ using WebApprovalEventEmitter = std::function<bool(std::string_view event_name, 
 
 [[nodiscard]]
 AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                            SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr, ToolApprovalCallback approval_callback = {});
+                                            SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr, ToolApprovalCallback approval_callback = {},
+                                            std::shared_ptr<WebCompletionResumeState> completion_resume_state = {});
+
+[[nodiscard]]
+BackgroundCompletionResumeCallback make_web_completion_resume_callback(std::weak_ptr<WebCompletionResumeState> state);
 
 [[nodiscard]]
 bool await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,

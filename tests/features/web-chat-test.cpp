@@ -1,5 +1,9 @@
 #include "features/web/web-server.hpp"
 #include "features/web/web-routes.hpp"
+#include "features/agent/agent-loop.hpp"
+#include "features/automation/runtime.hpp"
+#include "features/automation/store.hpp"
+#include "features/tools/core/background-completion.hpp"
 #include "infra/config/config.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
@@ -61,6 +65,40 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
         return definition.name == name;
     });
 }
+
+const automation::InboxItem *find_inbox_item_by_body_type(const std::vector<automation::InboxItem> &items, const std::string &type) {
+    const auto it = std::ranges::find_if(items, [&](const automation::InboxItem &item) {
+        return json::parse(item.body).value("type", "") == type;
+    });
+    return it == items.end() ? nullptr : &(*it);
+}
+
+class ScriptedProvider final : public Provider {
+public:
+    using Step = std::function<LLMResponse(const std::vector<Message> &)>;
+
+    explicit ScriptedProvider(std::vector<Step> steps)
+    : steps_(std::move(steps)) {}
+
+    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        throw std::runtime_error("chat should not be used in this test");
+    }
+
+    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        if (next_step_ >= steps_.size()) {
+            throw std::runtime_error("no scripted response available");
+        }
+        return steps_[next_step_++](messages);
+    }
+
+    std::string name() const override {
+        return "scripted-provider";
+    }
+
+private:
+    std::vector<Step> steps_;
+    size_t next_step_ = 0;
+};
 
 class WebChatStoreTest : public ::testing::Test {
 protected:
@@ -343,6 +381,69 @@ TEST(WebChatTest, RuntimeBundleLoadsSkillsAndHooksFromConfiguredPaths) {
     EXPECT_NE(runtime.skills_prompt.find("web-chat-runtime-skill"), std::string::npos);
     ASSERT_NE(runtime.hook_manager, nullptr);
     EXPECT_EQ(runtime.hook_manager->hook_count(HookEvent::before_tool_call), 1);
+}
+
+TEST(WebChatTest, CompletionResumeAfterSessionShutdownFallsBackToInboxNotes) {
+    const auto automation_db_path = std::filesystem::temp_directory_path() / ("orangutan-web-chat-automation-" + std::to_string(getpid()) + ".db");
+    std::filesystem::remove(automation_db_path);
+    auto automation_store = std::make_shared<automation::Store>(automation_db_path.string());
+    automation::Runtime automation_runtime(*automation_store);
+    ToolRegistry tools;
+    size_t provider_calls = 0;
+    ScriptedProvider provider({
+        [&provider_calls](const std::vector<Message> &) {
+            ++provider_calls;
+            LLMResponse response;
+            response.stop_reason = "end_turn";
+            response.content.emplace_back(TextBlock{.text = "should not run"});
+            return response;
+        },
+    });
+    AgentLoop agent(provider, tools, "You are a test agent.");
+
+    auto resume_state = std::make_shared<WebCompletionResumeState>();
+    resume_state->agent = &agent;
+    resume_state->agent_key = "default";
+    resume_state->automation_runtime = &automation_runtime;
+    {
+        std::scoped_lock lock(resume_state->mutex);
+        resume_state->agent = nullptr;
+    }
+
+    ToolRuntimeContext tool_context{
+        .runtime_key = "agent:default|web:local",
+        .agent_key = "default",
+        .scope_key = "agent:default|web",
+        .automation_runtime = &automation_runtime,
+        .background_completion_runtime = make_background_completion_runtime_bindings(
+            [automation_store](const automation::InboxItem &item) {
+                (void)automation_store->insert_inbox(item);
+            },
+            web::detail::make_web_completion_resume_callback(resume_state)),
+    };
+    BackgroundCompletionDispatcher dispatcher(&tool_context);
+
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-web",
+        .command = "sleep 1",
+        .working_dir = orangutan::testing::test_tmp_root().string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
+
+    EXPECT_EQ(provider_calls, 0U);
+    const auto inbox_items = automation_runtime.list_inbox("default");
+    ASSERT_EQ(inbox_items.size(), 2U);
+
+    const auto *completion_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion");
+    const auto *failure_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion_resume_failure");
+    ASSERT_NE(completion_item, nullptr);
+    ASSERT_NE(failure_item, nullptr);
+    EXPECT_EQ(json::parse(failure_item->body).at("reason"), "web session is no longer live");
+    std::filesystem::remove(automation_db_path);
 }
 
 TEST(WebChatTest, PendingApprovalDenialReturnsFalse) {

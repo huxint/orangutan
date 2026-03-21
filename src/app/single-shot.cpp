@@ -82,6 +82,23 @@ auto make_tool_event_emitter(const JsonEmitter &emit) {
     };
 }
 
+std::optional<std::string> run_completion_resume_message_impl(AgentLoop &agent, const std::string &message, std::string_view agent_key, automation::Runtime *automation_runtime,
+                                                              const CompletionResumePostRunCallback &post_run, bool suppress_human_output) {
+    std::optional<std::string> post_run_error;
+    automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
+        std::string reply;
+        if (suppress_human_output) {
+            reply = agent.run(message, [](const std::string &, const json &) {}, [](const std::string &, const ToolUseBlock &, const ToolResultBlock *) {});
+        } else {
+            reply = agent.run(message);
+        }
+        if (post_run) {
+            post_run_error = post_run(reply);
+        }
+    });
+    return post_run_error;
+}
+
 void run_single_message_agent(AgentLoop &agent, const std::string &message, bool event_stream, const std::string &current_session_id, const JsonEmitter &emit,
                               const std::string &agent_key, automation::Runtime *automation_runtime) {
     automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
@@ -125,6 +142,17 @@ void maybe_persist_single_message_session(AgentLoop &agent, const Provider &prov
 }
 
 } // namespace
+
+std::optional<std::string> run_completion_resume_message(AgentLoop &agent, const std::string &message, std::string_view agent_key, automation::Runtime *automation_runtime,
+                                                         const CompletionResumePostRunCallback &post_run, bool suppress_human_output) {
+    try {
+        return run_completion_resume_message_impl(agent, message, agent_key, automation_runtime, post_run, suppress_human_output);
+    } catch (const std::exception &e) {
+        return e.what();
+    } catch (...) {
+        return "background completion resume failed";
+    }
+}
 
 void emit_session_history_dump(const std::vector<Message> &history, const std::string &current_session_id, const JsonEmitter &emit) {
     emit(make_session_event_json("session_resumed", current_session_id, "resumed"));

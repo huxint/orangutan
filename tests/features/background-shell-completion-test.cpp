@@ -1,3 +1,4 @@
+#include "app/single-shot.hpp"
 #include "core/tools/tool.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
@@ -24,6 +26,33 @@ using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 struct ResumeMessagesState {
     std::mutex mutex;
     std::vector<std::string> messages;
+};
+
+class ScriptedProvider final : public Provider {
+public:
+    using Step = std::function<LLMResponse(const std::vector<Message> &)>;
+
+    explicit ScriptedProvider(std::vector<Step> steps)
+    : steps_(std::move(steps)) {}
+
+    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        throw std::runtime_error("chat should not be used in this test");
+    }
+
+    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        if (next_step_ >= steps_.size()) {
+            throw std::runtime_error("no scripted response available");
+        }
+        return steps_[next_step_++](messages);
+    }
+
+    std::string name() const override {
+        return "scripted-provider";
+    }
+
+private:
+    std::vector<Step> steps_;
+    size_t next_step_ = 0;
 };
 
 const ToolDef *find_tool(const std::vector<ToolDef> &definitions, const std::string &name) {
@@ -373,6 +402,54 @@ TEST_F(BackgroundShellCompletionTest, InvalidUtf8OutputAndPromptStillProduceComp
     EXPECT_EQ(resume_payload.at("stdout").at("tail"), expected_stdout);
     EXPECT_EQ(inbox_payload.at("stderr").at("tail"), expected_stderr);
     EXPECT_EQ(resume_payload.at("stderr").at("tail"), expected_stderr);
+}
+
+TEST_F(BackgroundShellCompletionTest, CompletionResumeRunsThroughAgentExecutionLease) {
+    std::promise<void> provider_started_promise;
+    auto provider_started = provider_started_promise.get_future();
+    ToolRegistry tools;
+    ScriptedProvider provider({
+        [&provider_started_promise](const std::vector<Message> &messages) {
+            provider_started_promise.set_value();
+            EXPECT_FALSE(messages.empty());
+            if (messages.empty()) {
+                return LLMResponse{};
+            }
+
+            EXPECT_EQ(messages.back().role, "user");
+            const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
+            EXPECT_NE(text, nullptr);
+            if (text != nullptr) {
+                EXPECT_NE(text->text.find("\"type\": \"background_process_completion\""), std::string::npos);
+            }
+
+            LLMResponse response;
+            response.stop_reason = "end_turn";
+            response.content.emplace_back(TextBlock{.text = "resume complete"});
+            return response;
+        },
+    });
+    AgentLoop agent(provider, tools, "You are a test agent.");
+
+    std::future<std::optional<std::string>> resume_result;
+    {
+        auto lease = runtime_->acquire_agent_execution_lease(tool_context_.agent_key);
+        resume_result = std::async(std::launch::async, [&] {
+            return app::run_completion_resume_message(agent,
+                                                      R"({
+  "type": "background_process_completion",
+  "process_id": "proc-lease"
+})",
+                                                      tool_context_.agent_key, runtime_.get(), {}, true);
+        });
+
+        EXPECT_EQ(provider_started.wait_for(std::chrono::milliseconds(150)), std::future_status::timeout);
+    }
+
+    EXPECT_EQ(provider_started.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(resume_result.get(), std::nullopt);
+    ASSERT_GE(agent.history().size(), 2U);
+    EXPECT_EQ(agent.history().back().role, "assistant");
 }
 
 TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNotes) {

@@ -2,6 +2,7 @@
 
 #include "app/channel-serve.hpp"
 #include "app/repl.hpp"
+#include "app/session-workflow.hpp"
 #include "app/single-shot.hpp"
 #include "app/runtime/app-runtime.hpp"
 #include "app/runtime/agent-runtime.hpp"
@@ -487,6 +488,91 @@ std::unique_ptr<Store> create_store(const char *name) {
     }
 }
 
+struct RuntimeCompletionResumeState {
+    std::mutex mutex;
+    orangutan::AgentLoop *agent = nullptr;
+    orangutan::Provider *provider = nullptr;
+    orangutan::HookManager *hook_manager = nullptr;
+    orangutan::SessionStore *session_store = nullptr;
+    std::string *current_session_id = nullptr;
+    std::string agent_key;
+    std::string configured_model;
+    std::string scope_key;
+    orangutan::automation::Runtime *automation_runtime = nullptr;
+    bool persist_session = false;
+    bool suppress_human_output = false;
+};
+
+void deactivate_runtime_completion_resume_state(const std::shared_ptr<RuntimeCompletionResumeState> &state) {
+    if (state == nullptr) {
+        return;
+    }
+
+    std::scoped_lock lock(state->mutex);
+    state->agent = nullptr;
+    state->provider = nullptr;
+    state->hook_manager = nullptr;
+    state->session_store = nullptr;
+    state->current_session_id = nullptr;
+    state->automation_runtime = nullptr;
+}
+
+struct RuntimeCompletionResumeStateGuard {
+    std::shared_ptr<RuntimeCompletionResumeState> state;
+
+    ~RuntimeCompletionResumeStateGuard() {
+        deactivate_runtime_completion_resume_state(state);
+    }
+};
+
+orangutan::BackgroundCompletionResumeCallback make_runtime_completion_resume_callback(std::weak_ptr<RuntimeCompletionResumeState> weak_state) {
+    return [weak_state](const std::string &message) -> std::optional<std::string> {
+        const auto state = weak_state.lock();
+        if (!state) {
+            return "runtime is no longer available";
+        }
+
+        std::scoped_lock lock(state->mutex);
+        if (state->agent == nullptr) {
+            return "runtime is no longer available";
+        }
+
+        return orangutan::app::run_completion_resume_message(
+            *state->agent, message, state->agent_key, state->automation_runtime,
+            [state](const std::string &) -> std::optional<std::string> {
+                if (!state->persist_session || state->session_store == nullptr || state->current_session_id == nullptr || state->agent == nullptr) {
+                    return std::nullopt;
+                }
+
+                const bool created_session = state->current_session_id->empty();
+                const auto active_model = state->provider != nullptr && !state->provider->current_model().empty() ? state->provider->current_model() : state->configured_model;
+                if (!orangutan::app::persist_session(*state->agent, *state->session_store, *state->current_session_id,
+                                                     orangutan::app::make_cli_session_metadata(active_model, state->scope_key, state->agent_key))) {
+                    return std::nullopt;
+                }
+
+                if (created_session) {
+                    orangutan::dispatch_session_start(state->hook_manager, *state->current_session_id, state->agent->history().size());
+                }
+                return std::nullopt;
+            },
+            state->suppress_human_output);
+    };
+}
+
+std::shared_ptr<const orangutan::BackgroundCompletionRuntimeBindings> make_runtime_background_completion_bindings(orangutan::automation::Runtime *automation_runtime,
+                                                                                                                  orangutan::BackgroundCompletionResumeCallback resume_callback) {
+    if (automation_runtime == nullptr) {
+        return nullptr;
+    }
+
+    return orangutan::make_background_completion_runtime_bindings(
+        [automation_runtime](const orangutan::automation::InboxItem &item) {
+            (void)automation_runtime->store().insert_inbox(item);
+        },
+        std::move(resume_callback));
+}
+
 } // namespace
 
 namespace orangutan::app::detail {
@@ -860,6 +946,12 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
 
             const auto &runtime_cfg = config_it->second;
             std::string current_session_id;
+            auto completion_resume_state = std::make_shared<RuntimeCompletionResumeState>();
+            completion_resume_state->agent_key = runtime_cfg.agent_key;
+            completion_resume_state->configured_model = runtime_cfg.model;
+            completion_resume_state->scope_key = "agent:" + runtime_cfg.agent_key + "|automation";
+            completion_resume_state->automation_runtime = &app_runtime.automation_runtime();
+            completion_resume_state->suppress_human_output = true;
             orangutan::RuntimeIdentity identity{
                 .workspace = runtime_cfg.workspace_root,
                 .runtime_key = "agent:" + runtime_cfg.agent_key + "|automation:" + trigger.automation_id,
@@ -891,7 +983,12 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                     .mcp_servers = cfg.mcp_servers,
                     .skill_paths = cfg.skill_paths,
                     .hook_paths = cfg.hook_paths,
+                    .background_completion_runtime =
+                        make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
                 });
+                RuntimeCompletionResumeStateGuard completion_resume_guard{completion_resume_state};
+                completion_resume_state->agent = runtime.agent.get();
+                completion_resume_state->provider = runtime.provider.get();
                 result.reply = runtime.agent->run(trigger.prompt);
                 result.summary = result.reply;
                 result.workspace_root = runtime_cfg.workspace_root;
@@ -920,11 +1017,20 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     orangutan::SkillLoader skill_loader;
     std::string current_session_id;
     std::string web_runtime_build_error;
+    std::shared_ptr<RuntimeCompletionResumeState> primary_completion_resume_state;
     if (maybe_primary_runtime_cfg.has_value()) {
         load_display_skills(skill_loader, cfg, maybe_primary_runtime_cfg->workspace_root);
     }
     if (maybe_primary_runtime_cfg.has_value() && !primary_api_key.empty()) {
         try {
+            primary_completion_resume_state = std::make_shared<RuntimeCompletionResumeState>();
+            primary_completion_resume_state->agent_key = maybe_primary_runtime_cfg->agent_key;
+            primary_completion_resume_state->configured_model = maybe_primary_runtime_cfg->model;
+            primary_completion_resume_state->scope_key = maybe_primary_runtime_cfg->cli_memory_scope;
+            primary_completion_resume_state->session_store = session_store.get();
+            primary_completion_resume_state->current_session_id = &current_session_id;
+            primary_completion_resume_state->automation_runtime = &app_runtime.automation_runtime();
+            primary_completion_resume_state->persist_session = cfg.auto_save;
             orangutan::app::detail::maybe_inject_web_runtime_build_failure_for_tests();
             const auto approval_callback = make_cli_approval_callback(!options.event_stream);
             primary_runtime = std::make_unique<orangutan::AgentRuntimeBundle>(orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
@@ -952,7 +1058,12 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                 .mcp_servers = cfg.mcp_servers,
                 .skill_paths = cfg.skill_paths,
                 .hook_paths = cfg.hook_paths,
+                .background_completion_runtime =
+                    make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(primary_completion_resume_state)),
             }));
+            primary_completion_resume_state->agent = primary_runtime->agent.get();
+            primary_completion_resume_state->provider = primary_runtime->provider.get();
+            primary_completion_resume_state->hook_manager = primary_runtime->hook_manager.get();
             log_loaded_hooks(resolve_runtime_hook_dirs(cfg, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
         } catch (const std::exception &e) {
             web_runtime_build_error = e.what();
@@ -965,6 +1076,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
             }
         }
     }
+    RuntimeCompletionResumeStateGuard primary_completion_resume_guard{primary_completion_resume_state};
 
     std::unique_ptr<orangutan::WebServer> web_server;
     if (options.web_mode) {
