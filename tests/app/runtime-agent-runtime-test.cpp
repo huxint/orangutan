@@ -5,6 +5,7 @@
 #include "features/automation/store.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
+#include "features/tools/core/background-completion.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>
@@ -48,8 +49,8 @@ std::string sanitize_path_component(std::string value) {
     return value;
 }
 
-std::shared_ptr<BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<automation::Store> &store,
-                                                                                                      BackgroundCompletionResumeCallback resume_callback = {}) {
+std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<automation::Store> &store,
+                                                                                                            BackgroundCompletionResumeCallback resume_callback = {}) {
     return make_background_completion_runtime_bindings(
         [store](const automation::InboxItem &item) {
             (void)store->insert_inbox(item);
@@ -206,14 +207,12 @@ TEST_F(RuntimeAgentRuntimeTest, RuntimeWithExplicitCompletionBindingsEnablesComp
     ASSERT_NE(shell, nullptr);
     ASSERT_TRUE(shell->input_schema.contains("properties"));
     EXPECT_TRUE(shell->input_schema["properties"].contains("on_complete"));
+    EXPECT_EQ(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"], json::array({"inbox", "resume"}));
 
     input.background_completion_runtime.reset();
-
-    {
-        const auto live_snapshot = runtime.tool_context.background_completion_runtime->snapshot();
-        EXPECT_TRUE(static_cast<bool>(live_snapshot.inbox_callback));
-        EXPECT_TRUE(static_cast<bool>(live_snapshot.resume_callback));
-    }
+    ASSERT_NE(runtime.tool_context.background_completion_runtime, nullptr);
+    EXPECT_TRUE(runtime.tool_context.background_completion_runtime->supports_completion_routing());
+    EXPECT_TRUE(runtime.tool_context.background_completion_runtime->supports_resume_callback());
 }
 
 TEST_F(RuntimeAgentRuntimeTest, LoadsSkillsPromptFromConfiguredSkillDirectory) {
@@ -277,59 +276,49 @@ TEST_F(RuntimeAgentRuntimeTest, KeepsToolRegistryStableAndPermissionsAliveAfterM
     EXPECT_NE(result.content.find("Shell tool blocked by approval policy."), std::string::npos);
 }
 
-TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBeforeBackgroundShutdown) {
-    GTEST_FLAG_SET(death_test_style, "threadsafe");
+TEST_F(RuntimeAgentRuntimeTest, SharedCompletionBindingsRemainUsableAfterAnotherRuntimeIsDestroyed) {
+    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-shared.db").string());
+    size_t resume_callback_count = 0;
+    auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
+        ++resume_callback_count;
+        return std::optional<std::string>{};
+    });
 
-    EXPECT_EXIT(
-        {
-            auto input = make_input();
-            auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation.db").string());
-            auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-            input.automation_runtime = automation_runtime.get();
-            input.background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
-                return std::optional<std::string>{};
-            });
+    auto first_input = make_input();
+    first_input.background_completion_runtime = shared_bindings;
 
-            std::shared_ptr<BackgroundCompletionRuntimeBindings> bindings;
-            int exit_code = 0;
-            {
-                auto runtime = build_agent_runtime(input);
-                bindings = runtime.tool_context.background_completion_runtime;
-                if (bindings == nullptr) {
-                    exit_code = 10;
-                } else {
-                    const auto result = runtime.tools.execute(ToolUseBlock{
-                        .id = "background-shutdown",
-                        .name = "shell",
-                        .input =
-                            {
-                                {"command", "sleep 30"},
-                                {"background", true},
-                            },
-                    });
-                    if (result.is_error) {
-                        exit_code = 11;
-                    }
-                }
+    auto second_input = make_input();
+    second_input.background_completion_runtime = shared_bindings;
+    second_input.identity.runtime_key += "|second";
 
-                input.background_completion_runtime.reset();
-                automation_runtime.reset();
-                automation_store.reset();
-            }
+    auto first_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(first_input));
+    auto second_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(second_input));
+    BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
 
-            if (bindings != nullptr) {
-                const auto snapshot = bindings->snapshot();
-                if (static_cast<bool>(snapshot.inbox_callback)) {
-                    exit_code = 12;
-                }
-                if (static_cast<bool>(snapshot.resume_callback)) {
-                    exit_code = 13;
-                }
-            }
+    first_runtime.reset();
 
-            _exit(exit_code);
-        },
-        ::testing::ExitedWithCode(0), "");
+    const auto definitions = second_runtime->tools.definitions();
+    const auto *shell = find_tool_named(definitions, "shell");
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    ASSERT_TRUE(shell->input_schema["properties"].contains("on_complete"));
+    EXPECT_TRUE(dispatcher.supports_resume_callback());
+
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-shared",
+        .command = "printf 'done\\n'",
+        .working_dir = workspace_root().string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
+
+    const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
+    ASSERT_EQ(inbox_items.size(), 1U);
+    EXPECT_EQ(json::parse(inbox_items.front().body).at("process_id"), "proc-shared");
+    EXPECT_EQ(resume_callback_count, 1U);
 }
 
 } // namespace

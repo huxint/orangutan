@@ -30,7 +30,7 @@ private:
     std::string agent_key_;
     bool supports_completion_routing_ = false;
     bool supports_resume_callback_ = false;
-    std::weak_ptr<BackgroundCompletionRuntimeBindings> background_completion_runtime_;
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime_;
 };
 
 } // namespace orangutan

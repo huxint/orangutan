@@ -20,6 +20,17 @@ std::string truncate_completion_prompt(std::string_view prompt) {
     return std::string(prompt.substr(0, background_completion_prompt_max_chars - 3)) + "...";
 }
 
+json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
+    if (completion_dispatcher != nullptr && completion_dispatcher->supports_resume_callback()) {
+        return json::array({"inbox", "resume"});
+    }
+    return json::array({"inbox"});
+}
+
+bool supports_resume_mode(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
+    return completion_dispatcher != nullptr && completion_dispatcher->supports_resume_callback();
+}
+
 std::string process_status(const BackgroundProcessSummary &summary) {
     if (summary.running) {
         return summary.kill_requested ? "stopping" : "running";
@@ -65,6 +76,7 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
     std::string prompt;
     const bool has_on_complete = input.contains("on_complete") && !input.at("on_complete").is_null();
     const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
+    const bool resume_supported = supports_resume_mode(completion_dispatcher);
 
     if (has_on_complete && !supports_completion_routing) {
         throw std::runtime_error("on_complete is not available in this runtime context");
@@ -79,6 +91,9 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
         if (mode != "inbox" && mode != "resume") {
             throw std::runtime_error("on_complete.mode must be 'inbox' or 'resume'");
         }
+        if (mode == "resume" && !resume_supported) {
+            throw std::runtime_error("on_complete.mode 'resume' is not available in this runtime context");
+        }
 
         if (const auto prompt_it = on_complete_it->find("prompt"); prompt_it != on_complete_it->end()) {
             if (!prompt_it->is_string()) {
@@ -87,10 +102,6 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
             prompt_present = true;
             prompt = truncate_completion_prompt(prompt_it->get_ref<const std::string &>());
         }
-    }
-
-    if (mode == "resume" && (completion_dispatcher == nullptr || !completion_dispatcher->supports_resume_callback())) {
-        spdlog::warn("background shell completion requested resume mode without a registered runtime resume callback");
     }
 
     BackgroundProcessCompletionPolicy completion;
@@ -203,6 +214,7 @@ std::string kill_process(const json &input, const std::shared_ptr<BackgroundProc
 void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
                          const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
     const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
+    const bool resume_supported = supports_resume_mode(completion_dispatcher);
     std::string description = "Execute a shell command. Set background=true for long-running commands to return immediately.";
     json properties = {
         {"command", {{"type", "string"}, {"description", "The shell command to execute"}}},
@@ -210,17 +222,19 @@ void register_shell_tool(ToolRegistry &registry, const std::string &workspace, c
         {"working_dir", {{"type", "string"}, {"description", "Optional working directory inside the workspace"}}},
     };
     if (supports_completion_routing) {
-        description += " Background commands can use on_complete to write an inbox completion record and optionally request runtime-local resume.";
+        description += resume_supported ? " Background commands can use on_complete to write an inbox completion record and optionally request runtime-local resume."
+                                        : " Background commands can use on_complete to write an inbox completion record.";
         properties["on_complete"] = {
             {"type", "object"},
-            {"description", "Optional completion routing for background commands. Defaults to inbox-only delivery. "
-                            "Set mode=resume to also request a runtime-local agent resume."},
+            {"description", resume_supported ? "Optional completion routing for background commands. Defaults to inbox-only delivery. "
+                                               "Set mode=resume to also request a runtime-local agent resume."
+                                             : "Optional completion routing for background commands. Delivery is inbox-only in this runtime context."},
             {"properties",
              {
                  {"mode",
                   {
                       {"type", "string"},
-                      {"enum", json::array({"inbox", "resume"})},
+                      {"enum", completion_mode_enum(completion_dispatcher)},
                       {"description", "Completion delivery mode for a background command"},
                   }},
                  {"prompt",

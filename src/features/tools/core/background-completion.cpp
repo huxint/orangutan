@@ -119,13 +119,13 @@ std::string failure_reason_or_default(const std::optional<std::string> &reason) 
     return truncate_payload_text(*reason, max_failure_reason_chars);
 }
 
-bool insert_inbox_item(const BackgroundCompletionRuntimeBindings::Snapshot &snapshot, const automation::InboxItem &item, std::string_view process_id) {
-    if (!snapshot.inbox_callback) {
+bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
+    if (!bindings.supports_completion_routing()) {
         return false;
     }
 
     try {
-        snapshot.inbox_callback(item);
+        bindings.inbox_callback()(item);
         return true;
     } catch (const std::exception &ex) {
         spdlog::warn("background completion inbox callback threw for process {}: {}", process_id, ex.what());
@@ -145,10 +145,9 @@ BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntime
     runtime_key_ = tool_context->runtime_key;
     agent_key_ = tool_context->agent_key.empty() ? std::string(default_agent_key) : tool_context->agent_key;
     background_completion_runtime_ = tool_context->background_completion_runtime;
-    if (const auto bindings = background_completion_runtime_.lock(); bindings != nullptr) {
-        const auto snapshot = bindings->snapshot();
-        supports_completion_routing_ = static_cast<bool>(snapshot.inbox_callback);
-        supports_resume_callback_ = supports_completion_routing_ && static_cast<bool>(snapshot.resume_callback);
+    if (background_completion_runtime_ != nullptr) {
+        supports_completion_routing_ = background_completion_runtime_->supports_completion_routing();
+        supports_resume_callback_ = background_completion_runtime_->supports_resume_callback();
     }
 }
 
@@ -161,13 +160,12 @@ bool BackgroundCompletionDispatcher::supports_resume_callback() const {
 }
 
 void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionEvent &event) const {
-    const auto bindings = background_completion_runtime_.lock();
+    const auto bindings = background_completion_runtime_;
     if (bindings == nullptr) {
         return;
     }
 
-    const auto runtime_snapshot = bindings->snapshot();
-    if (!runtime_snapshot.inbox_callback) {
+    if (!bindings->supports_completion_routing()) {
         return;
     }
 
@@ -178,7 +176,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
         return;
     }
     const auto persisted_payload = json::parse(payload_text);
-    if (!insert_inbox_item(runtime_snapshot,
+    if (!insert_inbox_item(*bindings,
                            automation::InboxItem{
                                .agent_key = agent_key_,
                                .source_kind = std::string(inbox_source_kind),
@@ -209,7 +207,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
             spdlog::warn("background completion failure payload exceeded bounded size for process {}", event.process_id);
             return;
         }
-        (void)insert_inbox_item(runtime_snapshot,
+        (void)insert_inbox_item(*bindings,
                                 automation::InboxItem{
                                     .agent_key = agent_key_,
                                     .source_kind = std::string(inbox_source_kind),
@@ -221,13 +219,13 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
                                 event.process_id);
     };
 
-    if (!runtime_snapshot.resume_callback) {
+    if (!bindings->supports_resume_callback()) {
         insert_resume_failure_note("resume requested, but no background completion resume callback is registered");
         return;
     }
 
     try {
-        const auto error = runtime_snapshot.resume_callback(payload_text);
+        const auto error = bindings->resume_callback()(payload_text);
         if (error.has_value()) {
             spdlog::warn("background completion resume callback failed for process {}: {}", event.process_id, *error);
             insert_resume_failure_note(failure_reason_or_default(error));

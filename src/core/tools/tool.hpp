@@ -5,7 +5,6 @@
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,42 +24,40 @@ class SubagentManager;
 using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
 using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
 
-struct BackgroundCompletionRuntimeBindings {
-    struct Snapshot {
-        BackgroundCompletionInboxCallback inbox_callback;
-        BackgroundCompletionResumeCallback resume_callback;
-    };
-
-    BackgroundCompletionRuntimeBindings() = default;
-
+class BackgroundCompletionRuntimeBindings {
+public:
     BackgroundCompletionRuntimeBindings(BackgroundCompletionInboxCallback inbox_callback, BackgroundCompletionResumeCallback resume_callback = {})
     : inbox_callback_(std::move(inbox_callback)),
       resume_callback_(std::move(resume_callback)) {}
 
     [[nodiscard]]
-    Snapshot snapshot() const {
-        std::scoped_lock lock(mutex_);
-        return {
-            .inbox_callback = inbox_callback_,
-            .resume_callback = resume_callback_,
-        };
+    bool supports_completion_routing() const {
+        return static_cast<bool>(inbox_callback_);
     }
 
-    void invalidate() {
-        std::scoped_lock lock(mutex_);
-        inbox_callback_ = {};
-        resume_callback_ = {};
+    [[nodiscard]]
+    bool supports_resume_callback() const {
+        return static_cast<bool>(resume_callback_);
+    }
+
+    [[nodiscard]]
+    const BackgroundCompletionInboxCallback &inbox_callback() const {
+        return inbox_callback_;
+    }
+
+    [[nodiscard]]
+    const BackgroundCompletionResumeCallback &resume_callback() const {
+        return resume_callback_;
     }
 
 private:
-    mutable std::mutex mutex_;
-    BackgroundCompletionInboxCallback inbox_callback_;
-    BackgroundCompletionResumeCallback resume_callback_;
+    const BackgroundCompletionInboxCallback inbox_callback_;
+    const BackgroundCompletionResumeCallback resume_callback_;
 };
 
 [[nodiscard]]
-inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionInboxCallback inbox_callback,
-                                                                                                        BackgroundCompletionResumeCallback resume_callback = {}) {
+inline std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionInboxCallback inbox_callback,
+                                                                                                              BackgroundCompletionResumeCallback resume_callback = {}) {
     if (!inbox_callback) {
         return nullptr;
     }
@@ -80,17 +77,7 @@ struct ToolRuntimeContext {
     std::string raw_caller_id;
     automation::Runtime *automation_runtime = nullptr;
     ToolApprovalCallback approval_callback;
-    std::shared_ptr<BackgroundCompletionRuntimeBindings> background_completion_runtime;
-
-    void invalidate_background_completion_runtime() {
-        automation_runtime = nullptr;
-        if (background_completion_runtime == nullptr) {
-            return;
-        }
-
-        background_completion_runtime->invalidate();
-        background_completion_runtime.reset();
-    }
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
 };
 
 struct Tool {

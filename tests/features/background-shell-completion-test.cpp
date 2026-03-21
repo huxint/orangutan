@@ -40,8 +40,8 @@ const orangutan::automation::InboxItem *find_inbox_item_by_body_type(const std::
     return it == items.end() ? nullptr : &(*it);
 }
 
-std::shared_ptr<BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<orangutan::automation::Store> &store,
-                                                                                                      BackgroundCompletionResumeCallback resume_callback = {}) {
+std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<orangutan::automation::Store> &store,
+                                                                                                            BackgroundCompletionResumeCallback resume_callback = {}) {
     return make_background_completion_runtime_bindings(
         [store](const orangutan::automation::InboxItem &item) {
             (void)store->insert_inbox(item);
@@ -78,7 +78,6 @@ protected:
     }
 
     void TearDown() override {
-        tool_context_.invalidate_background_completion_runtime();
         runtime_.reset();
         store_.reset();
         resume_state_.reset();
@@ -153,6 +152,36 @@ TEST_F(BackgroundShellCompletionTest, ShellToolSchemaDocumentsOnCompletePolicy) 
     ASSERT_TRUE(on_complete["properties"].contains("mode"));
     ASSERT_TRUE(on_complete["properties"].contains("prompt"));
     EXPECT_EQ(on_complete["properties"]["mode"]["enum"], json::array({"inbox", "resume"}));
+}
+
+TEST_F(BackgroundShellCompletionTest, InboxOnlyCompletionRoutingExposesOnCompleteButRejectsResume) {
+    ToolRuntimeContext inbox_only_context = tool_context_;
+    inbox_only_context.background_completion_runtime = make_test_background_completion_runtime_bindings(store_);
+
+    ToolRegistry inbox_only_registry;
+    register_builtin_tools(inbox_only_registry, nullptr, workspace_root_.string(), &inbox_only_context);
+
+    const auto definitions = inbox_only_registry.definitions();
+    const auto *shell = find_tool(definitions, "shell");
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    ASSERT_TRUE(shell->input_schema["properties"].contains("on_complete"));
+    EXPECT_EQ(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"], json::array({"inbox"}));
+
+    const auto result = inbox_only_registry.execute(ToolUseBlock{
+        .id = "inbox-only-resume",
+        .name = "shell",
+        .input =
+            {
+                {"command", "printf 'ignored\\n'"},
+                {"background", true},
+                {"on_complete", {{"mode", "resume"}}},
+            },
+    });
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("resume"), std::string::npos);
+    EXPECT_NE(result.content.find("not available"), std::string::npos);
 }
 
 TEST_F(BackgroundShellCompletionTest, BackgroundShellDefaultsToInboxOnlyCompletionRouting) {
@@ -314,42 +343,6 @@ TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNo
     EXPECT_EQ(completion.at("on_complete").at("mode"), "resume");
     EXPECT_EQ(failure.at("process_id"), "proc-test");
     EXPECT_EQ(failure.at("reason"), "resume callback failed");
-}
-
-TEST_F(BackgroundShellCompletionTest, DispatcherNoOpsAfterBindingsAreInvalidated) {
-    size_t resume_callback_count = 0;
-    auto expiring_state = make_test_background_completion_runtime_bindings(store_, [&resume_callback_count](const std::string &) {
-        ++resume_callback_count;
-        return std::optional<std::string>{};
-    });
-    ToolRuntimeContext expiring_context{
-        .runtime_key = "runtime:test:expired",
-        .agent_key = tool_context_.agent_key,
-        .scope_key = "scope:test",
-        .automation_runtime = runtime_.get(),
-        .background_completion_runtime = expiring_state,
-    };
-
-    BackgroundCompletionDispatcher dispatcher(&expiring_context);
-    expiring_state->invalidate();
-
-    const auto snapshot = expiring_state->snapshot();
-    EXPECT_FALSE(static_cast<bool>(snapshot.inbox_callback));
-    EXPECT_FALSE(static_cast<bool>(snapshot.resume_callback));
-
-    dispatcher.dispatch(BackgroundProcessCompletionEvent{
-        .process_id = "proc-expired",
-        .command = "printf 'expired'",
-        .working_dir = workspace_root_.string(),
-        .pid = 4321,
-        .terminal_status = BackgroundProcessTerminalStatus::exited,
-        .exit_code = 0,
-        .stdout = {.tail = "done", .total_bytes = 4, .truncated = false},
-        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
-    });
-
-    EXPECT_TRUE(runtime_->list_inbox(tool_context_.agent_key).empty());
-    EXPECT_EQ(resume_callback_count, 0U);
 }
 
 } // namespace
