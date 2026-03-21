@@ -76,8 +76,8 @@ AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         .raw_caller_id = input.raw_caller_id,
         .automation_runtime = input.automation_runtime,
         .approval_callback = input.approval_callback,
-        .background_completion_resume = input.background_completion_resume,
     };
+    runtime.tool_context.background_completion_runtime = make_background_completion_runtime_bindings(input.automation_runtime, input.background_completion_resume);
 
     *runtime.permissions_storage_ = input.permissions;
     auto tool_bootstrap = register_runtime_tools(runtime.tools, runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,

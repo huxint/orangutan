@@ -13,7 +13,7 @@ void register_builtin_core_tools(ToolRegistry &registry, const std::string &work
     const auto process_manager = std::make_shared<BackgroundProcessManager>([completion_dispatcher](const BackgroundProcessCompletionEvent &event) {
         completion_dispatcher->dispatch(event);
     });
-    register_shell_tool(registry, workspace, permissions, tool_context, completion_dispatcher, process_manager);
+    register_shell_tool(registry, workspace, permissions, completion_dispatcher, process_manager);
     register_process_tools(registry, process_manager);
     register_read_tool(registry, workspace_root, edit_mode);
     register_write_tool(registry, workspace_root);

@@ -8,7 +8,7 @@
 
 namespace orangutan {
 
-static std::string scrub_credentials(const std::string &text) {
+std::string scrub_tool_output(std::string_view text) {
     static const std::vector<std::pair<std::regex, std::string>> patterns = {
         {std::regex(R"((sk-ant-api\d{2}-)[A-Za-z0-9_-]{20,})"), "$1[REDACTED]"},
         {std::regex(R"((sk-)[A-Za-z0-9_-]{20,})"), "$1[REDACTED]"},
@@ -20,7 +20,7 @@ static std::string scrub_credentials(const std::string &text) {
         {std::regex(R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))"), "$1[REDACTED]$2"},
     };
 
-    std::string result = text;
+    std::string result{text};
     for (const auto &[pattern, replacement] : patterns) {
         auto scrubbed = std::regex_replace(result, pattern, replacement);
         if (scrubbed != result) {
@@ -70,7 +70,7 @@ ToolResultBlock ToolRegistry::execute(const ToolUseBlock &call) const {
 
     try {
         std::string result = it->second.execute(call.input);
-        result = scrub_credentials(result);
+        result = scrub_tool_output(result);
         return {.tool_use_id = call.id, .content = result, .is_error = false};
     } catch (const std::exception &e) {
         return {.tool_use_id = call.id, .content = std::string("Error: ") + e.what(), .is_error = true};

@@ -15,15 +15,17 @@ public:
     explicit BackgroundCompletionDispatcher(const ToolRuntimeContext *tool_context);
 
     [[nodiscard]]
-    bool should_publish() const;
+    bool supports_completion_routing() const;
+
+    [[nodiscard]]
+    bool supports_resume_callback() const;
 
     void dispatch(const BackgroundProcessCompletionEvent &event) const;
 
 private:
     std::string runtime_key_;
     std::string agent_key_;
-    automation::Runtime *automation_runtime_ = nullptr;
-    BackgroundCompletionResumeCallback background_completion_resume_;
+    std::weak_ptr<BackgroundCompletionRuntimeBindings> background_completion_runtime_;
 };
 
 } // namespace orangutan

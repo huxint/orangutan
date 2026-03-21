@@ -29,6 +29,13 @@ bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &
     });
 }
 
+const ToolDef *find_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
+    const auto it = std::ranges::find_if(definitions, [&name](const ToolDef &definition) {
+        return definition.name == name;
+    });
+    return it == definitions.end() ? nullptr : &(*it);
+}
+
 std::string sanitize_path_component(std::string value) {
     for (char &ch : value) {
         if (std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '-' || ch == '_') {
@@ -136,16 +143,21 @@ TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance
     };
 
     auto runtime = build_agent_runtime(input);
+    const auto definitions = runtime.tools.definitions();
 
     ASSERT_NE(runtime.agent, nullptr);
     ASSERT_NE(runtime.provider, nullptr);
     ASSERT_NE(runtime.memory, nullptr);
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "shell"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_list"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_poll"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "process_kill"));
-    EXPECT_TRUE(static_cast<bool>(runtime.tool_context.background_completion_resume));
+    EXPECT_TRUE(has_tool_named(definitions, "memory_list"));
+    EXPECT_TRUE(has_tool_named(definitions, "shell"));
+    EXPECT_TRUE(has_tool_named(definitions, "process_list"));
+    EXPECT_TRUE(has_tool_named(definitions, "process_poll"));
+    EXPECT_TRUE(has_tool_named(definitions, "process_kill"));
+    EXPECT_EQ(runtime.tool_context.background_completion_runtime, nullptr);
+    const auto *shell = find_tool_named(definitions, "shell");
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
     EXPECT_NE(runtime.system_prompt.find("subagent"), std::string::npos);
     EXPECT_NE(runtime.system_prompt.find("subagent_spawn"), std::string::npos);
 }

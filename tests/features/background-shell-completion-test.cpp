@@ -52,13 +52,12 @@ protected:
             .agent_key = "assistant",
             .scope_key = "scope:test",
             .automation_runtime = runtime_.get(),
-            .background_completion_resume =
-                [this](const std::string &message) {
-                    std::scoped_lock lock(resume_messages_mutex_);
-                    resume_messages_.push_back(message);
-                    return std::optional<std::string>{};
-                },
         };
+        tool_context_.background_completion_runtime = make_background_completion_runtime_bindings(runtime_.get(), [this](const std::string &message) {
+            std::scoped_lock lock(resume_messages_mutex_);
+            resume_messages_.push_back(message);
+            return std::optional<std::string>{};
+        });
 
         register_builtin_tools(registry_, nullptr, workspace_root_.string(), &tool_context_);
     }
@@ -181,11 +180,70 @@ TEST_F(BackgroundShellCompletionTest, ResumeCompletionPreservesPromptInInboxAndR
     EXPECT_EQ(resume_completion.at("on_complete").at("prompt"), prompt);
 }
 
+TEST_F(BackgroundShellCompletionTest, UnsupportedCompletionRoutingDoesNotAdvertiseOrAcceptOnComplete) {
+    ToolRegistry unsupported_registry;
+    register_builtin_tools(unsupported_registry, nullptr, workspace_root_.string());
+
+    const auto definitions = unsupported_registry.definitions();
+    const auto *shell = find_tool(definitions, "shell");
+    ASSERT_NE(shell, nullptr);
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
+
+    const auto result = unsupported_registry.execute(ToolUseBlock{
+        .id = "unsupported-on-complete",
+        .name = "shell",
+        .input =
+            {
+                {"command", "printf 'ignored\\n'"},
+                {"background", true},
+                {"on_complete", {{"mode", "resume"}}},
+            },
+    });
+
+    EXPECT_TRUE(result.is_error);
+    EXPECT_NE(result.content.find("on_complete"), std::string::npos);
+    EXPECT_NE(result.content.find("not available"), std::string::npos);
+}
+
+TEST_F(BackgroundShellCompletionTest, CompletionPayloadSummariesAreScrubbedBeforePersistence) {
+    const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
+    BackgroundCompletionDispatcher dispatcher(&tool_context_);
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-secret",
+        .command = "printf 'secret'",
+        .working_dir = workspace_root_.string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "stdout " + secret, .total_bytes = secret.size() + 7, .truncated = false},
+        .stderr = {.tail = "stderr " + secret, .total_bytes = secret.size() + 7, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
+
+    const auto items = wait_for_inbox_size(1);
+    ASSERT_EQ(items.size(), 1U);
+    const auto resume_messages = wait_for_resume_messages_size(1);
+    ASSERT_EQ(resume_messages.size(), 1U);
+
+    const auto inbox_payload = json::parse(items.front().body);
+    const auto resume_payload = json::parse(resume_messages.front());
+
+    EXPECT_NE(inbox_payload.at("stdout").at("tail").get<std::string>().find("[REDACTED]"), std::string::npos);
+    EXPECT_NE(inbox_payload.at("stderr").at("tail").get<std::string>().find("[REDACTED]"), std::string::npos);
+    EXPECT_EQ(inbox_payload.at("stdout").at("tail").get<std::string>().find(secret), std::string::npos);
+    EXPECT_EQ(inbox_payload.at("stderr").at("tail").get<std::string>().find(secret), std::string::npos);
+    EXPECT_NE(resume_payload.at("stdout").at("tail").get<std::string>().find("[REDACTED]"), std::string::npos);
+    EXPECT_NE(resume_payload.at("stderr").at("tail").get<std::string>().find("[REDACTED]"), std::string::npos);
+    EXPECT_EQ(resume_payload.at("stdout").at("tail").get<std::string>().find(secret), std::string::npos);
+    EXPECT_EQ(resume_payload.at("stderr").at("tail").get<std::string>().find(secret), std::string::npos);
+}
+
 TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNotes) {
     ToolRuntimeContext failing_context = tool_context_;
-    failing_context.background_completion_resume = [](const std::string &) {
+    failing_context.background_completion_runtime = make_background_completion_runtime_bindings(runtime_.get(), [](const std::string &) {
         return std::optional<std::string>{"resume callback failed"};
-    };
+    });
 
     BackgroundCompletionDispatcher dispatcher(&failing_context);
     dispatcher.dispatch(BackgroundProcessCompletionEvent{
@@ -214,6 +272,39 @@ TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNo
     EXPECT_EQ(completion.at("on_complete").at("mode"), "resume");
     EXPECT_EQ(failure.at("process_id"), "proc-test");
     EXPECT_EQ(failure.at("reason"), "resume callback failed");
+}
+
+TEST_F(BackgroundShellCompletionTest, DispatcherNoOpsAfterOwningCompletionStateExpires) {
+    size_t resume_callback_count = 0;
+    auto expiring_state = make_background_completion_runtime_bindings(runtime_.get(), [&resume_callback_count](const std::string &) {
+        ++resume_callback_count;
+        return std::optional<std::string>{};
+    });
+    ToolRuntimeContext expiring_context{
+        .runtime_key = "runtime:test:expired",
+        .agent_key = tool_context_.agent_key,
+        .scope_key = "scope:test",
+        .automation_runtime = runtime_.get(),
+        .background_completion_runtime = expiring_state,
+    };
+
+    BackgroundCompletionDispatcher dispatcher(&expiring_context);
+    expiring_context.background_completion_runtime.reset();
+    expiring_state.reset();
+
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-expired",
+        .command = "printf 'expired'",
+        .working_dir = workspace_root_.string(),
+        .pid = 4321,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done", .total_bytes = 4, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
+
+    EXPECT_TRUE(runtime_->list_inbox(tool_context_.agent_key).empty());
+    EXPECT_EQ(resume_callback_count, 0U);
 }
 
 } // namespace

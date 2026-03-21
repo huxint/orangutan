@@ -114,22 +114,29 @@ BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntime
 
     runtime_key_ = tool_context->runtime_key;
     agent_key_ = tool_context->agent_key.empty() ? std::string(default_agent_key) : tool_context->agent_key;
-    automation_runtime_ = tool_context->automation_runtime;
-    background_completion_resume_ = tool_context->background_completion_resume;
+    background_completion_runtime_ = tool_context->background_completion_runtime;
 }
 
-bool BackgroundCompletionDispatcher::should_publish() const {
-    return automation_runtime_ != nullptr;
+bool BackgroundCompletionDispatcher::supports_completion_routing() const {
+    const auto bindings = background_completion_runtime_.lock();
+    return bindings != nullptr && bindings->automation_runtime != nullptr;
+}
+
+bool BackgroundCompletionDispatcher::supports_resume_callback() const {
+    const auto bindings = background_completion_runtime_.lock();
+    return bindings != nullptr && static_cast<bool>(bindings->resume_callback);
 }
 
 void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionEvent &event) const {
-    if (!should_publish()) {
+    const auto bindings = background_completion_runtime_.lock();
+    if (bindings == nullptr || bindings->automation_runtime == nullptr) {
         return;
     }
 
     const auto payload = build_completion_payload(event, runtime_key_, agent_key_);
-    const auto payload_text = payload.dump(2);
-    auto &store = automation_runtime_->store();
+    const auto payload_text = scrub_tool_output(payload.dump(2));
+    const auto persisted_payload = json::parse(payload_text);
+    auto &store = bindings->automation_runtime->store();
     (void)store.insert_inbox(automation::InboxItem{
         .agent_key = agent_key_,
         .source_kind = std::string(inbox_source_kind),
@@ -146,25 +153,25 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
     const auto insert_resume_failure_note = [&](std::string_view reason) {
         const auto failure_payload = json{
             {"type", completion_resume_failure_type}, {"runtime_key", runtime_key_},   {"agent_key", agent_key_},
-            {"process_id", event.process_id},         {"reason", std::string(reason)}, {"completion", payload},
+            {"process_id", event.process_id},         {"reason", std::string(reason)}, {"completion", persisted_payload},
         };
         (void)store.insert_inbox(automation::InboxItem{
             .agent_key = agent_key_,
             .source_kind = std::string(inbox_source_kind),
             .source_run_id = event.process_id,
             .title = "Background completion resume failed: " + clip_command(event.command),
-            .body = failure_payload.dump(2),
+            .body = scrub_tool_output(failure_payload.dump(2)),
             .created_at = automation::to_unix_seconds(automation::Clock::now()),
         });
     };
 
-    if (!background_completion_resume_) {
+    if (!bindings->resume_callback) {
         insert_resume_failure_note("resume requested, but no background completion resume callback is registered");
         return;
     }
 
     try {
-        const auto error = background_completion_resume_(payload_text);
+        const auto error = bindings->resume_callback(payload_text);
         if (error.has_value()) {
             spdlog::warn("background completion resume callback failed for process {}: {}", event.process_id, *error);
             insert_resume_failure_note(failure_reason_or_default(error));

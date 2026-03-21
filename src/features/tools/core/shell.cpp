@@ -49,11 +49,16 @@ json process_snapshot_json(const BackgroundProcessSnapshot &snapshot) {
     return payload;
 }
 
-BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, const ToolRuntimeContext *tool_context,
-                                                          const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
+BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
     std::string mode = "inbox";
     bool prompt_present = false;
     std::string prompt;
+    const bool has_on_complete = input.contains("on_complete") && !input.at("on_complete").is_null();
+    const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
+
+    if (has_on_complete && !supports_completion_routing) {
+        throw std::runtime_error("on_complete is not available in this runtime context");
+    }
 
     if (const auto on_complete_it = input.find("on_complete"); on_complete_it != input.end() && !on_complete_it->is_null()) {
         if (!on_complete_it->is_object()) {
@@ -74,12 +79,12 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
         }
     }
 
-    if (mode == "resume" && (tool_context == nullptr || !tool_context->background_completion_resume)) {
+    if (mode == "resume" && (completion_dispatcher == nullptr || !completion_dispatcher->supports_resume_callback())) {
         spdlog::warn("background shell completion requested resume mode without a registered runtime resume callback");
     }
 
     BackgroundProcessCompletionPolicy completion;
-    completion.publish_completion_event = completion_dispatcher != nullptr && completion_dispatcher->should_publish();
+    completion.publish_completion_event = supports_completion_routing;
     if (!completion.publish_completion_event) {
         return completion;
     }
@@ -131,7 +136,7 @@ std::string run_foreground_shell(const std::string &display_command, const std::
     return output;
 }
 
-std::string run_shell(const json &input, const std::string &workspace, const ToolPermissionSettings *permissions, const ToolRuntimeContext *tool_context,
+std::string run_shell(const json &input, const std::string &workspace, const ToolPermissionSettings *permissions,
                       const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
     const auto command = input.at("command").get<std::string>();
     const bool background = input.value("background", false);
@@ -159,7 +164,7 @@ std::string run_shell(const json &input, const std::string &workspace, const Too
             .working_dir = effective_working_dir,
             .use_shell = true,
         },
-        command, parse_completion_policy(input, tool_context, completion_dispatcher));
+        command, parse_completion_policy(input, completion_dispatcher));
     auto payload = process_summary_json(summary);
     payload["message"] = "Process started in background. Use process_poll, process_list, or process_kill to manage it.";
     return payload.dump(2);
@@ -185,38 +190,40 @@ std::string kill_process(const json &input, const std::shared_ptr<BackgroundProc
 
 } // namespace
 
-void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions, const ToolRuntimeContext *tool_context,
+void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
                          const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
-    const std::string description = "Execute a shell command. Set background=true for long-running commands to return immediately. "
-                                    "Background commands can use on_complete to write an inbox completion record and optionally request runtime-local resume.";
+    const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
+    std::string description = "Execute a shell command. Set background=true for long-running commands to return immediately.";
+    json properties = {
+        {"command", {{"type", "string"}, {"description", "The shell command to execute"}}},
+        {"background", {{"type", "boolean"}, {"description", "Run the command in the background and return a process id"}}},
+        {"working_dir", {{"type", "string"}, {"description", "Optional working directory inside the workspace"}}},
+    };
+    if (supports_completion_routing) {
+        description += " Background commands can use on_complete to write an inbox completion record and optionally request runtime-local resume.";
+        properties["on_complete"] = {
+            {"type", "object"},
+            {"description", "Optional completion routing for background commands. Defaults to inbox-only delivery. "
+                            "Set mode=resume to also request a runtime-local agent resume."},
+            {"properties",
+             {
+                 {"mode",
+                  {
+                      {"type", "string"},
+                      {"enum", json::array({"inbox", "resume"})},
+                      {"description", "Completion delivery mode for a background command"},
+                  }},
+                 {"prompt",
+                  {
+                      {"type", "string"},
+                      {"description", "Optional prompt to include in the structured completion payload"},
+                  }},
+             }},
+        };
+    }
     const json input_schema = {
         {"type", "object"},
-        {"properties",
-         {
-             {"command", {{"type", "string"}, {"description", "The shell command to execute"}}},
-             {"background", {{"type", "boolean"}, {"description", "Run the command in the background and return a process id"}}},
-             {"working_dir", {{"type", "string"}, {"description", "Optional working directory inside the workspace"}}},
-             {"on_complete",
-              {
-                  {"type", "object"},
-                  {"description", "Optional completion routing for background commands. Defaults to inbox-only delivery. "
-                                  "Set mode=resume to also request a runtime-local agent resume."},
-                  {"properties",
-                   {
-                       {"mode",
-                        {
-                            {"type", "string"},
-                            {"enum", json::array({"inbox", "resume"})},
-                            {"description", "Completion delivery mode for a background command"},
-                        }},
-                       {"prompt",
-                        {
-                            {"type", "string"},
-                            {"description", "Optional prompt to include in the structured completion payload"},
-                        }},
-                   }},
-              }},
-         }},
+        {"properties", std::move(properties)},
         {"required", json::array({"command"})},
     };
 
@@ -228,8 +235,8 @@ void register_shell_tool(ToolRegistry &registry, const std::string &workspace, c
                 .input_schema = input_schema,
             },
         .execute =
-            [workspace, permissions, tool_context, completion_dispatcher, process_manager](const json &input) {
-                return run_shell(input, workspace, permissions, tool_context, completion_dispatcher, process_manager);
+            [workspace, permissions, completion_dispatcher, process_manager](const json &input) {
+                return run_shell(input, workspace, permissions, completion_dispatcher, process_manager);
             },
     });
 }
