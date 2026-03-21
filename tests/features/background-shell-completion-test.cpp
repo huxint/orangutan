@@ -21,6 +21,11 @@ namespace {
 
 using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
+struct ResumeMessagesState {
+    std::mutex mutex;
+    std::vector<std::string> messages;
+};
+
 const ToolDef *find_tool(const std::vector<ToolDef> &definitions, const std::string &name) {
     const auto it = std::ranges::find_if(definitions, [&](const ToolDef &definition) {
         return definition.name == name;
@@ -35,6 +40,15 @@ const orangutan::automation::InboxItem *find_inbox_item_by_body_type(const std::
     return it == items.end() ? nullptr : &(*it);
 }
 
+std::shared_ptr<BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<orangutan::automation::Store> &store,
+                                                                                                      BackgroundCompletionResumeCallback resume_callback = {}) {
+    return make_background_completion_runtime_bindings(
+        [store](const orangutan::automation::InboxItem &item) {
+            (void)store->insert_inbox(item);
+        },
+        std::move(resume_callback));
+}
+
 class BackgroundShellCompletionTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -45,18 +59,18 @@ protected:
         std::filesystem::remove(db_path);
         std::filesystem::create_directories(workspace_root_);
 
-        store_ = std::make_unique<orangutan::automation::Store>(db_path.string());
+        store_ = std::make_shared<orangutan::automation::Store>(db_path.string());
         runtime_ = std::make_unique<orangutan::automation::Runtime>(*store_);
-        completion_owner_ = std::make_shared<int>(1);
+        resume_state_ = std::make_shared<ResumeMessagesState>();
         tool_context_ = ToolRuntimeContext{
             .runtime_key = "runtime:test:background-shell",
             .agent_key = "assistant",
             .scope_key = "scope:test",
             .automation_runtime = runtime_.get(),
         };
-        tool_context_.background_completion_runtime = make_background_completion_runtime_bindings(completion_owner_, runtime_.get(), [this](const std::string &message) {
-            std::scoped_lock lock(resume_messages_mutex_);
-            resume_messages_.push_back(message);
+        tool_context_.background_completion_runtime = make_test_background_completion_runtime_bindings(store_, [resume_state = resume_state_](const std::string &message) {
+            std::scoped_lock lock(resume_state->mutex);
+            resume_state->messages.push_back(message);
             return std::optional<std::string>{};
         });
 
@@ -64,10 +78,10 @@ protected:
     }
 
     void TearDown() override {
-        completion_owner_.reset();
         tool_context_.invalidate_background_completion_runtime();
         runtime_.reset();
         store_.reset();
+        resume_state_.reset();
         std::filesystem::remove_all(workspace_root_);
     }
 
@@ -104,28 +118,26 @@ protected:
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
             {
-                std::scoped_lock lock(resume_messages_mutex_);
-                if (resume_messages_.size() >= expected_size) {
-                    return resume_messages_;
+                std::scoped_lock lock(resume_state_->mutex);
+                if (resume_state_->messages.size() >= expected_size) {
+                    return resume_state_->messages;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
 
         ADD_FAILURE() << "background completion resume messages did not arrive in time";
-        std::scoped_lock lock(resume_messages_mutex_);
-        return resume_messages_;
+        std::scoped_lock lock(resume_state_->mutex);
+        return resume_state_->messages;
     }
 
     ToolRegistry registry_;
     ToolRuntimeContext tool_context_;
     std::unique_ptr<ScopedEnvVar> tmp_env_;
     std::filesystem::path workspace_root_;
-    std::unique_ptr<orangutan::automation::Store> store_;
+    std::shared_ptr<orangutan::automation::Store> store_;
     std::unique_ptr<orangutan::automation::Runtime> runtime_;
-    std::shared_ptr<int> completion_owner_;
-    std::mutex resume_messages_mutex_;
-    std::vector<std::string> resume_messages_;
+    std::shared_ptr<ResumeMessagesState> resume_state_;
 };
 
 TEST_F(BackgroundShellCompletionTest, ShellToolSchemaDocumentsOnCompletePolicy) {
@@ -151,8 +163,8 @@ TEST_F(BackgroundShellCompletionTest, BackgroundShellDefaultsToInboxOnlyCompleti
     const auto items = wait_for_inbox_size(1);
     ASSERT_EQ(items.size(), 1U);
     {
-        std::scoped_lock lock(resume_messages_mutex_);
-        EXPECT_TRUE(resume_messages_.empty());
+        std::scoped_lock lock(resume_state_->mutex);
+        EXPECT_TRUE(resume_state_->messages.empty());
     }
 
     const auto completion = json::parse(items.front().body);
@@ -182,6 +194,32 @@ TEST_F(BackgroundShellCompletionTest, ResumeCompletionPreservesPromptInInboxAndR
     EXPECT_EQ(resume_completion.at("process_id"), start_payload.at("process_id"));
     EXPECT_EQ(resume_completion.at("on_complete").at("mode"), "resume");
     EXPECT_EQ(resume_completion.at("on_complete").at("prompt"), prompt);
+}
+
+TEST_F(BackgroundShellCompletionTest, LargeResumePromptIsBoundedInPersistedAndResumePayload) {
+    const std::string prompt(background_completion_prompt_max_chars * 4, 'p');
+    const auto start_payload = start_background_shell({
+        {"command", "printf 'ready\\n'"},
+        {"on_complete", {{"mode", "resume"}, {"prompt", prompt}}},
+    });
+
+    const auto items = wait_for_inbox_size(1);
+    ASSERT_EQ(items.size(), 1U);
+    const auto resume_messages = wait_for_resume_messages_size(1);
+    ASSERT_EQ(resume_messages.size(), 1U);
+
+    const auto inbox_completion = json::parse(items.front().body);
+    const auto resume_completion = json::parse(resume_messages.front());
+    const auto inbox_prompt = inbox_completion.at("on_complete").at("prompt").get<std::string>();
+    const auto resume_prompt = resume_completion.at("on_complete").at("prompt").get<std::string>();
+
+    EXPECT_EQ(inbox_completion.at("process_id"), start_payload.at("process_id"));
+    EXPECT_EQ(inbox_prompt, resume_prompt);
+    EXPECT_LT(inbox_prompt.size(), prompt.size());
+    EXPECT_LE(inbox_prompt.size(), background_completion_prompt_max_chars);
+    EXPECT_TRUE(inbox_prompt.ends_with("..."));
+    EXPECT_LE(items.front().body.size(), background_completion_payload_max_bytes);
+    EXPECT_LE(resume_messages.front().size(), background_completion_payload_max_bytes);
 }
 
 TEST_F(BackgroundShellCompletionTest, UnsupportedCompletionRoutingDoesNotAdvertiseOrAcceptOnComplete) {
@@ -245,7 +283,7 @@ TEST_F(BackgroundShellCompletionTest, CompletionPayloadSummariesAreScrubbedBefor
 
 TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNotes) {
     ToolRuntimeContext failing_context = tool_context_;
-    failing_context.background_completion_runtime = make_background_completion_runtime_bindings(completion_owner_, runtime_.get(), [](const std::string &) {
+    failing_context.background_completion_runtime = make_test_background_completion_runtime_bindings(store_, [](const std::string &) {
         return std::optional<std::string>{"resume callback failed"};
     });
 
@@ -278,10 +316,9 @@ TEST_F(BackgroundShellCompletionTest, ResumeDispatchFailuresBecomeInboxVisibleNo
     EXPECT_EQ(failure.at("reason"), "resume callback failed");
 }
 
-TEST_F(BackgroundShellCompletionTest, DispatcherNoOpsAfterOwnerTokenExpiresEvenIfBindingsRemainAlive) {
+TEST_F(BackgroundShellCompletionTest, DispatcherNoOpsAfterBindingsAreInvalidated) {
     size_t resume_callback_count = 0;
-    auto expiring_owner = std::make_shared<int>(1);
-    auto expiring_state = make_background_completion_runtime_bindings(expiring_owner, runtime_.get(), [&resume_callback_count](const std::string &) {
+    auto expiring_state = make_test_background_completion_runtime_bindings(store_, [&resume_callback_count](const std::string &) {
         ++resume_callback_count;
         return std::optional<std::string>{};
     });
@@ -294,11 +331,10 @@ TEST_F(BackgroundShellCompletionTest, DispatcherNoOpsAfterOwnerTokenExpiresEvenI
     };
 
     BackgroundCompletionDispatcher dispatcher(&expiring_context);
-    expiring_owner.reset();
+    expiring_state->invalidate();
 
     const auto snapshot = expiring_state->snapshot();
-    EXPECT_EQ(snapshot.owner_guard, nullptr);
-    EXPECT_EQ(snapshot.automation_runtime, nullptr);
+    EXPECT_FALSE(static_cast<bool>(snapshot.inbox_callback));
     EXPECT_FALSE(static_cast<bool>(snapshot.resume_callback));
 
     dispatcher.dispatch(BackgroundProcessCompletionEvent{

@@ -3,12 +3,15 @@
 #include "core/tools/tool.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
+#include <cstddef>
 #include <string_view>
 
 namespace orangutan {
 
 inline constexpr std::string_view background_completion_mode_metadata_key = "on_complete.mode";
 inline constexpr std::string_view background_completion_prompt_metadata_key = "on_complete.prompt";
+inline constexpr size_t background_completion_prompt_max_chars = 2048;
+inline constexpr size_t background_completion_payload_max_bytes = 16384;
 
 class BackgroundCompletionDispatcher {
 public:
@@ -25,6 +28,8 @@ public:
 private:
     std::string runtime_key_;
     std::string agent_key_;
+    bool supports_completion_routing_ = false;
+    bool supports_resume_callback_ = false;
     std::weak_ptr<BackgroundCompletionRuntimeBindings> background_completion_runtime_;
 };
 

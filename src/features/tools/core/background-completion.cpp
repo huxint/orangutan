@@ -18,6 +18,13 @@ constexpr std::string_view completion_resume_failure_type = "background_process_
 constexpr std::string_view inbox_source_kind = "background_process";
 constexpr std::string_view default_agent_key = "default";
 constexpr size_t max_output_summary_bytes = 2048;
+constexpr size_t max_runtime_key_chars = 256;
+constexpr size_t max_agent_key_chars = 128;
+constexpr size_t max_process_id_chars = 128;
+constexpr size_t max_command_chars = 2048;
+constexpr size_t max_working_dir_chars = 1024;
+constexpr size_t max_failure_reason_chars = 512;
+constexpr size_t max_failure_payload_bytes = background_completion_payload_max_bytes * 2;
 constexpr size_t max_title_command_chars = 80;
 
 std::string process_status(const BackgroundProcessCompletionEvent &event) {
@@ -35,11 +42,18 @@ std::string process_status(const BackgroundProcessCompletionEvent &event) {
     }
 }
 
-std::string clip_command(std::string_view command) {
-    if (command.size() <= max_title_command_chars) {
-        return std::string(command);
+std::string truncate_payload_text(std::string_view text, size_t max_chars) {
+    if (text.size() <= max_chars) {
+        return std::string(text);
     }
-    return std::string(command.substr(0, max_title_command_chars)) + "...";
+    if (max_chars <= 3) {
+        return std::string(text.substr(0, max_chars));
+    }
+    return std::string(text.substr(0, max_chars - 3)) + "...";
+}
+
+std::string clip_command(std::string_view command) {
+    return truncate_payload_text(command, max_title_command_chars);
 }
 
 json summarize_output(const BackgroundProcessOutputMetadata &output) {
@@ -66,7 +80,7 @@ std::string completion_mode(const std::map<std::string, std::string> &metadata) 
 
 std::optional<std::string> completion_prompt(const std::map<std::string, std::string> &metadata) {
     if (const auto it = metadata.find(std::string(background_completion_prompt_metadata_key)); it != metadata.end()) {
-        return it->second;
+        return truncate_payload_text(it->second, background_completion_prompt_max_chars);
     }
     return std::nullopt;
 }
@@ -74,11 +88,11 @@ std::optional<std::string> completion_prompt(const std::map<std::string, std::st
 json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
     json payload = {
         {"type", completion_message_type},
-        {"runtime_key", runtime_key},
-        {"agent_key", agent_key},
-        {"process_id", event.process_id},
-        {"command", event.command},
-        {"working_dir", event.working_dir},
+        {"runtime_key", truncate_payload_text(runtime_key, max_runtime_key_chars)},
+        {"agent_key", truncate_payload_text(agent_key, max_agent_key_chars)},
+        {"process_id", truncate_payload_text(event.process_id, max_process_id_chars)},
+        {"command", truncate_payload_text(event.command, max_command_chars)},
+        {"working_dir", truncate_payload_text(event.working_dir, max_working_dir_chars)},
         {"pid", event.pid},
         {"status", process_status(event)},
         {"kill_requested", event.kill_requested},
@@ -102,7 +116,23 @@ std::string failure_reason_or_default(const std::optional<std::string> &reason) 
     if (!reason.has_value() || reason->empty()) {
         return "resume callback returned an unspecified failure";
     }
-    return *reason;
+    return truncate_payload_text(*reason, max_failure_reason_chars);
+}
+
+bool insert_inbox_item(const BackgroundCompletionRuntimeBindings::Snapshot &snapshot, const automation::InboxItem &item, std::string_view process_id) {
+    if (!snapshot.inbox_callback) {
+        return false;
+    }
+
+    try {
+        snapshot.inbox_callback(item);
+        return true;
+    } catch (const std::exception &ex) {
+        spdlog::warn("background completion inbox callback threw for process {}: {}", process_id, ex.what());
+    } catch (...) {
+        spdlog::warn("background completion inbox callback threw for process {} with an unknown exception", process_id);
+    }
+    return false;
 }
 
 } // namespace
@@ -115,26 +145,19 @@ BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntime
     runtime_key_ = tool_context->runtime_key;
     agent_key_ = tool_context->agent_key.empty() ? std::string(default_agent_key) : tool_context->agent_key;
     background_completion_runtime_ = tool_context->background_completion_runtime;
+    if (const auto bindings = background_completion_runtime_.lock(); bindings != nullptr) {
+        const auto snapshot = bindings->snapshot();
+        supports_completion_routing_ = static_cast<bool>(snapshot.inbox_callback);
+        supports_resume_callback_ = supports_completion_routing_ && static_cast<bool>(snapshot.resume_callback);
+    }
 }
 
 bool BackgroundCompletionDispatcher::supports_completion_routing() const {
-    const auto bindings = background_completion_runtime_.lock();
-    if (bindings == nullptr) {
-        return false;
-    }
-
-    const auto snapshot = bindings->snapshot();
-    return snapshot.owner_guard != nullptr && snapshot.automation_runtime != nullptr;
+    return supports_completion_routing_;
 }
 
 bool BackgroundCompletionDispatcher::supports_resume_callback() const {
-    const auto bindings = background_completion_runtime_.lock();
-    if (bindings == nullptr) {
-        return false;
-    }
-
-    const auto snapshot = bindings->snapshot();
-    return snapshot.owner_guard != nullptr && static_cast<bool>(snapshot.resume_callback);
+    return supports_resume_callback_;
 }
 
 void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionEvent &event) const {
@@ -144,22 +167,29 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
     }
 
     const auto runtime_snapshot = bindings->snapshot();
-    if (runtime_snapshot.owner_guard == nullptr || runtime_snapshot.automation_runtime == nullptr) {
+    if (!runtime_snapshot.inbox_callback) {
         return;
     }
 
     const auto payload = build_completion_payload(event, runtime_key_, agent_key_);
     const auto payload_text = scrub_tool_output(payload.dump(2));
+    if (payload_text.size() > background_completion_payload_max_bytes) {
+        spdlog::warn("background completion payload exceeded bounded size for process {}", event.process_id);
+        return;
+    }
     const auto persisted_payload = json::parse(payload_text);
-    auto &store = runtime_snapshot.automation_runtime->store();
-    (void)store.insert_inbox(automation::InboxItem{
-        .agent_key = agent_key_,
-        .source_kind = std::string(inbox_source_kind),
-        .source_run_id = event.process_id,
-        .title = inbox_title_for_event(event),
-        .body = payload_text,
-        .created_at = automation::to_unix_seconds(automation::Clock::now()),
-    });
+    if (!insert_inbox_item(runtime_snapshot,
+                           automation::InboxItem{
+                               .agent_key = agent_key_,
+                               .source_kind = std::string(inbox_source_kind),
+                               .source_run_id = event.process_id,
+                               .title = inbox_title_for_event(event),
+                               .body = payload_text,
+                               .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                           },
+                           event.process_id)) {
+        return;
+    }
 
     if (completion_mode(event.metadata) != "resume") {
         return;
@@ -167,17 +197,28 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
 
     const auto insert_resume_failure_note = [&](std::string_view reason) {
         const auto failure_payload = json{
-            {"type", completion_resume_failure_type}, {"runtime_key", runtime_key_},   {"agent_key", agent_key_},
-            {"process_id", event.process_id},         {"reason", std::string(reason)}, {"completion", persisted_payload},
+            {"type", completion_resume_failure_type},
+            {"runtime_key", truncate_payload_text(runtime_key_, max_runtime_key_chars)},
+            {"agent_key", truncate_payload_text(agent_key_, max_agent_key_chars)},
+            {"process_id", truncate_payload_text(event.process_id, max_process_id_chars)},
+            {"reason", truncate_payload_text(reason, max_failure_reason_chars)},
+            {"completion", persisted_payload},
         };
-        (void)store.insert_inbox(automation::InboxItem{
-            .agent_key = agent_key_,
-            .source_kind = std::string(inbox_source_kind),
-            .source_run_id = event.process_id,
-            .title = "Background completion resume failed: " + clip_command(event.command),
-            .body = scrub_tool_output(failure_payload.dump(2)),
-            .created_at = automation::to_unix_seconds(automation::Clock::now()),
-        });
+        const auto failure_body = scrub_tool_output(failure_payload.dump(2));
+        if (failure_body.size() > max_failure_payload_bytes) {
+            spdlog::warn("background completion failure payload exceeded bounded size for process {}", event.process_id);
+            return;
+        }
+        (void)insert_inbox_item(runtime_snapshot,
+                                automation::InboxItem{
+                                    .agent_key = agent_key_,
+                                    .source_kind = std::string(inbox_source_kind),
+                                    .source_run_id = event.process_id,
+                                    .title = "Background completion resume failed: " + clip_command(event.command),
+                                    .body = std::move(failure_body),
+                                    .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                                },
+                                event.process_id);
     };
 
     if (!runtime_snapshot.resume_callback) {

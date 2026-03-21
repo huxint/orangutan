@@ -17,66 +17,55 @@ namespace orangutan {
 
 namespace automation {
 class Runtime;
-}
+struct InboxItem;
+} // namespace automation
 
 class RuntimeMemory;
 class SubagentManager;
 using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
-using BackgroundCompletionOwnerToken = std::shared_ptr<void>;
+using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
 
 struct BackgroundCompletionRuntimeBindings {
     struct Snapshot {
-        BackgroundCompletionOwnerToken owner_guard;
-        automation::Runtime *automation_runtime = nullptr;
+        BackgroundCompletionInboxCallback inbox_callback;
         BackgroundCompletionResumeCallback resume_callback;
     };
 
     BackgroundCompletionRuntimeBindings() = default;
 
-    BackgroundCompletionRuntimeBindings(BackgroundCompletionOwnerToken owner_token, automation::Runtime *automation_runtime,
-                                        BackgroundCompletionResumeCallback resume_callback = {})
-    : owner_token_(std::move(owner_token)),
-      automation_runtime_(automation_runtime),
+    BackgroundCompletionRuntimeBindings(BackgroundCompletionInboxCallback inbox_callback, BackgroundCompletionResumeCallback resume_callback = {})
+    : inbox_callback_(std::move(inbox_callback)),
       resume_callback_(std::move(resume_callback)) {}
 
     [[nodiscard]]
     Snapshot snapshot() const {
         std::scoped_lock lock(mutex_);
-        auto owner_guard = owner_token_.lock();
-        if (owner_guard == nullptr) {
-            return {};
-        }
-
         return {
-            .owner_guard = std::move(owner_guard),
-            .automation_runtime = automation_runtime_,
+            .inbox_callback = inbox_callback_,
             .resume_callback = resume_callback_,
         };
     }
 
     void invalidate() {
         std::scoped_lock lock(mutex_);
-        owner_token_.reset();
-        automation_runtime_ = nullptr;
+        inbox_callback_ = {};
         resume_callback_ = {};
     }
 
 private:
     mutable std::mutex mutex_;
-    std::weak_ptr<void> owner_token_;
-    automation::Runtime *automation_runtime_ = nullptr;
+    BackgroundCompletionInboxCallback inbox_callback_;
     BackgroundCompletionResumeCallback resume_callback_;
 };
 
 [[nodiscard]]
-inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionOwnerToken owner_token,
-                                                                                                        automation::Runtime *automation_runtime,
+inline std::shared_ptr<BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionInboxCallback inbox_callback,
                                                                                                         BackgroundCompletionResumeCallback resume_callback = {}) {
-    if (owner_token == nullptr || automation_runtime == nullptr) {
+    if (!inbox_callback) {
         return nullptr;
     }
 
-    return std::make_shared<BackgroundCompletionRuntimeBindings>(std::move(owner_token), automation_runtime, std::move(resume_callback));
+    return std::make_shared<BackgroundCompletionRuntimeBindings>(std::move(inbox_callback), std::move(resume_callback));
 }
 
 struct ToolRuntimeContext {

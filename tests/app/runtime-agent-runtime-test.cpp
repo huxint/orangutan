@@ -48,6 +48,15 @@ std::string sanitize_path_component(std::string value) {
     return value;
 }
 
+std::shared_ptr<BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<automation::Store> &store,
+                                                                                                      BackgroundCompletionResumeCallback resume_callback = {}) {
+    return make_background_completion_runtime_bindings(
+        [store](const automation::InboxItem &item) {
+            (void)store->insert_inbox(item);
+        },
+        std::move(resume_callback));
+}
+
 class RuntimeAgentRuntimeTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -140,9 +149,6 @@ private:
 
 TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance) {
     auto input = make_input();
-    input.background_completion_resume = [](const std::string &) {
-        return std::optional<std::string>{};
-    };
 
     auto runtime = build_agent_runtime(input);
     const auto definitions = runtime.tools.definitions();
@@ -164,15 +170,12 @@ TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance
     EXPECT_NE(runtime.system_prompt.find("subagent_spawn"), std::string::npos);
 }
 
-TEST_F(RuntimeAgentRuntimeTest, RuntimeWithoutCompletionOwnerDoesNotEnableCompletionRouting) {
-    auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation-no-owner.db").string());
+TEST_F(RuntimeAgentRuntimeTest, RuntimeWithoutExplicitCompletionBindingsDoesNotEnableCompletionRouting) {
+    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-no-owner.db").string());
     auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
 
     auto input = make_input();
     input.automation_runtime = automation_runtime.get();
-    input.background_completion_resume = [](const std::string &) {
-        return std::optional<std::string>{};
-    };
 
     auto runtime = build_agent_runtime(input);
     const auto definitions = runtime.tools.definitions();
@@ -184,41 +187,33 @@ TEST_F(RuntimeAgentRuntimeTest, RuntimeWithoutCompletionOwnerDoesNotEnableComple
     EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
 }
 
-TEST_F(RuntimeAgentRuntimeTest, RuntimeWithCompletionOwnerEnablesCompletionRoutingUntilOwnerExpires) {
-    auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation-with-owner.db").string());
+TEST_F(RuntimeAgentRuntimeTest, RuntimeWithExplicitCompletionBindingsEnablesCompletionRouting) {
+    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-with-owner.db").string());
     auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-    auto completion_owner = std::make_shared<int>(1);
+    auto background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
+        return std::optional<std::string>{};
+    });
 
     auto input = make_input();
     input.automation_runtime = automation_runtime.get();
-    input.background_completion_owner = completion_owner;
-    input.background_completion_resume = [](const std::string &) {
-        return std::optional<std::string>{};
-    };
+    input.background_completion_runtime = background_completion_runtime;
 
     auto runtime = build_agent_runtime(input);
     const auto definitions = runtime.tools.definitions();
     const auto *shell = find_tool_named(definitions, "shell");
 
-    ASSERT_NE(runtime.tool_context.background_completion_runtime, nullptr);
+    ASSERT_EQ(runtime.tool_context.background_completion_runtime, background_completion_runtime);
     ASSERT_NE(shell, nullptr);
     ASSERT_TRUE(shell->input_schema.contains("properties"));
     EXPECT_TRUE(shell->input_schema["properties"].contains("on_complete"));
 
+    input.background_completion_runtime.reset();
+
     {
         const auto live_snapshot = runtime.tool_context.background_completion_runtime->snapshot();
-        ASSERT_NE(live_snapshot.owner_guard, nullptr);
-        EXPECT_EQ(live_snapshot.automation_runtime, automation_runtime.get());
+        EXPECT_TRUE(static_cast<bool>(live_snapshot.inbox_callback));
         EXPECT_TRUE(static_cast<bool>(live_snapshot.resume_callback));
     }
-
-    input.background_completion_owner.reset();
-    completion_owner.reset();
-
-    const auto expired_snapshot = runtime.tool_context.background_completion_runtime->snapshot();
-    EXPECT_EQ(expired_snapshot.owner_guard, nullptr);
-    EXPECT_EQ(expired_snapshot.automation_runtime, nullptr);
-    EXPECT_FALSE(static_cast<bool>(expired_snapshot.resume_callback));
 }
 
 TEST_F(RuntimeAgentRuntimeTest, LoadsSkillsPromptFromConfiguredSkillDirectory) {
@@ -288,14 +283,12 @@ TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBefor
     EXPECT_EXIT(
         {
             auto input = make_input();
-            auto automation_store = std::make_unique<automation::Store>((workspace_root() / "automation.db").string());
+            auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation.db").string());
             auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-            auto completion_owner = std::make_shared<int>(1);
             input.automation_runtime = automation_runtime.get();
-            input.background_completion_owner = completion_owner;
-            input.background_completion_resume = [](const std::string &) {
+            input.background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
                 return std::optional<std::string>{};
-            };
+            });
 
             std::shared_ptr<BackgroundCompletionRuntimeBindings> bindings;
             int exit_code = 0;
@@ -319,15 +312,14 @@ TEST_F(RuntimeAgentRuntimeTest, BundleTeardownInvalidatesCompletionBindingsBefor
                     }
                 }
 
-                input.background_completion_owner.reset();
-                completion_owner.reset();
+                input.background_completion_runtime.reset();
                 automation_runtime.reset();
                 automation_store.reset();
             }
 
             if (bindings != nullptr) {
                 const auto snapshot = bindings->snapshot();
-                if (snapshot.automation_runtime != nullptr) {
+                if (static_cast<bool>(snapshot.inbox_callback)) {
                     exit_code = 12;
                 }
                 if (static_cast<bool>(snapshot.resume_callback)) {

@@ -10,6 +10,16 @@
 namespace orangutan {
 namespace {
 
+std::string truncate_completion_prompt(std::string_view prompt) {
+    if (prompt.size() <= background_completion_prompt_max_chars) {
+        return std::string(prompt);
+    }
+    if (background_completion_prompt_max_chars <= 3) {
+        return std::string(prompt.substr(0, background_completion_prompt_max_chars));
+    }
+    return std::string(prompt.substr(0, background_completion_prompt_max_chars - 3)) + "...";
+}
+
 std::string process_status(const BackgroundProcessSummary &summary) {
     if (summary.running) {
         return summary.kill_requested ? "stopping" : "running";
@@ -75,7 +85,7 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
                 throw std::runtime_error("on_complete.prompt must be a string");
             }
             prompt_present = true;
-            prompt = prompt_it->get<std::string>();
+            prompt = truncate_completion_prompt(prompt_it->get_ref<const std::string &>());
         }
     }
 
