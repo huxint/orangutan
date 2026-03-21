@@ -99,6 +99,9 @@ void WebServer::set_tool_registry(ToolRegistry *registry) {
 void WebServer::set_skill_loader(SkillLoader *loader) {
     skill_loader_ = loader;
 }
+void WebServer::set_automation_runtime(automation::Runtime *runtime) {
+    automation_runtime_ = runtime;
+}
 
 void WebServer::setup_routes() {
     server_.set_pre_routing_handler([this](const httplib::Request &req, httplib::Response &res) {
@@ -170,16 +173,36 @@ void WebServer::setup_routes() {
         web::handle_list_skills(req, res, skill_loader_);
     });
 
+    server_.Get("/api/tasks", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_tasks(req, res, automation_runtime_);
+    });
+
+    server_.Get("/api/heartbeats", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_heartbeats(req, res, automation_runtime_);
+    });
+
+    server_.Get("/api/inbox", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_list_inbox(req, res, automation_runtime_);
+    });
+
+    server_.Post("/api/inbox/ack", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_ack_inbox(req, res, automation_runtime_);
+    });
+
+    server_.Delete("/api/inbox", [this](const httplib::Request &req, httplib::Response &res) {
+        web::handle_clear_inbox(req, res, automation_runtime_);
+    });
+
     server_.Get("/api/system/status", [this](const httplib::Request &req, httplib::Response &res) {
-        web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_);
+        web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_runtime_);
     });
 
     server_.Get("/api/system", [this](const httplib::Request &req, httplib::Response &res) {
-        web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_);
+        web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_runtime_);
     });
 
     server_.Post("/api/chat", [this](const httplib::Request &req, httplib::Response &res) {
-        web::handle_chat(req, res, config_, session_store_, memory_store_, subagent_manager_, tool_registry_, sessions_mutex_, sessions_);
+        web::handle_chat(req, res, config_, session_store_, memory_store_, subagent_manager_, tool_registry_, automation_runtime_, sessions_mutex_, sessions_);
     });
 
     server_.Post("/api/chat/approval", [this](const httplib::Request &req, httplib::Response &res) {

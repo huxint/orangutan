@@ -1,11 +1,11 @@
 #include "app/channel-serve.hpp"
 
 #include "app/runtime/agent-runtime.hpp"
+#include "features/automation/runtime.hpp"
 #include "features/agent/agent-loop.hpp"
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
 #include "features/channel/platforms/qq.hpp"
-#include "features/heartbeat/scheduler.hpp"
 #include "features/heartbeat/protocol/heartbeat-ok.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "core/providers/provider.hpp"
@@ -19,6 +19,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -205,7 +206,7 @@ ChannelApprovalDecision parse_channel_approval_decision(const std::string &conte
 
 std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
                                                                SubagentManager &subagent_manager, const std::string &raw_caller_id, HookManager *hook_manager,
-                                                               CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler) {
+                                                               automation::Runtime *automation_runtime) {
     auto runtime = std::make_unique<ConversationRuntime>();
     runtime->runtime_key = identity.runtime_key;
     runtime->agent_key = cfg.agent_key;
@@ -233,8 +234,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
         .subagent_manager = &subagent_manager,
         .runtime_origin = SubagentRuntimeOrigin::channel,
         .raw_caller_id = raw_caller_id,
-        .cron_store = cron_store,
-        .heartbeat_scheduler = heartbeat_scheduler,
+        .automation_runtime = automation_runtime,
         .custom_tools = app_cfg.custom_tools,
         .mcp_servers = app_cfg.mcp_servers,
         .skill_paths = app_cfg.skill_paths,
@@ -293,8 +293,7 @@ void persist_channel_session(const std::string &jid, ConversationRuntime &runtim
 ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
                                             const InboundMessage &message, const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                             const std::unordered_map<std::string, std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                                            SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, CronStore *cron_store,
-                                            HeartbeatScheduler *heartbeat_scheduler) {
+                                            SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     std::scoped_lock lock(runtimes_mutex);
     const auto agent_key = resolve_agent_key_for_message(message, qq_bot_agents);
     const auto runtime_key = derive_channel_runtime_key(jid, agent_key);
@@ -306,7 +305,7 @@ ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unorder
         }
 
         auto identity = derive_channel_identity(cfg_it->second.workspace_root, jid, agent_key);
-        auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, subagent_manager, jid, hook_manager, cron_store, heartbeat_scheduler);
+        auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, subagent_manager, jid, hook_manager, automation_runtime);
         if (!message.isolated) {
             if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
                 try {
@@ -635,10 +634,9 @@ std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntime
 namespace detail {
 
 ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
-                                                           const std::string &raw_caller_id, HookManager *hook_manager, CronStore *cron_store,
-                                                           HeartbeatScheduler *heartbeat_scheduler) {
+                                                           const std::string &raw_caller_id, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
-    auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, subagent_manager, raw_caller_id, hook_manager, cron_store, heartbeat_scheduler);
+    auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, subagent_manager, raw_caller_id, hook_manager, automation_runtime);
 
     return ConversationRuntimeInspection{
         .tool_definitions = runtime->tools().definitions(),
@@ -659,35 +657,37 @@ namespace {
 void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
                              std::mutex &runtimes_mutex, const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                              const std::unordered_map<std::string, std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                             SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler,
+                             SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager, automation::Runtime *automation_runtime,
                              ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner) {
     try {
         auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store, subagent_manager, cfg,
-                                               hook_manager, cron_store, heartbeat_scheduler);
-        if (handle_channel_session_command(message, runtime, session_store, channel_manager, cfg)) {
-            return;
-        }
+                                               hook_manager, automation_runtime);
+        automation::with_agent_execution_lease(automation_runtime, runtime.agent_key, [&] {
+            if (handle_channel_session_command(message, runtime, session_store, channel_manager, cfg)) {
+                return;
+            }
 
-        // Light context: clear history so agent runs with minimal context (system prompt + current message only)
-        if (message.light_context) {
-            runtime.agent().clear_history();
-        }
+            // Light context: clear history so agent runs with minimal context (system prompt + current message only)
+            if (message.light_context) {
+                runtime.agent().clear_history();
+            }
 
-        runtime.tool_context().approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
-        const auto reply = runtime.agent().run(message.content);
+            runtime.tool_context().approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
+            const auto reply = runtime.agent().run(message.content);
 
-        // Skip session persistence for isolated heartbeat runs
-        if (!message.isolated) {
-            persist_channel_session(message.jid, runtime, session_store);
-        }
+            // Skip session persistence for isolated heartbeat runs
+            if (!message.isolated) {
+                persist_channel_session(message.jid, runtime, session_store);
+            }
 
-        // Suppress HEARTBEAT_OK responses from heartbeat jobs
-        if (should_suppress_heartbeat_reply(message.jid, reply, cfg.ack_max_chars)) {
-            spdlog::debug("Suppressing HEARTBEAT_OK response from '{}'", message.jid);
-            return;
-        }
+            // Suppress HEARTBEAT_OK responses from heartbeat jobs
+            if (should_suppress_heartbeat_reply(message.jid, reply, cfg.ack_max_chars)) {
+                spdlog::debug("Suppressing HEARTBEAT_OK response from '{}'", message.jid);
+                return;
+            }
 
-        deliver_reply(message, reply, channel_manager);
+            deliver_reply(message, reply, channel_manager);
+        });
     } catch (const std::exception &e) {
         spdlog::error("Failed to process message for jid '{}': {}", message.jid, e.what());
         deliver_reply(message, "Error: " + std::string(e.what()), channel_manager);
@@ -710,7 +710,7 @@ size_t default_serve_worker_count() {
 void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                       const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
                       MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg, HookManager *hook_manager,
-                      CronStore *cron_store, HeartbeatScheduler *heartbeat_scheduler) {
+                      automation::Runtime *automation_runtime) {
     std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
     std::mutex runtimes_mutex;
     ChannelApprovalCoordinator approval_coordinator;
@@ -733,9 +733,9 @@ void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std:
         }
 
         task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store, &session_store, &subagent_manager,
-                                         &cfg, hook_manager, cron_store, heartbeat_scheduler, &approval_coordinator, &task_runner] {
+                                         &cfg, hook_manager, automation_runtime, &approval_coordinator, &task_runner] {
             process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, subagent_manager, cfg,
-                                    hook_manager, cron_store, heartbeat_scheduler, approval_coordinator, task_runner);
+                                    hook_manager, automation_runtime, approval_coordinator, task_runner);
         });
     }
 

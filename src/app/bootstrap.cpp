@@ -3,14 +3,13 @@
 #include "app/channel-serve.hpp"
 #include "app/repl.hpp"
 #include "app/single-shot.hpp"
+#include "app/runtime/app-runtime.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
 #include "core/tools/tool.hpp"
 #include "features/web/web-server.hpp"
 #include "features/channel/core/message-queue.hpp"
 #include "features/cron/parser.hpp"
-#include "features/cron/store.hpp"
-#include "features/heartbeat/scheduler.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
 #include "features/skills/skill-loader.hpp"
@@ -37,6 +36,7 @@
 #include <print>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -68,6 +68,7 @@ struct WebStartupInspection {
 
 using WebStartupInspectionCallback = std::function<bool(const WebStartupInspection &)>;
 using WebRuntimeBuildCallback = std::function<void()>;
+using ChannelModeCallback = std::function<int()>;
 
 WebStartupInspectionCallback &web_startup_inspection_callback() {
     static WebStartupInspectionCallback callback;
@@ -76,6 +77,11 @@ WebStartupInspectionCallback &web_startup_inspection_callback() {
 
 WebRuntimeBuildCallback &web_runtime_build_callback() {
     static WebRuntimeBuildCallback callback;
+    return callback;
+}
+
+ChannelModeCallback &channel_mode_callback() {
+    static ChannelModeCallback callback;
     return callback;
 }
 
@@ -114,6 +120,14 @@ void set_web_runtime_build_callback_for_tests(WebRuntimeBuildCallback callback) 
 
 void clear_web_runtime_build_callback_for_tests() {
     web_runtime_build_callback() = {};
+}
+
+void set_channel_mode_callback_for_tests(ChannelModeCallback callback) {
+    channel_mode_callback() = std::move(callback);
+}
+
+void clear_channel_mode_callback_for_tests() {
+    channel_mode_callback() = {};
 }
 
 void maybe_inject_web_runtime_build_failure_for_tests() {
@@ -176,7 +190,8 @@ struct CliOptions {
     std::string resume_session;
     bool dump_session = false;
     bool event_stream = false;
-    bool serve_mode = false;
+    bool cli_mode = false;
+    bool channel_mode = false;
     std::string edit_mode;
     std::string config_password;
     std::string protect_config_path;
@@ -184,7 +199,6 @@ struct CliOptions {
     bool resume_requested = false;
     bool protect_config_requested = false;
     bool web_mode = false;
-    bool web_only = false;
     int web_port = 18080;
     std::string web_host = "127.0.0.1";
     std::string web_dir = "web/dist";
@@ -207,7 +221,9 @@ void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_
     app.add_option("--agent", options.cli_agent_key, "Configured agent key to use in CLI mode");
     app.add_option("-m,--message", options.message, "Single message mode: send one message, print response, exit");
     app.add_option("-s,--system-prompt", options.cli_system_prompt, "Custom system prompt");
-    app.add_flag("--serve", options.serve_mode, "Run configured channels without starting the interactive REPL");
+    app.add_flag("--cli", options.cli_mode, "Start the interactive CLI entry");
+    app.add_flag("--web", options.web_mode, "Start the web management UI server");
+    app.add_flag("--channel", options.channel_mode, "Start configured channel adapters");
     app.add_flag("--event-stream", options.event_stream, "Emit newline-delimited JSON events (single-message mode only)");
     app.add_flag("--dump-session", options.dump_session, "Emit the resumed session history as NDJSON and exit");
     app.add_option("-r,--resume", options.resume_session, "Resume a saved session (ID, 'latest', or omit to pick)")->expected(0, 1)->default_str("");
@@ -220,8 +236,6 @@ void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_
         ->expected(0, 1)
         ->default_str("");
     protect_flag = app.get_option("--protect-config-secrets");
-    app.add_flag("--web", options.web_mode, "Start the web management UI server");
-    app.add_flag("--web-only", options.web_only, "Start only the web server (no REPL)");
     app.add_option("--port", options.web_port, "Web server port (default: 18080)");
     app.add_option("--web-host", options.web_host, "Web server bind address (default: 127.0.0.1)");
     app.add_option("--web-dir", options.web_dir, "Path to web frontend static files");
@@ -344,7 +358,8 @@ bool maybe_skip_web_server_start_for_tests(orangutan::SessionStore *session_stor
 
 WebServerRuntimeAttachments configure_web_server_runtime(orangutan::WebServer &web_server, const CliOptions &options, orangutan::Config &cfg,
                                                          orangutan::SessionStore *session_store, orangutan::MemoryStore *memory_store, orangutan::SubagentManager *subagent_manager,
-                                                         orangutan::ToolRegistry *tool_registry = nullptr, orangutan::SkillLoader *skill_loader = nullptr) {
+                                                         orangutan::automation::Runtime *automation_runtime = nullptr, orangutan::ToolRegistry *tool_registry = nullptr,
+                                                         orangutan::SkillLoader *skill_loader = nullptr) {
     WebServerRuntimeAttachments attachments;
     web_server.set_static_dir(options.web_dir);
     web_server.set_config(&cfg);
@@ -354,6 +369,7 @@ WebServerRuntimeAttachments configure_web_server_runtime(orangutan::WebServer &w
     }
     web_server.set_memory_store(memory_store);
     web_server.set_subagent_manager(subagent_manager);
+    web_server.set_automation_runtime(automation_runtime);
     if (tool_registry != nullptr) {
         web_server.set_tool_registry(tool_registry);
         attachments.tool_registry_attached = true;
@@ -372,21 +388,17 @@ void warn_if_nonlocal_web_host(const std::string &web_host) {
 }
 
 bool validate_initial_options(const CliOptions &options) {
-    if (options.serve_mode && (!options.message.empty() || options.event_stream || options.dump_session)) {
-        std::println(std::cerr, "Error: --serve cannot be combined with single-message or event-stream flags.");
+    if (!options.cli_mode && !options.web_mode && !options.channel_mode) {
+        std::println(std::cerr, "Error: specify at least one entry flag: --cli, --web, or --channel.");
         return false;
     }
-    if (options.protect_config_requested &&
-        (options.serve_mode || options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session || !options.api_key.empty())) {
+    if (options.protect_config_requested && (options.cli_mode || options.web_mode || options.channel_mode || options.resume_requested || !options.message.empty() ||
+                                             options.event_stream || options.dump_session || !options.api_key.empty())) {
         std::println(std::cerr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
         return false;
     }
-    if (options.web_only && options.web_mode) {
-        std::println(std::cerr, "Error: --web and --web-only are mutually exclusive.");
-        return false;
-    }
-    if (options.web_only && (!options.message.empty() || options.serve_mode)) {
-        std::println(std::cerr, "Error: --web-only cannot be combined with --message or --serve.");
+    if (!options.cli_mode && (options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session)) {
+        std::println(std::cerr, "Error: --message, --resume, --event-stream, and --dump-session require --cli.");
         return false;
     }
     return true;
@@ -510,11 +522,6 @@ std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_r
         orangutan::Config agent_cfg_wrapper = cfg;
         agent_cfg_wrapper.api_key = agent_cfg.api_key;
         const auto resolved_agent_api_key = orangutan::app::detail::resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
-        if (resolved_agent_api_key.empty()) {
-            std::println(std::cerr, "Error: missing API key for agent '{}'.", agent_key);
-            std::println(std::cerr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
-            return std::nullopt;
-        }
 
         std::string resolved_workspace_root;
         try {
@@ -692,10 +699,6 @@ std::string merge_stdin_message(std::string message) {
 }
 
 bool validate_runtime_mode_options(const CliOptions &options, bool has_current_session) {
-    if (options.serve_mode && !options.message.empty()) {
-        std::println(std::cerr, "Error: --serve cannot be combined with --message or piped stdin.");
-        return false;
-    }
     if (options.event_stream && options.message.empty() && !options.dump_session) {
         std::println(std::cerr, "Error: --event-stream requires --message or piped stdin.");
         return false;
@@ -714,94 +717,36 @@ bool validate_runtime_mode_options(const CliOptions &options, bool has_current_s
     return true;
 }
 
-int run_serve_mode(orangutan::ChannelManager &channel_manager, orangutan::MessageQueue &message_queue,
-                   const std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> &agent_runtime_configs,
-                   const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
-                   orangutan::SubagentManager &subagent_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager) {
-    if (!channel_manager.has_channels() && cfg.heartbeat_jobs.empty()) {
-        std::println(std::cerr, "Error: --serve requires at least one configured channel or heartbeat job.");
-        return 1;
-    }
-
+int run_channel_mode(orangutan::ChannelManager &channel_manager, orangutan::MessageQueue &message_queue,
+                     const std::unordered_map<std::string, orangutan::app::AgentRuntimeConfig> &agent_runtime_configs,
+                     const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
+                     orangutan::SubagentManager &subagent_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
+                     orangutan::automation::Runtime *automation_runtime) {
     auto &stop_requested = signal_stop_requested();
     stop_requested.store(false);
     auto channel_task_runner = std::make_unique<orangutan::JidTaskRunner>(orangutan::app::default_serve_worker_count());
     spdlog::info("Starting channel executor (configured concurrency hint: {})", channel_task_runner->worker_count());
 
-    static constexpr std::string_view heartbeat_protocol_suffix = "\n\n---\n"
-                                                                  "HEARTBEAT PROTOCOL: If everything looks fine and nothing needs attention, "
-                                                                  "respond with exactly \"HEARTBEAT_OK\" (optionally followed by a brief status note). "
-                                                                  "This suppresses delivery and saves tokens. Only use HEARTBEAT_OK when there is truly nothing to report.";
-
-    orangutan::HeartbeatScheduler heartbeat_scheduler([&message_queue, &cfg](const orangutan::HeartbeatJob &job) {
-        auto jid = std::string("heartbeat:") + job.name;
-        auto prompt = job.prompt + std::string(heartbeat_protocol_suffix);
-        message_queue.push(orangutan::InboundMessage{
-            .jid = jid,
-            .content = std::move(prompt),
-            .agent_override = job.agent,
-            .reply_target = job.channel,
-            .isolated = cfg.isolated_session,
-            .light_context = cfg.light_context,
-        });
-    });
-
-    heartbeat_scheduler.set_heartbeat_md_path(cfg.heartbeat_md_path);
-
-    for (const auto &job_cfg : cfg.heartbeat_jobs) {
-        auto expr = orangutan::parse_cron(job_cfg.cron);
-        if (!expr.has_value()) {
-            spdlog::error("Invalid cron expression for heartbeat job '{}': '{}'", job_cfg.name, job_cfg.cron);
-            continue;
+    if (channel_manager.has_channels()) {
+        try {
+            channel_manager.connect_all([&message_queue](const orangutan::InboundMessage &message) {
+                message_queue.push(message);
+            });
+        } catch (const std::exception &e) {
+            std::println(std::cerr, "Error: failed to start configured channels: {}", e.what());
+            channel_manager.disconnect_all();
+            return 1;
         }
-        heartbeat_scheduler.add_job(job_cfg.name, *expr, job_cfg.agent, job_cfg.channel, job_cfg.prompt);
-        auto next = orangutan::next_fire_time(*expr, std::chrono::system_clock::now());
-        if (next.has_value()) {
-            auto next_time = std::chrono::system_clock::to_time_t(*next);
-            std::tm next_tm{};
-            localtime_r(&next_time, &next_tm);
-            std::array<char, 64> buf{};
-            std::strftime(buf.data(), buf.size(), "%Y-%m-%d %H:%M", &next_tm);
-            spdlog::info("Heartbeat job '{}' [{}] next fire: {}", job_cfg.name, job_cfg.cron, buf.data());
-        }
-    }
-
-    const auto *const home = std::getenv("HOME");
-    auto cron_store_path = home != nullptr ? std::string(home) + "/.orangutan/cron/jobs.json" : std::string{};
-    orangutan::CronStore cron_store(cron_store_path);
-    for (const auto &entry : cron_store.jobs()) {
-        if (heartbeat_scheduler.has_job(entry.name)) {
-            spdlog::warn("Skipping persisted cron job '{}' — conflicts with config job", entry.name);
-            continue;
-        }
-        auto expr = orangutan::parse_cron(entry.cron);
-        if (!expr.has_value()) {
-            spdlog::warn("Invalid cron expression in persisted job '{}': '{}'", entry.name, entry.cron);
-            continue;
-        }
-        heartbeat_scheduler.add_job(entry.name, *expr, entry.agent, entry.channel, entry.prompt, true);
-        spdlog::info("Loaded persisted cron job '{}'", entry.name);
-    }
-
-    try {
-        channel_manager.connect_all([&message_queue](const orangutan::InboundMessage &message) {
-            message_queue.push(message);
-        });
-    } catch (const std::exception &e) {
-        std::println(std::cerr, "Error: failed to start configured channels: {}", e.what());
-        channel_manager.disconnect_all();
-        return 1;
+    } else {
+        spdlog::warn("Channel mode started without any configured channels.");
     }
 
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
-    heartbeat_scheduler.start();
-
     orangutan::app::run_channel_loop(message_queue, channel_manager, stop_requested, *channel_task_runner, agent_runtime_configs, qq_bot_agents, memory_store, session_store,
-                                     subagent_manager, cfg, hook_manager, &cron_store, &heartbeat_scheduler);
+                                     subagent_manager, cfg, hook_manager, automation_runtime);
 
-    heartbeat_scheduler.stop();
     channel_task_runner->shutdown(true);
     channel_manager.disconnect_all();
     return 0;
@@ -839,115 +784,46 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     }
     apply_cli_edit_mode_override(cfg, options.edit_mode);
 
-    const auto maybe_selected_agent = resolve_selected_agent(cfg, options);
-    if (!maybe_selected_agent.has_value()) {
-        return 1;
-    }
+    std::optional<orangutan::AgentConfig> maybe_selected_agent;
+    std::optional<std::string> maybe_workspace;
+    std::optional<orangutan::app::AgentRuntimeConfig> maybe_primary_runtime_cfg;
+    std::optional<orangutan::RuntimeIdentity> maybe_primary_identity;
+    std::string primary_api_key;
 
-    const auto maybe_workspace = resolve_agent_workspace(*maybe_selected_agent);
-    if (!maybe_workspace.has_value()) {
-        return 1;
-    }
-
-    orangutan::Config selected_agent_cfg = cfg;
-    selected_agent_cfg.api_key = maybe_selected_agent->api_key;
-    const auto api_key = orangutan::app::detail::resolve_api_key(options.api_key, selected_agent_cfg);
-    const auto cli_identity = orangutan::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
-    const auto runtime_cfg = orangutan::app::AgentRuntimeConfig{
-        .agent_key = options.cli_agent_key,
-        .provider_name = maybe_selected_agent->provider,
-        .api_key = api_key,
-        .model = maybe_selected_agent->model,
-        .fallback_models = maybe_selected_agent->fallback_models,
-        .base_url = maybe_selected_agent->base_url,
-        .system_prompt = maybe_selected_agent->system_prompt,
-        .workspace_root = *maybe_workspace,
-        .edit_mode = maybe_selected_agent->edit_mode,
-        .cli_runtime_key = cli_identity.runtime_key,
-        .cli_memory_scope = cli_identity.memory_scope,
-        .memory = cfg.memory,
-        .permissions = maybe_selected_agent->permissions,
-        .allowed_child_agents = maybe_selected_agent->subagents,
-    };
-
-    if (options.web_only) {
-        auto session_store = create_store<orangutan::SessionStore>("session store");
-        auto memory_store = create_store<orangutan::MemoryStore>("memory store");
-        auto subagent_run_store = create_store<orangutan::SubagentRunStore>("subagent run store");
-        if (session_store == nullptr || memory_store == nullptr || subagent_run_store == nullptr) {
+    if (options.cli_mode || options.web_mode) {
+        maybe_selected_agent = resolve_selected_agent(cfg, options);
+        if (!maybe_selected_agent.has_value()) {
             return 1;
         }
 
-        std::unique_ptr<orangutan::SubagentManager> subagent_manager;
-        try {
-            subagent_manager = std::make_unique<orangutan::SubagentManager>(*subagent_run_store, orangutan::SubagentExecutionEnvironment{});
-        } catch (const std::exception &e) {
-            std::println(std::cerr, "Error: failed to initialize subagent manager: {}", e.what());
+        maybe_workspace = resolve_agent_workspace(*maybe_selected_agent);
+        if (!maybe_workspace.has_value()) {
             return 1;
         }
 
-        orangutan::SkillLoader skill_loader;
-        load_display_skills(skill_loader, cfg, runtime_cfg.workspace_root);
-
-        std::unique_ptr<orangutan::AgentRuntimeBundle> runtime;
-        std::string current_session_id;
-        std::string runtime_build_error;
-        if (!api_key.empty()) {
-            try {
-                orangutan::app::detail::maybe_inject_web_runtime_build_failure_for_tests();
-                runtime = std::make_unique<orangutan::AgentRuntimeBundle>(orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
-                    .provider_name = runtime_cfg.provider_name,
-                    .api_key = runtime_cfg.api_key,
-                    .model = runtime_cfg.model,
-                    .fallback_models = runtime_cfg.fallback_models,
-                    .base_url = runtime_cfg.base_url,
-                    .agent_key = runtime_cfg.agent_key,
-                    .system_prompt = runtime_cfg.system_prompt,
-                    .workspace_root = runtime_cfg.workspace_root,
-                    .edit_mode = runtime_cfg.edit_mode,
-                    .memory = runtime_cfg.memory,
-                    .permissions = runtime_cfg.permissions,
-                    .allowed_child_agents = runtime_cfg.allowed_child_agents,
-                    .identity = cli_identity,
-                    .memory_store = memory_store.get(),
-                    .current_session_id = &current_session_id,
-                    .subagent_manager = subagent_manager.get(),
-                    .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
-                    .raw_caller_id = "cli:local",
-                    .custom_tools = cfg.custom_tools,
-                    .mcp_servers = cfg.mcp_servers,
-                    .skill_paths = cfg.skill_paths,
-                    .hook_paths = cfg.hook_paths,
-                }));
-                log_loaded_hooks(resolve_runtime_hook_dirs(cfg, runtime_cfg.workspace_root), *runtime->hook_manager);
-            } catch (const std::exception &e) {
-                runtime_build_error = e.what();
-                spdlog::warn("Web-only runtime bootstrap failed; starting web UI without runtime tools: {}", runtime_build_error);
-            }
-        }
-
-        orangutan::WebServer web_server;
-        const auto attachments = configure_web_server_runtime(web_server, options, cfg, session_store.get(), memory_store.get(), subagent_manager.get(),
-                                                              runtime != nullptr ? &runtime->tools : nullptr, &skill_loader);
-        if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), subagent_manager.get(), runtime.get(), &skill_loader,
-                                                  attachments, runtime_build_error)) {
-            return 0;
-        }
-        warn_if_nonlocal_web_host(options.web_host);
-        web_server.start(options.web_host, options.web_port);
-        std::println("Web UI available at http://{}:{}", options.web_host, web_server.port());
-        auto &stop = signal_stop_requested();
-        stop.store(false);
-        std::signal(SIGINT, handle_signal);
-        std::signal(SIGTERM, handle_signal);
-        while (!stop.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        web_server.stop();
-        return 0;
+        orangutan::Config selected_agent_cfg = cfg;
+        selected_agent_cfg.api_key = maybe_selected_agent->api_key;
+        primary_api_key = orangutan::app::detail::resolve_api_key(options.api_key, selected_agent_cfg);
+        maybe_primary_identity = orangutan::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
+        maybe_primary_runtime_cfg = orangutan::app::AgentRuntimeConfig{
+            .agent_key = options.cli_agent_key,
+            .provider_name = maybe_selected_agent->provider,
+            .api_key = primary_api_key,
+            .model = maybe_selected_agent->model,
+            .fallback_models = maybe_selected_agent->fallback_models,
+            .base_url = maybe_selected_agent->base_url,
+            .system_prompt = maybe_selected_agent->system_prompt,
+            .workspace_root = *maybe_workspace,
+            .edit_mode = maybe_selected_agent->edit_mode,
+            .cli_runtime_key = maybe_primary_identity->runtime_key,
+            .cli_memory_scope = maybe_primary_identity->memory_scope,
+            .memory = cfg.memory,
+            .permissions = maybe_selected_agent->permissions,
+            .allowed_child_agents = maybe_selected_agent->subagents,
+        };
     }
 
-    if (api_key.empty()) {
+    if (options.cli_mode && primary_api_key.empty()) {
         std::println(std::cerr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
         std::println(std::cerr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
         return 1;
@@ -971,66 +847,133 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                                                                          .session_store = session_store.get(),
                                                                          .memory_store = memory_store.get(),
                                                                      });
-    std::string current_session_id;
-    const auto approval_callback = make_cli_approval_callback(!options.event_stream && !options.serve_mode);
-    auto runtime = orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
-        .provider_name = runtime_cfg.provider_name,
-        .api_key = runtime_cfg.api_key,
-        .model = runtime_cfg.model,
-        .fallback_models = runtime_cfg.fallback_models,
-        .base_url = runtime_cfg.base_url,
-        .agent_key = runtime_cfg.agent_key,
-        .system_prompt = runtime_cfg.system_prompt,
-        .workspace_root = runtime_cfg.workspace_root,
-        .edit_mode = runtime_cfg.edit_mode,
-        .memory = runtime_cfg.memory,
-        .permissions = runtime_cfg.permissions,
-        .allowed_child_agents = runtime_cfg.allowed_child_agents,
-        .identity = cli_identity,
-        .memory_store = memory_store.get(),
-        .current_session_id = &current_session_id,
-        .subagent_manager = &subagent_manager,
-        .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
-        .raw_caller_id = "cli:local",
-        .approval_callback = approval_callback,
-        .custom_tools = cfg.custom_tools,
-        .mcp_servers = cfg.mcp_servers,
-        .skill_paths = cfg.skill_paths,
-        .hook_paths = cfg.hook_paths,
-    });
-    orangutan::SkillLoader skill_loader;
-    load_display_skills(skill_loader, cfg, runtime_cfg.workspace_root);
-    log_loaded_hooks(resolve_runtime_hook_dirs(cfg, runtime_cfg.workspace_root), *runtime.hook_manager);
+    orangutan::app::AppRuntime app_runtime;
+
+    app_runtime.automation_runtime().set_executor(
+        [&cfg, &subagent_manager, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get()](const orangutan::automation::Trigger &trigger) {
+            orangutan::automation::ExecutionResult result;
+            auto config_it = maybe_agent_runtime_configs->find(trigger.agent_key);
+            if (config_it == maybe_agent_runtime_configs->end()) {
+                result.summary = "No runtime configuration for agent '" + trigger.agent_key + "'.";
+                return result;
+            }
+
+            const auto &runtime_cfg = config_it->second;
+            std::string current_session_id;
+            orangutan::RuntimeIdentity identity{
+                .workspace = runtime_cfg.workspace_root,
+                .runtime_key = "agent:" + runtime_cfg.agent_key + "|automation:" + trigger.automation_id,
+                .memory_scope = "agent:" + runtime_cfg.agent_key + "|automation",
+            };
+
+            try {
+                auto runtime = orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
+                    .provider_name = runtime_cfg.provider_name,
+                    .api_key = runtime_cfg.api_key,
+                    .model = runtime_cfg.model,
+                    .fallback_models = runtime_cfg.fallback_models,
+                    .base_url = runtime_cfg.base_url,
+                    .agent_key = runtime_cfg.agent_key,
+                    .system_prompt = runtime_cfg.system_prompt,
+                    .workspace_root = runtime_cfg.workspace_root,
+                    .edit_mode = runtime_cfg.edit_mode,
+                    .memory = runtime_cfg.memory,
+                    .permissions = runtime_cfg.permissions,
+                    .allowed_child_agents = runtime_cfg.allowed_child_agents,
+                    .identity = identity,
+                    .memory_store = memory_store,
+                    .current_session_id = &current_session_id,
+                    .subagent_manager = &subagent_manager,
+                    .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
+                    .raw_caller_id = identity.runtime_key,
+                    .automation_runtime = &app_runtime.automation_runtime(),
+                    .custom_tools = cfg.custom_tools,
+                    .mcp_servers = cfg.mcp_servers,
+                    .skill_paths = cfg.skill_paths,
+                    .hook_paths = cfg.hook_paths,
+                });
+                result.reply = runtime.agent->run(trigger.prompt);
+                result.summary = result.reply;
+                result.workspace_root = runtime_cfg.workspace_root;
+                result.success = true;
+                return result;
+            } catch (const std::exception &e) {
+                result.summary = e.what();
+                result.workspace_root = runtime_cfg.workspace_root;
+                return result;
+            }
+        });
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
     orangutan::app::add_configured_channels(channel_manager, cfg);
+    app_runtime.automation_runtime().set_notifier([&channel_manager](std::string_view target, std::string_view message) -> std::optional<std::string> {
+        try {
+            channel_manager.send(std::string(target), std::string(message));
+            return std::nullopt;
+        } catch (const std::exception &e) {
+            return e.what();
+        }
+    });
+    app_runtime.automation_runtime().start();
 
-    auto resume_session = options.resume_session;
-    if (!restore_requested_session(options, *session_store, runtime_cfg, *runtime.agent, resume_session, current_session_id)) {
-        return 1;
+    std::unique_ptr<orangutan::AgentRuntimeBundle> primary_runtime;
+    orangutan::SkillLoader skill_loader;
+    std::string current_session_id;
+    std::string web_runtime_build_error;
+    if (maybe_primary_runtime_cfg.has_value()) {
+        load_display_skills(skill_loader, cfg, maybe_primary_runtime_cfg->workspace_root);
     }
-
-    options.message = merge_stdin_message(options.message);
-    if (!validate_runtime_mode_options(options, !current_session_id.empty())) {
-        return 1;
-    }
-
-    if (options.dump_session) {
-        orangutan::app::emit_session_history_dump(runtime.agent->history(), current_session_id, emit_json_event);
-        return 0;
-    }
-
-    if (options.serve_mode) {
-        orangutan::MessageQueue message_queue;
-        return run_serve_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store, subagent_manager, cfg,
-                              runtime.hook_manager.get());
+    if (maybe_primary_runtime_cfg.has_value() && !primary_api_key.empty()) {
+        try {
+            orangutan::app::detail::maybe_inject_web_runtime_build_failure_for_tests();
+            const auto approval_callback = make_cli_approval_callback(!options.event_stream);
+            primary_runtime = std::make_unique<orangutan::AgentRuntimeBundle>(orangutan::build_agent_runtime(orangutan::AgentRuntimeBuildInput{
+                .provider_name = maybe_primary_runtime_cfg->provider_name,
+                .api_key = maybe_primary_runtime_cfg->api_key,
+                .model = maybe_primary_runtime_cfg->model,
+                .fallback_models = maybe_primary_runtime_cfg->fallback_models,
+                .base_url = maybe_primary_runtime_cfg->base_url,
+                .agent_key = maybe_primary_runtime_cfg->agent_key,
+                .system_prompt = maybe_primary_runtime_cfg->system_prompt,
+                .workspace_root = maybe_primary_runtime_cfg->workspace_root,
+                .edit_mode = maybe_primary_runtime_cfg->edit_mode,
+                .memory = maybe_primary_runtime_cfg->memory,
+                .permissions = maybe_primary_runtime_cfg->permissions,
+                .allowed_child_agents = maybe_primary_runtime_cfg->allowed_child_agents,
+                .identity = *maybe_primary_identity,
+                .memory_store = memory_store.get(),
+                .current_session_id = &current_session_id,
+                .subagent_manager = &subagent_manager,
+                .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
+                .raw_caller_id = "cli:local",
+                .automation_runtime = &app_runtime.automation_runtime(),
+                .approval_callback = approval_callback,
+                .custom_tools = cfg.custom_tools,
+                .mcp_servers = cfg.mcp_servers,
+                .skill_paths = cfg.skill_paths,
+                .hook_paths = cfg.hook_paths,
+            }));
+            log_loaded_hooks(resolve_runtime_hook_dirs(cfg, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
+        } catch (const std::exception &e) {
+            web_runtime_build_error = e.what();
+            if (options.web_mode && !options.cli_mode) {
+                spdlog::warn("Web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
+            } else {
+                std::println(std::cerr, "Error: failed to initialize primary runtime: {}", e.what());
+                app_runtime.automation_runtime().stop();
+                return 1;
+            }
+        }
     }
 
     std::unique_ptr<orangutan::WebServer> web_server;
     if (options.web_mode) {
         web_server = std::make_unique<orangutan::WebServer>();
-        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &subagent_manager, &runtime.tools, &skill_loader);
-        if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), &subagent_manager, &runtime, &skill_loader, attachments)) {
+        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &subagent_manager,
+                                                              &app_runtime.automation_runtime(), primary_runtime != nullptr ? &primary_runtime->tools : nullptr, &skill_loader);
+        if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), &subagent_manager, primary_runtime.get(), &skill_loader,
+                                                  attachments, web_runtime_build_error)) {
+            app_runtime.automation_runtime().stop();
             return 0;
         }
         warn_if_nonlocal_web_host(options.web_host);
@@ -1038,12 +981,74 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         std::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
     }
 
-    if (!options.message.empty()) {
-        return orangutan::app::run_single_message(*runtime.agent, *runtime.provider, *session_store, cfg, options.message, options.event_stream, current_session_id,
-                                                  runtime_cfg.model, runtime_cfg.cli_memory_scope, runtime_cfg.agent_key, emit_json_event, std::cerr);
+    orangutan::MessageQueue message_queue;
+    std::thread channel_thread;
+    auto &stop_requested = signal_stop_requested();
+    stop_requested.store(false);
+    std::atomic<int> channel_exit_code{0};
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
+
+    if (options.channel_mode) {
+        channel_thread = std::thread([&] {
+            int status = 0;
+            if (auto &callback = detail::channel_mode_callback(); callback) {
+                status = callback();
+            } else {
+                status = run_channel_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store, subagent_manager, cfg,
+                                          nullptr, &app_runtime.automation_runtime());
+            }
+            channel_exit_code.store(status);
+            if (status != 0) {
+                stop_requested.store(true);
+            }
+        });
     }
 
-    orangutan::app::run_repl(*runtime.agent, *runtime.provider, *session_store, runtime_cfg.model, runtime_cfg.fallback_models, cfg, current_session_id, runtime_cfg.agent_key,
-                             runtime_cfg.cli_memory_scope, &skill_loader, &runtime.tools, runtime.hook_manager.get());
-    return 0;
+    int exit_code = 0;
+    if (options.cli_mode) {
+        if (primary_runtime == nullptr || !maybe_primary_runtime_cfg.has_value()) {
+            std::println(std::cerr, "Error: failed to initialize CLI runtime.");
+            exit_code = 1;
+        } else {
+            auto resume_session = options.resume_session;
+            if (!restore_requested_session(options, *session_store, *maybe_primary_runtime_cfg, *primary_runtime->agent, resume_session, current_session_id)) {
+                exit_code = 1;
+            } else {
+                options.message = merge_stdin_message(options.message);
+                if (!validate_runtime_mode_options(options, !current_session_id.empty())) {
+                    exit_code = 1;
+                } else if (options.dump_session) {
+                    orangutan::app::emit_session_history_dump(primary_runtime->agent->history(), current_session_id, emit_json_event);
+                } else if (!options.message.empty()) {
+                    exit_code = orangutan::app::run_single_message(*primary_runtime->agent, *primary_runtime->provider, *session_store, cfg, options.message, options.event_stream,
+                                                                   current_session_id, maybe_primary_runtime_cfg->model, maybe_primary_runtime_cfg->cli_memory_scope,
+                                                                   maybe_primary_runtime_cfg->agent_key, emit_json_event, std::cerr, &app_runtime.automation_runtime());
+                } else {
+                    orangutan::app::run_repl(*primary_runtime->agent, *primary_runtime->provider, *session_store, maybe_primary_runtime_cfg->model,
+                                             maybe_primary_runtime_cfg->fallback_models, cfg, current_session_id, maybe_primary_runtime_cfg->agent_key,
+                                             maybe_primary_runtime_cfg->cli_memory_scope, &skill_loader, &primary_runtime->tools, primary_runtime->hook_manager.get(),
+                                             &app_runtime.automation_runtime());
+                }
+            }
+        }
+    } else {
+        while (!stop_requested.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+
+    stop_requested.store(true);
+    message_queue.shutdown();
+    if (channel_thread.joinable()) {
+        channel_thread.join();
+    }
+    if (exit_code == 0 && channel_exit_code.load() != 0) {
+        exit_code = channel_exit_code.load();
+    }
+    if (web_server != nullptr) {
+        web_server->stop();
+    }
+    app_runtime.automation_runtime().stop();
+    return exit_code;
 }

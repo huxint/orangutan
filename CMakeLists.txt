@@ -62,6 +62,7 @@ add_library(orangutan_lib STATIC
     src/app/cli-ui.cpp
     src/app/history-events.cpp
     src/app/repl.cpp
+    src/app/runtime/app-runtime.cpp
     src/app/runtime/agent-runtime.cpp
     src/app/runtime/identity.cpp
     src/app/runtime/memory-context.cpp
@@ -74,14 +75,17 @@ add_library(orangutan_lib STATIC
     src/core/tools/permissions.cpp
     src/core/tools/registry.cpp
     src/features/agent/agent-loop.cpp
+    src/features/automation/log-writer.cpp
+    src/features/automation/planner.cpp
+    src/features/automation/runtime.cpp
+    src/features/automation/store.cpp
+    src/features/automation/types.cpp
     src/features/channel/core/channel.cpp
     src/features/channel/core/jid-task-runner.cpp
     src/features/channel/platforms/qq.cpp
     src/features/cron/parser.cpp
-    src/features/cron/store.cpp
     src/features/heartbeat/protocol/heartbeat-md.cpp
     src/features/heartbeat/protocol/heartbeat-ok.cpp
-    src/features/heartbeat/scheduler.cpp
     src/features/hooks/hook-manager.cpp
     src/features/memory/memory.cpp
     src/features/memory/memory-extract.cpp
@@ -91,8 +95,11 @@ add_library(orangutan_lib STATIC
     src/features/memory/runtime-memory.cpp
     src/features/skills/skill-loader.cpp
     src/features/subagent/subagent-manager.cpp
-    src/features/tools/builtin/cron.cpp
+    src/features/tools/builtin/automation-tool-support.cpp
+    src/features/tools/builtin/heartbeat.cpp
+    src/features/tools/builtin/inbox.cpp
     src/features/tools/builtin/register-builtin.cpp
+    src/features/tools/builtin/task.cpp
     src/features/tools/core/command-sandbox.cpp
     src/features/tools/core/edit.cpp
     src/features/tools/core/hashline.cpp
@@ -177,15 +184,16 @@ if(BUILD_TESTING)
         tests/core/tool-registry-test.cpp
         tests/core/types-test.cpp
         tests/features/agent-loop-test.cpp
+        tests/features/automation-runtime-test.cpp
+        tests/features/automation-store-test.cpp
         tests/features/channel-test.cpp
         tests/features/cron-parser-test.cpp
-        tests/features/cron-store-test.cpp
-        tests/features/cron-tool-test.cpp
         tests/features/hashline-test.cpp
+        tests/features/heartbeat-tool-test.cpp
         tests/features/heartbeat-md-test.cpp
         tests/features/heartbeat-ok-test.cpp
-        tests/features/heartbeat-scheduler-test.cpp
         tests/features/hook-manager-test.cpp
+        tests/features/inbox-tool-test.cpp
         tests/features/jid-task-runner-test.cpp
         tests/features/mcp-client-test.cpp
         tests/features/memory-test.cpp
@@ -193,6 +201,7 @@ if(BUILD_TESTING)
         tests/features/skill-loader-test.cpp
         tests/features/subagent-manager-test.cpp
         tests/features/subagent-tools-test.cpp
+        tests/features/task-tool-test.cpp
         tests/features/web-server-test.cpp
         tests/features/web-routes-test.cpp
         tests/features/web-chat-test.cpp

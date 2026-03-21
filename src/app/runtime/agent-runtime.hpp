@@ -11,14 +11,15 @@
 namespace orangutan {
 
 class AgentLoop;
-class CronStore;
-class HeartbeatScheduler;
 class HookManager;
 class McpManager;
 class MemoryStore;
 class Provider;
 class RuntimeMemory;
 class SubagentManager;
+namespace automation {
+class Runtime;
+}
 
 struct AgentRuntimeBuildInput {
     std::string provider_name;
@@ -40,8 +41,7 @@ struct AgentRuntimeBuildInput {
     SubagentManager *subagent_manager = nullptr;
     SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
     std::string raw_caller_id = "cli:local";
-    CronStore *cron_store = nullptr;
-    HeartbeatScheduler *heartbeat_scheduler = nullptr;
+    automation::Runtime *automation_runtime = nullptr;
     bool is_child_run = false;
     ToolApprovalCallback approval_callback;
 

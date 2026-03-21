@@ -1,5 +1,6 @@
 #include "features/web/web-server.hpp"
 #include "features/web/web-routes.hpp"
+#include "app/runtime/app-runtime.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
 #include "features/subagent/subagent-manager.hpp"
@@ -287,6 +288,7 @@ TEST_F(WebRoutesTest, SharedWebRuntimeBuildsWithParityContextAndTools) {
     std::filesystem::create_directories(workspace);
 
     auto cfg = make_runtime_config(workspace);
+    orangutan::app::AppRuntime app_runtime((temp_root_ / "automation.db").string());
     orangutan::MemoryStore memory_store((temp_root_ / "memory.db").string());
     orangutan::SubagentRunStore run_store((temp_root_ / "subagent-runs.db").string());
     orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
@@ -294,18 +296,22 @@ TEST_F(WebRoutesTest, SharedWebRuntimeBuildsWithParityContextAndTools) {
     });
     std::string session_id = "web-session";
 
-    auto runtime =
-        orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, [](const orangutan::ToolUseBlock &, const std::string &) {
-            return false;
-        });
+    auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, &app_runtime.automation_runtime(),
+                                                                    [](const orangutan::ToolUseBlock &, const std::string &) {
+                                                                        return false;
+                                                                    });
 
     EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
     EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "shell"));
     EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "task"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "heartbeat"));
+    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "inbox"));
     EXPECT_EQ(runtime.tool_context.runtime_origin, orangutan::SubagentRuntimeOrigin::web);
     EXPECT_EQ(runtime.tool_context.raw_caller_id, "web:local");
     EXPECT_EQ(runtime.tool_context.current_session_id, &session_id);
     EXPECT_EQ(runtime.tool_context.allowed_child_agents, std::vector<std::string>({"coder"}));
+    EXPECT_EQ(runtime.tool_context.automation_runtime, &app_runtime.automation_runtime());
     EXPECT_TRUE(static_cast<bool>(runtime.tool_context.approval_callback));
     EXPECT_TRUE(runtime.agent != nullptr);
 
@@ -353,11 +359,87 @@ TEST_F(WebRoutesTest, SharedWebRuntimeLoadsSkillsAndHooks) {
     });
     std::string session_id = "web-session-skills";
 
-    auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager);
+    auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, nullptr);
 
     EXPECT_NE(runtime.skills_prompt.find("web-runtime-skill"), std::string::npos);
     ASSERT_NE(runtime.hook_manager, nullptr);
     EXPECT_EQ(runtime.hook_manager->hook_count(orangutan::HookEvent::before_tool_call), 1);
+}
+
+TEST_F(WebRoutesTest, AutomationEndpointsExposeSharedState) {
+    orangutan::app::AppRuntime app_runtime((temp_root_ / "automation.db").string());
+    auto &automation_runtime = app_runtime.automation_runtime();
+    const auto task_id = automation_runtime.save_task(orangutan::automation::TaskSpec{
+        .agent_key = "default",
+        .name = "repo-check",
+        .schedule = {.kind = orangutan::automation::TaskScheduleKind::cron, .value = "0 * * * *"},
+        .prompt = "Check the repository state.",
+    });
+    const auto heartbeat_id = automation_runtime.save_heartbeat(orangutan::automation::HeartbeatSpec{
+        .agent_key = "default",
+        .name = "self-check",
+        .every_seconds = 1800,
+        .jitter_seconds = 300,
+        .prompt = "Wake up and inspect ongoing work.",
+    });
+    const auto inserted_inbox_id = automation_runtime.store().insert_inbox(orangutan::automation::InboxItem{
+        .agent_key = "default",
+        .source_kind = "task",
+        .source_run_id = "run-1",
+        .title = "Task notification",
+        .body = "Repository check found changes.",
+        .created_at = 123,
+    });
+    EXPECT_FALSE(task_id.empty());
+    EXPECT_FALSE(heartbeat_id.empty());
+    EXPECT_FALSE(inserted_inbox_id.empty());
+
+    orangutan::WebServer server;
+    server.set_automation_runtime(&automation_runtime);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    auto tasks_res = cli.Get("/api/tasks?agent_key=default");
+    ASSERT_TRUE(tasks_res);
+    EXPECT_EQ(tasks_res->status, 200);
+    auto tasks = nlohmann::json::parse(tasks_res->body);
+    ASSERT_EQ(tasks.size(), 1);
+    EXPECT_EQ(tasks[0]["name"], "repo-check");
+    EXPECT_EQ(tasks[0]["schedule_kind"], "cron");
+
+    auto heartbeats_res = cli.Get("/api/heartbeats?agent_key=default");
+    ASSERT_TRUE(heartbeats_res);
+    EXPECT_EQ(heartbeats_res->status, 200);
+    auto heartbeats = nlohmann::json::parse(heartbeats_res->body);
+    ASSERT_EQ(heartbeats.size(), 1);
+    EXPECT_EQ(heartbeats[0]["name"], "self-check");
+
+    auto inbox_res = cli.Get("/api/inbox?agent_key=default");
+    ASSERT_TRUE(inbox_res);
+    EXPECT_EQ(inbox_res->status, 200);
+    auto inbox = nlohmann::json::parse(inbox_res->body);
+    ASSERT_EQ(inbox.size(), 1);
+    const auto inbox_id = inbox[0]["id"].get<std::string>();
+    EXPECT_EQ(inbox[0]["title"], "Task notification");
+
+    auto ack_res = cli.Post("/api/inbox/ack", nlohmann::json{{"agent_key", "default"}, {"id", inbox_id}}.dump(), "application/json");
+    ASSERT_TRUE(ack_res);
+    EXPECT_EQ(ack_res->status, 200);
+
+    auto inbox_after_ack = cli.Get("/api/inbox?agent_key=default");
+    ASSERT_TRUE(inbox_after_ack);
+    ASSERT_EQ(inbox_after_ack->status, 200);
+    EXPECT_EQ(nlohmann::json::parse(inbox_after_ack->body)[0]["status"], "acked");
+
+    auto clear_res = cli.Delete("/api/inbox?agent_key=default");
+    ASSERT_TRUE(clear_res);
+    EXPECT_EQ(clear_res->status, 200);
+
+    auto inbox_after_clear = cli.Get("/api/inbox?agent_key=default");
+    ASSERT_TRUE(inbox_after_clear);
+    EXPECT_EQ(inbox_after_clear->status, 200);
+    EXPECT_TRUE(nlohmann::json::parse(inbox_after_clear->body).empty());
+    server.stop();
 }
 
 TEST_F(WebRoutesTest, ChatApprovalEndpointRejectsInvalidApprovalPayload) {

@@ -1,5 +1,6 @@
 #include "features/web/web-routes.hpp"
 
+#include "features/automation/runtime.hpp"
 #include "app/bootstrap.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
@@ -79,7 +80,8 @@ ToolApprovalCallback default_web_approval_callback() {
 }
 
 AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
-                                                 std::string *current_session_id, SubagentManager *subagent_manager, ToolApprovalCallback approval_callback) {
+                                                 std::string *current_session_id, SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
+                                                 ToolApprovalCallback approval_callback) {
     const auto workspace_root = resolve_agent_workspace(agent, agent_key);
     const auto api_key = resolve_agent_api_key(config, agent);
     if (api_key.empty()) {
@@ -110,6 +112,7 @@ AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const Age
         .subagent_manager = subagent_manager,
         .runtime_origin = SubagentRuntimeOrigin::web,
         .raw_caller_id = "web:local",
+        .automation_runtime = automation_runtime,
         .approval_callback = effective_approval_callback,
         .custom_tools = config.custom_tools,
         .mcp_servers = config.mcp_servers,
@@ -176,6 +179,63 @@ json approval_payload(const WebPendingApproval &approval) {
     return payload;
 }
 
+std::string resolve_agent_key_param(const httplib::Request &req) {
+    if (req.has_param("agent_key")) {
+        return req.get_param_value("agent_key");
+    }
+    return "default";
+}
+
+json unix_time_to_json(const std::optional<std::int64_t> &value) {
+    if (!value.has_value()) {
+        return nullptr;
+    }
+    return *value;
+}
+
+json task_to_json(const automation::TaskSpec &task) {
+    return {
+        {"id", task.id},
+        {"agent_key", task.agent_key},
+        {"name", task.name},
+        {"enabled", task.enabled},
+        {"schedule_kind", automation::task_schedule_kind_to_string(task.schedule.kind)},
+        {"schedule", task.schedule.value},
+        {"prompt", task.prompt},
+        {"notes", task.notes},
+        {"delivery", automation::delivery_policy_to_json(task.delivery)},
+        {"last_run_at", unix_time_to_json(task.last_run_at)},
+        {"last_status", task.last_status},
+    };
+}
+
+json heartbeat_to_json(const automation::HeartbeatSpec &heartbeat) {
+    return {
+        {"id", heartbeat.id},
+        {"agent_key", heartbeat.agent_key},
+        {"name", heartbeat.name},
+        {"enabled", heartbeat.enabled},
+        {"paused", heartbeat.paused},
+        {"every_seconds", heartbeat.every_seconds},
+        {"jitter_seconds", heartbeat.jitter_seconds},
+        {"active_hours", automation::active_hours_to_json(heartbeat.active_hours)},
+        {"prompt", heartbeat.prompt},
+        {"notes", heartbeat.notes},
+        {"delivery", automation::delivery_policy_to_json(heartbeat.delivery)},
+        {"next_due_at", unix_time_to_json(heartbeat.next_due_at)},
+        {"last_run_at", unix_time_to_json(heartbeat.last_run_at)},
+        {"last_status", heartbeat.last_status},
+    };
+}
+
+json inbox_item_to_json(const automation::InboxItem &item) {
+    return {
+        {"id", item.id},         {"agent_key", item.agent_key}, {"source_kind", item.source_kind}, {"source_run_id", item.source_run_id},
+        {"title", item.title},   {"body", item.body},           {"created_at", item.created_at},   {"acked_at", unix_time_to_json(item.acked_at)},
+        {"status", item.status},
+    };
+}
+
 void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool cancelled) {
     std::lock_guard lock(approval.mutex);
     if (approval.resolved) {
@@ -190,12 +250,12 @@ void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool 
 } // namespace
 
 AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                    SubagentManager *subagent_manager, ToolApprovalCallback approval_callback) {
+                                                    SubagentManager *subagent_manager, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback) {
     const auto maybe_agent = find_effective_agent(&config, agent_key);
     if (!maybe_agent.has_value()) {
         throw std::runtime_error("agent not found");
     }
-    return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, std::move(approval_callback));
+    return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime, std::move(approval_callback));
 }
 
 bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
@@ -565,8 +625,92 @@ void handle_list_skills(const httplib::Request & /*req*/, httplib::Response &res
     res.set_content(arr.dump(), "application/json");
 }
 
+void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
+    if (automation_runtime == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        return;
+    }
+
+    auto arr = nlohmann::json::array();
+    for (const auto &task : automation_runtime->list_tasks(resolve_agent_key_param(req))) {
+        arr.push_back(task_to_json(task));
+    }
+    res.set_content(arr.dump(), "application/json");
+}
+
+void handle_list_heartbeats(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
+    if (automation_runtime == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        return;
+    }
+
+    auto arr = nlohmann::json::array();
+    for (const auto &heartbeat : automation_runtime->list_heartbeats(resolve_agent_key_param(req))) {
+        arr.push_back(heartbeat_to_json(heartbeat));
+    }
+    res.set_content(arr.dump(), "application/json");
+}
+
+void handle_list_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
+    if (automation_runtime == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        return;
+    }
+
+    auto arr = nlohmann::json::array();
+    for (const auto &item : automation_runtime->list_inbox(resolve_agent_key_param(req))) {
+        arr.push_back(inbox_item_to_json(item));
+    }
+    res.set_content(arr.dump(), "application/json");
+}
+
+void handle_ack_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
+    if (automation_runtime == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        return;
+    }
+
+    nlohmann::json input;
+    try {
+        input = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::parse_error &) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid JSON"})", "application/json");
+        return;
+    }
+
+    if (!input.contains("id") || !input["id"].is_string()) {
+        res.status = 400;
+        res.set_content(R"({"error":"missing or invalid 'id' field"})", "application/json");
+        return;
+    }
+
+    const auto agent_key = input.value("agent_key", std::string("default"));
+    if (!automation_runtime->ack_inbox(agent_key, input["id"].get<std::string>())) {
+        res.status = 404;
+        res.set_content(R"({"error":"inbox item not found"})", "application/json");
+        return;
+    }
+    res.set_content(R"({"status":"acknowledged"})", "application/json");
+}
+
+void handle_clear_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
+    if (automation_runtime == nullptr) {
+        res.status = 503;
+        res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        return;
+    }
+
+    automation_runtime->clear_inbox(resolve_agent_key_param(req));
+    res.set_content(R"({"status":"cleared"})", "application/json");
+}
+
 void handle_system_status(const httplib::Request & /*req*/, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                          const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+                          const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime) {
 
     auto now = std::chrono::steady_clock::now();
     auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
@@ -578,14 +722,26 @@ void handle_system_status(const httplib::Request & /*req*/, httplib::Response &r
     }
 
     nlohmann::json body = {
-        {"uptime_seconds", uptime},         {"active_web_sessions", active_sessions}, {"provider_health", nlohmann::json::object()},
-        {"cron", nlohmann::json::object()}, {"heartbeat", nlohmann::json::object()},
+        {"uptime_seconds", uptime},
+        {"active_web_sessions", active_sessions},
+        {"provider_health", nlohmann::json::object()},
     };
+    if (automation_runtime == nullptr) {
+        body["automation"] = nullptr;
+    } else {
+        const auto all_tasks = automation_runtime->list_tasks({});
+        const auto all_heartbeats = automation_runtime->list_heartbeats({});
+        body["automation"] = {
+            {"task_count", all_tasks.size()},
+            {"heartbeat_count", all_heartbeats.size()},
+        };
+    }
     res.set_content(body.dump(), "application/json");
 }
 
 void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, MemoryStore *memory_store, SubagentManager *subagent_manager,
-                 ToolRegistry * /*tool_registry*/, std::mutex &sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
+                 ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                 std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
     if (config == nullptr) {
         res.status = 503;
         res.set_content(R"({"error":"config not available"})", "application/json");
@@ -664,7 +820,7 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         auto approval_event_emitter = std::make_shared<detail::WebApprovalEventEmitter>();
         auto approval_stream_open = std::make_shared<std::function<bool()>>();
         session->runtime = std::make_unique<AgentRuntimeBundle>(
-            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager,
+            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
                                              [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter,
                                               approval_stream_open](const ToolUseBlock &call, const std::string &prompt_text) {
                                                  return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
@@ -705,7 +861,7 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
         res.set_chunked_content_provider("text/event-stream",
                                          [agent_ptr, session_ptr, store_ptr, captured_session_id, captured_metadata, message, approval_event_emitter, approval_stream_open,
-                                          &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                                          agent_key, automation_runtime, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
                                              if (approval_event_emitter != nullptr) {
                                                  *approval_event_emitter = [&sink](std::string_view event_name, const json &payload) {
                                                      const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
@@ -725,35 +881,37 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
                                              session_ptr->running = true;
                                              try {
-                                                 agent_ptr->run(
-                                                     message,
-                                                     // StreamCallback
-                                                     [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
-                                                         if (session_ptr->abort_requested) {
-                                                             return;
-                                                         }
-                                                         if (event_type == "text_delta") {
-                                                             auto payload = nlohmann::json({{"text", data["text"]}}).dump();
-                                                             auto sse = "event: text\ndata: " + payload + "\n\n";
-                                                             sink.write(sse.c_str(), sse.size());
-                                                         }
-                                                     },
-                                                     // ToolEventCallback
-                                                     [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
-                                                         if (session_ptr->abort_requested) {
-                                                             return;
-                                                         }
-                                                         nlohmann::json payload;
-                                                         if (event_type == "tool_started" || event_type == "tool_start") {
-                                                             payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
-                                                             auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
-                                                             sink.write(sse.c_str(), sse.size());
-                                                         } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
-                                                             payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
-                                                             auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
-                                                             sink.write(sse.c_str(), sse.size());
-                                                         }
-                                                     });
+                                                 automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
+                                                     agent_ptr->run(
+                                                         message,
+                                                         // StreamCallback
+                                                         [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
+                                                             if (session_ptr->abort_requested) {
+                                                                 return;
+                                                             }
+                                                             if (event_type == "text_delta") {
+                                                                 auto payload = nlohmann::json({{"text", data["text"]}}).dump();
+                                                                 auto sse = "event: text\ndata: " + payload + "\n\n";
+                                                                 sink.write(sse.c_str(), sse.size());
+                                                             }
+                                                         },
+                                                         // ToolEventCallback
+                                                         [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+                                                             if (session_ptr->abort_requested) {
+                                                                 return;
+                                                             }
+                                                             nlohmann::json payload;
+                                                             if (event_type == "tool_started" || event_type == "tool_start") {
+                                                                 payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
+                                                                 auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
+                                                                 sink.write(sse.c_str(), sse.size());
+                                                             } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
+                                                                 payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
+                                                                 auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
+                                                                 sink.write(sse.c_str(), sse.size());
+                                                             }
+                                                         });
+                                                 });
 
                                                  auto done_sse = std::string("event: done\ndata: {}\n\n");
                                                  sink.write(done_sse.c_str(), done_sse.size());

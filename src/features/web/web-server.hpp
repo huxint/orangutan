@@ -17,6 +17,9 @@ class SubagentManager;
 class ToolRegistry;
 class SkillLoader;
 struct Config;
+namespace automation {
+class Runtime;
+}
 
 class WebServer {
 public:
@@ -43,6 +46,7 @@ public:
     void set_config_save_path(const std::string &path);
     void set_tool_registry(ToolRegistry *registry);
     void set_skill_loader(SkillLoader *loader);
+    void set_automation_runtime(automation::Runtime *runtime);
 
 private:
     httplib::Server server_;
@@ -58,6 +62,7 @@ private:
     std::string config_save_path_;
     ToolRegistry *tool_registry_ = nullptr;
     SkillLoader *skill_loader_ = nullptr;
+    automation::Runtime *automation_runtime_ = nullptr;
     std::chrono::steady_clock::time_point start_time_ = std::chrono::steady_clock::now();
 
     std::mutex sessions_mutex_;

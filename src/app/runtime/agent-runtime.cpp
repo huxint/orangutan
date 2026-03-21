@@ -74,8 +74,7 @@ AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         .subagent_manager = input.subagent_manager,
         .runtime_origin = input.runtime_origin,
         .raw_caller_id = input.raw_caller_id,
-        .cron_store = input.cron_store,
-        .heartbeat_scheduler = input.heartbeat_scheduler,
+        .automation_runtime = input.automation_runtime,
         .approval_callback = input.approval_callback,
     };
 

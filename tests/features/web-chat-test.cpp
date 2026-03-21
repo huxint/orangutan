@@ -278,7 +278,7 @@ TEST(WebChatTest, RuntimeBundleIncludesCustomAndMemoryTools) {
     });
     std::string session_id = "web-chat-runtime-session";
 
-    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, [](const ToolUseBlock &, const std::string &) {
+    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr, [](const ToolUseBlock &, const std::string &) {
         return false;
     });
 
@@ -338,7 +338,7 @@ TEST(WebChatTest, RuntimeBundleLoadsSkillsAndHooksFromConfiguredPaths) {
     });
     std::string session_id = "web-chat-skills-hooks";
 
-    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager);
+    auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr);
 
     EXPECT_NE(runtime.skills_prompt.find("web-chat-runtime-skill"), std::string::npos);
     ASSERT_NE(runtime.hook_manager, nullptr);

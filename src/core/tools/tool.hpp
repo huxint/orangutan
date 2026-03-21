@@ -12,8 +12,10 @@
 
 namespace orangutan {
 
-class CronStore;
-class HeartbeatScheduler;
+namespace automation {
+class Runtime;
+}
+
 class RuntimeMemory;
 class SubagentManager;
 
@@ -27,8 +29,7 @@ struct ToolRuntimeContext {
     SubagentManager *subagent_manager = nullptr;
     SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
     std::string raw_caller_id;
-    CronStore *cron_store = nullptr;
-    HeartbeatScheduler *heartbeat_scheduler = nullptr;
+    automation::Runtime *automation_runtime = nullptr;
     ToolApprovalCallback approval_callback;
 };
 

@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <unistd.h>
 #include <vector>
 
@@ -56,6 +57,8 @@ void set_web_startup_inspection_callback_for_tests(std::function<bool(const WebS
 void clear_web_startup_inspection_callback_for_tests();
 void set_web_runtime_build_callback_for_tests(std::function<void()> callback);
 void clear_web_runtime_build_callback_for_tests();
+void set_channel_mode_callback_for_tests(std::function<int()> callback);
+void clear_channel_mode_callback_for_tests();
 
 } // namespace orangutan::app::detail
 
@@ -141,6 +144,22 @@ public:
 
 private:
     std::string message_;
+};
+
+class ScopedChannelModeCallback {
+public:
+    explicit ScopedChannelModeCallback(std::function<int()> callback) {
+        bootstrap_detail::set_channel_mode_callback_for_tests(std::move(callback));
+    }
+
+    ~ScopedChannelModeCallback() {
+        bootstrap_detail::clear_channel_mode_callback_for_tests();
+    }
+
+    ScopedChannelModeCallback(const ScopedChannelModeCallback &) = delete;
+    ScopedChannelModeCallback &operator=(const ScopedChannelModeCallback &) = delete;
+    ScopedChannelModeCallback(ScopedChannelModeCallback &&) = delete;
+    ScopedChannelModeCallback &operator=(ScopedChannelModeCallback &&) = delete;
 };
 
 struct BootstrapRunResult {
@@ -523,7 +542,7 @@ TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
         ::close(output_pipe[1]);
 
         std::vector<std::string> argv_storage{
-            "orangutan", "--agent", "default", "--resume", "--event-stream", "--dump-session",
+            "orangutan", "--cli", "--agent", "default", "--resume", "--event-stream", "--dump-session",
         };
         std::vector<char *> argv;
         argv.reserve(argv_storage.size() + 1);
@@ -536,6 +555,28 @@ TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
     }
 
     ::close(output_pipe[0]);
+}
+
+TEST_F(BootstrapTest, RunBootstrapRequiresAtLeastOneEntryFlag) {
+    write_config();
+    ScopedEnvVar home_env("HOME", home_root().string());
+
+    const auto result = invoke_bootstrap({"orangutan", "--agent", "default"});
+
+    EXPECT_EQ(result.exit_code, 1);
+    EXPECT_NE(result.output.find("specify at least one entry flag"), std::string::npos);
+}
+
+TEST_F(BootstrapTest, ChannelOnlyModeReturnsStartupFailureInsteadOfHanging) {
+    write_config();
+    ScopedEnvVar home_env("HOME", home_root().string());
+    ScopedChannelModeCallback channel_failure([] {
+        return 1;
+    });
+
+    const auto result = invoke_bootstrap({"orangutan", "--channel"});
+
+    EXPECT_EQ(result.exit_code, 1);
 }
 
 TEST_F(BootstrapTest, BuildAgentRuntimeConfigsUsesPerAgentEditMode) {
@@ -698,17 +739,26 @@ TEST_F(BootstrapTest, ReplRuntimeListsMemoryToolsAndSkills) {
     ScopedEnvVar home_env("HOME", home_root().string());
     ScopedEnvVar term_env("TERM", "dumb");
 
-    PtyBootstrapSession session({"orangutan", "--agent", "default"});
+    PtyBootstrapSession session({"orangutan", "--cli", "--agent", "default"});
     ASSERT_TRUE(session.wait_for_output("Type /help"));
 
     session.write_input("/tools\n");
     session.write_input("/skills\n");
+    session.write_input("/tasks\n");
+    session.write_input("/heartbeats\n");
+    session.write_input("/inbox\n");
     session.write_input("/quit\n");
 
     const auto result = session.finish();
     EXPECT_EQ(result.exit_code, 0);
     EXPECT_NE(result.output.find("memory_list"), std::string::npos);
+    EXPECT_NE(result.output.find("task"), std::string::npos);
+    EXPECT_NE(result.output.find("heartbeat"), std::string::npos);
+    EXPECT_NE(result.output.find("inbox"), std::string::npos);
     EXPECT_NE(result.output.find("workspace-skill"), std::string::npos);
+    EXPECT_NE(result.output.find("No tasks configured."), std::string::npos);
+    EXPECT_NE(result.output.find("No heartbeats configured."), std::string::npos);
+    EXPECT_NE(result.output.find("Inbox is empty."), std::string::npos);
 }
 
 TEST_F(BootstrapTest, WebModeBuildsAndAttachesRealBootstrapRuntimeDependencies) {
@@ -737,7 +787,7 @@ TEST_F(BootstrapTest, WebModeBuildsAndAttachesRealBootstrapRuntimeDependencies) 
     EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
 }
 
-TEST_F(BootstrapTest, WebOnlyCreatesWebAssemblyDependenciesWithoutApiKey) {
+TEST_F(BootstrapTest, WebModeCreatesWebAssemblyDependenciesWithoutApiKey) {
     write_config_with_api_key("");
     write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
     ScopedEnvVar home_env("HOME", home_root().string());
@@ -745,7 +795,7 @@ TEST_F(BootstrapTest, WebOnlyCreatesWebAssemblyDependenciesWithoutApiKey) {
     ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
     ScopedWebStartupInspectionCapture inspection_capture;
 
-    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web-only", "--port", "0"});
+    const auto result = invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
 
     ASSERT_EQ(result.exit_code, 0) << result.output;
     ASSERT_TRUE(inspection_capture.inspection().has_value());
@@ -763,16 +813,16 @@ TEST_F(BootstrapTest, WebOnlyCreatesWebAssemblyDependenciesWithoutApiKey) {
     EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
 }
 
-TEST_F(BootstrapTest, WebOnlyStartsAdminUiWhenRuntimeAssemblyFails) {
+TEST_F(BootstrapTest, WebModeStartsAdminUiWhenRuntimeAssemblyFails) {
     write_config();
     write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
     ScopedEnvVar home_env("HOME", home_root().string());
     ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
     ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
     ScopedWebStartupInspectionCapture inspection_capture;
-    ScopedWebRuntimeBuildFailureInjection build_failure("injected web-only runtime failure");
+    ScopedWebRuntimeBuildFailureInjection build_failure("injected web runtime failure");
 
-    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web-only", "--port", "0"});
+    const auto result = invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
 
     ASSERT_EQ(result.exit_code, 0) << result.output;
     ASSERT_TRUE(inspection_capture.inspection().has_value());
@@ -788,7 +838,7 @@ TEST_F(BootstrapTest, WebOnlyStartsAdminUiWhenRuntimeAssemblyFails) {
     EXPECT_TRUE(inspection.attached_skill_loader);
     EXPECT_TRUE(inspection.tool_definitions.empty());
     EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
-    EXPECT_NE(inspection.runtime_build_error.find("injected web-only runtime failure"), std::string::npos);
+    EXPECT_NE(inspection.runtime_build_error.find("injected web runtime failure"), std::string::npos);
 }
 
 TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {
@@ -799,6 +849,7 @@ TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {
 
     const auto result = invoke_bootstrap({
         "orangutan",
+        "--cli",
         "--agent",
         "default",
         "--config-password",
@@ -820,6 +871,7 @@ TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithEnvironmentPasswordHea
 
     const auto result = invoke_bootstrap({
         "orangutan",
+        "--cli",
         "--agent",
         "default",
         "--resume",
@@ -838,6 +890,7 @@ TEST_F(BootstrapTest, RunBootstrapFailsWithoutPasswordForProtectedConfigHeadless
 
     const auto result = invoke_bootstrap({
         "orangutan",
+        "--cli",
         "--agent",
         "default",
         "--resume",

@@ -21,8 +21,9 @@
 namespace orangutan {
 
 class HookManager;
-class CronStore;
-class HeartbeatScheduler;
+namespace automation {
+class Runtime;
+}
 
 } // namespace orangutan
 
@@ -109,8 +110,8 @@ namespace detail {
 
 [[nodiscard]]
 ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
-                                                           const std::string &raw_caller_id, orangutan::HookManager *hook_manager = nullptr, CronStore *cron_store = nullptr,
-                                                           HeartbeatScheduler *heartbeat_scheduler = nullptr);
+                                                           const std::string &raw_caller_id, orangutan::HookManager *hook_manager = nullptr,
+                                                           automation::Runtime *automation_runtime = nullptr);
 
 } // namespace detail
 
@@ -119,6 +120,6 @@ void add_configured_channels(ChannelManager &channel_manager, const Config &cfg)
 void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                       const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
                       MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg, orangutan::HookManager *hook_manager = nullptr,
-                      CronStore *cron_store = nullptr, HeartbeatScheduler *heartbeat_scheduler = nullptr);
+                      automation::Runtime *automation_runtime = nullptr);
 
 } // namespace orangutan::app

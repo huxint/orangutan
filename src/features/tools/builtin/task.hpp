@@ -4,6 +4,6 @@
 
 namespace orangutan {
 
-void register_cron_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+void register_task_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 
 } // namespace orangutan

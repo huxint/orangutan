@@ -3,6 +3,7 @@
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
 #include "core/providers/provider.hpp"
+#include "features/automation/runtime.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 
@@ -15,6 +16,7 @@
 #include <optional>
 #include <print>
 #include <ranges>
+#include <string_view>
 
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -119,6 +121,123 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
     }
 
     std::print("🗜️ Compressed history: {} -> {} messages.\n\n", result.messages_before, result.messages_after);
+}
+
+std::string trim_copy(std::string_view input) {
+    const auto begin = input.find_first_not_of(" \t");
+    if (begin == std::string_view::npos) {
+        return {};
+    }
+    const auto end = input.find_last_not_of(" \t");
+    return std::string(input.substr(begin, end - begin + 1));
+}
+
+bool execute_registry_command(const ToolRegistry *tool_registry, std::string_view tool_name, const json &input, std::string_view tool_use_id) {
+    if (tool_registry == nullptr) {
+        std::print("No tool registry available.\n\n");
+        return true;
+    }
+
+    const auto result = tool_registry->execute(ToolUseBlock{
+        .id = std::string(tool_use_id),
+        .name = std::string(tool_name),
+        .input = input,
+    });
+    std::print("{}\n\n", result.content);
+    return true;
+}
+
+bool handle_tasks_command(const std::string &line, const ToolRegistry *tool_registry) {
+    if (line == "/tasks") {
+        return execute_registry_command(tool_registry, "task", {{"op", "list"}}, "slash-task-list");
+    }
+    if (!line.starts_with("/tasks ")) {
+        return false;
+    }
+
+    const auto remainder = trim_copy(std::string_view(line).substr(7));
+    if (remainder.starts_with("run ")) {
+        const auto id = trim_copy(std::string_view(remainder).substr(4));
+        if (id.empty()) {
+            std::print("Usage: /tasks run <id>\n\n");
+            return true;
+        }
+        return execute_registry_command(tool_registry, "task", {{"op", "run"}, {"id", id}}, "slash-task-run");
+    }
+    if (remainder.starts_with("remove ")) {
+        const auto id = trim_copy(std::string_view(remainder).substr(7));
+        if (id.empty()) {
+            std::print("Usage: /tasks remove <id>\n\n");
+            return true;
+        }
+        return execute_registry_command(tool_registry, "task", {{"op", "remove"}, {"id", id}}, "slash-task-remove");
+    }
+
+    std::print("Usage: /tasks | /tasks run <id> | /tasks remove <id>\n\n");
+    return true;
+}
+
+bool handle_heartbeats_command(const std::string &line, const ToolRegistry *tool_registry) {
+    if (line == "/heartbeats") {
+        return execute_registry_command(tool_registry, "heartbeat", {{"op", "list"}}, "slash-heartbeat-list");
+    }
+    if (!line.starts_with("/heartbeats ")) {
+        return false;
+    }
+
+    const auto remainder = trim_copy(std::string_view(line).substr(12));
+    const auto run_action = [&](std::string_view action, std::string_view op, std::string_view tool_use_id) {
+        if (!remainder.starts_with(action)) {
+            return false;
+        }
+        const auto id = trim_copy(std::string_view(remainder).substr(action.size()));
+        if (id.empty()) {
+            std::print("Usage: /heartbeats {} <id>\n\n", op);
+            return true;
+        }
+        return execute_registry_command(tool_registry, "heartbeat", {{"op", std::string(op)}, {"id", id}}, std::string(tool_use_id));
+    };
+
+    if (run_action("run ", "run", "slash-heartbeat-run")) {
+        return true;
+    }
+    if (run_action("pause ", "pause", "slash-heartbeat-pause")) {
+        return true;
+    }
+    if (run_action("resume ", "resume", "slash-heartbeat-resume")) {
+        return true;
+    }
+    if (run_action("remove ", "remove", "slash-heartbeat-remove")) {
+        return true;
+    }
+
+    std::print("Usage: /heartbeats | /heartbeats run <id> | /heartbeats pause <id> | /heartbeats resume <id> | /heartbeats remove <id>\n\n");
+    return true;
+}
+
+bool handle_inbox_command(const std::string &line, const ToolRegistry *tool_registry) {
+    if (line == "/inbox") {
+        return execute_registry_command(tool_registry, "inbox", {{"op", "list"}}, "slash-inbox-list");
+    }
+    if (line == "/inbox clear") {
+        return execute_registry_command(tool_registry, "inbox", {{"op", "clear"}}, "slash-inbox-clear");
+    }
+    if (!line.starts_with("/inbox ")) {
+        return false;
+    }
+
+    const auto remainder = trim_copy(std::string_view(line).substr(7));
+    if (remainder.starts_with("ack ")) {
+        const auto id = trim_copy(std::string_view(remainder).substr(4));
+        if (id.empty()) {
+            std::print("Usage: /inbox ack <id>\n\n");
+            return true;
+        }
+        return execute_registry_command(tool_registry, "inbox", {{"op", "ack"}, {"id", id}}, "slash-inbox-ack");
+    }
+
+    std::print("Usage: /inbox | /inbox ack <id> | /inbox clear\n\n");
+    return true;
 }
 
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
@@ -227,6 +346,15 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         }
         return true;
     }
+    if (handle_tasks_command(line, tool_registry)) {
+        return true;
+    }
+    if (handle_heartbeats_command(line, tool_registry)) {
+        return true;
+    }
+    if (handle_inbox_command(line, tool_registry)) {
+        return true;
+    }
     if (line == "/multi") {
         return false;
     }
@@ -237,7 +365,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
 
 void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
               const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const SkillLoader *skill_loader,
-              const ToolRegistry *tool_registry, HookManager *hook_manager) {
+              const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     std::println("Orangutan v0.1.0");
     std::print("Type /help for commands, Ctrl+D to quit\n\n");
 
@@ -254,15 +382,6 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
             continue;
         }
 
-        bool quit = false;
-        if (line[0] == '/' && handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key,
-                                                   skill_loader, tool_registry, hook_manager)) {
-            if (quit) {
-                break;
-            }
-            continue;
-        }
-
         if (line == "/multi") {
             line = read_multiline();
             if (line.empty()) {
@@ -270,10 +389,25 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
             }
         }
 
-        try {
-            agent.run(line);
-        } catch (const std::exception &e) {
-            std::print(std::cerr, "Error: {}\n\n", e.what());
+        bool quit = false;
+        const bool handled = automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
+            if (line[0] == '/' && handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key,
+                                                       skill_loader, tool_registry, hook_manager)) {
+                return true;
+            }
+
+            try {
+                agent.run(line);
+            } catch (const std::exception &e) {
+                std::print(std::cerr, "Error: {}\n\n", e.what());
+            }
+            return false;
+        });
+        if (quit) {
+            break;
+        }
+        if (handled) {
+            continue;
         }
     }
 

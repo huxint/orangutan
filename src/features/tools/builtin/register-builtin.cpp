@@ -7,7 +7,9 @@ void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memor
                             const ToolPermissionSettings *permissions, std::string_view edit_mode) {
     register_builtin_core_tools(registry, workspace, permissions, edit_mode);
     register_builtin_subagent_tools(registry, tool_context);
-    register_cron_tool(registry, tool_context);
+    register_task_tool(registry, tool_context);
+    register_heartbeat_tool(registry, tool_context);
+    register_inbox_tool(registry, tool_context);
     if (runtime_memory != nullptr) {
         register_builtin_memory_tools(registry, *runtime_memory);
     }

@@ -2,7 +2,9 @@
 
 #include "app/history-events.hpp"
 #include "app/session-workflow.hpp"
+#include "features/automation/runtime.hpp"
 
+#include <optional>
 #include <ostream>
 
 namespace orangutan::app {
@@ -80,19 +82,22 @@ auto make_tool_event_emitter(const JsonEmitter &emit) {
     };
 }
 
-void run_single_message_agent(AgentLoop &agent, const std::string &message, bool event_stream, const std::string &current_session_id, const JsonEmitter &emit) {
-    if (!event_stream) {
-        (void)agent.run(message);
-        return;
-    }
+void run_single_message_agent(AgentLoop &agent, const std::string &message, bool event_stream, const std::string &current_session_id, const JsonEmitter &emit,
+                              const std::string &agent_key, automation::Runtime *automation_runtime) {
+    automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
+        if (!event_stream) {
+            (void)agent.run(message);
+            return;
+        }
 
-    if (!current_session_id.empty()) {
-        emit(make_session_event_json("session_resumed", current_session_id, "resumed"));
-    }
+        if (!current_session_id.empty()) {
+            emit(make_session_event_json("session_resumed", current_session_id, "resumed"));
+        }
 
-    const auto stream_event = make_stream_event_emitter(emit);
-    const auto tool_event = make_tool_event_emitter(emit);
-    (void)agent.run(message, stream_event, tool_event);
+        const auto stream_event = make_stream_event_emitter(emit);
+        const auto tool_event = make_tool_event_emitter(emit);
+        (void)agent.run(message, stream_event, tool_event);
+    });
 }
 
 void maybe_persist_single_message_session(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, std::string &current_session_id,
@@ -131,9 +136,9 @@ void emit_session_history_dump(const std::vector<Message> &history, const std::s
 
 int run_single_message(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
                        std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key, const JsonEmitter &emit,
-                       std::ostream &error_stream) {
+                       std::ostream &error_stream, automation::Runtime *automation_runtime) {
     try {
-        run_single_message_agent(agent, message, event_stream, current_session_id, emit);
+        run_single_message_agent(agent, message, event_stream, current_session_id, emit, agent_key, automation_runtime);
     } catch (const std::exception &e) {
         emit_single_message_error(event_stream, emit, error_stream, e.what());
         return 1;

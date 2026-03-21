@@ -18,6 +18,9 @@ std::string repl_help_text() {
            "  /load <id>       - load a saved session\n"
            "  /resume <id>     - alias of /load; supports 'latest'\n"
            "  /tools           - list all registered tools\n"
+           "  /tasks           - list tasks or run '/tasks run <id>'\n"
+           "  /heartbeats      - list heartbeats or run '/heartbeats pause <id>'\n"
+           "  /inbox           - list inbox items, '/inbox ack <id>', or '/inbox clear'\n"
            "  /skills          - list loaded skills\n"
            "  /agent           - show the current agent\n"
            "  /agents          - list configured agents\n"
@@ -35,6 +38,9 @@ std::string channel_help_text() {
            "/session - show the current session id\n"
            "/sessions - list saved sessions in this scope\n"
            "/resume <id> - resume a saved session (or 'latest')\n"
+           "/tasks - list tasks\n"
+           "/heartbeats - list heartbeats\n"
+           "/inbox - list inbox items\n"
            "/agent - show the current agent\n"
            "/agents - list configured agents";
 }
