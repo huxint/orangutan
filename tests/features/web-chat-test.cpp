@@ -332,6 +332,69 @@ TEST_F(WebChatStoreTest, ResumeSlashCommandStreamsTargetSessionEvent) {
     server.stop();
 }
 
+TEST_F(WebChatStoreTest, NewSlashCommandStreamsMarkdownReplyAndSessionEvent) {
+    SessionStore store(db_path_.string());
+    Config config = make_config();
+    config.api_key.clear();
+    config.agents["default"].api_key.clear();
+
+    const auto existing_session_id = store.save({Message::user_text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+
+    WebServer server;
+    server.set_config(&config);
+    server.set_session_store(&store);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    const auto req = json{
+        {"message", "/new"},
+        {"agent_key", "default"},
+        {"session_id", existing_session_id},
+    };
+    auto res = cli.Post("/api/chat", req.dump(), "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "session").has_value());
+    EXPECT_NE(find_sse_event_payload(res->body, "session")->at("session_id"), existing_session_id);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
+    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## Session\n"
+                                                                     "- Started a new session.\n"
+                                                                     "- Previous session remains available to resume later.");
+
+    server.stop();
+}
+
+TEST_F(WebChatStoreTest, HistorySlashCommandWorksForReadOnlyChannelSession) {
+    SessionStore store(db_path_.string());
+    Config config = make_config();
+    config.api_key.clear();
+    config.agents["default"].api_key.clear();
+
+    const auto session_id = store.save({Message::user_text("hello"), Message::assistant_text("copied reply")},
+                                       make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
+
+    WebServer server;
+    server.set_config(&config);
+    server.set_session_store(&store);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    const auto req = json{
+        {"message", "/history"},
+        {"agent_key", "default"},
+        {"session_id", session_id},
+    };
+    auto res = cli.Post("/api/chat", req.dump(), "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
+    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## History\n"
+                                                                     "- 👤 User `0`: `hello`\n"
+                                                                     "- 🤖 Assistant `1`: `copied reply`\n");
+
+    server.stop();
+}
+
 TEST(WebChatTest, AbortEndpointReturns404ForUnknownSession) {
     WebServer server;
     server.start("127.0.0.1", 0);

@@ -45,6 +45,12 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
 [[nodiscard]]
 std::string render_history_summary(const AgentLoop &agent);
 [[nodiscard]]
+std::string format_history_summary(const std::vector<Message> &history);
+[[nodiscard]]
+std::string format_history_summary(const AgentLoop &agent);
+[[nodiscard]]
+std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result);
+[[nodiscard]]
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key = {});
 [[nodiscard]]
 RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,

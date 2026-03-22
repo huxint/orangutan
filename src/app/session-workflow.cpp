@@ -1,5 +1,7 @@
 #include "app/session-workflow.hpp"
 
+#include <sstream>
+
 namespace orangutan::app {
 
 SessionMetadata make_cli_session_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key, const std::string &origin_ref) {
@@ -82,21 +84,28 @@ LoadSessionResult load_session_into_agent(const std::string &requested_session_i
 }
 
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session) {
+    std::ostringstream out;
+    out << "## Session\n";
+
     if (!result.had_history) {
-        return "✨ Started a new session.";
+        out << "- Started a new session.";
+        return out.str();
     }
 
-    std::string message;
     if (result.distillation.distilled) {
-        message = "✨ Started a new session. Distilled " + std::to_string(result.distillation.memories_stored) + " long-term memories.";
+        out << "- Started a new session.\n";
+        out << "- Distilled `" << result.distillation.memories_stored << "` long-term memories.";
+    } else if (!result.distillation.status.empty()) {
+        out << "- Started a new session.\n";
+        out << "- " << result.distillation.status;
     } else {
-        message = "✨ Started a new session. " + result.distillation.status;
+        out << "- Started a new session.";
     }
 
     if (mention_previous_session) {
-        message += " Previous session remains available to resume later.";
+        out << "\n- Previous session remains available to resume later.";
     }
-    return message;
+    return out.str();
 }
 
 } // namespace orangutan::app

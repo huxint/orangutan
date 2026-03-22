@@ -302,6 +302,12 @@ WebSlashCommandResponse handle_web_static_slash_command(const std::string &messa
     if (message == "/agents") {
         return {.handled = true, .text = app::format_agent_list(config, agent_key)};
     }
+    if (message == "/history") {
+        if (store == nullptr || current_session_id.empty()) {
+            return {.handled = true, .text = app::format_history_summary(std::vector<Message>{})};
+        }
+        return {.handled = true, .text = app::format_history_summary(store->load(current_session_id))};
+    }
     if (message == "/new") {
         std::string new_session_id;
         if (store != nullptr) {
@@ -311,7 +317,12 @@ WebSlashCommandResponse handle_web_static_slash_command(const std::string &messa
         }
         return {.handled = true,
                 .session_id = new_session_id,
-                .text = existing_session.has_value() ? "✨ Started a new session. Previous session remains available to resume later." : "✨ Started a new session."};
+                .text = app::describe_new_session_result(
+                    {
+                        .had_history = existing_session.has_value(),
+                        .distillation = {},
+                    },
+                    existing_session.has_value())};
     }
     if (message.starts_with("/resume ") || message.starts_with("/load ")) {
         if (store == nullptr) {
@@ -348,13 +359,10 @@ WebSlashCommandResponse handle_web_runtime_slash_command(const std::string &mess
 
     if (message == "/compress") {
         const auto result = runtime.agent->compress_history();
-        if (!result.compacted) {
-            return {.handled = true, .text = result.status};
-        }
-        if (store != nullptr && !current_session_id.empty()) {
+        if (result.compacted && store != nullptr && !current_session_id.empty()) {
             store->update(current_session_id, runtime.agent->history(), metadata);
         }
-        return {.handled = true, .text = "🗜️ Compressed history: " + std::to_string(result.messages_before) + " -> " + std::to_string(result.messages_after) + " messages."};
+        return {.handled = true, .text = app::format_history_compaction_result(result)};
     }
 
     if (const auto reply = app::handle_registry_slash_command(message, &runtime.tools); reply.handled) {

@@ -170,3 +170,21 @@ TEST_F(SessionWorkflowTest, StartNewSessionWritesMirrorArtifactsWhenEnabled) {
 
     std::filesystem::remove_all(workspace);
 }
+
+TEST_F(SessionWorkflowTest, DescribeNewSessionResultUsesMarkdownSlashReplyFormat) {
+    const auto text = app::describe_new_session_result(
+        app::NewSessionResult{
+            .had_history = true,
+            .distillation =
+                {
+                    .distilled = true,
+                    .memories_stored = 3,
+                },
+        },
+        true);
+
+    EXPECT_EQ(text, "## Session\n"
+                    "- Started a new session.\n"
+                    "- Distilled `3` long-term memories.\n"
+                    "- Previous session remains available to resume later.");
+}

@@ -45,6 +45,15 @@ TEST(CliUiTest, RenderHistorySummaryIncludesToolMarkers) {
     EXPECT_NE(text.find("[0] user: hello"), std::string::npos);
     EXPECT_NE(text.find("[tool_use: read]"), std::string::npos);
     EXPECT_NE(text.find("[tool_result]"), std::string::npos);
+
+    const auto formatted = app::format_history_summary(agent);
+    EXPECT_NE(formatted.find("## History"), std::string::npos);
+    EXPECT_NE(formatted.find("👤 User `0`"), std::string::npos);
+    EXPECT_NE(formatted.find("`tool_use:read`"), std::string::npos);
+    EXPECT_NE(formatted.find("`tool_result`"), std::string::npos);
+
+    const auto formatted_from_messages = app::format_history_summary(agent.history());
+    EXPECT_EQ(formatted_from_messages, formatted);
 }
 
 TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
@@ -115,8 +124,16 @@ TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     EXPECT_NE(app::format_current_agent("coder").find("🤖 Current Agent: `coder`"), std::string::npos);
     EXPECT_NE(app::repl_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::repl_help_text().find("`/status`"), std::string::npos);
+    EXPECT_NE(app::repl_help_text().find("`/history`"), std::string::npos);
     EXPECT_NE(app::channel_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::channel_help_text().find("`/status`"), std::string::npos);
+    EXPECT_NE(app::channel_help_text().find("`/history`"), std::string::npos);
     EXPECT_NE(app::web_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::web_help_text().find("`/status`"), std::string::npos);
+    EXPECT_NE(app::web_help_text().find("`/history`"), std::string::npos);
+
+    const auto compacted = app::format_history_compaction_result(AgentLoop::HistoryCompactionResult{.compacted = true, .messages_before = 20, .messages_after = 8});
+    EXPECT_EQ(compacted, "## Compression\n- Messages: `20 -> 8`");
+    EXPECT_EQ(app::format_history_compaction_result(AgentLoop::HistoryCompactionResult{.compacted = false, .status = "Not enough history to compress yet."}),
+              "## Compression\n- Not enough history to compress yet.");
 }

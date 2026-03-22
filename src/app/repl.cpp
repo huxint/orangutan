@@ -112,16 +112,11 @@ void load_session(const std::string &requested_session_id, AgentLoop &agent, Ses
 void compress_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model, const std::string &scope_key,
                       const std::string &agent_key) {
     const auto result = agent.compress_history();
-    if (!result.compacted) {
-        std::print("{}\n\n", result.status);
-        return;
-    }
-
-    if (!current_session_id.empty()) {
+    if (result.compacted && !current_session_id.empty()) {
         store.update(current_session_id, agent.history(), make_cli_session_metadata(model, scope_key, agent_key));
     }
 
-    std::print("🗜️ Compressed history: {} -> {} messages.\n\n", result.messages_before, result.messages_after);
+    std::print("{}\n\n", format_history_compaction_result(result));
 }
 
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
@@ -154,7 +149,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line == "/history") {
-        std::print("{}", render_history_summary(agent));
+        std::print("{}\n\n", format_history_summary(agent));
         return true;
     }
     if (line == "/session") {

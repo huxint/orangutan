@@ -34,6 +34,7 @@ std::string channel_help_text() {
            "- `/help` - show this help\n"
            "- `/status` - show active model and runtime status\n"
            "- `/new` - start a new session\n"
+           "- `/history` - show conversation summary\n"
            "- `/compress` - summarize older history\n"
            "- `/session` - show the current session id\n"
            "- `/sessions` - list saved sessions in this scope\n"
@@ -51,6 +52,7 @@ std::string web_help_text() {
            "- `/help` - show this help\n"
            "- `/status` - show active model and runtime status\n"
            "- `/new` - start a new chat session\n"
+           "- `/history` - show conversation summary for the current session\n"
            "- `/compress` - summarize older history for the current session\n"
            "- `/session` - show the current session id\n"
            "- `/sessions` - list saved sessions for the current agent\n"
@@ -154,6 +156,59 @@ std::string render_history_summary(const AgentLoop &agent) {
         out << '\n';
     }
     out << '\n';
+    return out.str();
+}
+
+std::string format_history_summary(const std::vector<Message> &history) {
+    if (history.empty()) {
+        return "## History\n- No conversation history yet.";
+    }
+
+    std::ostringstream out;
+    out << "## History\n";
+    for (size_t index = 0; index < history.size(); ++index) {
+        const auto &message = history[index];
+        std::string label = message.role == "user" ? "👤 User" : (message.role == "assistant" ? "🤖 Assistant" : "📦 " + message.role);
+        out << "- " << label << " `" << index << "`: ";
+
+        bool wrote_content = false;
+        for (const auto &block : message.content) {
+            if (const auto *text = std::get_if<TextBlock>(&block)) {
+                auto preview = text->text.substr(0, 80);
+                if (text->text.size() > 80) {
+                    preview += "...";
+                }
+                out << '`' << preview << '`';
+                wrote_content = true;
+            } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                out << "`tool_use:" << tool->name << '`';
+                wrote_content = true;
+            } else if (std::get_if<ToolResultBlock>(&block) != nullptr) {
+                out << "`tool_result`";
+                wrote_content = true;
+            }
+        }
+
+        if (!wrote_content) {
+            out << "`(empty)`";
+        }
+        out << '\n';
+    }
+    return out.str();
+}
+
+std::string format_history_summary(const AgentLoop &agent) {
+    return format_history_summary(agent.history());
+}
+
+std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result) {
+    if (!result.compacted) {
+        return "## Compression\n- " + result.status;
+    }
+
+    std::ostringstream out;
+    out << "## Compression\n";
+    out << "- Messages: `" << result.messages_before << " -> " << result.messages_after << "`";
     return out.str();
 }
 

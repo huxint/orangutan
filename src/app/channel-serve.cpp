@@ -434,6 +434,11 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         return true;
     }
 
+    if (message.content == "/history") {
+        deliver_command_reply(message, format_history_summary(runtime.agent()), channel_manager);
+        return true;
+    }
+
     if (message.content == "/session") {
         deliver_command_reply(message, format_current_session(runtime.current_session_id, runtime.agent_key), channel_manager);
         return true;
@@ -510,14 +515,10 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     const auto result = runtime.agent().compress_history();
-    if (!result.compacted) {
-        deliver_command_reply(message, result.status, channel_manager);
-        return true;
+    if (result.compacted) {
+        persist_channel_session(message.jid, runtime, session_store);
     }
-
-    persist_channel_session(message.jid, runtime, session_store);
-    deliver_command_reply(message, "🗜️ Compressed history: " + std::to_string(result.messages_before) + " -> " + std::to_string(result.messages_after) + " messages.",
-                          channel_manager);
+    deliver_command_reply(message, format_history_compaction_result(result), channel_manager);
     return true;
 }
 
