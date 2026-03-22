@@ -3,6 +3,7 @@
 #include "features/memory/memory-extract.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/types.hpp"
+#include "infra/execution/sender-utils.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -240,22 +241,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
         return;
     }
     const auto persisted_payload = json::parse(payload_text);
-    if (!insert_inbox_item(*bindings,
-                           automation::InboxItem{
-                               .agent_key = agent_key_,
-                               .source_kind = std::string(inbox_source_kind),
-                               .source_run_id = event.process_id,
-                               .title = inbox_title_for_event(event),
-                               .body = payload_text,
-                               .created_at = automation::to_unix_seconds(automation::Clock::now()),
-                           },
-                           event.process_id)) {
-        return;
-    }
-
-    if (completion_mode(event.metadata) != "resume") {
-        return;
-    }
+    const auto requested_completion_mode = completion_mode(event.metadata);
 
     const auto insert_resume_failure_note = [&](std::string_view reason) {
         const auto failure_payload = json{
@@ -271,35 +257,61 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
             spdlog::warn("background completion failure payload exceeded bounded size for process {}", event.process_id);
             return;
         }
-        (void)insert_inbox_item(*bindings,
-                                automation::InboxItem{
-                                    .agent_key = agent_key_,
-                                    .source_kind = std::string(inbox_source_kind),
-                                    .source_run_id = event.process_id,
-                                    .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
-                                    .body = std::move(failure_body),
-                                    .created_at = automation::to_unix_seconds(automation::Clock::now()),
-                                },
-                                event.process_id);
+        static_cast<void>(insert_inbox_item(*bindings,
+                                            automation::InboxItem{
+                                                .agent_key = agent_key_,
+                                                .source_kind = std::string(inbox_source_kind),
+                                                .source_run_id = event.process_id,
+                                                .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
+                                                .body = std::move(failure_body),
+                                                .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                                            },
+                                            event.process_id));
     };
 
-    if (!bindings->supports_resume_callback()) {
-        insert_resume_failure_note("resume requested, but no background completion resume callback is registered");
-        return;
-    }
+    auto pipeline = stdexec::just() | stdexec::then([&]() -> bool {
+                        return insert_inbox_item(*bindings,
+                                                 automation::InboxItem{
+                                                     .agent_key = agent_key_,
+                                                     .source_kind = std::string(inbox_source_kind),
+                                                     .source_run_id = event.process_id,
+                                                     .title = inbox_title_for_event(event),
+                                                     .body = payload_text,
+                                                     .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                                                 },
+                                                 event.process_id);
+                    }) |
+                    stdexec::then([&](bool inserted) {
+                        if (!inserted || requested_completion_mode != "resume") {
+                            return;
+                        }
+
+                        if (!bindings->supports_resume_callback()) {
+                            insert_resume_failure_note("resume requested, but no background completion resume callback is registered");
+                            return;
+                        }
+
+                        try {
+                            const auto error = bindings->resume_callback()(payload_text);
+                            if (error.has_value()) {
+                                spdlog::warn("background completion resume callback failed for process {}: {}", event.process_id, *error);
+                                insert_resume_failure_note(failure_reason_or_default(error));
+                            }
+                        } catch (const std::exception &ex) {
+                            spdlog::warn("background completion resume callback threw for process {}: {}", event.process_id, ex.what());
+                            insert_resume_failure_note(ex.what());
+                        } catch (...) {
+                            spdlog::warn("background completion resume callback threw for process {} with an unknown exception", event.process_id);
+                            insert_resume_failure_note("resume callback threw an unknown exception");
+                        }
+                    });
 
     try {
-        const auto error = bindings->resume_callback()(payload_text);
-        if (error.has_value()) {
-            spdlog::warn("background completion resume callback failed for process {}: {}", event.process_id, *error);
-            insert_resume_failure_note(failure_reason_or_default(error));
-        }
+        static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "background completion dispatch pipeline"));
     } catch (const std::exception &ex) {
-        spdlog::warn("background completion resume callback threw for process {}: {}", event.process_id, ex.what());
-        insert_resume_failure_note(ex.what());
+        spdlog::error("background completion dispatch pipeline failed for process {}: {}", event.process_id, ex.what());
     } catch (...) {
-        spdlog::warn("background completion resume callback threw for process {} with an unknown exception", event.process_id);
-        insert_resume_failure_note("resume callback threw an unknown exception");
+        spdlog::error("background completion dispatch pipeline failed for process {} with non-standard exception", event.process_id);
     }
 }
 

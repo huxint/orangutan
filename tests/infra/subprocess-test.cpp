@@ -356,19 +356,19 @@ TEST(SubprocessTest, BackgroundManagerRejectsReentrantStartDuringShutdown) {
 
                 callback_attempted.store(true, std::memory_order_release);
                 try {
-                    (void)manager_ptr->start(
+                    static_cast<void>(manager_ptr->start(
                         {
                             .command = "/bin/true",
                             .use_shell = false,
                         },
-                        "shutdown reentrant start");
+                        "shutdown reentrant start"));
                 } catch (const std::exception &) {
                     start_rejected.store(true, std::memory_order_release);
                 }
             });
             manager_ptr = manager.get();
 
-            (void)manager->start(
+            static_cast<void>(manager->start(
                 {
                     .command = "python3 -c \"import time; time.sleep(10)\"",
                     .use_shell = true,
@@ -376,7 +376,7 @@ TEST(SubprocessTest, BackgroundManagerRejectsReentrantStartDuringShutdown) {
                 "shutdown gate test",
                 {
                     .publish_completion_event = true,
-                });
+                }));
 
             shutdown_started.store(true, std::memory_order_release);
             manager.reset();

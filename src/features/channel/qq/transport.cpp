@@ -517,7 +517,7 @@ Transport::Transport(Callbacks callbacks)
 : impl_(std::make_shared<Impl>(std::move(callbacks))){}
 #else
 : impl_(nullptr) {
-    (void)callbacks;
+    static_cast<void>(callbacks);
 }
 #endif
 
@@ -529,7 +529,7 @@ void Transport::start(const std::string &url) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     impl_->start(url);
 #else
-    (void)url;
+    static_cast<void>(url);
     throw std::runtime_error("QQ channel support was not compiled in");
 #endif
 }
@@ -538,7 +538,7 @@ void Transport::send_text(std::string payload) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     impl_->send_text(std::move(payload));
 #else
-    (void)payload;
+    static_cast<void>(payload);
     throw std::runtime_error("QQ channel support was not compiled in");
 #endif
 }

@@ -137,7 +137,7 @@ void migrate_legacy_memories(sqlite::Database &db) {
         insert_new.bind_text(5, category.empty() ? std::string{"general"} : category);
         insert_new.bind_text(6, created_at);
         insert_new.bind_text(7, updated_at);
-        (void)insert_new.step();
+        static_cast<void>(insert_new.step());
         insert_new.reset();
     }
 

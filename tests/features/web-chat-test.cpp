@@ -574,7 +574,7 @@ TEST(WebChatTest, CompletionResumeAfterSessionShutdownFallsBackToInboxNotes) {
         .automation_runtime = &automation_runtime,
         .background_completion_runtime = make_background_completion_runtime_bindings(
             [automation_store](const automation::InboxItem &item) {
-                (void)automation_store->insert_inbox(item);
+                static_cast<void>(automation_store->insert_inbox(item));
             },
             web::detail::make_web_completion_resume_callback(resume_state)),
     };

@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
+
+set(CMAKE_CXX_COMPILER clang++)
+set(CMAKE_C_COMPILER clang)
+
 project(orangutan VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -41,6 +45,24 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(httplib)
+
+FetchContent_Declare(
+    stdexec_source
+    GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
+    GIT_TAG        46ca0458a9806f63cde1c3bba76a2ec720974c00
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(stdexec_source)
+if(NOT stdexec_source_POPULATED)
+    if(POLICY CMP0169)
+        cmake_policy(PUSH)
+        cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_Populate(stdexec_source)
+    if(POLICY CMP0169)
+        cmake_policy(POP)
+    endif()
+endif()
 
 option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support" ON)
 
@@ -139,6 +161,14 @@ add_library(orangutan_lib STATIC
     src/infra/subprocess/subprocess.cpp
 )
 
+add_library(orangutan_stdexec INTERFACE)
+target_include_directories(orangutan_stdexec SYSTEM INTERFACE ${stdexec_source_SOURCE_DIR}/include)
+target_compile_features(orangutan_stdexec INTERFACE cxx_std_20)
+target_compile_options(orangutan_stdexec INTERFACE
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fcoroutines>
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fconcepts-diagnostics-depth=10>
+)
+
 target_include_directories(orangutan_lib PUBLIC src ${SQLITE3_INCLUDE_DIRS} ${xxhash_SOURCE_DIR})
 
 target_link_libraries(orangutan_lib PUBLIC
@@ -146,6 +176,7 @@ target_link_libraries(orangutan_lib PUBLIC
     spdlog::spdlog
     CURL::libcurl
     tomlplusplus::tomlplusplus
+    orangutan_stdexec
     Threads::Threads
     OpenSSL::Crypto
     httplib::httplib

@@ -96,7 +96,7 @@ void signal_process(pid_t pid, int signal_number) {
         return;
     }
     if (killpg(pid, signal_number) == -1 && errno != ESRCH) {
-        (void)kill(pid, signal_number);
+        static_cast<void>(kill(pid, signal_number));
     }
 }
 
@@ -211,7 +211,7 @@ void McpClient::disconnect() {
             const auto terminate_deadline = std::chrono::steady_clock::now() + terminate_timeout;
             if (!wait_for_pid_exit(child_pid_, terminate_deadline)) {
                 signal_process(child_pid_, SIGKILL);
-                (void)waitpid(child_pid_, nullptr, 0);
+                static_cast<void>(waitpid(child_pid_, nullptr, 0));
             }
         }
     }
@@ -313,7 +313,7 @@ void McpClient::spawn_process() {
     }
 
     if (pid == 0) {
-        (void)setpgid(0, 0);
+        static_cast<void>(setpgid(0, 0));
 
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);

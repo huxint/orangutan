@@ -687,7 +687,7 @@ TEST_F(ConfigFileTest, ThrowsWhenProtectedSecretHasNoPasswordSource) {
     const auto protected_key = protect_config_secret("sk-no-password", "expected-password", "agent.api_key");
     auto path = write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
 
-    EXPECT_THROW((void)Config::load_from(path), ConfigSecretProtectionError);
+    EXPECT_THROW(static_cast<void>(Config::load_from(path)), ConfigSecretProtectionError);
 }
 
 // ── edit_mode parsing ───────────────────────────

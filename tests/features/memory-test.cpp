@@ -164,7 +164,7 @@ TEST_F(MemoryStoreTest, DumpAllIncludesStoredMemories) {
 TEST_F(MemoryStoreTest, StatsCountManualAndAutoEntries) {
     MemoryStore store(db_path().string());
     store.remember("user_name", "Alice", "profile", {}, "manual", 0.9);
-    (void)store.auto_capture("my name is Bob and we are working on orangutan");
+    static_cast<void>(store.auto_capture("my name is Bob and we are working on orangutan"));
 
     const auto stats = store.stats();
     EXPECT_EQ(stats.total, 3);
@@ -175,7 +175,7 @@ TEST_F(MemoryStoreTest, StatsCountManualAndAutoEntries) {
 
 TEST_F(MemoryStoreTest, AutoCaptureExtractsStructuredMemories) {
     MemoryStore store(db_path().string());
-    (void)store.auto_capture("my name is Alice. We are working on orangutan. I prefer concise answers.");
+    static_cast<void>(store.auto_capture("my name is Alice. We are working on orangutan. I prefer concise answers."));
 
     const auto name = store.recall("profile.name");
     const auto project = store.recall("project.current");
@@ -188,8 +188,8 @@ TEST_F(MemoryStoreTest, AutoCaptureExtractsStructuredMemories) {
 
 TEST_F(MemoryStoreTest, AutoCaptureMergesRepeatedGeneralPreferences) {
     MemoryStore store(db_path().string());
-    (void)store.auto_capture("I prefer concise answers.");
-    (void)store.auto_capture("I prefer short commit messages.");
+    static_cast<void>(store.auto_capture("I prefer concise answers."));
+    static_cast<void>(store.auto_capture("I prefer short commit messages."));
 
     const auto preference = store.recall("preference.general");
     EXPECT_NE(preference.find("concise answers"), std::string::npos);
@@ -431,13 +431,13 @@ TEST(SanitizeUtf8Test, StrayContinuationBytesAreSkipped) {
 
 TEST_F(MemoryStoreTest, AutoCaptureChineseNameProducesValidUtf8) {
     MemoryStore store(db_path().string());
-    (void)store.auto_capture("我是一个算法高手");
+    static_cast<void>(store.auto_capture("我是一个算法高手"));
 
     const auto name = store.recall("profile.name");
     // Must not throw when serialized to JSON.
     EXPECT_NO_THROW({
         nlohmann::json j = name;
-        (void)j.dump();
+        static_cast<void>(j.dump());
     });
     // The captured content should contain valid Chinese text.
     if (!name.contains("(no memories found)")) {
@@ -447,7 +447,7 @@ TEST_F(MemoryStoreTest, AutoCaptureChineseNameProducesValidUtf8) {
 
 TEST_F(MemoryStoreTest, AutoCaptureChineseRememberProducesValidUtf8) {
     MemoryStore store(db_path().string());
-    (void)store.auto_capture("记住我是一个算法高手");
+    static_cast<void>(store.auto_capture("记住我是一个算法高手"));
 
     const auto stats = store.stats();
     EXPECT_GE(stats.auto_entries, 1);
@@ -456,18 +456,18 @@ TEST_F(MemoryStoreTest, AutoCaptureChineseRememberProducesValidUtf8) {
     const auto dump = store.dump_all();
     EXPECT_NO_THROW({
         nlohmann::json j = dump;
-        (void)j.dump();
+        static_cast<void>(j.dump());
     });
 }
 
 TEST_F(MemoryStoreTest, AutoCaptureAccentedLatinProducesValidUtf8) {
     MemoryStore store(db_path().string());
-    (void)store.auto_capture("my name is Jos\xc3\xa9");
+    static_cast<void>(store.auto_capture("my name is Jos\xc3\xa9"));
 
     const auto name = store.recall("profile.name");
     EXPECT_NO_THROW({
         nlohmann::json j = name;
-        (void)j.dump();
+        static_cast<void>(j.dump());
     });
     EXPECT_NE(name.find("Jos\xc3\xa9"), std::string::npos);
 }
@@ -475,7 +475,7 @@ TEST_F(MemoryStoreTest, AutoCaptureAccentedLatinProducesValidUtf8) {
 TEST_F(MemoryStoreTest, AutoCaptureEmojiProducesValidUtf8) {
     MemoryStore store(db_path().string());
     // "remember that the deploy emoji is 🚀"
-    (void)store.auto_capture("remember that the deploy emoji is \xf0\x9f\x9a\x80");
+    static_cast<void>(store.auto_capture("remember that the deploy emoji is \xf0\x9f\x9a\x80"));
 
     const auto stats = store.stats();
     EXPECT_GE(stats.auto_entries, 1);
@@ -483,7 +483,7 @@ TEST_F(MemoryStoreTest, AutoCaptureEmojiProducesValidUtf8) {
     const auto dump = store.dump_all();
     EXPECT_NO_THROW({
         nlohmann::json j = dump;
-        (void)j.dump();
+        static_cast<void>(j.dump());
     });
 }
 

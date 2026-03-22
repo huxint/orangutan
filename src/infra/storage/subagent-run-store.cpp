@@ -129,7 +129,7 @@ void SubagentRunStore::create_run(const SubagentRunCreateParams &params) {
     stmt.bind_text(8, params.child_scope_key);
     stmt.bind_text(9, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(10, params.task_summary);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::optional<SubagentRunRecord> SubagentRunStore::load_run(const std::string &run_id) {
@@ -171,7 +171,7 @@ void SubagentRunStore::mark_running(const std::string &run_id) {
     stmt.bind_text(1, status_to_string(SubagentRunStatus::running));
     stmt.bind_text(2, run_id);
     stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark running");
 }
 
@@ -185,7 +185,7 @@ void SubagentRunStore::mark_succeeded(const std::string &run_id, const std::stri
     stmt.bind_text(3, output);
     stmt.bind_text(4, run_id);
     stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark succeeded");
 }
 
@@ -199,7 +199,7 @@ void SubagentRunStore::mark_failed(const std::string &run_id, const std::string 
     stmt.bind_text(3, run_id);
     stmt.bind_text(4, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark failed");
 }
 
@@ -213,7 +213,7 @@ void SubagentRunStore::mark_timed_out(const std::string &run_id, const std::stri
     stmt.bind_text(3, run_id);
     stmt.bind_text(4, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark timed out");
 }
 
@@ -226,7 +226,7 @@ void SubagentRunStore::mark_abandoned(const std::string &run_id) {
     stmt.bind_text(2, run_id);
     stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(4, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark abandoned");
 }
 
@@ -238,7 +238,7 @@ void SubagentRunStore::mark_active_runs_abandoned() {
     stmt.bind_text(1, status_to_string(SubagentRunStatus::abandoned));
     stmt.bind_text(2, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(3, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 void SubagentRunStore::mark_active_runs_abandoned_for_runtime(const std::string &parent_runtime_key) {
@@ -250,7 +250,7 @@ void SubagentRunStore::mark_active_runs_abandoned_for_runtime(const std::string 
     stmt.bind_text(2, parent_runtime_key);
     stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
     stmt.bind_text(4, status_to_string(SubagentRunStatus::running));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 void SubagentRunStore::require_updated_row(const std::string &run_id, const std::string &operation) const {

@@ -94,7 +94,7 @@ NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, std::s
 
     if (result.had_history) {
         result.distillation = agent.distill_session_memory();
-        (void)persist_session(agent, store, current_session_id, metadata);
+        static_cast<void>(persist_session(agent, store, current_session_id, metadata));
         result.previous_session_id = current_session_id;
     }
 
@@ -129,8 +129,8 @@ LoadSessionResult load_session_into_agent(const std::string &requested_session_i
 }
 
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session) {
-    (void)mention_previous_session;
-    (void)result;
+    static_cast<void>(mention_previous_session);
+    static_cast<void>(result);
     std::ostringstream out;
     out << "## Session\n";
     out << "- ✨ Started a new session.";

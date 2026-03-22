@@ -103,7 +103,7 @@ void run_single_message_agent(AgentLoop &agent, const std::string &message, bool
                               const std::string &agent_key, automation::Runtime *automation_runtime) {
     automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
         if (!event_stream) {
-            (void)agent.run(message);
+            static_cast<void>(agent.run(message));
             return;
         }
 
@@ -113,7 +113,7 @@ void run_single_message_agent(AgentLoop &agent, const std::string &message, bool
 
         const auto stream_event = make_stream_event_emitter(emit);
         const auto tool_event = make_tool_event_emitter(emit);
-        (void)agent.run(message, stream_event, tool_event);
+        static_cast<void>(agent.run(message, stream_event, tool_event));
     });
 }
 

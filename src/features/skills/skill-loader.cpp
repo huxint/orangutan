@@ -207,7 +207,7 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
             if (is_toml_delimiter(lines[index])) {
                 try {
                     auto parsed = toml::parse(fm_buf.str());
-                    (void)parsed;
+                    static_cast<void>(parsed);
                     found_closing = true;
                     body_start_index = index + 1;
                     break;

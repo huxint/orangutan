@@ -163,7 +163,7 @@ std::string Store::upsert_task(const TaskSpec &task_input) {
     stmt.bind_text(9, delivery_policy_to_json(task.delivery).dump());
     stmt.bind_text(10, encode_optional_seconds(task.last_run_at));
     stmt.bind_text(11, task.last_status);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return task.id;
 }
 
@@ -176,7 +176,7 @@ bool Store::remove_task(const std::string &agent_key, const std::string &id_or_n
     std::lock_guard lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM tasks WHERE id = ?1");
     stmt.bind_text(1, existing->id);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return db_.changes() > 0;
 }
 
@@ -187,7 +187,7 @@ void Store::update_task_run_state(const std::string &task_id, std::optional<std:
     stmt.bind_text(2, encode_optional_seconds(last_run_at));
     stmt.bind_text(3, std::string(last_status));
     stmt.bind_int(4, enabled ? 1 : 0);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::vector<HeartbeatSpec> Store::list_heartbeats(const std::string &agent_key) const {
@@ -255,7 +255,7 @@ std::string Store::upsert_heartbeat(const HeartbeatSpec &heartbeat_input) {
     stmt.bind_text(12, encode_optional_seconds(heartbeat.next_due_at));
     stmt.bind_text(13, encode_optional_seconds(heartbeat.last_run_at));
     stmt.bind_text(14, heartbeat.last_status);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return heartbeat.id;
 }
 
@@ -268,7 +268,7 @@ bool Store::remove_heartbeat(const std::string &agent_key, const std::string &id
     std::lock_guard lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM heartbeats WHERE id = ?1");
     stmt.bind_text(1, existing->id);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return db_.changes() > 0;
 }
 
@@ -281,7 +281,7 @@ void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::opt
     stmt.bind_text(3, encode_optional_seconds(next_due_at));
     stmt.bind_text(4, std::string(last_status));
     stmt.bind_int(5, paused ? 1 : 0);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::string Store::insert_run(const RunRecord &run_input) {
@@ -305,7 +305,7 @@ std::string Store::insert_run(const RunRecord &run_input) {
     stmt.bind_text(9, run.summary);
     stmt.bind_text(10, run.delivery_status);
     stmt.bind_text(11, run.log_path);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return run.id;
 }
 
@@ -319,7 +319,7 @@ void Store::complete_run(const std::string &run_id, std::string_view status, std
     stmt.bind_text(4, std::string(summary));
     stmt.bind_text(5, std::string(delivery_status));
     stmt.bind_text(6, std::string(log_path));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::vector<RunRecord> Store::list_runs(const std::string &agent_key) const {
@@ -355,7 +355,7 @@ std::string Store::insert_inbox(const InboxItem &item_input) {
     stmt.bind_text(7, std::to_string(item.created_at));
     stmt.bind_text(8, encode_optional_seconds(item.acked_at));
     stmt.bind_text(9, item.status);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return item.id;
 }
 
@@ -380,7 +380,7 @@ bool Store::ack_inbox(const std::string &agent_key, const std::string &id) {
     stmt.bind_text(1, agent_key);
     stmt.bind_text(2, id);
     stmt.bind_text(3, std::to_string(to_unix_seconds(Clock::now())));
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return db_.changes() > 0;
 }
 
@@ -388,7 +388,7 @@ void Store::clear_inbox(const std::string &agent_key) {
     std::lock_guard lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM agent_inbox WHERE agent_key = ?1");
     stmt.bind_text(1, agent_key);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 void Store::ensure_schema() {

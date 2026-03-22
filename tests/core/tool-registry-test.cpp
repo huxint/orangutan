@@ -840,7 +840,7 @@ TEST(RuntimeToolLoaderTest, ShellApprovalAskBlocksWhenPromptUnavailable) {
     permissions.sandbox_mode = ToolSandboxMode::disabled;
     permissions.shell_approval = ToolApprovalPolicy::ask;
 
-    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
     const auto shell_result = registry.execute(ToolUseBlock{
         .id = "ask-shell",
@@ -858,12 +858,12 @@ TEST(RuntimeToolLoaderTest, ShellApprovalCallbackCanAllowCommand) {
     permissions.shell_approval = ToolApprovalPolicy::ask;
 
     bool prompted = false;
-    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
         prompted = true;
         EXPECT_EQ(call.name, "shell");
         EXPECT_NE(prompt_text.find("echo hello"), std::string::npos);
         return true;
-    });
+    }));
 
     const auto shell_result = registry.execute(ToolUseBlock{
         .id = "allow-shell",
@@ -888,7 +888,7 @@ TEST(RuntimeToolLoaderTest, UsesDynamicApprovalCallbackFromToolContext) {
     auto tool_context = make_runtime_tool_context(&manager);
     bool prompted = false;
 
-    (void)register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
     tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
         prompted = true;
         EXPECT_EQ(call.name, "shell");
@@ -913,7 +913,7 @@ TEST(RuntimeToolLoaderTest, BlockedShellCommandsAreRejectedByPolicy) {
     permissions.shell_approval = ToolApprovalPolicy::allow;
     permissions.denied_shell_commands = {"rm -rf", "shutdown"};
 
-    (void)register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
     const auto shell_result = registry.execute(ToolUseBlock{
         .id = "blocked-shell",
@@ -936,7 +936,7 @@ TEST(RuntimeToolLoaderTest, ScriptToolsRespectShellApprovalPolicy) {
         .command = "echo custom",
     }};
 
-    (void)register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
     const auto result = registry.execute(ToolUseBlock{
         .id = "deny-script-shell",
@@ -961,7 +961,7 @@ TEST(RuntimeToolLoaderTest, ScriptToolsRespectDeniedShellCommands) {
         .input_schema = {{"path", "string"}},
     }};
 
-    (void)register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
     const auto result = registry.execute(ToolUseBlock{
         .id = "deny-script-command",
@@ -991,7 +991,7 @@ TEST(RuntimeToolLoaderTest, ScriptToolsUseDynamicApprovalCallbackFromToolContext
         .command = "echo custom",
     }};
 
-    (void)register_runtime_tools(registry, nullptr, {}, &tool_context, custom_tools, {}, &permissions);
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, custom_tools, {}, &permissions));
     tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
         prompted = true;
         EXPECT_EQ(call.name, "echo_custom");

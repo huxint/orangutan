@@ -381,12 +381,12 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     // --- Name ---
     std::smatch match;
     if (!push_regex_match(english_name, "profile.name", "profile", 0.95)) {
-        (void)push_chinese_name();
+        static_cast<void>(push_chinese_name());
     }
 
     // --- Project ---
     if (!push_regex_match(english_project, "project.current", "project", 0.8)) {
-        (void)push_chinese_project();
+        static_cast<void>(push_chinese_project());
     }
 
     // --- Favorite ---
@@ -400,7 +400,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     // --- Preference ---
     if (!push_regex_match(english_prefer, "preference.general", "preference", 0.65)) {
-        (void)push_chinese_prefer();
+        static_cast<void>(push_chinese_prefer());
     }
 
     // --- Remember ---
@@ -410,7 +410,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
             candidates.push_back({.key = hash_key("fact.note.", value), .content = value, .category = "fact", .importance = 0.85});
         }
     } else {
-        (void)push_chinese_remember();
+        static_cast<void>(push_chinese_remember());
     }
 
     candidates.erase(std::ranges::remove_if(candidates,

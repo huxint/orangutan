@@ -52,7 +52,7 @@ TEST(ConfigSecretProtectionTest, RejectsWrongPasswordWithoutLeakingSecret) {
     const auto stored = protect_config_secret("top-secret-token", "right-password", "agents.api_key");
 
     try {
-        (void)reveal_config_secret(stored, "wrong-password", "agents.api_key", "agents.coder.api_key");
+        static_cast<void>(reveal_config_secret(stored, "wrong-password", "agents.api_key", "agents.coder.api_key"));
         FAIL() << "expected protected secret decryption to fail";
     } catch (const ConfigSecretProtectionError &e) {
         const std::string message = e.what();
@@ -64,12 +64,12 @@ TEST(ConfigSecretProtectionTest, RejectsWrongPasswordWithoutLeakingSecret) {
 
 TEST(ConfigSecretProtectionTest, RejectsMissingPasswordForProtectedSecret) {
     const auto stored = protect_config_secret("top-secret-token", "right-password", "agents.api_key");
-    EXPECT_THROW((void)reveal_config_secret(stored, "", "agents.api_key", "agents.coder.api_key"), ConfigSecretProtectionError);
+    EXPECT_THROW(static_cast<void>(reveal_config_secret(stored, "", "agents.api_key", "agents.coder.api_key")), ConfigSecretProtectionError);
 }
 
 TEST(ConfigSecretProtectionTest, RejectsMalformedPayloadWithoutEchoingPayload) {
     try {
-        (void)reveal_config_secret("enc:v1:not-valid-***", "password", "agent.api_key", "agent.api_key");
+        static_cast<void>(reveal_config_secret("enc:v1:not-valid-***", "password", "agent.api_key", "agent.api_key"));
         FAIL() << "expected malformed payload to fail";
     } catch (const ConfigSecretProtectionError &e) {
         const std::string message = e.what();
@@ -79,7 +79,7 @@ TEST(ConfigSecretProtectionTest, RejectsMalformedPayloadWithoutEchoingPayload) {
 
 TEST(ConfigSecretProtectionTest, FieldBindingPreventsReplayAcrossSecretKinds) {
     const auto stored = protect_config_secret("qq-secret", "shared-password", "qq.client_secret");
-    EXPECT_THROW((void)reveal_config_secret(stored, "shared-password", "agents.api_key", "agents.default.api_key"), ConfigSecretProtectionError);
+    EXPECT_THROW(static_cast<void>(reveal_config_secret(stored, "shared-password", "agents.api_key", "agents.default.api_key")), ConfigSecretProtectionError);
 }
 
 TEST_F(ConfigSecretFileTest, ProtectFlowEncryptsEligibleSecretsAndSkipsEnvironmentReferences) {
@@ -152,7 +152,7 @@ api_key = "plain-agent-key"
 )toml");
 
     const auto original = read_config(config_path());
-    EXPECT_THROW((void)protect_config_file_secrets(config_path(), ""), ConfigSecretProtectionError);
+    EXPECT_THROW(static_cast<void>(protect_config_file_secrets(config_path(), "")), ConfigSecretProtectionError);
     EXPECT_EQ(read_config(config_path()), original);
     EXPECT_FALSE(std::filesystem::exists(config_path().string() + ".bak"));
 }

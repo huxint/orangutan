@@ -125,7 +125,7 @@ void write_messages(sqlite::Database &db, const std::string &session_id, const s
         insert_msg.bind_int(2, static_cast<int>(index));
         insert_msg.bind_text(3, message.role);
         insert_msg.bind_text(4, content_json);
-        (void)insert_msg.step();
+        static_cast<void>(insert_msg.step());
         insert_msg.reset();
     }
 }
@@ -139,7 +139,7 @@ void insert_session(sqlite::Database &db, const std::string &session_id, const S
     insert_session_stmt.bind_text(4, metadata.agent_key);
     insert_session_stmt.bind_text(5, metadata.origin_kind);
     insert_session_stmt.bind_text(6, metadata.origin_ref);
-    (void)insert_session_stmt.step();
+    static_cast<void>(insert_session_stmt.step());
 }
 
 void update_session_model(sqlite::Database &db, const std::string &session_id, const std::string &model) {
@@ -150,7 +150,7 @@ void update_session_model(sqlite::Database &db, const std::string &session_id, c
     sqlite::Statement stmt(db, "UPDATE sessions SET model = ? WHERE id = ?");
     stmt.bind_text(1, model);
     stmt.bind_text(2, session_id);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 void update_session_metadata(sqlite::Database &db, const std::string &session_id, const SessionMetadata &metadata) {
@@ -163,7 +163,7 @@ void update_session_metadata(sqlite::Database &db, const std::string &session_id
     stmt.bind_text(4, metadata.origin_kind);
     stmt.bind_text(5, metadata.origin_ref);
     stmt.bind_text(6, session_id);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 bool session_exists(sqlite::Database &db, const std::string &session_id) {
@@ -292,7 +292,7 @@ void SessionStore::update(const std::string &session_id, const std::vector<Messa
 
     sqlite::Statement delete_messages(db_, "DELETE FROM messages WHERE session_id = ?");
     delete_messages.bind_text(1, session_id);
-    (void)delete_messages.step();
+    static_cast<void>(delete_messages.step());
 
     write_messages(db_, session_id, messages, 0);
 
@@ -308,7 +308,7 @@ void SessionStore::update(const std::string &session_id, const std::vector<Messa
 
     sqlite::Statement delete_messages(db_, "DELETE FROM messages WHERE session_id = ?");
     delete_messages.bind_text(1, session_id);
-    (void)delete_messages.step();
+    static_cast<void>(delete_messages.step());
 
     write_messages(db_, session_id, messages, 0);
 
@@ -425,15 +425,15 @@ void SessionStore::remove(const std::string &session_id) {
 
     sqlite::Statement delete_bindings(db_, "DELETE FROM channel_session_bindings WHERE session_id = ?");
     delete_bindings.bind_text(1, session_id);
-    (void)delete_bindings.step();
+    static_cast<void>(delete_bindings.step());
 
     sqlite::Statement delete_messages(db_, "DELETE FROM messages WHERE session_id = ?");
     delete_messages.bind_text(1, session_id);
-    (void)delete_messages.step();
+    static_cast<void>(delete_messages.step());
 
     sqlite::Statement delete_session(db_, "DELETE FROM sessions WHERE id = ?");
     delete_session.bind_text(1, session_id);
-    (void)delete_session.step();
+    static_cast<void>(delete_session.step());
 
     tx.commit();
 }
@@ -455,7 +455,7 @@ void SessionStore::bind_jid(const std::string &jid, const std::string &session_i
     stmt.bind_text(1, jid);
     stmt.bind_text(2, agent_key);
     stmt.bind_text(3, session_id);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 void SessionStore::clear_jid(const std::string &jid, const std::string &agent_key) {
@@ -463,7 +463,7 @@ void SessionStore::clear_jid(const std::string &jid, const std::string &agent_ke
     sqlite::Statement stmt(db_, "DELETE FROM channel_session_bindings WHERE jid = ? AND agent_key = ?");
     stmt.bind_text(1, jid);
     stmt.bind_text(2, agent_key);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::optional<std::string> SessionStore::bound_session_for_jid(const std::string &jid, const std::string &agent_key) {

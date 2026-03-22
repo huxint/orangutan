@@ -137,7 +137,7 @@ Transaction::Transaction(const Database &db)
 
 Transaction::~Transaction() {
     if (!committed_) {
-        (void)db_.try_exec("ROLLBACK;");
+        static_cast<void>(db_.try_exec("ROLLBACK;"));
     }
 }
 

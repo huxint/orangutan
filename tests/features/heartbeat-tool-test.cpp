@@ -36,7 +36,7 @@ TEST(HeartbeatToolTest, UpdatePreservesDeliveryScheduleStateAndActiveHoursWhenFi
     heartbeat.active_hours = {{.start_minute = 9 * 60, .end_minute = 17 * 60}};
     heartbeat.next_due_at = 1'763'000'000;
     const auto heartbeat_id = runtime.save_heartbeat(heartbeat);
-    (void)heartbeat_id;
+    static_cast<void>(heartbeat_id);
 
     orangutan::ToolRuntimeContext context{
         .agent_key = "default",

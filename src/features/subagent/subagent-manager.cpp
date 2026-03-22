@@ -5,6 +5,7 @@
 #include "features/tools/runtime/runtime-loader.hpp"
 #include "core/providers/provider.hpp"
 #include "infra/storage/session-store.hpp"
+#include "infra/execution/sender-utils.hpp"
 #include "app/runtime/memory-context.hpp"
 #include "core/tools/tool.hpp"
 
@@ -25,6 +26,40 @@ bool is_terminal_record(const std::optional<SubagentRunRecord> &maybe_run) {
     return maybe_run.has_value() && (maybe_run->status == SubagentRunStatus::succeeded || maybe_run->status == SubagentRunStatus::failed ||
                                      maybe_run->status == SubagentRunStatus::timed_out || maybe_run->status == SubagentRunStatus::abandoned);
 }
+
+void persist_worker_result(SubagentRunStore &run_store, std::string_view run_id, const SubagentWorkerResult &result) {
+    switch (result.status) {
+        case SubagentRunStatus::succeeded:
+            run_store.mark_succeeded(std::string(run_id), result.final_summary, result.final_output);
+            break;
+        case SubagentRunStatus::failed:
+            run_store.mark_failed(std::string(run_id), result.error);
+            break;
+        case SubagentRunStatus::timed_out:
+            run_store.mark_timed_out(std::string(run_id), result.error);
+            break;
+        case SubagentRunStatus::abandoned:
+        case SubagentRunStatus::queued:
+        case SubagentRunStatus::running:
+            throw std::runtime_error("worker returned invalid terminal status");
+    }
+}
+
+struct RealChildExecutionContext {
+    SubagentChildRuntimeConfig child_config;
+    std::unique_ptr<Provider> provider;
+    ToolRegistry child_tools;
+    std::unique_ptr<std::string> current_session_id;
+    ToolRuntimeContext tool_context;
+    std::unique_ptr<RuntimeMemory> child_memory;
+    RuntimeMemory *child_runtime_memory = nullptr;
+
+    [[nodiscard]]
+    std::string resolve_active_model() const {
+        const auto current_model = provider->current_model();
+        return current_model.empty() ? child_config.model : current_model;
+    }
+};
 
 } // namespace
 
@@ -278,83 +313,81 @@ std::optional<SubagentChildRuntimeConfig> SubagentManager::resolve_child_config(
 }
 
 SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest &request) {
-    const auto maybe_child_config = resolve_child_config(request.child_agent_key);
-    if (!maybe_child_config.has_value()) {
-        throw std::runtime_error("unknown child agent: " + request.child_agent_key);
-    }
-    if (provider_factory_ == nullptr) {
-        throw std::runtime_error("subagent provider factory is not configured");
-    }
+    auto pipeline = stdexec::just() | stdexec::then([this, &request]() {
+                        const auto maybe_child_config = resolve_child_config(request.child_agent_key);
+                        if (!maybe_child_config.has_value()) {
+                            throw std::runtime_error("unknown child agent: " + request.child_agent_key);
+                        }
+                        if (provider_factory_ == nullptr) {
+                            throw std::runtime_error("subagent provider factory is not configured");
+                        }
 
-    auto provider = provider_factory_(*maybe_child_config);
-    const auto resolve_active_model = [&provider, &maybe_child_config]() {
-        const auto current_model = provider->current_model();
-        return current_model.empty() ? maybe_child_config->model : current_model;
-    };
-    ToolRegistry child_tools;
-    auto current_session_id = request.child_session_id;
-    auto tool_context = ToolRuntimeContext{
-        .runtime_key = request.child_identity.runtime_key,
-        .agent_key = request.child_agent_key,
-        .scope_key = request.child_scope_key,
-        .current_session_id = &current_session_id,
-        .allowed_child_agents = maybe_child_config->allowed_child_agents,
-        .is_child_run = true,
-        .subagent_manager = this,
-        .runtime_origin = request.caller.runtime_origin,
-        .raw_caller_id = request.caller.raw_caller_id,
-        .approval_callback = request.caller.approval_callback,
-    };
-    std::optional<RuntimeMemory> child_memory;
-    RuntimeMemory *child_runtime_memory = nullptr;
-    if (memory_store_ != nullptr) {
-        child_memory.emplace(*memory_store_, make_runtime_memory_context(request.child_identity, maybe_child_config->memory));
-        child_runtime_memory = &*child_memory;
-    }
-    (void)register_runtime_tools(child_tools, child_runtime_memory, request.child_identity.workspace, &tool_context, {}, {}, &maybe_child_config->permissions,
-                                 request.caller.approval_callback, maybe_child_config->edit_mode);
+                        auto context = RealChildExecutionContext{
+                            .child_config = *maybe_child_config,
+                            .provider = provider_factory_(*maybe_child_config),
+                            .child_tools = ToolRegistry{},
+                            .current_session_id = std::make_unique<std::string>(request.child_session_id),
+                            .tool_context =
+                                ToolRuntimeContext{
+                                    .runtime_key = request.child_identity.runtime_key,
+                                    .agent_key = request.child_agent_key,
+                                    .scope_key = request.child_scope_key,
+                                    .current_session_id = nullptr,
+                                    .allowed_child_agents = maybe_child_config->allowed_child_agents,
+                                    .is_child_run = true,
+                                    .subagent_manager = this,
+                                    .runtime_origin = request.caller.runtime_origin,
+                                    .raw_caller_id = request.caller.raw_caller_id,
+                                    .approval_callback = request.caller.approval_callback,
+                                },
+                        };
+                        context.tool_context.current_session_id = context.current_session_id.get();
+                        if (memory_store_ != nullptr) {
+                            context.child_memory =
+                                std::make_unique<RuntimeMemory>(*memory_store_, make_runtime_memory_context(request.child_identity, context.child_config.memory));
+                            context.child_runtime_memory = context.child_memory.get();
+                        }
+                        return context;
+                    }) |
+                    stdexec::then([this, &request](RealChildExecutionContext context) mutable {
+                        static_cast<void>(register_runtime_tools(context.child_tools, context.child_runtime_memory, request.child_identity.workspace, &context.tool_context, {}, {},
+                                                                 &context.child_config.permissions, request.caller.approval_callback, context.child_config.edit_mode));
 
-    auto child_prompt = append_subagent_prompt_guidance(maybe_child_config->system_prompt, maybe_child_config->allowed_child_agents, true);
-    AgentLoop child_agent(*provider, child_tools, child_prompt, child_runtime_memory);
-    const auto persist_history = [this, &request, &resolve_active_model](const std::vector<Message> &history) {
-        session_store_->update(request.child_session_id, history, resolve_active_model());
-    };
+                        auto child_prompt = append_subagent_prompt_guidance(context.child_config.system_prompt, context.child_config.allowed_child_agents, true);
+                        AgentLoop child_agent(*context.provider, context.child_tools, child_prompt, context.child_runtime_memory);
+                        const auto persist_history = [this, &request, &context](const std::vector<Message> &history) {
+                            session_store_->update(request.child_session_id, history, context.resolve_active_model());
+                        };
 
-    const auto final_output = child_agent.run(request.task_summary, {}, {}, persist_history);
-    session_store_->update(request.child_session_id, child_agent.history(), resolve_active_model());
-    return SubagentWorkerResult{
-        .status = SubagentRunStatus::succeeded,
-        .final_summary = final_output,
-        .final_output = final_output,
-    };
+                        const auto final_output = child_agent.run(request.task_summary, {}, {}, persist_history);
+                        session_store_->update(request.child_session_id, child_agent.history(), context.resolve_active_model());
+                        return SubagentWorkerResult{
+                            .status = SubagentRunStatus::succeeded,
+                            .final_summary = final_output,
+                            .final_output = final_output,
+                        };
+                    });
+
+    auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "subagent run_real_child pipeline");
+    return result;
 }
 
 void SubagentManager::run_worker(const std::shared_ptr<ActiveRunState> &state, const SubagentWorkerRequest &request) {
     try {
-        run_store_.mark_running(request.run_id);
-        if (should_abandon(state)) {
-            finish_state(state);
-            return;
-        }
-
-        const auto result = worker_(request);
-        if (!should_abandon(state)) {
-            switch (result.status) {
-                case SubagentRunStatus::succeeded:
-                    run_store_.mark_succeeded(request.run_id, result.final_summary, result.final_output);
-                    break;
-                case SubagentRunStatus::failed:
-                    run_store_.mark_failed(request.run_id, result.error);
-                    break;
-                case SubagentRunStatus::timed_out:
-                    run_store_.mark_timed_out(request.run_id, result.error);
-                    break;
-                case SubagentRunStatus::abandoned:
-                case SubagentRunStatus::queued:
-                case SubagentRunStatus::running:
-                    throw std::runtime_error("worker returned invalid terminal status");
-            }
-        }
+        auto pipeline = stdexec::just() | stdexec::then([this, state, &request]() -> std::optional<SubagentWorkerResult> {
+                            run_store_.mark_running(request.run_id);
+                            if (should_abandon(state)) {
+                                return std::nullopt;
+                            }
+                            return worker_(request);
+                        }) |
+                        stdexec::then([this, state, &request](std::optional<SubagentWorkerResult> result) {
+                            if (!result.has_value() || should_abandon(state)) {
+                                return;
+                            }
+                            persist_worker_result(run_store_, request.run_id, *result);
+                        });
+        static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "subagent run_worker pipeline"));
     } catch (const std::exception &error) {
         if (!should_abandon(state)) {
             try {

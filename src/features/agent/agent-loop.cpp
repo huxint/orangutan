@@ -292,7 +292,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
         // Dispatch after_tool_call hooks (informational, non-blocking)
         if (hook_manager_ != nullptr) {
             auto hook_ctx = build_after_tool_call_context(call.name, call.input, result.content, result.is_error);
-            (void)hook_manager_->dispatch(HookEvent::after_tool_call, hook_ctx);
+            static_cast<void>(hook_manager_->dispatch(HookEvent::after_tool_call, hook_ctx));
         }
 
         if (on_tool_event) {
@@ -311,7 +311,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
     // Dispatch message_received hook
     if (hook_manager_ != nullptr) {
         auto ctx = build_message_context(HookEvent::message_received, "user", user_input);
-        (void)hook_manager_->dispatch(HookEvent::message_received, ctx);
+        static_cast<void>(hook_manager_->dispatch(HookEvent::message_received, ctx));
     }
 
     history_.push_back(Message::user_text(user_input));
@@ -373,16 +373,16 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
     }
 
     if (memory_ != nullptr) {
-        (void)memory_->auto_capture(user_input, "auto:user");
+        static_cast<void>(memory_->auto_capture(user_input, "auto:user"));
         if (!final_text.empty()) {
-            (void)memory_->auto_capture(final_text, "auto:assistant");
+            static_cast<void>(memory_->auto_capture(final_text, "auto:assistant"));
         }
     }
 
     // Dispatch message_sending hook
     if (hook_manager_ != nullptr && !final_text.empty()) {
         auto ctx = build_message_context(HookEvent::message_sending, "assistant", final_text);
-        (void)hook_manager_->dispatch(HookEvent::message_sending, ctx);
+        static_cast<void>(hook_manager_->dispatch(HookEvent::message_sending, ctx));
     }
 
     return final_text;
@@ -528,7 +528,7 @@ AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
             if (text == nullptr || text->text.empty()) {
                 continue;
             }
-            (void)memory_->auto_capture(text->text, "auto:session");
+            static_cast<void>(memory_->auto_capture(text->text, "auto:session"));
         }
     }
 

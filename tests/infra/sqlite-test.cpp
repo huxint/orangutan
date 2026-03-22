@@ -32,7 +32,7 @@ TEST_F(SqliteTest, DatabaseExecAndStatementRoundTripValues) {
     sqlite::Statement insert(db, "INSERT INTO sample (name, score) VALUES (?, ?)");
     insert.bind_text(1, "alice");
     insert.bind_double(2, 9.5);
-    (void)insert.step();
+    static_cast<void>(insert.step());
 
     sqlite::Statement query(db, "SELECT name, score FROM sample LIMIT 1");
     ASSERT_TRUE(query.step());
@@ -48,7 +48,7 @@ TEST_F(SqliteTest, TransactionRollsBackWhenNotCommitted) {
         sqlite::Transaction tx(db);
         sqlite::Statement insert(db, "INSERT INTO sample (value) VALUES (?)");
         insert.bind_text(1, "transient");
-        (void)insert.step();
+        static_cast<void>(insert.step());
     }
 
     sqlite::Statement query(db, "SELECT COUNT(*) FROM sample");

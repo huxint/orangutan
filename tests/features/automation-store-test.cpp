@@ -4,6 +4,6 @@
 
 TEST(AutomationStoreTest, ConstructsWithExplicitPath) {
     orangutan::automation::Store store("/tmp/orangutan-automation-store-test.db");
-    (void)store;
+    static_cast<void>(store);
     SUCCEED();
 }

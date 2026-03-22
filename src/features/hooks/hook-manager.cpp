@@ -218,14 +218,14 @@ void dispatch_session_start(HookManager *hook_manager, const std::string &sessio
     if (hook_manager == nullptr || session_id.empty()) {
         return;
     }
-    (void)hook_manager->dispatch(HookEvent::session_start, build_session_context(HookEvent::session_start, session_id, message_count));
+    static_cast<void>(hook_manager->dispatch(HookEvent::session_start, build_session_context(HookEvent::session_start, session_id, message_count)));
 }
 
 void dispatch_session_end(HookManager *hook_manager, const std::string &session_id, size_t message_count) {
     if (hook_manager == nullptr || session_id.empty()) {
         return;
     }
-    (void)hook_manager->dispatch(HookEvent::session_end, build_session_context(HookEvent::session_end, session_id, message_count));
+    static_cast<void>(hook_manager->dispatch(HookEvent::session_end, build_session_context(HookEvent::session_end, session_id, message_count)));
 }
 
 } // namespace orangutan

@@ -125,7 +125,7 @@ AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const Age
         .background_completion_runtime = (automation_runtime != nullptr && completion_resume_state != nullptr)
                                              ? make_background_completion_runtime_bindings(
                                                    [automation_runtime](const automation::InboxItem &item) {
-                                                       (void)automation_runtime->store().insert_inbox(item);
+                                                       static_cast<void>(automation_runtime->store().insert_inbox(item));
                                                    },
                                                    detail::make_web_completion_resume_callback(completion_resume_state))
                                              : nullptr,

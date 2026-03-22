@@ -139,7 +139,7 @@ std::vector<MemoryRecord> RuntimeMemory::durable_records() const {
 }
 
 void RuntimeMemory::refresh_mirror_after_write() const {
-    (void)refresh_mirror();
+    static_cast<void>(refresh_mirror());
 }
 
 } // namespace orangutan

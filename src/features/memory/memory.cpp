@@ -227,7 +227,7 @@ bool MemoryStore::forget(const std::string &key, const std::string &scope) {
     sqlite::Statement stmt(db_, "DELETE FROM memories WHERE scope = ? AND memory_key = ?");
     stmt.bind_text(1, scope);
     stmt.bind_text(2, key);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
     return db_.changes() > 0;
 }
 

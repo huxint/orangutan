@@ -327,7 +327,7 @@ void QqChannel::send_gateway_payload(const json &payload) {
     }
     runtime_->websocket->send_text(payload.dump());
 #else
-    (void)payload;
+    static_cast<void>(payload);
 #endif
 }
 

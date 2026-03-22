@@ -428,9 +428,9 @@ int run_protect_config_mode(const CliOptions &options) {
             return 0;
         }
 
-        (void)orangutan::Config::load_from(path, orangutan::ConfigSecretOptions{
-                                                     .password_override = password,
-                                                 });
+        static_cast<void>(orangutan::Config::load_from(path, orangutan::ConfigSecretOptions{
+                                                                 .password_override = password,
+                                                             }));
 
         std::println("Protected {} config secret(s) in {}", result.protected_count, path);
         std::println("Backup written to {}", result.backup_path.string());
@@ -568,7 +568,7 @@ std::shared_ptr<const orangutan::BackgroundCompletionRuntimeBindings> make_runti
 
     return orangutan::make_background_completion_runtime_bindings(
         [automation_runtime](const orangutan::automation::InboxItem &item) {
-            (void)automation_runtime->store().insert_inbox(item);
+            static_cast<void>(automation_runtime->store().insert_inbox(item));
         },
         std::move(resume_callback));
 }
@@ -597,7 +597,7 @@ std::unordered_map<std::string, AgentConfig> build_effective_agents(const orangu
         if (agent_cfg.workspace.empty()) {
             agent_cfg.workspace = default_workspace_hint();
         }
-        (void)agent_key;
+        static_cast<void>(agent_key);
     }
     return effective_agents;
 }
@@ -672,7 +672,7 @@ void apply_cli_edit_mode_override(orangutan::Config &cfg, std::string_view edit_
     cfg.edit_mode = std::string(edit_mode);
     for (auto &[agent_key, agent_cfg] : cfg.agents) {
         agent_cfg.edit_mode = cfg.edit_mode;
-        (void)agent_key;
+        static_cast<void>(agent_key);
     }
 }
 

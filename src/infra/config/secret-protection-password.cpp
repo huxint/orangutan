@@ -56,7 +56,7 @@ public:
         if (!modified_) {
             return;
         }
-        (void)SetConsoleMode(handle_, original_mode_);
+        static_cast<void>(SetConsoleMode(handle_, original_mode_));
     }
 
     EchoGuard(const EchoGuard &) = delete;
@@ -109,7 +109,7 @@ public:
         if (!modified_) {
             return;
         }
-        (void)tcsetattr(input_fd_, TCSANOW, &original_);
+        static_cast<void>(tcsetattr(input_fd_, TCSANOW, &original_));
     }
 
     EchoGuard(const EchoGuard &) = delete;

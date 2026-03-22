@@ -34,7 +34,7 @@ TEST(TaskToolTest, UpdatePreservesDeliveryWhenFieldsAreOmitted) {
     task.delivery.mode = orangutan::automation::DeliveryMode::notify;
     task.delivery.targets = {"qqbot:primary:c2c:123456"};
     const auto task_id = runtime.save_task(task);
-    (void)task_id;
+    static_cast<void>(task_id);
 
     orangutan::ToolRuntimeContext context{
         .agent_key = "default",

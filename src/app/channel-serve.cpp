@@ -11,6 +11,7 @@
 #include "features/heartbeat/protocol/heartbeat-ok.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "core/providers/provider.hpp"
+#include "infra/execution/sender-utils.hpp"
 #include "app/runtime/identity.hpp"
 #include "features/skills/skill-loader.hpp"
 
@@ -257,7 +258,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
         .hook_paths = app_cfg.hook_paths,
         .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
                                                                              [automation_runtime](const automation::InboxItem &item) {
-                                                                                 (void)automation_runtime->store().insert_inbox(item);
+                                                                                 static_cast<void>(automation_runtime->store().insert_inbox(item));
                                                                              },
                                                                              detail::make_channel_completion_resume_callback(completion_resume_state))
                                                                        : nullptr,
@@ -527,34 +528,63 @@ ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMess
     }
 
     return [this, message, &channel_manager, task_runner](const ToolUseBlock &, const std::string &prompt_text) {
-        auto pending = std::make_shared<PendingApproval>();
-        {
-            std::scoped_lock lock(mutex_);
-            if (shutting_down_) {
-                return false;
-            }
-            pending->request_id = "shell-approval-" + std::to_string(++next_prompt_id_);
-            pending->jid = message.jid;
-            pending_by_request_id_[pending->request_id] = pending;
-            pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
-        }
+        struct WaitOutcome {
+            std::shared_ptr<PendingApproval> pending;
+            bool resolved = false;
+            bool cancelled = false;
+            bool approved = false;
+        };
 
-        auto reply = prompt_text + "\nRequest: " + pending->request_id + "\nReply with `" + pending->request_id + " yes` to allow or `" + pending->request_id + " no` to reject.";
-        deliver_reply(message, reply, channel_manager);
+        auto pipeline = stdexec::just() | stdexec::then([this, &message]() {
+                            auto pending = std::make_shared<PendingApproval>();
+                            {
+                                std::scoped_lock lock(mutex_);
+                                if (shutting_down_) {
+                                    return std::shared_ptr<PendingApproval>{};
+                                }
+                                pending->request_id = "shell-approval-" + std::to_string(++next_prompt_id_);
+                                pending->jid = message.jid;
+                                pending_by_request_id_[pending->request_id] = pending;
+                                pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
+                            }
+                            return pending;
+                        }) |
+                        stdexec::then([this, &message, &channel_manager, task_runner, &prompt_text](std::shared_ptr<PendingApproval> pending) {
+                            if (pending == nullptr) {
+                                return WaitOutcome{};
+                            }
 
-        auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
-        std::unique_lock lock(pending->mutex);
-        const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
-            return pending->resolved;
-        });
-        const auto cancelled = resolved && pending->cancelled;
-        const auto approved = resolved && !cancelled && pending->approved;
-        lock.unlock();
+                            auto reply = prompt_text + "\nRequest: " + pending->request_id + "\nReply with `" + pending->request_id + " yes` to allow or `" + pending->request_id +
+                                         " no` to reject.";
+                            deliver_reply(message, reply, channel_manager);
 
-        clear_pending(pending);
-        if (!resolved && !cancelled) {
-            deliver_reply(message, "Shell approval timed out. The command was rejected.", channel_manager);
-        }
+                            auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
+                            std::unique_lock lock(pending->mutex);
+                            const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
+                                return pending->resolved;
+                            });
+                            const bool cancelled = resolved && pending->cancelled;
+                            const bool approved = resolved && !cancelled && pending->approved;
+                            return WaitOutcome{
+                                .pending = std::move(pending),
+                                .resolved = resolved,
+                                .cancelled = cancelled,
+                                .approved = approved,
+                            };
+                        }) |
+                        stdexec::then([this, &message, &channel_manager](WaitOutcome outcome) {
+                            if (outcome.pending == nullptr) {
+                                return false;
+                            }
+
+                            clear_pending(outcome.pending);
+                            if (!outcome.resolved && !outcome.cancelled) {
+                                deliver_reply(message, "Shell approval timed out. The command was rejected.", channel_manager);
+                            }
+                            return outcome.approved;
+                        });
+
+        auto [approved] = execution::sync_wait_or_throw(std::move(pipeline), "channel approval callback pipeline");
         return approved;
     };
 }
@@ -613,7 +643,7 @@ void ChannelApprovalCoordinator::shutdown() {
         shutting_down_ = true;
         pending.reserve(pending_by_request_id_.size());
         for (const auto &[request_id, approval] : pending_by_request_id_) {
-            (void)request_id;
+            static_cast<void>(request_id);
             pending.push_back(approval);
         }
         pending_by_request_id_.clear();
@@ -850,7 +880,7 @@ void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std:
 
     std::scoped_lock lock(runtimes_mutex);
     for (auto &[runtime_key, runtime] : runtimes) {
-        (void)runtime_key;
+        static_cast<void>(runtime_key);
         dispatch_session_end(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
     }
 }

@@ -53,7 +53,7 @@ std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_
                                                                                                             BackgroundCompletionResumeCallback resume_callback = {}) {
     return make_background_completion_runtime_bindings(
         [store](const automation::InboxItem &item) {
-            (void)store->insert_inbox(item);
+            static_cast<void>(store->insert_inbox(item));
         },
         std::move(resume_callback));
 }

@@ -255,7 +255,7 @@ void upsert_memory_record(sqlite::Database &db, const std::string &scope, const 
     stmt.bind_text(4, category.empty() ? std::string{"general"} : category);
     stmt.bind_text(5, source.empty() ? std::string{"manual"} : source);
     stmt.bind_double(6, importance);
-    (void)stmt.step();
+    static_cast<void>(stmt.step());
 }
 
 std::vector<MemoryRecord> dedupe_records_by_key(std::vector<MemoryRecord> records) {
@@ -275,7 +275,7 @@ void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &record
     sqlite::Statement stmt(db, "UPDATE memories SET access_count = access_count + 1, last_accessed_at = datetime('now') WHERE id = ?");
     for (const auto &record : records) {
         stmt.bind_int(1, record.id);
-        (void)stmt.step();
+        static_cast<void>(stmt.step());
         stmt.reset();
     }
 }

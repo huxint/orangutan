@@ -891,7 +891,7 @@ TEST_F(ChannelServeTest, CompletionResumePersistsBoundSessionAndRepliesThroughCh
         .automation_runtime = &automation_runtime,
         .background_completion_runtime = make_background_completion_runtime_bindings(
             [automation_store](const automation::InboxItem &item) {
-                (void)automation_store->insert_inbox(item);
+                static_cast<void>(automation_store->insert_inbox(item));
             },
             app::detail::make_channel_completion_resume_callback(resume_state)),
     };

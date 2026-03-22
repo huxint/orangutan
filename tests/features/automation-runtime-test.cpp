@@ -59,7 +59,7 @@ TEST(AutomationRuntimeTest, HeartbeatsWaitForActiveAgentLease) {
     heartbeat.every_seconds = 60;
     heartbeat.next_due_at = orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now()) - 1;
     const auto heartbeat_id = store.upsert_heartbeat(heartbeat);
-    (void)heartbeat_id;
+    static_cast<void>(heartbeat_id);
 
     std::promise<void> executor_called;
     auto executor_called_future = executor_called.get_future();
@@ -102,7 +102,7 @@ TEST(AutomationRuntimeTest, TasksWaitForActiveAgentLease) {
     task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
     task.schedule.value = std::to_string(scheduled_at);
     const auto task_id = store.upsert_task(task);
-    (void)task_id;
+    static_cast<void>(task_id);
 
     std::promise<void> executor_called;
     auto executor_called_future = executor_called.get_future();
@@ -144,7 +144,7 @@ TEST(AutomationRuntimeTest, ManualHeartbeatRunsReuseCurrentAgentLease) {
     heartbeat.every_seconds = 60;
     heartbeat.next_due_at = orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now()) - 1;
     const auto heartbeat_id = store.upsert_heartbeat(heartbeat);
-    (void)heartbeat_id;
+    static_cast<void>(heartbeat_id);
 
     std::promise<void> executor_called;
     auto executor_called_future = executor_called.get_future();
@@ -180,7 +180,7 @@ TEST(AutomationRuntimeTest, ManualTaskRunsReuseCurrentAgentLease) {
     task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
     task.schedule.value = std::to_string(orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now()));
     const auto task_id = store.upsert_task(task);
-    (void)task_id;
+    static_cast<void>(task_id);
 
     std::promise<void> executor_called;
     auto executor_called_future = executor_called.get_future();

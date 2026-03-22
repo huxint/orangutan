@@ -1,6 +1,7 @@
 #include "features/automation/runtime.hpp"
 
 #include "features/automation/planner.hpp"
+#include "infra/execution/sender-utils.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -11,6 +12,11 @@
 
 namespace orangutan::automation {
 namespace {
+
+struct RuntimeCallbacks {
+    Runtime::Executor executor;
+    Runtime::Notifier notifier;
+};
 
 json make_log_entry(const Trigger &trigger, const ExecutionResult &result, std::int64_t started_at, std::string_view status) {
     return {
@@ -27,6 +33,17 @@ json make_log_entry(const Trigger &trigger, const ExecutionResult &result, std::
 
 std::string result_body(const ExecutionResult &result) {
     return result.reply.empty() ? result.summary : result.reply;
+}
+
+ExecutionResult execute_runtime_trigger(const Trigger &trigger, const RuntimeCallbacks &callbacks) {
+    if (callbacks.executor) {
+        return callbacks.executor(trigger);
+    }
+
+    return ExecutionResult{
+        .success = false,
+        .summary = "No automation executor configured",
+    };
 }
 
 } // namespace
@@ -127,14 +144,17 @@ void Runtime::stop() {
 
 void Runtime::run_pending(TimePoint now) {
     const auto due = collect_due_items(store_.list_tasks(), store_.list_heartbeats(), now, startup_time_);
-    for (const auto &task : due.tasks) {
-        execute_task(task);
-    }
-    for (const auto &heartbeat : due.heartbeats) {
-        with_agent_execution_lease(this, heartbeat.agent_key, [&] {
-            execute_heartbeat(heartbeat);
-        });
-    }
+    auto pipeline = stdexec::just() | stdexec::then([this, due] {
+                        for (const auto &task : due.tasks) {
+                            execute_task(task);
+                        }
+                        for (const auto &heartbeat : due.heartbeats) {
+                            with_agent_execution_lease(this, heartbeat.agent_key, [&] {
+                                execute_heartbeat(heartbeat);
+                            });
+                        }
+                    });
+    static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "automation run_pending pipeline"));
 }
 
 Runtime::AgentExecutionLease Runtime::acquire_agent_execution_lease(const std::string &agent_key) {
@@ -282,12 +302,11 @@ std::shared_ptr<Runtime::AgentExecutionGate> Runtime::get_agent_execution_gate(c
 }
 
 Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std::int64_t started_at) {
-    auto executor = Executor{};
-    auto notifier = Notifier{};
+    auto callbacks = RuntimeCallbacks{};
     {
         std::lock_guard lock(mutex_);
-        executor = executor_;
-        notifier = notifier_;
+        callbacks.executor = executor_;
+        callbacks.notifier = notifier_;
     }
 
     const auto run_id = store_.insert_run(RunRecord{
@@ -299,47 +318,52 @@ Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std
         .status = "running",
     });
 
-    CompletedExecution completed;
-    ExecutionResult result;
-    if (executor) {
-        result = executor(trigger);
-    } else {
-        result.success = false;
-        result.summary = "No automation executor configured";
-    }
-    completed.result = result;
-    completed.finished_at = to_unix_seconds(Clock::now());
-    completed.status = result.success ? std::string("completed") : std::string("failed");
+    auto pipeline = stdexec::just(std::move(callbacks)) | stdexec::then([trigger](RuntimeCallbacks active_callbacks) {
+                        auto result = execute_runtime_trigger(trigger, active_callbacks);
+                        return std::pair{std::move(active_callbacks), std::move(result)};
+                    }) |
+                    stdexec::then([this, &trigger, &run_id, started_at](std::pair<RuntimeCallbacks, ExecutionResult> state) mutable {
+                        auto &callbacks = state.first;
+                        auto &result = state.second;
+                        CompletedExecution completed;
+                        completed.result = result;
+                        completed.finished_at = to_unix_seconds(Clock::now());
+                        completed.status = result.success ? std::string("completed") : std::string("failed");
 
-    const auto body = result_body(result);
+                        const auto body = result_body(result);
 
-    if (trigger.delivery.mode == DeliveryMode::silent) {
-        if (!result.workspace_root.empty()) {
-            completed.log_path = log_writer_.append(result.workspace_root, make_log_entry(trigger, result, started_at, completed.status));
-        }
-    } else if (trigger.delivery.targets.empty()) {
-        completed.delivery_status = "inbox";
-        record_delivery_failure(trigger, run_id, "Notification target missing", body);
-    } else {
-        completed.delivery_status = "notified";
-        for (const auto &target : trigger.delivery.targets) {
-            if (target == "inbox" || target == "cli" || target == "web") {
-                record_delivery_failure(trigger, run_id, trigger.name, body);
-                continue;
-            }
-            if (!notifier) {
-                completed.delivery_status = "notify_failed";
-                record_delivery_failure(trigger, run_id, trigger.name, body);
-                continue;
-            }
-            if (const auto error = notifier(target, body); error.has_value()) {
-                completed.delivery_status = "notify_failed";
-                record_delivery_failure(trigger, run_id, trigger.name, *error + "\n" + body);
-            }
-        }
-    }
+                        if (trigger.delivery.mode == DeliveryMode::silent) {
+                            if (!result.workspace_root.empty()) {
+                                completed.log_path = log_writer_.append(result.workspace_root, make_log_entry(trigger, result, started_at, completed.status));
+                            }
+                        } else if (trigger.delivery.targets.empty()) {
+                            completed.delivery_status = "inbox";
+                            record_delivery_failure(trigger, run_id, "Notification target missing", body);
+                        } else {
+                            completed.delivery_status = "notified";
+                            for (const auto &target : trigger.delivery.targets) {
+                                if (target == "inbox" || target == "cli" || target == "web") {
+                                    record_delivery_failure(trigger, run_id, trigger.name, body);
+                                    continue;
+                                }
+                                if (!callbacks.notifier) {
+                                    completed.delivery_status = "notify_failed";
+                                    record_delivery_failure(trigger, run_id, trigger.name, body);
+                                    continue;
+                                }
+                                if (const auto error = callbacks.notifier(target, body); error.has_value()) {
+                                    completed.delivery_status = "notify_failed";
+                                    record_delivery_failure(trigger, run_id, trigger.name, *error + "\n" + body);
+                                }
+                            }
+                        }
 
-    store_.complete_run(run_id, completed.status, result.summary, completed.delivery_status, completed.log_path, completed.finished_at);
+                        return completed;
+                    });
+
+    auto [completed] = execution::sync_wait_or_throw(std::move(pipeline), "automation execute_trigger pipeline");
+
+    store_.complete_run(run_id, completed.status, completed.result.summary, completed.delivery_status, completed.log_path, completed.finished_at);
     return completed;
 }
 
@@ -380,14 +404,14 @@ void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<st
 }
 
 void Runtime::record_delivery_failure(const Trigger &trigger, std::string_view run_id, std::string_view title, std::string_view body) {
-    (void)store_.insert_inbox(InboxItem{
+    static_cast<void>(store_.insert_inbox(InboxItem{
         .agent_key = trigger.agent_key,
         .source_kind = kind_to_string(trigger.kind),
         .source_run_id = std::string(run_id),
         .title = std::string(title),
         .body = std::string(body),
         .created_at = to_unix_seconds(Clock::now()),
-    });
+    }));
 }
 
 } // namespace orangutan::automation

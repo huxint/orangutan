@@ -181,14 +181,14 @@ std::string describe_message(const Message &message) {
 
 std::vector<std::vector<std::string>> capture_checkpoint_descriptions(AgentLoop &loop, const std::string &user_input) {
     std::vector<std::vector<std::string>> checkpoints;
-    (void)loop.run(user_input, {}, {}, [&checkpoints](const std::vector<Message> &history) {
+    static_cast<void>(loop.run(user_input, {}, {}, [&checkpoints](const std::vector<Message> &history) {
         std::vector<std::string> snapshot;
         snapshot.reserve(history.size());
         for (const auto &message : history) {
             snapshot.push_back(describe_message(message));
         }
         checkpoints.push_back(std::move(snapshot));
-    });
+    }));
     return checkpoints;
 }
 
@@ -359,7 +359,7 @@ TEST(AgentLoopTest, OrdinaryPromptsExcludeJournalEntriesFromRelevantMemories) {
     auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
 
     AgentLoop loop(provider, tools, {}, &runtime_memory);
-    (void)loop.run("what project am I working on?");
+    static_cast<void>(loop.run("what project am I working on?"));
 
     EXPECT_NE(provider.last_system_prompt_.find("orangutan memory enhancements"), std::string::npos);
     EXPECT_EQ(provider.last_system_prompt_.find("Yesterday we debugged the failing mirror refresh."), std::string::npos);
@@ -379,7 +379,7 @@ TEST(AgentLoopTest, JournalQueriesCanIncludeJournalEntriesInRelevantMemories) {
     auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
 
     AgentLoop loop(provider, tools, {}, &runtime_memory);
-    (void)loop.run("what happened in the previous session journal?");
+    static_cast<void>(loop.run("what happened in the previous session journal?"));
 
     EXPECT_NE(provider.last_system_prompt_.find("Yesterday we debugged the failing mirror refresh."), std::string::npos);
 

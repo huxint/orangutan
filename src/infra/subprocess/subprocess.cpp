@@ -1,4 +1,5 @@
 #include "infra/subprocess/subprocess.hpp"
+#include "infra/execution/sender-utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -120,7 +121,7 @@ void signal_process(pid_t pid, int signal_number) {
         return;
     }
     if (killpg(pid, signal_number) == -1) {
-        (void)kill(pid, signal_number);
+        static_cast<void>(kill(pid, signal_number));
     }
 }
 
@@ -190,7 +191,7 @@ pid_t spawn_background_subprocess(const SubprocessConfig &config, const std::fil
     }
 
     if (pid == 0) {
-        (void)setpgid(0, 0);
+        static_cast<void>(setpgid(0, 0));
 
         int devnull = open("/dev/null", O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
         if (devnull >= 0) {
@@ -246,7 +247,7 @@ pid_t spawn_background_subprocess(const SubprocessConfig &config, const std::fil
         _exit(127);
     }
 
-    (void)setpgid(pid, pid);
+    static_cast<void>(setpgid(pid, pid));
     return pid;
 }
 
@@ -285,7 +286,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
 
     if (pid == 0) {
         // Child: create own process group for clean kill (skip if not possible)
-        (void)setpgid(0, 0);
+        static_cast<void>(setpgid(0, 0));
 
         // Redirect stdio
         if (need_stdin_pipe) {
@@ -339,7 +340,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config) {
         _exit(127);
     }
 
-    (void)setpgid(pid, pid);
+    static_cast<void>(setpgid(pid, pid));
 
     // Parent: close child-side pipe ends
     close(stdout_pipe[1]);
@@ -495,6 +496,15 @@ struct BackgroundProcessManager::Impl {
         std::thread wait_thread;
     };
 
+    struct WaitOutcome {
+        pid_t waited = -1;
+        int status = 0;
+        int wait_error = 0;
+        BackgroundProcessTerminalStatus terminal_status = BackgroundProcessTerminalStatus::unknown;
+        std::optional<int> exit_code = -1;
+        std::optional<int> signal_number;
+    };
+
     mutable std::mutex mutex;
     std::condition_variable shutdown_cv;
     std::vector<std::shared_ptr<ProcessEntry>> entries;
@@ -610,6 +620,91 @@ struct BackgroundProcessManager::Impl {
     }
 
     [[nodiscard]]
+    static WaitOutcome wait_for_process_exit(const std::shared_ptr<ProcessEntry> &entry) {
+        WaitOutcome outcome;
+        outcome.waited = waitpid(entry->pid, &outcome.status, 0);
+        while (outcome.waited == -1 && errno == EINTR) {
+            outcome.waited = waitpid(entry->pid, &outcome.status, 0);
+        }
+        outcome.wait_error = outcome.waited == -1 ? errno : 0;
+        if (outcome.waited == -1) {
+            spdlog::warn("waitpid() failed for background process {} (pid {}): {}", entry->process_id, entry->pid, std::strerror(outcome.wait_error));
+            return outcome;
+        }
+
+        if (WIFEXITED(outcome.status)) {
+            outcome.exit_code = WEXITSTATUS(outcome.status);
+            outcome.terminal_status = BackgroundProcessTerminalStatus::exited;
+        } else if (WIFSIGNALED(outcome.status)) {
+            outcome.signal_number = WTERMSIG(outcome.status);
+            outcome.exit_code = 128 + WTERMSIG(outcome.status);
+            outcome.terminal_status = BackgroundProcessTerminalStatus::signaled;
+        }
+
+        return outcome;
+    }
+
+    [[nodiscard]]
+    static std::optional<BackgroundProcessCompletionEvent> finalize_wait_outcome(const std::shared_ptr<ProcessEntry> &entry, WaitOutcome outcome, bool has_completion_callback) {
+        std::optional<BackgroundProcessCompletionEvent> completion_event;
+        {
+            std::scoped_lock entry_lock(entry->mutex);
+            entry->running = false;
+            entry->exit_code = outcome.exit_code;
+            entry->signal_number = outcome.signal_number;
+
+            if (entry->completion_policy.publish_completion_event && !entry->completion_published && has_completion_callback) {
+                entry->completion_published = true;
+
+                BackgroundProcessCompletionEvent event;
+                event.process_id = entry->process_id;
+                event.command = entry->command;
+                event.working_dir = entry->working_dir;
+                event.pid = static_cast<int>(entry->pid);
+                event.kill_requested = entry->kill_requested;
+                event.terminal_status = outcome.terminal_status;
+                event.exit_code = entry->exit_code;
+                event.signal_number = entry->signal_number;
+                event.metadata = entry->completion_policy.metadata;
+                completion_event = std::move(event);
+            }
+        }
+        entry->cv.notify_all();
+
+        if (!completion_event.has_value()) {
+            return std::nullopt;
+        }
+
+        try {
+            completion_event->stdout = to_output_metadata(read_output_tail(entry->stdout_path));
+            completion_event->stderr = to_output_metadata(read_output_tail(entry->stderr_path));
+        } catch (const std::exception &ex) {
+            spdlog::error("background process completion event build failed for {}: {}", entry->process_id, ex.what());
+            return std::nullopt;
+        } catch (...) {
+            spdlog::error("background process completion event build failed for {} with non-standard exception", entry->process_id);
+            return std::nullopt;
+        }
+
+        return completion_event;
+    }
+
+    static void publish_completion_event(const std::shared_ptr<ProcessEntry> &entry, const BackgroundProcessManager::CompletionCallback &completion_callback,
+                                         std::optional<BackgroundProcessCompletionEvent> completion_event) {
+        if (!completion_event.has_value() || !completion_callback) {
+            return;
+        }
+
+        try {
+            completion_callback(*completion_event);
+        } catch (const std::exception &ex) {
+            spdlog::error("background process completion callback failed for {}: {}", entry->process_id, ex.what());
+        } catch (...) {
+            spdlog::error("background process completion callback failed for {} with non-standard exception", entry->process_id);
+        }
+    }
+
+    [[nodiscard]]
     static BackgroundProcessSnapshot snapshot_entry(const std::shared_ptr<ProcessEntry> &entry) {
         auto snapshot = BackgroundProcessSnapshot{summarize_entry(entry)};
         auto stdout_capture = read_output_tail(entry->stdout_path);
@@ -652,9 +747,9 @@ struct BackgroundProcessManager::Impl {
             lock.unlock();
             signal_process(pid, SIGKILL);
             lock.lock();
-            (void)entry->cv.wait_for(lock, std::chrono::seconds(2), [&entry] {
+            static_cast<void>(entry->cv.wait_for(lock, std::chrono::seconds(2), [&entry] {
                 return !entry->running;
-            });
+            }));
         }
         lock.unlock();
         auto snapshot = snapshot_entry(entry);
@@ -674,7 +769,7 @@ struct BackgroundProcessManager::Impl {
         }
 
         for (const auto &entry : active_entries) {
-            (void)terminate_entry(entry);
+            static_cast<void>(terminate_entry(entry));
         }
 
         for (const auto &entry : active_entries) {
@@ -744,74 +839,22 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
     try {
         std::scoped_lock lock(entry->mutex);
         entry->wait_thread = std::thread([entry, completion_callback = impl_->completion_callback]() {
-            int status = 0;
-            pid_t waited = waitpid(entry->pid, &status, 0);
-            while (waited == -1 && errno == EINTR) {
-                waited = waitpid(entry->pid, &status, 0);
-            }
-            const int wait_error = waited == -1 ? errno : 0;
-            if (waited == -1) {
-                spdlog::warn("waitpid() failed for background process {} (pid {}): {}", entry->process_id, entry->pid, std::strerror(wait_error));
-            }
+            auto pipeline = stdexec::just() | stdexec::then([entry] {
+                                return Impl::wait_for_process_exit(entry);
+                            }) |
+                            stdexec::then([entry, has_completion_callback = static_cast<bool>(completion_callback)](Impl::WaitOutcome outcome) {
+                                return Impl::finalize_wait_outcome(entry, std::move(outcome), has_completion_callback);
+                            }) |
+                            stdexec::then([entry, completion_callback](std::optional<BackgroundProcessCompletionEvent> completion_event) {
+                                Impl::publish_completion_event(entry, completion_callback, std::move(completion_event));
+                            });
 
-            BackgroundProcessCompletionEvent completion_event;
-            bool should_publish = false;
-            {
-                std::scoped_lock entry_lock(entry->mutex);
-                entry->running = false;
-                entry->exit_code = -1;
-                entry->signal_number.reset();
-
-                auto terminal_status = BackgroundProcessTerminalStatus::unknown;
-                if (waited != -1) {
-                    if (WIFEXITED(status)) {
-                        entry->exit_code = WEXITSTATUS(status);
-                        terminal_status = BackgroundProcessTerminalStatus::exited;
-                    } else if (WIFSIGNALED(status)) {
-                        entry->signal_number = WTERMSIG(status);
-                        entry->exit_code = 128 + WTERMSIG(status);
-                        terminal_status = BackgroundProcessTerminalStatus::signaled;
-                    }
-                }
-
-                if (entry->completion_policy.publish_completion_event && !entry->completion_published && completion_callback) {
-                    entry->completion_published = true;
-                    completion_event.process_id = entry->process_id;
-                    completion_event.command = entry->command;
-                    completion_event.working_dir = entry->working_dir;
-                    completion_event.pid = static_cast<int>(entry->pid);
-                    completion_event.kill_requested = entry->kill_requested;
-                    completion_event.terminal_status = terminal_status;
-                    completion_event.exit_code = entry->exit_code;
-                    completion_event.signal_number = entry->signal_number;
-                    completion_event.metadata = entry->completion_policy.metadata;
-                    should_publish = true;
-                }
-            }
-            entry->cv.notify_all();
-
-            if (should_publish) {
-                bool completion_event_ready = true;
-                try {
-                    completion_event.stdout = to_output_metadata(read_output_tail(entry->stdout_path));
-                    completion_event.stderr = to_output_metadata(read_output_tail(entry->stderr_path));
-                } catch (const std::exception &ex) {
-                    spdlog::error("background process completion event build failed for {}: {}", entry->process_id, ex.what());
-                    completion_event_ready = false;
-                } catch (...) {
-                    spdlog::error("background process completion event build failed for {} with non-standard exception", entry->process_id);
-                    completion_event_ready = false;
-                }
-
-                if (completion_event_ready) {
-                    try {
-                        completion_callback(completion_event);
-                    } catch (const std::exception &ex) {
-                        spdlog::error("background process completion callback failed for {}: {}", entry->process_id, ex.what());
-                    } catch (...) {
-                        spdlog::error("background process completion callback failed for {} with non-standard exception", entry->process_id);
-                    }
-                }
+            try {
+                static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "background process completion pipeline"));
+            } catch (const std::exception &ex) {
+                spdlog::error("background process completion pipeline failed for {}: {}", entry->process_id, ex.what());
+            } catch (...) {
+                spdlog::error("background process completion pipeline failed for {} with non-standard exception", entry->process_id);
             }
 
             Impl::finalize_wait_thread(entry);
