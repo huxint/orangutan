@@ -715,6 +715,65 @@ TEST_F(ChannelServeTest, ExportCommandWritesTranscriptToWorkspaceAndRepliesWithP
     EXPECT_NE(content.find("### Tool Use: `read`"), std::string::npos);
 }
 
+TEST_F(ChannelServeTest, ResumeCommandTrimsSessionIdWhitespace) {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    SessionStore session_store((temp_root() / "sessions.db").string());
+    SubagentRunStore run_store((temp_root() / "runs.db").string());
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
+
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = workspace_root().string(),
+    };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
+
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(workspace_root().string(), jid, "default");
+    const auto session_id = session_store.save({Message::user_text("hello")}, SessionMetadata{
+                                                                                  .model = "gpt-test",
+                                                                                  .scope_key = identity.runtime_key,
+                                                                                  .agent_key = "default",
+                                                                                  .origin_kind = "channel",
+                                                                                  .origin_ref = jid,
+                                                                              });
+
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+    });
+
+    queue.push(InboundMessage{
+        .jid = jid,
+        .content = "/resume    latest   ",
+    });
+
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    stop_requested.store(true);
+    queue.shutdown();
+
+    ASSERT_EQ(loop.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_FALSE(qq->sent_messages().empty());
+    EXPECT_EQ(qq->sent_messages().front().second, "🧵 Resumed session: " + session_id);
+}
+
 TEST_F(ChannelServeTest, TasksCommandRepliesWithTaskToolOutput) {
     ChannelManager manager;
     auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");

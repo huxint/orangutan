@@ -473,7 +473,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     if (message.content.starts_with("/resume ")) {
-        const auto session_id = message.content.substr(8);
+        const auto session_id = trim_copy(std::string_view(message.content).substr(8));
         if (session_id.empty()) {
             deliver_command_reply(message, "Usage: /resume <session-id>", channel_manager);
             return true;

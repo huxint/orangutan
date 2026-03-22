@@ -192,7 +192,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line.starts_with("/resume ")) {
-        const auto session_id = line.substr(8);
+        const auto session_id = trim_copy(std::string_view(line).substr(8));
         load_session(session_id, agent, store, current_session_id, scope_key, agent_key, hook_manager);
         return true;
     }
