@@ -1,12 +1,7 @@
 #include "features/channel/platforms/qq.hpp"
 
 #include "core/providers/http.hpp"
-
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-#include <ixwebsocket/IXWebSocket.h>
-#include <ixwebsocket/IXWebSocketMessage.h>
-#include <ixwebsocket/IXWebSocketMessageType.h>
-#endif
+#include "features/channel/platforms/qq-websocket-client.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -98,9 +93,7 @@ struct QqChannel::RuntimeState {
     std::atomic<bool> heartbeat_stop{false};
     std::thread heartbeat_thread;
 
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    std::unique_ptr<ix::WebSocket> ws;
-#endif
+    std::unique_ptr<QqWebsocketClient> websocket;
 };
 
 QqChannel::QqChannel(std::string bot_name, std::string app_id, std::string client_secret)
@@ -185,10 +178,9 @@ void QqChannel::disconnect() {
         runtime_->last_seq = 0;
     }
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    if (runtime_->ws != nullptr) {
-        runtime_->ws->disableAutomaticReconnection();
-        runtime_->ws->stop();
-        runtime_->ws.reset();
+    if (runtime_->websocket != nullptr) {
+        runtime_->websocket->stop();
+        runtime_->websocket.reset();
     }
 #endif
 }
@@ -245,56 +237,48 @@ std::string QqChannel::get_gateway_url() {
 
 void QqChannel::connect_websocket(const std::string &gateway_url) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    runtime_->ws = std::make_unique<ix::WebSocket>();
-    runtime_->ws->setUrl(gateway_url);
-    runtime_->ws->setHandshakeTimeout(10);
-    runtime_->ws->enableAutomaticReconnection();
-    runtime_->ws->setMinWaitBetweenReconnectionRetries(1000);
-    runtime_->ws->setMaxWaitBetweenReconnectionRetries(5000);
-
-    runtime_->ws->setOnMessageCallback([this](const ix::WebSocketMessagePtr &message) {
-        switch (message->type) {
-            case ix::WebSocketMessageType::Open:
+    runtime_->websocket = std::make_unique<QqWebsocketClient>(QqWebsocketClient::Callbacks{
+        .on_open =
+            [this] {
                 spdlog::info("QQ WebSocket connected");
-                break;
-            case ix::WebSocketMessageType::Message:
+            },
+        .on_text =
+            [this](const std::string &text) {
                 try {
-                    handle_ws_message(message->str);
+                    handle_ws_message(text);
                 } catch (const std::exception &e) {
                     spdlog::error("Failed to process QQ WebSocket message: {}", e.what());
                 }
-                break;
-            case ix::WebSocketMessageType::Close: {
-                spdlog::warn("QQ WebSocket closed: {} {}", message->closeInfo.code, message->closeInfo.reason);
+            },
+        .on_close =
+            [this](uint16_t code, std::string reason) {
+                spdlog::warn("QQ WebSocket closed: {} {}", code, reason);
                 connected_ = false;
                 stop_heartbeat();
 
                 std::scoped_lock lock(runtime_->mutex);
                 runtime_->ready = false;
-                if (!runtime_->close_requested && !runtime_->ready && runtime_->last_error.empty()) {
-                    runtime_->last_error = "QQ WebSocket closed before READY: " + message->closeInfo.reason;
+                if (!runtime_->close_requested && runtime_->last_error.empty()) {
+                    runtime_->last_error = "QQ WebSocket closed before READY: " + reason;
                     runtime_->cv.notify_all();
                 }
-                break;
-            }
-            case ix::WebSocketMessageType::Error:
-                spdlog::error("QQ WebSocket error: {}", message->errorInfo.reason);
+            },
+        .on_error =
+            [this](std::string error) {
+                spdlog::error("QQ WebSocket error: {}", error);
                 connected_ = false;
 
                 {
                     std::scoped_lock lock(runtime_->mutex);
                     if (runtime_->last_error.empty()) {
-                        runtime_->last_error = "QQ WebSocket error: " + message->errorInfo.reason;
+                        runtime_->last_error = std::move(error);
                     }
                 }
                 runtime_->cv.notify_all();
-                break;
-            default:
-                break;
-        }
+            },
     });
 
-    runtime_->ws->start();
+    runtime_->websocket->start(gateway_url);
 #endif
 }
 
@@ -338,15 +322,10 @@ void QqChannel::send_gateway_identity_or_resume() {
 
 void QqChannel::send_gateway_payload(const json &payload) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    if (runtime_->ws == nullptr) {
+    if (runtime_->websocket == nullptr) {
         return;
     }
-
-    const auto send_info = runtime_->ws->sendText(payload.dump());
-    if (!send_info.success) {
-        const char *reason = send_info.compressionError ? "compression error" : "transport error";
-        throw std::runtime_error(std::string("QQ WebSocket send failed: ") + reason);
-    }
+    runtime_->websocket->send_text(payload.dump());
 #else
     (void)payload;
 #endif
@@ -452,23 +431,25 @@ void QqChannel::handle_ws_message(const std::string &data) {
         case gateway_op_reconnect:
             spdlog::warn("QQ gateway requested reconnect");
             connected_ = false;
+            stop_heartbeat();
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-            if (runtime_->ws != nullptr) {
-                runtime_->ws->close();
+            if (runtime_->websocket != nullptr) {
+                runtime_->websocket->request_reconnect();
             }
 #endif
             break;
         case gateway_op_invalid_session:
             spdlog::warn("QQ gateway reported invalid session");
             connected_ = false;
+            stop_heartbeat();
             {
                 std::scoped_lock lock(runtime_->mutex);
                 runtime_->session_id.clear();
                 runtime_->ready = false;
             }
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-            if (runtime_->ws != nullptr) {
-                runtime_->ws->close();
+            if (runtime_->websocket != nullptr) {
+                runtime_->websocket->request_reconnect();
             }
 #endif
             break;

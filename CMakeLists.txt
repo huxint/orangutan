@@ -42,18 +42,26 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(httplib)
 
-option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support (requires ixwebsocket)" ON)
+option(ORANGUTAN_ENABLE_QQ_CHANNEL "Enable QQ Bot channel support" ON)
 
 if(ORANGUTAN_ENABLE_QQ_CHANNEL)
-    set(USE_TLS ON CACHE BOOL "Enable TLS for ixwebsocket" FORCE)
-    set(USE_OPEN_SSL ON CACHE BOOL "Use OpenSSL for ixwebsocket TLS" FORCE)
     FetchContent_Declare(
-        ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG        v11.4.5
-        GIT_SHALLOW    TRUE
+        boost
+        URL https://github.com/boostorg/boost/releases/download/boost-1.89.0/boost-1.89.0-cmake.tar.xz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
-    FetchContent_MakeAvailable(ixwebsocket)
+    FetchContent_GetProperties(boost)
+    if(NOT boost_POPULATED)
+        if(POLICY CMP0169)
+            cmake_policy(PUSH)
+            cmake_policy(SET CMP0169 OLD)
+        endif()
+        FetchContent_Populate(boost)
+        if(POLICY CMP0169)
+            cmake_policy(POP)
+        endif()
+    endif()
+    file(GLOB BOOST_INCLUDE_DIRS CONFIGURE_DEPENDS "${boost_SOURCE_DIR}/libs/*/include")
 endif()
 
 add_library(orangutan_lib STATIC
@@ -84,6 +92,7 @@ add_library(orangutan_lib STATIC
     src/features/channel/core/channel.cpp
     src/features/channel/core/jid-task-runner.cpp
     src/features/channel/platforms/qq.cpp
+    src/features/channel/platforms/qq-websocket-client.cpp
     src/features/cron/parser.cpp
     src/features/heartbeat/protocol/heartbeat-md.cpp
     src/features/heartbeat/protocol/heartbeat-ok.cpp
@@ -145,7 +154,9 @@ target_link_libraries(orangutan_lib PUBLIC
 
 if(ORANGUTAN_ENABLE_QQ_CHANNEL)
     target_compile_definitions(orangutan_lib PUBLIC ORANGUTAN_ENABLE_QQ_CHANNEL=1)
-    target_link_libraries(orangutan_lib PUBLIC ixwebsocket OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(orangutan_lib PUBLIC BOOST_ERROR_CODE_HEADER_ONLY=1)
+    target_include_directories(orangutan_lib SYSTEM PUBLIC ${BOOST_INCLUDE_DIRS})
+    target_link_libraries(orangutan_lib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 add_executable(orangutan src/main.cpp)
@@ -201,6 +212,7 @@ if(BUILD_TESTING)
         tests/features/jid-task-runner-test.cpp
         tests/features/mcp-client-test.cpp
         tests/features/memory-test.cpp
+        tests/features/qq-reconnect-backoff-test.cpp
         tests/features/script-tool-test.cpp
         tests/features/skill-loader-test.cpp
         tests/features/subagent-manager-test.cpp
