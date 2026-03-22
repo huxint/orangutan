@@ -5,6 +5,7 @@ import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import { ToolCallCard } from './ToolCallCard'
+import { normalizeMarkdownMath } from '../../lib/markdown/math'
 import type { ContentBlock } from './types'
 
 interface MessageBubbleProps {
@@ -32,25 +33,8 @@ function hasBlockChild(children: ReactNode): boolean {
   })
 }
 
-/**
- * Pre-process markdown so that $$ display math blocks have proper blank lines.
- * remark-math requires $$ on its own line with blank lines before/after
- * to treat it as "flow" (block-level display) math.
- * AI responses often return $$formula$$ on a single line or without blank lines.
- */
-function normalizeDisplayMath(text: string): string {
-  // Match all $$...$$ pairs (including multiline) and normalize them
-  let result = text.replace(/\$\$([\s\S]+?)\$\$/g, (_match, content: string) => {
-    const trimmed = content.trim()
-    return '\n\n$$\n' + trimmed + '\n$$\n\n'
-  })
-  // Clean up excessive blank lines
-  result = result.replace(/\n{3,}/g, '\n\n')
-  return result
-}
-
 function AssistantMarkdown({ text }: { text: string }) {
-  const processed = normalizeDisplayMath(text)
+  const processed = normalizeMarkdownMath(text)
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
