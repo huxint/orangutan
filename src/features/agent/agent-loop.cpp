@@ -2,6 +2,7 @@
 
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/runtime-memory.hpp"
+#include "infra/execution/sender-utils.hpp"
 
 #include <cstdio>
 #include <cctype>
@@ -255,50 +256,78 @@ std::string AgentLoop::handle_continuation(const std::string &system_prompt, boo
 }
 
 std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::vector<ToolUseBlock> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
+    struct ToolExecutionState {
+        ToolUseBlock call;
+        bool loop_detected = false;
+        std::optional<ToolResultBlock> result;
+    };
+
+    struct ToolExecutionOutcome {
+        ToolResultBlock result;
+        bool loop_detected = false;
+    };
+
     std::vector<ContentBlock> result_blocks;
     bool loop_detected = false;
 
     for (const auto &call : calls) {
-        if (check_loop_detection(call)) {
-            loop_detected = true;
-        }
-        if (human_output) {
-            std::println("  {}-> {}{}", color_cyan, call.name, color_reset);
-        }
-        if (on_tool_event) {
-            on_tool_event("tool_started", call, nullptr);
-        }
+        auto pipeline = stdexec::just(ToolExecutionState{.call = call}) | stdexec::then([this, human_output, &on_tool_event](ToolExecutionState state) {
+                            if (check_loop_detection(state.call)) {
+                                state.loop_detected = true;
+                            }
+                            if (human_output) {
+                                std::println("  {}-> {}{}", color_cyan, state.call.name, color_reset);
+                            }
+                            if (on_tool_event) {
+                                on_tool_event("tool_started", state.call, nullptr);
+                            }
+                            return state;
+                        }) |
+                        stdexec::then([this](ToolExecutionState state) {
+                            if (hook_manager_ == nullptr) {
+                                return state;
+                            }
 
-        // Dispatch before_tool_call hooks — may block the call
-        if (hook_manager_ != nullptr) {
-            auto hook_ctx = build_before_tool_call_context(call.name, call.input);
-            auto hook_result = hook_manager_->dispatch(HookEvent::before_tool_call, hook_ctx);
-            if (!hook_result.allowed) {
-                std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
-                if (!hook_result.block_reason.empty()) {
-                    block_msg += ": " + hook_result.block_reason;
-                }
-                ToolResultBlock blocked_result{.tool_use_id = call.id, .content = block_msg, .is_error = true};
-                if (on_tool_event) {
-                    on_tool_event("tool_finished", call, &blocked_result);
-                }
-                result_blocks.emplace_back(std::move(blocked_result));
-                continue;
-            }
-        }
+                            auto hook_ctx = build_before_tool_call_context(state.call.name, state.call.input);
+                            auto hook_result = hook_manager_->dispatch(HookEvent::before_tool_call, hook_ctx);
+                            if (!hook_result.allowed) {
+                                std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
+                                if (!hook_result.block_reason.empty()) {
+                                    block_msg += ": " + hook_result.block_reason;
+                                }
+                                state.result = ToolResultBlock{
+                                    .tool_use_id = state.call.id,
+                                    .content = std::move(block_msg),
+                                    .is_error = true,
+                                };
+                            }
+                            return state;
+                        }) |
+                        stdexec::then([this](ToolExecutionState state) {
+                            if (state.result.has_value()) {
+                                return state;
+                            }
 
-        ToolResultBlock result = tools_.execute(call);
+                            state.result = tools_.execute(state.call);
+                            if (hook_manager_ != nullptr) {
+                                auto hook_ctx = build_after_tool_call_context(state.call.name, state.call.input, state.result->content, state.result->is_error);
+                                static_cast<void>(hook_manager_->dispatch(HookEvent::after_tool_call, hook_ctx));
+                            }
+                            return state;
+                        }) |
+                        stdexec::then([&on_tool_event](ToolExecutionState state) {
+                            if (on_tool_event) {
+                                on_tool_event("tool_finished", state.call, &*state.result);
+                            }
+                            return ToolExecutionOutcome{
+                                .result = std::move(*state.result),
+                                .loop_detected = state.loop_detected,
+                            };
+                        });
 
-        // Dispatch after_tool_call hooks (informational, non-blocking)
-        if (hook_manager_ != nullptr) {
-            auto hook_ctx = build_after_tool_call_context(call.name, call.input, result.content, result.is_error);
-            static_cast<void>(hook_manager_->dispatch(HookEvent::after_tool_call, hook_ctx));
-        }
-
-        if (on_tool_event) {
-            on_tool_event("tool_finished", call, &result);
-        }
-        result_blocks.emplace_back(std::move(result));
+        auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
+        loop_detected = loop_detected || outcome.loop_detected;
+        result_blocks.emplace_back(std::move(outcome.result));
     }
 
     return {std::move(result_blocks), loop_detected};
