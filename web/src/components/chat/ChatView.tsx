@@ -295,6 +295,8 @@ export function ChatView() {
     let activeSessionId = sessionIdRef.current
 
     const finalizeRequest = () => {
+      const switchedToDifferentSession = Boolean(activeSessionId) && paramSessionId !== activeSessionId
+
       setStreaming(false)
       abortRef.current = null
       activeAssistantMessageIdRef.current = null
@@ -307,7 +309,7 @@ export function ChatView() {
       if (activeSessionId) {
         void refreshAgentSessions(agentKey).catch(() => {})
       }
-      if (requestWasForNewSession && activeSessionId) {
+      if ((requestWasForNewSession || switchedToDifferentSession) && activeSessionId) {
         pendingSessionIdRef.current = null
         void loadSession(agentKey, activeSessionId).catch(() => {})
       }
@@ -320,9 +322,9 @@ export function ChatView() {
           activeSessionId = sessionData.session_id
           sessionIdRef.current = sessionData.session_id
           setSessionId(sessionData.session_id)
-          if (requestWasForNewSession) {
+          if (paramSessionId !== sessionData.session_id) {
             pendingSessionIdRef.current = sessionData.session_id
-            navigate(`/chat/${agentKey}/${sessionData.session_id}`, { replace: true })
+            navigate(`/chat/${agentKey}/${sessionData.session_id}`, { replace: requestWasForNewSession })
           }
           break
         }
