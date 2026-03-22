@@ -43,12 +43,6 @@ std::string format_current_session(const std::string &current_session_id, const 
 [[nodiscard]]
 std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, const std::string &current_session_id);
 [[nodiscard]]
-std::string render_history_summary(const AgentLoop &agent);
-[[nodiscard]]
-std::string format_history_summary(const std::vector<Message> &history);
-[[nodiscard]]
-std::string format_history_summary(const AgentLoop &agent);
-[[nodiscard]]
 std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result);
 [[nodiscard]]
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key = {});

@@ -184,7 +184,36 @@ TEST_F(SessionWorkflowTest, DescribeNewSessionResultUsesMarkdownSlashReplyFormat
         true);
 
     EXPECT_EQ(text, "## Session\n"
-                    "- Started a new session.\n"
-                    "- Distilled `3` long-term memories.\n"
-                    "- Previous session remains available to resume later.");
+                    "- ✨ Started a new session.");
+}
+
+TEST_F(SessionWorkflowTest, ExportSessionMarkdownWritesCompleteTranscriptToWorkspaceExports) {
+    const auto workspace = std::filesystem::temp_directory_path() / "orangutan_session_export_test";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(workspace);
+
+    const auto result = app::export_session_markdown(
+        {
+            Message::user_text("hello"),
+            {.role = "assistant", .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
+            {.role = "user", .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
+        },
+        "session-123", workspace.string());
+
+    ASSERT_TRUE(result.exported);
+    ASSERT_TRUE(std::filesystem::exists(result.path));
+
+    std::ifstream in(result.path);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("# Session Export"), std::string::npos);
+    EXPECT_NE(content.find("- Session: `session-123`"), std::string::npos);
+    EXPECT_NE(content.find("## User 1"), std::string::npos);
+    EXPECT_NE(content.find("hello"), std::string::npos);
+    EXPECT_NE(content.find("### Tool Use: `read`"), std::string::npos);
+    EXPECT_NE(content.find("\"path\": \"README.md\""), std::string::npos);
+    EXPECT_NE(content.find("### Tool Result"), std::string::npos);
+    EXPECT_NE(content.find("file contents"), std::string::npos);
+    EXPECT_EQ(app::describe_export_result(result), "## Export\n- Saved current session to `" + result.path + '`');
+
+    std::filesystem::remove_all(workspace);
 }

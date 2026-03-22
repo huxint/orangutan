@@ -1,8 +1,53 @@
 #include "app/session-workflow.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 
 namespace orangutan::app {
+
+namespace {
+
+std::string message_heading(const Message &message, size_t index) {
+    if (message.role == "user") {
+        return "User " + std::to_string(index + 1);
+    }
+    if (message.role == "assistant") {
+        return "Assistant " + std::to_string(index + 1);
+    }
+    return message.role + " " + std::to_string(index + 1);
+}
+
+void append_message_markdown(std::ostringstream &out, const Message &message, size_t index) {
+    out << "## " << message_heading(message, index) << "\n\n";
+
+    if (message.content.empty()) {
+        out << "_Empty message._\n\n";
+        return;
+    }
+
+    for (const auto &block : message.content) {
+        if (const auto *text = std::get_if<TextBlock>(&block)) {
+            out << text->text << "\n\n";
+            continue;
+        }
+        if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+            out << "### Tool Use: `" << tool->name << "`\n\n";
+            out << "```json\n" << tool->input.dump(2) << "\n```\n\n";
+            continue;
+        }
+        if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
+            out << "### Tool Result";
+            if (result->is_error) {
+                out << " (error)";
+            }
+            out << "\n\n";
+            out << "```text\n" << result->content << "\n```\n\n";
+        }
+    }
+}
+
+} // namespace
 
 SessionMetadata make_cli_session_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key, const std::string &origin_ref) {
     return SessionMetadata{
@@ -84,27 +129,68 @@ LoadSessionResult load_session_into_agent(const std::string &requested_session_i
 }
 
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session) {
+    (void)mention_previous_session;
+    (void)result;
     std::ostringstream out;
     out << "## Session\n";
+    out << "- ✨ Started a new session.";
+    return out.str();
+}
 
-    if (!result.had_history) {
-        out << "- Started a new session.";
+SessionExportResult export_session_markdown(const std::vector<Message> &history, const std::string &session_id, const std::string &workspace_root) {
+    if (workspace_root.empty()) {
+        return {.status = "Workspace root is not available."};
+    }
+    if (session_id.empty()) {
+        return {.status = "No active session to export."};
+    }
+    if (history.empty()) {
+        return {.status = "No session history to export."};
+    }
+
+    const auto export_dir = std::filesystem::path(workspace_root) / ".exports";
+    const auto export_path = export_dir / (session_id + ".md");
+
+    std::error_code ec;
+    std::filesystem::create_directories(export_dir, ec);
+    if (ec) {
+        return {.status = "Failed to create export directory: " + ec.message()};
+    }
+
+    std::ofstream out(export_path);
+    if (!out) {
+        return {.status = "Failed to open export file for writing."};
+    }
+
+    std::ostringstream content;
+    content << "# Session Export\n\n";
+    content << "- Session: `" << session_id << "`\n";
+    content << "- Messages: `" << history.size() << "`\n\n";
+    for (size_t index = 0; index < history.size(); ++index) {
+        append_message_markdown(content, history[index], index);
+    }
+
+    out << content.str();
+    if (!out) {
+        return {.status = "Failed to write export file."};
+    }
+
+    return {
+        .exported = true,
+        .path = export_path.string(),
+        .status = "Exported session to " + export_path.string(),
+    };
+}
+
+std::string describe_export_result(const SessionExportResult &result) {
+    std::ostringstream out;
+    out << "## Export\n";
+    if (!result.exported) {
+        out << "- " << result.status;
         return out.str();
     }
 
-    if (result.distillation.distilled) {
-        out << "- Started a new session.\n";
-        out << "- Distilled `" << result.distillation.memories_stored << "` long-term memories.";
-    } else if (!result.distillation.status.empty()) {
-        out << "- Started a new session.\n";
-        out << "- " << result.distillation.status;
-    } else {
-        out << "- Started a new session.";
-    }
-
-    if (mention_previous_session) {
-        out << "\n- Previous session remains available to resume later.";
-    }
+    out << "- Saved current session to `" << result.path << '`';
     return out.str();
 }
 

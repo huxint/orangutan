@@ -434,8 +434,8 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         return true;
     }
 
-    if (message.content == "/history") {
-        deliver_command_reply(message, format_history_summary(runtime.agent()), channel_manager);
+    if (message.content == "/export") {
+        deliver_command_reply(message, describe_export_result(export_session_markdown(runtime.agent().history(), runtime.current_session_id, runtime.workspace)), channel_manager);
         return true;
     }
 
@@ -472,8 +472,8 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
         return true;
     }
 
-    if (message.content.starts_with("/resume ") || message.content.starts_with("/load ")) {
-        const auto session_id = message.content.starts_with("/resume ") ? message.content.substr(8) : message.content.substr(6);
+    if (message.content.starts_with("/resume ")) {
+        const auto session_id = message.content.substr(8);
         if (session_id.empty()) {
             deliver_command_reply(message, "Usage: /resume <session-id>", channel_manager);
             return true;

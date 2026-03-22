@@ -119,9 +119,19 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
     std::print("{}\n\n", format_history_compaction_result(result));
 }
 
+void export_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const std::string &model, const std::string &scope_key, const std::string &agent_key,
+                    const std::string &workspace_root, HookManager *hook_manager) {
+    if (current_session_id.empty() && !agent.history().empty() && persist_session(agent, store, current_session_id, make_cli_session_metadata(model, scope_key, agent_key))) {
+        dispatch_session_start(hook_manager, current_session_id, agent.history().size());
+    }
+
+    std::print("{}\n\n", describe_export_result(export_session_markdown(agent.history(), current_session_id, workspace_root)));
+}
+
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
                           const std::vector<std::string> &fallback_models, std::string &current_session_id, bool &quit, const Config &cfg, const std::string &agent_key,
-                          const std::string &scope_key, const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
+                          const std::string &scope_key, const std::string &workspace_root, const SkillLoader *skill_loader, const ToolRegistry *tool_registry,
+                          HookManager *hook_manager) {
     const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
 
     if (line == "/quit" || line == "/exit") {
@@ -139,6 +149,10 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         std::print("{}\n\n", describe_new_session_result(result, false));
         return true;
     }
+    if (line == "/export") {
+        export_session(agent, store, current_session_id, active_model, scope_key, agent_key, workspace_root, hook_manager);
+        return true;
+    }
     if (line == "/compress") {
         compress_session(agent, store, current_session_id, active_model, scope_key, agent_key);
         return true;
@@ -146,10 +160,6 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     if (line == "/clear") {
         agent.clear_history();
         std::print("History cleared.\n\n");
-        return true;
-    }
-    if (line == "/history") {
-        std::print("{}\n\n", format_history_summary(agent));
         return true;
     }
     if (line == "/session") {
@@ -181,8 +191,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         std::print("{}\n\n", format_agent_list(cfg, agent_key));
         return true;
     }
-    if (line.starts_with("/load ") || line.starts_with("/resume ")) {
-        const auto session_id = line.starts_with("/resume ") ? line.substr(8) : line.substr(6);
+    if (line.starts_with("/resume ")) {
+        const auto session_id = line.substr(8);
         load_session(session_id, agent, store, current_session_id, scope_key, agent_key, hook_manager);
         return true;
     }
@@ -238,8 +248,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
 } // namespace
 
 void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
-              const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const SkillLoader *skill_loader,
-              const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
+              const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
+              const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     std::println("Orangutan v0.1.0");
     std::print("Type /help for commands, Ctrl+D to quit\n\n");
 
@@ -266,7 +276,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         bool quit = false;
         const bool handled = automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
             if (line[0] == '/' && handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key,
-                                                       skill_loader, tool_registry, hook_manager)) {
+                                                       workspace_root, skill_loader, tool_registry, hook_manager)) {
                 return true;
             }
 

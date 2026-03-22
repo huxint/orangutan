@@ -19,6 +19,12 @@ struct LoadSessionResult {
     std::string status;
 };
 
+struct SessionExportResult {
+    bool exported = false;
+    std::string path;
+    std::string status;
+};
+
 [[nodiscard]]
 std::optional<std::string> resolve_requested_session(SessionStore &store, const std::string &requested, const std::string &scope_key, const std::string &agent_key = {});
 
@@ -37,5 +43,9 @@ LoadSessionResult load_session_into_agent(const std::string &requested_session_i
 
 [[nodiscard]]
 std::string describe_new_session_result(const NewSessionResult &result, bool mention_previous_session);
+[[nodiscard]]
+SessionExportResult export_session_markdown(const std::vector<Message> &history, const std::string &session_id, const std::string &workspace_root);
+[[nodiscard]]
+std::string describe_export_result(const SessionExportResult &result);
 
 } // namespace orangutan::app

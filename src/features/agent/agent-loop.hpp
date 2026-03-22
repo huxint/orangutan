@@ -45,7 +45,7 @@ public:
         history_ = std::move(messages);
     }
 
-    // Access conversation history (for /history command)
+    // Access conversation history for persistence and export flows.
     [[nodiscard]]
     const std::vector<Message> &history() const {
         return history_;

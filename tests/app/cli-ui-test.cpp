@@ -19,43 +19,6 @@ TEST(CliUiTest, FormatAgentListMarksCurrentAgentAndSubagents) {
     EXPECT_NE(text.find("subagents: `coder`"), std::string::npos);
 }
 
-TEST(CliUiTest, RenderHistorySummaryIncludesToolMarkers) {
-    class NoopProvider final : public Provider {
-    public:
-        LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
-            return {};
-        }
-        LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
-            return {};
-        }
-        std::string name() const override {
-            return "noop";
-        }
-    } provider;
-
-    ToolRegistry tools;
-    AgentLoop agent(provider, tools);
-    agent.set_history({
-        Message::user_text("hello"),
-        {.role = "assistant", .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}},
-        {.role = "user", .content = {ToolResultBlock{.tool_use_id = "1", .content = "ok", .is_error = false}}},
-    });
-
-    const auto text = app::render_history_summary(agent);
-    EXPECT_NE(text.find("[0] user: hello"), std::string::npos);
-    EXPECT_NE(text.find("[tool_use: read]"), std::string::npos);
-    EXPECT_NE(text.find("[tool_result]"), std::string::npos);
-
-    const auto formatted = app::format_history_summary(agent);
-    EXPECT_NE(formatted.find("## History"), std::string::npos);
-    EXPECT_NE(formatted.find("👤 User `0`"), std::string::npos);
-    EXPECT_NE(formatted.find("`tool_use:read`"), std::string::npos);
-    EXPECT_NE(formatted.find("`tool_result`"), std::string::npos);
-
-    const auto formatted_from_messages = app::format_history_summary(agent.history());
-    EXPECT_EQ(formatted_from_messages, formatted);
-}
-
 TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     class StatusProvider final : public Provider {
     public:
@@ -110,7 +73,7 @@ TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     EXPECT_EQ(status.registered_tool_count, 1U);
 
     const auto text = app::format_runtime_status(status);
-    EXPECT_NE(text.find("## Runtime Status"), std::string::npos);
+    EXPECT_NE(text.find("## Status"), std::string::npos);
     EXPECT_NE(text.find("- 🔌 Provider: `openai`"), std::string::npos);
     EXPECT_NE(text.find("- 🧠 Model: `gpt-fallback`"), std::string::npos);
     EXPECT_NE(text.find("- 🎯 Configured Model: `gpt-primary`"), std::string::npos);
@@ -124,13 +87,19 @@ TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     EXPECT_NE(app::format_current_agent("coder").find("🤖 Current Agent: `coder`"), std::string::npos);
     EXPECT_NE(app::repl_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::repl_help_text().find("`/status`"), std::string::npos);
-    EXPECT_NE(app::repl_help_text().find("`/history`"), std::string::npos);
+    EXPECT_NE(app::repl_help_text().find("`/export`"), std::string::npos);
+    EXPECT_EQ(app::repl_help_text().find("`/history`"), std::string::npos);
+    EXPECT_EQ(app::repl_help_text().find("`/load`"), std::string::npos);
     EXPECT_NE(app::channel_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::channel_help_text().find("`/status`"), std::string::npos);
-    EXPECT_NE(app::channel_help_text().find("`/history`"), std::string::npos);
+    EXPECT_NE(app::channel_help_text().find("`/export`"), std::string::npos);
+    EXPECT_EQ(app::channel_help_text().find("`/history`"), std::string::npos);
+    EXPECT_EQ(app::channel_help_text().find("`/load`"), std::string::npos);
     EXPECT_NE(app::web_help_text().find("## Commands"), std::string::npos);
     EXPECT_NE(app::web_help_text().find("`/status`"), std::string::npos);
-    EXPECT_NE(app::web_help_text().find("`/history`"), std::string::npos);
+    EXPECT_NE(app::web_help_text().find("`/export`"), std::string::npos);
+    EXPECT_EQ(app::web_help_text().find("`/history`"), std::string::npos);
+    EXPECT_EQ(app::web_help_text().find("`/load`"), std::string::npos);
 
     const auto compacted = app::format_history_compaction_result(AgentLoop::HistoryCompactionResult{.compacted = true, .messages_before = 20, .messages_after = 8});
     EXPECT_EQ(compacted, "## Compression\n- Messages: `20 -> 8`");

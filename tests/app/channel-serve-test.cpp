@@ -641,9 +641,7 @@ TEST_F(ChannelServeTest, NewCommandUpdatesBoundSessionWithChannelMetadata) {
     ASSERT_EQ(loop.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     ASSERT_FALSE(qq->sent_messages().empty());
     EXPECT_EQ(qq->sent_messages().front().second, "## Session\n"
-                                                  "- Started a new session.\n"
-                                                  "- Long-term memory is disabled.\n"
-                                                  "- Previous session remains available to resume later.");
+                                                  "- ✨ Started a new session.");
 
     const auto sessions = session_store.list_sessions_for_agent("default");
     ASSERT_EQ(sessions.size(), 1U);
@@ -654,7 +652,7 @@ TEST_F(ChannelServeTest, NewCommandUpdatesBoundSessionWithChannelMetadata) {
     EXPECT_EQ(sessions[0].origin_ref, jid);
 }
 
-TEST_F(ChannelServeTest, HistoryCommandRepliesWithMarkdownSummary) {
+TEST_F(ChannelServeTest, ExportCommandWritesTranscriptToWorkspaceAndRepliesWithPath) {
     ChannelManager manager;
     auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
     auto *qq = qq_channel.get();
@@ -687,6 +685,7 @@ TEST_F(ChannelServeTest, HistoryCommandRepliesWithMarkdownSummary) {
     const auto session_id = session_store.save({Message::user_text("hello"), {.role = "assistant", .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
                                                "gpt-test", identity.runtime_key);
     session_store.bind_jid(jid, session_id, "default");
+    const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
 
     auto loop = std::async(std::launch::async, [&] {
         app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
@@ -694,7 +693,7 @@ TEST_F(ChannelServeTest, HistoryCommandRepliesWithMarkdownSummary) {
 
     queue.push(InboundMessage{
         .jid = jid,
-        .content = "/history",
+        .content = "/export",
     });
 
     for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
@@ -706,9 +705,14 @@ TEST_F(ChannelServeTest, HistoryCommandRepliesWithMarkdownSummary) {
 
     ASSERT_EQ(loop.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     ASSERT_FALSE(qq->sent_messages().empty());
-    EXPECT_EQ(qq->sent_messages().front().second, "## History\n"
-                                                  "- 👤 User `0`: `hello`\n"
-                                                  "- 🤖 Assistant `1`: `tool_use:read`\n");
+    EXPECT_EQ(qq->sent_messages().front().second, "## Export\n- Saved current session to `" + export_path.string() + '`');
+    ASSERT_TRUE(std::filesystem::exists(export_path));
+
+    std::ifstream in(export_path);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("# Session Export"), std::string::npos);
+    EXPECT_NE(content.find("hello"), std::string::npos);
+    EXPECT_NE(content.find("### Tool Use: `read`"), std::string::npos);
 }
 
 TEST_F(ChannelServeTest, TasksCommandRepliesWithTaskToolOutput) {

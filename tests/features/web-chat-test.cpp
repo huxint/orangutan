@@ -356,22 +356,24 @@ TEST_F(WebChatStoreTest, NewSlashCommandStreamsMarkdownReplyAndSessionEvent) {
     EXPECT_EQ(res->status, 200);
     ASSERT_TRUE(find_sse_event_payload(res->body, "session").has_value());
     EXPECT_NE(find_sse_event_payload(res->body, "session")->at("session_id"), existing_session_id);
-    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
-    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## Session\n"
-                                                                     "- Started a new session.\n"
-                                                                     "- Previous session remains available to resume later.");
+    EXPECT_FALSE(find_sse_event_payload(res->body, "text").has_value());
 
     server.stop();
 }
 
-TEST_F(WebChatStoreTest, HistorySlashCommandWorksForReadOnlyChannelSession) {
+TEST_F(WebChatStoreTest, ExportSlashCommandWorksForReadOnlyChannelSession) {
     SessionStore store(db_path_.string());
     Config config = make_config();
     config.api_key.clear();
     config.agents["default"].api_key.clear();
+    const auto workspace = std::filesystem::temp_directory_path() / "orangutan_web_export_test";
+    std::filesystem::remove_all(workspace);
+    std::filesystem::create_directories(workspace);
+    config.agents["default"].workspace = workspace.string();
 
     const auto session_id = store.save({Message::user_text("hello"), Message::assistant_text("copied reply")},
                                        make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
+    const auto export_path = workspace / ".exports" / (session_id + ".md");
 
     WebServer server;
     server.set_config(&config);
@@ -380,7 +382,7 @@ TEST_F(WebChatStoreTest, HistorySlashCommandWorksForReadOnlyChannelSession) {
     httplib::Client cli("127.0.0.1", server.port());
 
     const auto req = json{
-        {"message", "/history"},
+        {"message", "/export"},
         {"agent_key", "default"},
         {"session_id", session_id},
     };
@@ -388,11 +390,17 @@ TEST_F(WebChatStoreTest, HistorySlashCommandWorksForReadOnlyChannelSession) {
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
     ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
-    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## History\n"
-                                                                     "- 👤 User `0`: `hello`\n"
-                                                                     "- 🤖 Assistant `1`: `copied reply`\n");
+    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## Export\n- Saved current session to `" + export_path.string() + '`');
+    ASSERT_TRUE(std::filesystem::exists(export_path));
+
+    std::ifstream in(export_path);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("# Session Export"), std::string::npos);
+    EXPECT_NE(content.find("hello"), std::string::npos);
+    EXPECT_NE(content.find("copied reply"), std::string::npos);
 
     server.stop();
+    std::filesystem::remove_all(workspace);
 }
 
 TEST(WebChatTest, AbortEndpointReturns404ForUnknownSession) {

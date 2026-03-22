@@ -274,7 +274,9 @@ void send_web_command_stream(httplib::Response &res, const WebSlashCommandRespon
         if (command_response.session_id.has_value()) {
             write_sse_event(sink, "session", {{"session_id", *command_response.session_id}});
         }
-        write_sse_event(sink, "text", {{"text", command_response.text}});
+        if (!command_response.text.empty()) {
+            write_sse_event(sink, "text", {{"text", command_response.text}});
+        }
         write_sse_event(sink, "done", json::object());
         sink.done();
         return false;
@@ -302,11 +304,13 @@ WebSlashCommandResponse handle_web_static_slash_command(const std::string &messa
     if (message == "/agents") {
         return {.handled = true, .text = app::format_agent_list(config, agent_key)};
     }
-    if (message == "/history") {
+    if (message == "/export") {
+        const auto maybe_agent = find_effective_agent(&config, agent_key);
+        const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
         if (store == nullptr || current_session_id.empty()) {
-            return {.handled = true, .text = app::format_history_summary(std::vector<Message>{})};
+            return {.handled = true, .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root))};
         }
-        return {.handled = true, .text = app::format_history_summary(store->load(current_session_id))};
+        return {.handled = true, .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root))};
     }
     if (message == "/new") {
         std::string new_session_id;
@@ -315,21 +319,14 @@ WebSlashCommandResponse handle_web_static_slash_command(const std::string &messa
         } else {
             new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         }
-        return {.handled = true,
-                .session_id = new_session_id,
-                .text = app::describe_new_session_result(
-                    {
-                        .had_history = existing_session.has_value(),
-                        .distillation = {},
-                    },
-                    existing_session.has_value())};
+        return {.handled = true, .session_id = new_session_id, .text = {}};
     }
-    if (message.starts_with("/resume ") || message.starts_with("/load ")) {
+    if (message.starts_with("/resume ")) {
         if (store == nullptr) {
             return {.handled = true, .text = "Session store is not available in this runtime."};
         }
 
-        const auto requested_session_id = app::trim_copy(message.starts_with("/resume ") ? std::string_view(message).substr(8) : std::string_view(message).substr(6));
+        const auto requested_session_id = app::trim_copy(std::string_view(message).substr(8));
         if (requested_session_id.empty()) {
             return {.handled = true, .text = "Usage: /resume <session-id>"};
         }

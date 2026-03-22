@@ -130,6 +130,7 @@ export function ChatView() {
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef<string | null>(paramSessionId ?? null)
   const pendingSessionIdRef = useRef<string | null>(null)
+  const transientAssistantMessageRef = useRef<{ sessionId: string; message: ChatMessage } | null>(null)
   const queuedMessagesRef = useRef<string[]>([])
   const flushQueuedMessageRef = useRef(false)
   const activeAssistantMessageIdRef = useRef<string | null>(null)
@@ -144,7 +145,14 @@ export function ChatView() {
   const loadSession = useCallback((targetAgentKey: string, targetSessionId: string) => {
     return getAgentSession(targetAgentKey, targetSessionId).then(data => {
       setSessionMeta(toSessionSummary(data))
-      setMessages(normalizeMessages(data.messages))
+      const normalized = normalizeMessages(data.messages)
+      const transientAssistantMessage = transientAssistantMessageRef.current
+      if (transientAssistantMessage?.sessionId === targetSessionId) {
+        transientAssistantMessageRef.current = null
+        setMessages([...normalized, transientAssistantMessage.message])
+      } else {
+        setMessages(normalized)
+      }
       activeAssistantMessageIdRef.current = null
       return data
     })
@@ -187,6 +195,7 @@ export function ChatView() {
 
     stopStreamingState()
     pendingSessionIdRef.current = null
+    transientAssistantMessageRef.current = null
     sessionIdRef.current = paramSessionId ?? null
     setSessionId(paramSessionId ?? null)
     setSessionMeta(null)
@@ -236,6 +245,7 @@ export function ChatView() {
 
     if (!paramSessionId) {
       pendingSessionIdRef.current = null
+      transientAssistantMessageRef.current = null
       sessionIdRef.current = null
       setSessionId(null)
       setSessionMeta(null)
@@ -293,6 +303,7 @@ export function ChatView() {
 
     const requestWasForNewSession = !sessionIdRef.current
     let activeSessionId = sessionIdRef.current
+    let assistantReplyContent: ContentBlock[] = []
 
     const finalizeRequest = () => {
       const switchedToDifferentSession = Boolean(activeSessionId) && paramSessionId !== activeSessionId
@@ -310,6 +321,16 @@ export function ChatView() {
         void refreshAgentSessions(agentKey).catch(() => {})
       }
       if ((requestWasForNewSession || switchedToDifferentSession) && activeSessionId) {
+        if (assistantReplyContent.length > 0) {
+          transientAssistantMessageRef.current = {
+            sessionId: activeSessionId,
+            message: {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: assistantReplyContent,
+            },
+          }
+        }
         pendingSessionIdRef.current = null
         void loadSession(agentKey, activeSessionId).catch(() => {})
       }
@@ -330,27 +351,30 @@ export function ChatView() {
         }
         case 'text': {
           const textData = data as ChatTextEvent
-          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, { type: 'text', text: textData.text }))
+          assistantReplyContent = appendAssistantBlock(assistantReplyContent, { type: 'text', text: textData.text })
+          updateAssistantMessage(assistantMessageId, () => assistantReplyContent)
           break
         }
         case 'tool_start': {
           const toolStartData = data as ChatToolStartEvent
-          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
+          assistantReplyContent = appendAssistantBlock(assistantReplyContent, {
             type: 'tool_use',
             id: toolStartData.id,
             name: toolStartData.name,
             input: toolStartData.input,
-          }))
+          })
+          updateAssistantMessage(assistantMessageId, () => assistantReplyContent)
           break
         }
         case 'tool_end': {
           const toolEndData = data as ChatToolEndEvent
-          updateAssistantMessage(assistantMessageId, content => appendAssistantBlock(content, {
+          assistantReplyContent = appendAssistantBlock(assistantReplyContent, {
             type: 'tool_result',
             tool_use_id: toolEndData.id,
             content: toolEndData.content,
             is_error: toolEndData.is_error,
-          }))
+          })
+          updateAssistantMessage(assistantMessageId, () => assistantReplyContent)
           break
         }
         case 'approval_request':

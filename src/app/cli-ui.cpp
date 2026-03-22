@@ -10,13 +10,12 @@ std::string repl_help_text() {
            "- `/help` - show this help\n"
            "- `/status` - show active model and runtime status\n"
            "- `/new` - save current session and start a new one\n"
+           "- `/export` - export the current session to the workspace\n"
            "- `/compress` - summarize older history and keep recent messages verbatim\n"
            "- `/clear` - clear conversation history\n"
-           "- `/history` - show conversation summary\n"
            "- `/session` - show the current session id\n"
            "- `/sessions` - list saved sessions for the current agent scope\n"
-           "- `/load <id>` - load a saved session\n"
-           "- `/resume <id>` - alias of `/load`; supports `latest`\n"
+           "- `/resume <id>` - resume a saved session; supports `latest`\n"
            "- `/tools` - list all registered tools\n"
            "- `/tasks` - list tasks or run `/tasks run <id>`\n"
            "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
@@ -34,12 +33,11 @@ std::string channel_help_text() {
            "- `/help` - show this help\n"
            "- `/status` - show active model and runtime status\n"
            "- `/new` - start a new session\n"
-           "- `/history` - show conversation summary\n"
+           "- `/export` - export the current session to the workspace\n"
            "- `/compress` - summarize older history\n"
            "- `/session` - show the current session id\n"
            "- `/sessions` - list saved sessions in this scope\n"
            "- `/resume <id>` - resume a saved session or use `latest`\n"
-           "- `/load <id>` - alias of `/resume`\n"
            "- `/tasks` - list tasks, `/tasks run <id>`, or `/tasks remove <id>`\n"
            "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
            "- `/inbox` - list inbox items, `/inbox ack <id>`, or `/inbox clear`\n"
@@ -52,12 +50,11 @@ std::string web_help_text() {
            "- `/help` - show this help\n"
            "- `/status` - show active model and runtime status\n"
            "- `/new` - start a new chat session\n"
-           "- `/history` - show conversation summary for the current session\n"
+           "- `/export` - export the current session to the workspace\n"
            "- `/compress` - summarize older history for the current session\n"
            "- `/session` - show the current session id\n"
            "- `/sessions` - list saved sessions for the current agent\n"
            "- `/resume <id>` - switch to a saved session or use `latest`\n"
-           "- `/load <id>` - alias of `/resume`\n"
            "- `/tasks` - list tasks, `/tasks run <id>`, or `/tasks remove <id>`\n"
            "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
            "- `/inbox` - list inbox items, `/inbox ack <id>`, or `/inbox clear`\n"
@@ -129,78 +126,6 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
     return out.str();
 }
 
-std::string render_history_summary(const AgentLoop &agent) {
-    const auto &history = agent.history();
-    if (history.empty()) {
-        return "(no conversation history)\n\n";
-    }
-
-    std::ostringstream out;
-    for (size_t index = 0; index < history.size(); ++index) {
-        const auto &message = history[index];
-        out << '[' << index << "] " << message.role << ": ";
-
-        for (const auto &block : message.content) {
-            if (const auto *text = std::get_if<TextBlock>(&block)) {
-                auto preview = text->text.substr(0, 80);
-                if (text->text.size() > 80) {
-                    preview += "...";
-                }
-                out << preview;
-            } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
-                out << "[tool_use: " << tool->name << ']';
-            } else if (std::get_if<ToolResultBlock>(&block) != nullptr) {
-                out << "[tool_result]";
-            }
-        }
-        out << '\n';
-    }
-    out << '\n';
-    return out.str();
-}
-
-std::string format_history_summary(const std::vector<Message> &history) {
-    if (history.empty()) {
-        return "## History\n- No conversation history yet.";
-    }
-
-    std::ostringstream out;
-    out << "## History\n";
-    for (size_t index = 0; index < history.size(); ++index) {
-        const auto &message = history[index];
-        std::string label = message.role == "user" ? "👤 User" : (message.role == "assistant" ? "🤖 Assistant" : "📦 " + message.role);
-        out << "- " << label << " `" << index << "`: ";
-
-        bool wrote_content = false;
-        for (const auto &block : message.content) {
-            if (const auto *text = std::get_if<TextBlock>(&block)) {
-                auto preview = text->text.substr(0, 80);
-                if (text->text.size() > 80) {
-                    preview += "...";
-                }
-                out << '`' << preview << '`';
-                wrote_content = true;
-            } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
-                out << "`tool_use:" << tool->name << '`';
-                wrote_content = true;
-            } else if (std::get_if<ToolResultBlock>(&block) != nullptr) {
-                out << "`tool_result`";
-                wrote_content = true;
-            }
-        }
-
-        if (!wrote_content) {
-            out << "`(empty)`";
-        }
-        out << '\n';
-    }
-    return out.str();
-}
-
-std::string format_history_summary(const AgentLoop &agent) {
-    return format_history_summary(agent.history());
-}
-
 std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result) {
     if (!result.compacted) {
         return "## Compression\n- " + result.status;
@@ -267,7 +192,7 @@ RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provi
 
 std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
     std::ostringstream out;
-    out << "## Runtime Status\n";
+    out << "## Status\n";
     out << "- 🤖 Agent: `" << status.agent_key << "`\n";
     out << "- 🔌 Provider: `" << status.provider_name << "`\n";
     out << "- 🧠 Model: `" << status.current_model << "`\n";

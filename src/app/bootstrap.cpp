@@ -1139,8 +1139,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                 } else {
                     orangutan::app::run_repl(*primary_runtime->agent, *primary_runtime->provider, *session_store, maybe_primary_runtime_cfg->model,
                                              maybe_primary_runtime_cfg->fallback_models, cfg, current_session_id, maybe_primary_runtime_cfg->agent_key,
-                                             maybe_primary_runtime_cfg->cli_memory_scope, &skill_loader, &primary_runtime->tools, primary_runtime->hook_manager.get(),
-                                             &app_runtime.automation_runtime());
+                                             maybe_primary_runtime_cfg->cli_memory_scope, maybe_primary_runtime_cfg->workspace_root, &skill_loader, &primary_runtime->tools,
+                                             primary_runtime->hook_manager.get(), &app_runtime.automation_runtime());
                 }
             }
         }
