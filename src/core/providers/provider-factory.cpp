@@ -2,8 +2,11 @@
 
 #include "core/providers/anthropic-provider.hpp"
 #include "core/providers/openai-provider.hpp"
+#include "infra/execution/sender-utils.hpp"
 
+#include <exec/any_sender_of.hpp>
 #include <algorithm>
+#include <exception>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -104,6 +107,22 @@ public:
     }
 
 private:
+    template <class... Ts>
+    using any_sender_of = exec::any_receiver_ref<stdexec::completion_signatures<Ts...>>::template any_sender<>;
+
+    using response_sender_t = any_sender_of<stdexec::set_value_t(LLMResponse), stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+
+    struct RequestAttemptState {
+        size_t attempt_index = 0;
+        std::vector<std::string> errors;
+    };
+
+    struct AttemptResult {
+        RequestAttemptState state;
+        std::optional<LLMResponse> response;
+        std::exception_ptr error;
+    };
+
     std::vector<ProviderEndpoint> endpoints_;
     ProviderFactory factory_;
     mutable std::mutex mutex_;
@@ -142,69 +161,108 @@ private:
         return provider;
     }
 
+    [[nodiscard]]
+    static std::runtime_error make_all_failed_error(const std::vector<std::string> &errors) {
+        std::ostringstream summary;
+        summary << "All configured models failed";
+        if (!errors.empty()) {
+            summary << " (" << errors.front();
+            for (size_t index = 1; index < errors.size(); ++index) {
+                summary << "; " << errors[index];
+            }
+            summary << ")";
+        }
+        return std::runtime_error(summary.str());
+    }
+
+    [[nodiscard]]
+    std::optional<std::string> advance_after_retryable_failure(RequestAttemptState &state, std::string_view error_message) {
+        const auto failed_model = endpoints_[state.attempt_index].model;
+        std::optional<size_t> next_index;
+        std::string next_model;
+
+        {
+            std::scoped_lock lock(mutex_);
+            ++usage_.failed_attempts;
+
+            std::ostringstream message;
+            message << failed_model << ": " << error_message;
+            state.errors.push_back(message.str());
+
+            if (state.attempt_index + 1 < endpoints_.size()) {
+                const auto candidate_index = state.attempt_index + 1;
+                next_index = candidate_index;
+                next_model = endpoints_[candidate_index].model;
+                if (candidate_index > preferred_index_) {
+                    preferred_provider_.reset();
+                    preferred_index_ = candidate_index;
+                    ++usage_.fallback_switches;
+                }
+            }
+        }
+
+        if (!next_index.has_value()) {
+            return std::nullopt;
+        }
+
+        spdlog::warn("Model '{}' failed, falling back to '{}': {}", failed_model, next_model, error_message);
+        state.attempt_index = *next_index;
+        return next_model;
+    }
+
+    template <typename Fn>
+    response_sender_t execute_attempt_sender(RequestAttemptState state, Fn &fn) {
+        return stdexec::just(std::move(state)) | stdexec::then([this, &fn](RequestAttemptState active_state) {
+                   AttemptResult result{.state = std::move(active_state)};
+
+                   try {
+                       std::unique_lock lock(mutex_);
+                       ++usage_.attempt_count;
+                       auto provider = provider_for_index_locked(result.state.attempt_index);
+                       lock.unlock();
+                       result.response = fn(*provider);
+                   } catch (...) {
+                       result.error = std::current_exception();
+                   }
+
+                   return result;
+               }) |
+               stdexec::let_value([this, &fn](AttemptResult result) -> response_sender_t {
+                   if (result.response.has_value()) {
+                       return stdexec::just(std::move(*result.response));
+                   }
+
+                   try {
+                       std::rethrow_exception(result.error);
+                   } catch (const NonRetryableProviderError &) {
+                       std::scoped_lock lock(mutex_);
+                       ++usage_.failed_attempts;
+                       throw;
+                   } catch (const MissingApiKeyError &) {
+                       std::scoped_lock lock(mutex_);
+                       ++usage_.failed_attempts;
+                       throw;
+                   } catch (const std::exception &error) {
+                       if (!advance_after_retryable_failure(result.state, error.what()).has_value()) {
+                           throw make_all_failed_error(result.state.errors);
+                       }
+                       return execute_attempt_sender(std::move(result.state), fn);
+                   }
+               });
+    }
+
     template <typename Fn>
     LLMResponse execute_with_fallback(Fn &&fn) {
-        std::vector<std::string> errors;
-        size_t attempt_index = 0;
+        RequestAttemptState state;
         {
             std::scoped_lock lock(mutex_);
             ++usage_.logical_requests;
-            attempt_index = preferred_index_;
+            state.attempt_index = preferred_index_;
         }
 
-        while (true) {
-            try {
-                std::unique_lock lock(mutex_);
-                ++usage_.attempt_count;
-                auto provider = provider_for_index_locked(attempt_index);
-                lock.unlock();
-                return std::forward<Fn>(fn)(*provider);
-            } catch (const NonRetryableProviderError &) {
-                std::scoped_lock lock(mutex_);
-                ++usage_.failed_attempts;
-                throw;
-            } catch (const MissingApiKeyError &) {
-                std::scoped_lock lock(mutex_);
-                ++usage_.failed_attempts;
-                throw;
-            } catch (const std::exception &error) {
-                const auto failed_model = endpoints_[attempt_index].model;
-                std::optional<size_t> next_index;
-                std::string next_model;
-
-                std::scoped_lock lock(mutex_);
-                ++usage_.failed_attempts;
-
-                std::ostringstream message;
-                message << failed_model << ": " << error.what();
-                errors.push_back(message.str());
-
-                if (attempt_index + 1 < endpoints_.size()) {
-                    const auto candidate_index = attempt_index + 1;
-                    next_index = candidate_index;
-                    next_model = endpoints_[candidate_index].model;
-                    if (candidate_index > preferred_index_) {
-                        preferred_provider_.reset();
-                        preferred_index_ = candidate_index;
-                        ++usage_.fallback_switches;
-                    }
-                } else {
-                    std::ostringstream summary;
-                    summary << "All configured models failed";
-                    if (!errors.empty()) {
-                        summary << " (" << errors.front();
-                        for (size_t index = 1; index < errors.size(); ++index) {
-                            summary << "; " << errors[index];
-                        }
-                        summary << ")";
-                    }
-                    throw std::runtime_error(summary.str());
-                }
-
-                spdlog::warn("Model '{}' failed, falling back to '{}': {}", failed_model, next_model, error.what());
-                attempt_index = *next_index;
-            }
-        }
+        auto pipeline = execute_attempt_sender(std::move(state), fn);
+        auto [response] = execution::sync_wait_or_throw(std::move(pipeline), "provider fallback pipeline");
+        return response;
     }
 };
 
