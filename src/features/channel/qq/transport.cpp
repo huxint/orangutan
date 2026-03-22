@@ -1,6 +1,6 @@
-#include "features/channel/platforms/qq-websocket-client.hpp"
+#include "features/channel/qq/transport.hpp"
 
-#include "features/channel/platforms/qq-reconnect-backoff.hpp"
+#include "features/channel/qq/reconnect-backoff.hpp"
 
 #include <stdexcept>
 
@@ -31,7 +31,7 @@
 #include <utility>
 #endif
 
-namespace orangutan {
+namespace orangutan::qq {
 
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
 namespace asio = boost::asio;
@@ -108,7 +108,7 @@ std::string error_to_string(std::string_view context, const beast::error_code &e
 
 } // namespace
 
-class QqWebsocketClient::Impl : public std::enable_shared_from_this<QqWebsocketClient::Impl> {
+class Transport::Impl : public std::enable_shared_from_this<Transport::Impl> {
 public:
     explicit Impl(Callbacks callbacks)
     : callbacks_(std::move(callbacks)),
@@ -499,7 +499,7 @@ private:
     beast::flat_buffer read_buffer_;
     std::unique_ptr<WebsocketStream> websocket_;
     std::deque<std::string> write_queue_;
-    QqReconnectBackoff backoff_;
+    ReconnectBackoff backoff_;
     ParsedWebsocketUrl parsed_url_;
     std::thread io_thread_;
     std::thread::id io_thread_id_;
@@ -512,7 +512,7 @@ private:
 };
 #endif
 
-QqWebsocketClient::QqWebsocketClient(Callbacks callbacks)
+Transport::Transport(Callbacks callbacks)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
 : impl_(std::make_shared<Impl>(std::move(callbacks))){}
 #else
@@ -521,11 +521,11 @@ QqWebsocketClient::QqWebsocketClient(Callbacks callbacks)
 }
 #endif
 
-  QqWebsocketClient::~QqWebsocketClient() {
+  Transport::~Transport() {
     stop();
 }
 
-void QqWebsocketClient::start(const std::string &url) {
+void Transport::start(const std::string &url) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     impl_->start(url);
 #else
@@ -534,7 +534,7 @@ void QqWebsocketClient::start(const std::string &url) {
 #endif
 }
 
-void QqWebsocketClient::send_text(std::string payload) {
+void Transport::send_text(std::string payload) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     impl_->send_text(std::move(payload));
 #else
@@ -543,7 +543,7 @@ void QqWebsocketClient::send_text(std::string payload) {
 #endif
 }
 
-void QqWebsocketClient::request_reconnect() {
+void Transport::request_reconnect() {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     if (impl_) {
         impl_->request_reconnect();
@@ -551,7 +551,7 @@ void QqWebsocketClient::request_reconnect() {
 #endif
 }
 
-void QqWebsocketClient::stop() {
+void Transport::stop() {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     if (impl_) {
         impl_->stop();
@@ -559,4 +559,4 @@ void QqWebsocketClient::stop() {
 #endif
 }
 
-} // namespace orangutan
+} // namespace orangutan::qq

@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstddef>
 
-namespace orangutan {
+namespace orangutan::qq {
 
-class QqReconnectBackoff {
+class ReconnectBackoff {
 public:
     [[nodiscard]]
     std::chrono::milliseconds next_delay() {
@@ -28,4 +28,4 @@ private:
     std::size_t index_ = 0;
 };
 
-} // namespace orangutan
+} // namespace orangutan::qq

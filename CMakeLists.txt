@@ -91,8 +91,8 @@ add_library(orangutan_lib STATIC
     src/features/automation/types.cpp
     src/features/channel/core/channel.cpp
     src/features/channel/core/jid-task-runner.cpp
-    src/features/channel/platforms/qq.cpp
-    src/features/channel/platforms/qq-websocket-client.cpp
+    src/features/channel/qq/channel.cpp
+    src/features/channel/qq/transport.cpp
     src/features/cron/parser.cpp
     src/features/heartbeat/protocol/heartbeat-md.cpp
     src/features/heartbeat/protocol/heartbeat-ok.cpp
@@ -212,7 +212,7 @@ if(BUILD_TESTING)
         tests/features/jid-task-runner-test.cpp
         tests/features/mcp-client-test.cpp
         tests/features/memory-test.cpp
-        tests/features/qq-reconnect-backoff-test.cpp
+        tests/features/channel/qq/reconnect-backoff-test.cpp
         tests/features/script-tool-test.cpp
         tests/features/skill-loader-test.cpp
         tests/features/subagent-manager-test.cpp

@@ -1,7 +1,7 @@
-#include "features/channel/platforms/qq.hpp"
+#include "features/channel/qq/channel.hpp"
 
 #include "core/providers/http.hpp"
-#include "features/channel/platforms/qq-websocket-client.hpp"
+#include "features/channel/qq/transport.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -93,7 +93,7 @@ struct QqChannel::RuntimeState {
     std::atomic<bool> heartbeat_stop{false};
     std::thread heartbeat_thread;
 
-    std::unique_ptr<QqWebsocketClient> websocket;
+    std::unique_ptr<qq::Transport> websocket;
 };
 
 QqChannel::QqChannel(std::string bot_name, std::string app_id, std::string client_secret)
@@ -237,7 +237,7 @@ std::string QqChannel::get_gateway_url() {
 
 void QqChannel::connect_websocket(const std::string &gateway_url) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    runtime_->websocket = std::make_unique<QqWebsocketClient>(QqWebsocketClient::Callbacks{
+    runtime_->websocket = std::make_unique<qq::Transport>(qq::Transport::Callbacks{
         .on_open =
             [this] {
                 spdlog::info("QQ WebSocket connected");

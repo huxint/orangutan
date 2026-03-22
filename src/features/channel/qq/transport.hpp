@@ -5,9 +5,9 @@
 #include <memory>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::qq {
 
-class QqWebsocketClient {
+class Transport {
 public:
     struct Callbacks {
         std::function<void()> on_open;
@@ -16,13 +16,13 @@ public:
         std::function<void(std::string)> on_error;
     };
 
-    explicit QqWebsocketClient(Callbacks callbacks);
-    ~QqWebsocketClient();
+    explicit Transport(Callbacks callbacks);
+    ~Transport();
 
-    QqWebsocketClient(const QqWebsocketClient &) = delete;
-    QqWebsocketClient &operator=(const QqWebsocketClient &) = delete;
-    QqWebsocketClient(QqWebsocketClient &&) = delete;
-    QqWebsocketClient &operator=(QqWebsocketClient &&) = delete;
+    Transport(const Transport &) = delete;
+    Transport &operator=(const Transport &) = delete;
+    Transport(Transport &&) = delete;
+    Transport &operator=(Transport &&) = delete;
 
     void start(const std::string &url);
     void send_text(std::string payload);
@@ -34,4 +34,4 @@ private:
     std::shared_ptr<Impl> impl_;
 };
 
-} // namespace orangutan
+} // namespace orangutan::qq

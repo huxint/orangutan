@@ -1,12 +1,13 @@
-#include "features/channel/platforms/qq-reconnect-backoff.hpp"
+#include "features/channel/qq/reconnect-backoff.hpp"
 
 #include <chrono>
 #include <gtest/gtest.h>
 
 using namespace orangutan;
+using namespace orangutan::qq;
 
-TEST(QqReconnectBackoffTest, UsesCappedExponentialBackoff) {
-    QqReconnectBackoff backoff;
+TEST(ReconnectBackoffTest, UsesCappedExponentialBackoff) {
+    ReconnectBackoff backoff;
 
     EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(1));
     EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(2));
@@ -16,8 +17,8 @@ TEST(QqReconnectBackoffTest, UsesCappedExponentialBackoff) {
     EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(15));
 }
 
-TEST(QqReconnectBackoffTest, ResetRestartsSequence) {
-    QqReconnectBackoff backoff;
+TEST(ReconnectBackoffTest, ResetRestartsSequence) {
+    ReconnectBackoff backoff;
 
     EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(1));
     EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(2));
