@@ -2,6 +2,7 @@
 
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
+#include "app/slash-commands.hpp"
 #include "core/providers/provider.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/hooks/hook-manager.hpp"
@@ -123,123 +124,6 @@ void compress_session(AgentLoop &agent, SessionStore &store, std::string &curren
     std::print("🗜️ Compressed history: {} -> {} messages.\n\n", result.messages_before, result.messages_after);
 }
 
-std::string trim_copy(std::string_view input) {
-    const auto begin = input.find_first_not_of(" \t");
-    if (begin == std::string_view::npos) {
-        return {};
-    }
-    const auto end = input.find_last_not_of(" \t");
-    return std::string(input.substr(begin, end - begin + 1));
-}
-
-bool execute_registry_command(const ToolRegistry *tool_registry, std::string_view tool_name, const json &input, std::string_view tool_use_id) {
-    if (tool_registry == nullptr) {
-        std::print("No tool registry available.\n\n");
-        return true;
-    }
-
-    const auto result = tool_registry->execute(ToolUseBlock{
-        .id = std::string(tool_use_id),
-        .name = std::string(tool_name),
-        .input = input,
-    });
-    std::print("{}\n\n", result.content);
-    return true;
-}
-
-bool handle_tasks_command(const std::string &line, const ToolRegistry *tool_registry) {
-    if (line == "/tasks") {
-        return execute_registry_command(tool_registry, "task", {{"op", "list"}}, "slash-task-list");
-    }
-    if (!line.starts_with("/tasks ")) {
-        return false;
-    }
-
-    const auto remainder = trim_copy(std::string_view(line).substr(7));
-    if (remainder.starts_with("run ")) {
-        const auto id = trim_copy(std::string_view(remainder).substr(4));
-        if (id.empty()) {
-            std::print("Usage: /tasks run <id>\n\n");
-            return true;
-        }
-        return execute_registry_command(tool_registry, "task", {{"op", "run"}, {"id", id}}, "slash-task-run");
-    }
-    if (remainder.starts_with("remove ")) {
-        const auto id = trim_copy(std::string_view(remainder).substr(7));
-        if (id.empty()) {
-            std::print("Usage: /tasks remove <id>\n\n");
-            return true;
-        }
-        return execute_registry_command(tool_registry, "task", {{"op", "remove"}, {"id", id}}, "slash-task-remove");
-    }
-
-    std::print("Usage: /tasks | /tasks run <id> | /tasks remove <id>\n\n");
-    return true;
-}
-
-bool handle_heartbeats_command(const std::string &line, const ToolRegistry *tool_registry) {
-    if (line == "/heartbeats") {
-        return execute_registry_command(tool_registry, "heartbeat", {{"op", "list"}}, "slash-heartbeat-list");
-    }
-    if (!line.starts_with("/heartbeats ")) {
-        return false;
-    }
-
-    const auto remainder = trim_copy(std::string_view(line).substr(12));
-    const auto run_action = [&](std::string_view action, std::string_view op, std::string_view tool_use_id) {
-        if (!remainder.starts_with(action)) {
-            return false;
-        }
-        const auto id = trim_copy(std::string_view(remainder).substr(action.size()));
-        if (id.empty()) {
-            std::print("Usage: /heartbeats {} <id>\n\n", op);
-            return true;
-        }
-        return execute_registry_command(tool_registry, "heartbeat", {{"op", std::string(op)}, {"id", id}}, std::string(tool_use_id));
-    };
-
-    if (run_action("run ", "run", "slash-heartbeat-run")) {
-        return true;
-    }
-    if (run_action("pause ", "pause", "slash-heartbeat-pause")) {
-        return true;
-    }
-    if (run_action("resume ", "resume", "slash-heartbeat-resume")) {
-        return true;
-    }
-    if (run_action("remove ", "remove", "slash-heartbeat-remove")) {
-        return true;
-    }
-
-    std::print("Usage: /heartbeats | /heartbeats run <id> | /heartbeats pause <id> | /heartbeats resume <id> | /heartbeats remove <id>\n\n");
-    return true;
-}
-
-bool handle_inbox_command(const std::string &line, const ToolRegistry *tool_registry) {
-    if (line == "/inbox") {
-        return execute_registry_command(tool_registry, "inbox", {{"op", "list"}}, "slash-inbox-list");
-    }
-    if (line == "/inbox clear") {
-        return execute_registry_command(tool_registry, "inbox", {{"op", "clear"}}, "slash-inbox-clear");
-    }
-    if (!line.starts_with("/inbox ")) {
-        return false;
-    }
-
-    const auto remainder = trim_copy(std::string_view(line).substr(7));
-    if (remainder.starts_with("ack ")) {
-        const auto id = trim_copy(std::string_view(remainder).substr(4));
-        if (id.empty()) {
-            std::print("Usage: /inbox ack <id>\n\n");
-            return true;
-        }
-        return execute_registry_command(tool_registry, "inbox", {{"op", "ack"}, {"id", id}}, "slash-inbox-ack");
-    }
-
-    std::print("Usage: /inbox | /inbox ack <id> | /inbox clear\n\n");
-    return true;
-}
-
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
                           const std::vector<std::string> &fallback_models, std::string &current_session_id, bool &quit, const Config &cfg, const std::string &agent_key,
                           const std::string &scope_key, const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager) {
@@ -290,7 +174,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (line == "/agent") {
-        std::print("🤖 Current agent: {}\n\n", agent_key);
+        std::print("{}\n\n", format_current_agent(agent_key));
         return true;
     }
     if (line == "/status") {
@@ -346,13 +230,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         }
         return true;
     }
-    if (handle_tasks_command(line, tool_registry)) {
-        return true;
-    }
-    if (handle_heartbeats_command(line, tool_registry)) {
-        return true;
-    }
-    if (handle_inbox_command(line, tool_registry)) {
+    if (const auto reply = handle_registry_slash_command(line, tool_registry); reply.handled) {
+        std::print("{}\n\n", reply.text);
         return true;
     }
     if (line == "/multi") {

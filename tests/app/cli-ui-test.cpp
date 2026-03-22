@@ -13,9 +13,10 @@ TEST(CliUiTest, FormatAgentListMarksCurrentAgentAndSubagents) {
     cfg.agents.insert_or_assign("coder", AgentConfig{.model = "model-b", .workspace = "/tmp/coder", .subagents = {}});
 
     const auto text = app::format_agent_list(cfg, "coder");
-    EXPECT_NE(text.find("default"), std::string::npos);
-    EXPECT_NE(text.find("coder [current]"), std::string::npos);
-    EXPECT_NE(text.find("subagents=coder"), std::string::npos);
+    EXPECT_NE(text.find("## Agents"), std::string::npos);
+    EXPECT_NE(text.find("`default`"), std::string::npos);
+    EXPECT_NE(text.find("`coder` **(current)**"), std::string::npos);
+    EXPECT_NE(text.find("subagents: `coder`"), std::string::npos);
 }
 
 TEST(CliUiTest, RenderHistorySummaryIncludesToolMarkers) {
@@ -100,15 +101,22 @@ TEST(CliUiTest, FormatRuntimeStatusIncludesActiveModelFallbacksAndUsage) {
     EXPECT_EQ(status.registered_tool_count, 1U);
 
     const auto text = app::format_runtime_status(status);
-    EXPECT_NE(text.find("📊 Status:"), std::string::npos);
-    EXPECT_NE(text.find("provider: openai"), std::string::npos);
-    EXPECT_NE(text.find("model: gpt-fallback"), std::string::npos);
-    EXPECT_NE(text.find("configured model: gpt-primary"), std::string::npos);
-    EXPECT_NE(text.find("fallback models: gpt-fallback"), std::string::npos);
-    EXPECT_NE(text.find("usage: llm_requests=4, attempts=5, fallbacks=1, failed_attempts=1, tool_calls=1, tool_errors=1"), std::string::npos);
-    EXPECT_NE(text.find("tools: registered=1"), std::string::npos);
-    EXPECT_NE(app::format_current_session("session-1", "coder").find("🧵 Current session:"), std::string::npos);
+    EXPECT_NE(text.find("## Runtime Status"), std::string::npos);
+    EXPECT_NE(text.find("- 🔌 Provider: `openai`"), std::string::npos);
+    EXPECT_NE(text.find("- 🧠 Model: `gpt-fallback`"), std::string::npos);
+    EXPECT_NE(text.find("- 🎯 Configured Model: `gpt-primary`"), std::string::npos);
+    EXPECT_NE(text.find("- 🔁 Fallback Models: `gpt-fallback`"), std::string::npos);
+    EXPECT_NE(text.find("- 📊 Usage: `llm_requests=4`, `attempts=5`, `fallbacks=1`, `failed_attempts=1`, `tool_calls=1`, `tool_errors=1`"), std::string::npos);
+    EXPECT_NE(text.find("- 🛠️ Tools: `registered=1`"), std::string::npos);
+    EXPECT_NE(app::format_current_session("session-1", "coder").find("## Session"), std::string::npos);
+    EXPECT_NE(app::format_current_session("session-1", "coder").find("🧵 Current Session: `session-1`"), std::string::npos);
     EXPECT_NE(app::format_current_session("", "coder").find("💤 No active session"), std::string::npos);
-    EXPECT_NE(app::repl_help_text().find("/status"), std::string::npos);
-    EXPECT_NE(app::channel_help_text().find("/status"), std::string::npos);
+    EXPECT_NE(app::format_current_agent("coder").find("## Agent"), std::string::npos);
+    EXPECT_NE(app::format_current_agent("coder").find("🤖 Current Agent: `coder`"), std::string::npos);
+    EXPECT_NE(app::repl_help_text().find("## Commands"), std::string::npos);
+    EXPECT_NE(app::repl_help_text().find("`/status`"), std::string::npos);
+    EXPECT_NE(app::channel_help_text().find("## Commands"), std::string::npos);
+    EXPECT_NE(app::channel_help_text().find("`/status`"), std::string::npos);
+    EXPECT_NE(app::web_help_text().find("## Commands"), std::string::npos);
+    EXPECT_NE(app::web_help_text().find("`/status`"), std::string::npos);
 }

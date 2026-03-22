@@ -33,7 +33,11 @@ std::string repl_help_text();
 [[nodiscard]]
 std::string channel_help_text();
 [[nodiscard]]
+std::string web_help_text();
+[[nodiscard]]
 std::string format_agent_list(const Config &cfg, const std::string &current_agent_key);
+[[nodiscard]]
+std::string format_current_agent(const std::string &agent_key);
 [[nodiscard]]
 std::string format_current_session(const std::string &current_session_id, const std::string &agent_key);
 [[nodiscard]]

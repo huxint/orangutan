@@ -1,6 +1,7 @@
 #include "app/channel-serve.hpp"
 
 #include "app/single-shot.hpp"
+#include "app/slash-commands.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/agent/agent-loop.hpp"
@@ -444,7 +445,7 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
     }
 
     if (message.content == "/agent") {
-        deliver_command_reply(message, "🤖 Current agent: " + runtime.agent_key, channel_manager);
+        deliver_command_reply(message, format_current_agent(runtime.agent_key), channel_manager);
         return true;
     }
 
@@ -458,6 +459,11 @@ bool handle_channel_session_command(const InboundMessage &message, ConversationR
 
     if (message.content == "/agents") {
         deliver_command_reply(message, format_agent_list(cfg, runtime.agent_key), channel_manager);
+        return true;
+    }
+
+    if (const auto reply = handle_registry_slash_command(message.content, &runtime.tools()); reply.handled) {
+        deliver_command_reply(message, reply.text, channel_manager);
         return true;
     }
 

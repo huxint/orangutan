@@ -18,7 +18,7 @@ export function ChatInput({
   onQueue,
   disabled,
   readOnly,
-  placeholder = 'Send a message...',
+  placeholder = 'Send a message or /help...',
   onAbort,
   streaming,
   queuedMessages = [],
@@ -140,6 +140,11 @@ export function ChatInput({
       </div>
 
       {/* Hint */}
+      {!streaming && !readOnly && (
+        <div className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-text-muted anim-fade-in">
+          <kbd className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono">/help</kbd> for commands
+        </div>
+      )}
       {streaming && !readOnly && (
         <div className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-text-muted anim-fade-in">
           <kbd className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono">Ctrl+Enter</kbd> to queue

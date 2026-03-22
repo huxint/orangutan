@@ -67,6 +67,7 @@ add_library(orangutan_lib STATIC
     src/app/runtime/identity.cpp
     src/app/runtime/memory-context.cpp
     src/app/session-workflow.cpp
+    src/app/slash-commands.cpp
     src/app/single-shot.cpp
     src/core/providers/anthropic-provider.cpp
     src/core/providers/openai-provider.cpp

@@ -73,6 +73,22 @@ const automation::InboxItem *find_inbox_item_by_body_type(const std::vector<auto
     return it == items.end() ? nullptr : &(*it);
 }
 
+std::optional<json> find_sse_event_payload(std::string_view body, std::string_view event_name) {
+    const auto marker = "event: " + std::string(event_name) + "\ndata: ";
+    const auto start = body.find(marker);
+    if (start == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    const auto payload_start = start + marker.size();
+    const auto payload_end = body.find("\n\n", payload_start);
+    if (payload_end == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    return json::parse(std::string(body.substr(payload_start, payload_end - payload_start)));
+}
+
 class ScriptedProvider final : public Provider {
 public:
     using Step = std::function<LLMResponse(const std::vector<Message> &)>;
@@ -191,6 +207,27 @@ TEST(WebChatTest, ChatEndpointRejectsMissingApiKey) {
     server.stop();
 }
 
+TEST(WebChatTest, HelpSlashCommandStreamsHelpWithoutApiKey) {
+    orangutan::testing::ScopedEnvVar anthropic_api_key("ANTHROPIC_API_KEY", "");
+    orangutan::testing::ScopedEnvVar llm_api_key("LLM_API_KEY", "");
+
+    WebServer server;
+    Config config = make_config();
+    config.api_key.clear();
+    config.agents["default"].api_key.clear();
+    server.set_config(&config);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    auto res = cli.Post("/api/chat", R"({"message":"/help","agent_key":"default"})", "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
+    EXPECT_NE(find_sse_event_payload(res->body, "text")->at("text").get<std::string>().find("/tasks run <id>"), std::string::npos);
+
+    server.stop();
+}
+
 TEST(WebChatTest, ChatEndpointRejectsInvalidWorkspaceConfig) {
     const auto workspace_file = orangutan::testing::test_tmp_root() / "web-chat-invalid-workspace";
     std::filesystem::remove(workspace_file);
@@ -266,6 +303,35 @@ TEST_F(WebChatStoreTest, ChatEndpointRejectsCrossAgentSessionAccess) {
     server.stop();
 }
 
+TEST_F(WebChatStoreTest, ResumeSlashCommandStreamsTargetSessionEvent) {
+    SessionStore store(db_path_.string());
+    Config config = make_config();
+    config.api_key.clear();
+    config.agents["default"].api_key.clear();
+
+    const auto session_id = store.save({Message::user_text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+
+    WebServer server;
+    server.set_config(&config);
+    server.set_session_store(&store);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    const auto req = json{
+        {"message", std::string("/resume ") + session_id},
+        {"agent_key", "default"},
+    };
+    auto res = cli.Post("/api/chat", req.dump(), "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "session").has_value());
+    EXPECT_EQ(find_sse_event_payload(res->body, "session")->at("session_id"), session_id);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
+    EXPECT_NE(find_sse_event_payload(res->body, "text")->at("text").get<std::string>().find(session_id), std::string::npos);
+
+    server.stop();
+}
+
 TEST(WebChatTest, AbortEndpointReturns404ForUnknownSession) {
     WebServer server;
     server.start("127.0.0.1", 0);
@@ -336,6 +402,26 @@ TEST(WebChatTest, RuntimeBundleIncludesCustomAndMemoryTools) {
     });
     EXPECT_TRUE(shell_result.is_error);
     EXPECT_TRUE(shell_result.content.find("requires approval") != std::string::npos || shell_result.content.find("rejected by user") != std::string::npos);
+}
+
+TEST(WebChatTest, TasksSlashCommandUsesRuntimeToolOutput) {
+    WebServer server;
+    Config config = make_config();
+    auto automation_store =
+        std::make_shared<automation::Store>((std::filesystem::temp_directory_path() / ("orangutan-web-chat-tasks-" + std::to_string(getpid()) + ".db")).string());
+    automation::Runtime automation_runtime(*automation_store);
+    server.set_config(&config);
+    server.set_automation_runtime(&automation_runtime);
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+
+    auto res = cli.Post("/api/chat", R"({"message":"/tasks","agent_key":"default"})", "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    ASSERT_TRUE(find_sse_event_payload(res->body, "text").has_value());
+    EXPECT_EQ(find_sse_event_payload(res->body, "text")->at("text"), "## Tasks\n- 🗓️ No tasks configured.");
+
+    server.stop();
 }
 
 TEST(WebChatTest, RuntimeBundleLoadsSkillsAndHooksFromConfiguredPaths) {
