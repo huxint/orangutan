@@ -110,12 +110,12 @@ Runtime::~Runtime() {
 }
 
 void Runtime::set_executor(Executor executor) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     executor_ = std::move(executor);
 }
 
 void Runtime::set_notifier(Notifier notifier) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     notifier_ = std::move(notifier);
 }
 
@@ -291,7 +291,7 @@ void Runtime::normalize_state(TimePoint now) {
 
 std::shared_ptr<Runtime::AgentExecutionGate> Runtime::get_agent_execution_gate(const std::string &agent_key) {
     const auto key = agent_key.empty() ? std::string("default") : agent_key;
-    std::lock_guard lock(agent_execution_gates_mutex_);
+    std::scoped_lock lock(agent_execution_gates_mutex_);
     auto &entry = agent_execution_gates_[key];
     auto gate = entry.lock();
     if (!gate) {
@@ -304,7 +304,7 @@ std::shared_ptr<Runtime::AgentExecutionGate> Runtime::get_agent_execution_gate(c
 Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std::int64_t started_at) {
     auto callbacks = RuntimeCallbacks{};
     {
-        std::lock_guard lock(mutex_);
+        std::scoped_lock lock(mutex_);
         callbacks.executor = executor_;
         callbacks.notifier = notifier_;
     }
@@ -322,9 +322,9 @@ Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std
                         auto result = execute_runtime_trigger(trigger, active_callbacks);
                         return std::pair{std::move(active_callbacks), std::move(result)};
                     }) |
-                    stdexec::then([this, &trigger, &run_id, started_at](std::pair<RuntimeCallbacks, ExecutionResult> state) mutable {
-                        auto &callbacks = state.first;
-                        auto &result = state.second;
+                    stdexec::then([this, &trigger, &run_id, started_at](const std::pair<RuntimeCallbacks, ExecutionResult> &state) {
+                        const auto &callbacks = state.first;
+                        const auto &result = state.second;
                         CompletedExecution completed;
                         completed.result = result;
                         completed.finished_at = to_unix_seconds(Clock::now());

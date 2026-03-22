@@ -25,8 +25,8 @@ struct HashDict {
     consteval HashDict()
     : entries{} {
         for (size_t i = 0; i < 256; ++i) {
-            entries[i][0] = hash_alphabet[i >> 4];
-            entries[i][1] = hash_alphabet[i & 0xF];
+            entries.at(i).at(0) = hash_alphabet.at(i >> 4);
+            entries.at(i).at(1) = hash_alphabet.at(i & 0xF);
         }
     }
 };
@@ -57,8 +57,8 @@ std::string compute_line_hash(std::string_view line, size_t line_number) {
     const auto processed = preprocess_line(line);
     const auto seed = static_cast<XXH32_hash_t>(is_symbol_only(processed) ? line_number : 0);
     const auto hash = XXH32(processed.data(), processed.size(), seed) & 0xFF;
-    const auto &entry = hash_dict.entries[hash];
-    return {entry[0], entry[1]};
+    const auto &entry = hash_dict.entries.at(hash);
+    return {entry.at(0), entry.at(1)};
 }
 
 std::string format_hashline(std::string_view line, size_t line_number) {

@@ -109,7 +109,7 @@ Store::Store(const std::string &db_path)
 }
 
 std::vector<TaskSpec> Store::list_tasks(const std::string &agent_key) const {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, schedule_kind, schedule_value, prompt, notes, delivery_json, last_run_at, last_status "
                                 "FROM tasks "
                                 "WHERE (?1 = '' OR agent_key = ?1) "
@@ -133,7 +133,7 @@ std::optional<TaskSpec> Store::find_task(const std::string &agent_key, const std
 }
 
 std::string Store::upsert_task(const TaskSpec &task_input) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     TaskSpec task = task_input;
     if (task.id.empty()) {
         task.id = generate_id("task");
@@ -173,7 +173,7 @@ bool Store::remove_task(const std::string &agent_key, const std::string &id_or_n
         return false;
     }
 
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM tasks WHERE id = ?1");
     stmt.bind_text(1, existing->id);
     static_cast<void>(stmt.step());
@@ -181,7 +181,7 @@ bool Store::remove_task(const std::string &agent_key, const std::string &id_or_n
 }
 
 void Store::update_task_run_state(const std::string &task_id, std::optional<std::int64_t> last_run_at, std::string_view last_status, bool enabled) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "UPDATE tasks SET last_run_at = ?2, last_status = ?3, enabled = ?4 WHERE id = ?1");
     stmt.bind_text(1, task_id);
     stmt.bind_text(2, encode_optional_seconds(last_run_at));
@@ -191,7 +191,7 @@ void Store::update_task_run_state(const std::string &task_id, std::optional<std:
 }
 
 std::vector<HeartbeatSpec> Store::list_heartbeats(const std::string &agent_key) const {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, every_seconds, jitter_seconds, active_hours_json, prompt, notes, delivery_json, paused, next_due_at, "
                                 "last_run_at, last_status "
                                 "FROM heartbeats "
@@ -216,7 +216,7 @@ std::optional<HeartbeatSpec> Store::find_heartbeat(const std::string &agent_key,
 }
 
 std::string Store::upsert_heartbeat(const HeartbeatSpec &heartbeat_input) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     HeartbeatSpec heartbeat = heartbeat_input;
     if (heartbeat.id.empty()) {
         heartbeat.id = generate_id("heartbeat");
@@ -265,7 +265,7 @@ bool Store::remove_heartbeat(const std::string &agent_key, const std::string &id
         return false;
     }
 
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM heartbeats WHERE id = ?1");
     stmt.bind_text(1, existing->id);
     static_cast<void>(stmt.step());
@@ -274,7 +274,7 @@ bool Store::remove_heartbeat(const std::string &agent_key, const std::string &id
 
 void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<std::int64_t> last_run_at, std::optional<std::int64_t> next_due_at,
                                        std::string_view last_status, bool paused) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "UPDATE heartbeats SET last_run_at = ?2, next_due_at = ?3, last_status = ?4, paused = ?5 WHERE id = ?1");
     stmt.bind_text(1, heartbeat_id);
     stmt.bind_text(2, encode_optional_seconds(last_run_at));
@@ -285,7 +285,7 @@ void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::opt
 }
 
 std::string Store::insert_run(const RunRecord &run_input) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     RunRecord run = run_input;
     if (run.id.empty()) {
         run.id = generate_id("run");
@@ -311,7 +311,7 @@ std::string Store::insert_run(const RunRecord &run_input) {
 
 void Store::complete_run(const std::string &run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
                          std::optional<std::int64_t> finished_at) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "UPDATE automation_runs SET finished_at = ?2, status = ?3, summary = ?4, delivery_status = ?5, log_path = ?6 WHERE id = ?1");
     stmt.bind_text(1, run_id);
     stmt.bind_text(2, encode_optional_seconds(finished_at));
@@ -323,7 +323,7 @@ void Store::complete_run(const std::string &run_id, std::string_view status, std
 }
 
 std::vector<RunRecord> Store::list_runs(const std::string &agent_key) const {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "SELECT id, kind, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, delivery_status, log_path "
                                 "FROM automation_runs "
                                 "WHERE (?1 = '' OR agent_key = ?1) "
@@ -338,7 +338,7 @@ std::vector<RunRecord> Store::list_runs(const std::string &agent_key) const {
 }
 
 std::string Store::insert_inbox(const InboxItem &item_input) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     InboxItem item = item_input;
     if (item.id.empty()) {
         item.id = generate_id("inbox");
@@ -360,7 +360,7 @@ std::string Store::insert_inbox(const InboxItem &item_input) {
 }
 
 std::vector<InboxItem> Store::list_inbox(const std::string &agent_key) const {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "SELECT id, agent_key, source_kind, source_run_id, title, body, created_at, acked_at, status "
                                 "FROM agent_inbox "
                                 "WHERE agent_key = ?1 "
@@ -375,7 +375,7 @@ std::vector<InboxItem> Store::list_inbox(const std::string &agent_key) const {
 }
 
 bool Store::ack_inbox(const std::string &agent_key, const std::string &id) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "UPDATE agent_inbox SET acked_at = ?3, status = 'acked' WHERE agent_key = ?1 AND id = ?2");
     stmt.bind_text(1, agent_key);
     stmt.bind_text(2, id);
@@ -385,7 +385,7 @@ bool Store::ack_inbox(const std::string &agent_key, const std::string &id) {
 }
 
 void Store::clear_inbox(const std::string &agent_key) {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     sqlite::Statement stmt(db_, "DELETE FROM agent_inbox WHERE agent_key = ?1");
     stmt.bind_text(1, agent_key);
     static_cast<void>(stmt.step());

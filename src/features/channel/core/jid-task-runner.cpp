@@ -14,6 +14,11 @@ namespace orangutan {
 
 struct JidTaskRunner::QueuedTask {
     virtual ~QueuedTask() = default;
+    QueuedTask() = default;
+    QueuedTask(const QueuedTask &) = delete;
+    QueuedTask &operator=(const QueuedTask &) = delete;
+    QueuedTask(QueuedTask &&) = delete;
+    QueuedTask &operator=(QueuedTask &&) = delete;
     virtual void execute() noexcept = 0;
     virtual void cancel() noexcept = 0;
 };
@@ -33,7 +38,7 @@ struct JidTaskRunner::SchedulerModel {
 
         [[nodiscard]]
         auto get_env() const noexcept {
-            return stdexec::prop{stdexec::get_completion_scheduler<stdexec::set_value_t>, Scheduler{runner, jid}};
+            return stdexec::prop{stdexec::get_completion_scheduler<stdexec::set_value_t>, Scheduler{.runner = runner, .jid = jid}};
         }
 
         template <class Receiver>
@@ -98,7 +103,7 @@ struct JidTaskRunner::SchedulerModel {
 
             try {
                 auto task = std::make_unique<ReceiverTask<Receiver>>(std::move(*receiver));
-                runner->enqueue_scheduled_task(std::move(jid), std::move(task));
+                runner->enqueue_scheduled_task(jid, std::move(task));
                 receiver.reset();
             } catch (...) {
                 if (receiver.has_value()) {
@@ -156,7 +161,7 @@ void JidTaskRunner::submit(const std::string &jid, Task task) {
         throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
     }
 
-    auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{this, jid}) | stdexec::then([task = std::move(task), jid]() mutable {
+    auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = jid}) | stdexec::then([task = std::move(task), jid]() mutable {
                         try {
                             task();
                         } catch (const std::exception &e) {
@@ -168,31 +173,31 @@ void JidTaskRunner::submit(const std::string &jid, Task task) {
     exec::start_detached(std::move(pipeline));
 }
 
-void JidTaskRunner::enqueue_scheduled_task(std::string jid, std::unique_ptr<QueuedTask> task) {
+void JidTaskRunner::enqueue_scheduled_task(const std::string &jid, std::unique_ptr<QueuedTask> task) {
     if (jid.empty()) {
         throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
     }
 
-    bool rejected = false;
+    if (stopping_.load()) {
+        task->cancel();
+        return;
+    }
+
     {
         std::scoped_lock lock(mutex_);
         if (stopping_.load()) {
-            rejected = true;
-        } else {
-            auto &bucket = buckets_[jid];
-            bucket.tasks.push_back(std::move(task));
-            if (bucket.active) {
-                return;
-            }
-
-            bucket.active = true;
-            ready_jids_.push(jid);
+            task->cancel();
+            return;
         }
-    }
 
-    if (rejected) {
-        task->cancel();
-        return;
+        auto &bucket = buckets_[jid];
+        bucket.tasks.push_back(std::move(task));
+        if (bucket.active) {
+            return;
+        }
+
+        bucket.active = true;
+        ready_jids_.push(jid);
     }
 
     cv_.notify_one();

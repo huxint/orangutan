@@ -252,7 +252,7 @@ private:
     }
 
     template <typename Fn>
-    LLMResponse execute_with_fallback(Fn &&fn) {
+    LLMResponse execute_with_fallback(Fn fn) {
         RequestAttemptState state;
         {
             std::scoped_lock lock(mutex_);

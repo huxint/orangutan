@@ -1,5 +1,6 @@
 #include "features/automation/types.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <iomanip>
@@ -19,7 +20,7 @@ std::string random_hex(std::size_t count) {
     value.reserve(count);
     std::uniform_int_distribution<int> dist(0, 15);
     for (std::size_t index = 0; index < count; ++index) {
-        value.push_back(hex[static_cast<std::size_t>(dist(rng))]);
+        value.push_back(hex.at(static_cast<std::size_t>(dist(rng))));
     }
     return value;
 }
@@ -154,12 +155,8 @@ std::vector<ActiveHourWindow> active_hours_from_json(const json &value) {
         ActiveHourWindow window;
         window.start_minute = item.value("start_minute", 0);
         window.end_minute = item.value("end_minute", 24 * 60);
-        if (window.start_minute < 0) {
-            window.start_minute = 0;
-        }
-        if (window.end_minute > 24 * 60) {
-            window.end_minute = 24 * 60;
-        }
+        window.start_minute = std::max(window.start_minute, 0);
+        window.end_minute = std::min(window.end_minute, 24 * 60);
         if (window.start_minute >= window.end_minute) {
             continue;
         }

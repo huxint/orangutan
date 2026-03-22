@@ -28,6 +28,8 @@ public:
 
     WebServer(const WebServer &) = delete;
     WebServer &operator=(const WebServer &) = delete;
+    WebServer(WebServer &&) = delete;
+    WebServer &operator=(WebServer &&) = delete;
 
     void start(const std::string &host = "127.0.0.1", int port = 18080);
     void stop();

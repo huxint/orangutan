@@ -18,10 +18,8 @@ namespace orangutan::automation {
 namespace {
 
 bool parse_integer(std::string_view value, long long &out) {
-    const auto *begin = value.data();
-    const auto *end = begin + value.size();
-    auto result = std::from_chars(begin, end, out);
-    return result.ec == std::errc{} && result.ptr == end;
+    auto result = std::from_chars(value.begin(), value.end(), out);
+    return result.ec == std::errc{} && result.ptr == value.end();
 }
 
 bool within_active_hours(const HeartbeatSpec &heartbeat, std::int64_t candidate) {
@@ -32,7 +30,7 @@ bool within_active_hours(const HeartbeatSpec &heartbeat, std::int64_t candidate)
     const auto time_value = static_cast<std::time_t>(candidate);
     std::tm local_tm{};
     localtime_r(&time_value, &local_tm);
-    const int minute_of_day = local_tm.tm_hour * 60 + local_tm.tm_min;
+    const int minute_of_day = (local_tm.tm_hour * 60) + local_tm.tm_min;
 
     return std::ranges::any_of(heartbeat.active_hours, [minute_of_day](const ActiveHourWindow &window) {
         return minute_of_day >= window.start_minute && minute_of_day < window.end_minute;
@@ -45,11 +43,11 @@ std::int64_t clamp_to_active_hours(const HeartbeatSpec &heartbeat, std::int64_t 
     }
 
     for (int day_offset = 0; day_offset < 8; ++day_offset) {
-        const auto shifted = candidate + static_cast<std::int64_t>(day_offset) * 24 * 60 * 60;
+        const auto shifted = candidate + (static_cast<std::int64_t>(day_offset) * 24 * 60 * 60);
         const auto shifted_time = static_cast<std::time_t>(shifted);
         std::tm local_tm{};
         localtime_r(&shifted_time, &local_tm);
-        const int minute_of_day = local_tm.tm_hour * 60 + local_tm.tm_min;
+        const int minute_of_day = (local_tm.tm_hour * 60) + local_tm.tm_min;
 
         for (const auto &window : heartbeat.active_hours) {
             if (day_offset == 0 && minute_of_day >= window.start_minute && minute_of_day < window.end_minute) {

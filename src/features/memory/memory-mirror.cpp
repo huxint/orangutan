@@ -70,7 +70,7 @@ void write_file(const std::filesystem::path &path, const std::string &content) {
 
 } // namespace
 
-MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) const {
+MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
     MemoryMirrorRefreshResult result{.path = context.snapshot_path()};
     if (!context.mirror_enabled()) {
         result.skipped = true;
@@ -105,7 +105,7 @@ MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryCont
     return result;
 }
 
-JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary) const {
+JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary) {
     JournalMirrorWriteResult result;
     if (!context.mirror_enabled()) {
         result.status = "Mirror disabled or workspace unavailable.";

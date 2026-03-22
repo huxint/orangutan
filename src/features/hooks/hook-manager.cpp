@@ -122,12 +122,12 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
 
 // ── Hook execution ──────────────────────────────
 
-static auto execute_hook_sender(HookDef hook, json context) {
+static auto execute_hook_sender(const HookDef &hook, json context) {
     constexpr int hook_timeout_seconds = 5;
     auto hook_path = hook.path;
     auto hook_filename = hook.filename;
 
-    return stdexec::just(std::move(context)) | stdexec::then([](json active_context) {
+    return stdexec::just(std::move(context)) | stdexec::then([](const json &active_context) {
                return active_context.dump();
            }) |
            stdexec::let_value([hook_path = std::move(hook_path), hook_timeout_seconds](std::string stdin_data) mutable {
@@ -178,24 +178,22 @@ static std::optional<DispatchResult> process_hook_result(const HookDef &hook, Ho
     return std::nullopt;
 }
 
-static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, std::shared_ptr<const json> context, bool is_blocking_event) {
+static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, const std::shared_ptr<const json> &context, bool is_blocking_event) {
     if (index >= hooks.size()) {
         return stdexec::just(DispatchResult{});
     }
 
-    HookDef hook = hooks[index];
+    const HookDef hook = hooks[index];
 
-    return stdexec::just(std::move(hook)) | stdexec::let_value([event, context, is_blocking_event](HookDef current_hook) {
-               spdlog::debug("Dispatching hook '{}' for event '{}'", current_hook.filename, hook_event_to_string(event));
-               return execute_hook_sender(current_hook, *context) | stdexec::then([current_hook = std::move(current_hook), event, is_blocking_event](HookResult result) mutable {
-                          return process_hook_result(current_hook, event, is_blocking_event, std::move(result));
-                      });
+    return execute_hook_sender(hook, *context) | stdexec::then([hook, event, is_blocking_event](HookResult result) {
+               spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, hook_event_to_string(event));
+               return process_hook_result(hook, event, is_blocking_event, std::move(result));
            }) |
-           stdexec::let_value([hooks, index, event, context = std::move(context), is_blocking_event](std::optional<DispatchResult> blocked_result) mutable -> dispatch_sender_t {
+           stdexec::let_value([hooks, index, event, context, is_blocking_event](std::optional<DispatchResult> blocked_result) -> dispatch_sender_t {
                if (blocked_result.has_value()) {
                    return stdexec::just(std::move(*blocked_result));
                }
-               return dispatch_hooks_sender(hooks, index + 1, event, std::move(context), is_blocking_event);
+               return dispatch_hooks_sender(hooks, index + 1, event, context, is_blocking_event);
            });
 }
 

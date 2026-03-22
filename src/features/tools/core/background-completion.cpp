@@ -263,7 +263,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
                                                 .source_kind = std::string(inbox_source_kind),
                                                 .source_run_id = event.process_id,
                                                 .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
-                                                .body = std::move(failure_body),
+                                                .body = failure_body,
                                                 .created_at = automation::to_unix_seconds(automation::Clock::now()),
                                             },
                                             event.process_id));
@@ -307,7 +307,7 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
                     });
 
     try {
-        static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "background completion dispatch pipeline"));
+        static_cast<void>(execution::sync_wait_or_throw(pipeline, "background completion dispatch pipeline"));
     } catch (const std::exception &ex) {
         spdlog::error("background completion dispatch pipeline failed for process {}: {}", event.process_id, ex.what());
     } catch (...) {

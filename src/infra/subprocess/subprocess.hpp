@@ -33,7 +33,7 @@ SubprocessResult run_subprocess(const SubprocessConfig &config);
 
 [[nodiscard]]
 inline auto run_subprocess_sender(SubprocessConfig config) {
-    return stdexec::just(std::move(config)) | stdexec::then([](SubprocessConfig active_config) {
+    return stdexec::just(std::move(config)) | stdexec::then([](const SubprocessConfig &active_config) {
                return run_subprocess(active_config);
            });
 }

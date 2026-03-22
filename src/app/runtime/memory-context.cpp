@@ -8,7 +8,7 @@ std::filesystem::path resolve_workspace_path(const std::string &workspace, const
         return {};
     }
 
-    const auto configured_path = std::filesystem::path(configured);
+    auto configured_path = std::filesystem::path(configured);
     if (configured_path.is_absolute()) {
         return configured_path;
     }

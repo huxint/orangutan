@@ -74,7 +74,7 @@ private:
     std::atomic<bool> stopping_{false};
     std::atomic<bool> discard_pending_{false};
 
-    void enqueue_scheduled_task(std::string jid, std::unique_ptr<QueuedTask> task);
+    void enqueue_scheduled_task(const std::string &jid, std::unique_ptr<QueuedTask> task);
     void spawn_worker_locked();
     void release_blocking_lease();
     void worker_loop();

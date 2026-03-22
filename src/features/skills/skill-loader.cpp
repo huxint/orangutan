@@ -84,10 +84,10 @@ bool env_vars_satisfied(const std::vector<std::string> &env) {
 
 // Trim leading/trailing whitespace from a string_view
 std::string_view trim(std::string_view sv) {
-    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front())) != 0) {
         sv.remove_prefix(1);
     }
-    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back()))) {
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back())) != 0) {
         sv.remove_suffix(1);
     }
     return sv;

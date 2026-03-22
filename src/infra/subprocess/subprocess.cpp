@@ -592,11 +592,9 @@ struct BackgroundProcessManager::Impl {
 
     void erase_entry(const std::string &process_id) {
         std::scoped_lock lock(mutex);
-        entries.erase(std::remove_if(entries.begin(), entries.end(),
-                                     [&process_id](const auto &entry) {
-                                         return entry->process_id == process_id;
-                                     }),
-                      entries.end());
+        std::erase_if(entries, [&process_id](const auto &entry) {
+            return entry->process_id == process_id;
+        });
         entries_by_id.erase(process_id);
     }
 
@@ -795,6 +793,11 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
         explicit PendingStartGuard(Impl &impl_ref)
         : impl(impl_ref) {}
 
+        PendingStartGuard(const PendingStartGuard &) = delete;
+        PendingStartGuard &operator=(const PendingStartGuard &) = delete;
+        PendingStartGuard(PendingStartGuard &&) = delete;
+        PendingStartGuard &operator=(PendingStartGuard &&) = delete;
+
         ~PendingStartGuard() {
             impl.finish_start();
         }
@@ -842,8 +845,8 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
             auto pipeline = stdexec::just() | stdexec::then([entry] {
                                 return Impl::wait_for_process_exit(entry);
                             }) |
-                            stdexec::then([entry, has_completion_callback = static_cast<bool>(completion_callback)](Impl::WaitOutcome outcome) {
-                                return Impl::finalize_wait_outcome(entry, std::move(outcome), has_completion_callback);
+                            stdexec::then([entry, has_completion_callback = static_cast<bool>(completion_callback)](const Impl::WaitOutcome &outcome) {
+                                return Impl::finalize_wait_outcome(entry, outcome, has_completion_callback);
                             }) |
                             stdexec::then([entry, completion_callback](std::optional<BackgroundProcessCompletionEvent> completion_event) {
                                 Impl::publish_completion_event(entry, completion_callback, std::move(completion_event));

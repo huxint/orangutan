@@ -25,10 +25,10 @@ struct JournalMirrorWriteResult {
 class MemoryMirror {
 public:
     [[nodiscard]]
-    MemoryMirrorRefreshResult refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) const;
+    static MemoryMirrorRefreshResult refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records);
 
     [[nodiscard]]
-    JournalMirrorWriteResult append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary) const;
+    static JournalMirrorWriteResult append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary);
 };
 
 } // namespace orangutan

@@ -108,13 +108,13 @@ std::string execute_heartbeat_tool(const json &input, const ToolRuntimeContext *
     const bool has_active_hours_field = input.contains("active_hours");
     const bool timing_changed = input.contains("every") || input.contains("jitter") || has_active_hours_field;
 
-    const auto delivery = builtin_detail::parse_delivery_overlay(input, heartbeat.delivery);
+    auto delivery = builtin_detail::parse_delivery_overlay(input, heartbeat.delivery);
     if (!delivery.has_value()) {
         return "Error: " + delivery.error() + ".";
     }
     heartbeat.delivery = std::move(*delivery);
 
-    const auto active_hours = builtin_detail::parse_active_hours_overlay(input);
+    auto active_hours = builtin_detail::parse_active_hours_overlay(input);
     if (!active_hours.has_value()) {
         return "Error: " + active_hours.error() + ".";
     }

@@ -12,6 +12,7 @@ class AppRuntime {
 public:
     AppRuntime();
     explicit AppRuntime(const std::string &automation_db_path);
+    ~AppRuntime() = default;
 
     AppRuntime(const AppRuntime &) = delete;
     AppRuntime &operator=(const AppRuntime &) = delete;

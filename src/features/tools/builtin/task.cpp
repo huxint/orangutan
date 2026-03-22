@@ -100,7 +100,7 @@ std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) 
         }
     }
 
-    const auto delivery = builtin_detail::parse_delivery_overlay(input, task.delivery);
+    auto delivery = builtin_detail::parse_delivery_overlay(input, task.delivery);
     if (!delivery.has_value()) {
         return "Error: " + delivery.error() + ".";
     }

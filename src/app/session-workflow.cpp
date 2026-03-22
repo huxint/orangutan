@@ -64,7 +64,15 @@ std::optional<std::string> resolve_requested_session(SessionStore &store, const 
         return requested;
     }
 
-    const auto sessions = !scope_key.empty() ? store.list_sessions(scope_key) : (!agent_key.empty() ? store.list_sessions_for_agent(agent_key) : store.list_sessions());
+    const auto sessions = [&]() {
+        if (!scope_key.empty()) {
+            return store.list_sessions(scope_key);
+        }
+        if (!agent_key.empty()) {
+            return store.list_sessions_for_agent(agent_key);
+        }
+        return store.list_sessions();
+    }();
     if (sessions.empty()) {
         return std::nullopt;
     }

@@ -368,7 +368,7 @@ SubagentWorkerResult SubagentManager::run_real_child(const SubagentWorkerRequest
                         };
                     });
 
-    auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "subagent run_real_child pipeline");
+    auto [result] = execution::sync_wait_or_throw(pipeline, "subagent run_real_child pipeline");
     return result;
 }
 

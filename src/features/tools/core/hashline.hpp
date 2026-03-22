@@ -28,7 +28,7 @@ enum class HashlineEditOp {
 };
 
 struct HashlineEdit {
-    HashlineEditOp op;
+    HashlineEditOp op = HashlineEditOp::replace;
     std::string anchor;     // "LINE#HASH" -- optional for insert_after/insert_before
     std::string end_anchor; // optional, for range operations
     std::vector<std::string> content;

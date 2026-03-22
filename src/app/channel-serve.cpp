@@ -572,7 +572,7 @@ ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMess
                                 .approved = approved,
                             };
                         }) |
-                        stdexec::then([this, &message, &channel_manager](WaitOutcome outcome) {
+                        stdexec::then([this, &message, &channel_manager](const WaitOutcome &outcome) {
                             if (outcome.pending == nullptr) {
                                 return false;
                             }
@@ -584,7 +584,7 @@ ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMess
                             return outcome.approved;
                         });
 
-        auto [approved] = execution::sync_wait_or_throw(std::move(pipeline), "channel approval callback pipeline");
+        auto [approved] = execution::sync_wait_or_throw(pipeline, "channel approval callback pipeline");
         return approved;
     };
 }

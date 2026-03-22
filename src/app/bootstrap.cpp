@@ -108,7 +108,7 @@ void reset_signal_stop_requested_for_tests() {
 }
 
 void set_web_startup_inspection_callback_for_tests(WebStartupInspectionCallback callback) {
-    web_startup_inspection_callback() = callback;
+    web_startup_inspection_callback() = std::move(callback);
 }
 
 void clear_web_startup_inspection_callback_for_tests() {
@@ -116,7 +116,7 @@ void clear_web_startup_inspection_callback_for_tests() {
 }
 
 void set_web_runtime_build_callback_for_tests(WebRuntimeBuildCallback callback) {
-    web_runtime_build_callback() = callback;
+    web_runtime_build_callback() = std::move(callback);
 }
 
 void clear_web_runtime_build_callback_for_tests() {
@@ -520,12 +520,20 @@ void deactivate_runtime_completion_resume_state(const std::shared_ptr<RuntimeCom
 struct RuntimeCompletionResumeStateGuard {
     std::shared_ptr<RuntimeCompletionResumeState> state;
 
+    explicit RuntimeCompletionResumeStateGuard(std::shared_ptr<RuntimeCompletionResumeState> state_ptr)
+    : state(std::move(state_ptr)) {}
+
+    RuntimeCompletionResumeStateGuard(const RuntimeCompletionResumeStateGuard &) = delete;
+    RuntimeCompletionResumeStateGuard &operator=(const RuntimeCompletionResumeStateGuard &) = delete;
+    RuntimeCompletionResumeStateGuard(RuntimeCompletionResumeStateGuard &&) = delete;
+    RuntimeCompletionResumeStateGuard &operator=(RuntimeCompletionResumeStateGuard &&) = delete;
+
     ~RuntimeCompletionResumeStateGuard() {
         deactivate_runtime_completion_resume_state(state);
     }
 };
 
-orangutan::BackgroundCompletionResumeCallback make_runtime_completion_resume_callback(std::weak_ptr<RuntimeCompletionResumeState> weak_state) {
+orangutan::BackgroundCompletionResumeCallback make_runtime_completion_resume_callback(const std::weak_ptr<RuntimeCompletionResumeState> &weak_state) {
     return [weak_state](const std::string &message) -> std::optional<std::string> {
         const auto state = weak_state.lock();
         if (!state) {
