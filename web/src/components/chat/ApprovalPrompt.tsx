@@ -1,16 +1,21 @@
-import { ShieldAlert, Terminal } from 'lucide-react'
-import { motion } from 'framer-motion'
-import type { ApprovalRequest } from './types'
+import { ShieldAlert, Terminal } from "lucide-react";
+import { motion } from "framer-motion";
+import type { ApprovalRequest } from "./types";
 
 interface ApprovalPromptProps {
-  approval: ApprovalRequest
-  resolving?: 'approve' | 'deny' | null
-  onApprove: () => void
-  onDeny: () => void
+  approval: ApprovalRequest;
+  resolving?: "approve" | "deny" | null;
+  onApprove: () => void;
+  onDeny: () => void;
 }
 
-export function ApprovalPrompt({ approval, resolving = null, onApprove, onDeny }: ApprovalPromptProps) {
-  const busy = resolving !== null
+export function ApprovalPrompt({
+  approval,
+  resolving = null,
+  onApprove,
+  onDeny,
+}: ApprovalPromptProps) {
+  const busy = resolving !== null;
 
   return (
     <div className="px-4 py-2">
@@ -37,12 +42,16 @@ export function ApprovalPrompt({ approval, resolving = null, onApprove, onDeny }
             {approval.command && (
               <div className="mt-1.5 flex items-center gap-1.5 rounded-md bg-bg-elevated border border-border px-2.5 py-1.5">
                 <Terminal size={11} className="text-text-muted shrink-0" />
-                <code className="text-xs text-text font-mono truncate">{approval.command}</code>
+                <code className="text-xs text-text font-mono truncate">
+                  {approval.command}
+                </code>
               </div>
             )}
 
             {approval.prompt && !approval.command && (
-              <p className="mt-1 text-xs text-text-secondary line-clamp-2">{approval.prompt}</p>
+              <p className="mt-1 text-xs text-text-secondary line-clamp-2">
+                {approval.prompt}
+              </p>
             )}
           </div>
 
@@ -55,7 +64,7 @@ export function ApprovalPrompt({ approval, resolving = null, onApprove, onDeny }
               className="rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text-secondary
                 hover:text-danger hover:border-danger/30 transition-colors disabled:opacity-40"
             >
-              {resolving === 'deny' ? '...' : 'Deny'}
+              {resolving === "deny" ? "..." : "Deny"}
             </button>
             <button
               type="button"
@@ -65,11 +74,11 @@ export function ApprovalPrompt({ approval, resolving = null, onApprove, onDeny }
                 hover:bg-accent-hover transition-colors disabled:opacity-40
                 shadow-[0_2px_8px_rgba(249,115,22,0.2)]"
             >
-              {resolving === 'approve' ? '...' : 'Approve'}
+              {resolving === "approve" ? "..." : "Approve"}
             </button>
           </div>
         </div>
       </motion.div>
     </div>
-  )
+  );
 }

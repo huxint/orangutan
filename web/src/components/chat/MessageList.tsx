@@ -1,18 +1,18 @@
-import { useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { MessageBubble } from './MessageBubble'
-import type { ChatMessage } from './types'
+import { useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { MessageBubble } from "./MessageBubble";
+import type { ChatMessage } from "./types";
 
 interface MessageListProps {
-  messages: ChatMessage[]
-  onSuggest?: (text: string) => void
+  messages: ChatMessage[];
+  onSuggest?: (text: string) => void;
 }
 
 const SUGGESTIONS = [
-  { emoji: '💡', text: 'Explain how this works' },
-  { emoji: '🔧', text: 'Help me debug something' },
-  { emoji: '📝', text: 'Write some code' },
-]
+  { emoji: "💡", text: "Explain how this works" },
+  { emoji: "🔧", text: "Help me debug something" },
+  { emoji: "📝", text: "Write some code" },
+];
 
 function EmptyState({ onSuggest }: { onSuggest?: (text: string) => void }) {
   return (
@@ -21,10 +21,17 @@ function EmptyState({ onSuggest }: { onSuggest?: (text: string) => void }) {
         <motion.div
           initial={{ opacity: 0, scale: 0.8, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="relative"
         >
-          <img src="/assets/orangutan.png" alt="Orangutan" width={120} height={120} className="select-none" draggable={false} />
+          <img
+            src="/assets/orangutan.png"
+            alt="Orangutan"
+            width={120}
+            height={120}
+            className="select-none"
+            draggable={false}
+          />
           <div className="absolute inset-0 blur-3xl bg-accent/8 rounded-full scale-150" />
         </motion.div>
 
@@ -49,7 +56,7 @@ function EmptyState({ onSuggest }: { onSuggest?: (text: string) => void }) {
             transition={{ delay: 0.2 }}
             className="flex gap-2.5"
           >
-            {SUGGESTIONS.map(s => (
+            {SUGGESTIONS.map((s) => (
               <button
                 key={s.text}
                 onClick={() => onSuggest(s.text)}
@@ -67,34 +74,34 @@ function EmptyState({ onSuggest }: { onSuggest?: (text: string) => void }) {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 export function MessageList({ messages, onSuggest }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const visible = messages.filter(m => m.content.length > 0)
+  const visible = messages.filter((m) => m.content.length > 0);
 
   if (visible.length === 0) {
-    return <EmptyState onSuggest={onSuggest} />
+    return <EmptyState onSuggest={onSuggest} />;
   }
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-6">
       <div className="mx-auto max-w-3xl space-y-4">
         <AnimatePresence initial={false}>
-          {visible.map(msg => (
+          {visible.map((msg) => (
             <motion.div
               key={msg.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
-                type: 'spring',
+                type: "spring",
                 stiffness: 300,
                 damping: 25,
               }}
@@ -106,5 +113,5 @@ export function MessageList({ messages, onSuggest }: MessageListProps) {
         <div ref={bottomRef} />
       </div>
     </div>
-  )
+  );
 }

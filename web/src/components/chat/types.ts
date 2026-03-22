@@ -1,76 +1,83 @@
 export interface ContentBlock {
-  type: string
-  text?: string
-  id?: string
-  name?: string
-  input?: object
-  tool_use_id?: string
-  content?: string
-  is_error?: boolean
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: object;
+  tool_use_id?: string;
+  content?: string;
+  is_error?: boolean;
 }
 
 export interface ApprovalRequest {
-  request_id: string
-  tool: string
-  command?: string
-  sandbox_mode: string
-  prompt: string
+  request_id: string;
+  tool: string;
+  command?: string;
+  sandbox_mode: string;
+  prompt: string;
 }
 
 export interface SessionMessage {
-  role: string
-  content: ContentBlock[]
+  role: string;
+  content: ContentBlock[];
 }
 
 export interface ChatSessionSummary {
-  id: string
-  created_at: string
-  model: string
-  scope_key: string
-  agent_key: string
-  origin_kind: string
-  origin_ref: string
-  message_count: number
-  read_only: boolean
-  preview?: string
+  id: string;
+  created_at: string;
+  model: string;
+  scope_key: string;
+  agent_key: string;
+  origin_kind: string;
+  origin_ref: string;
+  message_count: number;
+  read_only: boolean;
+  preview?: string;
 }
 
 export interface ChatSessionData extends ChatSessionSummary {
-  messages: SessionMessage[]
+  messages: SessionMessage[];
 }
 
 export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: ContentBlock[]
+  id: string;
+  role: "user" | "assistant";
+  content: ContentBlock[];
 }
 
 export interface ChatSessionEvent {
-  session_id: string
+  session_id: string;
 }
 
 export interface ChatTextEvent {
-  text: string
+  text: string;
 }
 
 export interface ChatToolStartEvent {
-  id: string
-  name: string
-  input: object
+  id: string;
+  name: string;
+  input: object;
 }
 
 export interface ChatToolEndEvent {
-  id: string
-  name: string
-  content: string
-  is_error: boolean
+  id: string;
+  name: string;
+  content: string;
+  is_error: boolean;
 }
 
 export interface ChatErrorEvent {
-  error: string
+  error: string;
 }
 
-export type ChatStreamEventType = 'session' | 'text' | 'tool_start' | 'tool_end' | 'approval_request' | 'done' | 'error'
+export type ChatStreamEventType =
+  | "session"
+  | "text"
+  | "tool_start"
+  | "tool_end"
+  | "approval_request"
+  | "done"
+  | "error";
 
 export type ChatStreamEventPayload =
   | ChatSessionEvent
@@ -79,4 +86,4 @@ export type ChatStreamEventPayload =
   | ChatToolEndEvent
   | ApprovalRequest
   | ChatErrorEvent
-  | Record<string, never>
+  | Record<string, never>;

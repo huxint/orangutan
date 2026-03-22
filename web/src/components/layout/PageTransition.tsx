@@ -1,34 +1,36 @@
-import { useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import type { ReactNode } from 'react'
+import { useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import type { ReactNode } from "react";
 
 interface PageTransitionProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 const variants = {
   initial: {
     opacity: 0,
     y: 12,
-    filter: 'blur(4px)',
+    filter: "blur(4px)",
   },
   animate: {
     opacity: 1,
     y: 0,
-    filter: 'blur(0px)',
+    filter: "blur(0px)",
   },
   exit: {
     opacity: 0,
     y: -8,
-    filter: 'blur(4px)',
+    filter: "blur(4px)",
   },
-}
+};
 
 export function PageTransition({ children }: PageTransitionProps) {
-  const location = useLocation()
+  const location = useLocation();
 
   // Derive a stable key: for chat routes use "chat", for others use the path
-  const routeKey = location.pathname.startsWith('/chat') ? 'chat' : location.pathname
+  const routeKey = location.pathname.startsWith("/chat")
+    ? "chat"
+    : location.pathname;
 
   return (
     <AnimatePresence mode="wait">
@@ -47,5 +49,5 @@ export function PageTransition({ children }: PageTransitionProps) {
         {children}
       </motion.div>
     </AnimatePresence>
-  )
+  );
 }
