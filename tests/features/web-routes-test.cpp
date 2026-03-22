@@ -301,12 +301,13 @@ TEST_F(WebRoutesTest, SharedWebRuntimeBuildsWithParityContextAndTools) {
                                                                         return false;
                                                                     });
 
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "memory_list"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "shell"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "task"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "heartbeat"));
-    EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "inbox"));
+    const auto definitions = runtime.tools.definitions();
+    EXPECT_TRUE(has_tool_named(definitions, "memory_list"));
+    EXPECT_TRUE(has_tool_named(definitions, "shell"));
+    EXPECT_TRUE(has_tool_named(definitions, "custom_echo"));
+    EXPECT_TRUE(has_tool_named(definitions, "task"));
+    EXPECT_TRUE(has_tool_named(definitions, "heartbeat"));
+    EXPECT_TRUE(has_tool_named(definitions, "inbox"));
     EXPECT_EQ(runtime.tool_context.runtime_origin, orangutan::SubagentRuntimeOrigin::web);
     EXPECT_EQ(runtime.tool_context.raw_caller_id, "web:local");
     EXPECT_EQ(runtime.tool_context.current_session_id, &session_id);
@@ -314,6 +315,13 @@ TEST_F(WebRoutesTest, SharedWebRuntimeBuildsWithParityContextAndTools) {
     EXPECT_EQ(runtime.tool_context.automation_runtime, &app_runtime.automation_runtime());
     EXPECT_TRUE(static_cast<bool>(runtime.tool_context.approval_callback));
     EXPECT_TRUE(runtime.agent != nullptr);
+
+    const auto shell = std::ranges::find_if(definitions, [](const orangutan::ToolDef &definition) {
+        return definition.name == "shell";
+    });
+    ASSERT_NE(shell, definitions.end());
+    ASSERT_TRUE(shell->input_schema.contains("properties"));
+    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
     const auto shell_result = runtime.tools.execute(orangutan::ToolUseBlock{
         .id = "web-shell",

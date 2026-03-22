@@ -354,8 +354,11 @@ void Runtime::execute_task(const TaskSpec &task, std::optional<std::int64_t> for
         .delivery = task.delivery,
     };
 
-    const auto completed = execute_trigger(trigger, started_at);
-    store_.update_task_run_state(task.id, completed.finished_at, completed.status, task.schedule.kind == TaskScheduleKind::cron);
+    std::optional<CompletedExecution> completed;
+    with_agent_execution_lease(this, task.agent_key, [&] {
+        completed.emplace(execute_trigger(trigger, started_at));
+    });
+    store_.update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == TaskScheduleKind::cron);
 }
 
 void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<std::int64_t> forced_timestamp) {

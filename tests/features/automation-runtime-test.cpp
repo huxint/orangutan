@@ -88,6 +88,49 @@ TEST(AutomationRuntimeTest, HeartbeatsWaitForActiveAgentLease) {
     worker.join();
 }
 
+TEST(AutomationRuntimeTest, TasksWaitForActiveAgentLease) {
+    const auto db_path = make_test_db_path("automation-runtime-task-lock.db");
+    orangutan::automation::Store store(db_path.string());
+    orangutan::automation::Runtime runtime(store);
+
+    const auto scheduled_at = orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now());
+    orangutan::automation::TaskSpec task;
+    task.id = "task-1";
+    task.agent_key = "default";
+    task.name = "repo-check";
+    task.prompt = "check";
+    task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
+    task.schedule.value = std::to_string(scheduled_at);
+    const auto task_id = store.upsert_task(task);
+    (void)task_id;
+
+    std::promise<void> executor_called;
+    auto executor_called_future = executor_called.get_future();
+    runtime.set_executor([&executor_called](const orangutan::automation::Trigger &) {
+        executor_called.set_value();
+        return orangutan::automation::ExecutionResult{
+            .success = true,
+            .reply = "ok",
+            .summary = "ok",
+        };
+    });
+
+    std::optional<orangutan::automation::Runtime::AgentExecutionLease> held_lease;
+    held_lease.emplace(runtime.acquire_agent_execution_lease("default"));
+
+    std::thread worker([&runtime, scheduled_at] {
+        runtime.run_pending(orangutan::automation::from_unix_seconds(scheduled_at));
+    });
+
+    EXPECT_EQ(executor_called_future.wait_for(100ms), std::future_status::timeout);
+
+    held_lease.reset();
+
+    EXPECT_EQ(executor_called_future.wait_for(1s), std::future_status::ready);
+
+    worker.join();
+}
+
 TEST(AutomationRuntimeTest, ManualHeartbeatRunsReuseCurrentAgentLease) {
     const auto db_path = make_test_db_path("automation-runtime-heartbeat-reentrant.db");
     orangutan::automation::Store store(db_path.string());
@@ -121,5 +164,41 @@ TEST(AutomationRuntimeTest, ManualHeartbeatRunsReuseCurrentAgentLease) {
 
     ASSERT_EQ(run_future.wait_for(1s), std::future_status::ready);
     EXPECT_EQ(run_future.get(), "Heartbeat run queued.");
+    EXPECT_EQ(executor_called_future.wait_for(0s), std::future_status::ready);
+}
+
+TEST(AutomationRuntimeTest, ManualTaskRunsReuseCurrentAgentLease) {
+    const auto db_path = make_test_db_path("automation-runtime-task-reentrant.db");
+    orangutan::automation::Store store(db_path.string());
+    orangutan::automation::Runtime runtime(store);
+
+    orangutan::automation::TaskSpec task;
+    task.id = "task-1";
+    task.agent_key = "default";
+    task.name = "repo-check";
+    task.prompt = "check";
+    task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
+    task.schedule.value = std::to_string(orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now()));
+    const auto task_id = store.upsert_task(task);
+    (void)task_id;
+
+    std::promise<void> executor_called;
+    auto executor_called_future = executor_called.get_future();
+    runtime.set_executor([&executor_called](const orangutan::automation::Trigger &) {
+        executor_called.set_value();
+        return orangutan::automation::ExecutionResult{
+            .success = true,
+            .reply = "ok",
+            .summary = "ok",
+        };
+    });
+
+    auto run_future = std::async(std::launch::async, [&runtime] {
+        auto lease = runtime.acquire_agent_execution_lease("default");
+        return runtime.run_task_now("default", "task-1");
+    });
+
+    ASSERT_EQ(run_future.wait_for(1s), std::future_status::ready);
+    EXPECT_EQ(run_future.get(), "Task run queued.");
     EXPECT_EQ(executor_called_future.wait_for(0s), std::future_status::ready);
 }

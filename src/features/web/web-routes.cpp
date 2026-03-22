@@ -119,14 +119,13 @@ AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const Age
         .mcp_servers = config.mcp_servers,
         .skill_paths = config.skill_paths,
         .hook_paths = config.hook_paths,
-        .background_completion_runtime =
-            automation_runtime != nullptr
-                ? make_background_completion_runtime_bindings(
-                      [automation_runtime](const automation::InboxItem &item) {
-                          (void)automation_runtime->store().insert_inbox(item);
-                      },
-                      completion_resume_state != nullptr ? detail::make_web_completion_resume_callback(completion_resume_state) : BackgroundCompletionResumeCallback{})
-                : nullptr,
+        .background_completion_runtime = (automation_runtime != nullptr && completion_resume_state != nullptr)
+                                             ? make_background_completion_runtime_bindings(
+                                                   [automation_runtime](const automation::InboxItem &item) {
+                                                       (void)automation_runtime->store().insert_inbox(item);
+                                                   },
+                                                   detail::make_web_completion_resume_callback(completion_resume_state))
+                                             : nullptr,
     };
     return build_agent_runtime(input);
 }
@@ -843,25 +842,22 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
-        session->completion_resume_state = std::make_shared<WebCompletionResumeState>();
-        session->completion_resume_state->agent_key = agent_key;
-        session->completion_resume_state->automation_runtime = automation_runtime;
         auto *session_ptr = session.get();
         auto approval_event_emitter = std::make_shared<detail::WebApprovalEventEmitter>();
         auto approval_stream_open = std::make_shared<std::function<bool()>>();
-        session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(
-            *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
-            [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUseBlock &call,
-                                                                                                                                               const std::string &prompt_text) {
-                return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
-                                                  approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
-                                                  approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-            },
-            session->completion_resume_state));
+        // Request-scoped web runtimes tear down their BackgroundProcessManager with the HTTP stream,
+        // so they intentionally do not advertise background completion routing.
+        session->runtime = std::make_unique<AgentRuntimeBundle>(
+            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
+                                             [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter,
+                                              approval_stream_open](const ToolUseBlock &call, const std::string &prompt_text) {
+                                                 return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
+                                                                                   approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
+                                                                                   approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
+                                             }));
         if (session->agent() == nullptr) {
             throw std::runtime_error("failed to initialize web runtime agent");
         }
-        session->completion_resume_state->agent = session->agent();
 
         if (!session_id.empty() && store != nullptr) {
             session->agent()->set_history(store->load(session_id));
@@ -960,12 +956,6 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
                                              }
                                              if (approval_stream_open != nullptr) {
                                                  *approval_stream_open = {};
-                                             }
-                                             if (session_ptr->completion_resume_state != nullptr) {
-                                                 std::scoped_lock lock(session_ptr->completion_resume_state->mutex);
-                                                 // Once the request-scoped web session is tearing down, later background completions
-                                                 // must downgrade to inbox-only failure notes instead of touching destroyed state.
-                                                 session_ptr->completion_resume_state->agent = nullptr;
                                              }
 
                                              // Save session to store
