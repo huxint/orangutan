@@ -68,6 +68,8 @@ public:
     AgentRuntimeBundle(const AgentRuntimeBundle &) = delete;
     AgentRuntimeBundle &operator=(const AgentRuntimeBundle &) = delete;
 
+    // This is a runtime bundle with intentionally exposed handles for assembly sites.
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
     std::unique_ptr<Provider> provider;
     std::unique_ptr<RuntimeMemory> memory;
     ToolRegistry &tools;
@@ -77,6 +79,7 @@ public:
     std::string skills_prompt;
     std::unique_ptr<HookManager> hook_manager;
     std::unique_ptr<AgentLoop> agent;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 
     friend AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input);
 };

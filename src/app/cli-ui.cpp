@@ -1,4 +1,5 @@
 #include "app/cli-ui.hpp"
+#include "app/slash-commands.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -6,60 +7,15 @@
 namespace orangutan::app {
 
 std::string repl_help_text() {
-    return "## Commands\n"
-           "- `/help` - show this help\n"
-           "- `/status` - show active model and runtime status\n"
-           "- `/new` - save current session and start a new one\n"
-           "- `/export` - export the current session to the workspace\n"
-           "- `/compress` - summarize older history and keep recent messages verbatim\n"
-           "- `/clear` - clear conversation history\n"
-           "- `/session` - show the current session id\n"
-           "- `/sessions` - list saved sessions for the current agent scope\n"
-           "- `/resume <id>` - resume a saved session; supports `latest`\n"
-           "- `/tools` - list all registered tools\n"
-           "- `/tasks` - list tasks or run `/tasks run <id>`\n"
-           "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
-           "- `/inbox` - list inbox items, `/inbox ack <id>`, or `/inbox clear`\n"
-           "- `/skills` - list loaded skills\n"
-           "- `/agent` - show the current agent\n"
-           "- `/agents` - list configured agents\n"
-           "- `/multi` - enter multi-line mode and finish with an empty line\n"
-           "- `/save` - save current session\n"
-           "- `/quit` - exit\n";
+    return render_slash_help_text(slash_command_surface::cli);
 }
 
 std::string channel_help_text() {
-    return "## Commands\n"
-           "- `/help` - show this help\n"
-           "- `/status` - show active model and runtime status\n"
-           "- `/new` - start a new session\n"
-           "- `/export` - export the current session to the workspace\n"
-           "- `/compress` - summarize older history\n"
-           "- `/session` - show the current session id\n"
-           "- `/sessions` - list saved sessions in this scope\n"
-           "- `/resume <id>` - resume a saved session or use `latest`\n"
-           "- `/tasks` - list tasks, `/tasks run <id>`, or `/tasks remove <id>`\n"
-           "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
-           "- `/inbox` - list inbox items, `/inbox ack <id>`, or `/inbox clear`\n"
-           "- `/agent` - show the current agent\n"
-           "- `/agents` - list configured agents";
+    return render_slash_help_text(slash_command_surface::channel);
 }
 
 std::string web_help_text() {
-    return "## Commands\n"
-           "- `/help` - show this help\n"
-           "- `/status` - show active model and runtime status\n"
-           "- `/new` - start a new chat session\n"
-           "- `/export` - export the current session to the workspace\n"
-           "- `/compress` - summarize older history for the current session\n"
-           "- `/session` - show the current session id\n"
-           "- `/sessions` - list saved sessions for the current agent\n"
-           "- `/resume <id>` - switch to a saved session or use `latest`\n"
-           "- `/tasks` - list tasks, `/tasks run <id>`, or `/tasks remove <id>`\n"
-           "- `/heartbeats` - list heartbeats or run `/heartbeats pause <id>`\n"
-           "- `/inbox` - list inbox items, `/inbox ack <id>`, or `/inbox clear`\n"
-           "- `/agent` - show the current agent\n"
-           "- `/agents` - list configured agents";
+    return render_slash_help_text(slash_command_surface::web);
 }
 
 std::string format_agent_list(const Config &cfg, const std::string &current_agent_key) {

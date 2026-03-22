@@ -133,7 +133,7 @@ ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, co
                                                            automation::Runtime *automation_runtime = nullptr);
 
 [[nodiscard]]
-BackgroundCompletionResumeCallback make_channel_completion_resume_callback(std::weak_ptr<ChannelCompletionResumeState> state);
+BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
 
 } // namespace detail
 

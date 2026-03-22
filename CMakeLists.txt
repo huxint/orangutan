@@ -180,6 +180,7 @@ if(BUILD_TESTING)
         tests/app/identity-test.cpp
         tests/app/runtime-agent-runtime-test.cpp
         tests/app/session-workflow-test.cpp
+        tests/app/slash-commands-test.cpp
         tests/app/single-shot-test.cpp
         tests/core/provider-fallback-test.cpp
         tests/core/sse-parser-test.cpp

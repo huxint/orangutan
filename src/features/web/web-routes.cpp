@@ -248,7 +248,7 @@ json inbox_item_to_json(const automation::InboxItem &item) {
 }
 
 void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool cancelled) {
-    std::lock_guard lock(approval.mutex);
+    std::scoped_lock lock(approval.mutex);
     if (approval.resolved) {
         return;
     }
@@ -258,18 +258,12 @@ void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool 
     approval.condition.notify_all();
 }
 
-struct WebSlashCommandResponse {
-    bool handled = false;
-    std::optional<std::string> session_id;
-    std::string text;
-};
-
 void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const json &payload) {
     const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
     sink.write(sse.c_str(), sse.size());
 }
 
-void send_web_command_stream(httplib::Response &res, const WebSlashCommandResponse &command_response) {
+void send_web_command_stream(httplib::Response &res, const app::SlashCommandReply &command_response) {
     res.set_chunked_content_provider("text/event-stream", [command_response](size_t /*offset*/, httplib::DataSink &sink) -> bool {
         if (command_response.session_id.has_value()) {
             write_sse_event(sink, "session", {{"session_id", *command_response.session_id}});
@@ -283,97 +277,112 @@ void send_web_command_stream(httplib::Response &res, const WebSlashCommandRespon
     });
 }
 
-WebSlashCommandResponse handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const Config &config, SessionStore *store,
-                                                        const std::optional<SessionInfo> &existing_session, const SessionMetadata &metadata,
-                                                        const std::string &current_session_id) {
-    if (message == "/help") {
-        return {.handled = true, .text = app::web_help_text()};
-    }
-    if (message == "/session") {
-        return {.handled = true, .text = app::format_current_session(current_session_id, agent_key)};
-    }
-    if (message == "/sessions") {
-        if (store == nullptr) {
-            return {.handled = true, .text = "Session store is not available in this runtime."};
-        }
-        return {.handled = true, .text = app::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id)};
-    }
-    if (message == "/agent") {
-        return {.handled = true, .text = app::format_current_agent(agent_key)};
-    }
-    if (message == "/agents") {
-        return {.handled = true, .text = app::format_agent_list(config, agent_key)};
-    }
-    if (message == "/export") {
-        const auto maybe_agent = find_effective_agent(&config, agent_key);
-        const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
-        if (store == nullptr || current_session_id.empty()) {
-            return {.handled = true, .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root))};
-        }
-        return {.handled = true, .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root))};
-    }
-    if (message == "/new") {
-        std::string new_session_id;
-        if (store != nullptr) {
-            new_session_id = store->create_empty(metadata);
-        } else {
-            new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-        }
-        return {.handled = true, .session_id = new_session_id, .text = {}};
-    }
-    if (message.starts_with("/resume ")) {
-        if (store == nullptr) {
-            return {.handled = true, .text = "Session store is not available in this runtime."};
-        }
-
-        const auto requested_session_id = app::trim_copy(std::string_view(message).substr(8));
-        if (requested_session_id.empty()) {
-            return {.handled = true, .text = "Usage: /resume <session-id>"};
-        }
-
-        const auto resolved_session_id = app::resolve_requested_session(*store, requested_session_id, {}, agent_key);
-        if (!resolved_session_id.has_value()) {
-            return {.handled = true, .text = "No saved sessions available for this agent."};
-        }
-        if (!store->session_belongs_to_agent(*resolved_session_id, agent_key)) {
-            return {.handled = true, .text = "That session does not belong to the current agent."};
-        }
-
-        return {.handled = true, .session_id = *resolved_session_id, .text = "🧵 Resumed session: " + *resolved_session_id};
-    }
-
-    return {};
+app::SlashCommandReply handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const Config &config, SessionStore *store,
+                                                       const std::optional<SessionInfo> & /*existing_session*/, const SessionMetadata &metadata,
+                                                       const std::string &current_session_id) {
+    return app::dispatch_shared_slash_command(
+        message, {
+                     .surface = app::slash_command_surface::web,
+                     .help =
+                         [] {
+                             return app::SlashCommandReply{.handled = true, .text = app::web_help_text()};
+                         },
+                     .new_session =
+                         [&] {
+                             std::string new_session_id;
+                             if (store != nullptr) {
+                                 new_session_id = store->create_empty(metadata);
+                             } else {
+                                 new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+                             }
+                             return app::SlashCommandReply{.handled = true, .text = {}, .session_id = new_session_id};
+                         },
+                     .export_session =
+                         [&] {
+                             const auto maybe_agent = find_effective_agent(&config, agent_key);
+                             const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
+                             if (store == nullptr || current_session_id.empty()) {
+                                 return app::SlashCommandReply{
+                                     .handled = true,
+                                     .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root)),
+                                 };
+                             }
+                             return app::SlashCommandReply{
+                                 .handled = true,
+                                 .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root)),
+                             };
+                         },
+                     .session =
+                         [&] {
+                             return app::SlashCommandReply{.handled = true, .text = app::format_current_session(current_session_id, agent_key)};
+                         },
+                     .sessions =
+                         [&] {
+                             if (store == nullptr) {
+                                 return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                             }
+                             return app::SlashCommandReply{
+                                 .handled = true,
+                                 .text = app::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id),
+                             };
+                         },
+                     .agent =
+                         [&] {
+                             return app::SlashCommandReply{.handled = true, .text = app::format_current_agent(agent_key)};
+                         },
+                     .agents =
+                         [&] {
+                             return app::SlashCommandReply{.handled = true, .text = app::format_agent_list(config, agent_key)};
+                         },
+                     .resume =
+                         [&](const std::string &requested_session_id) {
+                             if (store == nullptr) {
+                                 return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                             }
+                             const auto resolved_session_id = app::resolve_requested_session(*store, requested_session_id, {}, agent_key);
+                             if (!resolved_session_id.has_value()) {
+                                 return app::SlashCommandReply{.handled = true, .text = "No saved sessions available for this agent."};
+                             }
+                             if (!store->session_belongs_to_agent(*resolved_session_id, agent_key)) {
+                                 return app::SlashCommandReply{.handled = true, .text = "That session does not belong to the current agent."};
+                             }
+                             return app::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + *resolved_session_id, .session_id = resolved_session_id};
+                         },
+                 });
 }
 
-WebSlashCommandResponse handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
-                                                         const SessionMetadata &metadata, AgentRuntimeBundle &runtime, std::string &current_session_id) {
-    if (message == "/status") {
-        const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
-        return {.handled = true,
-                .text = app::format_runtime_status(app::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id, agent_key, active_model,
-                                                                               agent.fallback_models, metadata.scope_key))};
-    }
-
-    if (message == "/compress") {
-        const auto result = runtime.agent->compress_history();
-        if (result.compacted && store != nullptr && !current_session_id.empty()) {
-            store->update(current_session_id, runtime.agent->history(), metadata);
-        }
-        return {.handled = true, .text = app::format_history_compaction_result(result)};
-    }
-
-    if (const auto reply = app::handle_registry_slash_command(message, &runtime.tools); reply.handled) {
-        return {.handled = true, .text = reply.text};
-    }
-
-    return {};
+app::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
+                                                        const SessionMetadata &metadata, AgentRuntimeBundle &runtime, std::string &current_session_id) {
+    return app::dispatch_shared_slash_command(
+        message, {
+                     .surface = app::slash_command_surface::web,
+                     .compress =
+                         [&] {
+                             const auto result = runtime.agent->compress_history();
+                             if (result.compacted && store != nullptr && !current_session_id.empty()) {
+                                 store->update(current_session_id, runtime.agent->history(), metadata);
+                             }
+                             return app::SlashCommandReply{.handled = true, .text = app::format_history_compaction_result(result)};
+                         },
+                     .status =
+                         [&] {
+                             const auto active_model =
+                                 runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
+                             return app::SlashCommandReply{
+                                 .handled = true,
+                                 .text = app::format_runtime_status(app::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id, agent_key,
+                                                                                                active_model, agent.fallback_models, metadata.scope_key)),
+                             };
+                         },
+                     .tool_registry = &runtime.tools,
+                 });
 }
 
 } // namespace
 
 AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
                                                     SubagentManager *subagent_manager, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
-                                                    std::shared_ptr<WebCompletionResumeState> completion_resume_state) {
+                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
     const auto maybe_agent = find_effective_agent(&config, agent_key);
     if (!maybe_agent.has_value()) {
         throw std::runtime_error("agent not found");
@@ -382,7 +391,7 @@ AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const 
                                          completion_resume_state);
 }
 
-BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(std::weak_ptr<WebCompletionResumeState> weak_state) {
+BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &weak_state) {
     return [weak_state](const std::string &message) -> std::optional<std::string> {
         const auto state = weak_state.lock();
         if (!state) {
@@ -399,7 +408,7 @@ BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(s
 }
 
 bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
-                                WebApprovalEventEmitter event_emitter, std::function<bool()> stream_open, std::chrono::milliseconds timeout) {
+                                const web_approval_event_emitter &event_emitter, const std::function<bool()> &stream_open, std::chrono::milliseconds timeout) {
     auto approval = std::make_shared<WebPendingApproval>();
     approval->request_id = make_approval_request_id();
     approval->tool = call.name;
@@ -408,7 +417,7 @@ bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_m
     approval->prompt = prompt_text;
 
     {
-        std::lock_guard sessions_lock(sessions_mutex);
+        std::scoped_lock sessions_lock(sessions_mutex);
         if (session.abort_requested.load()) {
             return false;
         }
@@ -449,7 +458,7 @@ bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_m
     approval_lock.unlock();
 
     {
-        std::lock_guard sessions_lock(sessions_mutex);
+        std::scoped_lock sessions_lock(sessions_mutex);
         if (session.pending_approval == approval) {
             session.pending_approval.reset();
         }
@@ -857,7 +866,7 @@ void handle_system_status(const httplib::Request & /*req*/, httplib::Response &r
 
     size_t active_sessions = 0;
     {
-        std::lock_guard lock(sessions_mutex);
+        std::scoped_lock lock(sessions_mutex);
         active_sessions = sessions.size();
     }
 
@@ -959,18 +968,18 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         auto session = std::make_unique<WebSessionState>();
         session->session_id = session_id;
         auto *session_ptr = session.get();
-        auto approval_event_emitter = std::make_shared<detail::WebApprovalEventEmitter>();
+        auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
         auto approval_stream_open = std::make_shared<std::function<bool()>>();
         // Request-scoped web runtimes tear down their BackgroundProcessManager with the HTTP stream,
         // so they intentionally do not advertise background completion routing.
-        session->runtime = std::make_unique<AgentRuntimeBundle>(
-            detail::build_web_runtime_bundle(*config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
-                                             [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter,
-                                              approval_stream_open](const ToolUseBlock &call, const std::string &prompt_text) {
-                                                 return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
-                                                                                   approval_event_emitter != nullptr ? *approval_event_emitter : detail::WebApprovalEventEmitter{},
-                                                                                   approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-                                             }));
+        session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(
+            *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
+            [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUseBlock &call,
+                                                                                                                                               const std::string &prompt_text) {
+                return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
+                                                  approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
+                                                  approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
+            }));
         if (session->agent() == nullptr) {
             throw std::runtime_error("failed to initialize web runtime agent");
         }
@@ -1011,17 +1020,15 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
         auto active_session_id = session->session_id;
 
         {
-            std::lock_guard lock(sessions_mutex);
+            std::scoped_lock lock(sessions_mutex);
             sessions[active_session_id] = std::move(session);
         }
 
-        auto captured_session_id = active_session_id;
         auto *store_ptr = store;
-        auto captured_metadata = metadata;
 
         res.set_chunked_content_provider("text/event-stream",
-                                         [agent_ptr, session_ptr, store_ptr, captured_session_id, captured_metadata, message, approval_event_emitter, approval_stream_open,
-                                          agent_key, automation_runtime, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                                         [agent_ptr, session_ptr, store_ptr, captured_session_id = active_session_id, captured_metadata = metadata, message, approval_event_emitter,
+                                          approval_stream_open, agent_key, automation_runtime, &sessions_mutex, &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
                                              if (approval_event_emitter != nullptr) {
                                                  *approval_event_emitter = [&sink](std::string_view event_name, const json &payload) {
                                                      const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
@@ -1101,7 +1108,7 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
 
                                              // Clean up session
                                              {
-                                                 std::lock_guard lock(sessions_mutex);
+                                                 std::scoped_lock lock(sessions_mutex);
                                                  sessions.erase(captured_session_id);
                                              }
 
@@ -1135,7 +1142,7 @@ void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std:
     }
 
     auto session_id = input.at("session_id").get<std::string>();
-    std::lock_guard lock(sessions_mutex);
+    std::scoped_lock lock(sessions_mutex);
     auto it = sessions.find(session_id);
     if (it != sessions.end()) {
         it->second->abort_requested = true;
@@ -1180,7 +1187,7 @@ void handle_chat_approval(const httplib::Request &req, httplib::Response &res, s
 
     std::shared_ptr<WebPendingApproval> pending;
     {
-        std::lock_guard lock(sessions_mutex);
+        std::scoped_lock lock(sessions_mutex);
         const auto it = sessions.find(session_id);
         if (it == sessions.end()) {
             res.status = 404;
@@ -1196,7 +1203,7 @@ void handle_chat_approval(const httplib::Request &req, httplib::Response &res, s
         }
     }
 
-    std::lock_guard approval_lock(pending->mutex);
+    std::scoped_lock approval_lock(pending->mutex);
     if (pending->request_id != request_id) {
         res.status = 404;
         res.set_content(R"({"error":"approval not found"})", "application/json");

@@ -42,22 +42,12 @@ struct WebSessionState {
     std::atomic<bool> running{false};
 
     [[nodiscard]]
-    AgentLoop *agent() noexcept {
+    AgentLoop *agent() const noexcept {
         return runtime != nullptr ? runtime->agent.get() : nullptr;
     }
 
     [[nodiscard]]
-    const AgentLoop *agent() const noexcept {
-        return runtime != nullptr ? runtime->agent.get() : nullptr;
-    }
-
-    [[nodiscard]]
-    ToolRegistry *tools() noexcept {
-        return runtime != nullptr ? &runtime->tools : nullptr;
-    }
-
-    [[nodiscard]]
-    const ToolRegistry *tools() const noexcept {
+    ToolRegistry *tools() const noexcept {
         return runtime != nullptr ? &runtime->tools : nullptr;
     }
 

@@ -58,19 +58,20 @@ void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std:
 
 namespace detail {
 
-using WebApprovalEventEmitter = std::function<bool(std::string_view event_name, const json &payload)>;
+using web_approval_event_emitter = std::function<bool(std::string_view event_name, const json &payload)>;
 
 [[nodiscard]]
 AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
                                             SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr, ToolApprovalCallback approval_callback = {},
-                                            std::shared_ptr<WebCompletionResumeState> completion_resume_state = {});
+                                            const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 
 [[nodiscard]]
-BackgroundCompletionResumeCallback make_web_completion_resume_callback(std::weak_ptr<WebCompletionResumeState> state);
+BackgroundCompletionResumeCallback make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &state);
 
 [[nodiscard]]
 bool await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
-                        WebApprovalEventEmitter event_emitter = {}, std::function<bool()> stream_open = {}, std::chrono::milliseconds timeout = std::chrono::minutes(2));
+                        const web_approval_event_emitter &event_emitter = {}, const std::function<bool()> &stream_open = {},
+                        std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
 void cancel_pending_approval(WebSessionState &session);
 

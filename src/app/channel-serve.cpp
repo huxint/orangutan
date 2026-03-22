@@ -35,7 +35,7 @@ namespace {
 
 constexpr auto serve_poll_interval = std::chrono::milliseconds(50);
 
-enum class ChannelApprovalDecision {
+enum class channel_approval_decision {
     approve,
     deny,
     invalid,
@@ -43,7 +43,7 @@ enum class ChannelApprovalDecision {
 
 struct ParsedChannelApprovalReply {
     std::string request_id;
-    ChannelApprovalDecision decision = ChannelApprovalDecision::invalid;
+    channel_approval_decision decision = channel_approval_decision::invalid;
 };
 
 struct ConversationRuntime {
@@ -66,27 +66,17 @@ struct ConversationRuntime {
     }
 
     [[nodiscard]]
-    ToolRegistry &tools() {
+    ToolRegistry &tools() const {
         return runtime->tools;
     }
 
     [[nodiscard]]
-    const ToolRegistry &tools() const {
-        return runtime->tools;
-    }
-
-    [[nodiscard]]
-    ToolRuntimeContext &tool_context() {
+    ToolRuntimeContext &tool_context() const {
         return runtime->tool_context;
     }
 
     [[nodiscard]]
-    AgentLoop &agent() {
-        return *runtime->agent;
-    }
-
-    [[nodiscard]]
-    const AgentLoop &agent() const {
+    AgentLoop &agent() const {
         return *runtime->agent;
     }
 
@@ -104,6 +94,11 @@ struct ConversationRuntime {
         completion_resume_state->channel_manager = nullptr;
         completion_resume_state->automation_runtime = nullptr;
     }
+    ConversationRuntime() = default;
+    ConversationRuntime(const ConversationRuntime &) = delete;
+    ConversationRuntime &operator=(const ConversationRuntime &) = delete;
+    ConversationRuntime(ConversationRuntime &&) = delete;
+    ConversationRuntime &operator=(ConversationRuntime &&) = delete;
 };
 
 std::string extract_qq_bot_name(const std::string &jid) {
@@ -138,26 +133,25 @@ std::string normalize_channel_approval_token(std::string_view content) {
     return normalized;
 }
 
-ChannelApprovalDecision parse_channel_approval_decision(std::string_view content) {
+channel_approval_decision parse_channel_approval_decision(std::string_view content) {
     const auto normalized = normalize_channel_approval_token(content);
     if (normalized.empty()) {
-        return ChannelApprovalDecision::invalid;
+        return channel_approval_decision::invalid;
     }
 
     if (normalized == "y" || normalized == "yes" || normalized == "approve" || normalized == "approved" || normalized == "allow") {
-        return ChannelApprovalDecision::approve;
+        return channel_approval_decision::approve;
     }
     if (normalized == "n" || normalized == "no" || normalized == "deny" || normalized == "denied" || normalized == "reject") {
-        return ChannelApprovalDecision::deny;
+        return channel_approval_decision::deny;
     }
-    return ChannelApprovalDecision::invalid;
+    return channel_approval_decision::invalid;
 }
 
 ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content) {
     ParsedChannelApprovalReply parsed;
     std::istringstream stream(content);
-    std::string token;
-    while (stream >> token) {
+    for (std::string token; static_cast<bool>(stream >> token);) {
         const auto normalized = normalize_channel_approval_token(token);
         if (normalized.starts_with("shell-approval-")) {
             parsed.request_id = normalized;
@@ -165,7 +159,7 @@ ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &conte
         }
 
         const auto decision = parse_channel_approval_decision(normalized);
-        if (decision != ChannelApprovalDecision::invalid) {
+        if (decision != channel_approval_decision::invalid) {
             parsed.decision = decision;
         }
     }
@@ -210,7 +204,7 @@ bool can_prompt_for_channel_approval(const InboundMessage &message) {
     return target == message.jid;
 }
 
-ChannelApprovalDecision parse_channel_approval_decision(const std::string &content) {
+channel_approval_decision parse_channel_approval_decision(const std::string &content) {
     std::string normalized;
     normalized.reserve(content.size());
     for (const auto ch : content) {
@@ -417,109 +411,104 @@ ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unorder
 }
 
 bool handle_channel_session_command(const InboundMessage &message, ConversationRuntime &runtime, SessionStore &session_store, ChannelManager &channel_manager, const Config &cfg) {
-    if (message.content == "/help") {
-        deliver_command_reply(message, channel_help_text(), channel_manager);
-        return true;
-    }
+    if (const auto reply = dispatch_shared_slash_command(
+            message.content,
+            {
+                .surface = slash_command_surface::channel,
+                .help =
+                    [&] {
+                        return SlashCommandReply{.handled = true, .text = channel_help_text()};
+                    },
+                .new_session =
+                    [&] {
+                        const auto previous_message_count = runtime.agent().history().size();
+                        const auto active_model =
+                            runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
+                        const auto result =
+                            start_new_session(runtime.agent(), session_store, runtime.current_session_id, make_channel_session_metadata(runtime, message.jid, active_model));
+                        dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
+                        runtime.current_session_id.clear();
+                        session_store.clear_jid(message.jid, runtime.agent_key);
+                        runtime.persisted_message_count = 0;
+                        return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, true)};
+                    },
+                .export_session =
+                    [&] {
+                        return SlashCommandReply{
+                            .handled = true,
+                            .text = describe_export_result(export_session_markdown(runtime.agent().history(), runtime.current_session_id, runtime.workspace)),
+                        };
+                    },
+                .compress =
+                    [&] {
+                        const auto result = runtime.agent().compress_history();
+                        if (result.compacted) {
+                            persist_channel_session(message.jid, runtime, session_store);
+                        }
+                        return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
+                    },
+                .session =
+                    [&] {
+                        return SlashCommandReply{.handled = true, .text = format_current_session(runtime.current_session_id, runtime.agent_key)};
+                    },
+                .sessions =
+                    [&] {
+                        return SlashCommandReply{
+                            .handled = true,
+                            .text = format_scoped_sessions(session_store.list_sessions(runtime.session_scope_key), runtime.current_session_id),
+                        };
+                    },
+                .agent =
+                    [&] {
+                        return SlashCommandReply{.handled = true, .text = format_current_agent(runtime.agent_key)};
+                    },
+                .status =
+                    [&] {
+                        return SlashCommandReply{
+                            .handled = true,
+                            .text = format_runtime_status(collect_runtime_status(runtime.agent(), *runtime.provider(), &runtime.tools(), runtime.current_session_id,
+                                                                                 runtime.agent_key, runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
+                        };
+                    },
+                .agents =
+                    [&] {
+                        return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, runtime.agent_key)};
+                    },
+                .resume =
+                    [&](const std::string &session_id) {
+                        const auto previous_session_id = runtime.current_session_id;
+                        const auto previous_message_count = runtime.agent().history().size();
+                        const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
+                        if (!resolved_session_id.has_value()) {
+                            return SlashCommandReply{.handled = true, .text = "No saved sessions available in this scope."};
+                        }
+                        if (!session_store.session_belongs_to_scope(*resolved_session_id, runtime.session_scope_key)) {
+                            return SlashCommandReply{.handled = true, .text = "That session does not belong to this conversation scope."};
+                        }
 
-    if (message.content == "/new") {
-        const auto previous_message_count = runtime.agent().history().size();
-        const auto active_model = runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
-        const auto result = start_new_session(runtime.agent(), session_store, runtime.current_session_id, make_channel_session_metadata(runtime, message.jid, active_model));
-        dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
-        runtime.current_session_id.clear();
-        session_store.clear_jid(message.jid, runtime.agent_key);
-        runtime.persisted_message_count = 0;
-        deliver_command_reply(message, describe_new_session_result(result, true), channel_manager);
-        return true;
-    }
+                        const auto load_result =
+                            load_session_into_agent(*resolved_session_id, runtime.agent(), session_store, runtime.current_session_id, runtime.session_scope_key, runtime.agent_key);
+                        if (!load_result.loaded) {
+                            return SlashCommandReply{.handled = true, .text = load_result.status};
+                        }
 
-    if (message.content == "/export") {
-        deliver_command_reply(message, describe_export_result(export_session_markdown(runtime.agent().history(), runtime.current_session_id, runtime.workspace)), channel_manager);
-        return true;
-    }
+                        if (previous_session_id != runtime.current_session_id) {
+                            dispatch_session_end(runtime.hook_manager, previous_session_id, previous_message_count);
+                            dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent().history().size());
+                        }
 
-    if (message.content == "/session") {
-        deliver_command_reply(message, format_current_session(runtime.current_session_id, runtime.agent_key), channel_manager);
-        return true;
-    }
-
-    if (message.content == "/sessions") {
-        deliver_command_reply(message, format_scoped_sessions(session_store.list_sessions(runtime.session_scope_key), runtime.current_session_id), channel_manager);
-        return true;
-    }
-
-    if (message.content == "/agent") {
-        deliver_command_reply(message, format_current_agent(runtime.agent_key), channel_manager);
-        return true;
-    }
-
-    if (message.content == "/status") {
-        deliver_command_reply(message,
-                              format_runtime_status(collect_runtime_status(runtime.agent(), *runtime.provider(), &runtime.tools(), runtime.current_session_id, runtime.agent_key,
-                                                                           runtime.configured_model, runtime.fallback_models, runtime.session_scope_key)),
-                              channel_manager);
-        return true;
-    }
-
-    if (message.content == "/agents") {
-        deliver_command_reply(message, format_agent_list(cfg, runtime.agent_key), channel_manager);
-        return true;
-    }
-
-    if (const auto reply = handle_registry_slash_command(message.content, &runtime.tools()); reply.handled) {
+                        runtime.persisted_message_count = runtime.agent().history().size();
+                        session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
+                        return SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + runtime.current_session_id};
+                    },
+                .tool_registry = &runtime.tools(),
+            });
+        reply.handled) {
         deliver_command_reply(message, reply.text, channel_manager);
         return true;
     }
 
-    if (message.content.starts_with("/resume ")) {
-        const auto session_id = trim_copy(std::string_view(message.content).substr(8));
-        if (session_id.empty()) {
-            deliver_command_reply(message, "Usage: /resume <session-id>", channel_manager);
-            return true;
-        }
-
-        const auto previous_session_id = runtime.current_session_id;
-        const auto previous_message_count = runtime.agent().history().size();
-        const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
-        if (!resolved_session_id.has_value()) {
-            deliver_command_reply(message, "No saved sessions available in this scope.", channel_manager);
-            return true;
-        }
-
-        if (!session_store.session_belongs_to_scope(*resolved_session_id, runtime.session_scope_key)) {
-            deliver_command_reply(message, "That session does not belong to this conversation scope.", channel_manager);
-            return true;
-        }
-
-        const auto load_result =
-            load_session_into_agent(*resolved_session_id, runtime.agent(), session_store, runtime.current_session_id, runtime.session_scope_key, runtime.agent_key);
-        if (!load_result.loaded) {
-            deliver_command_reply(message, load_result.status, channel_manager);
-            return true;
-        }
-
-        if (previous_session_id != runtime.current_session_id) {
-            dispatch_session_end(runtime.hook_manager, previous_session_id, previous_message_count);
-            dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent().history().size());
-        }
-
-        runtime.persisted_message_count = runtime.agent().history().size();
-        session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
-        deliver_command_reply(message, "🧵 Resumed session: " + runtime.current_session_id, channel_manager);
-        return true;
-    }
-
-    if (message.content != "/compress") {
-        return false;
-    }
-
-    const auto result = runtime.agent().compress_history();
-    if (result.compacted) {
-        persist_channel_session(message.jid, runtime, session_store);
-    }
-    deliver_command_reply(message, format_history_compaction_result(result), channel_manager);
-    return true;
+    return false;
 }
 
 } // namespace
@@ -602,7 +591,7 @@ bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &me
         return true;
     }
 
-    if (parsed.decision == ChannelApprovalDecision::invalid) {
+    if (parsed.decision == channel_approval_decision::invalid) {
         deliver_reply(message, "Shell approval is pending. Reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.", channel_manager);
         return true;
     }
@@ -610,7 +599,7 @@ bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &me
     {
         std::scoped_lock lock(pending->mutex);
         pending->resolved = true;
-        pending->approved = parsed.decision == ChannelApprovalDecision::approve;
+        pending->approved = parsed.decision == channel_approval_decision::approve;
     }
     pending->cv.notify_all();
     return true;
@@ -736,7 +725,7 @@ ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, co
     };
 }
 
-BackgroundCompletionResumeCallback make_channel_completion_resume_callback(std::weak_ptr<ChannelCompletionResumeState> weak_state) {
+BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &weak_state) {
     return [weak_state](const std::string &message) -> std::optional<std::string> {
         const auto state = weak_state.lock();
         if (!state) {

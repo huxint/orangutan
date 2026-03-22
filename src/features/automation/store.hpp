@@ -14,6 +14,7 @@ class Store {
 public:
     Store();
     explicit Store(const std::string &db_path);
+    ~Store() = default;
 
     Store(const Store &) = delete;
     Store &operator=(const Store &) = delete;
