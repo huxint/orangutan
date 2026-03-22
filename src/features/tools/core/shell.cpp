@@ -2,6 +2,8 @@
 #include "features/tools/core/background-completion.hpp"
 #include "features/tools/core/command-sandbox.hpp"
 #include "features/memory/memory-extract.hpp"
+#include "infra/execution/sender-utils.hpp"
+#include "infra/subprocess/subprocess.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -167,36 +169,40 @@ std::string run_foreground_shell(const std::string &display_command, const std::
         spdlog::info("  [tool] shell (cwd={}): {}", effective_working_dir, display_command);
     }
 
-    auto result = run_subprocess({
-        .command = sandboxed_command,
-        .timeout = std::chrono::seconds(30),
-        .working_dir = effective_working_dir,
-        .use_shell = true,
-    });
+    auto pipeline = run_subprocess_sender({
+                        .command = sandboxed_command,
+                        .timeout = std::chrono::seconds(30),
+                        .working_dir = effective_working_dir,
+                        .use_shell = true,
+                    }) |
+                    stdexec::then([](SubprocessResult result) {
+                        if (result.timed_out) {
+                            throw std::runtime_error("shell command timed out after 30 seconds");
+                        }
 
-    if (result.timed_out) {
-        throw std::runtime_error("shell command timed out after 30 seconds");
-    }
+                        std::string output = std::move(result.stdout_output);
+                        if (!result.stderr_output.empty()) {
+                            if (!output.empty() && output.back() != '\n') {
+                                output += '\n';
+                            }
+                            output += result.stderr_output;
+                        }
+                        if (result.exit_code != 0) {
+                            if (!output.empty() && output.back() != '\n') {
+                                output += '\n';
+                            }
+                            output += "[exit code: " + std::to_string(result.exit_code) + "]";
+                        }
 
-    std::string output = result.stdout_output;
-    if (!result.stderr_output.empty()) {
-        if (!output.empty() && output.back() != '\n') {
-            output += '\n';
-        }
-        output += result.stderr_output;
-    }
-    if (result.exit_code != 0) {
-        if (!output.empty() && output.back() != '\n') {
-            output += '\n';
-        }
-        output += "[exit code: " + std::to_string(result.exit_code) + "]";
-    }
+                        constexpr size_t max_output = 8192;
+                        if (output.size() > max_output) {
+                            output = output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
+                        }
 
-    constexpr size_t max_output = 8192;
-    if (output.size() > max_output) {
-        output = output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
-    }
+                        return output;
+                    });
 
+    auto [output] = execution::sync_wait_or_throw(std::move(pipeline), "foreground shell pipeline");
     return output;
 }
 

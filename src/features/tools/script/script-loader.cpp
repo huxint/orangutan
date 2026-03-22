@@ -2,6 +2,7 @@
 
 #include "features/tools/core/command-sandbox.hpp"
 #include "features/tools/core/internal.hpp"
+#include "infra/execution/sender-utils.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
 #include <filesystem>
@@ -82,7 +83,13 @@ json generate_input_schema(const std::unordered_map<std::string, std::string> &s
 static SubprocessResult execute_script(const std::string &command, const std::string &workspace, const std::string &working_dir, int timeout_seconds,
                                        ToolSandboxMode sandbox_mode) {
     const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
-    return run_subprocess({.command = sandboxed.command, .timeout = std::chrono::seconds(timeout_seconds), .working_dir = sandboxed.working_dir});
+    auto pipeline = run_subprocess_sender({
+        .command = sandboxed.command,
+        .timeout = std::chrono::seconds(timeout_seconds),
+        .working_dir = sandboxed.working_dir,
+    });
+    auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "script tool subprocess pipeline");
+    return result;
 }
 
 // ── Tool Registration Helpers ───────────────────

@@ -1,4 +1,5 @@
 #include "infra/subprocess/subprocess.hpp"
+#include "infra/execution/sender-utils.hpp"
 #include "test-helpers.hpp"
 
 #include <atomic>
@@ -44,6 +45,15 @@ TEST(SubprocessTest, StdinDelivery) {
     auto result = run_subprocess({.command = "cat", .stdin_data = "hello from stdin"});
     EXPECT_EQ(result.exit_code, 0);
     EXPECT_EQ(result.stdout_output, "hello from stdin");
+}
+
+TEST(SubprocessTest, SenderPrimitiveExecutesSubprocess) {
+    auto pipeline = run_subprocess_sender({.command = "printf 'sender-path\\n'"});
+    auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "subprocess sender test");
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_EQ(result.stdout_output, "sender-path\n");
+    EXPECT_TRUE(result.stderr_output.empty());
+    EXPECT_FALSE(result.timed_out);
 }
 
 TEST(SubprocessTest, NonZeroExitCode) {

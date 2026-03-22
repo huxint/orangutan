@@ -1,12 +1,18 @@
 #include "features/hooks/hook-manager.hpp"
 
+#include <exec/any_sender_of.hpp>
+
+#include "infra/execution/sender-utils.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
 #include <algorithm>
 #include <array>
 #include <ctime>
+#include <exception>
 #include <filesystem>
+#include <memory>
 #include <spdlog/spdlog.h>
+#include <span>
 #include <string_view>
 
 namespace orangutan {
@@ -116,24 +122,81 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
 
 // ── Hook execution ──────────────────────────────
 
-static HookResult execute_hook(const HookDef &hook, const json &context) {
+static auto execute_hook_sender(HookDef hook, json context) {
     constexpr int hook_timeout_seconds = 5;
-    auto subprocess_result = run_subprocess({
-        .command = hook.path,
-        .stdin_data = context.dump(),
-        .timeout = std::chrono::seconds(hook_timeout_seconds),
-        .use_shell = false,
-    });
+    auto hook_path = hook.path;
+    auto hook_filename = hook.filename;
 
-    if (subprocess_result.timed_out) {
-        spdlog::warn("[{}] Hook timed out after {}s", hook.filename, hook_timeout_seconds);
+    return stdexec::just(std::move(context)) | stdexec::then([](json active_context) {
+               return active_context.dump();
+           }) |
+           stdexec::let_value([hook_path = std::move(hook_path), hook_timeout_seconds](std::string stdin_data) mutable {
+               return run_subprocess_sender({
+                   .command = std::move(hook_path),
+                   .stdin_data = std::move(stdin_data),
+                   .timeout = std::chrono::seconds(hook_timeout_seconds),
+                   .use_shell = false,
+               });
+           }) |
+           stdexec::then([hook_filename = std::move(hook_filename), hook_timeout_seconds](SubprocessResult subprocess_result) {
+               if (subprocess_result.timed_out) {
+                   spdlog::warn("[{}] Hook timed out after {}s", hook_filename, hook_timeout_seconds);
+               }
+
+               return HookResult{
+                   .exit_code = subprocess_result.exit_code,
+                   .stderr_output = std::move(subprocess_result.stderr_output),
+                   .timed_out = subprocess_result.timed_out,
+               };
+           });
+}
+
+template <class... Ts>
+using any_sender_of = exec::any_receiver_ref<stdexec::completion_signatures<Ts...>>::template any_sender<>;
+
+using dispatch_sender_t = any_sender_of<stdexec::set_value_t(DispatchResult), stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+
+static std::optional<DispatchResult> process_hook_result(const HookDef &hook, HookEvent event, bool is_blocking_event, HookResult result) {
+    if (!result.stderr_output.empty()) {
+        spdlog::warn("[{}] {}", hook.filename, result.stderr_output);
     }
 
-    return {
-        .exit_code = subprocess_result.exit_code,
-        .stderr_output = std::move(subprocess_result.stderr_output),
-        .timed_out = subprocess_result.timed_out,
-    };
+    if (result.exit_code == 0) {
+        return std::nullopt;
+    }
+
+    if (is_blocking_event) {
+        spdlog::info("Hook '{}' blocked {} (exit code {})", hook.filename, hook_event_to_string(event), result.exit_code);
+        return DispatchResult{
+            .allowed = false,
+            .blocked_by = hook.filename,
+            .block_reason = result.stderr_output,
+        };
+    }
+
+    spdlog::warn("Hook '{}' for '{}' exited with code {}", hook.filename, hook_event_to_string(event), result.exit_code);
+    return std::nullopt;
+}
+
+static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, std::shared_ptr<const json> context, bool is_blocking_event) {
+    if (index >= hooks.size()) {
+        return stdexec::just(DispatchResult{});
+    }
+
+    HookDef hook = hooks[index];
+
+    return stdexec::just(std::move(hook)) | stdexec::let_value([event, context, is_blocking_event](HookDef current_hook) {
+               spdlog::debug("Dispatching hook '{}' for event '{}'", current_hook.filename, hook_event_to_string(event));
+               return execute_hook_sender(current_hook, *context) | stdexec::then([current_hook = std::move(current_hook), event, is_blocking_event](HookResult result) mutable {
+                          return process_hook_result(current_hook, event, is_blocking_event, std::move(result));
+                      });
+           }) |
+           stdexec::let_value([hooks, index, event, context = std::move(context), is_blocking_event](std::optional<DispatchResult> blocked_result) mutable -> dispatch_sender_t {
+               if (blocked_result.has_value()) {
+                   return stdexec::just(std::move(*blocked_result));
+               }
+               return dispatch_hooks_sender(hooks, index + 1, event, std::move(context), is_blocking_event);
+           });
 }
 
 // ── Hook dispatch ───────────────────────────────
@@ -145,29 +208,10 @@ DispatchResult HookManager::dispatch(HookEvent event, const json &context) const
     }
 
     bool is_blocking_event = (event == HookEvent::before_tool_call);
-
-    for (const auto &hook : it->second) {
-        spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, hook_event_to_string(event));
-        auto result = execute_hook(hook, context);
-
-        if (!result.stderr_output.empty()) {
-            spdlog::warn("[{}] {}", hook.filename, result.stderr_output);
-        }
-
-        if (result.exit_code != 0) {
-            if (is_blocking_event) {
-                spdlog::info("Hook '{}' blocked {} (exit code {})", hook.filename, hook_event_to_string(event), result.exit_code);
-                return {
-                    .allowed = false,
-                    .blocked_by = hook.filename,
-                    .block_reason = result.stderr_output,
-                };
-            }
-            spdlog::warn("Hook '{}' for '{}' exited with code {}", hook.filename, hook_event_to_string(event), result.exit_code);
-        }
-    }
-
-    return {};
+    auto context_ptr = std::make_shared<json>(context);
+    auto pipeline = dispatch_hooks_sender(it->second, 0, event, std::move(context_ptr), is_blocking_event);
+    auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "hook dispatch pipeline");
+    return result;
 }
 
 size_t HookManager::hook_count(HookEvent event) const {

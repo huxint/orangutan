@@ -6,7 +6,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <stdexec/execution.hpp>
 
 namespace orangutan {
 
@@ -27,6 +30,13 @@ struct SubprocessResult {
 
 // Run a subprocess with poll-based I/O multiplexing, deadline timeout, and process group cleanup.
 SubprocessResult run_subprocess(const SubprocessConfig &config);
+
+[[nodiscard]]
+inline auto run_subprocess_sender(SubprocessConfig config) {
+    return stdexec::just(std::move(config)) | stdexec::then([](SubprocessConfig active_config) {
+               return run_subprocess(active_config);
+           });
+}
 
 struct BackgroundProcessSummary {
     std::string process_id;
