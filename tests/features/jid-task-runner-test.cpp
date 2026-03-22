@@ -154,3 +154,50 @@ TEST(JidTaskRunnerTest, BlockingLeaseAllowsOtherJidsToRunWithSingleWorker) {
     release_alice.set_value();
     runner.shutdown();
 }
+
+TEST(JidTaskRunnerTest, TaskExceptionsDoNotTerminateRunnerOrBlockFollowingTasks) {
+    JidTaskRunner runner(1);
+
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future();
+
+    runner.submit("qqbot:c2c:alice", [] {
+        throw std::runtime_error("boom");
+    });
+    runner.submit("qqbot:c2c:alice", [&] {
+        second_ran.set_value();
+    });
+
+    ASSERT_EQ(second_ran_future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    runner.shutdown();
+}
+
+TEST(JidTaskRunnerTest, ShutdownDiscardReleasesPendingSenderOperations) {
+    JidTaskRunner runner(1);
+
+    std::promise<void> first_started;
+    std::promise<void> release_first;
+    auto release_first_future = release_first.get_future().share();
+
+    runner.submit("qqbot:c2c:alice", [&] {
+        first_started.set_value();
+        release_first_future.wait();
+    });
+
+    auto pending_capture = std::make_shared<int>(42);
+    std::weak_ptr<int> pending_capture_weak = pending_capture;
+    runner.submit("qqbot:c2c:alice", [pending_capture] {
+        static_cast<void>(pending_capture);
+    });
+    pending_capture.reset();
+
+    ASSERT_EQ(first_started.get_future().wait_for(std::chrono::seconds(2)), std::future_status::ready);
+
+    auto shutdown_future = std::async(std::launch::async, [&runner] {
+        runner.shutdown(true);
+    });
+
+    release_first.set_value();
+    ASSERT_EQ(shutdown_future.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_TRUE(pending_capture_weak.expired());
+}

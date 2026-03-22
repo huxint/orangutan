@@ -1,10 +1,114 @@
 #include "features/channel/core/jid-task-runner.hpp"
 
+#include <exec/start_detached.hpp>
+#include <stdexec/execution.hpp>
+
+#include <exception>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace orangutan {
+
+struct JidTaskRunner::QueuedTask {
+    virtual ~QueuedTask() = default;
+    virtual void execute() noexcept = 0;
+    virtual void cancel() noexcept = 0;
+};
+
+struct JidTaskRunner::SchedulerModel {
+    struct Scheduler;
+
+    template <class Receiver>
+    struct Operation;
+
+    struct Sender {
+        using sender_concept = stdexec::sender_t;
+        using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t(), stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
+
+        JidTaskRunner *runner = nullptr;
+        std::string jid;
+
+        [[nodiscard]]
+        auto get_env() const noexcept {
+            return stdexec::prop{stdexec::get_completion_scheduler<stdexec::set_value_t>, Scheduler{runner, jid}};
+        }
+
+        template <class Receiver>
+        auto connect(Receiver receiver) && -> Operation<std::decay_t<Receiver>> {
+            return Operation<std::decay_t<Receiver>>{
+                .runner = runner,
+                .jid = std::move(jid),
+                .receiver = std::move(receiver),
+            };
+        }
+    };
+
+    struct Scheduler {
+        JidTaskRunner *runner = nullptr;
+        std::string jid;
+
+        [[nodiscard]]
+        auto schedule() const noexcept -> Sender {
+            return Sender{
+                .runner = runner,
+                .jid = jid,
+            };
+        }
+
+        auto operator==(const Scheduler &) const noexcept -> bool = default;
+    };
+
+    template <class Receiver>
+    struct ReceiverTask final : QueuedTask {
+        explicit ReceiverTask(Receiver receiver_arg)
+        : receiver(std::move(receiver_arg)) {}
+
+        void execute() noexcept override {
+            stdexec::set_value(std::move(receiver));
+        }
+
+        void cancel() noexcept override {
+            stdexec::set_stopped(std::move(receiver));
+        }
+
+        Receiver receiver;
+    };
+
+    template <class Receiver>
+    struct Operation {
+        using operation_state_concept = stdexec::operation_state_t;
+
+        JidTaskRunner *runner = nullptr;
+        std::string jid;
+        std::optional<Receiver> receiver;
+
+        void start() & noexcept {
+            if (!receiver.has_value()) {
+                return;
+            }
+
+            if (runner == nullptr) {
+                stdexec::set_stopped(std::move(*receiver));
+                receiver.reset();
+                return;
+            }
+
+            try {
+                auto task = std::make_unique<ReceiverTask<Receiver>>(std::move(*receiver));
+                runner->enqueue_scheduled_task(std::move(jid), std::move(task));
+                receiver.reset();
+            } catch (...) {
+                if (receiver.has_value()) {
+                    stdexec::set_error(std::move(*receiver), std::current_exception());
+                    receiver.reset();
+                }
+            }
+        }
+    };
+};
 
 JidTaskRunner::BlockingLease::BlockingLease(JidTaskRunner *runner)
 : runner_(runner) {}
@@ -52,23 +156,50 @@ void JidTaskRunner::submit(const std::string &jid, Task task) {
         throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
     }
 
-    std::scoped_lock lock(mutex_);
-    if (stopping_.load()) {
+    auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{this, jid}) | stdexec::then([task = std::move(task), jid]() mutable {
+                        try {
+                            task();
+                        } catch (const std::exception &e) {
+                            spdlog::error("Unhandled exception in JidTaskRunner task for '{}': {}", jid, e.what());
+                        } catch (...) {
+                            spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
+                        }
+                    });
+    exec::start_detached(std::move(pipeline));
+}
+
+void JidTaskRunner::enqueue_scheduled_task(std::string jid, std::unique_ptr<QueuedTask> task) {
+    if (jid.empty()) {
+        throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
+    }
+
+    bool rejected = false;
+    {
+        std::scoped_lock lock(mutex_);
+        if (stopping_.load()) {
+            rejected = true;
+        } else {
+            auto &bucket = buckets_[jid];
+            bucket.tasks.push_back(std::move(task));
+            if (bucket.active) {
+                return;
+            }
+
+            bucket.active = true;
+            ready_jids_.push(jid);
+        }
+    }
+
+    if (rejected) {
+        task->cancel();
         return;
     }
 
-    auto &bucket = buckets_[jid];
-    bucket.tasks.push_back(std::move(task));
-    if (bucket.active) {
-        return;
-    }
-
-    bucket.active = true;
-    ready_jids_.push(jid);
     cv_.notify_one();
 }
 
 void JidTaskRunner::shutdown(bool discard_pending) {
+    std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
     {
         discard_pending_.store(discard_pending);
         stopping_.store(true);
@@ -81,7 +212,10 @@ void JidTaskRunner::shutdown(bool discard_pending) {
         if (discard_pending_.load()) {
             ready_jids_ = {};
             for (auto it = buckets_.begin(); it != buckets_.end();) {
-                it->second.tasks.clear();
+                while (!it->second.tasks.empty()) {
+                    canceled_tasks.push_back(std::move(it->second.tasks.front()));
+                    it->second.tasks.pop_front();
+                }
                 if (!it->second.active) {
                     it = buckets_.erase(it);
                     continue;
@@ -89,6 +223,10 @@ void JidTaskRunner::shutdown(bool discard_pending) {
                 ++it;
             }
         }
+    }
+
+    for (auto &task : canceled_tasks) {
+        task->cancel();
     }
 
     cv_.notify_all();
@@ -136,7 +274,7 @@ void JidTaskRunner::release_blocking_lease() {
 void JidTaskRunner::worker_loop() {
     while (true) {
         std::string jid;
-        Task task;
+        std::unique_ptr<QueuedTask> task;
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -165,14 +303,9 @@ void JidTaskRunner::worker_loop() {
             it->second.tasks.pop_front();
         }
 
-        try {
-            task();
-        } catch (const std::exception &e) {
-            spdlog::error("Unhandled exception in JidTaskRunner task for '{}': {}", jid, e.what());
-        } catch (...) {
-            spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
-        }
+        task->execute();
 
+        std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
         {
             std::scoped_lock lock(mutex_);
             auto it = buckets_.find(jid);
@@ -181,7 +314,10 @@ void JidTaskRunner::worker_loop() {
             }
 
             if (discard_pending_.load()) {
-                it->second.tasks.clear();
+                while (!it->second.tasks.empty()) {
+                    canceled_tasks.push_back(std::move(it->second.tasks.front()));
+                    it->second.tasks.pop_front();
+                }
             }
 
             if (it->second.tasks.empty()) {
@@ -192,6 +328,10 @@ void JidTaskRunner::worker_loop() {
 
             ready_jids_.push(jid);
             cv_.notify_one();
+        }
+
+        for (auto &pending_task : canceled_tasks) {
+            pending_task->cancel();
         }
     }
 }

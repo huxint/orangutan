@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -54,8 +55,11 @@ public:
     size_t worker_count() const;
 
 private:
+    struct QueuedTask;
+    struct SchedulerModel;
+
     struct Bucket {
-        std::deque<Task> tasks;
+        std::deque<std::unique_ptr<QueuedTask>> tasks;
         bool active = false;
     };
 
@@ -70,6 +74,7 @@ private:
     std::atomic<bool> stopping_{false};
     std::atomic<bool> discard_pending_{false};
 
+    void enqueue_scheduled_task(std::string jid, std::unique_ptr<QueuedTask> task);
     void spawn_worker_locked();
     void release_blocking_lease();
     void worker_loop();
