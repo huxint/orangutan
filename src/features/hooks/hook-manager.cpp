@@ -183,7 +183,7 @@ static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, s
         return stdexec::just(DispatchResult{});
     }
 
-    const HookDef hook = hooks[index];
+    const HookDef &hook = hooks[index];
 
     return execute_hook_sender(hook, *context) | stdexec::then([hook, event, is_blocking_event](HookResult result) {
                spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, hook_event_to_string(event));

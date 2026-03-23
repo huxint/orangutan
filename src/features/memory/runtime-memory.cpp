@@ -84,7 +84,7 @@ size_t RuntimeMemory::auto_capture(const std::string &text, const std::string &s
 }
 
 MemoryMirrorRefreshResult RuntimeMemory::refresh_mirror() const {
-    return mirror_.refresh_snapshot(context_, durable_records());
+    return MemoryMirror::refresh_snapshot(context_, durable_records());
 }
 
 JournalStoreResult RuntimeMemory::store_journal_summary(const std::string &summary, const std::string &source) {
@@ -95,7 +95,7 @@ JournalStoreResult RuntimeMemory::store_journal_summary(const std::string &summa
 
     const auto key = make_journal_key(trimmed_summary);
     store_.remember(key, trimmed_summary, "journal", context_.scope, source.empty() ? std::string{"session:journal"} : source, 0.35);
-    const auto journal_result = mirror_.append_daily_journal(context_, trimmed_summary);
+    const auto journal_result = MemoryMirror::append_daily_journal(context_, trimmed_summary);
     refresh_mirror_after_write();
     return {
         .stored = true,

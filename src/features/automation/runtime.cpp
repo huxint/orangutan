@@ -334,7 +334,7 @@ Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std
 
                         if (trigger.delivery.mode == DeliveryMode::silent) {
                             if (!result.workspace_root.empty()) {
-                                completed.log_path = log_writer_.append(result.workspace_root, make_log_entry(trigger, result, started_at, completed.status));
+                                completed.log_path = LogWriter::append(result.workspace_root, make_log_entry(trigger, result, started_at, completed.status));
                             }
                         } else if (trigger.delivery.targets.empty()) {
                             completed.delivery_status = "inbox";
