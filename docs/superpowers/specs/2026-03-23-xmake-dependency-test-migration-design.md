@@ -20,13 +20,13 @@ The migration also fixes a current testing weakness: many tests share process-gl
 - Replace `gtest` with `boost-ext::ut`.
 - Replace `readline` with `replxx`.
 - Replace `OpenSSL` with `Mbed TLS`.
-- Keep current user-facing functionality, including CLI, web, storage, config secret protection, and QQ channel support.
+- Keep the intended current functionality moving forward, including CLI, web, storage, config secret protection, and QQ channel support.
 - Redesign the test layout so module-level test binaries can run in parallel safely and faster than the current suite.
 
 ## Non-Goals
 
 - Do not do a broad source-tree reorganization unrelated to the migration.
-- Do not redesign CLI commands, hashline syntax, or config formats unless required by the dependency swap.
+- Do not preserve old formats or behaviors purely for backward compatibility if a cleaner migration result is better for the in-progress codebase.
 - Do not widen platform support beyond Linux in this pass.
 - Do not keep a dual-build setup with both CMake and `xmake`.
 - Do not solve unrelated refactors that do not help the migration, dependency replacement, or test isolation work.
@@ -151,21 +151,11 @@ The directory structure under `src/` remains largely intact for this migration. 
 
 This reduces migration risk while still making dependencies and tests more modular.
 
-### `hashline` keeps its external format, not its old hash values
+### `hashline` can change format if it improves the new implementation
 
-The existing `hashline` format remains:
+The migration does not need to preserve old hash values, anchor strings, or serialized hashline output for backward compatibility. The only requirement is that the resulting edit and anchor model is deterministic, internally coherent, and well-covered by tests.
 
-- same anchor string shape
-- same two-character alphabet
-- same line formatting and validation behavior
-
-The low-level hash byte changes from `xxhash` to `rapidhash`, so historical hash values are expected to change. This is acceptable as long as:
-
-- formatting remains compatible
-- error handling remains compatible
-- anchor validation logic remains deterministic
-
-The implementation will isolate the hash primitive behind a narrow helper rather than including `rapidhash` directly across the codebase.
+The implementation should still isolate the hash primitive behind a narrow helper rather than including `rapidhash` directly across the codebase. This keeps the new design reviewable and avoids re-coupling the feature to a specific hash header layout.
 
 ### REPL input logic gets a thin adapter
 
@@ -181,16 +171,15 @@ Behavior that should remain stable:
 
 This is a dependency swap, not a CLI UX redesign.
 
-### Config secret protection keeps its wire format
+### Config secret protection can change format
 
-The crypto implementation changes from `OpenSSL` to `Mbed TLS`, but the protected config encoding stays the same:
+The crypto implementation changes from `OpenSSL` to `Mbed TLS`, and it does not need to preserve the old protected config encoding for backward compatibility. The migration may adopt a cleaner or simpler payload format if it improves implementation quality.
 
-- prefix stays `enc:v1:`
-- KDF stays PBKDF2-HMAC-SHA256
-- encryption stays AES-256-GCM
-- payload framing and base64url behavior stay compatible
+The only requirements are:
 
-This preserves previously encrypted user config values while removing `OpenSSL` from the implementation.
+- secrets can be protected and recovered reliably within the new codebase
+- the format is explicit and test-covered
+- the implementation no longer depends on `OpenSSL`
 
 ### QQ transport moves off the `OpenSSL` stack
 
@@ -308,16 +297,16 @@ The testing rewrite should keep most assertions behaviorally equivalent while ch
 
 The goal is not a cosmetic 1:1 macro rewrite. The goal is smaller, clearer, isolated module tests that happen to use `boost-ext::ut`.
 
-### Hashline tests should assert semantics, not obsolete constants
+### Hashline tests should assert the new semantics
 
-Where tests currently rely on hard-coded `xxhash`-derived constants, update them to verify:
+Where tests currently rely on hard-coded `xxhash`-derived constants, rewrite them around the new design rather than preserving obsolete expectations.
+
+Tests should verify:
 
 - determinism
-- anchor parsing and validation
+- anchor parsing and validation under the new format
 - edit application behavior
 - collision handling semantics when relevant
-
-Only tests that genuinely need a concrete hash value should pin one, and those values must reflect the new `rapidhash` implementation.
 
 ## File-Level Design
 
@@ -416,10 +405,10 @@ Both toolchains must succeed.
 - run it with default parallelism enabled
 - confirm no failures caused by shared temp roots, environment collisions, logger collisions, or DB path reuse
 
-### Compatibility validation
+### Behavioral validation
 
-- config secret tests must prove legacy `enc:v1:` payloads still decrypt
-- hashline tests must prove deterministic anchors and valid edit behavior under the new hash primitive
+- config secret tests must prove the new format can encrypt and decrypt correctly
+- hashline tests must prove deterministic anchors and valid edit behavior under the new design
 - QQ tests must prove connect/reconnect/close behavior remains consistent at the interface level
 
 ### Removal validation
@@ -459,13 +448,13 @@ Mitigation:
 - prefer helper extraction and fixture cleanup over literal framework translation
 - split binaries by responsibility before chasing perfect stylistic parity
 
-### Risk: hidden dependence on stable old hash values
+### Risk: hidden dependence on old hashline or secret formats
 
 Mitigation:
 
-- update tests to verify behavior rather than obsolete constants
-- keep external hashline format stable
-- audit any persisted or fixture-based expectations that encode old hash bytes
+- audit persisted fixtures and tests that assume old formats
+- rewrite them against the new behavior instead of carrying compatibility shims
+- keep format choices explicit in the new tests and docs
 
 ### Risk: one-shot migration hides regressions until late
 
@@ -484,5 +473,5 @@ Mitigation:
 - `rapidhash`, `boost-ext::ut`, `replxx`, and `Mbed TLS` replace them successfully.
 - QQ support remains present without relying on OpenSSL.
 - The test suite is split into module-focused binaries and runs safely in parallel.
-- Config secret payload compatibility is preserved.
-- Hashline formatting and behavior remain externally compatible apart from the expected hash-value change.
+- Config secret protection works correctly with the new format and implementation.
+- Hashline behavior works correctly under the new design, without carrying old-format compatibility requirements.
