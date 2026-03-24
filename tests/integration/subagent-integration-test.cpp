@@ -14,16 +14,16 @@ namespace {
 
 class ScriptedProvider final : public Provider {
 public:
-    using Step = std::function<LLMResponse(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &)>;
+    using Step = std::function<LLMResponse(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &)>;
 
     explicit ScriptedProvider(std::vector<Step> steps)
     : steps_(std::move(steps)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &, int) override {
         if (next_step_ >= steps_.size()) {
             throw std::runtime_error("no scripted response available");
         }
@@ -131,8 +131,8 @@ boost::ut::suite subagent_integration_suite = [] {
                         expect(config.agent_key == "coder");
                         std::vector<ScriptedProvider::Step> steps;
                         steps.reserve(2);
-                        steps.emplace_back([&](const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools) -> LLMResponse {
-                            child_prompts.push_back(system_prompt);
+                        steps.emplace_back([&](std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools) -> LLMResponse {
+                            child_prompts.emplace_back(system_prompt);
                             expect(system_prompt.contains("delegated worker"));
                             expect(system_prompt.contains("cannot spawn subagents"));
                             expect(not orangutan::testing::has_tool_named(tools, "subagent_spawn"));
@@ -145,7 +145,7 @@ boost::ut::suite subagent_integration_suite = [] {
                                 .content = {ToolUseBlock{.id = "child-write", .name = "write", .input = {{"path", "child-notes.txt"}, {"content", "child touched its workspace"}}}},
                             };
                         });
-                        steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                             return LLMResponse{
                                 .stop_reason = "end_turn",
                                 .content = {TextBlock{.text = "child completed delegated work"}},
@@ -163,8 +163,8 @@ boost::ut::suite subagent_integration_suite = [] {
 
         std::vector<ScriptedProvider::Step> parent_steps;
         parent_steps.reserve(3);
-        parent_steps.emplace_back([&](const std::string &system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
-            parent_prompts.push_back(system_prompt);
+        parent_steps.emplace_back([&](std::string_view system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
+            parent_prompts.emplace_back(system_prompt);
             expect(system_prompt.contains("Use `subagent_spawn`"));
             expect(system_prompt.contains("Use `subagent_wait`"));
             expect(orangutan::testing::has_tool_named(tools, "subagent_spawn"));
@@ -174,7 +174,7 @@ boost::ut::suite subagent_integration_suite = [] {
                 .content = {ToolUseBlock{.id = "spawn-1", .name = "subagent_spawn", .input = {{"child_agent_key", "coder"}, {"task_summary", "Investigate parser regression"}}}},
             };
         });
-        parent_steps.emplace_back([&](const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
+        parent_steps.emplace_back([&](std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
             const auto *spawn_result = last_tool_result(messages);
             expect((spawn_result != nullptr) >> fatal);
             const auto payload = json::parse(spawn_result->content);
@@ -184,7 +184,7 @@ boost::ut::suite subagent_integration_suite = [] {
                 .content = {ToolUseBlock{.id = "wait-1", .name = "subagent_wait", .input = {{"run_id", payload.at("run_id")}, {"timeout_ms", 1000}}}},
             };
         });
-        parent_steps.emplace_back([&](const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
+        parent_steps.emplace_back([&](std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
             const auto *wait_result = last_tool_result(messages);
             expect((wait_result != nullptr) >> fatal);
             const auto payload = json::parse(wait_result->content);
@@ -237,7 +237,7 @@ boost::ut::suite subagent_integration_suite = [] {
 
         const auto child_history = session_store.load(wait_run_result.run->child_session_id);
         expect(child_history.size() == 4_ul);
-        expect(child_history[0].role == "user");
+        expect(child_history[0].role == Role::User);
         expect(std::get<TextBlock>(child_history[0].content[0]).text == "Investigate parser regression");
         expect(std::get<TextBlock>(child_history[3].content[0]).text == "child completed delegated work");
 
@@ -279,13 +279,13 @@ boost::ut::suite subagent_integration_suite = [] {
                     [&](const SubagentChildRuntimeConfig &) {
                         std::vector<ScriptedProvider::Step> steps;
                         steps.reserve(2);
-                        steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                             return LLMResponse{
                                 .stop_reason = "tool_use",
                                 .content = {ToolUseBlock{.id = "write-1", .name = "write", .input = {{"path", "channel-child.txt"}, {"content", "channel child workspace"}}}},
                             };
                         });
-                        steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                             return LLMResponse{
                                 .stop_reason = "end_turn",
                                 .content = {TextBlock{.text = "channel child done"}},

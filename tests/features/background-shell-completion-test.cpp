@@ -35,11 +35,11 @@ public:
     explicit ScriptedProvider(std::vector<Step> steps)
     : steps_(std::move(steps)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         if (next_step_ >= steps_.size()) {
             throw std::runtime_error("no scripted response available");
         }
@@ -470,7 +470,7 @@ boost::ut::suite background_shell_completion_suite = [] {
                     return LLMResponse{};
                 }
 
-                boost::ut::expect(messages.back().role == "user");
+                boost::ut::expect(messages.back().role == Role::User);
                 const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
                 boost::ut::expect(text != nullptr) << "expected trailing user text block";
                 if (text != nullptr) {
@@ -503,7 +503,7 @@ boost::ut::suite background_shell_completion_suite = [] {
         expect(provider_started.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         expect(resume_result.get() == std::nullopt);
         expect(agent.history().size() >= 2U);
-        expect(agent.history().back().role == "assistant");
+        expect(agent.history().back().role == Role::Assistant);
     };
 
     "resume_dispatch_failures_become_inbox_visible_notes"_test = [] {

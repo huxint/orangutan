@@ -21,16 +21,16 @@ namespace {
 
 class ScriptedProvider final : public Provider {
 public:
-    using Step = std::function<LLMResponse(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &)>;
+    using Step = std::function<LLMResponse(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &)>;
 
     explicit ScriptedProvider(std::vector<Step> steps)
     : steps_(std::move(steps)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &, int) override {
         if (next_step_ >= steps_.size()) {
             throw std::runtime_error("no scripted response available");
         }
@@ -259,13 +259,13 @@ boost::ut::suite subagent_manager_suite = [] {
                                                    [&](const SubagentChildRuntimeConfig &) {
                                                        std::vector<ScriptedProvider::Step> steps;
                                                        steps.reserve(2);
-                                                       steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                       steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                                                            return LLMResponse{
                                                                .stop_reason = "tool_use",
                                                                .content = {ToolUseBlock{.id = "child-shell", .name = "shell", .input = {{"command", "echo child"}}}},
                                                            };
                                                        });
-                                                       steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                       steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                                                            return LLMResponse{
                                                                .stop_reason = "end_turn",
                                                                .content = {TextBlock{.text = "child completed"}},
@@ -328,7 +328,7 @@ boost::ut::suite subagent_manager_suite = [] {
                                                    [&](const SubagentChildRuntimeConfig &) {
                                                        std::vector<ScriptedProvider::Step> steps;
                                                        steps.reserve(1);
-                                                       steps.emplace_back([&](const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
+                                                       steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &tools) -> LLMResponse {
                                                            const auto *edit_tool = find_tool(tools, "edit");
                                                            expect((edit_tool != nullptr) >> fatal);
                                                            expect(edit_tool->description.contains("hash"));

@@ -119,11 +119,11 @@ public:
     explicit ScriptedProvider(std::vector<Step> steps)
     : steps_(std::move(steps)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         if (next_step_ >= steps_.size()) {
             throw std::runtime_error("no scripted response available");
         }
@@ -433,7 +433,7 @@ boost::ut::suite channel_serve_suite = [] {
             .content = "run shell",
         };
         auto callback = coordinator.make_callback(request, manager);
-        expect(static_cast<bool>(callback) >> fatal);
+        expect((callback != nullptr) >> fatal);
 
         auto future = std::async(std::launch::async, [&callback] {
             return callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
@@ -466,7 +466,7 @@ boost::ut::suite channel_serve_suite = [] {
             .content = "run shell",
         };
         auto callback = coordinator.make_callback(request, manager);
-        expect(static_cast<bool>(callback) >> fatal);
+        expect((callback != nullptr) >> fatal);
 
         auto future = std::async(std::launch::async, [&callback] {
             return callback(ToolUseBlock{.id = "deny-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
@@ -502,19 +502,19 @@ boost::ut::suite channel_serve_suite = [] {
 
         app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
 
-        expect(not static_cast<bool>(coordinator.make_callback(
-            InboundMessage{
-                .jid = "heartbeat:nightly",
-                .reply_target = "qqbot:c2c:42",
-            },
-            manager)));
+        expect(coordinator.make_callback(
+                   InboundMessage{
+                       .jid = "heartbeat:nightly",
+                       .reply_target = "qqbot:c2c:42",
+                   },
+                   manager) == nullptr);
 
-        expect(not static_cast<bool>(coordinator.make_callback(
-            InboundMessage{
-                .jid = "qqbot:c2c:42",
-                .reply_target = "qqbot:c2c:other",
-            },
-            manager)));
+        expect(coordinator.make_callback(
+                   InboundMessage{
+                       .jid = "qqbot:c2c:42",
+                       .reply_target = "qqbot:c2c:other",
+                   },
+                   manager) == nullptr);
     };
 
     "approval_wait_does_not_starve_other_jids_and_shutdown_cancels_it"_test = [] {
@@ -576,13 +576,13 @@ boost::ut::suite channel_serve_suite = [] {
             .content = "run shell",
         };
         auto callback = coordinator.make_callback(request, manager);
-        expect(static_cast<bool>(callback) >> fatal);
+        expect((callback != nullptr) >> fatal);
 
         coordinator.shutdown();
 
         expect(not callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
         expect(qq->sent_messages().empty());
-        expect(not static_cast<bool>(coordinator.make_callback(request, manager)));
+        expect(coordinator.make_callback(request, manager) == nullptr);
     };
 
     "new_command_updates_bound_session_with_channel_metadata"_test = [] {
@@ -682,7 +682,7 @@ boost::ut::suite channel_serve_suite = [] {
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
         const auto session_id =
-            session_store.save({Message::user_text("hello"), {.role = "assistant", .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
+            session_store.save({Message::user_text("hello"), {.role = Role::Assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
                                orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
         const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
@@ -856,7 +856,7 @@ boost::ut::suite channel_serve_suite = [] {
                     return LLMResponse{};
                 }
 
-                boost::ut::expect(messages.back().role == "user");
+                boost::ut::expect(messages.back().role == Role::User);
                 const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
                 boost::ut::expect((text != nullptr) >> boost::ut::fatal);
                 if (text != nullptr) {
@@ -921,7 +921,7 @@ boost::ut::suite channel_serve_suite = [] {
         expect(current_session_id == session_id);
         expect(persisted_message_count == persisted_history.size());
         expect(persisted_history.size() >= 4_ul);
-        expect(persisted_history.back().role == "assistant");
+        expect(persisted_history.back().role == Role::Assistant);
         const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
         expect((reply_text != nullptr) >> fatal);
         if (reply_text != nullptr) {

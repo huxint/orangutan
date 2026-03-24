@@ -11,7 +11,7 @@ namespace {
 
 class SummarizingProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/) override {
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/) override {
         last_system_prompt_ = system_prompt;
         last_summary_input_size_ = messages.size();
         last_tool_count_ = tools.size();
@@ -21,7 +21,7 @@ public:
         };
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         throw std::runtime_error("chat_stream should not be used in this test");
     }
 
@@ -36,7 +36,7 @@ public:
 
 class DistillingProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/) override {
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/) override {
         last_system_prompt_ = system_prompt;
         last_messages_size_ = messages.size();
         last_tool_count_ = tools.size();
@@ -49,7 +49,7 @@ public:
         };
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         throw std::runtime_error("chat_stream should not be used in this test");
     }
 
@@ -64,14 +64,14 @@ public:
 
 class EmptyDistillingProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = ""}},
         };
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         throw std::runtime_error("chat_stream should not be used in this test");
     }
 
@@ -82,7 +82,7 @@ public:
 
 class MalformedJournalProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
@@ -90,7 +90,7 @@ public:
         };
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         throw std::runtime_error("chat_stream should not be used in this test");
     }
 
@@ -101,11 +101,11 @@ public:
 
 class PromptCapturingProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         last_system_prompt_ = system_prompt;
         return {
             .stop_reason = "end_turn",
@@ -125,11 +125,11 @@ public:
     explicit CheckpointingProvider(std::vector<LLMResponse> responses)
     : responses_(std::move(responses)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         if (next_response_ >= responses_.size()) {
             throw std::runtime_error("no more responses queued");
         }
@@ -146,7 +146,7 @@ private:
 };
 
 std::string describe_message(const Message &message) {
-    std::string description = message.role + ":";
+    std::string description = std::string(role_to_string(message.role)) + ":";
     bool first_block = true;
     for (const auto &block : message.content) {
         if (!first_block) {
@@ -303,7 +303,7 @@ boost::ut::suite agent_loop_suite = [] {
         loop.set_history({
             Message::user_text("please help with this task"),
             Message::assistant_text("my name is Mallory"),
-            {.role = "user", .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
+            {.role = Role::User, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
         });
 
         const auto result = loop.distill_session_memory();

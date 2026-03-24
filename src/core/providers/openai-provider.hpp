@@ -13,9 +13,9 @@ class OpenAiProvider : public Provider {
 public:
     OpenAiProvider(std::string api_key, std::string model, std::string base_url = "https://api.openai.com");
 
-    LLMResponse chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096) override;
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096) override;
 
-    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
                             int max_tokens = 4096) override;
 
     [[nodiscard]]
@@ -34,7 +34,7 @@ private:
     std::string base_url_;
 
     [[nodiscard]]
-    json build_request_body(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream) const;
+    json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream) const;
 
     // Convert orangutan Message to OpenAI message format
     [[nodiscard]]

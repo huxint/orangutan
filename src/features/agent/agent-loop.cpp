@@ -24,7 +24,7 @@ constexpr std::string_view default_system_prompt = "You are Orangutan, a helpful
                                                    "Be concise and helpful.";
 
 void emit_history_checkpoint(const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint, const std::vector<Message> &history) {
-    if (on_history_checkpoint) {
+    if (on_history_checkpoint != nullptr) {
         on_history_checkpoint(history);
     }
 }
@@ -51,7 +51,7 @@ static StreamCallback make_stream_callback(bool &first_text, bool human_output, 
                 std::fflush(stdout);
             }
         }
-        if (on_event && (event_type == "text_delta" || event_type == "tool_call_start")) {
+        if (on_event != nullptr && (event_type == "text_delta" || event_type == "tool_call_start")) {
             on_event(event_type, data);
         }
     };
@@ -239,7 +239,7 @@ std::string AgentLoop::handle_continuation(const std::string &system_prompt, boo
         auto parts = split_response(response);
         continued_text += parts.text;
         history_.push_back(Message{
-            .role = "assistant",
+            .role = Role::Assistant,
             .content = std::move(parts.all_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -275,7 +275,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
                             if (human_output) {
                                 std::println("  {}-> {}{}", color_cyan, state.call.name, color_reset);
                             }
-                            if (on_tool_event) {
+                            if (on_tool_event != nullptr) {
                                 on_tool_event("tool_started", state.call, nullptr);
                             }
                             return state;
@@ -313,7 +313,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
                             return state;
                         }) |
                         stdexec::then([&on_tool_event](ToolExecutionState state) {
-                            if (on_tool_event) {
+                            if (on_tool_event != nullptr) {
                                 on_tool_event("tool_finished", state.call, &*state.result);
                             }
                             return ToolExecutionOutcome{
@@ -358,7 +358,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
         auto parts = split_response(response);
         final_text += parts.text;
         history_.push_back(Message{
-            .role = "assistant",
+            .role = Role::Assistant,
             .content = std::move(parts.all_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -383,7 +383,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
         // Execute tools and check for loops
         auto [result_blocks, loop_detected] = execute_tools(parts.tool_calls, human_output, on_tool_event);
         history_.push_back(Message{
-            .role = "user",
+            .role = Role::User,
             .content = std::move(result_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -489,7 +489,7 @@ std::string AgentLoop::build_session_memory_transcript() const {
     std::string transcript;
 
     for (const auto &message : history_) {
-        std::format_to(std::back_inserter(transcript), "{}:\n", message.role);
+        std::format_to(std::back_inserter(transcript), "{}:\n", role_to_string(message.role));
         for (const auto &block : message.content) {
             if (const auto *text = std::get_if<TextBlock>(&block)) {
                 if (!text->text.empty()) {
@@ -548,7 +548,7 @@ AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
     }
 
     for (const auto &message : history_) {
-        if (message.role != "user") {
+        if (message.role != Role::User) {
             continue;
         }
         for (const auto &block : message.content) {

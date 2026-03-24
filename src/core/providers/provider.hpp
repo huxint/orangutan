@@ -45,10 +45,10 @@ public:
     Provider &operator=(Provider &&) = delete;
 
     // Send messages and get full response (blocking)
-    virtual LLMResponse chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096) = 0;
+    virtual LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096) = 0;
 
     // Send messages with streaming
-    virtual LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
+    virtual LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
                                     int max_tokens = 4096) = 0;
 
     // Provider name for logging

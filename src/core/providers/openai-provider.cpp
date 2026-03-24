@@ -156,7 +156,7 @@ OpenAiProvider::OpenAiProvider(std::string api_key, std::string model, std::stri
 
 json OpenAiProvider::message_to_openai(const Message &msg) {
     // Handle assistant messages with tool calls
-    if (msg.role == "assistant") {
+    if (msg.role == Role::Assistant) {
         json j;
         j["role"] = "assistant";
 
@@ -185,7 +185,7 @@ json OpenAiProvider::message_to_openai(const Message &msg) {
     }
 
     // Handle user messages with tool results
-    if (msg.role == "user") {
+    if (msg.role == Role::User) {
         // Check if this contains tool results
         for (const auto &block : msg.content) {
             if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
@@ -208,10 +208,10 @@ json OpenAiProvider::message_to_openai(const Message &msg) {
     }
 
     // Fallback
-    return {{"role", msg.role}, {"content", ""}};
+    return {{"role", role_to_string(msg.role)}, {"content", ""}};
 }
 
-json OpenAiProvider::build_request_body(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
+json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
                                         bool stream) const {
     json body;
     body["model"] = model_;
@@ -229,7 +229,7 @@ json OpenAiProvider::build_request_body(const std::string &system_prompt, const 
 
     for (const auto &msg : messages) {
         // A user message might contain multiple tool results — each becomes a separate message
-        if (msg.role == "user") {
+        if (msg.role == Role::User) {
             bool has_tool_results = false;
             std::string user_text;
 
@@ -268,7 +268,7 @@ json OpenAiProvider::build_request_body(const std::string &system_prompt, const 
     return body;
 }
 
-LLMResponse OpenAiProvider::chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
+LLMResponse OpenAiProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, false);
     std::string request_body = body.dump();
     spdlog::debug("OpenAI request body: {}", request_body);
@@ -293,7 +293,7 @@ LLMResponse OpenAiProvider::chat(const std::string &system_prompt, const std::ve
     return parse_response(resp);
 }
 
-LLMResponse OpenAiProvider::chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
+LLMResponse OpenAiProvider::chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
                                         int max_tokens) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, true);
     std::string request_body = body.dump();

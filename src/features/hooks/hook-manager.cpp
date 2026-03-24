@@ -221,7 +221,7 @@ size_t HookManager::total_hooks() const {
 
 // ── Context builders ────────────────────────────
 
-static json build_tool_call_context(HookEvent event, const std::string &tool_name, const json &tool_input, const std::string &tool_result, bool is_error) {
+static json build_tool_call_context(HookEvent event, std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error) {
     json ctx = {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
     if (event == HookEvent::after_tool_call) {
         ctx["tool_result"] = tool_result;
@@ -230,19 +230,19 @@ static json build_tool_call_context(HookEvent event, const std::string &tool_nam
     return ctx;
 }
 
-json build_before_tool_call_context(const std::string &tool_name, const json &tool_input) {
+json build_before_tool_call_context(std::string_view tool_name, const json &tool_input) {
     return build_tool_call_context(HookEvent::before_tool_call, tool_name, tool_input, {}, false);
 }
 
-json build_after_tool_call_context(const std::string &tool_name, const json &tool_input, const std::string &tool_result, bool is_error) {
+json build_after_tool_call_context(std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error) {
     return build_tool_call_context(HookEvent::after_tool_call, tool_name, tool_input, tool_result, is_error);
 }
 
-json build_message_context(HookEvent event, const std::string &role, const std::string &content) {
+json build_message_context(HookEvent event, std::string_view role, std::string_view content) {
     return {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
 }
 
-json build_session_context(HookEvent event, const std::string &session_id, size_t message_count) {
+json build_session_context(HookEvent event, std::string_view session_id, size_t message_count) {
     json ctx = {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
     if (event == HookEvent::session_end) {
         ctx["message_count"] = message_count;
@@ -250,14 +250,14 @@ json build_session_context(HookEvent event, const std::string &session_id, size_
     return ctx;
 }
 
-void dispatch_session_start(HookManager *hook_manager, const std::string &session_id, size_t message_count) {
+void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, size_t message_count) {
     if (hook_manager == nullptr || session_id.empty()) {
         return;
     }
     static_cast<void>(hook_manager->dispatch(HookEvent::session_start, build_session_context(HookEvent::session_start, session_id, message_count)));
 }
 
-void dispatch_session_end(HookManager *hook_manager, const std::string &session_id, size_t message_count) {
+void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, size_t message_count) {
     if (hook_manager == nullptr || session_id.empty()) {
         return;
     }

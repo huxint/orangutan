@@ -56,24 +56,24 @@ public:
         if (endpoints_.empty()) {
             throw std::runtime_error("FallbackProvider requires at least one model endpoint");
         }
-        if (!factory_) {
+        if (factory_ == nullptr) {
             factory_ = instantiate_provider;
         }
     }
 
-    LLMResponse chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) override {
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) override {
         return execute_with_fallback([&](Provider &provider) {
             return provider.chat(system_prompt, messages, tools, max_tokens);
         });
     }
 
-    LLMResponse chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
                             int max_tokens) override {
         return execute_with_fallback([&](Provider &provider) {
             bool emitted_output = false;
             auto tracking_callback = [&on_event, &emitted_output](const std::string &event_type, const json &data) {
                 emitted_output = true;
-                if (on_event) {
+                if (on_event != nullptr) {
                     on_event(event_type, data);
                 }
             };
@@ -150,7 +150,7 @@ private:
 
         ensure_api_key_present(endpoints_[index]);
         auto created = factory_(endpoints_[index]);
-        if (!created) {
+        if (created == nullptr) {
             throw std::runtime_error("Failed to create provider for model '" + endpoints_[index].model + "'.");
         }
 

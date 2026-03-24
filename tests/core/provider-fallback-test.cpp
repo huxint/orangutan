@@ -28,11 +28,11 @@ public:
       chat_handler_(std::move(chat_handler)),
       stream_handler_(std::move(stream_handler)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         return chat_handler_();
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int) override {
         return stream_handler_(on_event);
     }
 
@@ -219,7 +219,7 @@ boost::ut::suite provider_fallback_suite = [] {
             ConcurrentPrimaryProvider(ConcurrentPrimaryProvider &&) = delete;
             ConcurrentPrimaryProvider &operator=(ConcurrentPrimaryProvider &&) = delete;
 
-            LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+            LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
                 auto state = state_;
                 const auto call_number = ++state->call_count;
                 if (call_number == 1) {
@@ -233,7 +233,7 @@ boost::ut::suite provider_fallback_suite = [] {
                 throw std::runtime_error("primary unavailable");
             }
 
-            LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+            LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
                 throw std::runtime_error("stream should not be used");
             }
 
@@ -317,7 +317,7 @@ boost::ut::suite provider_fallback_suite = [] {
               model_(std::move(model)),
               state_(std::move(state)) {}
 
-            LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+            LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
                 const auto call_number = ++state_->call_count;
                 if (call_number == 1) {
                     state_->first_call_started.set_value();
@@ -327,7 +327,7 @@ boost::ut::suite provider_fallback_suite = [] {
                 throw std::runtime_error("primary unavailable");
             }
 
-            LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+            LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
                 throw std::runtime_error("stream should not be used");
             }
 
@@ -406,7 +406,7 @@ boost::ut::suite provider_fallback_suite = [] {
               model_(std::move(model)),
               state_(std::move(state)) {}
 
-            LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+            LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
                 const auto started = ++state_->call_count;
                 if (started == 2 && !state_->both_calls_signaled.exchange(true)) {
                     state_->both_calls_started.set_value();
@@ -418,7 +418,7 @@ boost::ut::suite provider_fallback_suite = [] {
                 throw std::runtime_error("primary unavailable");
             }
 
-            LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+            LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
                 throw std::runtime_error("stream should not be used");
             }
 
@@ -520,7 +520,7 @@ boost::ut::suite provider_fallback_suite = [] {
               model_(std::move(model)),
               state_(std::move(state)) {}
 
-            LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+            LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
                 const auto call_number = ++state_->call_count;
                 if (call_number == 1) {
                     state_->second_call_started_future.wait();
@@ -531,7 +531,7 @@ boost::ut::suite provider_fallback_suite = [] {
                 throw std::runtime_error("primary unavailable");
             }
 
-            LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+            LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
                 throw std::runtime_error("stream should not be used");
             }
 

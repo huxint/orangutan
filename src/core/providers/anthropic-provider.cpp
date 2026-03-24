@@ -128,7 +128,7 @@ AnthropicProvider::AnthropicProvider(std::string api_key, std::string model, std
   model_(std::move(model)),
   base_url_(std::move(base_url)) {}
 
-json AnthropicProvider::build_request_body(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
+json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
                                            bool stream) const {
     json body;
     body["model"] = model_;
@@ -154,7 +154,7 @@ json AnthropicProvider::build_request_body(const std::string &system_prompt, con
     return body;
 }
 
-LLMResponse AnthropicProvider::chat(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
+LLMResponse AnthropicProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, false);
     std::string request_body = body.dump();
     spdlog::debug("Request body: {}", request_body);
@@ -180,8 +180,8 @@ LLMResponse AnthropicProvider::chat(const std::string &system_prompt, const std:
     return parse_response(resp);
 }
 
-LLMResponse AnthropicProvider::chat_stream(const std::string &system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
-                                           const StreamCallback &on_event, int max_tokens) {
+LLMResponse AnthropicProvider::chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
+                                           int max_tokens) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, true);
     std::string request_body = body.dump();
     spdlog::debug("Stream request body: {}", request_body);
