@@ -1,10 +1,10 @@
 #include "features/skills/skill-loader.hpp"
+#include "infra/files/file-io.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <toml++/toml.hpp>
@@ -23,16 +23,6 @@ struct ParsedSkillFile {
     bool valid = false;
     SkillDef skill;
 };
-
-std::string read_file(const fs::path &path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        return {};
-    }
-    std::ostringstream buf;
-    buf << file.rdbuf();
-    return buf.str();
-}
 
 std::string_view strip_cr(std::string_view line) {
     if (!line.empty() && line.back() == '\r') {
@@ -344,7 +334,7 @@ void SkillLoader::load_from_directories(const std::vector<std::string> &director
                 continue;
             }
 
-            auto content = read_file(skill_file);
+            auto content = fileio::try_read_file(skill_file).value_or(std::string{});
             if (content.empty()) {
                 continue;
             }

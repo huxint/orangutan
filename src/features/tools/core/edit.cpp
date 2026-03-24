@@ -1,9 +1,10 @@
 #include "features/tools/core/internal.hpp"
 #include "features/tools/core/hashline.hpp"
+#include "infra/files/file-io.hpp"
 
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
+#include <format>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <span>
@@ -167,13 +168,7 @@ std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, c
                 if (!std::filesystem::exists(validated_file.resolved)) {
                     throw std::runtime_error("file not found: " + file.path);
                 }
-                std::ifstream ifs(validated_file.resolved);
-                if (!ifs) {
-                    throw std::runtime_error("cannot open file: " + file.path);
-                }
-                std::ostringstream ss;
-                ss << ifs.rdbuf();
-                validated_file.content = ss.str();
+                validated_file.content = fileio::read_file(validated_file.resolved);
             }
 
             const auto pos = validated_file.content.find(hunk.search);
@@ -210,11 +205,7 @@ void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePa
                 content += hunk.replace;
             }
 
-            std::ofstream ofs(validated_file.resolved);
-            if (!ofs) {
-                throw std::runtime_error("cannot create file: " + file.path);
-            }
-            ofs << content;
+            fileio::write_file(validated_file.resolved, content);
             continue;
         }
 
@@ -228,11 +219,7 @@ void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePa
             validated_file.content.replace(pos, hunk.search.size(), hunk.replace);
         }
 
-        std::ofstream ofs(validated_file.resolved);
-        if (!ofs) {
-            throw std::runtime_error("cannot write file: " + file.path);
-        }
-        ofs << validated_file.content;
+        fileio::write_file(validated_file.resolved, validated_file.content);
     }
 }
 
@@ -251,19 +238,13 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
     std::vector<std::string> lines;
     bool had_trailing_newline = false;
     {
-        std::ifstream ifs(resolved_path);
-        if (!ifs) {
-            throw std::runtime_error("cannot open file: " + path_str);
-        }
-        std::ostringstream content_stream;
-        content_stream << ifs.rdbuf();
-        auto content = content_stream.str();
+        const auto content = fileio::read_file(resolved_path);
         had_trailing_newline = !content.empty() && content.back() == '\n';
 
         std::istringstream line_stream(content);
         std::string line;
         while (std::getline(line_stream, line)) {
-            lines.push_back(line);
+            lines.push_back(std::move(line));
         }
     }
 
@@ -318,18 +299,15 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
         throw std::runtime_error(result.error);
     }
 
-    // Write modified lines back to file
     {
-        std::ofstream ofs(resolved_path);
-        if (!ofs) {
-            throw std::runtime_error("cannot write file: " + path_str);
-        }
-        write_lines(ofs, result.lines, had_trailing_newline);
+        std::ostringstream output;
+        write_lines(output, result.lines, had_trailing_newline);
+        fileio::write_file(resolved_path, output.str());
     }
 
-    std::string summary = "Applied " + std::to_string(result.edits_applied) + (result.edits_applied == 1 ? " edit" : " edits") + " to " + path_str;
+    std::string summary = std::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
     if (!result.warnings.empty()) {
-        summary += "\nWarnings: " + result.warnings;
+        summary += std::format("\nWarnings: {}", result.warnings);
     }
     return summary;
 }
@@ -349,11 +327,10 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
         if (!summary.empty()) {
             summary += ", ";
         }
-        summary += file.path + " (" + std::to_string(file.hunks.size()) + (file.hunks.size() == 1 ? " hunk)" : " hunks)");
+        summary += std::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
     }
 
-    return "Applied " + std::to_string(total_hunks) + (total_hunks == 1 ? " hunk" : " hunks") + " across " + std::to_string(files.size()) +
-           (files.size() == 1 ? " file: " : " files: ") + summary;
+    return std::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files", summary);
 }
 
 } // namespace

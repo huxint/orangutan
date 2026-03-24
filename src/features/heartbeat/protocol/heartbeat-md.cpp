@@ -1,7 +1,7 @@
 #include "features/heartbeat/protocol/heartbeat-md.hpp"
+#include "infra/files/file-io.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <string_view>
@@ -42,16 +42,16 @@ std::optional<std::string> load_heartbeat_md(const std::filesystem::path &path) 
         return std::nullopt;
     }
 
-    std::error_code ec;
     if (path.extension() != ".md") {
         return std::nullopt;
     }
 
+    std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
         return std::nullopt;
     }
 
-    auto file_size = std::filesystem::file_size(path, ec);
+    const auto file_size = std::filesystem::file_size(path, ec);
     if (ec) {
         spdlog::warn("Failed to get size of HEARTBEAT.md at '{}': {}", path.string(), ec.message());
         return std::nullopt;
@@ -61,14 +61,12 @@ std::optional<std::string> load_heartbeat_md(const std::filesystem::path &path) 
         spdlog::warn("HEARTBEAT.md at '{}' is {}KB — large files waste tokens on every heartbeat run", path.string(), file_size / 1024);
     }
 
-    std::ifstream file(path);
-    if (!file.is_open()) {
+    auto content = fileio::try_read_file(path);
+    if (!content.has_value()) {
         spdlog::warn("Failed to open HEARTBEAT.md at '{}'", path.string());
         return std::nullopt;
     }
-
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (is_empty_or_headers_only(content)) {
+    if (is_empty_or_headers_only(*content)) {
         return std::string{};
     }
 

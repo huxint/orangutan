@@ -1,5 +1,6 @@
 #include "infra/subprocess/subprocess.hpp"
 #include "infra/execution/sender-utils.hpp"
+#include "infra/files/file.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,7 +10,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fcntl.h>
-#include <fstream>
+#include <format>
 #include <mutex>
 #include <optional>
 #include <poll.h>
@@ -130,7 +131,7 @@ std::string make_process_token() {
     static std::atomic<uint64_t> counter{0};
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    return std::to_string(ticks) + "-" + std::to_string(++counter);
+    return std::format("{}-{}", ticks, ++counter);
 }
 
 struct CapturedOutput {
@@ -140,27 +141,38 @@ struct CapturedOutput {
 };
 
 CapturedOutput read_output_tail(const std::filesystem::path &path, size_t max_bytes = 16384) {
-    std::ifstream ifs(path, std::ios::binary);
-    if (!ifs) {
+    try {
+        fileio::File file(path, "rb");
+
+        std::error_code ec;
+        const auto total_bytes = std::filesystem::file_size(path, ec);
+        if (ec != std::error_code{} || total_bytes == 0) {
+            return {};
+        }
+
+        CapturedOutput captured;
+        captured.total_bytes = static_cast<size_t>(total_bytes);
+        captured.truncated = captured.total_bytes > max_bytes;
+
+        if (captured.truncated) {
+            if (std::fseek(file.get(), -static_cast<long>(max_bytes), SEEK_END) != 0) {
+                return {};
+            }
+            captured.text.resize(max_bytes);
+        } else {
+            captured.text.resize(captured.total_bytes);
+        }
+
+        const auto bytes_read = std::fread(captured.text.data(), sizeof(char), captured.text.size(), file.get());
+        if (bytes_read == 0 && !captured.text.empty() && std::ferror(file.get()) != 0) {
+            return {};
+        }
+        captured.text.resize(bytes_read);
+        file.close();
+        return captured;
+    } catch (const std::runtime_error &) {
         return {};
     }
-
-    ifs.seekg(0, std::ios::end);
-    const auto end_pos = ifs.tellg();
-    if (end_pos <= 0) {
-        return {};
-    }
-
-    CapturedOutput captured;
-    captured.total_bytes = static_cast<size_t>(end_pos);
-    const auto start_pos = captured.total_bytes > max_bytes ? static_cast<std::streamoff>(captured.total_bytes - max_bytes) : 0;
-    captured.truncated = captured.total_bytes > max_bytes;
-
-    ifs.seekg(start_pos, std::ios::beg);
-    captured.text.resize(captured.total_bytes - static_cast<size_t>(start_pos));
-    ifs.read(captured.text.data(), static_cast<std::streamsize>(captured.text.size()));
-    captured.text.resize(static_cast<size_t>(ifs.gcount()));
-    return captured;
 }
 
 BackgroundProcessOutputMetadata to_output_metadata(CapturedOutput captured) {
@@ -815,8 +827,10 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
     entry->stderr_path = impl_->temp_root / (entry->process_id + ".stderr");
     entry->completion_policy = std::move(completion);
 
-    std::ofstream(entry->stdout_path).close();
-    std::ofstream(entry->stderr_path).close();
+    fileio::File stdout_file(entry->stdout_path, "wb");
+    stdout_file.close();
+    fileio::File stderr_file(entry->stderr_path, "wb");
+    stderr_file.close();
 
     try {
         entry->pid = spawn_background_subprocess(config, entry->stdout_path, entry->stderr_path);

@@ -1,11 +1,10 @@
 #include "infra/config/secret-protection.hpp"
-
 #include "infra/config/secret-fields.hpp"
+#include "infra/files/file-io.hpp"
 
 #include <cctype>
 #include <filesystem>
 #include <format>
-#include <fstream>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -103,25 +102,19 @@ bool is_env_reference(std::string_view value) {
 }
 
 [[nodiscard]]
-std::string read_file(const std::filesystem::path &path) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw ConfigSecretProtectionError("Failed to read config file: " + path.string());
+std::string read_config_file(const std::filesystem::path &path) {
+    try {
+        return fileio::read_file(path);
+    } catch (const std::runtime_error &) {
+        throw ConfigSecretProtectionError(std::format("Failed to read config file: {}", path.string()));
     }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-    return buffer.str();
 }
 
-void write_file(const std::filesystem::path &path, const std::string &content) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) {
-        throw ConfigSecretProtectionError("Failed to write config file: " + path.string());
-    }
-    output.write(content.data(), static_cast<std::streamsize>(content.size()));
-    if (!output.good()) {
-        throw ConfigSecretProtectionError("Failed to write config file: " + path.string());
+void write_config_file(const std::filesystem::path &path, const std::string &content) {
+    try {
+        fileio::write_file_binary(path, content);
+    } catch (const std::runtime_error &) {
+        throw ConfigSecretProtectionError(std::format("Failed to write config file: {}", path.string()));
     }
 }
 
@@ -169,7 +162,7 @@ ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::pa
         throw ConfigSecretProtectionError("Protected config secrets require a non-empty password.");
     }
 
-    const auto original = read_file(path);
+    const auto original = read_config_file(path);
     const auto original_permissions = read_file_permissions(path);
     const bool had_trailing_newline = !original.empty() && original.back() == '\n';
 
@@ -230,7 +223,7 @@ ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::pa
     }
 
     try {
-        write_file(temp_path, rebuilt.str());
+        write_config_file(temp_path, rebuilt.str());
         preserve_permissions(temp_path, original_permissions);
         std::filesystem::rename(temp_path, path, ec);
         if (ec) {

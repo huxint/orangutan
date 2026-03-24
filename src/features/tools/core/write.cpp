@@ -1,7 +1,8 @@
 #include "features/tools/core/internal.hpp"
+#include "infra/files/file-io.hpp"
 
 #include <filesystem>
-#include <fstream>
+#include <format>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
@@ -17,19 +18,9 @@ std::string write_file(const json &input, const std::filesystem::path &workspace
         std::filesystem::create_directories(path.parent_path());
     }
 
-    std::ofstream ofs(path);
-    if (!ofs) {
-        throw std::runtime_error("Cannot open file for writing: " + path.string());
-    }
+    fileio::write_file(path, content);
 
-    ofs << content;
-    ofs.close();
-
-    if (ofs.fail()) {
-        throw std::runtime_error("Failed to write file: " + path.string());
-    }
-
-    return "Wrote " + std::to_string(content.size()) + " bytes to " + path.string();
+    return std::format("Wrote {} bytes to {}", content.size(), path.string());
 }
 
 } // namespace

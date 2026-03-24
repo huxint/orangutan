@@ -1,12 +1,15 @@
 #include "features/memory/memory-mirror.hpp"
-
 #include "features/memory/memory-search.hpp"
+#include "infra/files/file-io.hpp"
+#include "infra/files/file.hpp"
 
 #include <chrono>
 #include <ctime>
-#include <fstream>
+#include <format>
 #include <iomanip>
+#include <print>
 #include <sstream>
+#include <stdexcept>
 
 namespace orangutan {
 namespace {
@@ -55,19 +58,6 @@ std::string render_managed_block(const RuntimeMemoryContext &context, const std:
     return out.str();
 }
 
-std::string read_file(const std::filesystem::path &path) {
-    std::ifstream input(path);
-    std::stringstream buffer;
-    buffer << input.rdbuf();
-    return buffer.str();
-}
-
-void write_file(const std::filesystem::path &path, const std::string &content) {
-    std::filesystem::create_directories(path.parent_path());
-    std::ofstream output(path, std::ios::trunc);
-    output << content;
-}
-
 } // namespace
 
 MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
@@ -80,13 +70,14 @@ MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryCont
 
     const auto rendered = render_managed_block(context, durable_records);
     if (!std::filesystem::exists(result.path)) {
-        write_file(result.path, rendered);
+        std::filesystem::create_directories(result.path.parent_path());
+        fileio::write_file(result.path, rendered);
         result.refreshed = true;
         result.status = "Created memory snapshot.";
         return result;
     }
 
-    const auto current = read_file(result.path);
+    const auto current = fileio::read_file(result.path);
     const auto begin = current.find(managed_begin_marker);
     const auto end = current.find(managed_end_marker);
     const auto second_begin = begin == std::string::npos ? std::string::npos : current.find(managed_begin_marker, begin + managed_begin_marker.size());
@@ -99,7 +90,7 @@ MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryCont
 
     const auto suffix_start = end + managed_end_marker.size();
     const auto updated = current.substr(0, begin) + rendered + current.substr(suffix_start);
-    write_file(result.path, updated);
+    fileio::write_file(result.path, updated);
     result.refreshed = true;
     result.status = "Refreshed memory snapshot.";
     return result;
@@ -120,15 +111,23 @@ JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryC
 
     const auto journal_dir = context.journal_dir();
     std::filesystem::create_directories(journal_dir);
-    result.path = journal_dir / (current_date_string() + ".md");
+    result.path = journal_dir / std::format("{}.md", current_date_string());
 
-    std::ofstream output(result.path, std::ios::app);
-    if (output.tellp() > 0) {
-        output << "\n\n";
+    std::error_code ec;
+    bool has_existing_content = false;
+    if (std::filesystem::exists(result.path, ec) && ec == std::error_code{}) {
+        has_existing_content = std::filesystem::file_size(result.path, ec) > 0 && ec == std::error_code{};
     }
-    output << "## " << current_timestamp_string() << "\n";
-    output << trimmed_summary;
-    output << '\n';
+
+    fileio::File file(result.path, "a");
+    if (has_existing_content) {
+        std::println(file.get());
+        std::println(file.get());
+    }
+    std::println(file.get(), "## {}", current_timestamp_string());
+    std::print(file.get(), "{}", trimmed_summary);
+    std::println(file.get());
+    file.close();
 
     result.mirrored = true;
     result.status = "Appended journal summary.";

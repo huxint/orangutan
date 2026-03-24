@@ -1,9 +1,11 @@
 #include "features/tools/core/internal.hpp"
 #include "features/tools/core/hashline.hpp"
+#include "infra/files/file-io.hpp"
+#include "infra/files/file.hpp"
 
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
+#include <format>
 #include <iomanip>
 #include <ranges>
 #include <spdlog/spdlog.h>
@@ -15,25 +17,29 @@ namespace orangutan {
 namespace {
 
 bool is_binary_file(const std::filesystem::path &path) {
-    std::ifstream ifs(path, std::ios::binary);
-    if (!ifs) {
+    try {
+        fileio::File file(path, "rb");
+
+        constexpr std::size_t sample_size = 8192;
+        std::vector<char> buf(sample_size);
+        const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
+        if (std::ferror(file.get()) != 0) {
+            return false;
+        }
+        buf.resize(bytes_read);
+        return std::ranges::any_of(buf, [](char ch) {
+            return ch == '\0';
+        });
+    } catch (const std::runtime_error &) {
         return false;
     }
-
-    constexpr size_t sample_size = 8192;
-    std::vector<char> buf(sample_size);
-    ifs.read(buf.data(), static_cast<std::streamsize>(sample_size));
-    buf.resize(static_cast<size_t>(ifs.gcount()));
-    return std::ranges::any_of(buf, [](char ch) {
-        return ch == '\0';
-    });
 }
 
 std::string read_single_file(const std::filesystem::path &path, int offset, int limit, std::string_view edit_mode) {
     spdlog::info("  [tool] read: {}", path.string());
 
     if (!std::filesystem::exists(path)) {
-        throw std::runtime_error("File not found: " + path.string());
+        throw std::runtime_error(std::format("File not found: {}", path.string()));
     }
 
     if (is_binary_file(path)) {
@@ -42,23 +48,21 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
         if (ext.empty()) {
             ext = "unknown";
         }
-        return "Binary file: " + path.string() + " (" + std::to_string(size) + " bytes, type: " + ext + ")";
+        return std::format("Binary file: {} ({} bytes, type: {})", path.string(), size, ext);
     }
 
-    std::ifstream ifs(path);
-    if (!ifs) {
-        throw std::runtime_error("Cannot open file: " + path.string());
-    }
+    const auto content = fileio::read_file(path);
 
     std::vector<std::string> lines;
+    std::istringstream input(content);
     std::string line;
-    while (std::getline(ifs, line)) {
+    while (std::getline(input, line)) {
         lines.push_back(std::move(line));
     }
 
     const auto total_lines = static_cast<int>(lines.size());
     if (offset > total_lines) {
-        return "No content at offset " + std::to_string(offset) + " (file has " + std::to_string(total_lines) + " lines)";
+        return std::format("No content at offset {} (file has {} lines)", offset, total_lines);
     }
 
     const int start = offset;
