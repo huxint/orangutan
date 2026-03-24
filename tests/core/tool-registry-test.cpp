@@ -26,12 +26,6 @@ namespace {
 
 using namespace boost::ut;
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
     json input = {
         {"command", command},
@@ -293,13 +287,13 @@ boost::ut::suite builtin_tools_test_registers_expected_core_tools_suite = [] {
         BuiltinToolsTest fixture;
         const auto defs = fixture.registry().definitions();
         expect(defs.size() == 7);
-        expect(has_tool_named(defs, "shell"));
-        expect(has_tool_named(defs, "process_list"));
-        expect(has_tool_named(defs, "process_poll"));
-        expect(has_tool_named(defs, "process_kill"));
-        expect(has_tool_named(defs, "read"));
-        expect(has_tool_named(defs, "write"));
-        expect(has_tool_named(defs, "edit"));
+        expect(orangutan::testing::has_tool_named(defs, "shell"));
+        expect(orangutan::testing::has_tool_named(defs, "process_list"));
+        expect(orangutan::testing::has_tool_named(defs, "process_poll"));
+        expect(orangutan::testing::has_tool_named(defs, "process_kill"));
+        expect(orangutan::testing::has_tool_named(defs, "read"));
+        expect(orangutan::testing::has_tool_named(defs, "write"));
+        expect(orangutan::testing::has_tool_named(defs, "edit"));
     };
 };
 
@@ -321,15 +315,15 @@ boost::ut::suite builtin_tools_test_does_not_register_memory_tools_without_memor
         BuiltinToolsTest fixture;
         const auto defs = fixture.registry().definitions();
 
-        expect(not(has_tool_named(defs, "remember")));
-        expect(not(has_tool_named(defs, "recall")));
-        expect(not(has_tool_named(defs, "forget")));
-        expect(not(has_tool_named(defs, "memory_store")));
-        expect(not(has_tool_named(defs, "memory_recall")));
-        expect(not(has_tool_named(defs, "memory_forget")));
-        expect(not(has_tool_named(defs, "memory_update")));
-        expect(not(has_tool_named(defs, "memory_list")));
-        expect(not(has_tool_named(defs, "memory_stats")));
+        expect(not(orangutan::testing::has_tool_named(defs, "remember")));
+        expect(not(orangutan::testing::has_tool_named(defs, "recall")));
+        expect(not(orangutan::testing::has_tool_named(defs, "forget")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_store")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_recall")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_forget")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_update")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_list")));
+        expect(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
     };
 };
 
@@ -791,16 +785,16 @@ boost::ut::suite runtime_tool_loader_test_registers_builtin_and_custom_tools_onl
 
         expect(result.mcp_tool_count == 0);
         expect(result.mcp_manager == nullptr);
-        expect(has_tool_named(defs, "shell"));
-        expect(has_tool_named(defs, "process_list"));
-        expect(has_tool_named(defs, "process_poll"));
-        expect(has_tool_named(defs, "process_kill"));
-        expect(has_tool_named(defs, "read"));
-        expect(has_tool_named(defs, "write"));
-        expect(has_tool_named(defs, "edit"));
-        expect(not(has_tool_named(defs, "ls")));
-        expect(not(has_tool_named(defs, "grep")));
-        expect(has_tool_named(defs, "echo_custom"));
+        expect(orangutan::testing::has_tool_named(defs, "shell"));
+        expect(orangutan::testing::has_tool_named(defs, "process_list"));
+        expect(orangutan::testing::has_tool_named(defs, "process_poll"));
+        expect(orangutan::testing::has_tool_named(defs, "process_kill"));
+        expect(orangutan::testing::has_tool_named(defs, "read"));
+        expect(orangutan::testing::has_tool_named(defs, "write"));
+        expect(orangutan::testing::has_tool_named(defs, "edit"));
+        expect(not(orangutan::testing::has_tool_named(defs, "ls")));
+        expect(not(orangutan::testing::has_tool_named(defs, "grep")));
+        expect(orangutan::testing::has_tool_named(defs, "echo_custom"));
     };
 };
 
@@ -818,8 +812,10 @@ boost::ut::suite runtime_tool_loader_test_registers_usable_memory_and_subagent_t
             MemoryStore memory_store(memory_db);
             RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:parent"});
             SessionStore session_store(session_db);
-            const auto parent_session_id = session_store.create_empty("test-model", "scope:parent");
-            const auto child_session_id = session_store.create_empty("test-model", "scope:child");
+            const auto parent_session_id =
+                session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+            const auto child_session_id =
+                session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:child", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
 
             {
                 SubagentRunStore run_store(session_db);
@@ -834,19 +830,19 @@ boost::ut::suite runtime_tool_loader_test_registers_usable_memory_and_subagent_t
 
                 expect(result.mcp_tool_count == 0);
                 expect(result.mcp_manager == nullptr);
-                expect(has_tool_named(defs, "shell"));
-                expect(has_tool_named(defs, "process_list"));
-                expect(has_tool_named(defs, "process_poll"));
-                expect(has_tool_named(defs, "process_kill"));
-                expect(has_tool_named(defs, "read"));
-                expect(not(has_tool_named(defs, "ls")));
-                expect(not(has_tool_named(defs, "grep")));
-                expect(has_tool_named(defs, "subagent_spawn"));
-                expect(has_tool_named(defs, "subagent_status"));
-                expect(has_tool_named(defs, "subagent_wait"));
-                expect(has_tool_named(defs, "remember"));
-                expect(has_tool_named(defs, "memory_recall"));
-                expect(has_tool_named(defs, "memory_stats"));
+                expect(orangutan::testing::has_tool_named(defs, "shell"));
+                expect(orangutan::testing::has_tool_named(defs, "process_list"));
+                expect(orangutan::testing::has_tool_named(defs, "process_poll"));
+                expect(orangutan::testing::has_tool_named(defs, "process_kill"));
+                expect(orangutan::testing::has_tool_named(defs, "read"));
+                expect(not(orangutan::testing::has_tool_named(defs, "ls")));
+                expect(not(orangutan::testing::has_tool_named(defs, "grep")));
+                expect(orangutan::testing::has_tool_named(defs, "subagent_spawn"));
+                expect(orangutan::testing::has_tool_named(defs, "subagent_status"));
+                expect(orangutan::testing::has_tool_named(defs, "subagent_wait"));
+                expect(orangutan::testing::has_tool_named(defs, "remember"));
+                expect(orangutan::testing::has_tool_named(defs, "memory_recall"));
+                expect(orangutan::testing::has_tool_named(defs, "memory_stats"));
 
                 const auto remember = registry.execute(ToolUseBlock{
                     .id = "remember-runtime",
@@ -904,8 +900,8 @@ boost::ut::suite runtime_tool_loader_test_denied_tools_are_hidden_and_blocked_by
 
         expect(result.mcp_tool_count == 0);
         expect(result.mcp_manager == nullptr);
-        expect(not(has_tool_named(defs, "shell")));
-        expect(has_tool_named(defs, "read"));
+        expect(not(orangutan::testing::has_tool_named(defs, "shell")));
+        expect(orangutan::testing::has_tool_named(defs, "read"));
 
         const auto shell_result = registry.execute(ToolUseBlock{
             .id = "deny-shell",

@@ -46,11 +46,9 @@ public:
     SessionStore &operator=(SessionStore &&) = delete;
 
     // Save current conversation as a new session, returns session ID
-    std::string save(const std::vector<Message> &messages, const std::string &model, const std::string &scope_key = {});
     std::string save(const std::vector<Message> &messages, const SessionMetadata &metadata);
 
     // Create an empty session row before any messages exist, returns session ID
-    std::string create_empty(const std::string &model, const std::string &scope_key = {});
     std::string create_empty(const SessionMetadata &metadata);
 
     // Update an existing session's messages (keeps same ID)
@@ -94,7 +92,6 @@ private:
 
     void ensure_schema();
     static std::string generate_uuid();
-    static SessionMetadata make_legacy_metadata(const std::string &model, const std::string &scope_key);
 };
 
 } // namespace orangutan

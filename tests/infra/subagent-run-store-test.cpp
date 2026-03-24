@@ -30,8 +30,8 @@ struct SubagentRunStoreHarness {
     std::array<std::string, 2> create_linked_sessions() const {
         SessionStore session_store(db_path);
         return {
-            session_store.create_empty("test-model", "scope:parent"),
-            session_store.create_empty("test-model", "scope:child"),
+            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""}),
+            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:child", .agent_key = "", .origin_kind = "cli", .origin_ref = ""}),
         };
     }
 
@@ -397,8 +397,10 @@ boost::ut::suite subagent_run_store_suite = [] {
             SessionStore session_store;
             SubagentRunStore run_store;
 
-            const auto parent_session_id = session_store.create_empty("test-model", "scope:test");
-            const auto child_session_id = session_store.create_empty("test-model", "scope:test");
+            const auto parent_session_id =
+                session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:test", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+            const auto child_session_id =
+                session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:test", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
             run_store.create_run(SubagentRunCreateParams{
                 .run_id = "shared-db-run",
                 .parent_runtime_key = "runtime:shared",
@@ -466,7 +468,8 @@ boost::ut::suite subagent_run_store_suite = [] {
     "create_run_requires_existing_session_links"_test = [] {
         SubagentRunStoreHarness harness;
         SessionStore session_store(harness.db_path);
-        const auto parent_session_id = session_store.create_empty("test-model", "scope:parent");
+        const auto parent_session_id =
+            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         SubagentRunStore store(harness.db_path);
 
         expect(throws<std::runtime_error>([&] {

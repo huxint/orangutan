@@ -127,7 +127,8 @@ SubagentSpawnResult SubagentManager::spawn(const SubagentSpawnRequest &request) 
 
         child_identity = derive_child_identity(maybe_child_config->workspace_root, request.caller.raw_caller_id, request.child_agent_key);
         child_scope_key = child_identity.memory_scope;
-        child_session_id = session_store_->create_empty(maybe_child_config->model, child_scope_key);
+        child_session_id = session_store_->create_empty(
+            SessionMetadata{.model = maybe_child_config->model, .scope_key = child_scope_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
     }
     if (child_session_id.empty() || child_scope_key.empty()) {
         return SubagentSpawnResult{

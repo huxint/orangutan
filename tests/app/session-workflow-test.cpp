@@ -13,10 +13,6 @@ using namespace orangutan;
 
 namespace {
 
-SessionMetadata cli_metadata(const std::string &model, const std::string &scope_key, const std::string &agent_key) {
-    return app::make_cli_session_metadata(model, scope_key, agent_key);
-}
-
 class DistillingWorkflowProvider final : public Provider {
 public:
     LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
@@ -81,7 +77,7 @@ boost::ut::suite session_workflow_suite = [] {
         });
 
         std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, cli_metadata("test-model", "scope:test", "coder"));
+        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
         expect(result.had_history);
         expect(result.distillation.distilled);
@@ -105,7 +101,7 @@ boost::ut::suite session_workflow_suite = [] {
         SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools);
 
-        const auto session_id = session_store.save({Message::user_text("hello")}, cli_metadata("test-model", "scope:one", "scope-one"));
+        const auto session_id = session_store.save({Message::user_text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
         std::string current_session_id;
         const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
 
@@ -117,8 +113,8 @@ boost::ut::suite session_workflow_suite = [] {
     "resolve_requested_session_supports_latest"_test = [] {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        const auto first_id = session_store.save({Message::user_text("first")}, cli_metadata("test-model", "scope:test", "coder"));
-        const auto second_id = session_store.save({Message::user_text("second")}, cli_metadata("test-model", "scope:test", "coder"));
+        const auto first_id = session_store.save({Message::user_text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto second_id = session_store.save({Message::user_text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
         const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
         expect(latest.has_value() >> fatal);
@@ -131,9 +127,9 @@ boost::ut::suite session_workflow_suite = [] {
     "resolve_requested_session_uses_agent_ownership_when_scope_is_empty"_test = [] {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        session_store.save({Message::user_text("coder")}, cli_metadata("test-model", "agent:coder", "coder"));
-        const auto first_default = session_store.save({Message::user_text("first default")}, cli_metadata("test-model", "", "default"));
-        const auto second_default = session_store.save({Message::user_text("second default")}, cli_metadata("test-model", "", "default"));
+        session_store.save({Message::user_text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
+        const auto first_default = session_store.save({Message::user_text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
+        const auto second_default = session_store.save({Message::user_text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
 
         const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
         expect(latest.has_value() >> fatal);
@@ -163,7 +159,7 @@ boost::ut::suite session_workflow_suite = [] {
         });
 
         std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, cli_metadata("test-model", "scope:test", "coder"));
+        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
         expect(result.distillation.distilled);
 
         const auto snapshot = workspace / "MEMORY.md";

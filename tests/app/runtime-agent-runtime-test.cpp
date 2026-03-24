@@ -22,12 +22,6 @@ namespace {
 
 using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 const ToolDef *find_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
     const auto it = std::ranges::find_if(definitions, [&name](const ToolDef &definition) {
         return definition.name == name;
@@ -137,11 +131,11 @@ boost::ut::suite runtime_agent_runtime_suite = [] {
         expect((runtime.agent != nullptr) >> fatal);
         expect((runtime.provider != nullptr) >> fatal);
         expect((runtime.memory != nullptr) >> fatal);
-        expect(has_tool_named(definitions, "memory_list"));
-        expect(has_tool_named(definitions, "shell"));
-        expect(has_tool_named(definitions, "process_list"));
-        expect(has_tool_named(definitions, "process_poll"));
-        expect(has_tool_named(definitions, "process_kill"));
+        expect(orangutan::testing::has_tool_named(definitions, "memory_list"));
+        expect(orangutan::testing::has_tool_named(definitions, "shell"));
+        expect(orangutan::testing::has_tool_named(definitions, "process_list"));
+        expect(orangutan::testing::has_tool_named(definitions, "process_poll"));
+        expect(orangutan::testing::has_tool_named(definitions, "process_kill"));
         expect(runtime.tool_context.background_completion_runtime == nullptr);
         const auto *shell = find_tool_named(definitions, "shell");
         expect((shell != nullptr) >> fatal);
@@ -243,7 +237,7 @@ boost::ut::suite runtime_agent_runtime_suite = [] {
             });
 
             auto runtime = build_agent_runtime(input);
-            expect(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+            expect(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
             const auto *tools_before_move = &runtime.tools;
 
             auto moved = std::move(runtime);

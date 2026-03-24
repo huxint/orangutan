@@ -64,9 +64,7 @@ std::string sanitize_identity_component(std::string_view value) {
 }
 
 std::string make_identity_slug(const std::string &jid) {
-    std::string out;
-    std::format_to(std::back_inserter(out), "{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
-    return out;
+    return std::format("{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
 }
 
 std::string normalize_path(const std::filesystem::path &path) {

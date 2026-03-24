@@ -30,12 +30,6 @@ using namespace orangutan;
 
 namespace {
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 template <typename Fn>
 bool completes_without_throw(Fn &&fn) {
     try {
@@ -351,7 +345,7 @@ boost::ut::suite channel_serve_suite = [] {
 
         const auto inspection = app::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
 
-        expect(has_tool_named(inspection.tool_definitions, "memory_list"));
+        expect(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
         expect(inspection.runtime_origin == SubagentRuntimeOrigin::channel);
         expect(inspection.raw_caller_id == "qqbot:c2c:alice");
         expect(inspection.has_agent);
@@ -622,7 +616,9 @@ boost::ut::suite channel_serve_suite = [] {
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id = session_store.save({Message::user_text("hello"), Message::assistant_text("hi")}, "gpt-test", identity.runtime_key);
+        const auto session_id =
+            session_store.save({Message::user_text("hello"), Message::assistant_text("hi")},
+                               orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
 
         auto loop = std::async(std::launch::async, [&] {
@@ -685,8 +681,9 @@ boost::ut::suite channel_serve_suite = [] {
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id = session_store.save(
-            {Message::user_text("hello"), {.role = "assistant", .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}}, "gpt-test", identity.runtime_key);
+        const auto session_id =
+            session_store.save({Message::user_text("hello"), {.role = "assistant", .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
+                               orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
         const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
 
@@ -848,7 +845,8 @@ boost::ut::suite channel_serve_suite = [] {
             Message::user_text("hello"),
             Message::assistant_text("hi"),
         };
-        const auto session_id = session_store.save(history, "gpt-test", identity.runtime_key);
+        const auto session_id = session_store.save(
+            history, orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
 
         ToolRegistry tools;

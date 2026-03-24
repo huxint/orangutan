@@ -1,12 +1,16 @@
 #pragma once
 
+#include "core/tools/tool.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <spdlog/spdlog.h>
 
@@ -41,6 +45,12 @@ inline std::filesystem::path unique_test_path(std::string_view prefix, std::stri
 /// Returns a unique sqlite/database path under a fresh per-test directory.
 inline std::filesystem::path unique_test_db_path(std::string_view prefix, std::string_view filename = "test.db") {
     return unique_test_path(prefix, filename);
+}
+
+inline bool has_tool_named(const std::vector<ToolDef> &definitions, std::string_view name) {
+    return std::ranges::any_of(definitions, [name](const ToolDef &definition) {
+        return definition.name == name;
+    });
 }
 
 /// RAII guard that sets an environment variable and restores (or unsets) it on destruction.

@@ -39,12 +39,6 @@ private:
     size_t next_step_ = 0;
 };
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 const ToolResultBlock *last_tool_result(const std::vector<Message> &history) {
     for (const auto &message : std::ranges::reverse_view(history)) {
         for (const auto &block : std::ranges::reverse_view(message.content)) {
@@ -108,7 +102,8 @@ boost::ut::suite subagent_integration_suite = [] {
         SubagentIntegrationHarness harness;
         SessionStore session_store(harness.db_path());
         SubagentRunStore run_store(harness.db_path());
-        const auto parent_session_id = session_store.create_empty("parent-model", derive_cli_session_scope("default"));
+        const auto parent_session_id = session_store.create_empty(
+            orangutan::SessionMetadata{.model = "parent-model", .scope_key = derive_cli_session_scope("default"), .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
 
         std::vector<std::string> parent_prompts;
         std::vector<std::string> child_prompts;
@@ -140,7 +135,7 @@ boost::ut::suite subagent_integration_suite = [] {
                             child_prompts.push_back(system_prompt);
                             expect(system_prompt.contains("delegated worker"));
                             expect(system_prompt.contains("cannot spawn subagents"));
-                            expect(not has_tool_named(tools, "subagent_spawn"));
+                            expect(not orangutan::testing::has_tool_named(tools, "subagent_spawn"));
                             expect(messages.size() == 1_ul);
                             const auto *text = std::get_if<TextBlock>(&messages[0].content[0]);
                             expect((text != nullptr) >> fatal);
@@ -172,8 +167,8 @@ boost::ut::suite subagent_integration_suite = [] {
             parent_prompts.push_back(system_prompt);
             expect(system_prompt.contains("Use `subagent_spawn`"));
             expect(system_prompt.contains("Use `subagent_wait`"));
-            expect(has_tool_named(tools, "subagent_spawn"));
-            expect(has_tool_named(tools, "subagent_wait"));
+            expect(orangutan::testing::has_tool_named(tools, "subagent_spawn"));
+            expect(orangutan::testing::has_tool_named(tools, "subagent_wait"));
             return LLMResponse{
                 .stop_reason = "tool_use",
                 .content = {ToolUseBlock{.id = "spawn-1", .name = "subagent_spawn", .input = {{"child_agent_key", "coder"}, {"task_summary", "Investigate parser regression"}}}},

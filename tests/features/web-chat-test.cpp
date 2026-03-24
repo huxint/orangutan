@@ -60,12 +60,6 @@ Config make_config() {
     return config;
 }
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 const automation::InboxItem *find_inbox_item_by_body_type(const std::vector<automation::InboxItem> &items, const std::string &type) {
     const auto it = std::ranges::find_if(items, [&](const automation::InboxItem &item) {
         return json::parse(item.body).value("type", "") == type;
@@ -405,8 +399,8 @@ boost::ut::suite web_chat_suite = [] {
                 return false;
             });
 
-        expect(has_tool_named(runtime.tools.definitions(), "memory_list"));
-        expect(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+        expect(orangutan::testing::has_tool_named(runtime.tools.definitions(), "memory_list"));
+        expect(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
         expect(runtime.tool_context.runtime_origin == SubagentRuntimeOrigin::web);
         expect(runtime.tool_context.raw_caller_id == "web:local");
         expect(runtime.tool_context.current_session_id == &session_id);

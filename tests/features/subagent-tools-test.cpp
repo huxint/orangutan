@@ -12,12 +12,6 @@ using namespace orangutan;
 
 namespace {
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 ToolRuntimeContext make_tool_context(SubagentManager *manager, std::string *current_session_id, std::vector<std::string> allowed_child_agents, bool is_child_run = false) {
     return ToolRuntimeContext{
         .runtime_key = "runtime:cli:default",
@@ -52,8 +46,8 @@ public:
     std::array<std::string, 2> create_linked_sessions() const {
         SessionStore session_store(db_path());
         return {
-            session_store.create_empty("test-model", "scope:parent"),
-            session_store.create_empty("test-model", "scope:child"),
+            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""}),
+            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:child", .agent_key = "", .origin_kind = "cli", .origin_ref = ""}),
         };
     }
 
@@ -83,9 +77,9 @@ boost::ut::suite subagent_tools_suite = [] {
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
         const auto defs = registry.definitions();
-        expect(has_tool_named(defs, "subagent_spawn"));
-        expect(has_tool_named(defs, "subagent_status"));
-        expect(has_tool_named(defs, "subagent_wait"));
+        expect(orangutan::testing::has_tool_named(defs, "subagent_spawn"));
+        expect(orangutan::testing::has_tool_named(defs, "subagent_status"));
+        expect(orangutan::testing::has_tool_named(defs, "subagent_wait"));
     };
 
     "child_runtime_does_not_register_subagent_tools"_test = [] {
@@ -102,9 +96,9 @@ boost::ut::suite subagent_tools_suite = [] {
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
         const auto defs = registry.definitions();
-        expect(not has_tool_named(defs, "subagent_spawn"));
-        expect(not has_tool_named(defs, "subagent_status"));
-        expect(not has_tool_named(defs, "subagent_wait"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_spawn"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_status"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_wait"));
     };
 
     "incomplete_parent_runtime_context_does_not_register_subagent_tools"_test = [] {
@@ -122,9 +116,9 @@ boost::ut::suite subagent_tools_suite = [] {
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
         const auto defs = registry.definitions();
-        expect(not has_tool_named(defs, "subagent_spawn"));
-        expect(not has_tool_named(defs, "subagent_status"));
-        expect(not has_tool_named(defs, "subagent_wait"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_spawn"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_status"));
+        expect(not orangutan::testing::has_tool_named(defs, "subagent_wait"));
     };
 
     "spawn_rejects_agent_outside_allowlist"_test = [] {

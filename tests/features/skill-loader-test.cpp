@@ -22,10 +22,6 @@ std::filesystem::path override_dir() {
 
 using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
-std::filesystem::path make_temp_dir(const std::string &name) {
-    return orangutan::testing::unique_test_root(name);
-}
-
 void write_skill(const std::filesystem::path &root, const std::string &dir_name, const std::string &content) {
     const auto skill_dir = root / dir_name;
     std::filesystem::create_directories(skill_dir);
@@ -144,7 +140,7 @@ boost::ut::suite skill_loader_suite = [] {
     };
 
     "loads_frontmatter_with_embedded_delimiter_in_toml_string"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_embedded_delimiter");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_embedded_delimiter");
         write_skill(temp_dir, "embedded-delimiter", R"md(+++
 name = "embedded-delimiter"
 description = "Contains +++ in a TOML string"
@@ -165,7 +161,7 @@ Body with embedded delimiter in frontmatter string.
     };
 
     "loads_frontmatter_with_delimiter_line_inside_toml_multiline_string"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_multiline_delimiter");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_multiline_delimiter");
         write_skill(temp_dir, "multiline-delimiter", R"md(+++
 name = "multiline-delimiter"
 description = "Contains a delimiter line inside a multiline string"
@@ -189,7 +185,7 @@ Body after multiline string frontmatter.
     };
 
     "loads_frontmatter_with_utf8_bom_before_opening_delimiter"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_bom");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_bom");
         write_skill(temp_dir, "bom-skill", std::string("\xEF\xBB\xBF") + R"md(+++
 name = "bom-skill"
 description = "Frontmatter starts after a UTF-8 BOM"
@@ -207,7 +203,7 @@ Body after BOM.
     };
 
     "loads_frontmatter_with_leading_blank_line_before_opening_delimiter"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_leading_blank_line");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_leading_blank_line");
         write_skill(temp_dir, "blank-line-skill", R"md(
 +++
 name = "blank-line-skill"
@@ -226,8 +222,8 @@ Body after leading blank line.
     };
 
     "active_skills_are_sorted_by_name_after_shadowing"_test = [] {
-        const auto base_dir = make_temp_dir("orangutan_skill_loader_order_base");
-        const auto override_root = make_temp_dir("orangutan_skill_loader_order_override");
+        const auto base_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_order_base");
+        const auto override_root = orangutan::testing::unique_test_root("orangutan_skill_loader_order_override");
 
         write_skill(base_dir, "zebra-dir", R"md(+++
 name = "zebra"
@@ -274,7 +270,7 @@ alpha override body
     };
 
     "loads_yaml_frontmatter_from_temp_dir"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_yaml");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_yaml");
         write_skill(temp_dir, "yaml-test", R"md(---
 name: my-yaml-skill
 description: Skill with YAML frontmatter
@@ -299,7 +295,7 @@ YAML body content here.
     };
 
     "loads_yaml_with_quoted_values"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_yaml_quoted");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_yaml_quoted");
         write_skill(temp_dir, "quoted-yaml", R"md(---
 name: "quoted-skill"
 description: 'Single-quoted description'
@@ -320,7 +316,7 @@ Quoted values body.
     };
 
     "build_prompt_section_uses_deterministic_skill_order"_test = [] {
-        const auto temp_dir = make_temp_dir("orangutan_skill_loader_prompt_order");
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_prompt_order");
 
         write_skill(temp_dir, "zebra-dir", R"md(+++
 name = "zebra"

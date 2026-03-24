@@ -68,12 +68,6 @@ orangutan::SessionMetadata make_session_metadata(std::string model, std::string 
     };
 }
 
-bool has_tool_named(const std::vector<orangutan::ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&name](const orangutan::ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 orangutan::Config make_runtime_config(const std::filesystem::path &workspace_root) {
     orangutan::Config cfg;
     cfg.provider = "openai";
@@ -318,12 +312,12 @@ boost::ut::suite web_routes_suite = [] {
                                                                         });
 
         const auto definitions = runtime.tools.definitions();
-        expect(has_tool_named(definitions, "memory_list"));
-        expect(has_tool_named(definitions, "shell"));
-        expect(has_tool_named(definitions, "custom_echo"));
-        expect(has_tool_named(definitions, "task"));
-        expect(has_tool_named(definitions, "heartbeat"));
-        expect(has_tool_named(definitions, "inbox"));
+        expect(orangutan::testing::has_tool_named(definitions, "memory_list"));
+        expect(orangutan::testing::has_tool_named(definitions, "shell"));
+        expect(orangutan::testing::has_tool_named(definitions, "custom_echo"));
+        expect(orangutan::testing::has_tool_named(definitions, "task"));
+        expect(orangutan::testing::has_tool_named(definitions, "heartbeat"));
+        expect(orangutan::testing::has_tool_named(definitions, "inbox"));
         expect(runtime.tool_context.runtime_origin == orangutan::SubagentRuntimeOrigin::web);
         expect(runtime.tool_context.raw_caller_id == "web:local");
         expect(runtime.tool_context.current_session_id == &session_id);

@@ -47,6 +47,16 @@ void exec_sql(sqlite3 *db, const char *sql) {
     sqlite3_free(err_msg);
 }
 
+orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key = {}) {
+    return orangutan::SessionMetadata{
+        .model = model,
+        .scope_key = scope_key,
+        .agent_key = "",
+        .origin_kind = "cli",
+        .origin_ref = "",
+    };
+}
+
 } // namespace
 
 using namespace orangutan;
@@ -63,7 +73,7 @@ boost::ut::suite session_store_suite = [] {
             Message::assistant_text("Hi there!"),
         };
 
-        const auto session_id = store.save(messages, "claude-sonnet-4-20250514");
+        const auto session_id = store.save(messages, make_session_metadata("claude-sonnet-4-20250514"));
         const auto loaded = store.load(session_id);
 
         expect((loaded.size() == std::size_t{2}) >> fatal) << "expected two persisted messages";
@@ -99,7 +109,7 @@ boost::ut::suite session_store_suite = [] {
             {.role = "assistant", .content = std::move(content)},
         };
 
-        const auto session_id = store.save(messages, "test-model");
+        const auto session_id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(session_id);
 
         expect((loaded.size() == std::size_t{2}) >> fatal) << "expected tool-use history roundtrip";
@@ -127,7 +137,7 @@ boost::ut::suite session_store_suite = [] {
             {.role = "user", .content = std::move(result_content)},
         };
 
-        const auto session_id = store.save(messages, "test-model");
+        const auto session_id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(session_id);
 
         expect((loaded.size() == std::size_t{1}) >> fatal) << "expected one persisted tool result";
@@ -153,7 +163,7 @@ boost::ut::suite session_store_suite = [] {
 
         std::vector<Message> messages = {{.role = "user", .content = std::move(content)}};
 
-        const auto session_id = store.save(messages, "test-model");
+        const auto session_id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(session_id);
 
         expect((loaded.size() == std::size_t{1}) >> fatal);
@@ -169,8 +179,8 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        store.save(messages, "model-a", "scope:a");
-        store.save(messages, "model-b", "scope:b");
+        store.save(messages, make_session_metadata("model-a", "scope:a"));
+        store.save(messages, make_session_metadata("model-b", "scope:b"));
 
         const auto sessions = store.list_sessions();
         expect(sessions.size() == std::size_t{2});
@@ -189,8 +199,8 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto scope_a = store.save(messages, "model-a", "scope:a");
-        store.save(messages, "model-b", "scope:b");
+        const auto scope_a = store.save(messages, make_session_metadata("model-a", "scope:a"));
+        store.save(messages, make_session_metadata("model-b", "scope:b"));
 
         const auto sessions = store.list_sessions("scope:a");
         expect((sessions.size() == std::size_t{1}) >> fatal);
@@ -203,7 +213,7 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto session_id = store.save(messages, "model-a", "scope:a");
+        const auto session_id = store.save(messages, make_session_metadata("model-a", "scope:a"));
 
         expect(store.session_belongs_to_scope(session_id, "scope:a"));
         expect(not store.session_belongs_to_scope(session_id, "scope:b"));
@@ -309,7 +319,7 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("test")};
-        const auto id = store.save(messages, "test-model");
+        const auto id = store.save(messages, make_session_metadata("test-model"));
 
         expect(store.list_sessions().size() == std::size_t{1});
         store.remove(id);
@@ -332,7 +342,7 @@ boost::ut::suite session_store_suite = [] {
         SessionStoreHarness harness;
         auto store = harness.store();
 
-        const auto session_id = store.create_empty("claude-sonnet-4-20250514", "scope:a");
+        const auto session_id = store.create_empty(make_session_metadata("claude-sonnet-4-20250514", "scope:a"));
         expect(not session_id.empty());
 
         const auto loaded = store.load(session_id);
@@ -348,7 +358,7 @@ boost::ut::suite session_store_suite = [] {
         SessionStoreHarness harness;
         auto store = harness.store();
 
-        const auto session_id = store.create_empty("claude-sonnet-4-20250514");
+        const auto session_id = store.create_empty(make_session_metadata("claude-sonnet-4-20250514"));
         const std::vector<Message> messages = {
             Message::user_text("Hello"),
             Message::assistant_text("Hi there!"),
@@ -379,7 +389,7 @@ boost::ut::suite session_store_suite = [] {
 
         std::vector<Message> messages = {{.role = "assistant", .content = std::move(content)}};
 
-        const auto id = store.save(messages, "test-model");
+        const auto id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(id);
 
         expect((loaded.size() == std::size_t{1}) >> fatal);
@@ -400,8 +410,8 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        store.save(messages, "model-a");
-        const auto second_id = store.save(messages, "model-b");
+        store.save(messages, make_session_metadata("model-a"));
+        const auto second_id = store.save(messages, make_session_metadata("model-b"));
 
         const auto latest = store.latest_session_id();
         expect((latest.has_value()) >> fatal);
@@ -415,7 +425,7 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto session_id = store.save(messages, "model-a");
+        const auto session_id = store.save(messages, make_session_metadata("model-a"));
 
         expect(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
         store.bind_jid("qqbot:c2c:alice", session_id);
@@ -432,8 +442,8 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto general_session_id = store.save(messages, "model-a", "agent:default|jid:qqbot:c2c:alice");
-        const auto coder_session_id = store.save(messages, "model-b", "agent:coder|jid:qqbot:c2c:alice");
+        const auto general_session_id = store.save(messages, make_session_metadata("model-a", "agent:default|jid:qqbot:c2c:alice"));
+        const auto coder_session_id = store.save(messages, make_session_metadata("model-b", "agent:coder|jid:qqbot:c2c:alice"));
 
         store.bind_jid("qqbot:c2c:alice", general_session_id, "default");
         store.bind_jid("qqbot:c2c:alice", coder_session_id, "coder");
@@ -456,7 +466,7 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto session_id = store.save(messages, "model-a");
+        const auto session_id = store.save(messages, make_session_metadata("model-a"));
         store.bind_jid("qqbot:c2c:alice", session_id);
 
         store.clear_jid("qqbot:c2c:alice");
@@ -468,7 +478,7 @@ boost::ut::suite session_store_suite = [] {
         auto store = harness.store();
 
         auto messages = std::vector{Message::user_text("Hello")};
-        const auto session_id = store.save(messages, "model-a");
+        const auto session_id = store.save(messages, make_session_metadata("model-a"));
         store.bind_jid("qqbot:c2c:alice", session_id);
 
         store.remove(session_id);
@@ -484,7 +494,7 @@ boost::ut::suite session_store_suite = [] {
             Message::assistant_text("Hi there!"),
         };
 
-        const auto session_id = store.save(messages, "model-a");
+        const auto session_id = store.save(messages, make_session_metadata("model-a"));
         messages.push_back(Message::user_text("How are you?"));
         messages.push_back(Message::assistant_text("Doing well."));
 
@@ -508,7 +518,7 @@ boost::ut::suite session_store_suite = [] {
             Message::assistant_text("Hi there!"),
         };
 
-        const auto session_id = store.save(messages, "model-a", "scope:test");
+        const auto session_id = store.save(messages, make_session_metadata("model-a", "scope:test"));
         store.update(session_id, messages, "model-b");
 
         auto sessions = store.list_sessions("scope:test");

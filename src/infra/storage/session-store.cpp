@@ -241,14 +241,7 @@ std::string SessionStore::generate_uuid() {
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<uint32_t> dist;
 
-    std::string out;
-    std::format_to(std::back_inserter(out), "{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
-                   dist(gen) & 0xFFFF);
-    return out;
-}
-
-std::string SessionStore::save(const std::vector<Message> &messages, const std::string &model, const std::string &scope_key) {
-    return save(messages, make_legacy_metadata(model, scope_key));
+    return std::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen), dist(gen) & 0xFFFF);
 }
 
 std::string SessionStore::save(const std::vector<Message> &messages, const SessionMetadata &metadata) {
@@ -263,10 +256,6 @@ std::string SessionStore::save(const std::vector<Message> &messages, const Sessi
     tx.commit();
     spdlog::info("Saved session {} ({} messages)", session_id, messages.size());
     return session_id;
-}
-
-std::string SessionStore::create_empty(const std::string &model, const std::string &scope_key) {
-    return create_empty(make_legacy_metadata(model, scope_key));
 }
 
 std::string SessionStore::create_empty(const SessionMetadata &metadata) {
@@ -488,16 +477,6 @@ bool SessionStore::session_belongs_to_agent(const std::string &session_id, const
     stmt.bind_text(1, session_id);
     stmt.bind_text(2, agent_key);
     return stmt.step();
-}
-
-SessionMetadata SessionStore::make_legacy_metadata(const std::string &model, const std::string &scope_key) {
-    return SessionMetadata{
-        .model = model,
-        .scope_key = scope_key,
-        .agent_key = "",
-        .origin_kind = "cli",
-        .origin_ref = "",
-    };
 }
 
 } // namespace orangutan

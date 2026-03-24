@@ -10,15 +10,11 @@
 
 namespace {
 
-std::filesystem::path make_test_db_path(std::string_view name) {
-    return orangutan::testing::unique_test_db_path("task-tool", name);
-}
-
 boost::ut::suite task_tool_suite = [] {
     using namespace boost::ut;
 
     "update_preserves_delivery_when_fields_are_omitted"_test = [] {
-        const auto db_path = make_test_db_path("task-tool-update.db");
+        const auto db_path = orangutan::testing::unique_test_db_path("task-tool", "task-tool-update.db");
         orangutan::automation::Store store(db_path.string());
         orangutan::automation::Runtime runtime(store);
 

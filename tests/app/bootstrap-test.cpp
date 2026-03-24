@@ -66,12 +66,6 @@ void clear_channel_mode_callback_for_tests();
 
 namespace {
 
-bool has_tool_named(const std::vector<ToolDef> &definitions, const std::string &name) {
-    return std::ranges::any_of(definitions, [&name](const ToolDef &definition) {
-        return definition.name == name;
-    });
-}
-
 namespace bootstrap_detail = orangutan::app::detail;
 class ScopedWebStartupInspectionCapture {
 public:
@@ -671,10 +665,10 @@ const boost::ut::suite bootstrap_suite = [] {
         });
 
         const auto definitions = runtime.tools.definitions();
-        expect(has_tool_named(definitions, "memory_list"));
-        expect(has_tool_named(definitions, "task"));
-        expect(has_tool_named(definitions, "heartbeat"));
-        expect(has_tool_named(definitions, "inbox"));
+        expect(orangutan::testing::has_tool_named(definitions, "memory_list"));
+        expect(orangutan::testing::has_tool_named(definitions, "task"));
+        expect(orangutan::testing::has_tool_named(definitions, "heartbeat"));
+        expect(orangutan::testing::has_tool_named(definitions, "inbox"));
         expect(runtime.skills_prompt.contains("workspace-skill"));
     };
 
@@ -701,7 +695,7 @@ const boost::ut::suite bootstrap_suite = [] {
         expect(inspection.attached_session_store);
         expect(inspection.attached_tool_registry);
         expect(inspection.attached_skill_loader);
-        expect(has_tool_named(inspection.tool_definitions, "memory_list"));
+        expect(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
         expect(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
     };
 

@@ -74,10 +74,7 @@ std::string list_memory(const json &input, RuntimeMemory &runtime_memory) {
 
 std::string stats_memory(RuntimeMemory &runtime_memory) {
     const auto stats = runtime_memory.stats();
-    std::string out;
-    std::format_to(std::back_inserter(out), "total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
-                   stats.journal_entries);
-    return out;
+    return std::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries, stats.journal_entries);
 }
 
 } // namespace
