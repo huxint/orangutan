@@ -1,9 +1,8 @@
 #include "features/automation/log-writer.hpp"
 #include "infra/files/file.hpp"
+#include "infra/time/local-format.hpp"
 
-#include <chrono>
 #include <filesystem>
-#include <format>
 #include <print>
 #include <stdexcept>
 
@@ -14,14 +13,7 @@ std::string LogWriter::append(const std::string &workspace_root, const json &ent
         throw std::runtime_error("workspace root is empty");
     }
 
-    const auto now = std::chrono::system_clock::now();
-    const auto time_value = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm{};
-    localtime_r(&time_value, &local_tm);
-
-    std::array<char, 16> file_name{};
-    std::strftime(file_name.data(), file_name.size(), "%Y-%m-%d", &local_tm);
-
+    const auto file_name = time::current_local_date();
     const auto log_dir = std::filesystem::path(workspace_root) / "automation" / "logs";
     std::error_code ec;
     std::filesystem::create_directories(log_dir, ec);
@@ -29,7 +21,7 @@ std::string LogWriter::append(const std::string &workspace_root, const json &ent
         throw std::runtime_error("failed to create automation log directory: " + ec.message());
     }
 
-    const auto log_path = log_dir / (std::string(file_name.data()) + ".jsonl");
+    const auto log_path = log_dir / (file_name + ".jsonl");
     fileio::File file = [&]() -> fileio::File {
         try {
             return fileio::File(log_path, "a");

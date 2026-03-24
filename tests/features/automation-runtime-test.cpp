@@ -1,10 +1,10 @@
 #include "features/automation/planner.hpp"
 #include "features/automation/runtime.hpp"
+#include "infra/time/local-time.hpp"
 #include "test-helpers.hpp"
 
 #include "support/ut.hpp"
 #include <chrono>
-#include <ctime>
 #include <filesystem>
 #include <future>
 #include <optional>
@@ -20,14 +20,9 @@ std::filesystem::path make_test_db_path(std::string_view name) {
 }
 
 orangutan::automation::TimePoint make_local_time(int year, int month, int day, int hour, int minute, int second) {
-    std::tm local_tm{};
-    local_tm.tm_year = year - 1900;
-    local_tm.tm_mon = month - 1;
-    local_tm.tm_mday = day;
-    local_tm.tm_hour = hour;
-    local_tm.tm_min = minute;
-    local_tm.tm_sec = second;
-    return orangutan::automation::from_unix_seconds(static_cast<std::int64_t>(std::mktime(&local_tm)));
+    const auto local_time = std::chrono::local_days{std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} / std::chrono::day{static_cast<unsigned>(day)}} +
+                            std::chrono::hours{hour} + std::chrono::minutes{minute} + std::chrono::seconds{second};
+    return orangutan::time::sys_time_from_local(local_time);
 }
 
 auto make_successful_executor(std::promise<void> &executor_called) {

@@ -1,5 +1,5 @@
 #include "features/cron/parser.hpp"
-
+#include "infra/time/local-time.hpp"
 #include "support/ut.hpp"
 
 using namespace orangutan;
@@ -181,11 +181,11 @@ boost::ut::suite cron_parser_suite = [] {
         const auto next = next_fire_time(*expr, time);
         expect(next.has_value() >> fatal);
 
-        const auto next_time = std::chrono::system_clock::to_time_t(*next);
-        std::tm result{};
-        localtime_r(&next_time, &result);
-        expect(result.tm_min == 0_i);
-        expect(result.tm_hour == 10_i);
+        const auto local_time = orangutan::time::local_time_from(*next);
+        const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+        const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+        expect(tod.minutes().count() == 0_i);
+        expect(tod.hours().count() == 10_i);
     };
 
     "parses_comma_values"_test = [] {

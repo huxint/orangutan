@@ -1,17 +1,15 @@
 #include "features/automation/planner.hpp"
 
 #include "features/cron/parser.hpp"
+#include "infra/time/local-time.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <ctime>
 #include <functional>
-#include <iomanip>
 #include <random>
-#include <sstream>
 #include <string>
 
 namespace orangutan::automation {
@@ -21,16 +19,57 @@ bool parse_integer(std::string_view value, long long &out) {
     auto result = std::from_chars(value.begin(), value.end(), out);
     return result.ec == std::errc{} && result.ptr == value.end();
 }
+std::optional<int> parse_fixed_int(std::string_view value, size_t offset, size_t width) {
+    if (offset + width > value.size()) {
+        return std::nullopt;
+    }
+
+    int result = 0;
+    const auto token = value.substr(offset, width);
+    auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
+    if (ec != std::errc{} || ptr != token.end()) {
+        return std::nullopt;
+    }
+    return result;
+}
+
+std::optional<std::chrono::local_seconds> parse_local_date_time(std::string_view value) {
+    const bool has_seconds = value.size() == 19;
+    if (!has_seconds && value.size() != 16) {
+        return std::nullopt;
+    }
+
+    if (value[4] != '-' || value[7] != '-' || value[10] != ' ' || value[13] != ':' || (has_seconds && value[16] != ':')) {
+        return std::nullopt;
+    }
+
+    const auto year = parse_fixed_int(value, 0, 4);
+    const auto month = parse_fixed_int(value, 5, 2);
+    const auto day = parse_fixed_int(value, 8, 2);
+    const auto hour = parse_fixed_int(value, 11, 2);
+    const auto minute = parse_fixed_int(value, 14, 2);
+    const auto second = has_seconds ? parse_fixed_int(value, 17, 2) : std::optional<int>{0};
+    if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() || !minute.has_value() || !second.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto ymd = std::chrono::year{*year} / std::chrono::month{static_cast<unsigned>(*month)} / std::chrono::day{static_cast<unsigned>(*day)};
+    if (!ymd.ok() || *hour > 23 || *minute > 59 || *second > 59) {
+        return std::nullopt;
+    }
+
+    return std::chrono::local_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
+}
 
 bool within_active_hours(const HeartbeatSpec &heartbeat, std::int64_t candidate) {
     if (heartbeat.active_hours.empty()) {
         return true;
     }
 
-    const auto time_value = static_cast<std::time_t>(candidate);
-    std::tm local_tm{};
-    localtime_r(&time_value, &local_tm);
-    const int minute_of_day = (local_tm.tm_hour * 60) + local_tm.tm_min;
+    const auto local_time = time::local_time_from(from_unix_seconds(candidate));
+    const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+    const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+    const int minute_of_day = static_cast<int>(tod.hours().count() * 60 + tod.minutes().count());
 
     return std::ranges::any_of(heartbeat.active_hours, [minute_of_day](const ActiveHourWindow &window) {
         return minute_of_day >= window.start_minute && minute_of_day < window.end_minute;
@@ -44,20 +83,18 @@ std::int64_t clamp_to_active_hours(const HeartbeatSpec &heartbeat, std::int64_t 
 
     for (int day_offset = 0; day_offset < 8; ++day_offset) {
         const auto shifted = candidate + (static_cast<std::int64_t>(day_offset) * 24 * 60 * 60);
-        const auto shifted_time = static_cast<std::time_t>(shifted);
-        std::tm local_tm{};
-        localtime_r(&shifted_time, &local_tm);
-        const int minute_of_day = (local_tm.tm_hour * 60) + local_tm.tm_min;
+        const auto local_time = time::local_time_from(from_unix_seconds(shifted));
+        const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+        const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+        const int minute_of_day = static_cast<int>(tod.hours().count() * 60 + tod.minutes().count());
 
         for (const auto &window : heartbeat.active_hours) {
             if (day_offset == 0 && minute_of_day >= window.start_minute && minute_of_day < window.end_minute) {
                 return shifted;
             }
             if (day_offset > 0 || minute_of_day < window.start_minute) {
-                local_tm.tm_hour = window.start_minute / 60;
-                local_tm.tm_min = window.start_minute % 60;
-                local_tm.tm_sec = 0;
-                return static_cast<std::int64_t>(std::mktime(&local_tm));
+                const auto next_local_time = local_day + std::chrono::hours{window.start_minute / 60} + std::chrono::minutes{window.start_minute % 60};
+                return to_unix_seconds(time::sys_time_from_local(next_local_time));
             }
         }
     }
@@ -117,21 +154,16 @@ std::optional<std::int64_t> parse_absolute_time(std::string_view value) {
         return static_cast<std::int64_t>(numeric);
     }
 
-    std::tm tm{};
-    std::istringstream stream{std::string(value)};
-    stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    if (!stream.fail()) {
-        return static_cast<std::int64_t>(std::mktime(&tm));
+    const auto parsed = parse_local_date_time(value);
+    if (!parsed.has_value()) {
+        return std::nullopt;
     }
 
-    stream.clear();
-    stream.str(std::string(value));
-    stream >> std::get_time(&tm, "%Y-%m-%d %H:%M");
-    if (!stream.fail()) {
-        return static_cast<std::int64_t>(std::mktime(&tm));
+    try {
+        return to_unix_seconds(time::sys_time_from_local(*parsed));
+    } catch (const std::runtime_error &) {
+        return std::nullopt;
     }
-
-    return std::nullopt;
 }
 
 bool is_task_due(const TaskSpec &task, TimePoint now, std::int64_t startup_time) {

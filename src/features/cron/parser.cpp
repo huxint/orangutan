@@ -1,7 +1,7 @@
 #include "features/cron/parser.hpp"
+#include "infra/time/local-time.hpp"
 
 #include <charconv>
-#include <ctime>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <vector>
@@ -124,13 +124,6 @@ std::vector<std::string_view> split_whitespace(std::string_view sv) {
     return tokens;
 }
 
-std::tm to_local_tm(const TimePoint &tp) {
-    auto time = std::chrono::system_clock::to_time_t(tp);
-    std::tm result{};
-    localtime_r(&time, &result);
-    return result;
-}
-
 } // namespace
 
 std::optional<CronExpr> parse_cron(std::string_view expr) {
@@ -160,12 +153,15 @@ std::optional<CronExpr> parse_cron(std::string_view expr) {
     };
 }
 
-bool cron_matches(const CronExpr &expr, const TimePoint &time) {
-    auto tm = to_local_tm(time);
-    auto day_of_month_matches = expr.day_of_month.matches(tm.tm_mday);
-    auto day_of_week_matches = expr.day_of_week.matches(tm.tm_wday);
-    auto either_day_field_restricted = !expr.day_of_month.wildcard || !expr.day_of_week.wildcard;
-    auto both_day_fields_restricted = !expr.day_of_month.wildcard && !expr.day_of_week.wildcard;
+bool cron_matches(const CronExpr &expr, const TimePoint &time_point) {
+    const auto local_time = time::local_time_from(time_point);
+    const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+    const auto ymd = std::chrono::year_month_day{local_day};
+    const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+    const auto day_of_month_matches = expr.day_of_month.matches(static_cast<int>(static_cast<unsigned>(ymd.day())));
+    const auto day_of_week_matches = expr.day_of_week.matches(static_cast<int>(std::chrono::weekday{local_day}.c_encoding()));
+    const auto either_day_field_restricted = !expr.day_of_month.wildcard || !expr.day_of_week.wildcard;
+    const auto both_day_fields_restricted = !expr.day_of_month.wildcard && !expr.day_of_week.wildcard;
 
     auto day_matches = true;
     if (both_day_fields_restricted) {
@@ -174,7 +170,8 @@ bool cron_matches(const CronExpr &expr, const TimePoint &time) {
         day_matches = day_of_month_matches && day_of_week_matches;
     }
 
-    return expr.minute.matches(tm.tm_min) && expr.hour.matches(tm.tm_hour) && expr.month.matches(tm.tm_mon + 1) && day_matches;
+    return expr.minute.matches(static_cast<int>(tod.minutes().count())) && expr.hour.matches(static_cast<int>(tod.hours().count())) &&
+           expr.month.matches(static_cast<int>(static_cast<unsigned>(ymd.month()))) && day_matches;
 }
 
 std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after) {

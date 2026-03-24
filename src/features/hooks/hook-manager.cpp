@@ -4,10 +4,10 @@
 
 #include "infra/execution/sender-utils.hpp"
 #include "infra/subprocess/subprocess.hpp"
+#include "infra/time/local-format.hpp"
 
 #include <algorithm>
 #include <array>
-#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <memory>
@@ -47,13 +47,7 @@ static std::optional<HookEvent> string_to_hook_event(std::string_view name) {
 // ── ISO 8601 timestamp ──────────────────────────
 
 static std::string iso8601_now() {
-    auto now = std::chrono::system_clock::now();
-    auto time_t_now = std::chrono::system_clock::to_time_t(now);
-    std::tm tm_buf{};
-    localtime_r(&time_t_now, &tm_buf);
-    std::array<char, 32> buf{};
-    std::strftime(buf.data(), buf.size(), "%Y-%m-%dT%H:%M:%S", &tm_buf);
-    return {buf.data()};
+    return time::current_local_iso8601_timestamp();
 }
 
 // ── Hook discovery ──────────────────────────────

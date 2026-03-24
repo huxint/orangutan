@@ -2,9 +2,9 @@
 #include "features/memory/memory-search.hpp"
 #include "infra/files/file-io.hpp"
 #include "infra/files/file.hpp"
+#include "infra/time/local-format.hpp"
 
-#include <chrono>
-#include <ctime>
+#include <filesystem>
 #include <format>
 #include <iterator>
 #include <print>
@@ -15,29 +15,6 @@ namespace {
 
 constexpr std::string_view managed_begin_marker = "<!-- ORANGUTAN:MEMORY:BEGIN -->";
 constexpr std::string_view managed_end_marker = "<!-- ORANGUTAN:MEMORY:END -->";
-
-std::string current_date_string() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm{};
-    localtime_r(&time, &local_tm);
-
-    std::string out;
-    std::format_to(std::back_inserter(out), "{:04}-{:02}-{:02}", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
-    return out;
-}
-
-std::string current_timestamp_string() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm{};
-    localtime_r(&time, &local_tm);
-
-    std::string out;
-    std::format_to(std::back_inserter(out), "{:04}-{:02}-{:02} {:02}:{:02}:{:02}", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday, local_tm.tm_hour,
-                   local_tm.tm_min, local_tm.tm_sec);
-    return out;
-}
 
 std::string render_managed_block(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
     std::string out;
@@ -113,7 +90,7 @@ JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryC
 
     const auto journal_dir = context.journal_dir();
     std::filesystem::create_directories(journal_dir);
-    result.path = journal_dir / (current_date_string() + ".md");
+    result.path = journal_dir / (time::current_local_date() + ".md");
 
     std::error_code ec;
     bool has_existing_content = false;
@@ -126,7 +103,7 @@ JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryC
         std::println(file.get());
         std::println(file.get());
     }
-    std::println(file.get(), "## {}", current_timestamp_string());
+    std::println(file.get(), "## {}", time::current_local_timestamp());
     std::print(file.get(), "{}", trimmed_summary);
     std::println(file.get());
     file.close();
