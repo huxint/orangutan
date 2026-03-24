@@ -43,7 +43,12 @@ std::optional<std::string> load_heartbeat_md(const std::string &path) {
     }
 
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
+    const auto heartbeat_path = std::filesystem::path(path);
+    if (heartbeat_path.extension() != ".md") {
+        return std::nullopt;
+    }
+
+    if (!std::filesystem::exists(heartbeat_path, ec)) {
         return std::nullopt;
     }
 

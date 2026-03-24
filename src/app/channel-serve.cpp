@@ -203,18 +203,6 @@ bool can_prompt_for_channel_approval(const InboundMessage &message) {
     return target == message.jid;
 }
 
-channel_approval_decision parse_channel_approval_decision(const std::string &content) {
-    std::string normalized;
-    normalized.reserve(content.size());
-    for (const auto ch : content) {
-        if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
-            normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-        }
-    }
-
-    return parse_channel_approval_decision(std::string_view{normalized});
-}
-
 std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
                                                                SubagentManager &subagent_manager, const std::string &raw_caller_id, HookManager *hook_manager,
                                                                automation::Runtime *automation_runtime) {

@@ -1,13 +1,13 @@
 #include "features/tools/core/hashline.hpp"
 
-#define XXH_INLINE_ALL
-#include "xxhash.h"
+#include <rapidhash.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -51,12 +51,20 @@ std::string_view preprocess_line(std::string_view line) {
     return line;
 }
 
+// Keep the rapidhash call isolated so hashline semantics live in compute_line_hash().
+uint8_t hash_index_for_line(std::string_view normalized_line, uint64_t seed) {
+    static constexpr char empty_line_sentinel = '\0';
+    const void *data = normalized_line.empty() ? static_cast<const void *>(&empty_line_sentinel) : static_cast<const void *>(normalized_line.data());
+    const auto hash = rapidhash_withSeed(data, normalized_line.size(), seed);
+    return static_cast<uint8_t>(hash & 0xFFu);
+}
+
 } // namespace
 
 std::string compute_line_hash(std::string_view line, size_t line_number) {
     const auto processed = preprocess_line(line);
-    const auto seed = static_cast<XXH32_hash_t>(is_symbol_only(processed) ? line_number : 0);
-    const auto hash = XXH32(processed.data(), processed.size(), seed) & 0xFF;
+    const auto seed = is_symbol_only(processed) ? static_cast<uint64_t>(line_number) : 0;
+    const auto hash = hash_index_for_line(processed, seed);
     const auto &entry = hash_dict.entries.at(hash);
     return {entry.at(0), entry.at(1)};
 }

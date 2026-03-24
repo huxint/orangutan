@@ -2,127 +2,280 @@
 
 #include "features/channel/qq/reconnect-backoff.hpp"
 
-#include <stdexcept>
-
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-#include <algorithm>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/dispatch.hpp>
-#include <boost/asio/post.hpp>
-#include <boost/asio/ssl/context.hpp>
-#include <boost/asio/ssl/error.hpp>
-#include <boost/asio/ssl/host_name_verification.hpp>
-#include <boost/asio/ssl/stream.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/asio/strand.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/core/buffers_to_string.hpp>
-#include <boost/beast/core/error.hpp>
-#include <boost/beast/ssl.hpp>
-#include <boost/beast/websocket.hpp>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#include <spdlog/spdlog.h>
+#include <arpa/inet.h>
+#include <cerrno>
+#include <chrono>
+#include <condition_variable>
+#include <cstring>
 #include <deque>
-#include <future>
-#include <atomic>
+#include <limits>
+#include <mutex>
+#include <poll.h>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <utility>
+
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+#include <curl/curl.h>
+#include <spdlog/spdlog.h>
 #endif
 
 namespace orangutan::qq {
 
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-namespace asio = boost::asio;
-namespace beast = boost::beast;
-namespace ssl = asio::ssl;
-namespace websocket = beast::websocket;
-using tcp = asio::ip::tcp;
-
 namespace {
 
-struct ParsedWebsocketUrl {
-    std::string host;
-    std::string host_header;
-    std::string port;
-    std::string target;
-};
+using Clock = std::chrono::steady_clock;
 
-ParsedWebsocketUrl parse_websocket_url(const std::string &url) {
-    constexpr std::string_view secure_prefix = "wss://";
-    if (!url.starts_with(secure_prefix)) {
-        throw std::runtime_error("QQ gateway URL must use wss://");
-    }
-
-    const auto authority_start = secure_prefix.size();
-    const auto target_start = url.find('/', authority_start);
-    const auto query_start = url.find('?', authority_start);
-    const auto split_at = std::min(target_start == std::string::npos ? url.size() : target_start, query_start == std::string::npos ? url.size() : query_start);
-
-    const auto authority = url.substr(authority_start, split_at - authority_start);
-    if (authority.empty()) {
-        throw std::runtime_error("QQ gateway URL is missing a host");
-    }
-
-    ParsedWebsocketUrl parsed;
-    parsed.target = split_at == url.size() ? "/" : url.substr(split_at);
-
-    if (authority.front() == '[') {
-        const auto end = authority.find(']');
-        if (end == std::string::npos) {
-            throw std::runtime_error("QQ gateway URL contains an invalid IPv6 host");
+void ensure_curl_ready() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const auto code = curl_global_init(CURL_GLOBAL_DEFAULT);
+        if (code != CURLE_OK) {
+            throw std::runtime_error(std::string{"Failed to initialize libcurl: "} + curl_easy_strerror(code));
         }
-
-        parsed.host = authority.substr(1, end - 1);
-        if (end + 1 < authority.size()) {
-            if (authority[end + 1] != ':') {
-                throw std::runtime_error("QQ gateway URL contains an invalid host/port pair");
-            }
-            parsed.port = authority.substr(end + 2);
-        }
-    } else {
-        const auto colon = authority.rfind(':');
-        if (colon != std::string::npos) {
-            parsed.host = authority.substr(0, colon);
-            parsed.port = authority.substr(colon + 1);
-        } else {
-            parsed.host = authority;
-        }
-    }
-
-    if (parsed.host.empty()) {
-        throw std::runtime_error("QQ gateway URL is missing a host");
-    }
-    if (parsed.port.empty()) {
-        parsed.port = "443";
-    }
-
-    parsed.host_header = authority;
-    return parsed;
+    });
 }
 
-std::string error_to_string(std::string_view context, const beast::error_code &ec) {
-    return std::string(context) + ": " + ec.message();
+[[nodiscard]]
+std::string curl_message(std::string_view context, CURLcode code, std::string_view detail = {}) {
+    std::string message(context);
+    message += ": ";
+    if (!detail.empty()) {
+        message += detail;
+    } else {
+        message += curl_easy_strerror(code);
+    }
+    return message;
+}
+
+[[nodiscard]]
+std::string trim_curl_error(const char *buffer) {
+    if (buffer == nullptr || buffer[0] == '\0') {
+        return {};
+    }
+    std::string message(buffer);
+    while (!message.empty() && (message.back() == '\n' || message.back() == '\r' || message.back() == '\0')) {
+        message.pop_back();
+    }
+    return message;
+}
+
+[[nodiscard]]
+Transport::Event parse_close_event(std::string payload) {
+    uint16_t code = 1000;
+    std::string reason;
+
+    if (payload.size() >= sizeof(uint16_t)) {
+        uint16_t network_code = 0;
+        std::memcpy(&network_code, payload.data(), sizeof(network_code));
+        code = ntohs(network_code);
+        reason = payload.substr(sizeof(uint16_t));
+    } else {
+        reason = std::move(payload);
+    }
+
+    return Transport::Event::close(code, std::move(reason));
+}
+
+class CurlConnection final : public Transport::Connection {
+public:
+    explicit CurlConnection(const std::string &url) {
+        ensure_curl_ready();
+
+        handle_ = curl_easy_init();
+        if (handle_ == nullptr) {
+            throw std::runtime_error("Failed to initialize libcurl websocket handle");
+        }
+
+        error_buffer_[0] = '\0';
+        curl_easy_setopt(handle_, CURLOPT_ERRORBUFFER, error_buffer_);
+        curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(handle_, CURLOPT_CONNECT_ONLY, 2L);
+        curl_easy_setopt(handle_, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+        curl_easy_setopt(handle_, CURLOPT_TIMEOUT, 30L);
+        curl_easy_setopt(handle_, CURLOPT_CONNECTTIMEOUT, 30L);
+        curl_easy_setopt(handle_, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(handle_, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(handle_, CURLOPT_SSL_VERIFYHOST, 2L);
+
+        const auto code = curl_easy_perform(handle_);
+        if (code != CURLE_OK) {
+            const auto detail = trim_curl_error(error_buffer_);
+            curl_easy_cleanup(handle_);
+            handle_ = nullptr;
+            throw std::runtime_error(curl_message("QQ WebSocket connect", code, detail));
+        }
+
+        const auto socket_result = curl_easy_getinfo(handle_, CURLINFO_ACTIVESOCKET, &socket_);
+        if (socket_result != CURLE_OK || socket_ == CURL_SOCKET_BAD) {
+            curl_easy_cleanup(handle_);
+            handle_ = nullptr;
+            throw std::runtime_error(curl_message("QQ WebSocket connect", socket_result, "connection socket unavailable"));
+        }
+    }
+
+    ~CurlConnection() override {
+        cleanup();
+    }
+
+    void send_text(std::string payload) override {
+        ensure_open();
+
+        std::size_t offset = 0;
+        while (offset < payload.size()) {
+            std::size_t sent = 0;
+            const auto code = curl_ws_send(handle_, payload.data() + offset, payload.size() - offset, &sent, 0, CURLWS_TEXT);
+            offset += sent;
+            if (code == CURLE_OK) {
+                continue;
+            }
+            if (code == CURLE_AGAIN) {
+                if (!wait_socket(POLLOUT, std::chrono::seconds(30))) {
+                    throw std::runtime_error("QQ WebSocket write timed out waiting for socket readiness");
+                }
+                continue;
+            }
+
+            throw std::runtime_error(curl_message("QQ WebSocket write", code, trim_curl_error(error_buffer_)));
+        }
+    }
+
+    [[nodiscard]]
+    std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
+        ensure_open();
+
+        if (!wait_socket(POLLIN, timeout)) {
+            return std::nullopt;
+        }
+
+        std::string payload;
+        unsigned int flags = 0;
+
+        while (true) {
+            char buffer[4096];
+            std::size_t received = 0;
+            const curl_ws_frame *frame = nullptr;
+            const auto code = curl_ws_recv(handle_, buffer, sizeof(buffer), &received, &frame);
+
+            if (code == CURLE_AGAIN) {
+                if (!wait_socket(POLLIN, timeout)) {
+                    return std::nullopt;
+                }
+                continue;
+            }
+            if (code == CURLE_GOT_NOTHING) {
+                return Transport::Event::close(1000, {});
+            }
+            if (code != CURLE_OK) {
+                throw std::runtime_error(curl_message("QQ WebSocket read", code, trim_curl_error(error_buffer_)));
+            }
+            if (frame == nullptr) {
+                continue;
+            }
+
+            flags = frame->flags;
+            if (received > 0) {
+                payload.append(buffer, received);
+            }
+            if (frame->bytesleft > 0) {
+                continue;
+            }
+
+            if ((flags & CURLWS_TEXT) != 0U) {
+                return Transport::Event::text(std::move(payload));
+            }
+            if ((flags & CURLWS_CLOSE) != 0U) {
+                return parse_close_event(std::move(payload));
+            }
+            if ((flags & CURLWS_BINARY) != 0U) {
+                return Transport::Event::error("QQ WebSocket received unexpected binary frame");
+            }
+
+            payload.clear();
+            flags = 0;
+        }
+    }
+
+    void close() override {
+        if (closed_) {
+            return;
+        }
+
+        const uint16_t code = htons(static_cast<uint16_t>(1000));
+        std::size_t sent = 0;
+        const auto result = curl_ws_send(handle_, &code, sizeof(code), &sent, 0, CURLWS_CLOSE);
+        if (result != CURLE_OK && result != CURLE_GOT_NOTHING) {
+            spdlog::debug("QQ WebSocket close frame failed: {}", curl_easy_strerror(result));
+        }
+        cleanup();
+    }
+
+private:
+    void ensure_open() const {
+        if (closed_ || handle_ == nullptr) {
+            throw std::runtime_error("QQ WebSocket is closed");
+        }
+    }
+
+    [[nodiscard]]
+    bool wait_socket(short events, std::chrono::milliseconds timeout) const {
+        if (socket_ == CURL_SOCKET_BAD) {
+            throw std::runtime_error("QQ WebSocket socket is invalid");
+        }
+
+        pollfd descriptor{.fd = socket_, .events = events, .revents = 0};
+        const auto timeout_ms = timeout.count() > static_cast<long long>(std::numeric_limits<int>::max()) ? std::numeric_limits<int>::max() : static_cast<int>(timeout.count());
+        const auto rc = ::poll(&descriptor, 1, timeout_ms);
+        if (rc == 0) {
+            return false;
+        }
+        if (rc < 0) {
+            if (errno == EINTR) {
+                return false;
+            }
+            throw std::runtime_error(std::string{"QQ WebSocket poll failed: "} + std::strerror(errno));
+        }
+        return true;
+    }
+
+    void cleanup() {
+        if (closed_) {
+            return;
+        }
+
+        closed_ = true;
+        socket_ = CURL_SOCKET_BAD;
+        if (handle_ != nullptr) {
+            curl_easy_cleanup(handle_);
+            handle_ = nullptr;
+        }
+    }
+
+    CURL *handle_ = nullptr;
+    curl_socket_t socket_ = CURL_SOCKET_BAD;
+    char error_buffer_[CURL_ERROR_SIZE]{};
+    bool closed_ = false;
+};
+
+[[nodiscard]]
+Transport::ConnectionFactory default_connection_factory() {
+    return [](const std::string &url) {
+        return std::make_unique<CurlConnection>(url);
+    };
 }
 
 } // namespace
 
 class Transport::Impl : public std::enable_shared_from_this<Transport::Impl> {
 public:
-    explicit Impl(Callbacks callbacks)
+    Impl(Callbacks callbacks, ConnectionFactory connection_factory)
     : callbacks_(std::move(callbacks)),
-      work_guard_(asio::make_work_guard(io_context_)),
-      ssl_context_(ssl::context::tls_client),
-      resolver_(asio::make_strand(io_context_)),
-      reconnect_timer_(io_context_) {
-        ssl_context_.set_default_verify_paths();
-        ssl_context_.set_verify_mode(ssl::verify_peer);
-        io_thread_ = std::thread([this] {
-            io_thread_id_ = std::this_thread::get_id();
-            io_context_.run();
-        });
-    }
+      connection_factory_(connection_factory ? std::move(connection_factory) : default_connection_factory()),
+      worker_thread_([this] {
+          run();
+      }) {}
 
     ~Impl() = default;
     Impl(const Impl &) = delete;
@@ -131,319 +284,240 @@ public:
     Impl &operator=(Impl &&) = delete;
 
     void start(const std::string &url) {
-        parsed_url_ = parse_websocket_url(url);
-        asio::post(io_context_, [self = shared_from_this()] {
-            self->stop_requested_ = false;
-            self->reconnect_requested_ = false;
-            self->reconnect_scheduled_ = false;
-            self->reconnect_timer_.cancel();
-            self->write_queue_.clear();
-            self->write_in_progress_ = false;
-            self->backoff_.reset();
-            self->begin_connect();
-        });
+        {
+            std::scoped_lock lock(mutex_);
+            if (stopped_) {
+                throw std::runtime_error("QQ WebSocket is stopped");
+            }
+            url_ = url;
+            write_queue_.clear();
+            backoff_.reset();
+            reconnect_requested_ = false;
+            reconnect_scheduled_ = true;
+            reconnect_at_ = Clock::now();
+            open_ = false;
+            connection_reset_requested_ = connection_ != nullptr;
+        }
+        cv_.notify_all();
     }
 
     void send_text(std::string payload) {
-        if (stop_requested_) {
-            throw std::runtime_error("QQ WebSocket is stopped");
-        }
-
-        if (std::this_thread::get_id() == io_thread_id_) {
-            enqueue_write(std::move(payload));
-            return;
-        }
-
-        std::promise<void> ready;
-        auto future = ready.get_future();
-        asio::post(io_context_, [self = shared_from_this(), payload = std::move(payload), ready = std::move(ready)]() mutable {
-            try {
-                self->enqueue_write(std::move(payload));
-                ready.set_value();
-            } catch (...) {
-                ready.set_exception(std::current_exception());
+        {
+            std::scoped_lock lock(mutex_);
+            if (stopped_ || stop_requested_) {
+                throw std::runtime_error("QQ WebSocket is stopped");
             }
-        });
-        future.get();
+            if (!open_ || !connection_) {
+                throw std::runtime_error("QQ WebSocket is not connected");
+            }
+            write_queue_.push_back(std::move(payload));
+        }
+        cv_.notify_all();
     }
 
     void request_reconnect() {
-        asio::post(io_context_, [self = shared_from_this()] {
-            if (self->stop_requested_) {
+        {
+            std::scoped_lock lock(mutex_);
+            if (stopped_ || stop_requested_) {
                 return;
             }
-
-            self->reconnect_requested_ = true;
-            self->reconnect_scheduled_ = false;
-            self->open_ = false;
-            self->write_queue_.clear();
-            self->write_in_progress_ = false;
-
-            if (!self->websocket_) {
-                self->schedule_reconnect();
-                return;
-            }
-
-            self->websocket_->next_layer().next_layer().cancel();
-            self->websocket_->async_close(websocket::close_code::normal, [self](const beast::error_code &close_ec) {
-                if (close_ec && close_ec != websocket::error::closed && close_ec != asio::error::operation_aborted) {
-                    self->emit_error(error_to_string("QQ WebSocket close", close_ec));
-                }
-                self->websocket_.reset();
-                self->schedule_reconnect();
-            });
-        });
+            reconnect_requested_ = true;
+            reconnect_scheduled_ = true;
+            reconnect_at_ = Clock::now() + backoff_.next_delay();
+            open_ = false;
+            write_queue_.clear();
+            connection_reset_requested_ = connection_ != nullptr;
+        }
+        cv_.notify_all();
     }
 
     void stop() {
-        if (stopped_.exchange(true)) {
-            if (io_thread_.joinable() && io_thread_.get_id() != std::this_thread::get_id()) {
-                io_thread_.join();
+        {
+            std::scoped_lock lock(mutex_);
+            if (stopped_) {
+                finalize_join();
+                return;
             }
-            return;
+            stopped_ = true;
+            stop_requested_ = true;
+            open_ = false;
+            write_queue_.clear();
+            connection_reset_requested_ = true;
         }
-
-        stop_requested_ = true;
-        asio::post(io_context_, [self = shared_from_this()] {
-            self->reconnect_timer_.cancel();
-            self->write_queue_.clear();
-            self->write_in_progress_ = false;
-            self->open_ = false;
-            self->reconnect_scheduled_ = false;
-
-            beast::error_code ec;
-            self->resolver_.cancel();
-            if (self->websocket_) {
-                self->websocket_->next_layer().next_layer().cancel();
-                [[maybe_unused]]
-                const auto shutdown_result = self->websocket_->next_layer().next_layer().socket().shutdown(tcp::socket::shutdown_both, ec);
-                [[maybe_unused]]
-                const auto close_result = self->websocket_->next_layer().next_layer().socket().close(ec);
-                self->websocket_.reset();
-            }
-        });
-
-        work_guard_.reset();
-        io_context_.stop();
-        if (io_thread_.joinable() && io_thread_.get_id() != std::this_thread::get_id()) {
-            io_thread_.join();
-        }
+        cv_.notify_all();
+        finalize_join();
     }
 
 private:
-    using WebsocketStream = websocket::stream<beast::ssl_stream<beast::tcp_stream>>;
+    void run() {
+        while (true) {
+            std::unique_lock lock(mutex_);
+            if (stop_requested_) {
+                break;
+            }
 
-    void begin_connect() {
-        if (stop_requested_) {
-            return;
+            if (connection_reset_requested_) {
+                auto connection = std::move(connection_);
+                connection_reset_requested_ = false;
+                lock.unlock();
+                if (connection) {
+                    connection->close();
+                }
+                continue;
+            }
+
+            if (should_connect_locked()) {
+                const auto url = url_;
+                lock.unlock();
+
+                try {
+                    auto connection = connection_factory_(url);
+                    lock.lock();
+                    if (stop_requested_ || connection_reset_requested_ || url != url_) {
+                        if (!stop_requested_ && url != url_) {
+                            reconnect_scheduled_ = true;
+                            reconnect_at_ = Clock::now();
+                        }
+                        lock.unlock();
+                        connection->close();
+                        continue;
+                    }
+
+                    connection_ = std::move(connection);
+                    open_ = true;
+                    reconnect_requested_ = false;
+                    reconnect_scheduled_ = false;
+                    backoff_.reset();
+                    lock.unlock();
+                    emit_open();
+                } catch (const std::exception &e) {
+                    lock.lock();
+                    if (stop_requested_) {
+                        break;
+                    }
+                    open_ = false;
+                    if (!reconnect_scheduled_ || Clock::now() >= reconnect_at_) {
+                        schedule_reconnect_locked();
+                    }
+                    lock.unlock();
+                    emit_error(e.what());
+                }
+                continue;
+            }
+
+            if (connection_ && !write_queue_.empty()) {
+                auto payload = std::move(write_queue_.front());
+                write_queue_.pop_front();
+                auto *connection = connection_.get();
+                lock.unlock();
+                try {
+                    connection->send_text(std::move(payload));
+                } catch (const std::exception &e) {
+                    handle_connection_error(e.what());
+                }
+                continue;
+            }
+
+            if (!connection_) {
+                if (reconnect_scheduled_) {
+                    cv_.wait_until(lock, reconnect_at_, [this] {
+                        return stop_requested_ || connection_reset_requested_ || should_connect_locked();
+                    });
+                } else {
+                    cv_.wait(lock, [this] {
+                        return stop_requested_ || connection_reset_requested_ || should_connect_locked();
+                    });
+                }
+                continue;
+            }
+
+            auto *connection = connection_.get();
+            lock.unlock();
+
+            try {
+                auto event = connection->wait_event(std::chrono::milliseconds(100));
+                if (event) {
+                    handle_event(std::move(*event));
+                }
+            } catch (const std::exception &e) {
+                handle_connection_error(e.what());
+            }
         }
 
-        reconnect_requested_ = false;
-        reconnect_scheduled_ = false;
-        open_ = false;
-        read_buffer_.consume(read_buffer_.size());
-        websocket_ = std::make_unique<WebsocketStream>(asio::make_strand(io_context_), ssl_context_);
-
-        if (!SSL_set_tlsext_host_name(websocket_->next_layer().native_handle(), parsed_url_.host.c_str())) {
-            const beast::error_code ec(static_cast<int>(::ERR_get_error()), asio::error::get_ssl_category());
-            handle_failure("QQ WebSocket SNI", ec);
-            return;
-        }
-
-        websocket_->next_layer().set_verify_mode(ssl::verify_peer);
-        websocket_->next_layer().set_verify_callback(ssl::host_name_verification(parsed_url_.host));
-
-        resolver_.async_resolve(parsed_url_.host, parsed_url_.port, [self = shared_from_this()](const beast::error_code &ec, const tcp::resolver::results_type &results) {
-            self->on_resolve(ec, results);
-        });
-    }
-
-    void on_resolve(const beast::error_code &ec, const tcp::resolver::results_type &results) {
-        if (ec) {
-            handle_failure("QQ WebSocket resolve", ec);
-            return;
-        }
-        if (stop_requested_) {
-            return;
-        }
-
-        beast::get_lowest_layer(*websocket_).expires_after(std::chrono::seconds(30));
-        beast::get_lowest_layer(*websocket_)
-            .async_connect(results, [self = shared_from_this()](const beast::error_code &connect_ec, const tcp::resolver::results_type::endpoint_type &) {
-                self->on_connect(connect_ec);
-            });
-    }
-
-    void on_connect(const beast::error_code &ec) {
-        if (ec) {
-            handle_failure("QQ WebSocket connect", ec);
-            return;
-        }
-        if (stop_requested_) {
-            return;
-        }
-
-        beast::get_lowest_layer(*websocket_).expires_never();
-        websocket_->next_layer().async_handshake(ssl::stream_base::client, [self = shared_from_this()](const beast::error_code &handshake_ec) {
-            self->on_ssl_handshake(handshake_ec);
-        });
-    }
-
-    void on_ssl_handshake(const beast::error_code &ec) {
-        if (ec) {
-            handle_failure("QQ WebSocket TLS handshake", ec);
-            return;
-        }
-        if (stop_requested_) {
-            return;
-        }
-
-        websocket_->set_option(websocket::stream_base::timeout::suggested(beast::role_type::client));
-        websocket_->async_handshake(parsed_url_.host_header, parsed_url_.target, [self = shared_from_this()](const beast::error_code &handshake_ec) {
-            self->on_websocket_handshake(handshake_ec);
-        });
-    }
-
-    void on_websocket_handshake(const beast::error_code &ec) {
-        if (ec) {
-            handle_failure("QQ WebSocket handshake", ec);
-            return;
-        }
-        if (stop_requested_) {
-            return;
-        }
-
-        open_ = true;
-        backoff_.reset();
-        emit_open();
-        do_read();
-    }
-
-    void do_read() {
-        if (stop_requested_ || !websocket_) {
-            return;
-        }
-
-        websocket_->async_read(read_buffer_, [self = shared_from_this()](const beast::error_code &ec, std::size_t) {
-            self->on_read(ec);
-        });
-    }
-
-    void on_read(const beast::error_code &ec) {
-        if (ec == websocket::error::closed) {
-            const auto reason = websocket_ ? websocket_->reason() : websocket::close_reason{};
-            const auto code = static_cast<uint16_t>(reason.code);
-            const char *message = reason.reason.c_str();
-            websocket_.reset();
-            open_ = false;
+        std::unique_ptr<Connection> connection;
+        {
+            std::scoped_lock lock(mutex_);
+            connection = std::move(connection_);
             write_queue_.clear();
-            write_in_progress_ = false;
+            open_ = false;
+        }
+        if (connection) {
+            connection->close();
+        }
+    }
 
+    [[nodiscard]]
+    bool should_connect_locked() const {
+        return !url_.empty() && !connection_ && reconnect_scheduled_ && Clock::now() >= reconnect_at_;
+    }
+
+    void handle_event(Event event) {
+        switch (event.kind) {
+            case Event::Kind::Text:
+                emit_text(event.payload);
+                return;
+            case Event::Kind::Close: {
+                bool emit_close_callback = false;
+                {
+                    std::scoped_lock lock(mutex_);
+                    connection_.reset();
+                    open_ = false;
+                    write_queue_.clear();
+                    if (stop_requested_) {
+                        return;
+                    }
+                    emit_close_callback = !reconnect_requested_;
+                    schedule_reconnect_locked();
+                }
+                if (emit_close_callback) {
+                    emit_close(event.close_code, event.payload);
+                }
+                return;
+            }
+            case Event::Kind::Error:
+                handle_connection_error(event.payload);
+                return;
+        }
+    }
+
+    void handle_connection_error(const std::string &message) {
+        std::unique_ptr<Connection> connection;
+        {
+            std::scoped_lock lock(mutex_);
             if (stop_requested_) {
                 return;
             }
-            if (!reconnect_requested_) {
-                emit_close(code, message);
-            }
-            schedule_reconnect();
-            return;
+            connection = std::move(connection_);
+            open_ = false;
+            write_queue_.clear();
+            schedule_reconnect_locked();
         }
-
-        if (ec) {
-            handle_failure("QQ WebSocket read", ec);
-            return;
+        if (connection) {
+            connection->close();
         }
-        if (stop_requested_) {
-            return;
-        }
-
-        const auto text = beast::buffers_to_string(read_buffer_.cdata());
-        read_buffer_.consume(read_buffer_.size());
-        emit_text(text);
-        do_read();
+        emit_error(message);
     }
 
-    void enqueue_write(std::string payload) {
-        if (stop_requested_) {
-            throw std::runtime_error("QQ WebSocket is stopped");
-        }
-        if (!websocket_ || !open_) {
-            throw std::runtime_error("QQ WebSocket is not connected");
-        }
-
-        write_queue_.push_back(std::move(payload));
-        if (!write_in_progress_) {
-            do_write();
-        }
-    }
-
-    void do_write() {
-        if (!websocket_ || write_queue_.empty()) {
-            write_in_progress_ = false;
-            return;
-        }
-
-        write_in_progress_ = true;
-        websocket_->text(true);
-        websocket_->async_write(asio::buffer(write_queue_.front()), [self = shared_from_this()](const beast::error_code &ec, std::size_t) {
-            self->on_write(ec);
-        });
-    }
-
-    void on_write(const beast::error_code &ec) {
-        if (ec) {
-            handle_failure("QQ WebSocket write", ec);
-            return;
-        }
-
-        write_queue_.pop_front();
-        if (write_queue_.empty()) {
-            write_in_progress_ = false;
-            return;
-        }
-        do_write();
-    }
-
-    void handle_failure(std::string_view context, const beast::error_code &ec) {
-        if (stop_requested_) {
-            return;
-        }
-        if (reconnect_requested_) {
-            return;
-        }
-
-        open_ = false;
-        write_queue_.clear();
-        write_in_progress_ = false;
-        if (websocket_) {
-            beast::error_code ignored;
-            [[maybe_unused]]
-            const auto close_result = websocket_->next_layer().next_layer().socket().close(ignored);
-            websocket_.reset();
-        }
-
-        emit_error(error_to_string(context, ec));
-        schedule_reconnect();
-    }
-
-    void schedule_reconnect() {
-        if (stop_requested_) {
-            return;
-        }
-        if (reconnect_scheduled_) {
-            return;
-        }
-
-        const auto delay = backoff_.next_delay();
+    void schedule_reconnect_locked() {
         reconnect_requested_ = false;
         reconnect_scheduled_ = true;
-        reconnect_timer_.expires_after(delay);
-        reconnect_timer_.async_wait([self = shared_from_this()](const beast::error_code &ec) {
-            if (ec || self->stop_requested_) {
-                return;
-            }
-            self->begin_connect();
-        });
+        reconnect_at_ = Clock::now() + backoff_.next_delay();
+    }
+
+    void finalize_join() {
+        if (worker_thread_.joinable() && worker_thread_.get_id() != std::this_thread::get_id()) {
+            worker_thread_.join();
+        }
     }
 
     void emit_open() const {
@@ -491,33 +565,40 @@ private:
     }
 
     Callbacks callbacks_;
-    asio::io_context io_context_{1};
-    asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
-    ssl::context ssl_context_;
-    tcp::resolver resolver_;
-    asio::steady_timer reconnect_timer_;
-    beast::flat_buffer read_buffer_;
-    std::unique_ptr<WebsocketStream> websocket_;
+    ConnectionFactory connection_factory_;
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
     std::deque<std::string> write_queue_;
     ReconnectBackoff backoff_;
-    ParsedWebsocketUrl parsed_url_;
-    std::thread io_thread_;
-    std::thread::id io_thread_id_;
-    std::atomic<bool> stopped_{false};
+    std::unique_ptr<Connection> connection_;
+    std::thread worker_thread_;
+    std::string url_;
+    Clock::time_point reconnect_at_ = Clock::time_point::min();
+    bool stopped_ = false;
     bool stop_requested_ = false;
     bool reconnect_requested_ = false;
     bool reconnect_scheduled_ = false;
+    bool connection_reset_requested_ = false;
     bool open_ = false;
-    bool write_in_progress_ = false;
 };
 #endif
 
 Transport::Transport(Callbacks callbacks)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-: impl_(std::make_shared<Impl>(std::move(callbacks))){}
+: impl_(std::make_shared<Impl>(std::move(callbacks), ConnectionFactory{})){}
 #else
 : impl_(nullptr) {
     static_cast<void>(callbacks);
+}
+#endif
+
+  Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory)
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+: impl_(std::make_shared<Impl>(std::move(callbacks), std::move(connection_factory))){}
+#else
+: impl_(nullptr) {
+    static_cast<void>(callbacks);
+    static_cast<void>(connection_factory);
 }
 #endif
 

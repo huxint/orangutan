@@ -42,7 +42,7 @@ struct HashlineEditResult {
     size_t edits_applied = 0;
 };
 
-// Compute 2-char hash for a line using xxHash32.
+// Compute the 2-character hash tag for a line after hashline normalization.
 // Symbol-only lines (no alphanumeric chars) use line_number as seed;
 // all other lines use seed=0.
 std::string compute_line_hash(std::string_view line, size_t line_number);

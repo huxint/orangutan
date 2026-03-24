@@ -1,6 +1,7 @@
 #include "app/repl.hpp"
 
 #include "app/cli-ui.hpp"
+#include "app/line-editor.hpp"
 #include "app/session-workflow.hpp"
 #include "app/slash-commands.hpp"
 #include "core/providers/provider.hpp"
@@ -9,73 +10,20 @@
 #include "infra/storage/session-store.hpp"
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <iterator>
+#include <cstdio>
 #include <iostream>
-#include <memory>
 #include <optional>
 #include <print>
 #include <ranges>
 #include <string_view>
-
-#include <readline/history.h>
-#include <readline/readline.h>
-
 namespace orangutan::app {
 
 namespace {
 
-using readline_ptr = std::unique_ptr<char, decltype(&std::free)>;
-
-std::string read_multiline() {
-    std::println("Multi-line mode. Enter an empty line to finish.");
-    std::string result;
-
-    while (true) {
-        readline_ptr line(readline("... "), &std::free);
-        if (line == nullptr) {
-            break;
-        }
-
-        std::string line_str(line.get());
-        if (line_str.empty()) {
-            break;
-        }
-
-        if (!result.empty()) {
-            result += '\n';
-        }
-        result += line_str;
-    }
-
-    return result;
-}
-
-std::optional<std::string> read_input_line() {
-    readline_ptr input(readline("you> "), &std::free);
-    if (input == nullptr) {
-        return std::nullopt;
-    }
-
-    std::string line(input.get());
-    if (line.empty()) {
-        return line;
-    }
-
-    add_history(line.c_str());
-    while (!line.empty() && line.back() == '\\') {
-        line.pop_back();
-        line += '\n';
-
-        readline_ptr continuation(readline("... "), &std::free);
-        if (continuation == nullptr) {
-            break;
-        }
-        line += continuation.get();
-    }
-
-    return line;
+void flush_repl_streams() {
+    std::fflush(stdout);
+    std::fflush(stderr);
 }
 
 void save_session(AgentLoop &agent, SessionStore &store, const std::string &model, std::string &current_session_id, const std::string &scope_key, const std::string &agent_key,
@@ -255,11 +203,13 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
               const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     std::println("Orangutan v0.1.0");
     std::print("Type /help for commands, Ctrl+D to quit\n\n");
+    std::fflush(stdout);
 
     dispatch_session_start(hook_manager, current_session_id, agent.history().size());
 
+    ReplxxLineEditor editor;
     while (true) {
-        auto maybe_line = read_input_line();
+        auto maybe_line = read_repl_input(editor);
         if (!maybe_line.has_value()) {
             break;
         }
@@ -270,7 +220,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         }
 
         if (line == "/multi") {
-            line = read_multiline();
+            line = read_repl_multiline(editor, std::cout);
             if (line.empty()) {
                 continue;
             }
@@ -290,6 +240,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
             }
             return false;
         });
+        flush_repl_streams();
         if (quit) {
             break;
         }

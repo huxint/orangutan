@@ -192,10 +192,6 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
         return {};
     }
 
-    auto is_closing_delimiter = [format](std::string_view line) {
-        return format == FrontmatterFormat::toml ? is_toml_delimiter(line) : is_yaml_delimiter(line);
-    };
-
     // Extract frontmatter content and body
     std::ostringstream fm_buf;
     bool found_closing = false;

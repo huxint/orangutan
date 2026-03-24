@@ -1,0 +1,5 @@
+option("qq_channel")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable QQ channel support")
+option_end()

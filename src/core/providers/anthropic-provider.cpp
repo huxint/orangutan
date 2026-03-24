@@ -169,7 +169,6 @@ LLMResponse AnthropicProvider::chat(const std::string &system_prompt, const std:
 
     json resp = json::parse(response_body);
 
-    long http_code = 200; // http_post throws on curl errors
     if (resp.contains("error")) {
         std::string err_msg = "API error";
         if (resp["error"].contains("message")) {

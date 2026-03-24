@@ -4,7 +4,6 @@
 #include <array>
 #include <cstddef>
 #include <iterator>
-#include <memory>
 #include <ranges>
 #include <span>
 #include <string>
@@ -12,20 +11,24 @@
 #include <utility>
 #include <vector>
 
-#include <openssl/evp.h>
-#include <openssl/rand.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/gcm.h>
+#include <mbedtls/md.h>
+#include <mbedtls/pkcs5.h>
 
 namespace orangutan {
 namespace {
 
 constexpr std::string_view protected_prefix = "enc:v1:";
-constexpr int pbkdf2_iterations = 200000;
+constexpr unsigned int pbkdf2_iterations = 200000;
 constexpr size_t salt_size = 16;
 constexpr size_t iv_size = 12;
 constexpr size_t tag_size = 16;
 constexpr size_t key_size = 32;
 constexpr std::string_view base64url_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 constexpr int invalid_base64url_char = -1;
+constexpr std::string_view rng_personalization = "orangutan-config-secret";
 
 template <size_t Size>
 using byte_array = std::array<std::byte, Size>;
@@ -71,15 +74,21 @@ constexpr bool is_base64url_char(char ch) noexcept {
 }
 
 [[nodiscard]]
-const unsigned char *openssl_const_bytes(const_byte_span bytes) noexcept {
+const unsigned char *mbedtls_const_bytes(const_byte_span bytes) noexcept {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<const unsigned char *>(bytes.data());
 }
 
 [[nodiscard]]
-unsigned char *openssl_mutable_bytes(mutable_byte_span bytes) noexcept {
+unsigned char *mbedtls_mutable_bytes(mutable_byte_span bytes) noexcept {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<unsigned char *>(bytes.data());
+}
+
+[[nodiscard]]
+const unsigned char *mbedtls_const_chars(std::string_view text) noexcept {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const unsigned char *>(text.data());
 }
 
 [[nodiscard]]
@@ -163,13 +172,57 @@ byte_vector decode_base64url(std::string_view input) {
     return decoded;
 }
 
+void fill_random_bytes(mutable_byte_span output) {
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    const auto cleanup = [&] {
+        mbedtls_ctr_drbg_free(&ctr_drbg);
+        mbedtls_entropy_free(&entropy);
+    };
+
+    if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, mbedtls_const_chars(rng_personalization), rng_personalization.size()) != 0) {
+        cleanup();
+        throw ConfigSecretProtectionError("Failed to generate config secret protection randomness.");
+    }
+
+    if (mbedtls_ctr_drbg_random(&ctr_drbg, mbedtls_mutable_bytes(output), output.size()) != 0) {
+        cleanup();
+        throw ConfigSecretProtectionError("Failed to generate config secret protection randomness.");
+    }
+
+    cleanup();
+}
+
 [[nodiscard]]
 byte_array<key_size> derive_key(std::string_view password, std::span<const std::byte, salt_size> salt) {
-    byte_array<key_size> key{};
-    if (PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()), openssl_const_bytes(salt), static_cast<int>(salt.size()), pbkdf2_iterations, EVP_sha256(),
-                          static_cast<int>(key.size()), openssl_mutable_bytes(std::span{key})) != 1) {
+    const auto *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (md_info == nullptr) {
         throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
     }
+
+    mbedtls_md_context_t md_ctx;
+    mbedtls_md_init(&md_ctx);
+
+    const auto cleanup = [&] {
+        mbedtls_md_free(&md_ctx);
+    };
+
+    if (mbedtls_md_setup(&md_ctx, md_info, 1) != 0) {
+        cleanup();
+        throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
+    }
+
+    byte_array<key_size> key{};
+    if (mbedtls_pkcs5_pbkdf2_hmac(&md_ctx, mbedtls_const_chars(password), password.size(), mbedtls_const_bytes(salt), salt.size(), pbkdf2_iterations, key.size(),
+                                  mbedtls_mutable_bytes(std::span{key})) != 0) {
+        cleanup();
+        throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
+    }
+
+    cleanup();
     return key;
 }
 
@@ -181,84 +234,52 @@ std::string aad_for_field(std::string_view field_kind) {
 [[nodiscard]]
 byte_vector encrypt_aes_gcm(const_byte_span plaintext, std::span<const std::byte, key_size> key, std::span<const std::byte, iv_size> iv, const_byte_span aad,
                             byte_array<tag_size> &tag) {
-    byte_vector ciphertext(plaintext.size() + EVP_MAX_BLOCK_LENGTH);
+    mbedtls_gcm_context ctx;
+    mbedtls_gcm_init(&ctx);
 
-    using ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
-    ctx_ptr ctx(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!ctx) {
-        throw ConfigSecretProtectionError("Failed to initialize config secret encryption.");
-    }
-    if (EVP_EncryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1 ||
-        EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, openssl_const_bytes(key), openssl_const_bytes(iv)) != 1) {
-        throw ConfigSecretProtectionError("Failed to initialize config secret encryption.");
-    }
+    const auto cleanup = [&] {
+        mbedtls_gcm_free(&ctx);
+    };
 
-    int written = 0;
-    if (EVP_EncryptUpdate(ctx.get(), nullptr, &written, openssl_const_bytes(aad), static_cast<int>(aad.size())) != 1) {
+    if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
+        cleanup();
         throw ConfigSecretProtectionError("Failed to initialize config secret encryption.");
     }
 
-    int ciphertext_len = 0;
-    if (!plaintext.empty() &&
-        EVP_EncryptUpdate(ctx.get(), openssl_mutable_bytes(std::span{ciphertext}), &written, openssl_const_bytes(plaintext), static_cast<int>(plaintext.size())) != 1) {
+    byte_vector ciphertext(plaintext.size());
+    if (mbedtls_gcm_crypt_and_tag(&ctx, MBEDTLS_GCM_ENCRYPT, plaintext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(),
+                                  mbedtls_const_bytes(plaintext), mbedtls_mutable_bytes(std::span{ciphertext}), tag.size(), mbedtls_mutable_bytes(std::span{tag})) != 0) {
+        cleanup();
         throw ConfigSecretProtectionError("Failed to encrypt config secret.");
     }
-    ciphertext_len += written;
 
-    if (EVP_EncryptFinal_ex(ctx.get(), openssl_mutable_bytes(std::span{ciphertext}.subspan(static_cast<size_t>(ciphertext_len))), &written) != 1) {
-        throw ConfigSecretProtectionError("Failed to encrypt config secret.");
-    }
-    ciphertext_len += written;
-
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), openssl_mutable_bytes(std::span{tag})) != 1) {
-        throw ConfigSecretProtectionError("Failed to finalize config secret encryption.");
-    }
-
-    ciphertext.resize(static_cast<size_t>(ciphertext_len));
+    cleanup();
     return ciphertext;
 }
 
 [[nodiscard]]
 byte_vector decrypt_aes_gcm(const_byte_span ciphertext, std::span<const std::byte, key_size> key, std::span<const std::byte, iv_size> iv, std::span<const std::byte, tag_size> tag,
                             const_byte_span aad, std::string_view display_field) {
-    byte_vector plaintext(ciphertext.size() + EVP_MAX_BLOCK_LENGTH);
+    mbedtls_gcm_context ctx;
+    mbedtls_gcm_init(&ctx);
 
-    using ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
-    ctx_ptr ctx(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!ctx) {
+    const auto cleanup = [&] {
+        mbedtls_gcm_free(&ctx);
+    };
+
+    if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
+        cleanup();
         throw ConfigSecretProtectionError("Failed to initialize config secret decryption for '" + std::string(display_field) + "'.");
     }
-    if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1 ||
-        EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, openssl_const_bytes(key), openssl_const_bytes(iv)) != 1) {
-        throw ConfigSecretProtectionError("Failed to initialize config secret decryption for '" + std::string(display_field) + "'.");
-    }
 
-    int written = 0;
-    if (EVP_DecryptUpdate(ctx.get(), nullptr, &written, openssl_const_bytes(aad), static_cast<int>(aad.size())) != 1) {
+    byte_vector plaintext(ciphertext.size());
+    if (mbedtls_gcm_auth_decrypt(&ctx, ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag), tag.size(),
+                                 mbedtls_const_bytes(ciphertext), mbedtls_mutable_bytes(std::span{plaintext})) != 0) {
+        cleanup();
         throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
     }
 
-    int plaintext_len = 0;
-    if (!ciphertext.empty() &&
-        EVP_DecryptUpdate(ctx.get(), openssl_mutable_bytes(std::span{plaintext}), &written, openssl_const_bytes(ciphertext), static_cast<int>(ciphertext.size())) != 1) {
-        throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
-    }
-    plaintext_len += written;
-
-    byte_array<tag_size> mutable_tag{};
-    std::ranges::copy(tag, mutable_tag.begin());
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, static_cast<int>(mutable_tag.size()), openssl_mutable_bytes(std::span{mutable_tag})) != 1) {
-        throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
-    }
-
-    if (EVP_DecryptFinal_ex(ctx.get(), openssl_mutable_bytes(std::span{plaintext}.subspan(static_cast<size_t>(plaintext_len))), &written) != 1) {
-        throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
-    }
-    plaintext_len += written;
-
-    plaintext.resize(static_cast<size_t>(plaintext_len));
+    cleanup();
     return plaintext;
 }
 
@@ -309,10 +330,8 @@ std::string protect_config_secret(std::string_view plaintext, std::string_view p
 
     byte_array<salt_size> salt{};
     byte_array<iv_size> iv{};
-    if (RAND_bytes(openssl_mutable_bytes(std::span{salt}), static_cast<int>(salt.size())) != 1 ||
-        RAND_bytes(openssl_mutable_bytes(std::span{iv}), static_cast<int>(iv.size())) != 1) {
-        throw ConfigSecretProtectionError("Failed to generate config secret protection randomness.");
-    }
+    fill_random_bytes(std::span{salt});
+    fill_random_bytes(std::span{iv});
 
     const auto key = derive_key(password, salt);
     byte_array<tag_size> tag{};

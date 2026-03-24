@@ -267,6 +267,12 @@ void SubagentManager::shutdown() {
     }
 
     for (const auto &[run_id, state] : active_runs) {
+        {
+            std::unique_lock lock(state->mutex);
+            while (!state->worker_exited && state->worker_thread.joinable()) {
+                state->cv.wait(lock);
+            }
+        }
         cleanup_finished_run(run_id, state);
     }
 }

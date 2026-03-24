@@ -4,5 +4,6 @@ cd "$(dirname "$0")/.."
 echo "Building frontend..."
 cd web && pnpm build && cd ..
 echo "Building backend..."
-cmake --build build
+xmake f -y
+xmake
 echo "Done."

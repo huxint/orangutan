@@ -1,6 +1,5 @@
 #include "features/channel/core/jid-task-runner.hpp"
 
-#include <exec/start_detached.hpp>
 #include <stdexec/execution.hpp>
 
 #include <exception>
@@ -170,7 +169,7 @@ void JidTaskRunner::submit(const std::string &jid, Task task) {
                             spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
                         }
                     });
-    exec::start_detached(std::move(pipeline));
+    stdexec::start_detached(std::move(pipeline));
 }
 
 void JidTaskRunner::enqueue_scheduled_task(const std::string &jid, std::unique_ptr<QueuedTask> task) {
