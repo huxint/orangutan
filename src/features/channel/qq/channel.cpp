@@ -475,7 +475,7 @@ void QqChannel::handle_dispatch(const std::string &event_type, const json &data)
 }
 
 void QqChannel::handle_c2c_message(const json &data) {
-    if (!on_message_) {
+    if (on_message_ == nullptr) {
         return;
     }
 
@@ -493,7 +493,7 @@ void QqChannel::handle_c2c_message(const json &data) {
 }
 
 void QqChannel::handle_group_message(const json &data) {
-    if (!on_message_) {
+    if (on_message_ == nullptr) {
         return;
     }
 

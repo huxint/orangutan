@@ -131,14 +131,14 @@ void clear_channel_mode_callback_for_tests() {
 
 void maybe_inject_web_runtime_build_failure_for_tests() {
     auto &callback = web_runtime_build_callback();
-    if (callback) {
+    if (callback != nullptr) {
         callback();
     }
 }
 
 bool inspect_web_startup_for_tests(const WebStartupInspection &inspection) {
     auto &callback = web_startup_inspection_callback();
-    if (!callback) {
+    if (callback == nullptr) {
         return false;
     }
     return callback(inspection);

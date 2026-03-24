@@ -323,7 +323,7 @@ boost::ut::suite web_routes_suite = [] {
         expect(runtime.tool_context.current_session_id == &session_id);
         expect(runtime.tool_context.allowed_child_agents == std::vector<std::string>({"coder"}));
         expect(runtime.tool_context.automation_runtime == &app_runtime.automation_runtime());
-        expect(static_cast<bool>(runtime.tool_context.approval_callback));
+        expect(runtime.tool_context.approval_callback != nullptr);
         expect(runtime.agent != nullptr);
 
         const auto shell = std::ranges::find_if(definitions, [](const orangutan::ToolDef &definition) {

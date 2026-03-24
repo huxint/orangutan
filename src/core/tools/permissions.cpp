@@ -152,7 +152,7 @@ std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBl
             break;
     }
 
-    if (!approval_callback) {
+    if (approval_callback == nullptr) {
         return blocked_result(call, "Shell command requires approval, but interactive approval is unavailable.");
     }
 

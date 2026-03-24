@@ -21,7 +21,7 @@ void ChannelManager::connect_all(const MessageCallback &on_message) {
                 return;
             }
 
-            if (on_message) {
+            if (on_message != nullptr) {
                 on_message(message);
             }
         });

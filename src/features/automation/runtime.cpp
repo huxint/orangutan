@@ -346,7 +346,7 @@ Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, std
                                     record_delivery_failure(trigger, run_id, trigger.name, body);
                                     continue;
                                 }
-                                if (!callbacks.notifier) {
+                                if (callbacks.notifier == nullptr) {
                                     completed.delivery_status = "notify_failed";
                                     record_delivery_failure(trigger, run_id, trigger.name, body);
                                     continue;

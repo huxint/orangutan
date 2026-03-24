@@ -360,7 +360,7 @@ private:
                 auto connection = std::move(connection_);
                 connection_reset_requested_ = false;
                 lock.unlock();
-                if (connection) {
+                if (connection != nullptr) {
                     connection->close();
                 }
                 continue;
@@ -436,7 +436,7 @@ private:
 
             try {
                 auto event = connection->wait_event(std::chrono::milliseconds(100));
-                if (event) {
+                if (event.has_value()) {
                     handle_event(std::move(*event));
                 }
             } catch (const std::exception &e) {
@@ -521,7 +521,7 @@ private:
     }
 
     void emit_open() const {
-        if (!callbacks_.on_open) {
+        if (callbacks_.on_open == nullptr) {
             return;
         }
         try {
@@ -532,7 +532,7 @@ private:
     }
 
     void emit_text(const std::string &text) const {
-        if (!callbacks_.on_text) {
+        if (callbacks_.on_text == nullptr) {
             return;
         }
         try {
@@ -543,7 +543,7 @@ private:
     }
 
     void emit_close(uint16_t code, const std::string &reason) const {
-        if (!callbacks_.on_close) {
+        if (callbacks_.on_close == nullptr) {
             return;
         }
         try {
@@ -554,7 +554,7 @@ private:
     }
 
     void emit_error(const std::string &error) const {
-        if (!callbacks_.on_error) {
+        if (callbacks_.on_error == nullptr) {
             return;
         }
         try {

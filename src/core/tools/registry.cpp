@@ -57,7 +57,7 @@ std::vector<ToolDef> ToolRegistry::definitions() const {
 }
 
 ToolResultBlock ToolRegistry::execute(const ToolUseBlock &call) const {
-    if (execution_guard_) {
+    if (execution_guard_ != nullptr) {
         if (auto blocked = execution_guard_(call); blocked.has_value()) {
             return *blocked;
         }

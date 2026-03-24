@@ -32,12 +32,12 @@ public:
 
     [[nodiscard]]
     bool supports_completion_routing() const {
-        return static_cast<bool>(inbox_callback_);
+        return inbox_callback_ != nullptr;
     }
 
     [[nodiscard]]
     bool supports_resume_callback() const {
-        return static_cast<bool>(resume_callback_);
+        return resume_callback_ != nullptr;
     }
 
     [[nodiscard]]
@@ -58,7 +58,7 @@ private:
 [[nodiscard]]
 inline std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionInboxCallback inbox_callback,
                                                                                                               BackgroundCompletionResumeCallback resume_callback = {}) {
-    if (!inbox_callback) {
+    if (inbox_callback == nullptr) {
         return nullptr;
     }
 

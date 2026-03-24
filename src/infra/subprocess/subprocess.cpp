@@ -859,7 +859,7 @@ BackgroundProcessSummary BackgroundProcessManager::start(const SubprocessConfig 
             auto pipeline = stdexec::just() | stdexec::then([entry] {
                                 return Impl::wait_for_process_exit(entry);
                             }) |
-                            stdexec::then([entry, has_completion_callback = static_cast<bool>(completion_callback)](const Impl::WaitOutcome &outcome) {
+                            stdexec::then([entry, has_completion_callback = (completion_callback != nullptr)](const Impl::WaitOutcome &outcome) {
                                 return Impl::finalize_wait_outcome(entry, outcome, has_completion_callback);
                             }) |
                             stdexec::then([entry, completion_callback](std::optional<BackgroundProcessCompletionEvent> completion_event) {
