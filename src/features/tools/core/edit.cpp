@@ -34,19 +34,28 @@ struct ValidatedFile {
     bool is_new_file = false;
 };
 
-void write_lines(std::ostream &out, std::span<const std::string> lines, bool trailing_newline) {
+std::string render_lines(std::span<const std::string> lines, bool trailing_newline) {
     if (lines.empty()) {
-        return;
+        return {};
     }
 
-    out.write(lines.front().data(), static_cast<std::streamsize>(lines.front().size()));
+    size_t total_size = trailing_newline ? 1 : 0;
+    for (const auto &line : lines) {
+        total_size += line.size();
+    }
+    total_size += lines.size() - 1;
+
+    std::string output;
+    output.reserve(total_size);
+    output.append(lines.front());
     for (const auto &line : lines | std::views::drop(1)) {
-        out.put('\n');
-        out.write(line.data(), static_cast<std::streamsize>(line.size()));
+        output.push_back('\n');
+        output.append(line);
     }
     if (trailing_newline) {
-        out.put('\n');
+        output.push_back('\n');
     }
+    return output;
 }
 
 std::vector<FilePatch> parse_patch(std::string_view patch) {
@@ -299,15 +308,11 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
         throw std::runtime_error(result.error);
     }
 
-    {
-        std::ostringstream output;
-        write_lines(output, result.lines, had_trailing_newline);
-        fileio::write_file(resolved_path, output.str());
-    }
+    fileio::write_file(resolved_path, render_lines(result.lines, had_trailing_newline));
 
     std::string summary = std::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
     if (!result.warnings.empty()) {
-        summary += std::format("\nWarnings: {}", result.warnings);
+        summary += "\nWarnings: " + result.warnings;
     }
     return summary;
 }

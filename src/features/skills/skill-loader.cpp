@@ -6,15 +6,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <spdlog/spdlog.h>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <toml++/toml.hpp>
 #include <unordered_map>
 
 namespace orangutan {
 
 namespace {
-
-namespace fs = std::filesystem;
 
 constexpr std::string_view toml_delimiter = "+++";
 constexpr std::string_view yaml_delimiter = "---";
@@ -183,7 +182,7 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
     }
 
     // Extract frontmatter content and body
-    std::ostringstream fm_buf;
+    std::string fm_buf;
     bool found_closing = false;
     size_t body_start_index = lines.size();
 
@@ -192,17 +191,19 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
         for (size_t index = open_index + 1; index < lines.size(); ++index) {
             if (is_toml_delimiter(lines[index])) {
                 try {
-                    auto parsed = toml::parse(fm_buf.str());
+                    auto parsed = toml::parse(fm_buf);
                     static_cast<void>(parsed);
                     found_closing = true;
                     body_start_index = index + 1;
                     break;
                 } catch (const toml::parse_error &) {
-                    fm_buf << lines[index] << '\n';
+                    fm_buf.append(lines[index]);
+                    fm_buf.push_back('\n');
                     continue;
                 }
             }
-            fm_buf << lines[index] << '\n';
+            fm_buf.append(lines[index]);
+            fm_buf.push_back('\n');
         }
     } else {
         // YAML: simple close on first ---
@@ -212,7 +213,8 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
                 body_start_index = index + 1;
                 break;
             }
-            fm_buf << lines[index] << '\n';
+            fm_buf.append(lines[index]);
+            fm_buf.push_back('\n');
         }
     }
 
@@ -222,15 +224,14 @@ ParsedSkillFile parse_skill_file(const std::string &content, const std::string &
     }
 
     // Build body
-    std::ostringstream body_buf;
+    std::string body;
     for (size_t index = body_start_index; index < lines.size(); ++index) {
         if (index != body_start_index) {
-            body_buf << '\n';
+            body.push_back('\n');
         }
-        body_buf << lines[index];
+        body.append(lines[index]);
     }
-    auto fm_text = fm_buf.str();
-    auto body = body_buf.str();
+    auto fm_text = fm_buf;
 
     SkillDef skill;
 
@@ -304,13 +305,13 @@ void SkillLoader::load_from_directories(const std::vector<std::string> &director
 
     for (const auto &dir_path : directories) {
         std::error_code ec;
-        if (!fs::exists(dir_path, ec) || ec || !fs::is_directory(dir_path, ec) || ec) {
+        if (!std::filesystem::exists(dir_path, ec) || ec || !std::filesystem::is_directory(dir_path, ec) || ec) {
             spdlog::debug("Skill directory does not exist, skipping: {}", dir_path);
             continue;
         }
 
-        std::vector<fs::directory_entry> entries;
-        for (fs::directory_iterator it(dir_path, ec), end; !ec && it != end; it.increment(ec)) {
+        std::vector<std::filesystem::directory_entry> entries;
+        for (std::filesystem::directory_iterator it(dir_path, ec), end; !ec && it != end; it.increment(ec)) {
             const auto &entry = *it;
             if (!entry.is_directory(ec) || ec) {
                 continue;
@@ -323,14 +324,14 @@ void SkillLoader::load_from_directories(const std::vector<std::string> &director
             continue;
         }
 
-        std::ranges::sort(entries, [](const fs::directory_entry &left, const fs::directory_entry &right) {
+        std::ranges::sort(entries, [](const std::filesystem::directory_entry &left, const std::filesystem::directory_entry &right) {
             return left.path().lexically_normal().string() < right.path().lexically_normal().string();
         });
 
         for (const auto &entry : entries) {
 
             auto skill_file = entry.path() / "SKILL.md";
-            if (!fs::exists(skill_file, ec) || ec) {
+            if (!std::filesystem::exists(skill_file, ec) || ec) {
                 continue;
             }
 
@@ -367,13 +368,13 @@ std::string SkillLoader::build_prompt_section() const {
         return {};
     }
 
-    std::ostringstream out;
-    out << "\n\n## Active Skills\n";
+    std::string out;
+    out.append("\n\n## Active Skills\n");
     for (const auto &skill : skills_) {
-        out << "\n### " << skill.name << "\n";
-        out << skill.body;
+        std::format_to(std::back_inserter(out), "\n### {}\n", skill.name);
+        out.append(skill.body);
     }
-    return out.str();
+    return out;
 }
 
 } // namespace orangutan

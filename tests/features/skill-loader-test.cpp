@@ -11,25 +11,24 @@
 using namespace orangutan;
 
 namespace {
-namespace fs = std::filesystem;
 
-fs::path fixtures_dir() {
-    return fs::path(SOURCE_DIR) / "tests/fixtures/skills";
+std::filesystem::path fixtures_dir() {
+    return std::filesystem::path(SOURCE_DIR) / "tests/fixtures/skills";
 }
 
-fs::path override_dir() {
-    return fs::path(SOURCE_DIR) / "tests/fixtures/skills-override";
+std::filesystem::path override_dir() {
+    return std::filesystem::path(SOURCE_DIR) / "tests/fixtures/skills-override";
 }
 
 using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
-fs::path make_temp_dir(const std::string &name) {
+std::filesystem::path make_temp_dir(const std::string &name) {
     return orangutan::testing::unique_test_root(name);
 }
 
-void write_skill(const fs::path &root, const std::string &dir_name, const std::string &content) {
+void write_skill(const std::filesystem::path &root, const std::string &dir_name, const std::string &content) {
     const auto skill_dir = root / dir_name;
-    fs::create_directories(skill_dir);
+    std::filesystem::create_directories(skill_dir);
     std::ofstream out(skill_dir / "SKILL.md");
     out << content;
 }
@@ -162,7 +161,7 @@ Body with embedded delimiter in frontmatter string.
         expect(loader.active_skills()[0].name == "embedded-delimiter");
         expect(loader.active_skills()[0].body.contains("Body with embedded delimiter"));
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "loads_frontmatter_with_delimiter_line_inside_toml_multiline_string"_test = [] {
@@ -186,7 +185,7 @@ Body after multiline string frontmatter.
         expect(loader.active_skills()[0].name == "multiline-delimiter");
         expect(loader.active_skills()[0].body.contains("Body after multiline string frontmatter."));
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "loads_frontmatter_with_utf8_bom_before_opening_delimiter"_test = [] {
@@ -204,7 +203,7 @@ Body after BOM.
         expect(loader.active_skills().size() == 1_ul);
         expect(loader.active_skills()[0].name == "bom-skill");
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "loads_frontmatter_with_leading_blank_line_before_opening_delimiter"_test = [] {
@@ -223,7 +222,7 @@ Body after leading blank line.
         expect(loader.active_skills().size() == 1_ul);
         expect(loader.active_skills()[0].name == "blank-line-skill");
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "active_skills_are_sorted_by_name_after_shadowing"_test = [] {
@@ -257,8 +256,8 @@ alpha override body
         expect(loader.active_skills()[0].description == "alpha override");
         expect(loader.active_skills()[1].name == "zebra");
 
-        fs::remove_all(base_dir);
-        fs::remove_all(override_root);
+        std::filesystem::remove_all(base_dir);
+        std::filesystem::remove_all(override_root);
     };
 
     "loads_yaml_frontmatter"_test = [] {
@@ -296,7 +295,7 @@ YAML body content here.
         expect(loader.active_skills()[0].tools[1] == "grep");
         expect(loader.active_skills()[0].body.contains("YAML body content"));
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "loads_yaml_with_quoted_values"_test = [] {
@@ -317,7 +316,7 @@ Quoted values body.
         expect(loader.active_skills()[0].description == "Single-quoted description");
         expect(loader.active_skills()[0].tools.size() == 2_ul);
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 
     "build_prompt_section_uses_deterministic_skill_order"_test = [] {
@@ -346,7 +345,7 @@ alpha prompt body
         expect((zebra_pos != std::string::npos) >> fatal);
         expect(alpha_pos < zebra_pos);
 
-        fs::remove_all(temp_dir);
+        std::filesystem::remove_all(temp_dir);
     };
 };
 

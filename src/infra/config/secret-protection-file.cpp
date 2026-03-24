@@ -106,7 +106,7 @@ std::string read_config_file(const std::filesystem::path &path) {
     try {
         return fileio::read_file(path);
     } catch (const std::runtime_error &) {
-        throw ConfigSecretProtectionError(std::format("Failed to read config file: {}", path.string()));
+        throw ConfigSecretProtectionError("Failed to read config file: " + path.string());
     }
 }
 
@@ -114,7 +114,7 @@ void write_config_file(const std::filesystem::path &path, const std::string &con
     try {
         fileio::write_file_binary(path, content);
     } catch (const std::runtime_error &) {
-        throw ConfigSecretProtectionError(std::format("Failed to write config file: {}", path.string()));
+        throw ConfigSecretProtectionError("Failed to write config file: " + path.string());
     }
 }
 
@@ -202,11 +202,11 @@ ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::pa
         return {};
     }
 
-    std::ostringstream rebuilt;
+    std::string rebuilt;
     for (size_t index = 0; index < lines.size(); ++index) {
-        rebuilt << lines[index];
+        rebuilt += lines[index];
         if (index + 1 < lines.size() || had_trailing_newline) {
-            rebuilt << '\n';
+            rebuilt.push_back('\n');
         }
     }
 
@@ -223,7 +223,7 @@ ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::pa
     }
 
     try {
-        write_config_file(temp_path, rebuilt.str());
+        write_config_file(temp_path, rebuilt);
         preserve_permissions(temp_path, original_permissions);
         std::filesystem::rename(temp_path, path, ec);
         if (ec) {

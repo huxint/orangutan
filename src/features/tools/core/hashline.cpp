@@ -8,8 +8,9 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <format>
+#include <iterator>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -209,19 +210,25 @@ struct ApplyGroup {
 
 // Format context lines around a mismatch for error messages.
 std::string format_mismatch_context(const std::vector<std::string> &lines, const HashMismatch &mm) {
-    std::ostringstream oss;
+    std::string out;
     auto line_idx = mm.line - 1; // 0-based
     // 2 lines of context before
     for (size_t ctx = (line_idx >= 2 ? line_idx - 2 : 0); ctx < line_idx; ++ctx) {
-        oss << "  " << format_hashline(lines[ctx], ctx + 1) << "\n";
+        out += "  ";
+        out += format_hashline(lines[ctx], ctx + 1);
+        out.push_back('\n');
     }
     // The mismatched line
-    oss << ">>> " << format_hashline(lines[line_idx], line_idx + 1) << "  // <-- actual content\n";
+    out += ">>> ";
+    out += format_hashline(lines[line_idx], line_idx + 1);
+    out += "  // <-- actual content\n";
     // 2 lines of context after
     for (size_t ctx = line_idx + 1; ctx < std::min(lines.size(), line_idx + 3); ++ctx) {
-        oss << "  " << format_hashline(lines[ctx], ctx + 1) << "\n";
+        out += "  ";
+        out += format_hashline(lines[ctx], ctx + 1);
+        out.push_back('\n');
     }
-    return oss.str();
+    return out;
 }
 
 // Effective range of a resolved edit (1-based, inclusive).
@@ -312,14 +319,14 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, c
 
     // Step 3: Report all hash mismatches at once
     if (!mismatches.empty()) {
-        std::ostringstream oss;
+        std::string error;
         for (const auto &mm : mismatches) {
-            oss << "Hash mismatch at line " << mm.line << ": expected " << mm.expected << ", got " << (mm.actual.empty() ? "out-of-range" : mm.actual) << "\n";
+            std::format_to(std::back_inserter(error), "Hash mismatch at line {}: expected {}, got {}\n", mm.line, mm.expected, mm.actual.empty() ? "out-of-range" : mm.actual);
             if (!mm.actual.empty()) {
-                oss << format_mismatch_context(lines, mm);
+                error += format_mismatch_context(lines, mm);
             }
         }
-        return {.ok = false, .error = oss.str()};
+        return {.ok = false, .error = error};
     }
 
     // Step: Validate ranges (end_anchor.line >= anchor.line)

@@ -2,8 +2,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <format>
+#include <iterator>
 #include <random>
-#include <sstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -240,14 +241,10 @@ std::string SessionStore::generate_uuid() {
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<uint32_t> dist;
 
-    std::ostringstream out;
-    out << std::hex;
-    out << dist(gen) << '-';
-    out << (dist(gen) & 0xFFFF) << '-';
-    out << (0x4000 | (dist(gen) & 0x0FFF)) << '-';
-    out << (0x8000 | (dist(gen) & 0x3FFF)) << '-';
-    out << dist(gen) << (dist(gen) & 0xFFFF);
-    return out.str();
+    std::string out;
+    std::format_to(std::back_inserter(out), "{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
+                   dist(gen) & 0xFFFF);
+    return out;
 }
 
 std::string SessionStore::save(const std::vector<Message> &messages, const std::string &model, const std::string &scope_key) {

@@ -2,7 +2,8 @@
 
 #include <array>
 #include <cstdint>
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan::app {
 
@@ -212,31 +213,31 @@ SlashCommandReply invoke_required_arg(std::string_view args, const SharedSlashCo
 }
 
 std::string wrap_slash_reply(std::string_view title, std::string_view emoji, const std::string &text) {
-    std::ostringstream out;
-    out << "## " << title << '\n';
+    std::string out;
+    std::format_to(std::back_inserter(out), "## {}\n", title);
 
     if (text.empty()) {
-        out << "- " << emoji << " No output.";
-        return out.str();
+        std::format_to(std::back_inserter(out), "- {} No output.", emoji);
+        return out;
     }
 
     if (text.starts_with("Error: ")) {
-        out << "- ⚠️ " << text.substr(7);
-        return out.str();
+        std::format_to(std::back_inserter(out), "- ⚠️ {}", text.substr(7));
+        return out;
     }
 
     if (text.starts_with("Usage: ")) {
-        out << "- ℹ️ `" << text << '`';
-        return out.str();
+        std::format_to(std::back_inserter(out), "- ℹ️ `{}`", text);
+        return out;
     }
 
     if (text.starts_with("- ")) {
-        out << text;
-        return out.str();
+        out += text;
+        return out;
     }
 
-    out << "- " << emoji << ' ' << text;
-    return out.str();
+    std::format_to(std::back_inserter(out), "- {} {}", emoji, text);
+    return out;
 }
 
 SlashCommandReply execute_registry_command(const ToolRegistry *tool_registry, std::string_view tool_name, const json &input, std::string_view tool_use_id) {
@@ -426,7 +427,7 @@ constexpr auto k_cli_only_help_commands = std::array{
 };
 
 template <typename Specs>
-void append_help_lines(std::ostringstream &out, const Specs &specs, slash_command_surface surface) {
+void append_help_lines(std::string &out, const Specs &specs, slash_command_surface surface) {
     for (const auto &spec : specs) {
         if (!supports_surface(spec.definition.surfaces, surface)) {
             continue;
@@ -435,23 +436,21 @@ void append_help_lines(std::ostringstream &out, const Specs &specs, slash_comman
         if (description.empty()) {
             continue;
         }
-        out << "- `" << spec.definition.usage << "` - " << description << '\n';
+        std::format_to(std::back_inserter(out), "- `{}` - {}\n", spec.definition.usage, description);
     }
 }
 
 } // namespace
 
 std::string render_slash_help_text(slash_command_surface surface) {
-    std::ostringstream out;
-    out << "## Commands\n";
+    std::string out = "## Commands\n";
     append_help_lines(out, k_shared_slash_commands, surface);
     append_help_lines(out, k_registry_slash_commands, surface);
     append_help_lines(out, k_cli_only_help_commands, surface);
-    auto text = out.str();
-    if (!text.empty() && text.back() == '\n') {
-        text.pop_back();
+    if (!out.empty() && out.back() == '\n') {
+        out.pop_back();
     }
-    return text;
+    return out;
 }
 
 SlashCommandReply dispatch_shared_slash_command(const std::string &line, const SharedSlashCommandContext &context) {

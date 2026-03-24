@@ -2,7 +2,8 @@
 
 #include "features/automation/runtime.hpp"
 
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan {
 namespace {
@@ -21,12 +22,14 @@ std::string execute_inbox_tool(const json &input, const ToolRuntimeContext *ctx)
         if (items.empty()) {
             return "Inbox is empty.";
         }
-        std::ostringstream out;
+        std::string out;
         for (const auto &item : items) {
-            out << "- " << item.id << " [" << item.status << "] " << item.title << '\n';
-            out << "  " << item.body << '\n';
+            std::format_to(std::back_inserter(out), "- {} [{}] {}\n", item.id, item.status, item.title);
+            out.append("  ");
+            out.append(item.body);
+            out.push_back('\n');
         }
-        return out.str();
+        return out;
     }
 
     if (op == "clear") {

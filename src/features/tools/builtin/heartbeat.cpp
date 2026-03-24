@@ -4,26 +4,25 @@
 #include "features/automation/runtime.hpp"
 #include "features/tools/builtin/automation-tool-support.hpp"
 
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan {
 namespace {
 
-namespace builtin_detail = builtin::detail;
-
 std::string format_heartbeat(const automation::HeartbeatSpec &heartbeat) {
-    std::ostringstream out;
-    out << "- " << heartbeat.name << " every=" << heartbeat.every_seconds << "s";
+    std::string out;
+    std::format_to(std::back_inserter(out), "- {} every={}s", heartbeat.name, heartbeat.every_seconds);
     if (heartbeat.jitter_seconds > 0) {
-        out << " jitter=" << heartbeat.jitter_seconds << "s";
+        std::format_to(std::back_inserter(out), " jitter={}s", heartbeat.jitter_seconds);
     }
     if (heartbeat.next_due_at.has_value()) {
-        out << " next_due=" << *heartbeat.next_due_at;
+        std::format_to(std::back_inserter(out), " next_due={}", *heartbeat.next_due_at);
     }
     if (heartbeat.paused) {
-        out << " paused";
+        out.append(" paused");
     }
-    return out.str();
+    return out;
 }
 
 std::string execute_heartbeat_tool(const json &input, const ToolRuntimeContext *ctx) {
@@ -40,11 +39,12 @@ std::string execute_heartbeat_tool(const json &input, const ToolRuntimeContext *
         if (heartbeats.empty()) {
             return "No heartbeats configured.";
         }
-        std::ostringstream out;
+        std::string out;
         for (const auto &heartbeat : heartbeats) {
-            out << format_heartbeat(heartbeat) << '\n';
+            out.append(format_heartbeat(heartbeat));
+            out.push_back('\n');
         }
-        return out.str();
+        return out;
     }
 
     const auto id_or_name = input.value("id", input.value("name", ""));
@@ -108,13 +108,13 @@ std::string execute_heartbeat_tool(const json &input, const ToolRuntimeContext *
     const bool has_active_hours_field = input.contains("active_hours");
     const bool timing_changed = input.contains("every") || input.contains("jitter") || has_active_hours_field;
 
-    auto delivery = builtin_detail::parse_delivery_overlay(input, heartbeat.delivery);
+    auto delivery = builtin::detail::parse_delivery_overlay(input, heartbeat.delivery);
     if (!delivery.has_value()) {
         return "Error: " + delivery.error() + ".";
     }
     heartbeat.delivery = std::move(*delivery);
 
-    auto active_hours = builtin_detail::parse_active_hours_overlay(input);
+    auto active_hours = builtin::detail::parse_active_hours_overlay(input);
     if (!active_hours.has_value()) {
         return "Error: " + active_hours.error() + ".";
     }

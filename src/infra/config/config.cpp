@@ -1,13 +1,9 @@
 #include "infra/config/config-detail.hpp"
 #include "infra/config/secret-fields.hpp"
-#include "infra/files/file.hpp"
-
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <format>
-#include <print>
-#include <sstream>
+#include <fstream>
 #include <stdexcept>
 
 #include <spdlog/spdlog.h>
@@ -296,15 +292,16 @@ void Config::save_to(const std::filesystem::path &path) const {
     }
 
     // Write to file
-    std::ostringstream rendered;
-    rendered << tbl;
-
-    fileio::File file(path, "w");
     try {
-        std::print(file.get(), "{}", rendered.str());
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("open failed");
+        }
+        file.exceptions(std::ios::badbit | std::ios::failbit);
+        file << tbl;
         file.close();
     } catch (const std::exception &) {
-        throw std::runtime_error(std::format("Failed to write config file: {}", path.string()));
+        throw std::runtime_error("Failed to write config file: " + path.string());
     }
 }
 

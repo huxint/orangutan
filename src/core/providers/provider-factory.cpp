@@ -9,7 +9,8 @@
 #include <exception>
 #include <mutex>
 #include <optional>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>
@@ -163,16 +164,16 @@ private:
 
     [[nodiscard]]
     static std::runtime_error make_all_failed_error(const std::vector<std::string> &errors) {
-        std::ostringstream summary;
-        summary << "All configured models failed";
+        std::string summary = "All configured models failed";
         if (!errors.empty()) {
-            summary << " (" << errors.front();
+            summary.append(" (");
+            summary.append(errors.front());
             for (size_t index = 1; index < errors.size(); ++index) {
-                summary << "; " << errors[index];
+                std::format_to(std::back_inserter(summary), "; {}", errors[index]);
             }
-            summary << ")";
+            summary.push_back(')');
         }
-        return std::runtime_error(summary.str());
+        return std::runtime_error(summary);
     }
 
     [[nodiscard]]
@@ -185,9 +186,9 @@ private:
             std::scoped_lock lock(mutex_);
             ++usage_.failed_attempts;
 
-            std::ostringstream message;
-            message << failed_model << ": " << error_message;
-            state.errors.push_back(message.str());
+            std::string message;
+            std::format_to(std::back_inserter(message), "{}: {}", failed_model, error_message);
+            state.errors.push_back(std::move(message));
 
             if (state.attempt_index + 1 < endpoints_.size()) {
                 const auto candidate_index = state.attempt_index + 1;

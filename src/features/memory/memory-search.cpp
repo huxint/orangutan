@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <set>
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan::memory_detail {
 
@@ -141,15 +142,15 @@ double score_memory_match(const MemoryRecord &record, const std::string &query) 
 }
 
 std::string format_records(const std::vector<MemoryRecord> &records) {
-    std::ostringstream out;
+    std::string out;
     for (const auto &record : records) {
-        out << '[' << record.category << ':' << record.key << "] " << record.content;
+        std::format_to(std::back_inserter(out), "[{}:{}] {}", record.category, record.key, record.content);
         if (!record.source.empty()) {
-            out << " {source=" << record.source << '}';
+            std::format_to(std::back_inserter(out), " {{source={}}}", record.source);
         }
-        out << '\n';
+        out.push_back('\n');
     }
-    return out.str();
+    return out;
 }
 
 std::string merge_memory_content(const std::string &existing, const std::string &incoming) {
@@ -183,14 +184,14 @@ std::string merge_memory_content(const std::string &existing, const std::string 
         }
     }
 
-    std::ostringstream merged;
+    std::string merged;
     for (size_t index = 0; index < fragments.size(); ++index) {
         if (index > 0) {
-            merged << "\n";
+            merged.push_back('\n');
         }
-        merged << fragments[index];
+        merged.append(fragments[index]);
     }
-    return merged.str();
+    return merged;
 }
 
 std::optional<std::string> build_fts_query(const std::string &query) {
@@ -199,14 +200,14 @@ std::optional<std::string> build_fts_query(const std::string &query) {
         return std::nullopt;
     }
 
-    std::ostringstream out;
+    std::string out;
     for (size_t index = 0; index < tokens.size(); ++index) {
         if (index > 0) {
-            out << " OR ";
+            out.append(" OR ");
         }
-        out << tokens[index];
+        out.append(tokens[index]);
     }
-    return out.str();
+    return out;
 }
 
 std::vector<MemoryRecord> collect_records(sqlite::Statement &stmt) {

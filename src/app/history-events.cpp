@@ -1,7 +1,8 @@
 #include "app/history-events.hpp"
 
 #include <algorithm>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <unordered_map>
 
 namespace orangutan::app {
@@ -94,24 +95,36 @@ json build_edit_details(const ToolUseBlock &call) {
     const auto start_new = prefix_context_start + 1;
     const auto count_old = prefix_context_count + (old_lines.size() - prefix - suffix) + suffix_context_count;
     const auto count_new = prefix_context_count + (new_lines.size() - prefix - suffix) + suffix_context_count;
-    const auto header = "@@ -" + std::to_string(start_old) + "," + std::to_string(count_old) + " +" + std::to_string(start_new) + "," + std::to_string(count_new) + " @@";
+    const auto header = std::format("@@ -{},{} +{},{} @@", start_old, count_old, start_new, count_new);
 
-    std::ostringstream unified;
-    unified << "--- a/" << (path.empty() ? "before" : path) << '\n';
-    unified << "+++ b/" << (path.empty() ? "after" : path) << '\n';
-    unified << header;
+    std::string unified;
+    unified.append("--- a/");
+    unified.append(path.empty() ? "before" : path);
+    unified.push_back('\n');
+    unified.append("+++ b/");
+    unified.append(path.empty() ? "after" : path);
+    unified.push_back('\n');
+    std::format_to(std::back_inserter(unified), "{}", header);
 
     for (size_t index = prefix_context_start; index < prefix; ++index) {
-        unified << '\n' << ' ' << old_lines[index];
+        unified.push_back('\n');
+        unified.push_back(' ');
+        unified.append(old_lines[index]);
     }
     for (size_t index = prefix; index < old_lines.size() - suffix; ++index) {
-        unified << '\n' << '-' << old_lines[index];
+        unified.push_back('\n');
+        unified.push_back('-');
+        unified.append(old_lines[index]);
     }
     for (size_t index = prefix; index < new_lines.size() - suffix; ++index) {
-        unified << '\n' << '+' << new_lines[index];
+        unified.push_back('\n');
+        unified.push_back('+');
+        unified.append(new_lines[index]);
     }
     for (size_t index = suffix_context_start; index < suffix_context_start + suffix_context_count; ++index) {
-        unified << '\n' << ' ' << old_lines[index];
+        unified.push_back('\n');
+        unified.push_back(' ');
+        unified.append(old_lines[index]);
     }
 
     auto hunks = json::array();
@@ -125,7 +138,7 @@ json build_edit_details(const ToolUseBlock &call) {
         {"path", path},
         {"diff",
          {
-             {"unified", unified.str()},
+             {"unified", unified},
              {"hunks", hunks},
          }},
     };

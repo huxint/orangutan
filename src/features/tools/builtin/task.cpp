@@ -5,24 +5,24 @@
 #include "features/cron/parser.hpp"
 #include "features/tools/builtin/automation-tool-support.hpp"
 
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan {
 namespace {
 
 using automation::TaskScheduleKind;
-namespace builtin_detail = builtin::detail;
 
 std::string format_task(const automation::TaskSpec &task) {
-    std::ostringstream out;
-    out << "- " << task.name << " [" << automation::task_schedule_kind_to_string(task.schedule.kind) << "=" << task.schedule.value << "]";
+    std::string out;
+    std::format_to(std::back_inserter(out), "- {} [{}={}]", task.name, automation::task_schedule_kind_to_string(task.schedule.kind), task.schedule.value);
     if (task.last_run_at.has_value()) {
-        out << " last_run=" << *task.last_run_at;
+        std::format_to(std::back_inserter(out), " last_run={}", *task.last_run_at);
     }
     if (!task.last_status.empty()) {
-        out << " status=" << task.last_status;
+        std::format_to(std::back_inserter(out), " status={}", task.last_status);
     }
-    return out.str();
+    return out;
 }
 
 std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) {
@@ -39,11 +39,12 @@ std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) 
         if (tasks.empty()) {
             return "No tasks configured.";
         }
-        std::ostringstream out;
+        std::string out;
         for (const auto &task : tasks) {
-            out << format_task(task) << '\n';
+            out.append(format_task(task));
+            out.push_back('\n');
         }
-        return out.str();
+        return out;
     }
 
     const auto id_or_name = input.value("id", input.value("name", ""));
@@ -100,7 +101,7 @@ std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) 
         }
     }
 
-    auto delivery = builtin_detail::parse_delivery_overlay(input, task.delivery);
+    auto delivery = builtin::detail::parse_delivery_overlay(input, task.delivery);
     if (!delivery.has_value()) {
         return "Error: " + delivery.error() + ".";
     }

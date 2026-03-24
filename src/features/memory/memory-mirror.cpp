@@ -6,9 +6,8 @@
 #include <chrono>
 #include <ctime>
 #include <format>
-#include <iomanip>
+#include <iterator>
 #include <print>
-#include <sstream>
 #include <stdexcept>
 
 namespace orangutan {
@@ -23,9 +22,9 @@ std::string current_date_string() {
     std::tm local_tm{};
     localtime_r(&time, &local_tm);
 
-    std::ostringstream out;
-    out << std::put_time(&local_tm, "%Y-%m-%d");
-    return out.str();
+    std::string out;
+    std::format_to(std::back_inserter(out), "{:04}-{:02}-{:02}", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+    return out;
 }
 
 std::string current_timestamp_string() {
@@ -34,28 +33,31 @@ std::string current_timestamp_string() {
     std::tm local_tm{};
     localtime_r(&time, &local_tm);
 
-    std::ostringstream out;
-    out << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
-    return out.str();
+    std::string out;
+    std::format_to(std::back_inserter(out), "{:04}-{:02}-{:02} {:02}:{:02}:{:02}", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday, local_tm.tm_hour,
+                   local_tm.tm_min, local_tm.tm_sec);
+    return out;
 }
 
 std::string render_managed_block(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
-    std::ostringstream out;
-    out << managed_begin_marker << '\n';
-    out << "Generated durable memory for scope `" << context.scope << "`. Edit outside this managed block only.\n\n";
+    std::string out;
+    out.append(managed_begin_marker);
+    out.push_back('\n');
+    std::format_to(std::back_inserter(out), "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
     if (durable_records.empty()) {
-        out << "- No durable memories captured yet.\n";
+        out.append("- No durable memories captured yet.\n");
     } else {
         for (const auto &record : durable_records) {
-            out << "- [" << record.category << ':' << record.key << "] " << record.content;
+            std::format_to(std::back_inserter(out), "- [{}:{}] {}", record.category, record.key, record.content);
             if (!record.source.empty()) {
-                out << " {source=" << record.source << '}';
+                std::format_to(std::back_inserter(out), " {{source={}}}", record.source);
             }
-            out << '\n';
+            out.push_back('\n');
         }
     }
-    out << managed_end_marker << '\n';
-    return out.str();
+    out.append(managed_end_marker);
+    out.push_back('\n');
+    return out;
 }
 
 } // namespace
@@ -111,7 +113,7 @@ JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryC
 
     const auto journal_dir = context.journal_dir();
     std::filesystem::create_directories(journal_dir);
-    result.path = journal_dir / std::format("{}.md", current_date_string());
+    result.path = journal_dir / (current_date_string() + ".md");
 
     std::error_code ec;
     bool has_existing_content = false;

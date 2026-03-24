@@ -12,22 +12,22 @@
 using namespace orangutan;
 
 namespace {
-namespace fs = std::filesystem;
 
-fs::path fixtures_dir() {
-    return fs::path(SOURCE_DIR) / "tests/fixtures/hooks";
+std::filesystem::path fixtures_dir() {
+    return std::filesystem::path(SOURCE_DIR) / "tests/fixtures/hooks";
 }
 
-void ensure_fixture_scripts_are_executable(const fs::path &root) {
-    if (!fs::exists(root)) {
+void ensure_fixture_scripts_are_executable(const std::filesystem::path &root) {
+    if (!std::filesystem::exists(root)) {
         return;
     }
 
-    for (const auto &entry : fs::recursive_directory_iterator(root)) {
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(root)) {
         if (!entry.is_regular_file()) {
             continue;
         }
-        fs::permissions(entry.path(), fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec, fs::perm_options::replace);
+        std::filesystem::permissions(entry.path(), std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+                                     std::filesystem::perm_options::replace);
     }
 }
 
@@ -37,7 +37,7 @@ struct TempDirGuard {
 
     ~TempDirGuard() {
         std::error_code ec;
-        fs::remove_all(root, ec);
+        std::filesystem::remove_all(root, ec);
     }
 
     [[nodiscard]]
@@ -45,12 +45,12 @@ struct TempDirGuard {
         return root.string();
     }
 
-    fs::path root;
+    std::filesystem::path root;
 };
 
-void write_script(const fs::path &path, const std::string &content, bool executable = true) {
+void write_script(const std::filesystem::path &path, const std::string &content, bool executable = true) {
     if (const auto parent = path.parent_path(); !parent.empty()) {
-        fs::create_directories(parent);
+        std::filesystem::create_directories(parent);
     }
 
     std::ofstream out(path);
@@ -58,11 +58,11 @@ void write_script(const fs::path &path, const std::string &content, bool executa
     out.close();
 
     if (executable) {
-        fs::permissions(path, fs::perms::owner_exec | fs::perms::owner_read | fs::perms::owner_write);
+        std::filesystem::permissions(path, std::filesystem::perms::owner_exec | std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
     }
 }
 
-std::string read_file(const fs::path &path) {
+std::string read_file(const std::filesystem::path &path) {
     std::ifstream input(path);
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
@@ -87,7 +87,7 @@ boost::ut::suite hook_manager_suite = [] {
     "empty_directory_has_no_hooks"_test = [] {
         HookManager manager;
         TempDirGuard temp_dir{"empty-hooks"};
-        fs::create_directories(temp_dir.root);
+        std::filesystem::create_directories(temp_dir.root);
 
         manager.load_from_directories({temp_dir.string()});
 
@@ -114,7 +114,7 @@ boost::ut::suite hook_manager_suite = [] {
 
     "ignores_unknown_event_directories"_test = [] {
         TempDirGuard temp_dir{"unknown-hooks"};
-        fs::create_directories(temp_dir.root / "unknown_event");
+        std::filesystem::create_directories(temp_dir.root / "unknown_event");
 
         HookManager manager;
         manager.load_from_directories({temp_dir.string()});
@@ -209,7 +209,7 @@ boost::ut::suite hook_manager_suite = [] {
         TempDirGuard global_dir{"order-global"};
         TempDirGuard workspace_dir{"order-workspace"};
         const auto log_path = orangutan::testing::unique_test_path("hook-order-log", "order.log");
-        fs::remove(log_path);
+        std::filesystem::remove(log_path);
 
         write_script(global_dir.root / "after_tool_call" / "02-global.sh", "#!/bin/sh\nprintf 'global\\n' >> " + log_path.string() + "\nexit 0\n");
         write_script(global_dir.root / "after_tool_call" / "03-shared.sh", "#!/bin/sh\nprintf 'old-shared\\n' >> " + log_path.string() + "\nexit 0\n");
@@ -227,7 +227,7 @@ boost::ut::suite hook_manager_suite = [] {
         expect(result.allowed);
         expect(read_file(log_path) == "global\nworkspace\nnew-shared\n");
 
-        fs::remove(log_path);
+        std::filesystem::remove(log_path);
     };
 
     "build_before_tool_call_context_has_correct_fields"_test = [] {

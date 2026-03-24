@@ -2,7 +2,8 @@
 #include "features/tools/builtin/register-builtin.hpp"
 
 #include <algorithm>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <vector>
 
 namespace orangutan {
@@ -23,11 +24,10 @@ std::string recall_memory(const json &input, RuntimeMemory &runtime_memory) {
     if (input.contains("category")) {
         const auto category = input.at("category").get<std::string>();
         const auto entries = runtime_memory.recall_by_category(category, limit);
-        std::ostringstream out;
+        std::string result;
         for (const auto &[key, content] : entries) {
-            out << '[' << key << "] " << content << '\n';
+            std::format_to(std::back_inserter(result), "[{}] {}\n", key, content);
         }
-        const auto result = out.str();
         return result.empty() ? "(no memories found)" : result;
     }
 
@@ -53,15 +53,15 @@ std::string update_memory(const json &input, RuntimeMemory &runtime_memory) {
 }
 
 std::string format_memory_list(const std::vector<MemoryRecord> &entries) {
-    std::ostringstream out;
+    std::string out;
     for (const auto &entry : entries) {
-        out << '[' << entry.category << ':' << entry.key << "] " << entry.content;
+        std::format_to(std::back_inserter(out), "[{}:{}] {}", entry.category, entry.key, entry.content);
         if (!entry.source.empty()) {
-            out << " {source=" << entry.source << '}';
+            std::format_to(std::back_inserter(out), " {{source={}}}", entry.source);
         }
-        out << '\n';
+        out.push_back('\n');
     }
-    return out.str();
+    return out;
 }
 
 std::string list_memory(const json &input, RuntimeMemory &runtime_memory) {
@@ -74,13 +74,10 @@ std::string list_memory(const json &input, RuntimeMemory &runtime_memory) {
 
 std::string stats_memory(RuntimeMemory &runtime_memory) {
     const auto stats = runtime_memory.stats();
-    std::ostringstream out;
-    out << "total=" << stats.total << '\n';
-    out << "categories=" << stats.categories << '\n';
-    out << "manual=" << stats.manual_entries << '\n';
-    out << "auto=" << stats.auto_entries << '\n';
-    out << "journal=" << stats.journal_entries;
-    return out.str();
+    std::string out;
+    std::format_to(std::back_inserter(out), "total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
+                   stats.journal_entries);
+    return out;
 }
 
 } // namespace

@@ -2,7 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan {
 namespace {
@@ -155,12 +156,12 @@ std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBl
         return blocked_result(call, "Shell command requires approval, but interactive approval is unavailable.");
     }
 
-    std::ostringstream prompt;
-    prompt << "Shell command approval required.\n";
-    prompt << "Tool: " << call.name << '\n';
-    prompt << "Sandbox mode: " << to_string(settings.sandbox_mode) << '\n';
-    prompt << "Command: " << command;
-    if (!approval_callback(call, prompt.str())) {
+    std::string prompt;
+    prompt += "Shell command approval required.\n";
+    std::format_to(std::back_inserter(prompt), "Tool: {}\n", call.name);
+    std::format_to(std::back_inserter(prompt), "Sandbox mode: {}\n", to_string(settings.sandbox_mode));
+    std::format_to(std::back_inserter(prompt), "Command: {}", command);
+    if (!approval_callback(call, prompt)) {
         return blocked_result(call, "Shell command rejected by user.");
     }
 

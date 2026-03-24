@@ -4,8 +4,8 @@
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
-#include <iomanip>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -64,9 +64,9 @@ std::string sanitize_identity_component(std::string_view value) {
 }
 
 std::string make_identity_slug(const std::string &jid) {
-    std::ostringstream out;
-    out << sanitize_identity_component(jid) << '-' << std::hex << std::setw(16) << std::setfill('0') << fnv1a_64(jid);
-    return out.str();
+    std::string out;
+    std::format_to(std::back_inserter(out), "{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
+    return out;
 }
 
 std::string normalize_path(const std::filesystem::path &path) {
@@ -183,42 +183,41 @@ RuntimeIdentity derive_child_identity(const std::string &workspace_root, const s
 }
 
 std::string append_subagent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &allowed_child_agents, bool is_child_run) {
-    std::ostringstream prompt;
-    prompt << system_prompt;
+    std::string prompt = system_prompt;
 
     const auto append_separator = [&prompt] {
-        if (!prompt.str().empty()) {
-            prompt << "\n\n";
+        if (!prompt.empty()) {
+            prompt += "\n\n";
         }
     };
 
     if (is_child_run) {
         append_separator();
-        prompt << "Delegated worker mode:\n"
-               << "- You are a delegated worker handling a task from another Orangutan runtime.\n"
-               << "- Complete the assigned task and return a concise result.\n"
-               << "- You cannot spawn subagents.";
-        return prompt.str();
+        prompt += "Delegated worker mode:\n";
+        prompt += "- You are a delegated worker handling a task from another Orangutan runtime.\n";
+        prompt += "- Complete the assigned task and return a concise result.\n";
+        prompt += "- You cannot spawn subagents.";
+        return prompt;
     }
 
     if (allowed_child_agents.empty()) {
-        return prompt.str();
+        return prompt;
     }
 
     append_separator();
-    prompt << "Subagent delegation is available for: ";
+    prompt += "Subagent delegation is available for: ";
     for (size_t index = 0; index < allowed_child_agents.size(); ++index) {
         if (index > 0) {
-            prompt << ", ";
+            prompt += ", ";
         }
-        prompt << allowed_child_agents[index];
+        prompt += allowed_child_agents[index];
     }
-    prompt << ".\n"
-           << "- Use `subagent_spawn` when a self-contained task can be delegated to one of those child agents.\n"
-           << "- Use `subagent_status` to check whether a child run has finished without blocking.\n"
-           << "- Use `subagent_wait` when you need the child result before continuing.\n"
-           << "- If you can continue making progress without the child result yet, keep working and poll later with `subagent_status`.";
-    return prompt.str();
+    prompt += ".\n";
+    prompt += "- Use `subagent_spawn` when a self-contained task can be delegated to one of those child agents.\n";
+    prompt += "- Use `subagent_status` to check whether a child run has finished without blocking.\n";
+    prompt += "- Use `subagent_wait` when you need the child result before continuing.\n";
+    prompt += "- If you can continue making progress without the child result yet, keep working and poll later with `subagent_status`.";
+    return prompt;
 }
 
 } // namespace orangutan

@@ -2,7 +2,6 @@
 #include "infra/files/file.hpp"
 
 #include <cstdio>
-#include <format>
 #include <print>
 #include <stdexcept>
 
@@ -12,7 +11,7 @@ std::string read_file(const std::filesystem::path &path) {
     std::error_code ec;
     const auto size = std::filesystem::file_size(path, ec);
     if (ec != std::error_code{}) {
-        throw std::runtime_error(std::format("failed to get file size: {}", path.string()));
+        throw std::runtime_error("failed to get file size: " + path.string());
     }
 
     File file(path, "rb");
@@ -20,7 +19,7 @@ std::string read_file(const std::filesystem::path &path) {
     if (!content.empty()) {
         const auto bytes_read = std::fread(content.data(), sizeof(char), content.size(), file.get());
         if (bytes_read != content.size()) {
-            throw std::runtime_error(std::format("failed to read file: {}", path.string()));
+            throw std::runtime_error("failed to read file: " + path.string());
         }
     }
     file.close();
@@ -41,7 +40,7 @@ void write_file(const std::filesystem::path &path, std::string_view content) {
         std::print(file.get(), "{}", content);
         file.close();
     } catch (const std::exception &) {
-        throw std::runtime_error(std::format("failed to write file: {}", path.string()));
+        throw std::runtime_error("failed to write file: " + path.string());
     }
 }
 
@@ -50,7 +49,7 @@ void write_file_binary(const std::filesystem::path &path, std::string_view conte
     if (!content.empty()) {
         const auto bytes_written = std::fwrite(content.data(), sizeof(char), content.size(), file.get());
         if (bytes_written != content.size()) {
-            throw std::runtime_error(std::format("failed to write file: {}", path.string()));
+            throw std::runtime_error("failed to write file: " + path.string());
         }
     }
     file.close();

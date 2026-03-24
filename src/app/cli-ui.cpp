@@ -2,7 +2,8 @@
 #include "app/slash-commands.hpp"
 
 #include <algorithm>
-#include <sstream>
+#include <format>
+#include <iterator>
 
 namespace orangutan::app {
 
@@ -23,29 +24,28 @@ std::string format_agent_list(const Config &cfg, const std::string &current_agen
         return "## Agents\n- 💤 No configured agents.";
     }
 
-    std::ostringstream out;
-    out << "## Agents\n";
+    std::string out = "## Agents\n";
     for (const auto &[agent_key, agent_cfg] : cfg.agents) {
-        out << "- 🤖 `" << agent_key << '`';
+        std::format_to(std::back_inserter(out), "- 🤖 `{}`", agent_key);
         if (agent_key == current_agent_key) {
-            out << " **(current)**";
+            out += " **(current)**";
         }
-        out << " — model: `" << agent_cfg.model << '`';
+        std::format_to(std::back_inserter(out), " — model: `{}`", agent_cfg.model);
         if (!agent_cfg.workspace.empty()) {
-            out << ", workspace: `" << agent_cfg.workspace << '`';
+            std::format_to(std::back_inserter(out), ", workspace: `{}`", agent_cfg.workspace);
         }
         if (!agent_cfg.subagents.empty()) {
-            out << ", subagents: ";
+            out += ", subagents: ";
             for (size_t index = 0; index < agent_cfg.subagents.size(); ++index) {
                 if (index > 0) {
-                    out << ',';
+                    out.push_back(',');
                 }
-                out << '`' << agent_cfg.subagents[index] << '`';
+                std::format_to(std::back_inserter(out), "`{}`", agent_cfg.subagents[index]);
             }
         }
-        out << '\n';
+        out.push_back('\n');
     }
-    return out.str();
+    return out;
 }
 
 std::string format_current_agent(const std::string &agent_key) {
@@ -64,22 +64,21 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
         return "## Sessions\n- 💤 No saved sessions for this conversation scope.";
     }
 
-    std::ostringstream out;
-    out << "## Sessions\n";
+    std::string out = "## Sessions\n";
     constexpr size_t max_sessions_to_show = 10;
     const auto count = std::min(max_sessions_to_show, sessions.size());
     for (size_t index = 0; index < count; ++index) {
         const auto &session = sessions[index];
-        out << "- 🧵 `" << session.id << '`';
+        std::format_to(std::back_inserter(out), "- 🧵 `{}`", session.id);
         if (session.id == current_session_id) {
-            out << " **(current)**";
+            out += " **(current)**";
         }
-        out << " — " << session.created_at << ", model: `" << session.model << "`, messages: `" << session.message_count << "`\n";
+        std::format_to(std::back_inserter(out), " — {}, model: `{}`, messages: `{}`\n", session.created_at, session.model, session.message_count);
     }
     if (sessions.size() > count) {
-        out << "- ➕ And `" << (sessions.size() - count) << "` more";
+        std::format_to(std::back_inserter(out), "- ➕ And `{}` more", sessions.size() - count);
     }
-    return out.str();
+    return out;
 }
 
 std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result) {
@@ -87,10 +86,9 @@ std::string format_history_compaction_result(const AgentLoop::HistoryCompactionR
         return "## Compression\n- " + result.status;
     }
 
-    std::ostringstream out;
-    out << "## Compression\n";
-    out << "- Messages: `" << result.messages_before << " -> " << result.messages_after << "`";
-    return out.str();
+    std::string out = "## Compression\n";
+    std::format_to(std::back_inserter(out), "- Messages: `{} -> {}`", result.messages_before, result.messages_after);
+    return out;
 }
 
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key) {
@@ -99,13 +97,12 @@ std::string render_saved_sessions(SessionStore &store, const std::string &scope_
         return "(no saved sessions)\n\n";
     }
 
-    std::ostringstream out;
-    out << "🗂️ Saved sessions:\n";
+    std::string out = "🗂️ Saved sessions:\n";
     for (const auto &session : sessions) {
-        out << "  " << session.id << "  " << session.created_at << "  " << session.model << "  (" << session.message_count << " messages)\n";
+        std::format_to(std::back_inserter(out), "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
     }
-    out << '\n';
-    return out.str();
+    out.push_back('\n');
+    return out;
 }
 
 RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
@@ -147,34 +144,33 @@ RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provi
 }
 
 std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
-    std::ostringstream out;
-    out << "## Status\n";
-    out << "- 🤖 Agent: `" << status.agent_key << "`\n";
-    out << "- 🔌 Provider: `" << status.provider_name << "`\n";
-    out << "- 🧠 Model: `" << status.current_model << "`\n";
+    std::string out = "## Status\n";
+    std::format_to(std::back_inserter(out), "- 🤖 Agent: `{}`\n", status.agent_key);
+    std::format_to(std::back_inserter(out), "- 🔌 Provider: `{}`\n", status.provider_name);
+    std::format_to(std::back_inserter(out), "- 🧠 Model: `{}`\n", status.current_model);
     if (!status.configured_model.empty() && status.configured_model != status.current_model) {
-        out << "- 🎯 Configured Model: `" << status.configured_model << "`\n";
+        std::format_to(std::back_inserter(out), "- 🎯 Configured Model: `{}`\n", status.configured_model);
     }
     if (!status.fallback_models.empty()) {
-        out << "- 🔁 Fallback Models: ";
+        out += "- 🔁 Fallback Models: ";
         for (size_t index = 0; index < status.fallback_models.size(); ++index) {
             if (index > 0) {
-                out << ", ";
+                out += ", ";
             }
-            out << '`' << status.fallback_models[index] << '`';
+            std::format_to(std::back_inserter(out), "`{}`", status.fallback_models[index]);
         }
-        out << '\n';
+        out.push_back('\n');
     }
-    out << "- 🧵 Session: `" << (status.current_session_id.empty() ? "none" : status.current_session_id) << "`\n";
+    std::format_to(std::back_inserter(out), "- 🧵 Session: `{}`\n", status.current_session_id.empty() ? "none" : status.current_session_id);
     if (!status.scope_key.empty()) {
-        out << "- 🗂️ Scope: `" << status.scope_key << "`\n";
+        std::format_to(std::back_inserter(out), "- 🗂️ Scope: `{}`\n", status.scope_key);
     }
-    out << "- 📊 Usage: `llm_requests=" << status.provider_usage.logical_requests << "`, `attempts=" << status.provider_usage.attempt_count
-        << "`, `fallbacks=" << status.provider_usage.fallback_switches << "`, `failed_attempts=" << status.provider_usage.failed_attempts
-        << "`, `tool_calls=" << status.tool_call_count << "`, `tool_errors=" << status.tool_error_count << "`\n";
-    out << "- 💬 History: `messages=" << status.history_messages << "`, `user=" << status.user_messages << "`, `assistant=" << status.assistant_messages << "`\n";
-    out << "- 🛠️ Tools: `registered=" << status.registered_tool_count << '`';
-    return out.str();
+    std::format_to(std::back_inserter(out), "- 📊 Usage: `llm_requests={}`, `attempts={}`, `fallbacks={}`, `failed_attempts={}`, `tool_calls={}`, `tool_errors={}`\n",
+                   status.provider_usage.logical_requests, status.provider_usage.attempt_count, status.provider_usage.fallback_switches, status.provider_usage.failed_attempts,
+                   status.tool_call_count, status.tool_error_count);
+    std::format_to(std::back_inserter(out), "- 💬 History: `messages={}`, `user={}`, `assistant={}`\n", status.history_messages, status.user_messages, status.assistant_messages);
+    std::format_to(std::back_inserter(out), "- 🛠️ Tools: `registered={}`", status.registered_tool_count);
+    return out;
 }
 
 } // namespace orangutan::app

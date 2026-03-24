@@ -21,7 +21,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
+#include <format>
+#include <iterator>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -174,12 +175,11 @@ std::string format_pending_channel_approval_prompt(const std::vector<std::string
         return "Shell approval is pending. Reply with `" + request_ids.front() + " yes` or `" + request_ids.front() + " no`.";
     }
 
-    std::ostringstream prompt;
-    prompt << "Multiple shell approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
+    std::string prompt = "Multiple shell approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
     for (const auto &request_id : request_ids) {
-        prompt << " " << request_id;
+        std::format_to(std::back_inserter(prompt), " {}", request_id);
     }
-    return prompt.str();
+    return prompt;
 }
 
 std::vector<std::string> pending_request_ids_for_jid(const std::unordered_map<std::string, std::vector<std::string>> &pending_request_ids_by_jid, const std::string &jid) {

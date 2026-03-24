@@ -49,12 +49,15 @@ std::optional<std::string> find_bwrap_path() {
     return std::nullopt;
 }
 
-void append_ro_bind_if_exists(std::ostringstream &command, std::string_view path) {
+void append_ro_bind_if_exists(std::string &command, std::string_view path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) {
         return;
     }
-    command << " --ro-bind " << shell_escape(path) << ' ' << shell_escape(path);
+    command += " --ro-bind ";
+    command += shell_escape(path);
+    command.push_back(' ');
+    command += shell_escape(path);
 }
 
 std::string sandbox_working_dir(const std::string &workspace_root, const std::string &working_dir) {
@@ -83,23 +86,26 @@ SandboxedCommand prepare_isolated_command(const std::string &command, const std:
         throw std::runtime_error("isolated sandbox mode requires bubblewrap ('bwrap') on PATH");
     }
 
-    std::ostringstream wrapped;
-    wrapped << shell_escape(*maybe_bwrap);
-    wrapped << " --die-with-parent --new-session --unshare-all";
-    wrapped << " --proc /proc --dev /dev --tmpfs /tmp";
-    wrapped << " --setenv HOME /tmp --setenv TMPDIR /tmp";
+    std::string wrapped = shell_escape(*maybe_bwrap);
+    wrapped += " --die-with-parent --new-session --unshare-all";
+    wrapped += " --proc /proc --dev /dev --tmpfs /tmp";
+    wrapped += " --setenv HOME /tmp --setenv TMPDIR /tmp";
 
     for (const auto &path : std::vector<std::string>{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/nix", "/run/current-system/sw"}) {
         append_ro_bind_if_exists(wrapped, path);
     }
 
-    wrapped << " --dir /workspace";
-    wrapped << " --bind " << shell_escape(workspace_root) << " /workspace";
-    wrapped << " --chdir " << shell_escape(sandbox_working_dir(workspace_root, working_dir));
-    wrapped << " /bin/sh -c " << shell_escape(command);
+    wrapped += " --dir /workspace";
+    wrapped += " --bind ";
+    wrapped += shell_escape(workspace_root);
+    wrapped += " /workspace";
+    wrapped += " --chdir ";
+    wrapped += shell_escape(sandbox_working_dir(workspace_root, working_dir));
+    wrapped += " /bin/sh -c ";
+    wrapped += shell_escape(command);
 
     return {
-        .command = wrapped.str(),
+        .command = wrapped,
         .working_dir = {},
     };
 }

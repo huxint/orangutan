@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <format>
-#include <iomanip>
+#include <iterator>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -39,7 +39,7 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
     spdlog::info("  [tool] read: {}", path.string());
 
     if (!std::filesystem::exists(path)) {
-        throw std::runtime_error(std::format("File not found: {}", path.string()));
+        throw std::runtime_error("File not found: " + path.string());
     }
 
     if (is_binary_file(path)) {
@@ -70,20 +70,21 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
     const int output_count = end - start + 1;
     const int num_width = std::max(6, static_cast<int>(std::to_string(total_lines).size()));
 
-    std::ostringstream out;
+    std::string out;
     for (int i = start; i <= end; ++i) {
         if (edit_mode == "hashline") {
-            out << format_hashline(lines[static_cast<size_t>(i - 1)], static_cast<size_t>(i)) << '\n';
+            out += format_hashline(lines[static_cast<size_t>(i - 1)], static_cast<size_t>(i));
+            out.push_back('\n');
         } else {
-            out << std::setw(num_width) << i << '\t' << lines[static_cast<size_t>(i - 1)] << '\n';
+            std::format_to(std::back_inserter(out), "{:>{}}\t{}\n", i, num_width, lines[static_cast<size_t>(i - 1)]);
         }
     }
 
     if (end < total_lines) {
-        out << "... (showing " << output_count << " of " << total_lines << " lines, use offset to read more)\n";
+        std::format_to(std::back_inserter(out), "... (showing {} of {} lines, use offset to read more)\n", output_count, total_lines);
     }
 
-    return out.str();
+    return out;
 }
 
 std::string read_file(const json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
@@ -112,22 +113,22 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
     }
 
     const auto &paths = input.at("paths");
-    std::ostringstream out;
+    std::string out;
     for (size_t i = 0; i < paths.size(); ++i) {
         const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root);
         if (i > 0) {
-            out << '\n';
+            out.push_back('\n');
         }
-        out << "=== " << path.string() << " ===\n";
+        std::format_to(std::back_inserter(out), "=== {} ===\n", path.string());
 
         try {
-            out << read_single_file(path, offset, limit, edit_mode);
+            out += read_single_file(path, offset, limit, edit_mode);
         } catch (const std::exception &e) {
-            out << "Error: " << e.what() << '\n';
+            std::format_to(std::back_inserter(out), "Error: {}\n", e.what());
         }
     }
 
-    return out.str();
+    return out;
 }
 
 } // namespace
