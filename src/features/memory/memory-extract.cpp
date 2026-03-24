@@ -280,11 +280,11 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     }
 
     // --- English patterns (ASCII-only character classes, safe with std::regex) ---
-    const std::regex english_name(R"(\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))", std::regex::icase);
-    const std::regex english_project(R"(\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))", std::regex::icase);
-    const std::regex english_prefer(R"(\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))", std::regex::icase);
-    const std::regex english_favorite(R"(\bmy favorite\s+([A-Za-z0-9 _-]{1,32})\s+is\s+([^.!?\n]{1,120}))", std::regex::icase);
-    const std::regex english_remember(R"(\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))", std::regex::icase);
+    static const std::regex english_name(R"(\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))", std::regex::icase);
+    static const std::regex english_project(R"(\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))", std::regex::icase);
+    static const std::regex english_prefer(R"(\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))", std::regex::icase);
+    static const std::regex english_favorite(R"(\bmy favorite\s+([A-Za-z0-9 _-]{1,32})\s+is\s+([^.!?\n]{1,120}))", std::regex::icase);
+    static const std::regex english_remember(R"(\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))", std::regex::icase);
 
     const auto push_regex_match = [&candidates, &trimmed](const std::regex &pattern, std::string key, std::string category, double importance) {
         std::smatch local_match;

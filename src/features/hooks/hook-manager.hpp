@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace orangutan {
@@ -20,8 +21,8 @@ enum class HookEvent : std::uint8_t {
 };
 
 struct HookEventHash {
-    size_t operator()(HookEvent e) const noexcept {
-        return std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(e));
+    std::size_t operator()(HookEvent e) const noexcept {
+        return std::hash<std::uint8_t>{}(std::to_underlying(e));
     }
 };
 
@@ -66,16 +67,16 @@ private:
 std::string hook_event_to_string(HookEvent event);
 
 // Build JSON context for before/after tool call hooks
-json build_before_tool_call_context(const std::string &tool_name, const json &tool_input);
-json build_after_tool_call_context(const std::string &tool_name, const json &tool_input, const std::string &tool_result, bool is_error);
+json build_before_tool_call_context(std::string_view tool_name, const json &tool_input);
+json build_after_tool_call_context(std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error);
 
 // Build JSON context for message hooks
-json build_message_context(HookEvent event, const std::string &role, const std::string &content);
+json build_message_context(HookEvent event, std::string_view role, std::string_view content);
 
 // Build JSON context for session hooks
-json build_session_context(HookEvent event, const std::string &session_id, size_t message_count = 0);
+json build_session_context(HookEvent event, std::string_view session_id, size_t message_count = 0);
 
-void dispatch_session_start(HookManager *hook_manager, const std::string &session_id, size_t message_count = 0);
-void dispatch_session_end(HookManager *hook_manager, const std::string &session_id, size_t message_count = 0);
+void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, size_t message_count = 0);
+void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, size_t message_count = 0);
 
 } // namespace orangutan
