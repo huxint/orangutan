@@ -32,6 +32,14 @@
             },
             version = "v0.37.2"
         },
+        ["ctre 3.10.0#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "93ebc4e5f4b9df3d07d9d9c300378496aa82a5dd",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v3.10.0"
+        },
         ["libcurl 8.11.0#f5a641a2"] = {
             repo = {
                 branch = "master",
@@ -88,6 +96,14 @@
             },
             version = "2021.11.25"
         },
+        ["simdutf 8.0.0#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "93ebc4e5f4b9df3d07d9d9c300378496aa82a5dd",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v8.0.0"
+        },
         ["spdlog 1.17.0#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -119,6 +135,14 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v3.4.0"
+        },
+        ["uni_algo 1.2.0#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "93ebc4e5f4b9df3d07d9d9c300378496aa82a5dd",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.2.0"
         }
     },
     __meta__ = {

@@ -1,32 +1,72 @@
 #include "core/tools/tool.hpp"
 
+#include <ctre.hpp>
 #include <exception>
-#include <regex>
 #include <spdlog/spdlog.h>
 #include <utility>
-#include <vector>
 
 namespace orangutan {
 
-std::string scrub_tool_output(std::string_view text) {
-    static const std::vector<std::pair<std::regex, std::string>> patterns = {
-        {std::regex(R"((sk-ant-api\d{2}-)[A-Za-z0-9_-]{20,})"), "$1[REDACTED]"},
-        {std::regex(R"((sk-)[A-Za-z0-9_-]{20,})"), "$1[REDACTED]"},
-        {std::regex(R"((key-)[A-Za-z0-9_-]{20,})"), "$1[REDACTED]"},
-        {std::regex(R"((Bearer\s+)[A-Za-z0-9_.\-/+=]{20,})"), "$1[REDACTED]"},
-        {std::regex(R"(([Aa]pi[_-]?[Kk]ey\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))"), "$1[REDACTED]$2"},
-        {std::regex(R"(([Pp]assword\s*[:=]\s*["']?)[^\s"']{8,}(["']?))"), "$1[REDACTED]$2"},
-        {std::regex(R"(([Tt]oken\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))"), "$1[REDACTED]$2"},
-        {std::regex(R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))"), "$1[REDACTED]$2"},
-    };
+namespace {
 
+template <ctll::fixed_string Pattern, typename ReplaceFn>
+std::string ctre_replace_all(std::string_view input, ReplaceFn &&make_replacement) {
+    std::string result;
+    const char *pos = input.data();
+    const char *end = input.data() + input.size();
+
+    for (auto remaining = input; auto m = ctre::search<Pattern>(remaining);) {
+        auto full = m.template get<0>().to_view();
+        result.append(pos, full.data() - pos);
+        result.append(make_replacement(m));
+        pos = full.data() + full.size();
+        remaining = {pos, static_cast<std::size_t>(end - pos)};
+    }
+    result.append(pos, static_cast<std::size_t>(end - pos));
+    return result;
+}
+
+template <ctll::fixed_string Pattern>
+bool scrub_redact1(std::string &text) {
+    auto scrubbed = ctre_replace_all<Pattern>(text, [](auto &m) -> std::string {
+        return std::string(m.template get<1>().to_view()) + "[REDACTED]";
+    });
+    if (scrubbed != text) {
+        text = std::move(scrubbed);
+        return true;
+    }
+    return false;
+}
+
+template <ctll::fixed_string Pattern>
+bool scrub_redact2(std::string &text) {
+    auto scrubbed = ctre_replace_all<Pattern>(text, [](auto &m) -> std::string {
+        return std::string(m.template get<1>().to_view()) + "[REDACTED]" + std::string(m.template get<2>().to_view());
+    });
+    if (scrubbed != text) {
+        text = std::move(scrubbed);
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+std::string scrub_tool_output(std::string_view text) {
     std::string result{text};
-    for (const auto &[pattern, replacement] : patterns) {
-        auto scrubbed = std::regex_replace(result, pattern, replacement);
-        if (scrubbed != result) {
-            spdlog::warn("Credential scrubbing: redacted sensitive content in tool output");
-            result = std::move(scrubbed);
-        }
+    bool redacted = false;
+
+    redacted |= scrub_redact1<R"((sk-ant-api\d{2}-)[A-Za-z0-9_\-]{20,})">(result);
+    redacted |= scrub_redact1<R"((sk-)[A-Za-z0-9_\-]{20,})">(result);
+    redacted |= scrub_redact1<R"((key-)[A-Za-z0-9_\-]{20,})">(result);
+    redacted |= scrub_redact1<R"((Bearer\s+)[A-Za-z0-9_.\-/+=]{20,})">(result);
+    redacted |= scrub_redact2<R"(([Aa]pi[_\-]?[Kk]ey\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+    redacted |= scrub_redact2<R"(([Pp]assword\s*[:=]\s*["']?)[^\s"']{8,}(["']?))">(result);
+    redacted |= scrub_redact2<R"(([Tt]oken\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+    redacted |= scrub_redact2<R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+
+    if (redacted) {
+        spdlog::warn("Credential scrubbing: redacted sensitive content in tool output");
     }
     return result;
 }

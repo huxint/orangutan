@@ -5,6 +5,7 @@
 #include <set>
 #include <format>
 #include <iterator>
+#include <uni_algo/case.h>
 
 namespace orangutan::memory_detail {
 
@@ -65,13 +66,8 @@ std::vector<std::string> split_memory_fragments(const std::string &value) {
     return fragments;
 }
 
-std::string normalize_ascii(std::string_view value) {
-    std::string normalized;
-    normalized.reserve(value.size());
-    for (const unsigned char ch : value) {
-        normalized.push_back(static_cast<char>(std::tolower(ch)));
-    }
-    return normalized;
+std::string to_lowercase(std::string_view value) {
+    return una::cases::to_lowercase_utf8(value);
 }
 
 std::vector<std::string> tokenize_ascii_words(std::string_view value) {
@@ -111,10 +107,10 @@ double score_memory_match(const MemoryRecord &record, const std::string &query) 
         return 0.0;
     }
 
-    const auto normalized_query = normalize_ascii(trimmed_query);
-    const auto normalized_key = normalize_ascii(record.key);
-    const auto normalized_content = normalize_ascii(record.content);
-    const auto normalized_category = normalize_ascii(record.category);
+    const auto normalized_query = to_lowercase(trimmed_query);
+    const auto normalized_key = to_lowercase(record.key);
+    const auto normalized_content = to_lowercase(record.content);
+    const auto normalized_category = to_lowercase(record.category);
     const auto query_tokens = tokenize_ascii_words(trimmed_query);
     const bool query_has_non_ascii = contains_non_ascii(trimmed_query);
 
@@ -176,10 +172,10 @@ std::string merge_memory_content(const std::string &existing, const std::string 
     const auto incoming_fragments = split_memory_fragments(trimmed_incoming);
     std::set<std::string> seen;
     for (const auto &fragment : fragments) {
-        seen.insert(normalize_ascii(fragment));
+        seen.insert(to_lowercase(fragment));
     }
     for (const auto &fragment : incoming_fragments) {
-        if (seen.insert(normalize_ascii(fragment)).second) {
+        if (seen.insert(to_lowercase(fragment)).second) {
             fragments.push_back(fragment);
         }
     }

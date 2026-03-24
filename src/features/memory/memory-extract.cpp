@@ -5,8 +5,9 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
+#include <ctre.hpp>
 #include <initializer_list>
-#include <regex>
+#include <simdutf.h>
 #include <span>
 #include <set>
 #include <vector>
@@ -14,6 +15,10 @@
 namespace orangutan::memory_detail {
 
 std::string sanitize_utf8(std::string_view input) {
+    if (simdutf::validate_utf8(input.data(), input.size())) {
+        return std::string(input);
+    }
+
     std::string result;
     result.reserve(input.size());
 
@@ -242,7 +247,7 @@ bool should_attempt_auto_capture(const std::string &text) {
         return false;
     }
 
-    const auto normalized = normalize_ascii(trimmed);
+    const auto normalized = to_lowercase(trimmed);
     static constexpr auto exact_noise = std::to_array<std::string_view>({
         "hi",
         "hello",
@@ -279,20 +284,13 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
         return candidates;
     }
 
-    // --- English patterns (ASCII-only character classes, safe with std::regex) ---
-    static const std::regex english_name(R"(\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))", std::regex::icase);
-    static const std::regex english_project(R"(\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))", std::regex::icase);
-    static const std::regex english_prefer(R"(\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))", std::regex::icase);
-    static const std::regex english_favorite(R"(\bmy favorite\s+([A-Za-z0-9 _-]{1,32})\s+is\s+([^.!?\n]{1,120}))", std::regex::icase);
-    static const std::regex english_remember(R"(\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))", std::regex::icase);
+    // --- English patterns (compile-time via CTRE) ---
 
-    const auto push_regex_match = [&candidates, &trimmed](const std::regex &pattern, std::string key, std::string category, double importance) {
-        std::smatch local_match;
-        if (!std::regex_search(trimmed, local_match, pattern) || local_match.size() < 2) {
+    const auto push_ctre_match = [&candidates, &trimmed](auto match_result, std::string key, std::string category, double importance) {
+        if (!match_result || !match_result.template get<1>()) {
             return false;
         }
-
-        auto content = sanitize_utf8(trim_copy(local_match[1].str()));
+        auto content = sanitize_utf8(trim_copy(std::string(match_result.template get<1>().to_view())));
         if (content.empty()) {
             return false;
         }
@@ -379,33 +377,33 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     };
 
     // --- Name ---
-    std::smatch match;
-    if (!push_regex_match(english_name, "profile.name", "profile", 0.95)) {
+    if (!push_ctre_match(ctre::search<R"((?i)\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))">(trimmed), "profile.name", "profile", 0.95)) {
         static_cast<void>(push_chinese_name());
     }
 
     // --- Project ---
-    if (!push_regex_match(english_project, "project.current", "project", 0.8)) {
+    if (!push_ctre_match(ctre::search<R"((?i)\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))">(trimmed), "project.current", "project",
+                         0.8)) {
         static_cast<void>(push_chinese_project());
     }
 
     // --- Favorite ---
-    if (std::regex_search(trimmed, match, english_favorite) && match.size() >= 3) {
-        const auto aspect = sanitize_utf8(trim_copy(match[1].str()));
-        const auto value = sanitize_utf8(trim_copy(match[2].str()));
+    if (auto fm = ctre::search<R"((?i)\bmy favorite\s+([A-Za-z0-9 _\-]{1,32})\s+is\s+([^.!?\n]{1,120}))">(trimmed); fm) {
+        const auto aspect = sanitize_utf8(trim_copy(std::string(fm.get<1>().to_view())));
+        const auto value = sanitize_utf8(trim_copy(std::string(fm.get<2>().to_view())));
         if (!aspect.empty() && !value.empty()) {
             candidates.push_back({.key = "preference.favorite." + make_slug(aspect), .content = value, .category = "preference", .importance = 0.75});
         }
     }
 
     // --- Preference ---
-    if (!push_regex_match(english_prefer, "preference.general", "preference", 0.65)) {
+    if (!push_ctre_match(ctre::search<R"((?i)\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))">(trimmed), "preference.general", "preference", 0.65)) {
         static_cast<void>(push_chinese_prefer());
     }
 
     // --- Remember ---
-    if (std::regex_search(trimmed, match, english_remember) && match.size() >= 2) {
-        const auto value = sanitize_utf8(trim_copy(match[1].str()));
+    if (auto rm = ctre::search<R"((?i)\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))">(trimmed); rm) {
+        const auto value = sanitize_utf8(trim_copy(std::string(rm.get<1>().to_view())));
         if (!value.empty()) {
             candidates.push_back({.key = hash_key("fact.note.", value), .content = value, .category = "fact", .importance = 0.85});
         }

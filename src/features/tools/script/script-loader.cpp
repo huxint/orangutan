@@ -5,8 +5,8 @@
 #include "infra/execution/sender-utils.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
+#include <ctre.hpp>
 #include <filesystem>
-#include <regex>
 #include <spdlog/spdlog.h>
 
 namespace orangutan {
@@ -29,17 +29,15 @@ std::string shell_escape(const std::string &value) {
 // ── Parameter Substitution ──────────────────────
 
 std::string substitute_params(const std::string &command_template, const json &input, const std::unordered_map<std::string, std::string> &schema) {
-    static const std::regex param_re(R"(\$\{(\w+)\})");
     std::string result;
-    auto begin = std::sregex_iterator(command_template.begin(), command_template.end(), param_re);
-    auto end = std::sregex_iterator();
+    const char *pos = command_template.data();
+    const char *end = pos + command_template.size();
 
-    size_t last_pos = 0;
-    for (auto it = begin; it != end; ++it) {
-        const auto &match = *it;
-        result.append(command_template, last_pos, static_cast<size_t>(match.position()) - last_pos);
+    for (auto remaining = std::string_view{command_template}; auto m = ctre::search<R"(\$\{(\w+)\})">(remaining);) {
+        auto full = m.get<0>().to_view();
+        result.append(pos, full.data() - pos);
 
-        const std::string param_name = match[1].str();
+        auto param_name = std::string(m.get<1>().to_view());
         if (input.contains(param_name)) {
             const auto &val = input.at(param_name);
             std::string str_val;
@@ -53,9 +51,10 @@ std::string substitute_params(const std::string &command_template, const json &i
             spdlog::debug("Script tool: parameter '{}' not in input, substituting empty", param_name);
         }
 
-        last_pos = static_cast<size_t>(match.position() + match.length());
+        pos = full.data() + full.size();
+        remaining = {pos, static_cast<std::size_t>(end - pos)};
     }
-    result.append(command_template, last_pos, command_template.size() - last_pos);
+    result.append(pos, static_cast<std::size_t>(end - pos));
     return result;
 }
 

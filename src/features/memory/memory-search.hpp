@@ -18,7 +18,7 @@ std::string trim_copy(std::string value);
 [[nodiscard]]
 std::vector<std::string> split_memory_fragments(const std::string &value);
 [[nodiscard]]
-std::string normalize_ascii(std::string_view value);
+std::string to_lowercase(std::string_view value);
 [[nodiscard]]
 std::vector<std::string> tokenize_ascii_words(std::string_view value);
 [[nodiscard]]
