@@ -1,55 +1,29 @@
 #include "infra/config/config.hpp"
+#include "test-helpers.hpp"
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
+
+#include "support/ut.hpp"
 
 using namespace orangutan;
+using orangutan::testing::ScopedEnvVar;
 
-// ── Default config ──────────────────────────────
+namespace {
 
-TEST(ConfigTest, DefaultValues) {
-    const Config cfg;
-    EXPECT_EQ(cfg.model, "claude-sonnet-4-20250514");
-    EXPECT_EQ(cfg.base_url, "https://api.anthropic.com");
-    EXPECT_DOUBLE_EQ(cfg.temperature, 1.0);
-    EXPECT_EQ(cfg.max_iterations, 20);
-    EXPECT_EQ(cfg.max_tokens, 4096);
-    EXPECT_TRUE(cfg.workspace.empty());
-    EXPECT_TRUE(cfg.allowed_tools.empty());
-    EXPECT_TRUE(cfg.denied_tools.empty());
-    EXPECT_EQ(cfg.permissions.sandbox_mode, ToolSandboxMode::isolated);
-    EXPECT_EQ(cfg.permissions.shell_approval, ToolApprovalPolicy::ask);
-    EXPECT_TRUE(cfg.permissions.denied_shell_commands.empty());
-    EXPECT_TRUE(cfg.auto_save);
-    EXPECT_FALSE(cfg.memory.mirror_enabled);
-    EXPECT_EQ(cfg.memory.mirror_file, "MEMORY.md");
-    EXPECT_EQ(cfg.memory.journal_dir, "memory");
-}
+class ConfigFileHarness {
+public:
+    ConfigFileHarness()
+    : tmp_dir_(orangutan::testing::unique_test_root("config-test")) {}
 
-// ── edit_mode config ────────────────────────────
-
-TEST(ConfigTest, DefaultEditModeIsHashline) {
-    const Config cfg;
-    EXPECT_EQ(cfg.edit_mode, "hashline");
-}
-
-// ── Load from TOML ─────────────────────────────
-
-class ConfigFileTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        tmp_dir_ = std::filesystem::temp_directory_path() / "orangutan_config_test";
-        std::filesystem::create_directories(tmp_dir_);
-    }
-
-    void TearDown() override {
+    ~ConfigFileHarness() {
         std::filesystem::remove_all(tmp_dir_);
     }
 
-    std::string write_config(const std::string &content) {
-        auto path = (tmp_dir_ / "config.toml").string();
+    [[nodiscard]]
+    std::string write_config(const std::string &content) const {
+        const auto path = (tmp_dir_ / "config.toml").string();
         std::ofstream ofs(path);
         ofs << content;
         return path;
@@ -59,8 +33,40 @@ private:
     std::filesystem::path tmp_dir_;
 };
 
-TEST_F(ConfigFileTest, ParsesAgentSection) {
-    auto path = write_config(R"toml(
+boost::ut::suite config_default_suite = [] {
+    using namespace boost::ut;
+
+    "default_values"_test = [] {
+        const Config cfg;
+        expect(cfg.model == "claude-sonnet-4-20250514");
+        expect(cfg.base_url == "https://api.anthropic.com");
+        expect(cfg.temperature == 1.0_d);
+        expect(cfg.max_iterations == 20_i);
+        expect(cfg.max_tokens == 4096_i);
+        expect(cfg.workspace.empty());
+        expect(cfg.allowed_tools.empty());
+        expect(cfg.denied_tools.empty());
+        expect(cfg.permissions.sandbox_mode == ToolSandboxMode::isolated);
+        expect(cfg.permissions.shell_approval == ToolApprovalPolicy::ask);
+        expect(cfg.permissions.denied_shell_commands.empty());
+        expect(cfg.auto_save);
+        expect(not cfg.memory.mirror_enabled);
+        expect(cfg.memory.mirror_file == "MEMORY.md");
+        expect(cfg.memory.journal_dir == "memory");
+    };
+
+    "default_edit_mode_is_hashline"_test = [] {
+        const Config cfg;
+        expect(cfg.edit_mode == "hashline");
+    };
+};
+
+boost::ut::suite config_file_suite = [] {
+    using namespace boost::ut;
+
+    "parses_agent_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 model = "claude-opus-4-20250514"
 base_url = "http://localhost:8080"
@@ -70,19 +76,19 @@ max_tokens = 8192
 workspace = "/tmp/orangutan-workspace"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.model, "claude-opus-4-20250514");
-    EXPECT_EQ(cfg.base_url, "http://localhost:8080");
-    EXPECT_DOUBLE_EQ(cfg.temperature, 0.5);
-    EXPECT_EQ(cfg.max_iterations, 10);
-    EXPECT_EQ(cfg.max_tokens, 8192);
-    EXPECT_EQ(cfg.workspace, "/tmp/orangutan-workspace");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.model == "claude-opus-4-20250514");
+        expect(cfg.base_url == "http://localhost:8080");
+        expect(cfg.temperature == 0.5_d);
+        expect(cfg.max_iterations == 10_i);
+        expect(cfg.max_tokens == 8192_i);
+        expect(cfg.workspace == "/tmp/orangutan-workspace");
+    };
 
-TEST_F(ConfigFileTest, ParsesFallbackModelsWithInheritanceAndOverrides) {
-    setenv("ORANGUTAN_TEST_FALLBACK", "global-fallback-b", 1);
-
-    auto path = write_config(R"toml(
+    "parses_fallback_models_with_inheritance_and_overrides"_test = [] {
+        ConfigFileHarness harness;
+        ScopedEnvVar fallback_env("ORANGUTAN_TEST_FALLBACK", "global-fallback-b");
+        const auto path = harness.write_config(R"toml(
 [agent]
 model = "primary-model"
 fallback_models = ["global-fallback-a", "${ORANGUTAN_TEST_FALLBACK}"]
@@ -95,47 +101,47 @@ model = "coder-model"
 fallback_models = ["coder-fallback-a", "coder-fallback-b"]
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.fallback_models.size(), 2U);
-    EXPECT_EQ(cfg.fallback_models[0], "global-fallback-a");
-    EXPECT_EQ(cfg.fallback_models[1], "global-fallback-b");
+        const auto cfg = Config::load_from(path);
+        expect(cfg.fallback_models.size() == 2_ul);
+        expect(cfg.fallback_models[0] == "global-fallback-a");
+        expect(cfg.fallback_models[1] == "global-fallback-b");
 
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    ASSERT_TRUE(cfg.agents.contains("coder"));
-    ASSERT_EQ(cfg.agents.at("default").fallback_models.size(), 2U);
-    EXPECT_EQ(cfg.agents.at("default").fallback_models[0], "global-fallback-a");
-    EXPECT_EQ(cfg.agents.at("default").fallback_models[1], "global-fallback-b");
-    ASSERT_EQ(cfg.agents.at("coder").fallback_models.size(), 2U);
-    EXPECT_EQ(cfg.agents.at("coder").fallback_models[0], "coder-fallback-a");
-    EXPECT_EQ(cfg.agents.at("coder").fallback_models[1], "coder-fallback-b");
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect((cfg.agents.contains("coder")) >> fatal);
+        expect(cfg.agents.at("default").fallback_models.size() == 2_ul);
+        expect(cfg.agents.at("default").fallback_models[0] == "global-fallback-a");
+        expect(cfg.agents.at("default").fallback_models[1] == "global-fallback-b");
+        expect(cfg.agents.at("coder").fallback_models.size() == 2_ul);
+        expect(cfg.agents.at("coder").fallback_models[0] == "coder-fallback-a");
+        expect(cfg.agents.at("coder").fallback_models[1] == "coder-fallback-b");
+    };
 
-    unsetenv("ORANGUTAN_TEST_FALLBACK");
-}
-
-TEST_F(ConfigFileTest, ParsesToolsSection) {
-    auto path = write_config(R"toml(
+    "parses_tools_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [tools]
 allowed = ["read", "write", "ls"]
 denied = ["shell"]
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.allowed_tools.size(), 3);
-    EXPECT_EQ(cfg.allowed_tools[0], "read");
-    EXPECT_EQ(cfg.allowed_tools[1], "write");
-    EXPECT_EQ(cfg.allowed_tools[2], "ls");
-    ASSERT_EQ(cfg.denied_tools.size(), 1);
-    EXPECT_EQ(cfg.denied_tools[0], "shell");
-    ASSERT_EQ(cfg.permissions.allowed_tools.size(), 3);
-    EXPECT_EQ(cfg.permissions.allowed_tools[0], "read");
-    EXPECT_EQ(cfg.permissions.allowed_tools[1], "write");
-    EXPECT_EQ(cfg.permissions.allowed_tools[2], "ls");
-    ASSERT_EQ(cfg.permissions.denied_tools.size(), 1);
-    EXPECT_EQ(cfg.permissions.denied_tools[0], "shell");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.allowed_tools.size() == 3_ul);
+        expect(cfg.allowed_tools[0] == "read");
+        expect(cfg.allowed_tools[1] == "write");
+        expect(cfg.allowed_tools[2] == "ls");
+        expect(cfg.denied_tools.size() == 1_ul);
+        expect(cfg.denied_tools[0] == "shell");
+        expect(cfg.permissions.allowed_tools.size() == 3_ul);
+        expect(cfg.permissions.allowed_tools[0] == "read");
+        expect(cfg.permissions.allowed_tools[1] == "write");
+        expect(cfg.permissions.allowed_tools[2] == "ls");
+        expect(cfg.permissions.denied_tools.size() == 1_ul);
+        expect(cfg.permissions.denied_tools[0] == "shell");
+    };
 
-TEST_F(ConfigFileTest, ParsesPermissionsSection) {
-    auto path = write_config(R"toml(
+    "parses_permissions_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [permissions]
 sandbox_mode = "workspace-write"
 shell_approval_policy = "deny"
@@ -144,21 +150,22 @@ denied_tools = ["shell"]
 denied_shell_commands = ["rm -rf", "shutdown"]
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.permissions.sandbox_mode, ToolSandboxMode::workspace_write);
-    EXPECT_EQ(cfg.permissions.shell_approval, ToolApprovalPolicy::deny);
-    ASSERT_EQ(cfg.permissions.allowed_tools.size(), 2);
-    EXPECT_EQ(cfg.permissions.allowed_tools[0], "read");
-    EXPECT_EQ(cfg.permissions.allowed_tools[1], "write");
-    ASSERT_EQ(cfg.permissions.denied_tools.size(), 1);
-    EXPECT_EQ(cfg.permissions.denied_tools[0], "shell");
-    ASSERT_EQ(cfg.permissions.denied_shell_commands.size(), 2);
-    EXPECT_EQ(cfg.permissions.denied_shell_commands[0], "rm -rf");
-    EXPECT_EQ(cfg.permissions.denied_shell_commands[1], "shutdown");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.permissions.sandbox_mode == ToolSandboxMode::workspace_write);
+        expect(cfg.permissions.shell_approval == ToolApprovalPolicy::deny);
+        expect(cfg.permissions.allowed_tools.size() == 2_ul);
+        expect(cfg.permissions.allowed_tools[0] == "read");
+        expect(cfg.permissions.allowed_tools[1] == "write");
+        expect(cfg.permissions.denied_tools.size() == 1_ul);
+        expect(cfg.permissions.denied_tools[0] == "shell");
+        expect(cfg.permissions.denied_shell_commands.size() == 2_ul);
+        expect(cfg.permissions.denied_shell_commands[0] == "rm -rf");
+        expect(cfg.permissions.denied_shell_commands[1] == "shutdown");
+    };
 
-TEST_F(ConfigFileTest, ParsesCustomToolsSection) {
-    auto path = write_config(R"toml(
+    "parses_custom_tools_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [[tools.custom]]
 name = "ls"
 description = "List files"
@@ -179,97 +186,104 @@ pattern = "string"
 path = "string"
 )toml");
 
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.custom_tools.size(), 2);
-    EXPECT_EQ(cfg.custom_tools[0].name, "ls");
-    EXPECT_EQ(cfg.custom_tools[0].command, "ls -la ${path}");
-    EXPECT_EQ(cfg.custom_tools[0].timeout, 15);
-    EXPECT_EQ(cfg.custom_tools[0].working_dir, std::string(home) + "/workspace");
-    EXPECT_EQ(cfg.custom_tools[0].input_schema.at("path"), "string");
-    EXPECT_EQ(cfg.custom_tools[1].name, "grep");
-    EXPECT_EQ(cfg.custom_tools[1].command, "rg --color=never -n ${pattern} ${path}");
-    EXPECT_EQ(cfg.custom_tools[1].input_schema.at("pattern"), "string");
-    EXPECT_EQ(cfg.custom_tools[1].input_schema.at("path"), "string");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.custom_tools.size() == 2_ul);
+        expect(cfg.custom_tools[0].name == "ls");
+        expect(cfg.custom_tools[0].command == "ls -la ${path}");
+        expect(cfg.custom_tools[0].timeout == 15_i);
+        expect(cfg.custom_tools[0].working_dir == std::string(home) + "/workspace");
+        expect(cfg.custom_tools[0].input_schema.at("path") == "string");
+        expect(cfg.custom_tools[1].name == "grep");
+        expect(cfg.custom_tools[1].command == "rg --color=never -n ${pattern} ${path}");
+        expect(cfg.custom_tools[1].input_schema.at("pattern") == "string");
+        expect(cfg.custom_tools[1].input_schema.at("path") == "string");
+    };
 
-TEST_F(ConfigFileTest, PartialConfigKeepsDefaults) {
-    auto path = write_config(R"toml(
+    "partial_config_keeps_defaults"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 model = "gpt-4"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.model, "gpt-4");
-    EXPECT_EQ(cfg.base_url, "https://api.anthropic.com");
-    EXPECT_DOUBLE_EQ(cfg.temperature, 1.0);
-    EXPECT_EQ(cfg.max_iterations, 20);
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.model == "gpt-4");
+        expect(cfg.base_url == "https://api.anthropic.com");
+        expect(cfg.temperature == 1.0_d);
+        expect(cfg.max_iterations == 20_i);
+    };
 
-TEST_F(ConfigFileTest, EmptyFileReturnsDefaults) {
-    auto path = write_config("");
+    "empty_file_returns_defaults"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config("");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.model, "claude-sonnet-4-20250514");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.model == "claude-sonnet-4-20250514");
+    };
 
-TEST_F(ConfigFileTest, InvalidTomlReturnsDefaults) {
-    auto path = write_config("this is [not valid toml");
+    "invalid_toml_returns_defaults"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config("this is [not valid toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.model, "claude-sonnet-4-20250514");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.model == "claude-sonnet-4-20250514");
+    };
 
-TEST_F(ConfigFileTest, MissingFileReturnsDefaults) {
-    const auto cfg = Config::load_from("/tmp/orangutan_nonexistent_config_xyz.toml");
-    EXPECT_EQ(cfg.model, "claude-sonnet-4-20250514");
-}
+    "missing_file_returns_defaults"_test = [] {
+        const auto cfg = Config::load_from("/tmp/orangutan_nonexistent_config_xyz.toml");
+        expect(cfg.model == "claude-sonnet-4-20250514");
+    };
 
-TEST_F(ConfigFileTest, ParsesSessionSection) {
-    auto path = write_config(R"toml(
+    "parses_session_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [session]
 auto_save = true
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_TRUE(cfg.auto_save);
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.auto_save);
+    };
 
-TEST_F(ConfigFileTest, ParsesMemorySection) {
-    auto path = write_config(R"toml(
+    "parses_memory_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [memory]
 mirror_enabled = true
 mirror_file = "notes/MEMORY.md"
 journal_dir = "journals"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_TRUE(cfg.memory.mirror_enabled);
-    EXPECT_EQ(cfg.memory.mirror_file, "notes/MEMORY.md");
-    EXPECT_EQ(cfg.memory.journal_dir, "journals");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.memory.mirror_enabled);
+        expect(cfg.memory.mirror_file == "notes/MEMORY.md");
+        expect(cfg.memory.journal_dir == "journals");
+    };
 
-TEST_F(ConfigFileTest, ParsesQqSection) {
-    auto path = write_config(R"toml(
+    "parses_qq_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [qq]
 app_id = "app-123"
 client_secret = "secret-456"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.qq_app_id, "app-123");
-    EXPECT_EQ(cfg.qq_client_secret, "secret-456");
-    ASSERT_EQ(cfg.qq_bots.size(), 1);
-    EXPECT_TRUE(cfg.qq_bots[0].name.empty());
-    EXPECT_EQ(cfg.qq_bots[0].app_id, "app-123");
-    EXPECT_EQ(cfg.qq_bots[0].client_secret, "secret-456");
-    EXPECT_EQ(cfg.qq_bots[0].agent, "default");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.qq_app_id == "app-123");
+        expect(cfg.qq_client_secret == "secret-456");
+        expect(cfg.qq_bots.size() == 1_ul);
+        expect(cfg.qq_bots[0].name.empty());
+        expect(cfg.qq_bots[0].app_id == "app-123");
+        expect(cfg.qq_bots[0].client_secret == "secret-456");
+        expect(cfg.qq_bots[0].agent == "default");
+    };
 
-TEST_F(ConfigFileTest, ParsesNamedAgentsAndQqBots) {
-    auto path = write_config(R"toml(
+    "parses_named_agents_and_qq_bots"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 api_key = "legacy-default"
 
@@ -299,23 +313,24 @@ client_secret = "secret-b"
 agent = "coder"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.agents.size(), 2);
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    ASSERT_TRUE(cfg.agents.contains("coder"));
-    EXPECT_EQ(cfg.agents.at("default").model, "default-model");
-    EXPECT_EQ(cfg.agents.at("default").subagents[0], "coder");
-    EXPECT_EQ(cfg.agents.at("coder").provider, "openai");
-    EXPECT_EQ(cfg.agents.at("coder").api_key, "coder-key");
-    ASSERT_EQ(cfg.qq_bots.size(), 2);
-    EXPECT_EQ(cfg.qq_bots[0].name, "primary");
-    EXPECT_EQ(cfg.qq_bots[0].agent, "default");
-    EXPECT_EQ(cfg.qq_bots[1].name, "coder-bot");
-    EXPECT_EQ(cfg.qq_bots[1].agent, "coder");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.agents.size() == 2_ul);
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect((cfg.agents.contains("coder")) >> fatal);
+        expect(cfg.agents.at("default").model == "default-model");
+        expect(cfg.agents.at("default").subagents[0] == "coder");
+        expect(cfg.agents.at("coder").provider == "openai");
+        expect(cfg.agents.at("coder").api_key == "coder-key");
+        expect(cfg.qq_bots.size() == 2_ul);
+        expect(cfg.qq_bots[0].name == "primary");
+        expect(cfg.qq_bots[0].agent == "default");
+        expect(cfg.qq_bots[1].name == "coder-bot");
+        expect(cfg.qq_bots[1].agent == "coder");
+    };
 
-TEST_F(ConfigFileTest, AgentPermissionsInheritGlobalDefaultsAndAllowOverrides) {
-    auto path = write_config(R"toml(
+    "agent_permissions_inherit_global_defaults_and_allow_overrides"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [permissions]
 sandbox_mode = "isolated"
 shell_approval_policy = "ask"
@@ -338,50 +353,51 @@ denied_tools = ["shell"]
 denied_shell_commands = ["curl"]
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    ASSERT_TRUE(cfg.agents.contains("coder"));
+        const auto cfg = Config::load_from(path);
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect((cfg.agents.contains("coder")) >> fatal);
 
-    const auto &default_agent = cfg.agents.at("default");
-    EXPECT_EQ(default_agent.permissions.sandbox_mode, ToolSandboxMode::isolated);
-    EXPECT_EQ(default_agent.permissions.shell_approval, ToolApprovalPolicy::allow);
-    ASSERT_EQ(default_agent.permissions.allowed_tools.size(), 1);
-    EXPECT_EQ(default_agent.permissions.allowed_tools[0], "read");
-    ASSERT_EQ(default_agent.permissions.denied_shell_commands.size(), 1);
-    EXPECT_EQ(default_agent.permissions.denied_shell_commands[0], "rm -rf");
+        const auto &default_agent = cfg.agents.at("default");
+        expect(default_agent.permissions.sandbox_mode == ToolSandboxMode::isolated);
+        expect(default_agent.permissions.shell_approval == ToolApprovalPolicy::allow);
+        expect(default_agent.permissions.allowed_tools.size() == 1_ul);
+        expect(default_agent.permissions.allowed_tools[0] == "read");
+        expect(default_agent.permissions.denied_shell_commands.size() == 1_ul);
+        expect(default_agent.permissions.denied_shell_commands[0] == "rm -rf");
 
-    const auto &coder_agent = cfg.agents.at("coder");
-    EXPECT_EQ(coder_agent.permissions.sandbox_mode, ToolSandboxMode::workspace_write);
-    EXPECT_EQ(coder_agent.permissions.shell_approval, ToolApprovalPolicy::ask);
-    ASSERT_EQ(coder_agent.permissions.allowed_tools.size(), 2);
-    EXPECT_EQ(coder_agent.permissions.allowed_tools[0], "read");
-    EXPECT_EQ(coder_agent.permissions.allowed_tools[1], "write");
-    ASSERT_EQ(coder_agent.permissions.denied_tools.size(), 1);
-    EXPECT_EQ(coder_agent.permissions.denied_tools[0], "shell");
-    ASSERT_EQ(coder_agent.permissions.denied_shell_commands.size(), 1);
-    EXPECT_EQ(coder_agent.permissions.denied_shell_commands[0], "curl");
-}
+        const auto &coder_agent = cfg.agents.at("coder");
+        expect(coder_agent.permissions.sandbox_mode == ToolSandboxMode::workspace_write);
+        expect(coder_agent.permissions.shell_approval == ToolApprovalPolicy::ask);
+        expect(coder_agent.permissions.allowed_tools.size() == 2_ul);
+        expect(coder_agent.permissions.allowed_tools[0] == "read");
+        expect(coder_agent.permissions.allowed_tools[1] == "write");
+        expect(coder_agent.permissions.denied_tools.size() == 1_ul);
+        expect(coder_agent.permissions.denied_tools[0] == "shell");
+        expect(coder_agent.permissions.denied_shell_commands.size() == 1_ul);
+        expect(coder_agent.permissions.denied_shell_commands[0] == "curl");
+    };
 
-TEST_F(ConfigFileTest, ParsesSecuritySection) {
-    auto path = write_config(R"toml(
+    "parses_security_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [security]
 allow = ["cli:*", "qqbot:c2c:*"]
 deny = ["qqbot:c2c:blocked"]
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.allow.size(), 2);
-    EXPECT_EQ(cfg.allow[0], "cli:*");
-    EXPECT_EQ(cfg.allow[1], "qqbot:c2c:*");
-    ASSERT_EQ(cfg.deny.size(), 1);
-    EXPECT_EQ(cfg.deny[0], "qqbot:c2c:blocked");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.allow.size() == 2_ul);
+        expect(cfg.allow[0] == "cli:*");
+        expect(cfg.allow[1] == "qqbot:c2c:*");
+        expect(cfg.deny.size() == 1_ul);
+        expect(cfg.deny[0] == "qqbot:c2c:blocked");
+    };
 
-TEST_F(ConfigFileTest, ParsesMcpServersSection) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto path = write_config(R"toml(
+    "parses_mcp_servers_section"_test = [] {
+        ConfigFileHarness harness;
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+        const auto path = harness.write_config(R"toml(
 [[mcp.servers]]
 name = "github"
 command = "~/bin/mock-mcp"
@@ -393,21 +409,22 @@ GITHUB_TOKEN = "gh-test"
 ROOT = "${HOME}/workspace"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.mcp_servers.size(), 1);
-    const auto &server = cfg.mcp_servers[0];
-    EXPECT_EQ(server.name, "github");
-    EXPECT_EQ(server.command, std::string(home) + "/bin/mock-mcp");
-    ASSERT_EQ(server.args.size(), 2);
-    EXPECT_EQ(server.args[0], "--token");
-    EXPECT_EQ(server.args[1], std::string(home) + "/token.txt");
-    EXPECT_EQ(server.timeout, 12);
-    EXPECT_EQ(server.env.at("GITHUB_TOKEN"), "gh-test");
-    EXPECT_EQ(server.env.at("ROOT"), std::string(home) + "/workspace");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.mcp_servers.size() == 1_ul);
+        const auto &server = cfg.mcp_servers[0];
+        expect(server.name == "github");
+        expect(server.command == std::string(home) + "/bin/mock-mcp");
+        expect(server.args.size() == 2_ul);
+        expect(server.args[0] == "--token");
+        expect(server.args[1] == std::string(home) + "/token.txt");
+        expect(server.timeout == 12_i);
+        expect(server.env.at("GITHUB_TOKEN") == "gh-test");
+        expect(server.env.at("ROOT") == std::string(home) + "/workspace");
+    };
 
-TEST_F(ConfigFileTest, SkipsInvalidMcpServers) {
-    auto path = write_config(R"toml(
+    "skips_invalid_mcp_servers"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [[mcp.servers]]
 command = "missing-name"
 
@@ -415,12 +432,13 @@ command = "missing-name"
 name = "missing-command"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_TRUE(cfg.mcp_servers.empty());
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.mcp_servers.empty());
+    };
 
-TEST_F(ConfigFileTest, LaterMcpServerOverridesEarlierDuplicateName) {
-    auto path = write_config(R"toml(
+    "later_mcp_server_overrides_earlier_duplicate_name"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [[mcp.servers]]
 name = "github"
 command = "old-command"
@@ -432,241 +450,135 @@ command = "new-command"
 timeout = 9
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_EQ(cfg.mcp_servers.size(), 1);
-    EXPECT_EQ(cfg.mcp_servers[0].name, "github");
-    EXPECT_EQ(cfg.mcp_servers[0].command, "new-command");
-    EXPECT_EQ(cfg.mcp_servers[0].timeout, 9);
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.mcp_servers.size() == 1_ul);
+        expect(cfg.mcp_servers[0].name == "github");
+        expect(cfg.mcp_servers[0].command == "new-command");
+        expect(cfg.mcp_servers[0].timeout == 9_i);
+    };
 
-// ── Tool allow/deny ─────────────────────────────
-
-TEST(ConfigToolFilterTest, EmptyListsAllowAll) {
-    const Config cfg;
-    EXPECT_TRUE(cfg.is_tool_allowed("shell"));
-    EXPECT_TRUE(cfg.is_tool_allowed("read"));
-    EXPECT_TRUE(cfg.is_tool_allowed("anything"));
-}
-
-TEST(ConfigToolFilterTest, DeniedToolIsBlocked) {
-    Config cfg;
-    cfg.denied_tools = {"shell"};
-    EXPECT_FALSE(cfg.is_tool_allowed("shell"));
-    EXPECT_TRUE(cfg.is_tool_allowed("read"));
-}
-
-TEST(ConfigToolFilterTest, AllowedListRestrictsTools) {
-    Config cfg;
-    cfg.allowed_tools = {"read", "ls"};
-    EXPECT_TRUE(cfg.is_tool_allowed("read"));
-    EXPECT_TRUE(cfg.is_tool_allowed("ls"));
-    EXPECT_FALSE(cfg.is_tool_allowed("shell"));
-}
-
-TEST(ConfigToolFilterTest, DeniedTakesPrecedenceOverAllowed) {
-    Config cfg;
-    cfg.allowed_tools = {"shell", "read"};
-    cfg.denied_tools = {"shell"};
-    EXPECT_FALSE(cfg.is_tool_allowed("shell"));
-    EXPECT_TRUE(cfg.is_tool_allowed("read"));
-}
-
-// ── Environment variable expansion ──────────────
-
-TEST(ExpandEnvVarsTest, ExpandsDefinedVariable) {
-    // HOME should always be set in test environments
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto result = expand_env_vars("${HOME}/config");
-    EXPECT_EQ(result, std::string(home) + "/config");
-}
-
-TEST(ExpandEnvVarsTest, UndefinedVariableBecomesEmpty) {
-    auto result = expand_env_vars("prefix_${ORANGUTAN_UNDEFINED_XYZ_12345}_suffix");
-    EXPECT_EQ(result, "prefix__suffix");
-}
-
-TEST(ExpandEnvVarsTest, MultipleVariables) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto result = expand_env_vars("${HOME}:${HOME}");
-    EXPECT_EQ(result, std::string(home) + ":" + std::string(home));
-}
-
-TEST(ExpandEnvVarsTest, NoVariablesPassesThrough) {
-    auto result = expand_env_vars("plain text");
-    EXPECT_EQ(result, "plain text");
-}
-
-TEST(ExpandEnvVarsTest, EmptyInputReturnsEmpty) {
-    auto result = expand_env_vars("");
-    EXPECT_EQ(result, "");
-}
-
-TEST(ExpandEnvVarsTest, UnclosedBraceKeptLiteral) {
-    auto result = expand_env_vars("prefix${NOCLOSE");
-    EXPECT_EQ(result, "prefix${NOCLOSE");
-}
-
-TEST(ExpandEnvVarsTest, AdjacentVariables) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto result = expand_env_vars("${HOME}${HOME}");
-    EXPECT_EQ(result, std::string(home) + std::string(home));
-}
-
-TEST(ExpandHomePathTest, ExpandsBareHome) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto result = expand_home_path("~");
-    EXPECT_EQ(result, std::string(home));
-}
-
-TEST(ExpandHomePathTest, ExpandsHomePrefix) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto result = expand_home_path("~/projects/orangutan");
-    EXPECT_EQ(result, std::string(home) + "/projects/orangutan");
-}
-
-TEST(ExpandHomePathTest, LeavesPlainPathUntouched) {
-    auto result = expand_home_path("/tmp/orangutan");
-    EXPECT_EQ(result, "/tmp/orangutan");
-}
-
-// ── api_key from config file ────────────────────
-
-TEST_F(ConfigFileTest, ParsesApiKey) {
-    auto path = write_config(R"toml(
+    "parses_api_key"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 api_key = "sk-test-key-12345"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.api_key, "sk-test-key-12345");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.api_key == "sk-test-key-12345");
+    };
 
-TEST_F(ConfigFileTest, ApiKeyWithEnvVarExpansion) {
-    // Set a temporary env var for testing
-    setenv("ORANGUTAN_TEST_KEY", "sk-from-env", 1);
-
-    auto path = write_config(R"toml(
+    "api_key_with_env_var_expansion"_test = [] {
+        ConfigFileHarness harness;
+        ScopedEnvVar api_key_env("ORANGUTAN_TEST_KEY", "sk-from-env");
+        const auto path = harness.write_config(R"toml(
 [agent]
 api_key = "${ORANGUTAN_TEST_KEY}"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.api_key, "sk-from-env");
+        const auto cfg = Config::load_from(path);
+        expect(cfg.api_key == "sk-from-env");
+    };
 
-    unsetenv("ORANGUTAN_TEST_KEY");
-}
-
-TEST_F(ConfigFileTest, EnvVarExpansionInBaseUrl) {
-    setenv("ORANGUTAN_TEST_HOST", "myhost", 1);
-
-    auto path = write_config(R"toml(
+    "env_var_expansion_in_base_url"_test = [] {
+        ConfigFileHarness harness;
+        ScopedEnvVar host_env("ORANGUTAN_TEST_HOST", "myhost");
+        const auto path = harness.write_config(R"toml(
 [agent]
 base_url = "http://${ORANGUTAN_TEST_HOST}:8080"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.base_url, "http://myhost:8080");
+        const auto cfg = Config::load_from(path);
+        expect(cfg.base_url == "http://myhost:8080");
+    };
 
-    unsetenv("ORANGUTAN_TEST_HOST");
-}
-
-TEST_F(ConfigFileTest, EnvVarExpansionInWorkspace) {
-    setenv("ORANGUTAN_TEST_WORKSPACE", "/tmp/orangutan-workspace-from-env", 1);
-
-    auto path = write_config(R"toml(
+    "env_var_expansion_in_workspace"_test = [] {
+        ConfigFileHarness harness;
+        ScopedEnvVar workspace_env("ORANGUTAN_TEST_WORKSPACE", "/tmp/orangutan-workspace-from-env");
+        const auto path = harness.write_config(R"toml(
 [agent]
 workspace = "${ORANGUTAN_TEST_WORKSPACE}"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.workspace, "/tmp/orangutan-workspace-from-env");
+        const auto cfg = Config::load_from(path);
+        expect(cfg.workspace == "/tmp/orangutan-workspace-from-env");
+    };
 
-    unsetenv("ORANGUTAN_TEST_WORKSPACE");
-}
-
-TEST_F(ConfigFileTest, TildeExpansionInWorkspace) {
-    const char *home = std::getenv("HOME");
-    ASSERT_NE(home, nullptr);
-
-    auto path = write_config(R"toml(
+    "tilde_expansion_in_workspace"_test = [] {
+        ConfigFileHarness harness;
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+        const auto path = harness.write_config(R"toml(
 [agent]
 workspace = "~/projects/orangutan"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.workspace, std::string(home) + "/projects/orangutan");
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.workspace == std::string(home) + "/projects/orangutan");
+    };
 
-TEST_F(ConfigFileTest, DefaultApiKeyIsEmpty) {
-    auto path = write_config(R"toml(
+    "default_api_key_is_empty"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 model = "gpt-4"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    EXPECT_TRUE(cfg.api_key.empty());
-}
+        const auto cfg = Config::load_from(path);
+        expect(cfg.api_key.empty());
+    };
 
-TEST_F(ConfigFileTest, LoadsProtectedLegacyAgentApiKeyWithExplicitPassword) {
-    const auto protected_key = protect_config_secret("sk-protected-legacy", "legacy-password", "agent.api_key");
+    "loads_protected_legacy_agent_api_key_with_explicit_password"_test = [] {
+        ConfigFileHarness harness;
+        const auto protected_key = protect_config_secret("sk-protected-legacy", "legacy-password", "agent.api_key");
+        const auto path = harness.write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
 
-    auto path = write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
+        const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                     .password_override = "legacy-password",
+                                                 });
+        expect(cfg.api_key == "sk-protected-legacy");
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect(cfg.agents.at("default").api_key == "sk-protected-legacy");
+    };
 
-    const auto cfg = Config::load_from(path, ConfigSecretOptions{
-                                                 .password_override = "legacy-password",
-                                             });
-    EXPECT_EQ(cfg.api_key, "sk-protected-legacy");
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    EXPECT_EQ(cfg.agents.at("default").api_key, "sk-protected-legacy");
-}
+    "loads_protected_configured_agent_api_key_from_environment_password"_test = [] {
+        ConfigFileHarness harness;
+        const auto protected_key = protect_config_secret("sk-protected-agent", "env-password", "agents.api_key");
+        ScopedEnvVar config_password("ORANGUTAN_CONFIG_PASSWORD", "env-password");
+        const auto path = harness.write_config("[agents.default]\napi_key = \"" + protected_key + "\"\n");
 
-TEST_F(ConfigFileTest, LoadsProtectedConfiguredAgentApiKeyFromEnvironmentPassword) {
-    const auto protected_key = protect_config_secret("sk-protected-agent", "env-password", "agents.api_key");
-    setenv("ORANGUTAN_CONFIG_PASSWORD", "env-password", 1);
+        const auto cfg = Config::load_from(path);
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect(cfg.agents.at("default").api_key == "sk-protected-agent");
+    };
 
-    auto path = write_config("[agents.default]\napi_key = \"" + protected_key + "\"\n");
-
-    const auto cfg = Config::load_from(path);
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    EXPECT_EQ(cfg.agents.at("default").api_key, "sk-protected-agent");
-
-    unsetenv("ORANGUTAN_CONFIG_PASSWORD");
-}
-
-TEST_F(ConfigFileTest, NamedAgentsCanInheritProtectedLegacyApiKey) {
-    const auto protected_key = protect_config_secret("sk-inherited-agent", "inherit-password", "agent.api_key");
-
-    auto path = write_config(R"toml(
+    "named_agents_can_inherit_protected_legacy_api_key"_test = [] {
+        ConfigFileHarness harness;
+        const auto protected_key = protect_config_secret("sk-inherited-agent", "inherit-password", "agent.api_key");
+        const auto path = harness.write_config(
+            R"toml(
 [agent]
-api_key = ")toml" + protected_key +
-                             R"toml("
+api_key = ")toml" +
+            protected_key +
+            R"toml("
 model = "legacy-model"
 
 [agents.coder]
 model = "coder-model"
 )toml");
 
-    const auto cfg = Config::load_from(path, ConfigSecretOptions{
-                                                 .password_override = "inherit-password",
-                                             });
-    ASSERT_TRUE(cfg.agents.contains("coder"));
-    EXPECT_EQ(cfg.agents.at("coder").api_key, "sk-inherited-agent");
-}
+        const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                     .password_override = "inherit-password",
+                                                 });
+        expect((cfg.agents.contains("coder")) >> fatal);
+        expect(cfg.agents.at("coder").api_key == "sk-inherited-agent");
+    };
 
-TEST_F(ConfigFileTest, LoadsProtectedQqClientSecretWithExplicitPassword) {
-    const auto protected_secret = protect_config_secret("qq-secret-value", "qq-password", "qq.client_secret");
-
-    auto path = write_config(R"toml(
+    "loads_protected_qq_client_secret_with_explicit_password"_test = [] {
+        ConfigFileHarness harness;
+        const auto protected_secret = protect_config_secret("qq-secret-value", "qq-password", "qq.client_secret");
+        const auto path = harness.write_config(
+            R"toml(
 [agents.default]
 model = "test-model"
 api_key = "test-key"
@@ -674,44 +586,50 @@ api_key = "test-key"
 [qq]
 app_id = "qq-app"
 )toml" + std::string("client_secret = \"") +
-                             protected_secret + "\"\n");
+            protected_secret + "\"\n");
 
-    const auto cfg = Config::load_from(path, ConfigSecretOptions{
-                                                 .password_override = "qq-password",
-                                             });
-    ASSERT_EQ(cfg.qq_bots.size(), 1U);
-    EXPECT_EQ(cfg.qq_bots[0].client_secret, "qq-secret-value");
-}
+        const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                     .password_override = "qq-password",
+                                                 });
+        expect(cfg.qq_bots.size() == 1_ul);
+        expect(cfg.qq_bots[0].client_secret == "qq-secret-value");
+    };
 
-TEST_F(ConfigFileTest, ThrowsWhenProtectedSecretHasNoPasswordSource) {
-    const auto protected_key = protect_config_secret("sk-no-password", "expected-password", "agent.api_key");
-    auto path = write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
+    "throws_when_protected_secret_has_no_password_source"_test = [] {
+        ConfigFileHarness harness;
+        const auto protected_key = protect_config_secret("sk-no-password", "expected-password", "agent.api_key");
+        const auto path = harness.write_config("[agent]\napi_key = \"" + protected_key + "\"\n");
 
-    EXPECT_THROW(static_cast<void>(Config::load_from(path)), ConfigSecretProtectionError);
-}
+        expect(throws<ConfigSecretProtectionError>([&] {
+            static_cast<void>(Config::load_from(path));
+        }));
+    };
 
-// ── edit_mode parsing ───────────────────────────
-
-TEST_F(ConfigFileTest, ParsesEditModeFromToolsSection) {
-    auto path = write_config(R"toml(
+    "parses_edit_mode_from_tools_section"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [tools]
 edit_mode = "search_replace"
 )toml");
-    auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.edit_mode, "search_replace");
-}
 
-TEST_F(ConfigFileTest, EditModeDefaultsToHashlineWhenNotSpecified) {
-    auto path = write_config(R"toml(
+        const auto cfg = Config::load_from(path);
+        expect(cfg.edit_mode == "search_replace");
+    };
+
+    "edit_mode_defaults_to_hashline_when_not_specified"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [agent]
 model = "test-model"
 )toml");
-    auto cfg = Config::load_from(path);
-    EXPECT_EQ(cfg.edit_mode, "hashline");
-}
 
-TEST_F(ConfigFileTest, AgentsInheritGlobalEditModeAndCanOverrideIt) {
-    auto path = write_config(R"toml(
+        const auto cfg = Config::load_from(path);
+        expect(cfg.edit_mode == "hashline");
+    };
+
+    "agents_inherit_global_edit_mode_and_can_override_it"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
 [tools]
 edit_mode = "search_replace"
 
@@ -723,9 +641,115 @@ model = "coder-model"
 edit_mode = "hashline"
 )toml");
 
-    const auto cfg = Config::load_from(path);
-    ASSERT_TRUE(cfg.agents.contains("default"));
-    ASSERT_TRUE(cfg.agents.contains("coder"));
-    EXPECT_EQ(cfg.agents.at("default").edit_mode, "search_replace");
-    EXPECT_EQ(cfg.agents.at("coder").edit_mode, "hashline");
-}
+        const auto cfg = Config::load_from(path);
+        expect((cfg.agents.contains("default")) >> fatal);
+        expect((cfg.agents.contains("coder")) >> fatal);
+        expect(cfg.agents.at("default").edit_mode == "search_replace");
+        expect(cfg.agents.at("coder").edit_mode == "hashline");
+    };
+};
+
+boost::ut::suite config_tool_filter_suite = [] {
+    using namespace boost::ut;
+
+    "empty_lists_allow_all"_test = [] {
+        const Config cfg;
+        expect(cfg.is_tool_allowed("shell"));
+        expect(cfg.is_tool_allowed("read"));
+        expect(cfg.is_tool_allowed("anything"));
+    };
+
+    "denied_tool_is_blocked"_test = [] {
+        Config cfg;
+        cfg.denied_tools = {"shell"};
+        expect(not cfg.is_tool_allowed("shell"));
+        expect(cfg.is_tool_allowed("read"));
+    };
+
+    "allowed_list_restricts_tools"_test = [] {
+        Config cfg;
+        cfg.allowed_tools = {"read", "ls"};
+        expect(cfg.is_tool_allowed("read"));
+        expect(cfg.is_tool_allowed("ls"));
+        expect(not cfg.is_tool_allowed("shell"));
+    };
+
+    "denied_takes_precedence_over_allowed"_test = [] {
+        Config cfg;
+        cfg.allowed_tools = {"shell", "read"};
+        cfg.denied_tools = {"shell"};
+        expect(not cfg.is_tool_allowed("shell"));
+        expect(cfg.is_tool_allowed("read"));
+    };
+};
+
+boost::ut::suite config_env_expansion_suite = [] {
+    using namespace boost::ut;
+
+    "expand_env_vars_expands_defined_variable"_test = [] {
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+
+        const auto result = expand_env_vars("${HOME}/config");
+        expect(result == std::string(home) + "/config");
+    };
+
+    "expand_env_vars_undefined_variable_becomes_empty"_test = [] {
+        const auto result = expand_env_vars("prefix_${ORANGUTAN_UNDEFINED_XYZ_12345}_suffix");
+        expect(result == "prefix__suffix");
+    };
+
+    "expand_env_vars_multiple_variables"_test = [] {
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+
+        const auto result = expand_env_vars("${HOME}:${HOME}");
+        expect(result == std::string(home) + ":" + std::string(home));
+    };
+
+    "expand_env_vars_no_variables_passes_through"_test = [] {
+        const auto result = expand_env_vars("plain text");
+        expect(result == "plain text");
+    };
+
+    "expand_env_vars_empty_input_returns_empty"_test = [] {
+        const auto result = expand_env_vars("");
+        expect(result.empty());
+    };
+
+    "expand_env_vars_unclosed_brace_kept_literal"_test = [] {
+        const auto result = expand_env_vars("prefix${NOCLOSE");
+        expect(result == "prefix${NOCLOSE");
+    };
+
+    "expand_env_vars_adjacent_variables"_test = [] {
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+
+        const auto result = expand_env_vars("${HOME}${HOME}");
+        expect(result == std::string(home) + std::string(home));
+    };
+
+    "expand_home_path_expands_bare_home"_test = [] {
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+
+        const auto result = expand_home_path("~");
+        expect(result == std::string(home));
+    };
+
+    "expand_home_path_expands_home_prefix"_test = [] {
+        const char *home = std::getenv("HOME");
+        expect((home != nullptr) >> fatal);
+
+        const auto result = expand_home_path("~/projects/orangutan");
+        expect(result == std::string(home) + "/projects/orangutan");
+    };
+
+    "expand_home_path_leaves_plain_path_untouched"_test = [] {
+        const auto result = expand_home_path("/tmp/orangutan");
+        expect(result == "/tmp/orangutan");
+    };
+};
+
+} // namespace

@@ -2,12 +2,12 @@
 #include "infra/storage/subagent-run-store.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "core/tools/tool.hpp"
+#include "test-helpers.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <gtest/gtest.h>
-
+#include "support/ut.hpp"
 using namespace orangutan;
 
 namespace {
@@ -33,21 +33,19 @@ ToolRuntimeContext make_tool_context(SubagentManager *manager, std::string *curr
 }
 
 json parse_tool_json(const ToolResultBlock &result) {
-    EXPECT_FALSE(result.is_error);
+    using namespace boost::ut;
+
+    expect((not result.is_error) >> fatal);
     return json::parse(result.content);
 }
 
-} // namespace
+class SubagentToolsHarness {
+public:
+    SubagentToolsHarness()
+    : db_path_(orangutan::testing::unique_test_db_path("subagent-tools", "subagents.db")) {}
 
-class SubagentToolsTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        db_path_ = std::filesystem::temp_directory_path() / "orangutan_subagent_tools_test.db";
-        std::filesystem::remove(db_path_);
-    }
-
-    void TearDown() override {
-        std::filesystem::remove(db_path_);
+    ~SubagentToolsHarness() {
+        std::filesystem::remove_all(db_path_.parent_path());
     }
 
     [[nodiscard]]
@@ -68,207 +66,222 @@ private:
     std::filesystem::path db_path_;
 };
 
-TEST_F(SubagentToolsTest, ParentRuntimeRegistersSubagentToolsWhenChildAgentsAllowed) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-    auto current_session_id = parent_session_id;
-    const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
+boost::ut::suite subagent_tools_suite = [] {
+    using namespace boost::ut;
 
-    ToolRegistry registry;
-    register_builtin_tools(registry, nullptr, {}, &tool_context);
+    "parent_runtime_registers_subagent_tools_when_child_agents_allowed"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+        });
+        auto current_session_id = parent_session_id;
+        const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
 
-    const auto defs = registry.definitions();
-    EXPECT_TRUE(has_tool_named(defs, "subagent_spawn"));
-    EXPECT_TRUE(has_tool_named(defs, "subagent_status"));
-    EXPECT_TRUE(has_tool_named(defs, "subagent_wait"));
-}
+        ToolRegistry registry;
+        register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-TEST_F(SubagentToolsTest, ChildRuntimeDoesNotRegisterSubagentTools) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-    auto current_session_id = parent_session_id;
-    const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"}, true);
+        const auto defs = registry.definitions();
+        expect(has_tool_named(defs, "subagent_spawn"));
+        expect(has_tool_named(defs, "subagent_status"));
+        expect(has_tool_named(defs, "subagent_wait"));
+    };
 
-    ToolRegistry registry;
-    register_builtin_tools(registry, nullptr, {}, &tool_context);
+    "child_runtime_does_not_register_subagent_tools"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+        });
+        auto current_session_id = parent_session_id;
+        const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"}, true);
 
-    const auto defs = registry.definitions();
-    EXPECT_FALSE(has_tool_named(defs, "subagent_spawn"));
-    EXPECT_FALSE(has_tool_named(defs, "subagent_status"));
-    EXPECT_FALSE(has_tool_named(defs, "subagent_wait"));
-}
+        ToolRegistry registry;
+        register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-TEST_F(SubagentToolsTest, IncompleteParentRuntimeContextDoesNotRegisterSubagentTools) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-    auto current_session_id = parent_session_id;
-    auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
-    tool_context.runtime_key.clear();
+        const auto defs = registry.definitions();
+        expect(not has_tool_named(defs, "subagent_spawn"));
+        expect(not has_tool_named(defs, "subagent_status"));
+        expect(not has_tool_named(defs, "subagent_wait"));
+    };
 
-    ToolRegistry registry;
-    register_builtin_tools(registry, nullptr, {}, &tool_context);
+    "incomplete_parent_runtime_context_does_not_register_subagent_tools"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+        });
+        auto current_session_id = parent_session_id;
+        auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
+        tool_context.runtime_key.clear();
 
-    const auto defs = registry.definitions();
-    EXPECT_FALSE(has_tool_named(defs, "subagent_spawn"));
-    EXPECT_FALSE(has_tool_named(defs, "subagent_status"));
-    EXPECT_FALSE(has_tool_named(defs, "subagent_wait"));
-}
+        ToolRegistry registry;
+        register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-TEST_F(SubagentToolsTest, SpawnRejectsAgentOutsideAllowlist) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-    auto current_session_id = parent_session_id;
-    const auto tool_context = make_tool_context(&manager, &current_session_id, {"reviewer"});
+        const auto defs = registry.definitions();
+        expect(not has_tool_named(defs, "subagent_spawn"));
+        expect(not has_tool_named(defs, "subagent_status"));
+        expect(not has_tool_named(defs, "subagent_wait"));
+    };
 
-    ToolRegistry registry;
-    register_builtin_tools(registry, nullptr, {}, &tool_context);
+    "spawn_rejects_agent_outside_allowlist"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+        });
+        auto current_session_id = parent_session_id;
+        const auto tool_context = make_tool_context(&manager, &current_session_id, {"reviewer"});
 
-    const auto result = registry.execute(ToolUseBlock{
-        .id = "spawn-reject",
-        .name = "subagent_spawn",
-        .input =
-            {
-                {"child_agent_key", "coder"},
-                {"child_scope_key", "scope:child"},
-                {"child_session_id", child_session_id},
-                {"task_summary", "Investigate failing parser tests"},
-            },
-    });
+        ToolRegistry registry;
+        register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-    const auto payload = parse_tool_json(result);
-    EXPECT_FALSE(payload.at("accepted").get<bool>());
-    EXPECT_TRUE(payload.at("run_id").get<std::string>().empty());
-    EXPECT_NE(payload.at("error").get<std::string>().find("not allowed"), std::string::npos);
-}
+        const auto result = registry.execute(ToolUseBlock{
+            .id = "spawn-reject",
+            .name = "subagent_spawn",
+            .input =
+                {
+                    {"child_agent_key", "coder"},
+                    {"child_scope_key", "scope:child"},
+                    {"child_session_id", child_session_id},
+                    {"task_summary", "Investigate failing parser tests"},
+                },
+        });
 
-TEST_F(SubagentToolsTest, StatusAndWaitReturnStructuredJsonResponses) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{
-            .status = SubagentRunStatus::succeeded,
-            .final_summary = "Done",
-            .final_output = "Detailed output",
-        };
-    });
-    auto current_session_id = parent_session_id;
-    const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
+        const auto payload = parse_tool_json(result);
+        expect(not payload.at("accepted").get<bool>());
+        expect(payload.at("run_id").get<std::string>().empty());
+        expect(payload.at("error").get<std::string>().find("not allowed") != std::string::npos);
+    };
 
-    ToolRegistry registry;
-    register_builtin_tools(registry, nullptr, {}, &tool_context);
+    "status_and_wait_return_structured_json_responses"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{
+                .status = SubagentRunStatus::succeeded,
+                .final_summary = "Done",
+                .final_output = "Detailed output",
+            };
+        });
+        auto current_session_id = parent_session_id;
+        const auto tool_context = make_tool_context(&manager, &current_session_id, {"coder"});
 
-    const auto spawn_result = registry.execute(ToolUseBlock{
-        .id = "spawn-ok",
-        .name = "subagent_spawn",
-        .input =
-            {
-                {"child_agent_key", "coder"},
-                {"child_scope_key", "scope:child"},
-                {"child_session_id", child_session_id},
-                {"task_summary", "Investigate failing parser tests"},
-            },
-    });
-    const auto spawn_payload = parse_tool_json(spawn_result);
-    ASSERT_TRUE(spawn_payload.at("accepted").get<bool>());
-    const auto run_id = spawn_payload.at("run_id").get<std::string>();
-    ASSERT_FALSE(run_id.empty());
+        ToolRegistry registry;
+        register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-    const auto status_result = registry.execute(ToolUseBlock{
-        .id = "status-ok",
-        .name = "subagent_status",
-        .input = {{"run_id", run_id}},
-    });
-    const auto status_payload = parse_tool_json(status_result);
-    EXPECT_TRUE(status_payload.at("found").get<bool>());
-    EXPECT_EQ(status_payload.at("run").at("run_id").get<std::string>(), run_id);
-    EXPECT_EQ(status_payload.at("run").at("child_agent_key").get<std::string>(), "coder");
-    EXPECT_EQ(status_payload.at("run").at("task_summary").get<std::string>(), "Investigate failing parser tests");
+        const auto spawn_result = registry.execute(ToolUseBlock{
+            .id = "spawn-ok",
+            .name = "subagent_spawn",
+            .input =
+                {
+                    {"child_agent_key", "coder"},
+                    {"child_scope_key", "scope:child"},
+                    {"child_session_id", child_session_id},
+                    {"task_summary", "Investigate failing parser tests"},
+                },
+        });
+        const auto spawn_payload = parse_tool_json(spawn_result);
+        expect((spawn_payload.at("accepted").get<bool>()) >> fatal);
+        const auto run_id = spawn_payload.at("run_id").get<std::string>();
+        expect((not run_id.empty()) >> fatal);
 
-    const auto wait_result = registry.execute(ToolUseBlock{
-        .id = "wait-ok",
-        .name = "subagent_wait",
-        .input =
-            {
-                {"run_id", run_id},
-                {"timeout_ms", 1000},
-            },
-    });
-    const auto wait_payload = parse_tool_json(wait_result);
-    EXPECT_EQ(wait_payload.at("state").get<std::string>(), "completed");
-    EXPECT_EQ(wait_payload.at("run").at("run_id").get<std::string>(), run_id);
-    EXPECT_EQ(wait_payload.at("run").at("status").get<std::string>(), "succeeded");
-    EXPECT_EQ(wait_payload.at("run").at("final_summary").get<std::string>(), "Done");
-    EXPECT_EQ(wait_payload.at("run").at("final_output").get<std::string>(), "Detailed output");
-}
+        const auto status_result = registry.execute(ToolUseBlock{
+            .id = "status-ok",
+            .name = "subagent_status",
+            .input = {{"run_id", run_id}},
+        });
+        const auto status_payload = parse_tool_json(status_result);
+        expect((status_payload.at("found").get<bool>()) >> fatal);
+        expect((not status_payload.at("run").is_null()) >> fatal);
+        expect(status_payload.at("run").at("run_id").get<std::string>() == run_id);
+        expect(status_payload.at("run").at("child_agent_key").get<std::string>() == "coder");
+        expect(status_payload.at("run").at("task_summary").get<std::string>() == "Investigate failing parser tests");
 
-TEST_F(SubagentToolsTest, StatusAndWaitHideRunsFromOtherRuntimes) {
-    const auto [parent_session_id, child_session_id] = create_linked_sessions();
-    SubagentRunStore run_store(db_path().string());
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{
-            .status = SubagentRunStatus::succeeded,
-            .final_summary = "Done",
-            .final_output = "Detailed output",
-        };
-    });
+        const auto wait_result = registry.execute(ToolUseBlock{
+            .id = "wait-ok",
+            .name = "subagent_wait",
+            .input =
+                {
+                    {"run_id", run_id},
+                    {"timeout_ms", 1000},
+                },
+        });
+        const auto wait_payload = parse_tool_json(wait_result);
+        expect(wait_payload.at("state").get<std::string>() == "completed");
+        expect((not wait_payload.at("run").is_null()) >> fatal);
+        expect(wait_payload.at("run").at("run_id").get<std::string>() == run_id);
+        expect(wait_payload.at("run").at("status").get<std::string>() == "succeeded");
+        expect(wait_payload.at("run").at("final_summary").get<std::string>() == "Done");
+        expect(wait_payload.at("run").at("final_output").get<std::string>() == "Detailed output");
+    };
 
-    auto parent_session = parent_session_id;
-    const auto parent_context = make_tool_context(&manager, &parent_session, {"coder"});
-    ToolRegistry parent_registry;
-    register_builtin_tools(parent_registry, nullptr, {}, &parent_context);
+    "status_and_wait_hide_runs_from_other_runtimes"_test = [] {
+        SubagentToolsHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore run_store(harness.db_path().string());
+        SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
+            return SubagentWorkerResult{
+                .status = SubagentRunStatus::succeeded,
+                .final_summary = "Done",
+                .final_output = "Detailed output",
+            };
+        });
 
-    const auto spawn_result = parent_registry.execute(ToolUseBlock{
-        .id = "spawn-owner",
-        .name = "subagent_spawn",
-        .input =
-            {
-                {"child_agent_key", "coder"},
-                {"child_scope_key", "scope:child"},
-                {"child_session_id", child_session_id},
-                {"task_summary", "Investigate failing parser tests"},
-            },
-    });
-    const auto spawn_payload = parse_tool_json(spawn_result);
-    ASSERT_TRUE(spawn_payload.at("accepted").get<bool>());
-    const auto run_id = spawn_payload.at("run_id").get<std::string>();
+        auto parent_session = parent_session_id;
+        const auto parent_context = make_tool_context(&manager, &parent_session, {"coder"});
+        ToolRegistry parent_registry;
+        register_builtin_tools(parent_registry, nullptr, {}, &parent_context);
 
-    auto other_session = parent_session_id;
-    auto other_context = make_tool_context(&manager, &other_session, {"coder"});
-    other_context.runtime_key = "runtime:cli:other";
-    ToolRegistry other_registry;
-    register_builtin_tools(other_registry, nullptr, {}, &other_context);
+        const auto spawn_result = parent_registry.execute(ToolUseBlock{
+            .id = "spawn-owner",
+            .name = "subagent_spawn",
+            .input =
+                {
+                    {"child_agent_key", "coder"},
+                    {"child_scope_key", "scope:child"},
+                    {"child_session_id", child_session_id},
+                    {"task_summary", "Investigate failing parser tests"},
+                },
+        });
+        const auto spawn_payload = parse_tool_json(spawn_result);
+        expect((spawn_payload.at("accepted").get<bool>()) >> fatal);
+        const auto run_id = spawn_payload.at("run_id").get<std::string>();
+        expect((not run_id.empty()) >> fatal);
 
-    const auto status_result = other_registry.execute(ToolUseBlock{
-        .id = "status-other",
-        .name = "subagent_status",
-        .input = {{"run_id", run_id}},
-    });
-    const auto status_payload = parse_tool_json(status_result);
-    EXPECT_FALSE(status_payload.at("found").get<bool>());
-    EXPECT_TRUE(status_payload.at("run").is_null());
+        auto other_session = parent_session_id;
+        auto other_context = make_tool_context(&manager, &other_session, {"coder"});
+        other_context.runtime_key = "runtime:cli:other";
+        ToolRegistry other_registry;
+        register_builtin_tools(other_registry, nullptr, {}, &other_context);
 
-    const auto wait_result = other_registry.execute(ToolUseBlock{
-        .id = "wait-other",
-        .name = "subagent_wait",
-        .input =
-            {
-                {"run_id", run_id},
-                {"timeout_ms", 10},
-            },
-    });
-    const auto wait_payload = parse_tool_json(wait_result);
-    EXPECT_EQ(wait_payload.at("state").get<std::string>(), "not_found");
-    EXPECT_TRUE(wait_payload.at("run").is_null());
-}
+        const auto status_result = other_registry.execute(ToolUseBlock{
+            .id = "status-other",
+            .name = "subagent_status",
+            .input = {{"run_id", run_id}},
+        });
+        const auto status_payload = parse_tool_json(status_result);
+        expect(not status_payload.at("found").get<bool>());
+        expect(status_payload.at("run").is_null());
+
+        const auto wait_result = other_registry.execute(ToolUseBlock{
+            .id = "wait-other",
+            .name = "subagent_wait",
+            .input =
+                {
+                    {"run_id", run_id},
+                    {"timeout_ms", 10},
+                },
+        });
+        const auto wait_payload = parse_tool_json(wait_result);
+        expect(wait_payload.at("state").get<std::string>() == "not_found");
+        expect(wait_payload.at("run").is_null());
+    };
+};
+
+} // namespace

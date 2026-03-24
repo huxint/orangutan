@@ -1,23 +1,32 @@
 #include "features/web/web-server.hpp"
-#include <gtest/gtest.h>
-#include <thread>
+#include "support/ut.hpp"
+
 #include <chrono>
+#include <thread>
 
-TEST(WebServerTest, StartsAndStopsCleanly) {
-    orangutan::WebServer server;
-    server.start("127.0.0.1", 0); // port 0 = OS picks free port
-    EXPECT_GT(server.port(), 0);
-    EXPECT_TRUE(server.is_running());
-    server.stop();
-    EXPECT_FALSE(server.is_running());
-}
+namespace {
 
-TEST(WebServerTest, ServesHealthEndpoint) {
-    orangutan::WebServer server;
-    server.start("127.0.0.1", 0);
-    httplib::Client cli("127.0.0.1", server.port());
-    auto res = cli.Get("/api/health");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(res->status, 200);
-    server.stop();
-}
+boost::ut::suite web_server_suite = [] {
+    using namespace boost::ut;
+
+    "starts_and_stops_cleanly"_test = [] {
+        orangutan::WebServer server;
+        server.start("127.0.0.1", 0);
+        expect(server.port() > 0_i);
+        expect(server.is_running());
+        server.stop();
+        expect(not server.is_running());
+    };
+
+    "serves_health_endpoint"_test = [] {
+        orangutan::WebServer server;
+        server.start("127.0.0.1", 0);
+        httplib::Client cli("127.0.0.1", server.port());
+        const auto res = cli.Get("/api/health");
+        expect(static_cast<bool>(res) >> fatal) << "expected /api/health response";
+        expect(res->status == 200_i);
+        server.stop();
+    };
+};
+
+} // namespace

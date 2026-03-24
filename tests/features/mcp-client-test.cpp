@@ -1,10 +1,9 @@
 #include "features/tools/mcp/client.hpp"
-
 #include "features/tools/mcp/manager.hpp"
 #include "core/tools/tool.hpp"
 
 #include <filesystem>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 
 using namespace orangutan;
 
@@ -28,69 +27,79 @@ Config::McpServerConfig make_server_config(const std::string &mode = "normal", i
     return config;
 }
 
+boost::ut::suite mcp_client_suite = [] {
+    using namespace boost::ut;
+
+    "connects_and_lists_tools"_test = [] {
+        McpClient client(make_server_config());
+        client.connect();
+
+        const auto tools = client.list_tools();
+        expect(tools.size() == 2_ul);
+        expect(tools[0].name == "echo");
+        expect(tools[1].name == "structured");
+
+        client.disconnect();
+    };
+
+    "calls_tool_and_flattens_text_content"_test = [] {
+        McpClient client(make_server_config());
+        client.connect();
+
+        const auto result = client.call_tool("echo", {{"message", "hello from mcp"}});
+        expect(result == "hello from mcp");
+
+        client.disconnect();
+    };
+
+    "handshake_timeout_throws"_test = [] {
+        McpClient client(make_server_config("handshake-timeout"));
+        expect(throws<std::runtime_error>([&] {
+            client.connect();
+        }));
+        expect(not client.is_connected());
+    };
+
+    "tool_timeout_disconnects_client"_test = [] {
+        McpClient client(make_server_config("tool-timeout", 1));
+        client.connect();
+
+        expect(throws<std::runtime_error>([&] {
+            static_cast<void>(client.call_tool("echo", {{"message", "slow"}}));
+        }));
+        expect(not client.is_connected());
+    };
+
+    "server_crash_during_call_disconnects_client"_test = [] {
+        McpClient client(make_server_config("crash-on-call"));
+        client.connect();
+
+        expect(throws<std::runtime_error>([&] {
+            static_cast<void>(client.call_tool("echo", {{"message", "boom"}}));
+        }));
+        expect(not client.is_connected());
+    };
+
+    "registers_prefixed_tools_into_registry"_test = [] {
+        ToolRegistry registry;
+        McpManager manager({make_server_config()});
+
+        manager.connect_all();
+        manager.register_tools(registry);
+
+        const auto defs = registry.definitions();
+        const auto it = std::ranges::find(defs, std::string("mock:echo"), &ToolDef::name);
+        expect((it != defs.end()) >> fatal) << "expected prefixed mock:echo tool registration";
+        expect(it->description == "Echo a message back");
+
+        const auto result = registry.execute(ToolUseBlock{
+            .id = "call-1",
+            .name = "mock:echo",
+            .input = {{"message", "via registry"}},
+        });
+        expect(not result.is_error);
+        expect(result.content == "via registry");
+    };
+};
+
 } // namespace
-
-TEST(McpClientTest, ConnectsAndListsTools) {
-    McpClient client(make_server_config());
-    client.connect();
-
-    const auto tools = client.list_tools();
-    ASSERT_EQ(tools.size(), 2);
-    EXPECT_EQ(tools[0].name, "echo");
-    EXPECT_EQ(tools[1].name, "structured");
-
-    client.disconnect();
-}
-
-TEST(McpClientTest, CallsToolAndFlattensTextContent) {
-    McpClient client(make_server_config());
-    client.connect();
-
-    const auto result = client.call_tool("echo", {{"message", "hello from mcp"}});
-    EXPECT_EQ(result, "hello from mcp");
-
-    client.disconnect();
-}
-
-TEST(McpClientTest, HandshakeTimeoutThrows) {
-    McpClient client(make_server_config("handshake-timeout"));
-    EXPECT_THROW(client.connect(), std::runtime_error);
-    EXPECT_FALSE(client.is_connected());
-}
-
-TEST(McpClientTest, ToolTimeoutDisconnectsClient) {
-    McpClient client(make_server_config("tool-timeout", 1));
-    client.connect();
-
-    EXPECT_THROW(static_cast<void>(client.call_tool("echo", {{"message", "slow"}})), std::runtime_error);
-    EXPECT_FALSE(client.is_connected());
-}
-
-TEST(McpClientTest, ServerCrashDuringCallDisconnectsClient) {
-    McpClient client(make_server_config("crash-on-call"));
-    client.connect();
-
-    EXPECT_THROW(static_cast<void>(client.call_tool("echo", {{"message", "boom"}})), std::runtime_error);
-    EXPECT_FALSE(client.is_connected());
-}
-
-TEST(McpManagerTest, RegistersPrefixedToolsIntoRegistry) {
-    ToolRegistry registry;
-    McpManager manager({make_server_config()});
-
-    manager.connect_all();
-    manager.register_tools(registry);
-
-    const auto defs = registry.definitions();
-    const auto it = std::ranges::find(defs, std::string("mock:echo"), &ToolDef::name);
-    ASSERT_NE(it, defs.end());
-    EXPECT_EQ(it->description, "Echo a message back");
-
-    const auto result = registry.execute(ToolUseBlock{
-        .id = "call-1",
-        .name = "mock:echo",
-        .input = {{"message", "via registry"}},
-    });
-    EXPECT_FALSE(result.is_error);
-    EXPECT_EQ(result.content, "via registry");
-}

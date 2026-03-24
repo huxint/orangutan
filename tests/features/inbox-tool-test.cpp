@@ -1,7 +1,11 @@
 #include "features/tools/builtin/inbox.hpp"
 
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 
-TEST(InboxToolTest, RegistersWhenAutomationRuntimeIsPresent) {
-    SUCCEED();
-}
+boost::ut::suite inbox_tool_suite = [] {
+    using namespace boost::ut;
+
+    "registers_when_automation_runtime_is_present"_test = [] {
+        expect(true);
+    };
+};

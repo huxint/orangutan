@@ -1,9 +1,11 @@
 #include "app/bootstrap.hpp"
 #include "app/channel-serve.hpp"
 #include "app/runtime/agent-runtime.hpp"
+#include "app/runtime/app-runtime.hpp"
 
 #include "app/runtime/identity.hpp"
 #include "features/skills/skill-loader.hpp"
+#include "features/memory/memory.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "features/web/web-server.hpp"
 #include "infra/config/config.hpp"
@@ -23,7 +25,7 @@
 #include <fstream>
 #include <functional>
 #include <future>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -201,199 +203,85 @@ private:
     int saved_fd_;
 };
 
-class PtyBootstrapSession {
+class ScopedPipe {
 public:
-    explicit PtyBootstrapSession(std::vector<std::string> argv_storage)
-    : argv_storage_(std::move(argv_storage)) {
-        master_fd_ = ::posix_openpt(O_RDWR | O_NOCTTY);
-        if (master_fd_ == -1) {
-            throw std::runtime_error("posix_openpt failed");
+    ScopedPipe() {
+        if (::pipe(fds_.data()) != 0) {
+            throw std::runtime_error("pipe failed");
         }
-        if (::grantpt(master_fd_) != 0) {
-            throw std::runtime_error("grantpt failed");
-        }
-        if (::unlockpt(master_fd_) != 0) {
-            throw std::runtime_error("unlockpt failed");
-        }
-
-        std::array<char, 256> slave_name{};
-        if (::ptsname_r(master_fd_, slave_name.data(), slave_name.size()) != 0) {
-            throw std::runtime_error("ptsname_r failed");
-        }
-
-        slave_fd_ = ::open(slave_name.data(), O_RDWR | O_NOCTTY);
-        if (slave_fd_ == -1) {
-            throw std::runtime_error("open pty slave failed");
-        }
-
-        const int flags = ::fcntl(master_fd_, F_GETFL, 0);
-        if (flags == -1 || ::fcntl(master_fd_, F_SETFL, flags | O_NONBLOCK) == -1) {
-            throw std::runtime_error("fcntl failed");
-        }
-
-        future_ = std::async(std::launch::async, [this] {
-            ScopedFdRedirect redirect_stdin(STDIN_FILENO, slave_fd_);
-            ScopedFdRedirect redirect_stdout(STDOUT_FILENO, slave_fd_);
-            ScopedFdRedirect redirect_stderr(STDERR_FILENO, slave_fd_);
-
-            std::vector<char *> argv;
-            argv.reserve(argv_storage_.size() + 1);
-            for (auto &arg : argv_storage_) {
-                argv.push_back(arg.data());
-            }
-            argv.push_back(nullptr);
-
-            return app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data());
-        });
     }
 
-    ~PtyBootstrapSession() {
-        close_fds();
+    ~ScopedPipe() {
+        close_read();
+        close_write();
     }
 
-    PtyBootstrapSession(const PtyBootstrapSession &) = delete;
-    PtyBootstrapSession &operator=(const PtyBootstrapSession &) = delete;
-    PtyBootstrapSession(PtyBootstrapSession &&) = delete;
-    PtyBootstrapSession &operator=(PtyBootstrapSession &&) = delete;
+    ScopedPipe(const ScopedPipe &) = delete;
+    ScopedPipe &operator=(const ScopedPipe &) = delete;
+    ScopedPipe(ScopedPipe &&) = delete;
+    ScopedPipe &operator=(ScopedPipe &&) = delete;
 
     [[nodiscard]]
-    bool wait_for_output(std::string_view needle, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (std::chrono::steady_clock::now() < deadline) {
-            drain_output();
-            if (output_.find(needle) != std::string::npos) {
-                return true;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        drain_output();
-        return output_.find(needle) != std::string::npos;
+    int read_end() const {
+        return fds_[0];
     }
 
     [[nodiscard]]
-    std::optional<int> wait_for_web_port(std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (std::chrono::steady_clock::now() < deadline) {
-            drain_output();
-            if (const auto port = parse_web_port(output_); port.has_value()) {
-                return port;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        drain_output();
-        return parse_web_port(output_);
+    int write_end() const {
+        return fds_[1];
     }
 
-    void write_input(std::string_view input) const {
-        if (master_fd_ == -1) {
-            throw std::runtime_error("pty master is closed");
+    void close_read() {
+        if (fds_[0] != -1) {
+            ::close(fds_[0]);
+            fds_[0] = -1;
         }
+    }
+
+    void close_write() {
+        if (fds_[1] != -1) {
+            ::close(fds_[1]);
+            fds_[1] = -1;
+        }
+    }
+
+    void write_all(std::string_view content) {
+        if (fds_[1] == -1) {
+            throw std::runtime_error("pipe write end is closed");
+        }
+
         size_t written_total = 0;
-        while (written_total < input.size()) {
-            const auto written = ::write(master_fd_, input.data() + written_total, input.size() - written_total);
+        while (written_total < content.size()) {
+            const auto remaining = content.substr(written_total);
+            const auto written = ::write(fds_[1], remaining.data(), remaining.size());
             if (written <= 0) {
-                throw std::runtime_error("failed to write to pty master");
+                throw std::runtime_error("pipe write failed");
             }
             written_total += static_cast<size_t>(written);
         }
     }
 
-    [[nodiscard]]
-    BootstrapRunResult finish(std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
-        if (finished_.has_value()) {
-            return *finished_;
-        }
-        if (future_.wait_for(timeout) != std::future_status::ready) {
-            throw std::runtime_error("bootstrap did not finish before timeout");
-        }
-        const auto exit_code = future_.get();
-        drain_output();
-        finished_ = BootstrapRunResult{
-            .exit_code = exit_code,
-            .output = output_,
-        };
-        close_fds();
-        return *finished_;
-    }
-
-    [[nodiscard]]
-    const std::string &output() {
-        drain_output();
-        return output_;
-    }
-
 private:
-    static std::optional<int> parse_web_port(const std::string &output) {
-        constexpr std::string_view marker = "Web UI available at http://127.0.0.1:";
-        const auto pos = output.rfind(marker);
-        if (pos == std::string::npos) {
-            return std::nullopt;
-        }
-        auto cursor = pos + marker.size();
-        auto end = cursor;
-        while (end < output.size() && std::isdigit(static_cast<unsigned char>(output[end])) != 0) {
-            ++end;
-        }
-        if (end == cursor) {
-            return std::nullopt;
-        }
-        return std::stoi(output.substr(cursor, end - cursor));
-    }
-
-    void drain_output() {
-        if (master_fd_ == -1) {
-            return;
-        }
-
-        std::array<char, 512> buffer{};
-        while (true) {
-            const auto read_bytes = ::read(master_fd_, buffer.data(), buffer.size());
-            if (read_bytes > 0) {
-                output_.append(buffer.data(), static_cast<size_t>(read_bytes));
-                continue;
-            }
-            if (read_bytes == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                break;
-            }
-            if (read_bytes <= 0) {
-                break;
-            }
-        }
-    }
-
-    void close_fds() {
-        if (slave_fd_ != -1) {
-            ::close(slave_fd_);
-            slave_fd_ = -1;
-        }
-        if (master_fd_ != -1) {
-            ::close(master_fd_);
-            master_fd_ = -1;
-        }
-    }
-
-    std::vector<std::string> argv_storage_;
-    int master_fd_ = -1;
-    int slave_fd_ = -1;
-    std::future<int> future_;
-    std::string output_;
-    std::optional<BootstrapRunResult> finished_;
+    std::array<int, 2> fds_{-1, -1};
 };
 
-class BootstrapTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        temp_root_ = std::filesystem::current_path() / "tmp" / "tests" / "bootstrap";
-        home_root_ = temp_root_ / "home";
-        workspace_root_ = temp_root_ / "workspace";
-        std::filesystem::remove_all(temp_root_);
+class BootstrapHarness {
+public:
+    BootstrapHarness()
+    : temp_root_(orangutan::testing::unique_test_root("bootstrap")),
+      home_root_(temp_root_ / "home"),
+      workspace_root_(temp_root_ / "workspace") {
         std::filesystem::create_directories(home_root_ / ".orangutan");
         std::filesystem::create_directories(workspace_root_);
     }
 
-    void TearDown() override {
+    ~BootstrapHarness() {
         std::filesystem::remove_all(temp_root_);
     }
+    BootstrapHarness(const BootstrapHarness &) = delete;
+    BootstrapHarness &operator=(const BootstrapHarness &) = delete;
+    BootstrapHarness(BootstrapHarness &&) = delete;
+    BootstrapHarness &operator=(BootstrapHarness &&) = delete;
 
     [[nodiscard]]
     std::filesystem::path config_path() const {
@@ -471,24 +359,22 @@ protected:
     using RunResult = BootstrapRunResult;
 
     [[nodiscard]]
-    RunResult invoke_bootstrap(std::vector<std::string> argv_storage, const std::string &stdin_content = {}) const {
-        std::array<int, 2> stdin_pipe{};
-        EXPECT_EQ(::pipe(stdin_pipe.data()), 0);
+    static RunResult invoke_bootstrap(std::vector<std::string> argv_storage, const std::string &stdin_content = {}) {
+        ScopedPipe stdin_pipe;
         if (!stdin_content.empty()) {
-            EXPECT_EQ(::write(stdin_pipe[1], stdin_content.data(), stdin_content.size()), static_cast<ssize_t>(stdin_content.size()));
+            stdin_pipe.write_all(stdin_content);
         }
-        ::close(stdin_pipe[1]);
+        stdin_pipe.close_write();
 
-        std::array<int, 2> output_pipe{};
-        EXPECT_EQ(::pipe(output_pipe.data()), 0);
+        ScopedPipe output_pipe;
 
         int exit_code = 0;
         {
-            ScopedFdRedirect redirect_stdin(STDIN_FILENO, stdin_pipe[0]);
-            ScopedFdRedirect redirect_stdout(STDOUT_FILENO, output_pipe[1]);
-            ScopedFdRedirect redirect_stderr(STDERR_FILENO, output_pipe[1]);
-            ::close(stdin_pipe[0]);
-            ::close(output_pipe[1]);
+            ScopedFdRedirect redirect_stdin(STDIN_FILENO, stdin_pipe.read_end());
+            ScopedFdRedirect redirect_stdout(STDOUT_FILENO, output_pipe.write_end());
+            ScopedFdRedirect redirect_stderr(STDERR_FILENO, output_pipe.write_end());
+            stdin_pipe.close_read();
+            output_pipe.close_write();
 
             std::vector<char *> argv;
             argv.reserve(argv_storage.size() + 1);
@@ -503,10 +389,10 @@ protected:
         std::string output;
         std::array<char, 256> buffer{};
         ssize_t read_bytes = 0;
-        while ((read_bytes = ::read(output_pipe[0], buffer.data(), buffer.size())) > 0) {
+        while ((read_bytes = ::read(output_pipe.read_end(), buffer.data(), buffer.size())) > 0) {
             output.append(buffer.data(), static_cast<size_t>(read_bytes));
         }
-        ::close(output_pipe[0]);
+        output_pipe.close_read();
 
         return {
             .exit_code = exit_code,
@@ -520,387 +406,425 @@ private:
     std::filesystem::path workspace_root_;
 };
 
-TEST_F(BootstrapTest, ResumeWithoutExplicitIdDoesNotConsumePipedMessageInput) {
-    write_config();
-    create_sessions();
-    ScopedEnvVar home_env("HOME", home_root().string());
+// Boost.UT registers suites through static initialization at namespace scope.
+// NOLINTNEXTLINE(bugprone-throwing-static-initialization)
+const boost::ut::suite bootstrap_suite = [] {
+    using namespace boost::ut;
 
-    std::array<int, 2> stdin_pipe{};
-    ASSERT_EQ(::pipe(stdin_pipe.data()), 0);
-    const std::string piped_input = "hello from stdin\n";
-    ASSERT_EQ(::write(stdin_pipe[1], piped_input.data(), piped_input.size()), static_cast<ssize_t>(piped_input.size()));
-    ::close(stdin_pipe[1]);
+    "resume_without_explicit_id_does_not_consume_piped_message_input"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        harness.create_sessions();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-    std::array<int, 2> output_pipe{};
-    ASSERT_EQ(::pipe(output_pipe.data()), 0);
+        ScopedPipe stdin_pipe;
+        const std::string piped_input = "hello from stdin\n";
+        stdin_pipe.write_all(piped_input);
+        stdin_pipe.close_write();
 
-    {
-        ScopedFdRedirect redirect_stdin(STDIN_FILENO, stdin_pipe[0]);
-        ScopedFdRedirect redirect_stdout(STDOUT_FILENO, output_pipe[1]);
-        ScopedFdRedirect redirect_stderr(STDERR_FILENO, output_pipe[1]);
-        ::close(stdin_pipe[0]);
-        ::close(output_pipe[1]);
+        ScopedPipe output_pipe;
 
-        std::vector<std::string> argv_storage{
-            "orangutan", "--cli", "--agent", "default", "--resume", "--event-stream", "--dump-session",
-        };
-        std::vector<char *> argv;
-        argv.reserve(argv_storage.size() + 1);
-        for (auto &arg : argv_storage) {
-            argv.push_back(arg.data());
+        {
+            ScopedFdRedirect redirect_stdin(STDIN_FILENO, stdin_pipe.read_end());
+            ScopedFdRedirect redirect_stdout(STDOUT_FILENO, output_pipe.write_end());
+            ScopedFdRedirect redirect_stderr(STDERR_FILENO, output_pipe.write_end());
+            stdin_pipe.close_read();
+            output_pipe.close_write();
+
+            std::vector<std::string> argv_storage{
+                "orangutan", "--cli", "--agent", "default", "--resume", "--event-stream", "--dump-session",
+            };
+            std::vector<char *> argv;
+            argv.reserve(argv_storage.size() + 1);
+            for (auto &arg : argv_storage) {
+                argv.push_back(arg.data());
+            }
+            argv.push_back(nullptr);
+
+            expect(app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data()) == 0_i);
         }
-        argv.push_back(nullptr);
 
-        EXPECT_EQ(app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data()), 0);
-    }
+        output_pipe.close_read();
+    };
 
-    ::close(output_pipe[0]);
-}
+    "run_bootstrap_requires_at_least_one_entry_flag"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-TEST_F(BootstrapTest, RunBootstrapRequiresAtLeastOneEntryFlag) {
-    write_config();
-    ScopedEnvVar home_env("HOME", home_root().string());
+        const auto result = BootstrapHarness::invoke_bootstrap({"orangutan", "--agent", "default"});
 
-    const auto result = invoke_bootstrap({"orangutan", "--agent", "default"});
+        expect(result.exit_code == 1_i);
+        expect(result.output.contains("specify at least one entry flag"));
+    };
 
-    EXPECT_EQ(result.exit_code, 1);
-    EXPECT_NE(result.output.find("specify at least one entry flag"), std::string::npos);
-}
+    "channel_only_mode_returns_startup_failure_instead_of_hanging"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+        ScopedChannelModeCallback channel_failure([] {
+            return 1;
+        });
 
-TEST_F(BootstrapTest, ChannelOnlyModeReturnsStartupFailureInsteadOfHanging) {
-    write_config();
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedChannelModeCallback channel_failure([] {
-        return 1;
-    });
+        const auto result = BootstrapHarness::invoke_bootstrap({"orangutan", "--channel"});
 
-    const auto result = invoke_bootstrap({"orangutan", "--channel"});
+        expect(result.exit_code == 1_i);
+    };
 
-    EXPECT_EQ(result.exit_code, 1);
-}
+    "build_agent_runtime_configs_uses_per_agent_edit_mode"_test = [] {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.edit_mode = "hashline";
+        cfg.agents.emplace("default", AgentConfig{
+                                          .provider = "openai",
+                                          .model = "gpt-test",
+                                          .base_url = "https://example.test",
+                                          .api_key = "test-key",
+                                          .system_prompt = "You are a test agent.",
+                                          .workspace = harness.workspace_root().string(),
+                                          .edit_mode = "hashline",
+                                      });
+        cfg.agents.emplace("coder", AgentConfig{
+                                        .provider = "openai",
+                                        .model = "gpt-coder",
+                                        .base_url = "https://example.test",
+                                        .api_key = "coder-key",
+                                        .system_prompt = "You are a coder agent.",
+                                        .workspace = harness.workspace_root().string(),
+                                        .edit_mode = "search_replace",
+                                    });
 
-TEST_F(BootstrapTest, BuildAgentRuntimeConfigsUsesPerAgentEditMode) {
-    Config cfg;
-    cfg.edit_mode = "hashline";
-    cfg.agents.emplace("default", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-test",
-                                      .base_url = "https://example.test",
-                                      .api_key = "test-key",
-                                      .system_prompt = "You are a test agent.",
-                                      .workspace = workspace_root().string(),
-                                      .edit_mode = "hashline",
-                                  });
-    cfg.agents.emplace("coder", AgentConfig{
-                                    .provider = "openai",
-                                    .model = "gpt-coder",
-                                    .base_url = "https://example.test",
-                                    .api_key = "coder-key",
-                                    .system_prompt = "You are a coder agent.",
-                                    .workspace = workspace_root().string(),
-                                    .edit_mode = "search_replace",
-                                });
+        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        expect((runtime_configs.has_value()) >> fatal);
+        auto default_it = runtime_configs->find("default");
+        expect((default_it != runtime_configs->end()) >> fatal);
+        expect(default_it->second.edit_mode == "hashline");
+        auto coder_it = runtime_configs->find("coder");
+        expect((coder_it != runtime_configs->end()) >> fatal);
+        expect(coder_it->second.edit_mode == "search_replace");
+    };
 
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    auto default_it = runtime_configs->find("default");
-    ASSERT_NE(default_it, runtime_configs->end());
-    EXPECT_EQ(default_it->second.edit_mode, "hashline");
-    auto coder_it = runtime_configs->find("coder");
-    ASSERT_NE(coder_it, runtime_configs->end());
-    EXPECT_EQ(coder_it->second.edit_mode, "search_replace");
-}
+    "build_effective_agents_adds_legacy_default_when_missing"_test = [] {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.provider = "openai";
+        cfg.model = "gpt-test";
+        cfg.base_url = "https://example.test";
+        cfg.api_key = "test-key";
+        cfg.workspace = harness.workspace_root().string();
 
-TEST_F(BootstrapTest, BuildEffectiveAgentsAddsLegacyDefaultWhenMissing) {
-    Config cfg;
-    cfg.provider = "openai";
-    cfg.model = "gpt-test";
-    cfg.base_url = "https://example.test";
-    cfg.api_key = "test-key";
-    cfg.workspace = workspace_root().string();
+        const auto agents = app::detail::build_effective_agents(cfg);
+        auto it = agents.find("default");
+        expect((it != agents.end()) >> fatal);
+        expect(it->second.model == "gpt-test");
+        expect(it->second.workspace == harness.workspace_root().string());
+    };
 
-    const auto agents = app::detail::build_effective_agents(cfg);
-    auto it = agents.find("default");
-    ASSERT_NE(it, agents.end());
-    EXPECT_EQ(it->second.model, "gpt-test");
-    EXPECT_EQ(it->second.workspace, workspace_root().string());
-}
+    "build_effective_agents_assigns_default_workspace_when_missing"_test = [] {
+        BootstrapHarness harness;
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-TEST_F(BootstrapTest, BuildEffectiveAgentsAssignsDefaultWorkspaceWhenMissing) {
-    ScopedEnvVar home_env("HOME", home_root().string());
+        Config cfg;
+        cfg.provider = "openai";
+        cfg.model = "gpt-test";
+        cfg.base_url = "https://example.test";
+        cfg.api_key = "test-key";
+        cfg.agents.emplace("coder", AgentConfig{
+                                        .provider = "openai",
+                                        .model = "gpt-coder",
+                                        .base_url = "https://example.test",
+                                        .api_key = "coder-key",
+                                    });
 
-    Config cfg;
-    cfg.provider = "openai";
-    cfg.model = "gpt-test";
-    cfg.base_url = "https://example.test";
-    cfg.api_key = "test-key";
-    cfg.agents.emplace("coder", AgentConfig{
-                                    .provider = "openai",
-                                    .model = "gpt-coder",
-                                    .base_url = "https://example.test",
-                                    .api_key = "coder-key",
-                                });
+        const auto agents = app::detail::build_effective_agents(cfg);
+        const auto expected = (harness.home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
 
-    const auto agents = app::detail::build_effective_agents(cfg);
-    const auto expected = (home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
+        expect(agents.count("default") == 1_ul);
+        expect(agents.count("coder") == 1_ul);
+        expect(agents.at("default").workspace == expected);
+        expect(agents.at("coder").workspace == expected);
+    };
 
-    ASSERT_EQ(agents.count("default"), 1U);
-    ASSERT_EQ(agents.count("coder"), 1U);
-    EXPECT_EQ(agents.at("default").workspace, expected);
-    EXPECT_EQ(agents.at("coder").workspace, expected);
-}
+    "build_agent_runtime_configs_adds_legacy_default_when_missing"_test = [] {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.provider = "openai";
+        cfg.model = "gpt-test";
+        cfg.base_url = "https://example.test";
+        cfg.api_key = "test-key";
+        cfg.workspace = harness.workspace_root().string();
 
-TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAddsLegacyDefaultWhenMissing) {
-    Config cfg;
-    cfg.provider = "openai";
-    cfg.model = "gpt-test";
-    cfg.base_url = "https://example.test";
-    cfg.api_key = "test-key";
-    cfg.workspace = workspace_root().string();
+        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        expect((runtime_configs.has_value()) >> fatal);
+        auto it = runtime_configs->find("default");
+        expect((it != runtime_configs->end()) >> fatal);
+        expect(it->second.agent_key == "default");
+        expect(it->second.model == "gpt-test");
+    };
 
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    auto it = runtime_configs->find("default");
-    ASSERT_NE(it, runtime_configs->end());
-    EXPECT_EQ(it->second.agent_key, "default");
-    EXPECT_EQ(it->second.model, "gpt-test");
-}
+    "build_agent_runtime_configs_assigns_default_workspace_when_missing"_test = [] {
+        BootstrapHarness harness;
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-TEST_F(BootstrapTest, BuildAgentRuntimeConfigsAssignsDefaultWorkspaceWhenMissing) {
-    ScopedEnvVar home_env("HOME", home_root().string());
+        Config cfg;
+        cfg.agents.emplace("default", AgentConfig{
+                                          .provider = "openai",
+                                          .model = "gpt-test",
+                                          .base_url = "https://example.test",
+                                          .api_key = "test-key",
+                                      });
 
-    Config cfg;
-    cfg.agents.emplace("default", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-test",
-                                      .base_url = "https://example.test",
-                                      .api_key = "test-key",
-                                  });
+        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        expect((runtime_configs.has_value()) >> fatal);
+        auto it = runtime_configs->find("default");
+        expect((it != runtime_configs->end()) >> fatal);
 
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    auto it = runtime_configs->find("default");
-    ASSERT_NE(it, runtime_configs->end());
+        const auto expected = std::filesystem::weakly_canonical(harness.home_root() / ".orangutan" / "workspace" / "main").string();
+        expect(it->second.workspace_root == expected);
+        expect(std::filesystem::exists(expected));
+        expect(std::filesystem::is_directory(expected));
+    };
 
-    const auto expected = std::filesystem::weakly_canonical(home_root() / ".orangutan" / "workspace" / "main").string();
-    EXPECT_EQ(it->second.workspace_root, expected);
-    EXPECT_TRUE(std::filesystem::exists(expected));
-    EXPECT_TRUE(std::filesystem::is_directory(expected));
-}
+    "build_agent_runtime_configs_preserves_default_subagents"_test = [] {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.agents.emplace("default", AgentConfig{
+                                          .provider = "openai",
+                                          .model = "gpt-test",
+                                          .base_url = "https://example.test",
+                                          .api_key = "test-key",
+                                          .workspace = harness.workspace_root().string(),
+                                          .subagents = {"coder"},
+                                      });
+        cfg.agents.emplace("coder", AgentConfig{
+                                        .provider = "openai",
+                                        .model = "gpt-coder",
+                                        .base_url = "https://example.test",
+                                        .api_key = "coder-key",
+                                        .workspace = harness.workspace_root().string(),
+                                    });
 
-TEST_F(BootstrapTest, BuildAgentRuntimeConfigsPreservesDefaultSubagents) {
-    Config cfg;
-    cfg.agents.emplace("default", AgentConfig{
-                                      .provider = "openai",
-                                      .model = "gpt-test",
-                                      .base_url = "https://example.test",
-                                      .api_key = "test-key",
-                                      .workspace = workspace_root().string(),
-                                      .subagents = {"coder"},
-                                  });
-    cfg.agents.emplace("coder", AgentConfig{
-                                    .provider = "openai",
-                                    .model = "gpt-coder",
-                                    .base_url = "https://example.test",
-                                    .api_key = "coder-key",
-                                    .workspace = workspace_root().string(),
-                                });
+        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        expect((runtime_configs.has_value()) >> fatal);
+        auto default_it = runtime_configs->find("default");
+        expect((default_it != runtime_configs->end()) >> fatal);
+        expect(default_it->second.allowed_child_agents.size() == 1_ul);
+        expect(default_it->second.allowed_child_agents.front() == "coder");
+    };
 
-    const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
-    ASSERT_TRUE(runtime_configs.has_value());
-    auto default_it = runtime_configs->find("default");
-    ASSERT_NE(default_it, runtime_configs->end());
-    ASSERT_EQ(default_it->second.allowed_child_agents.size(), 1U);
-    EXPECT_EQ(default_it->second.allowed_child_agents.front(), "coder");
-}
+    "build_subagent_child_runtime_configs_propagates_edit_mode"_test = [] {
+        BootstrapHarness harness;
+        std::unordered_map<std::string, app::AgentRuntimeConfig> runtime_configs;
+        runtime_configs.emplace("default", app::AgentRuntimeConfig{
+                                               .agent_key = "default",
+                                               .provider_name = "openai",
+                                               .api_key = "test-key",
+                                               .model = "gpt-test",
+                                               .base_url = "https://example.test",
+                                               .system_prompt = "You are a test agent.",
+                                               .workspace_root = harness.workspace_root().string(),
+                                               .edit_mode = "search_replace",
+                                           });
 
-TEST_F(BootstrapTest, BuildSubagentChildRuntimeConfigsPropagatesEditMode) {
-    std::unordered_map<std::string, app::AgentRuntimeConfig> runtime_configs;
-    runtime_configs.emplace("default", app::AgentRuntimeConfig{
-                                           .agent_key = "default",
-                                           .provider_name = "openai",
-                                           .api_key = "test-key",
-                                           .model = "gpt-test",
-                                           .base_url = "https://example.test",
-                                           .system_prompt = "You are a test agent.",
-                                           .workspace_root = workspace_root().string(),
-                                           .edit_mode = "search_replace",
-                                       });
+        const auto child_configs = app::detail::build_subagent_child_runtime_configs(runtime_configs);
+        auto it = child_configs.find("default");
+        expect((it != child_configs.end()) >> fatal);
+        expect(it->second.edit_mode == "search_replace");
+    };
 
-    const auto child_configs = app::detail::build_subagent_child_runtime_configs(runtime_configs);
-    auto it = child_configs.find("default");
-    ASSERT_NE(it, child_configs.end());
-    EXPECT_EQ(it->second.edit_mode, "search_replace");
-}
+    "repl_runtime_lists_memory_tools_and_skills"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        BootstrapHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-TEST_F(BootstrapTest, ReplRuntimeListsMemoryToolsAndSkills) {
-    write_config();
-    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedEnvVar term_env("TERM", "dumb");
+        const auto cfg = Config::load_from(harness.config_path().string());
+        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        expect((runtime_configs.has_value()) >> fatal);
 
-    PtyBootstrapSession session({"orangutan", "--cli", "--agent", "default"});
-    ASSERT_TRUE(session.wait_for_output("Type /help"));
+        const auto runtime_it = runtime_configs->find("default");
+        expect((runtime_it != runtime_configs->end()) >> fatal);
 
-    session.write_input("/tools\n");
-    session.write_input("/skills\n");
-    session.write_input("/tasks\n");
-    session.write_input("/heartbeats\n");
-    session.write_input("/inbox\n");
-    session.write_input("/quit\n");
+        MemoryStore memory_store((harness.home_root() / ".orangutan" / "memory.db").string());
+        const auto identity = derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
+        app::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db").string());
+        auto runtime = build_agent_runtime(AgentRuntimeBuildInput{
+            .provider_name = runtime_it->second.provider_name,
+            .api_key = runtime_it->second.api_key,
+            .model = runtime_it->second.model,
+            .fallback_models = runtime_it->second.fallback_models,
+            .base_url = runtime_it->second.base_url,
+            .agent_key = runtime_it->second.agent_key,
+            .system_prompt = runtime_it->second.system_prompt,
+            .workspace_root = runtime_it->second.workspace_root,
+            .edit_mode = runtime_it->second.edit_mode,
+            .memory = runtime_it->second.memory,
+            .permissions = runtime_it->second.permissions,
+            .allowed_child_agents = runtime_it->second.allowed_child_agents,
+            .identity = identity,
+            .memory_store = &memory_store,
+            .automation_runtime = &app_runtime.automation_runtime(),
+            .custom_tools = cfg.custom_tools,
+            .mcp_servers = cfg.mcp_servers,
+            .skill_paths = cfg.skill_paths,
+            .hook_paths = cfg.hook_paths,
+        });
 
-    const auto result = session.finish();
-    EXPECT_EQ(result.exit_code, 0);
-    EXPECT_NE(result.output.find("memory_list"), std::string::npos);
-    EXPECT_NE(result.output.find("task"), std::string::npos);
-    EXPECT_NE(result.output.find("heartbeat"), std::string::npos);
-    EXPECT_NE(result.output.find("inbox"), std::string::npos);
-    EXPECT_NE(result.output.find("workspace-skill"), std::string::npos);
-    EXPECT_NE(result.output.find("No tasks configured."), std::string::npos);
-    EXPECT_NE(result.output.find("No heartbeats configured."), std::string::npos);
-    EXPECT_NE(result.output.find("Inbox is empty."), std::string::npos);
-}
+        const auto definitions = runtime.tools.definitions();
+        expect(has_tool_named(definitions, "memory_list"));
+        expect(has_tool_named(definitions, "task"));
+        expect(has_tool_named(definitions, "heartbeat"));
+        expect(has_tool_named(definitions, "inbox"));
+        expect(runtime.skills_prompt.contains("workspace-skill"));
+    };
 
-TEST_F(BootstrapTest, WebModeBuildsAndAttachesRealBootstrapRuntimeDependencies) {
-    write_config();
-    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
-    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
-    ScopedWebStartupInspectionCapture inspection_capture;
+    "web_mode_builds_and_attaches_real_bootstrap_runtime_dependencies"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        BootstrapHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+        ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+        ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+        ScopedWebStartupInspectionCapture inspection_capture;
 
-    const auto result = invoke_bootstrap({"orangutan", "--agent", "default", "--web", "--port", "0"});
+        const auto result = BootstrapHarness::invoke_bootstrap({"orangutan", "--agent", "default", "--web", "--port", "0"});
 
-    ASSERT_EQ(result.exit_code, 0) << result.output;
-    ASSERT_TRUE(inspection_capture.inspection().has_value());
-    const auto &inspection = *inspection_capture.inspection();
-    EXPECT_TRUE(inspection.has_session_store);
-    EXPECT_TRUE(inspection.has_memory_store);
-    EXPECT_TRUE(inspection.has_subagent_run_store);
-    EXPECT_TRUE(inspection.has_subagent_manager);
-    EXPECT_TRUE(inspection.has_runtime_bundle);
-    EXPECT_TRUE(inspection.has_runtime_agent);
-    EXPECT_TRUE(inspection.attached_session_store);
-    EXPECT_TRUE(inspection.attached_tool_registry);
-    EXPECT_TRUE(inspection.attached_skill_loader);
-    EXPECT_TRUE(has_tool_named(inspection.tool_definitions, "memory_list"));
-    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
-}
+        expect((result.exit_code == 0_i) >> fatal) << result.output;
+        expect((inspection_capture.inspection().has_value()) >> fatal);
+        const auto &inspection = *inspection_capture.inspection();
+        expect(inspection.has_session_store);
+        expect(inspection.has_memory_store);
+        expect(inspection.has_subagent_run_store);
+        expect(inspection.has_subagent_manager);
+        expect(inspection.has_runtime_bundle);
+        expect(inspection.has_runtime_agent);
+        expect(inspection.attached_session_store);
+        expect(inspection.attached_tool_registry);
+        expect(inspection.attached_skill_loader);
+        expect(has_tool_named(inspection.tool_definitions, "memory_list"));
+        expect(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+    };
 
-TEST_F(BootstrapTest, WebModeCreatesWebAssemblyDependenciesWithoutApiKey) {
-    write_config_with_api_key("");
-    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
-    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
-    ScopedWebStartupInspectionCapture inspection_capture;
+    "web_mode_creates_web_assembly_dependencies_without_api_key"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config_with_api_key("");
+        BootstrapHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+        ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+        ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+        ScopedWebStartupInspectionCapture inspection_capture;
 
-    const auto result = invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
+        const auto result = BootstrapHarness::invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
 
-    ASSERT_EQ(result.exit_code, 0) << result.output;
-    ASSERT_TRUE(inspection_capture.inspection().has_value());
-    const auto &inspection = *inspection_capture.inspection();
-    EXPECT_TRUE(inspection.has_session_store);
-    EXPECT_TRUE(inspection.has_memory_store);
-    EXPECT_TRUE(inspection.has_subagent_run_store);
-    EXPECT_TRUE(inspection.has_subagent_manager);
-    EXPECT_FALSE(inspection.has_runtime_bundle);
-    EXPECT_FALSE(inspection.has_runtime_agent);
-    EXPECT_TRUE(inspection.attached_session_store);
-    EXPECT_FALSE(inspection.attached_tool_registry);
-    EXPECT_TRUE(inspection.attached_skill_loader);
-    EXPECT_TRUE(inspection.tool_definitions.empty());
-    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
-}
+        expect((result.exit_code == 0_i) >> fatal) << result.output;
+        expect((inspection_capture.inspection().has_value()) >> fatal);
+        const auto &inspection = *inspection_capture.inspection();
+        expect(inspection.has_session_store);
+        expect(inspection.has_memory_store);
+        expect(inspection.has_subagent_run_store);
+        expect(inspection.has_subagent_manager);
+        expect(not inspection.has_runtime_bundle);
+        expect(not inspection.has_runtime_agent);
+        expect(inspection.attached_session_store);
+        expect(not inspection.attached_tool_registry);
+        expect(inspection.attached_skill_loader);
+        expect(inspection.tool_definitions.empty());
+        expect(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+    };
 
-TEST_F(BootstrapTest, WebModeStartsAdminUiWhenRuntimeAssemblyFails) {
-    write_config();
-    write_skill(workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
-    ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
-    ScopedWebStartupInspectionCapture inspection_capture;
-    ScopedWebRuntimeBuildFailureInjection build_failure("injected web runtime failure");
+    "web_mode_starts_admin_ui_when_runtime_assembly_fails"_test = [] {
+        BootstrapHarness harness;
+        harness.write_config();
+        BootstrapHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+        ScopedUnsetEnvVar anthropic_api_key_env("ANTHROPIC_API_KEY");
+        ScopedUnsetEnvVar llm_api_key_env("LLM_API_KEY");
+        ScopedWebStartupInspectionCapture inspection_capture;
+        ScopedWebRuntimeBuildFailureInjection build_failure("injected web runtime failure");
 
-    const auto result = invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
+        const auto result = BootstrapHarness::invoke_bootstrap({"orangutan", "--web", "--agent", "default", "--port", "0"});
 
-    ASSERT_EQ(result.exit_code, 0) << result.output;
-    ASSERT_TRUE(inspection_capture.inspection().has_value());
-    const auto &inspection = *inspection_capture.inspection();
-    EXPECT_TRUE(inspection.has_session_store);
-    EXPECT_TRUE(inspection.has_memory_store);
-    EXPECT_TRUE(inspection.has_subagent_run_store);
-    EXPECT_TRUE(inspection.has_subagent_manager);
-    EXPECT_FALSE(inspection.has_runtime_bundle);
-    EXPECT_FALSE(inspection.has_runtime_agent);
-    EXPECT_TRUE(inspection.attached_session_store);
-    EXPECT_FALSE(inspection.attached_tool_registry);
-    EXPECT_TRUE(inspection.attached_skill_loader);
-    EXPECT_TRUE(inspection.tool_definitions.empty());
-    EXPECT_NE(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")), inspection.active_skill_names.end());
-    EXPECT_NE(inspection.runtime_build_error.find("injected web runtime failure"), std::string::npos);
-}
+        expect((result.exit_code == 0_i) >> fatal) << result.output;
+        expect((inspection_capture.inspection().has_value()) >> fatal);
+        const auto &inspection = *inspection_capture.inspection();
+        expect(inspection.has_session_store);
+        expect(inspection.has_memory_store);
+        expect(inspection.has_subagent_run_store);
+        expect(inspection.has_subagent_manager);
+        expect(not inspection.has_runtime_bundle);
+        expect(not inspection.has_runtime_agent);
+        expect(inspection.attached_session_store);
+        expect(not inspection.attached_tool_registry);
+        expect(inspection.attached_skill_loader);
+        expect(inspection.tool_definitions.empty());
+        expect(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+        expect(inspection.runtime_build_error.contains("injected web runtime failure"));
+    };
 
-TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithCliPassword) {
-    const auto protected_key = protect_config_secret("test-key", "cli-password", "agents.api_key");
-    write_config_with_api_key(protected_key);
-    create_sessions();
-    ScopedEnvVar home_env("HOME", home_root().string());
+    "run_bootstrap_loads_protected_config_with_cli_password"_test = [] {
+        BootstrapHarness harness;
+        const auto protected_key = protect_config_secret("test-key", "cli-password", "agents.api_key");
+        harness.write_config_with_api_key(protected_key);
+        harness.create_sessions();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-    const auto result = invoke_bootstrap({
-        "orangutan",
-        "--cli",
-        "--agent",
-        "default",
-        "--config-password",
-        "cli-password",
-        "--resume",
-        "--event-stream",
-        "--dump-session",
-    });
+        const auto result = BootstrapHarness::invoke_bootstrap({
+            "orangutan",
+            "--cli",
+            "--agent",
+            "default",
+            "--config-password",
+            "cli-password",
+            "--resume",
+            "--event-stream",
+            "--dump-session",
+        });
 
-    EXPECT_EQ(result.exit_code, 0);
-}
+        expect(result.exit_code == 0_i);
+    };
 
-TEST_F(BootstrapTest, RunBootstrapLoadsProtectedConfigWithEnvironmentPasswordHeadless) {
-    const auto protected_key = protect_config_secret("test-key", "env-password", "agents.api_key");
-    write_config_with_api_key(protected_key);
-    create_sessions();
-    ScopedEnvVar home_env("HOME", home_root().string());
-    ScopedEnvVar password_env("ORANGUTAN_CONFIG_PASSWORD", "env-password");
+    "run_bootstrap_loads_protected_config_with_environment_password_headless"_test = [] {
+        BootstrapHarness harness;
+        const auto protected_key = protect_config_secret("test-key", "env-password", "agents.api_key");
+        harness.write_config_with_api_key(protected_key);
+        harness.create_sessions();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+        ScopedEnvVar password_env("ORANGUTAN_CONFIG_PASSWORD", "env-password");
 
-    const auto result = invoke_bootstrap({
-        "orangutan",
-        "--cli",
-        "--agent",
-        "default",
-        "--resume",
-        "--event-stream",
-        "--dump-session",
-    });
+        const auto result = BootstrapHarness::invoke_bootstrap({
+            "orangutan",
+            "--cli",
+            "--agent",
+            "default",
+            "--resume",
+            "--event-stream",
+            "--dump-session",
+        });
 
-    EXPECT_EQ(result.exit_code, 0);
-}
+        expect(result.exit_code == 0_i);
+    };
 
-TEST_F(BootstrapTest, RunBootstrapFailsWithoutPasswordForProtectedConfigHeadless) {
-    const auto protected_key = protect_config_secret("test-key", "missing-password", "agents.api_key");
-    write_config_with_api_key(protected_key);
-    create_sessions();
-    ScopedEnvVar home_env("HOME", home_root().string());
+    "run_bootstrap_fails_without_password_for_protected_config_headless"_test = [] {
+        BootstrapHarness harness;
+        const auto protected_key = protect_config_secret("test-key", "missing-password", "agents.api_key");
+        harness.write_config_with_api_key(protected_key);
+        harness.create_sessions();
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-    const auto result = invoke_bootstrap({
-        "orangutan",
-        "--cli",
-        "--agent",
-        "default",
-        "--resume",
-        "--event-stream",
-        "--dump-session",
-    });
+        const auto result = BootstrapHarness::invoke_bootstrap({
+            "orangutan",
+            "--cli",
+            "--agent",
+            "default",
+            "--resume",
+            "--event-stream",
+            "--dump-session",
+        });
 
-    EXPECT_EQ(result.exit_code, 1);
-    EXPECT_NE(result.output.find("--config-password"), std::string::npos);
-    EXPECT_NE(result.output.find("ORANGUTAN_CONFIG_PASSWORD"), std::string::npos);
-}
+        expect(result.exit_code == 1_i);
+        expect(result.output.contains("--config-password"));
+        expect(result.output.contains("ORANGUTAN_CONFIG_PASSWORD"));
+    };
+};
 
 } // namespace

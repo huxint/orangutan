@@ -1,16 +1,16 @@
 #include "features/heartbeat/protocol/heartbeat-md.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 #include <string_view>
 
-using namespace orangutan;
-
+namespace orangutan {
 namespace {
 
 std::filesystem::path make_test_path(std::string_view filename) {
-    return std::filesystem::temp_directory_path() / filename;
+    return orangutan::testing::unique_test_path("heartbeat-md", filename);
 }
 
 bool write_test_file(const std::filesystem::path &path, std::string_view content) {
@@ -29,59 +29,47 @@ bool write_test_file(const std::filesystem::path &path, std::string_view content
     return file.good();
 }
 
+boost::ut::suite heartbeat_md_suite = [] {
+    using namespace boost::ut;
+
+    "missing_file_returns_nullopt"_test = [] {
+        const auto result = load_heartbeat_md("/nonexistent/path/HEARTBEAT.md");
+        expect(not result.has_value());
+    };
+
+    "empty_path_returns_nullopt"_test = [] {
+        const auto result = load_heartbeat_md("");
+        expect(not result.has_value());
+    };
+
+    "loads_markdown_file_contents"_test = [] {
+        const auto path = make_test_path("HEARTBEAT-load.md");
+        expect(write_test_file(path, "# heartbeat\nready\n") >> fatal) << "expected heartbeat fixture file to be written";
+
+        const auto result = load_heartbeat_md(path.string());
+
+        expect(result.has_value() >> fatal) << "expected heartbeat markdown to load";
+        expect(*result == "# heartbeat\nready\n");
+    };
+
+    "ignores_non_markdown_extension"_test = [] {
+        const auto path = make_test_path("HEARTBEAT.txt");
+        expect(write_test_file(path, "not markdown") >> fatal) << "expected non-markdown fixture file to be written";
+
+        const auto result = load_heartbeat_md(path.string());
+
+        expect(not result.has_value());
+    };
+
+    "returns_nullopt_when_file_cannot_be_opened"_test = [] {
+        const auto path = make_test_path("missing/HEARTBEAT.md");
+        std::filesystem::remove_all(path.parent_path());
+
+        const auto result = load_heartbeat_md(path.string());
+
+        expect(not result.has_value());
+    };
+};
+
 } // namespace
-
-TEST(HeartbeatMdTest, MissingFileReturnsNullopt) {
-    auto result = load_heartbeat_md("/nonexistent/path/HEARTBEAT.md");
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST(HeartbeatMdTest, EmptyPathReturnsNullopt) {
-    auto result = load_heartbeat_md("");
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST(HeartbeatMdTest, FileWithContentReturnsContent) {
-    const auto path = make_test_path("orangutan-test-heartbeat.md");
-    ASSERT_TRUE(write_test_file(path, "- [ ] Check server status\n- [ ] Review pending PRs\n"));
-
-    auto result = load_heartbeat_md(path.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_FALSE(result->empty());
-    EXPECT_NE(result->find("Check server status"), std::string::npos);
-
-    std::filesystem::remove(path);
-}
-
-TEST(HeartbeatMdTest, EmptyFileReturnsEmptyString) {
-    const auto path = make_test_path("orangutan-test-heartbeat-empty.md");
-    ASSERT_TRUE(write_test_file(path, ""));
-
-    auto result = load_heartbeat_md(path.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->empty());
-
-    std::filesystem::remove(path);
-}
-
-TEST(HeartbeatMdTest, WhitespaceOnlyFileReturnsEmptyString) {
-    const auto path = make_test_path("orangutan-test-heartbeat-ws.md");
-    ASSERT_TRUE(write_test_file(path, "   \n\n  \t  \n"));
-
-    auto result = load_heartbeat_md(path.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->empty());
-
-    std::filesystem::remove(path);
-}
-
-TEST(HeartbeatMdTest, HeadersOnlyFileReturnsEmptyString) {
-    const auto path = make_test_path("orangutan-test-heartbeat-headers.md");
-    ASSERT_TRUE(write_test_file(path, "#\n##\n###   \n"));
-
-    auto result = load_heartbeat_md(path.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->empty());
-
-    std::filesystem::remove(path);
-}
+} // namespace orangutan

@@ -1,65 +1,61 @@
 #include "infra/storage/sqlite.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 
-using namespace orangutan;
+namespace {
 
-class SqliteTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        db_path_ = std::filesystem::temp_directory_path() / "orangutan_sqlite_test.db";
-        std::filesystem::remove(db_path_);
-    }
+boost::ut::suite sqlite_suite = [] {
+    using namespace boost::ut;
 
-    void TearDown() override {
-        std::filesystem::remove(db_path_);
-    }
+    "database_exec_and_statement_round_trip_values"_test = [] {
+        const auto db_path = orangutan::testing::unique_test_db_path("sqlite", "sqlite.db");
+        orangutan::sqlite::Database db(db_path.string());
+        db.exec("CREATE TABLE sample (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL NOT NULL);", "create table failed");
 
-    [[nodiscard]]
-    const std::filesystem::path &db_path() const {
-        return db_path_;
-    }
+        orangutan::sqlite::Statement insert(db, "INSERT INTO sample (name, score) VALUES (?, ?)");
+        insert.bind_text(1, "alice");
+        insert.bind_double(2, 9.5);
+        static_cast<void>(insert.step());
 
-private:
-    std::filesystem::path db_path_;
+        orangutan::sqlite::Statement query(db, "SELECT name, score FROM sample LIMIT 1");
+        expect(query.step() >> fatal) << "expected sqlite query to return one row";
+        expect(query.column_text(0) == "alice");
+        expect(query.column_double(1) == 9.5_d);
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    "transaction_rolls_back_when_not_committed"_test = [] {
+        const auto db_path = orangutan::testing::unique_test_db_path("sqlite-rollback", "sqlite.db");
+        orangutan::sqlite::Database db(db_path.string());
+        db.exec("CREATE TABLE sample (value TEXT NOT NULL);", "create table failed");
+
+        {
+            orangutan::sqlite::Transaction tx(db);
+            orangutan::sqlite::Statement insert(db, "INSERT INTO sample (value) VALUES (?)");
+            insert.bind_text(1, "transient");
+            static_cast<void>(insert.step());
+        }
+
+        orangutan::sqlite::Statement query(db, "SELECT COUNT(*) FROM sample");
+        expect(query.step() >> fatal) << "expected sqlite count query to return one row";
+        expect(query.column_int(0) == 0_i);
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    "database_configures_busy_timeout"_test = [] {
+        const auto db_path = orangutan::testing::unique_test_db_path("sqlite-timeout", "sqlite.db");
+        orangutan::sqlite::Database db(db_path.string());
+
+        orangutan::sqlite::Statement query(db, "PRAGMA busy_timeout");
+        expect(query.step() >> fatal) << "expected PRAGMA busy_timeout to return one row";
+        expect(query.column_int(0) == 1000_i);
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
 };
 
-TEST_F(SqliteTest, DatabaseExecAndStatementRoundTripValues) {
-    sqlite::Database db(db_path().string());
-    db.exec("CREATE TABLE sample (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL NOT NULL);", "create table failed");
-
-    sqlite::Statement insert(db, "INSERT INTO sample (name, score) VALUES (?, ?)");
-    insert.bind_text(1, "alice");
-    insert.bind_double(2, 9.5);
-    static_cast<void>(insert.step());
-
-    sqlite::Statement query(db, "SELECT name, score FROM sample LIMIT 1");
-    ASSERT_TRUE(query.step());
-    EXPECT_EQ(query.column_text(0), "alice");
-    EXPECT_DOUBLE_EQ(query.column_double(1), 9.5);
-}
-
-TEST_F(SqliteTest, TransactionRollsBackWhenNotCommitted) {
-    sqlite::Database db(db_path().string());
-    db.exec("CREATE TABLE sample (value TEXT NOT NULL);", "create table failed");
-
-    {
-        sqlite::Transaction tx(db);
-        sqlite::Statement insert(db, "INSERT INTO sample (value) VALUES (?)");
-        insert.bind_text(1, "transient");
-        static_cast<void>(insert.step());
-    }
-
-    sqlite::Statement query(db, "SELECT COUNT(*) FROM sample");
-    ASSERT_TRUE(query.step());
-    EXPECT_EQ(query.column_int(0), 0);
-}
-
-TEST_F(SqliteTest, DatabaseConfiguresBusyTimeout) {
-    sqlite::Database db(db_path().string());
-
-    sqlite::Statement query(db, "PRAGMA busy_timeout");
-    ASSERT_TRUE(query.step());
-    EXPECT_EQ(query.column_int(0), 1000);
-}
+} // namespace

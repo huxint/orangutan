@@ -1,117 +1,118 @@
 #include "core/types.hpp"
 
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 
 using namespace orangutan;
 
-// ── Message factory methods ─────────────────────
+boost::ut::suite types_test_suite = [] {
+    using namespace boost::ut;
 
-TEST(MessageTest, UserTextCreatesCorrectRole) {
-    const auto msg = Message::user_text("hello");
-    EXPECT_EQ(msg.role, "user");
-    ASSERT_EQ(msg.content.size(), 1);
+    "message_user_text_creates_correct_role"_test = [] {
+        const auto msg = Message::user_text("hello");
 
-    const auto *text = std::get_if<TextBlock>(&msg.content[0]);
-    ASSERT_NE(text, nullptr);
-    EXPECT_EQ(text->text, "hello");
-}
+        expect(msg.role == "user");
+        expect(msg.content.size() == 1_ul);
 
-TEST(MessageTest, AssistantTextCreatesCorrectRole) {
-    const auto msg = Message::assistant_text("hi there");
-    EXPECT_EQ(msg.role, "assistant");
-    ASSERT_EQ(msg.content.size(), 1);
-
-    const auto *text = std::get_if<TextBlock>(&msg.content[0]);
-    ASSERT_NE(text, nullptr);
-    EXPECT_EQ(text->text, "hi there");
-}
-
-TEST(MessageTest, EmptyTextIsAllowed) {
-    const auto msg = Message::user_text("");
-    const auto *text = std::get_if<TextBlock>(&msg.content[0]);
-    ASSERT_NE(text, nullptr);
-    EXPECT_TRUE(text->text.empty());
-}
-
-// ── content_block_to_json ───────────────────────
-
-TEST(ContentBlockToJsonTest, SerializesTextBlock) {
-    const ContentBlock block = TextBlock{"hello world"};
-    const json j = content_block_to_json(block);
-
-    EXPECT_EQ(j["type"], "text");
-    EXPECT_EQ(j["text"], "hello world");
-}
-
-TEST(ContentBlockToJsonTest, SerializesToolUseBlock) {
-    const ContentBlock block = ToolUseBlock{
-        .id = "call_123",
-        .name = "shell",
-        .input = {{"command", "ls"}},
+        const auto *text = std::get_if<TextBlock>(&msg.content[0]);
+        expect((text != nullptr) >> fatal);
+        expect(text->text == "hello");
     };
-    const json j = content_block_to_json(block);
 
-    EXPECT_EQ(j["type"], "tool_use");
-    EXPECT_EQ(j["id"], "call_123");
-    EXPECT_EQ(j["name"], "shell");
-    EXPECT_EQ(j["input"]["command"], "ls");
-}
+    "message_assistant_text_creates_correct_role"_test = [] {
+        const auto msg = Message::assistant_text("hi there");
 
-TEST(ContentBlockToJsonTest, SerializesToolResultSuccess) {
-    const ContentBlock block = ToolResultBlock{
-        .tool_use_id = "call_123",
-        .content = "file.txt",
-        .is_error = false,
+        expect(msg.role == "assistant");
+        expect(msg.content.size() == 1_ul);
+
+        const auto *text = std::get_if<TextBlock>(&msg.content[0]);
+        expect((text != nullptr) >> fatal);
+        expect(text->text == "hi there");
     };
-    const json j = content_block_to_json(block);
 
-    EXPECT_EQ(j["type"], "tool_result");
-    EXPECT_EQ(j["tool_use_id"], "call_123");
-    EXPECT_EQ(j["content"], "file.txt");
-    EXPECT_FALSE(j.contains("is_error"));
-}
+    "message_empty_text_is_allowed"_test = [] {
+        const auto msg = Message::user_text("");
 
-TEST(ContentBlockToJsonTest, SerializesToolResultError) {
-    const ContentBlock block = ToolResultBlock{
-        .tool_use_id = "call_456",
-        .content = "not found",
-        .is_error = true,
+        const auto *text = std::get_if<TextBlock>(&msg.content[0]);
+        expect((text != nullptr) >> fatal);
+        expect(text->text.empty());
     };
-    const json j = content_block_to_json(block);
 
-    EXPECT_EQ(j["type"], "tool_result");
-    EXPECT_TRUE(j["is_error"].get<bool>());
-}
+    "content_block_to_json_serializes_text_block"_test = [] {
+        const ContentBlock block = TextBlock{"hello world"};
+        const json j = content_block_to_json(block);
 
-// ── message_to_json ─────────────────────────────
+        expect(j["type"] == "text");
+        expect(j["text"] == "hello world");
+    };
 
-TEST(MessageToJsonTest, SerializesUserTextMessage) {
-    const auto msg = Message::user_text("test input");
-    const json j = message_to_json(msg);
+    "content_block_to_json_serializes_tool_use_block"_test = [] {
+        const ContentBlock block = ToolUseBlock{
+            .id = "call_123",
+            .name = "shell",
+            .input = {{"command", "ls"}},
+        };
+        const json j = content_block_to_json(block);
 
-    EXPECT_EQ(j["role"], "user");
-    ASSERT_EQ(j["content"].size(), 1);
-    EXPECT_EQ(j["content"][0]["type"], "text");
-    EXPECT_EQ(j["content"][0]["text"], "test input");
-}
+        expect(j["type"] == "tool_use");
+        expect(j["id"] == "call_123");
+        expect(j["name"] == "shell");
+        expect(j["input"]["command"] == "ls");
+    };
 
-TEST(MessageToJsonTest, SerializesMultiBlockMessage) {
-    const Message msg{
-        .role = "assistant",
-        .content =
-            {
-                TextBlock{.text = "thinking..."},
-                ToolUseBlock{
-                    .id = "id_1",
-                    .name = "shell",
-                    .input = {{"command", "pwd"}},
+    "content_block_to_json_serializes_tool_result_success"_test = [] {
+        const ContentBlock block = ToolResultBlock{
+            .tool_use_id = "call_123",
+            .content = "file.txt",
+            .is_error = false,
+        };
+        const json j = content_block_to_json(block);
+
+        expect(j["type"] == "tool_result");
+        expect(j["tool_use_id"] == "call_123");
+        expect(j["content"] == "file.txt");
+        expect(not j.contains("is_error"));
+    };
+
+    "content_block_to_json_serializes_tool_result_error"_test = [] {
+        const ContentBlock block = ToolResultBlock{
+            .tool_use_id = "call_456",
+            .content = "not found",
+            .is_error = true,
+        };
+        const json j = content_block_to_json(block);
+
+        expect(j["type"] == "tool_result");
+        expect(j["is_error"].get<bool>());
+    };
+
+    "message_to_json_serializes_user_text_message"_test = [] {
+        const auto msg = Message::user_text("test input");
+        const json j = message_to_json(msg);
+
+        expect(j["role"] == "user");
+        expect(j["content"].size() == 1_ul);
+        expect(j["content"][0]["type"] == "text");
+        expect(j["content"][0]["text"] == "test input");
+    };
+
+    "message_to_json_serializes_multi_block_message"_test = [] {
+        const Message msg{
+            .role = "assistant",
+            .content =
+                {
+                    TextBlock{.text = "thinking..."},
+                    ToolUseBlock{
+                        .id = "id_1",
+                        .name = "shell",
+                        .input = {{"command", "pwd"}},
+                    },
                 },
-            },
-    };
-    const json j = message_to_json(msg);
+        };
+        const json j = message_to_json(msg);
 
-    EXPECT_EQ(j["role"], "assistant");
-    ASSERT_EQ(j["content"].size(), 2);
-    EXPECT_EQ(j["content"][0]["type"], "text");
-    EXPECT_EQ(j["content"][1]["type"], "tool_use");
-}
+        expect(j["role"] == "assistant");
+        expect(j["content"].size() == 2_ul);
+        expect(j["content"][0]["type"] == "text");
+        expect(j["content"][1]["type"] == "tool_use");
+    };
+};

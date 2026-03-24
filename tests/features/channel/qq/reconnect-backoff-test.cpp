@@ -1,29 +1,355 @@
 #include "features/channel/qq/reconnect-backoff.hpp"
+#include "features/channel/qq/transport.hpp"
 
 #include <chrono>
-#include <gtest/gtest.h>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include "support/ut.hpp"
 
 using namespace orangutan;
 using namespace orangutan::qq;
 
-TEST(ReconnectBackoffTest, UsesCappedExponentialBackoff) {
-    ReconnectBackoff backoff;
+namespace {
 
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(1));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(2));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(4));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(8));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(15));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(15));
+class FakeConnection final : public Transport::Connection {
+public:
+    void send_text(std::string payload) override {
+        {
+            std::scoped_lock lock(mutex_);
+            sent_payloads_.push_back(std::move(payload));
+        }
+        cv_.notify_all();
+    }
+
+    [[nodiscard]]
+    std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
+        std::unique_lock lock(mutex_);
+        cv_.wait_for(lock, timeout, [this] {
+            return closed_ || !events_.empty();
+        });
+
+        if (!events_.empty()) {
+            auto event = std::move(events_.front());
+            events_.pop_front();
+            return event;
+        }
+        if (closed_) {
+            return Transport::Event::close(1000, "client close");
+        }
+        return std::nullopt;
+    }
+
+    void close() override {
+        {
+            std::scoped_lock lock(mutex_);
+            closed_ = true;
+        }
+        cv_.notify_all();
+    }
+
+    void push_text(std::string payload) {
+        {
+            std::scoped_lock lock(mutex_);
+            events_.push_back(Transport::Event::text(std::move(payload)));
+        }
+        cv_.notify_all();
+    }
+
+    void push_close(uint16_t code, std::string reason) {
+        {
+            std::scoped_lock lock(mutex_);
+            events_.push_back(Transport::Event::close(code, std::move(reason)));
+        }
+        cv_.notify_all();
+    }
+
+    void push_error(std::string message) {
+        {
+            std::scoped_lock lock(mutex_);
+            events_.push_back(Transport::Event::error(std::move(message)));
+        }
+        cv_.notify_all();
+    }
+
+    [[nodiscard]]
+    bool wait_for_sent_count(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(1)) const {
+        std::unique_lock lock(mutex_);
+        return cv_.wait_for(lock, timeout, [this, expected] {
+            return sent_payloads_.size() >= expected;
+        });
+    }
+
+    [[nodiscard]]
+    std::vector<std::string> sent_payloads() const {
+        std::scoped_lock lock(mutex_);
+        return sent_payloads_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    mutable std::condition_variable cv_;
+    std::deque<Transport::Event> events_;
+    std::vector<std::string> sent_payloads_;
+    bool closed_ = false;
+};
+
+class FakeConnector {
+public:
+    [[nodiscard]]
+    Transport::ConnectionFactory factory() {
+        return [this](const std::string &url) {
+            std::scoped_lock lock(mutex_);
+            urls_.push_back(url);
+            if (failures_remaining_ > 0) {
+                --failures_remaining_;
+                throw std::runtime_error("synthetic connect failure");
+            }
+
+            auto connection = std::make_shared<FakeConnection>();
+            connections_.push_back(connection);
+            cv_.notify_all();
+            return std::unique_ptr<Transport::Connection>(new SharedFakeConnection(connection));
+        };
+    }
+
+    void fail_next_connects(std::size_t count) {
+        std::scoped_lock lock(mutex_);
+        failures_remaining_ = count;
+    }
+
+    [[nodiscard]]
+    std::shared_ptr<FakeConnection> wait_for_connection(std::size_t index, std::chrono::milliseconds timeout = std::chrono::seconds(3)) const {
+        std::unique_lock lock(mutex_);
+        const auto ready = cv_.wait_for(lock, timeout, [this, index] {
+            return connections_.size() >= index;
+        });
+        if (!ready) {
+            throw std::runtime_error("timed out waiting for connection");
+        }
+        return connections_.at(index - 1);
+    }
+
+    [[nodiscard]]
+    std::size_t connection_count() const {
+        std::scoped_lock lock(mutex_);
+        return connections_.size();
+    }
+
+private:
+    class SharedFakeConnection final : public Transport::Connection {
+    public:
+        explicit SharedFakeConnection(std::shared_ptr<FakeConnection> connection)
+        : connection_(std::move(connection)) {}
+
+        void send_text(std::string payload) override {
+            connection_->send_text(std::move(payload));
+        }
+
+        [[nodiscard]]
+        std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
+            return connection_->wait_event(timeout);
+        }
+
+        void close() override {
+            connection_->close();
+        }
+
+    private:
+        std::shared_ptr<FakeConnection> connection_;
+    };
+
+    mutable std::mutex mutex_;
+    mutable std::condition_variable cv_;
+    std::vector<std::string> urls_;
+    std::vector<std::shared_ptr<FakeConnection>> connections_;
+    std::size_t failures_remaining_ = 0;
+};
+
+struct CallbackRecorder {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::size_t opens = 0;
+    std::vector<std::string> texts;
+    std::vector<std::pair<uint16_t, std::string>> closes;
+    std::vector<std::string> errors;
+
+    [[nodiscard]]
+    bool wait_for_opens(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [this, expected] {
+            return opens >= expected;
+        });
+    }
+
+    [[nodiscard]]
+    bool wait_for_texts(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [this, expected] {
+            return texts.size() >= expected;
+        });
+    }
+
+    [[nodiscard]]
+    bool wait_for_errors(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [this, expected] {
+            return errors.size() >= expected;
+        });
+    }
+};
+
+[[nodiscard]]
+Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector) {
+    return Transport({
+                         .on_open =
+                             [&] {
+                                 std::scoped_lock lock(recorder.mutex);
+                                 ++recorder.opens;
+                                 recorder.cv.notify_all();
+                             },
+                         .on_text =
+                             [&](std::string text) {
+                                 std::scoped_lock lock(recorder.mutex);
+                                 recorder.texts.push_back(std::move(text));
+                                 recorder.cv.notify_all();
+                             },
+                         .on_close =
+                             [&](uint16_t code, std::string reason) {
+                                 std::scoped_lock lock(recorder.mutex);
+                                 recorder.closes.emplace_back(code, std::move(reason));
+                                 recorder.cv.notify_all();
+                             },
+                         .on_error =
+                             [&](std::string error) {
+                                 std::scoped_lock lock(recorder.mutex);
+                                 recorder.errors.push_back(std::move(error));
+                                 recorder.cv.notify_all();
+                             },
+                     },
+                     connector.factory());
 }
 
-TEST(ReconnectBackoffTest, ResetRestartsSequence) {
-    ReconnectBackoff backoff;
+} // namespace
 
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(1));
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(2));
+boost::ut::suite qq_reconnect_backoff_suite = [] {
+    using namespace boost::ut;
 
-    backoff.reset();
+    "reconnect_backoff_uses_capped_exponential_sequence"_test = [] {
+        ReconnectBackoff backoff;
 
-    EXPECT_EQ(backoff.next_delay(), std::chrono::seconds(1));
-}
+        const auto first = backoff.next_delay();
+        const auto second = backoff.next_delay();
+        const auto third = backoff.next_delay();
+        const auto fourth = backoff.next_delay();
+        const auto fifth = backoff.next_delay();
+        const auto sixth = backoff.next_delay();
+
+        expect(first == std::chrono::seconds(1));
+        expect(second == std::chrono::seconds(2));
+        expect(third == std::chrono::seconds(4));
+        expect(fourth == std::chrono::seconds(8));
+        expect(fifth == std::chrono::seconds(15));
+        expect(sixth == std::chrono::seconds(15));
+    };
+
+    "reconnect_backoff_reset_restarts_sequence"_test = [] {
+        ReconnectBackoff backoff;
+
+        const auto first = backoff.next_delay();
+        const auto second = backoff.next_delay();
+
+        backoff.reset();
+
+        const auto reset_first = backoff.next_delay();
+
+        expect(first == std::chrono::seconds(1));
+        expect(second == std::chrono::seconds(2));
+        expect(reset_first == std::chrono::seconds(1));
+    };
+
+    "transport_start_connects_and_forwards_messages"_test = [] {
+        FakeConnector connector;
+        CallbackRecorder recorder;
+        auto transport = make_transport(recorder, connector);
+
+        transport.start("wss://qq.example/ws");
+        auto connection = connector.wait_for_connection(1);
+        expect((recorder.wait_for_opens(1)) >> fatal);
+
+        transport.send_text("ping");
+        expect((connection->wait_for_sent_count(1)) >> fatal);
+        expect(connection->sent_payloads().at(0) == "ping");
+
+        connection->push_text("gateway payload");
+        expect((recorder.wait_for_texts(1)) >> fatal);
+        expect(recorder.texts.at(0) == "gateway payload");
+
+        transport.stop();
+    };
+
+    "transport_connect_failure_emits_error_and_reconnects"_test = [] {
+        FakeConnector connector;
+        connector.fail_next_connects(1);
+        CallbackRecorder recorder;
+        auto transport = make_transport(recorder, connector);
+
+        transport.start("wss://qq.example/ws");
+
+        expect((recorder.wait_for_errors(1)) >> fatal);
+        auto connection = connector.wait_for_connection(1, std::chrono::seconds(5));
+        expect((recorder.wait_for_opens(1, std::chrono::seconds(5))) >> fatal);
+        expect((connection != nullptr) >> fatal);
+        expect(connector.connection_count() == 1_ul);
+        expect(recorder.errors.size() == 1_ul);
+
+        transport.stop();
+    };
+
+    "transport_request_reconnect_suppresses_close_callback_and_reopens"_test = [] {
+        FakeConnector connector;
+        CallbackRecorder recorder;
+        auto transport = make_transport(recorder, connector);
+
+        transport.start("wss://qq.example/ws");
+        auto first = connector.wait_for_connection(1);
+        expect((recorder.wait_for_opens(1)) >> fatal);
+
+        transport.request_reconnect();
+
+        auto second = connector.wait_for_connection(2, std::chrono::seconds(5));
+        expect((recorder.wait_for_opens(2, std::chrono::seconds(5))) >> fatal);
+        expect((first != second) >> fatal);
+        expect(recorder.closes.empty());
+
+        transport.stop();
+    };
+
+    "transport_stop_prevents_further_sends_and_callbacks"_test = [] {
+        FakeConnector connector;
+        CallbackRecorder recorder;
+        auto transport = make_transport(recorder, connector);
+
+        transport.start("wss://qq.example/ws");
+        auto connection = connector.wait_for_connection(1);
+        expect((recorder.wait_for_opens(1)) >> fatal);
+
+        transport.stop();
+
+        expect(throws<std::runtime_error>([&] {
+            transport.send_text("after-stop");
+        }));
+
+        connection->push_error("late failure");
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        expect(recorder.errors.empty());
+    };
+};

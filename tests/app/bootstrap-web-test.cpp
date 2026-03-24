@@ -1,5 +1,7 @@
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 #include <CLI/CLI.hpp>
+
+#include <string>
 
 struct WebCliOptions {
     bool cli_mode = false;
@@ -10,64 +12,71 @@ struct WebCliOptions {
     std::string web_dir = "web/dist";
 };
 
-TEST(BootstrapWebTest, WebFlagsParseCorrectly) {
-    CLI::App app{"test"};
-    WebCliOptions opts;
+namespace {
+
+void configure_app(CLI::App &app, WebCliOptions &opts) {
     app.add_flag("--cli", opts.cli_mode);
     app.add_flag("--web", opts.web_mode);
     app.add_flag("--channel", opts.channel_mode);
     app.add_option("--port", opts.web_port);
     app.add_option("--web-host", opts.web_host);
     app.add_option("--web-dir", opts.web_dir);
-
-    const char *argv[] = {"test", "--web", "--port", "9090"};
-    app.parse(4, argv);
-
-    EXPECT_TRUE(opts.web_mode);
-    EXPECT_FALSE(opts.cli_mode);
-    EXPECT_FALSE(opts.channel_mode);
-    EXPECT_EQ(opts.web_port, 9090);
 }
 
-TEST(BootstrapWebTest, CombinedFlagsParseCorrectly) {
-    CLI::App app{"test"};
-    WebCliOptions opts;
-    app.add_flag("--cli", opts.cli_mode);
-    app.add_flag("--web", opts.web_mode);
-    app.add_flag("--channel", opts.channel_mode);
-    app.add_option("--port", opts.web_port);
+boost::ut::suite bootstrap_web_suite = [] {
+    using namespace boost::ut;
 
-    const char *argv[] = {"test", "--cli", "--web", "--channel", "--port", "8000"};
-    app.parse(6, argv);
+    "web_flags_parse_correctly"_test = [] {
+        WebCliOptions opts;
+        CLI::App app{"test"};
+        configure_app(app, opts);
 
-    EXPECT_TRUE(opts.cli_mode);
-    EXPECT_TRUE(opts.web_mode);
-    EXPECT_TRUE(opts.channel_mode);
-    EXPECT_EQ(opts.web_port, 8000);
-}
+        const char *argv[] = {"test", "--web", "--port", "9090"};
+        app.parse(4, argv);
 
-TEST(BootstrapWebTest, MissingEntryFlagsLeavesAllModesDisabled) {
-    CLI::App app{"test"};
-    WebCliOptions opts;
-    app.add_flag("--cli", opts.cli_mode);
-    app.add_flag("--web", opts.web_mode);
-    app.add_flag("--channel", opts.channel_mode);
+        expect(opts.web_mode);
+        expect(not opts.cli_mode);
+        expect(not opts.channel_mode);
+        expect(opts.web_port == 9090_i);
+    };
 
-    const char *argv[] = {"test"};
-    app.parse(1, argv);
+    "combined_flags_parse_correctly"_test = [] {
+        WebCliOptions opts;
+        CLI::App app{"test"};
+        configure_app(app, opts);
 
-    EXPECT_FALSE(opts.cli_mode);
-    EXPECT_FALSE(opts.web_mode);
-    EXPECT_FALSE(opts.channel_mode);
-}
+        const char *argv[] = {"test", "--cli", "--web", "--channel", "--port", "8000"};
+        app.parse(6, argv);
 
-TEST(BootstrapWebTest, LegacyServeFlagIsRejected) {
-    CLI::App app{"test"};
-    WebCliOptions opts;
-    app.add_flag("--cli", opts.cli_mode);
-    app.add_flag("--web", opts.web_mode);
-    app.add_flag("--channel", opts.channel_mode);
+        expect(opts.cli_mode);
+        expect(opts.web_mode);
+        expect(opts.channel_mode);
+        expect(opts.web_port == 8000_i);
+    };
 
-    const char *argv[] = {"test", "--serve"};
-    EXPECT_THROW(app.parse(2, argv), CLI::ParseError);
-}
+    "missing_entry_flags_leaves_all_modes_disabled"_test = [] {
+        WebCliOptions opts;
+        CLI::App app{"test"};
+        configure_app(app, opts);
+
+        const char *argv[] = {"test"};
+        app.parse(1, argv);
+
+        expect(not opts.cli_mode);
+        expect(not opts.web_mode);
+        expect(not opts.channel_mode);
+    };
+
+    "legacy_serve_flag_is_rejected"_test = [] {
+        WebCliOptions opts;
+        CLI::App app{"test"};
+        configure_app(app, opts);
+
+        const char *argv[] = {"test", "--serve"};
+        expect(throws<CLI::ParseError>([&] {
+            app.parse(2, argv);
+        }));
+    };
+};
+
+} // namespace

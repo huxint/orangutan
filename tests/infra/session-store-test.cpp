@@ -1,15 +1,49 @@
 #include "infra/storage/session-store.hpp"
 #include "core/types.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
-#include <gtest/gtest.h>
+#include <set>
+#include "support/ut.hpp"
 #include <sqlite3.h>
 
 namespace {
 
+struct SessionStoreHarness {
+    SessionStoreHarness()
+    : db_path(orangutan::testing::unique_test_db_path("session-store", "sessions.db")) {}
+
+    ~SessionStoreHarness() {
+        std::filesystem::remove_all(db_path.parent_path());
+    }
+
+    [[nodiscard]]
+    orangutan::SessionStore store() const {
+        return orangutan::SessionStore(db_path.string());
+    }
+
+    std::filesystem::path db_path;
+};
+
+struct SqliteDb {
+    explicit SqliteDb(const std::filesystem::path &path) {
+        const auto rc = sqlite3_open(path.string().c_str(), &db);
+        boost::ut::expect((rc == SQLITE_OK) >> boost::ut::fatal) << "failed to open sqlite database";
+    }
+
+    ~SqliteDb() {
+        if (db != nullptr) {
+            sqlite3_close(db);
+        }
+    }
+
+    sqlite3 *db = nullptr;
+};
+
 void exec_sql(sqlite3 *db, const char *sql) {
     char *err_msg = nullptr;
-    ASSERT_EQ(sqlite3_exec(db, sql, nullptr, nullptr, &err_msg), SQLITE_OK) << (err_msg != nullptr ? err_msg : "sqlite error");
+    const auto rc = sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
+    boost::ut::expect((rc == SQLITE_OK) >> boost::ut::fatal) << (err_msg != nullptr ? err_msg : "sqlite error");
     sqlite3_free(err_msg);
 }
 
@@ -17,524 +51,555 @@ void exec_sql(sqlite3 *db, const char *sql) {
 
 using namespace orangutan;
 
-class SessionStoreTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        db_path_ = std::filesystem::temp_directory_path() / "orangutan_test.db";
-        // Remove any leftover test database
-        std::filesystem::remove(db_path_);
-    }
+boost::ut::suite session_store_suite = [] {
+    using namespace boost::ut;
 
-    void TearDown() override {
-        std::filesystem::remove(db_path_);
-    }
+    "save_and_load_text_messages"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
 
-    [[nodiscard]]
-    const std::filesystem::path &db_path() const {
-        return db_path_;
-    }
+        std::vector<Message> messages = {
+            Message::user_text("Hello"),
+            Message::assistant_text("Hi there!"),
+        };
 
-private:
-    std::filesystem::path db_path_;
+        const auto session_id = store.save(messages, "claude-sonnet-4-20250514");
+        const auto loaded = store.load(session_id);
+
+        expect((loaded.size() == std::size_t{2}) >> fatal) << "expected two persisted messages";
+        expect(loaded[0].role == "user");
+        expect(loaded[1].role == "assistant");
+
+        const auto *user_text = std::get_if<TextBlock>(&loaded[0].content[0]);
+        expect((user_text != nullptr) >> fatal);
+        if (user_text != nullptr) {
+            expect(user_text->text == "Hello");
+        }
+
+        const auto *asst_text = std::get_if<TextBlock>(&loaded[1].content[0]);
+        expect((asst_text != nullptr) >> fatal);
+        if (asst_text != nullptr) {
+            expect(asst_text->text == "Hi there!");
+        }
+    };
+
+    "save_and_load_tool_use_blocks"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<ContentBlock> content;
+        content.emplace_back(ToolUseBlock{
+            .id = "tool_123",
+            .name = "shell",
+            .input = json{{"command", "ls -la"}},
+        });
+
+        std::vector<Message> messages = {
+            Message::user_text("list files"),
+            {.role = "assistant", .content = std::move(content)},
+        };
+
+        const auto session_id = store.save(messages, "test-model");
+        const auto loaded = store.load(session_id);
+
+        expect((loaded.size() == std::size_t{2}) >> fatal) << "expected tool-use history roundtrip";
+        const auto *tool = std::get_if<ToolUseBlock>(&loaded[1].content[0]);
+        expect((tool != nullptr) >> fatal);
+        if (tool != nullptr) {
+            expect(tool->id == "tool_123");
+            expect(tool->name == "shell");
+            expect(tool->input["command"] == "ls -la");
+        }
+    };
+
+    "save_and_load_tool_result_blocks"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<ContentBlock> result_content;
+        result_content.emplace_back(ToolResultBlock{
+            .tool_use_id = "tool_123",
+            .content = "file1.txt\nfile2.cpp",
+            .is_error = false,
+        });
+
+        std::vector<Message> messages = {
+            {.role = "user", .content = std::move(result_content)},
+        };
+
+        const auto session_id = store.save(messages, "test-model");
+        const auto loaded = store.load(session_id);
+
+        expect((loaded.size() == std::size_t{1}) >> fatal) << "expected one persisted tool result";
+        const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
+        expect((result != nullptr) >> fatal);
+        if (result != nullptr) {
+            expect(result->tool_use_id == "tool_123");
+            expect(result->content == "file1.txt\nfile2.cpp");
+            expect(not result->is_error);
+        }
+    };
+
+    "tool_result_preserves_error_flag"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<ContentBlock> content;
+        content.emplace_back(ToolResultBlock{
+            .tool_use_id = "err_1",
+            .content = "command not found",
+            .is_error = true,
+        });
+
+        std::vector<Message> messages = {{.role = "user", .content = std::move(content)}};
+
+        const auto session_id = store.save(messages, "test-model");
+        const auto loaded = store.load(session_id);
+
+        expect((loaded.size() == std::size_t{1}) >> fatal);
+        const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
+        expect((result != nullptr) >> fatal);
+        if (result != nullptr) {
+            expect(result->is_error);
+        }
+    };
+
+    "list_sessions_returns_saved_sessions"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        store.save(messages, "model-a", "scope:a");
+        store.save(messages, "model-b", "scope:b");
+
+        const auto sessions = store.list_sessions();
+        expect(sessions.size() == std::size_t{2});
+
+        std::set<std::string> models;
+        for (const auto &session : sessions) {
+            models.insert(session.model);
+            expect(session.message_count == 1);
+        }
+        expect(models.contains("model-a"));
+        expect(models.contains("model-b"));
+    };
+
+    "list_sessions_can_filter_by_scope"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto scope_a = store.save(messages, "model-a", "scope:a");
+        store.save(messages, "model-b", "scope:b");
+
+        const auto sessions = store.list_sessions("scope:a");
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].id == scope_a);
+        expect(sessions[0].scope_key == "scope:a");
+    };
+
+    "session_belongs_to_scope_checks_ownership"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto session_id = store.save(messages, "model-a", "scope:a");
+
+        expect(store.session_belongs_to_scope(session_id, "scope:a"));
+        expect(not store.session_belongs_to_scope(session_id, "scope:b"));
+    };
+
+    "save_persists_explicit_session_metadata"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const SessionMetadata metadata{
+            .model = "test-model",
+            .scope_key = "agent:coder",
+            .agent_key = "coder",
+            .origin_kind = "channel",
+            .origin_ref = "qqbot:c2c:alice",
+        };
+        const std::vector<Message> messages = {Message::user_text("Hello")};
+
+        const auto session_id = store.save(messages, metadata);
+        const auto sessions = store.list_sessions();
+
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].id == session_id);
+        expect(sessions[0].model == metadata.model);
+        expect(sessions[0].scope_key == metadata.scope_key);
+        expect(sessions[0].agent_key == metadata.agent_key);
+        expect(sessions[0].origin_kind == metadata.origin_kind);
+        expect(sessions[0].origin_ref == metadata.origin_ref);
+    };
+
+    "create_empty_persists_explicit_session_metadata"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const SessionMetadata metadata{
+            .model = "test-model",
+            .scope_key = "agent:coder",
+            .agent_key = "coder",
+            .origin_kind = "channel",
+            .origin_ref = "qqbot:c2c:alice",
+        };
+
+        const auto session_id = store.create_empty(metadata);
+        const auto sessions = store.list_sessions();
+
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].id == session_id);
+        expect(sessions[0].message_count == 0);
+        expect(sessions[0].agent_key == metadata.agent_key);
+        expect(sessions[0].origin_kind == metadata.origin_kind);
+        expect(sessions[0].origin_ref == metadata.origin_ref);
+    };
+
+    "list_sessions_for_agent_returns_only_matching_sessions"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const std::vector<Message> messages = {Message::user_text("Hello")};
+        const SessionMetadata coder_metadata{
+            .model = "test-model-coder",
+            .scope_key = "agent:coder",
+            .agent_key = "coder",
+            .origin_kind = "channel",
+            .origin_ref = "qqbot:c2c:alice",
+        };
+        const SessionMetadata default_metadata{
+            .model = "test-model-default",
+            .scope_key = "agent:default",
+            .agent_key = "default",
+            .origin_kind = "web",
+            .origin_ref = "web:local",
+        };
+
+        const auto coder_session_id = store.save(messages, coder_metadata);
+        store.save(messages, default_metadata);
+
+        const auto coder_sessions = store.list_sessions_for_agent("coder");
+        expect((coder_sessions.size() == std::size_t{1}) >> fatal);
+        expect(coder_sessions[0].id == coder_session_id);
+        expect(coder_sessions[0].agent_key == "coder");
+    };
+
+    "session_belongs_to_agent_checks_ownership"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const std::vector<Message> messages = {Message::user_text("Hello")};
+        const SessionMetadata metadata{
+            .model = "test-model",
+            .scope_key = "agent:coder",
+            .agent_key = "coder",
+            .origin_kind = "channel",
+            .origin_ref = "qqbot:c2c:alice",
+        };
+        const auto session_id = store.save(messages, metadata);
+
+        expect(store.session_belongs_to_agent(session_id, "coder"));
+        expect(not store.session_belongs_to_agent(session_id, "default"));
+    };
+
+    "remove_deletes_session"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("test")};
+        const auto id = store.save(messages, "test-model");
+
+        expect(store.list_sessions().size() == std::size_t{1});
+        store.remove(id);
+        expect(store.list_sessions().empty());
+        expect(throws<std::runtime_error>([&] {
+            static_cast<void>(store.load(id));
+        }));
+    };
+
+    "load_nonexistent_session_throws"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        expect(throws<std::runtime_error>([&] {
+            static_cast<void>(store.load("nonexistent-id"));
+        }));
+    };
+
+    "create_empty_session_loads_empty_history"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const auto session_id = store.create_empty("claude-sonnet-4-20250514", "scope:a");
+        expect(not session_id.empty());
+
+        const auto loaded = store.load(session_id);
+        expect(loaded.empty());
+
+        const auto sessions = store.list_sessions("scope:a");
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].id == session_id);
+        expect(sessions[0].message_count == 0);
+    };
+
+    "append_populates_previously_empty_session"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        const auto session_id = store.create_empty("claude-sonnet-4-20250514");
+        const std::vector<Message> messages = {
+            Message::user_text("Hello"),
+            Message::assistant_text("Hi there!"),
+        };
+
+        store.append(session_id, messages, 0);
+
+        const auto loaded = store.load(session_id);
+        expect((loaded.size() == std::size_t{2}) >> fatal);
+        const auto *assistant_text = std::get_if<TextBlock>(&loaded[1].content[0]);
+        expect((assistant_text != nullptr) >> fatal);
+        if (assistant_text != nullptr) {
+            expect(assistant_text->text == "Hi there!");
+        }
+    };
+
+    "multiple_content_blocks_in_one_message"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<ContentBlock> content;
+        content.emplace_back(TextBlock{.text = "I'll run that command"});
+        content.emplace_back(ToolUseBlock{
+            .id = "call_1",
+            .name = "shell",
+            .input = json{{"command", "echo hi"}},
+        });
+
+        std::vector<Message> messages = {{.role = "assistant", .content = std::move(content)}};
+
+        const auto id = store.save(messages, "test-model");
+        const auto loaded = store.load(id);
+
+        expect((loaded.size() == std::size_t{1}) >> fatal);
+        expect((loaded[0].content.size() == std::size_t{2}) >> fatal);
+        expect(std::get_if<TextBlock>(&loaded[0].content[0]) != nullptr);
+        expect(std::get_if<ToolUseBlock>(&loaded[0].content[1]) != nullptr);
+    };
+
+    "latest_session_id_empty_db"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        expect(store.latest_session_id() == std::nullopt);
+    };
+
+    "latest_session_id_returns_newest"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        store.save(messages, "model-a");
+        const auto second_id = store.save(messages, "model-b");
+
+        const auto latest = store.latest_session_id();
+        expect((latest.has_value()) >> fatal);
+        if (latest.has_value()) {
+            expect(*latest == second_id);
+        }
+    };
+
+    "can_bind_and_resolve_session_for_jid"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto session_id = store.save(messages, "model-a");
+
+        expect(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
+        store.bind_jid("qqbot:c2c:alice", session_id);
+
+        const auto bound = store.bound_session_for_jid("qqbot:c2c:alice");
+        expect((bound.has_value()) >> fatal);
+        if (bound.has_value()) {
+            expect(*bound == session_id);
+        }
+    };
+
+    "jid_bindings_are_scoped_by_agent_key"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto general_session_id = store.save(messages, "model-a", "agent:default|jid:qqbot:c2c:alice");
+        const auto coder_session_id = store.save(messages, "model-b", "agent:coder|jid:qqbot:c2c:alice");
+
+        store.bind_jid("qqbot:c2c:alice", general_session_id, "default");
+        store.bind_jid("qqbot:c2c:alice", coder_session_id, "coder");
+
+        const auto general_bound = store.bound_session_for_jid("qqbot:c2c:alice", "default");
+        const auto coder_bound = store.bound_session_for_jid("qqbot:c2c:alice", "coder");
+
+        expect((general_bound.has_value()) >> fatal);
+        expect((coder_bound.has_value()) >> fatal);
+        if (general_bound.has_value()) {
+            expect(*general_bound == general_session_id);
+        }
+        if (coder_bound.has_value()) {
+            expect(*coder_bound == coder_session_id);
+        }
+    };
+
+    "can_clear_jid_binding"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto session_id = store.save(messages, "model-a");
+        store.bind_jid("qqbot:c2c:alice", session_id);
+
+        store.clear_jid("qqbot:c2c:alice");
+        expect(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
+    };
+
+    "removing_session_clears_jid_binding"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        auto messages = std::vector{Message::user_text("Hello")};
+        const auto session_id = store.save(messages, "model-a");
+        store.bind_jid("qqbot:c2c:alice", session_id);
+
+        store.remove(session_id);
+        expect(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
+    };
+
+    "append_adds_only_new_messages"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<Message> messages = {
+            Message::user_text("Hello"),
+            Message::assistant_text("Hi there!"),
+        };
+
+        const auto session_id = store.save(messages, "model-a");
+        messages.push_back(Message::user_text("How are you?"));
+        messages.push_back(Message::assistant_text("Doing well."));
+
+        store.append(session_id, messages, 2);
+
+        const auto loaded = store.load(session_id);
+        expect((loaded.size() == std::size_t{4}) >> fatal);
+        const auto *last_text = std::get_if<TextBlock>(&loaded[3].content[0]);
+        expect((last_text != nullptr) >> fatal);
+        if (last_text != nullptr) {
+            expect(last_text->text == "Doing well.");
+        }
+    };
+
+    "update_and_append_can_refresh_stored_model_metadata"_test = [] {
+        SessionStoreHarness harness;
+        auto store = harness.store();
+
+        std::vector<Message> messages = {
+            Message::user_text("Hello"),
+            Message::assistant_text("Hi there!"),
+        };
+
+        const auto session_id = store.save(messages, "model-a", "scope:test");
+        store.update(session_id, messages, "model-b");
+
+        auto sessions = store.list_sessions("scope:test");
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].model == "model-b");
+
+        messages.push_back(Message::user_text("How are you?"));
+        store.append(session_id, messages, 2, "model-c");
+
+        sessions = store.list_sessions("scope:test");
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].model == "model-c");
+    };
+
+    "migrates_legacy_schema_for_scope_and_composite_binding_key"_test = [] {
+        SessionStoreHarness harness;
+
+        {
+            SqliteDb db(harness.db_path);
+            exec_sql(db.db, "CREATE TABLE sessions ("
+                            "id TEXT PRIMARY KEY,"
+                            "model TEXT NOT NULL,"
+                            "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                            ");"
+                            "CREATE TABLE messages ("
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                            "session_id TEXT NOT NULL,"
+                            "seq INTEGER NOT NULL,"
+                            "role TEXT NOT NULL,"
+                            "content_json TEXT NOT NULL"
+                            ");"
+                            "CREATE TABLE channel_session_bindings ("
+                            "jid TEXT PRIMARY KEY,"
+                            "session_id TEXT NOT NULL,"
+                            "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                            ");");
+            exec_sql(db.db, "INSERT INTO sessions (id, model) VALUES ('legacy-session', 'legacy-model');");
+            exec_sql(db.db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES ("
+                            "'legacy-session', 0, 'user', '[{"
+                            "type"
+                            ":"
+                            "text"
+                            ","
+                            "text"
+                            ":"
+                            "hello"
+                            "}]'"
+                            ");");
+            exec_sql(db.db, "INSERT INTO channel_session_bindings (jid, session_id) VALUES ('qqbot:c2c:alice', 'legacy-session');");
+        }
+
+        auto store = harness.store();
+
+        const auto sessions = store.list_sessions();
+        expect((sessions.size() == std::size_t{1}) >> fatal);
+        expect(sessions[0].id == "legacy-session");
+        expect(sessions[0].scope_key.empty());
+
+        SqliteDb verify_db(harness.db_path);
+        sqlite3_stmt *stmt = nullptr;
+        const auto prepare_rc = sqlite3_prepare_v2(verify_db.db, "PRAGMA table_info(channel_session_bindings)", -1, &stmt, nullptr);
+        expect((prepare_rc == SQLITE_OK) >> fatal) << "failed to inspect channel_session_bindings schema";
+
+        bool has_agent_key = false;
+        int jid_pk_position = 0;
+        int agent_key_pk_position = 0;
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const auto *text = sqlite3_column_text(stmt, 1);
+            // sqlite3_column_text() returns UTF-8 bytes as unsigned char*; convert for std::string construction.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            const auto *name = text != nullptr ? reinterpret_cast<const char *>(text) : nullptr;
+            const auto pk = sqlite3_column_int(stmt, 5);
+            const auto column_name = name != nullptr ? std::string(name) : std::string{};
+            if (column_name == "jid") {
+                jid_pk_position = pk;
+            }
+            if (column_name == "agent_key") {
+                has_agent_key = true;
+                agent_key_pk_position = pk;
+            }
+        }
+        sqlite3_finalize(stmt);
+
+        expect(has_agent_key);
+        expect(jid_pk_position == 1);
+        expect(agent_key_pk_position == 2);
+
+        const auto migrated_binding = store.bound_session_for_jid("qqbot:c2c:alice");
+        expect((migrated_binding.has_value()) >> fatal);
+        if (migrated_binding.has_value()) {
+            expect(*migrated_binding == "legacy-session");
+        }
+    };
 };
-
-TEST_F(SessionStoreTest, SaveAndLoadTextMessages) {
-    SessionStore store(db_path().string());
-
-    std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
-    };
-
-    auto session_id = store.save(messages, "claude-sonnet-4-20250514");
-
-    auto loaded = store.load(session_id);
-
-    ASSERT_EQ(loaded.size(), 2);
-    EXPECT_EQ(loaded[0].role, "user");
-    EXPECT_EQ(loaded[1].role, "assistant");
-
-    const auto *user_text = std::get_if<TextBlock>(&loaded[0].content[0]);
-    ASSERT_NE(user_text, nullptr);
-    EXPECT_EQ(user_text->text, "Hello");
-
-    const auto *asst_text = std::get_if<TextBlock>(&loaded[1].content[0]);
-    ASSERT_NE(asst_text, nullptr);
-    EXPECT_EQ(asst_text->text, "Hi there!");
-}
-
-TEST_F(SessionStoreTest, SaveAndLoadToolUseBlocks) {
-    SessionStore store(db_path().string());
-
-    std::vector<ContentBlock> content;
-    content.emplace_back(ToolUseBlock{
-        .id = "tool_123",
-        .name = "shell",
-        .input = json{{"command", "ls -la"}},
-    });
-
-    std::vector<Message> messages = {
-        Message::user_text("list files"),
-        {.role = "assistant", .content = std::move(content)},
-    };
-
-    auto session_id = store.save(messages, "test-model");
-    auto loaded = store.load(session_id);
-
-    ASSERT_EQ(loaded.size(), 2);
-    const auto *tool = std::get_if<ToolUseBlock>(&loaded[1].content[0]);
-    ASSERT_NE(tool, nullptr);
-    EXPECT_EQ(tool->id, "tool_123");
-    EXPECT_EQ(tool->name, "shell");
-    EXPECT_EQ(tool->input["command"], "ls -la");
-}
-
-TEST_F(SessionStoreTest, SaveAndLoadToolResultBlocks) {
-    SessionStore store(db_path().string());
-
-    std::vector<ContentBlock> result_content;
-    result_content.emplace_back(ToolResultBlock{
-        .tool_use_id = "tool_123",
-        .content = "file1.txt\nfile2.cpp",
-        .is_error = false,
-    });
-
-    std::vector<Message> messages = {
-        {.role = "user", .content = std::move(result_content)},
-    };
-
-    auto session_id = store.save(messages, "test-model");
-    auto loaded = store.load(session_id);
-
-    ASSERT_EQ(loaded.size(), 1);
-    const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->tool_use_id, "tool_123");
-    EXPECT_EQ(result->content, "file1.txt\nfile2.cpp");
-    EXPECT_FALSE(result->is_error);
-}
-
-TEST_F(SessionStoreTest, ToolResultPreservesErrorFlag) {
-    SessionStore store(db_path().string());
-
-    std::vector<ContentBlock> content;
-    content.emplace_back(ToolResultBlock{
-        .tool_use_id = "err_1",
-        .content = "command not found",
-        .is_error = true,
-    });
-
-    std::vector<Message> messages = {{.role = "user", .content = std::move(content)}};
-
-    auto session_id = store.save(messages, "test-model");
-    auto loaded = store.load(session_id);
-
-    const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_error);
-}
-
-TEST_F(SessionStoreTest, ListSessionsReturnsSavedSessions) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    store.save(messages, "model-a", "scope:a");
-    store.save(messages, "model-b", "scope:b");
-
-    auto sessions = store.list_sessions();
-    ASSERT_EQ(sessions.size(), 2);
-
-    // Both sessions present with correct message counts
-    std::set<std::string> models;
-    for (const auto &s : sessions) {
-        models.insert(s.model);
-        EXPECT_EQ(s.message_count, 1);
-    }
-    EXPECT_TRUE(models.count("model-a"));
-    EXPECT_TRUE(models.count("model-b"));
-}
-
-TEST_F(SessionStoreTest, ListSessionsCanFilterByScope) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto scope_a = store.save(messages, "model-a", "scope:a");
-    store.save(messages, "model-b", "scope:b");
-
-    auto sessions = store.list_sessions("scope:a");
-    ASSERT_EQ(sessions.size(), 1);
-    EXPECT_EQ(sessions[0].id, scope_a);
-    EXPECT_EQ(sessions[0].scope_key, "scope:a");
-}
-
-TEST_F(SessionStoreTest, SessionBelongsToScopeChecksOwnership) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto session_id = store.save(messages, "model-a", "scope:a");
-
-    EXPECT_TRUE(store.session_belongs_to_scope(session_id, "scope:a"));
-    EXPECT_FALSE(store.session_belongs_to_scope(session_id, "scope:b"));
-}
-
-TEST_F(SessionStoreTest, SavePersistsExplicitSessionMetadata) {
-    SessionStore store(db_path().string());
-
-    const SessionMetadata metadata{
-        .model = "test-model",
-        .scope_key = "agent:coder",
-        .agent_key = "coder",
-        .origin_kind = "channel",
-        .origin_ref = "qqbot:c2c:alice",
-    };
-    const std::vector<Message> messages = {Message::user_text("Hello")};
-
-    const auto session_id = store.save(messages, metadata);
-
-    const auto sessions = store.list_sessions();
-    ASSERT_EQ(sessions.size(), 1U);
-    EXPECT_EQ(sessions[0].id, session_id);
-    EXPECT_EQ(sessions[0].model, metadata.model);
-    EXPECT_EQ(sessions[0].scope_key, metadata.scope_key);
-    EXPECT_EQ(sessions[0].agent_key, metadata.agent_key);
-    EXPECT_EQ(sessions[0].origin_kind, metadata.origin_kind);
-    EXPECT_EQ(sessions[0].origin_ref, metadata.origin_ref);
-}
-
-TEST_F(SessionStoreTest, CreateEmptyPersistsExplicitSessionMetadata) {
-    SessionStore store(db_path().string());
-
-    const SessionMetadata metadata{
-        .model = "test-model",
-        .scope_key = "agent:coder",
-        .agent_key = "coder",
-        .origin_kind = "channel",
-        .origin_ref = "qqbot:c2c:alice",
-    };
-
-    const auto session_id = store.create_empty(metadata);
-
-    const auto sessions = store.list_sessions();
-    ASSERT_EQ(sessions.size(), 1U);
-    EXPECT_EQ(sessions[0].id, session_id);
-    EXPECT_EQ(sessions[0].message_count, 0);
-    EXPECT_EQ(sessions[0].agent_key, metadata.agent_key);
-    EXPECT_EQ(sessions[0].origin_kind, metadata.origin_kind);
-    EXPECT_EQ(sessions[0].origin_ref, metadata.origin_ref);
-}
-
-TEST_F(SessionStoreTest, ListSessionsForAgentReturnsOnlyMatchingSessions) {
-    SessionStore store(db_path().string());
-
-    const std::vector<Message> messages = {Message::user_text("Hello")};
-    const SessionMetadata coder_metadata{
-        .model = "test-model-coder",
-        .scope_key = "agent:coder",
-        .agent_key = "coder",
-        .origin_kind = "channel",
-        .origin_ref = "qqbot:c2c:alice",
-    };
-    const SessionMetadata default_metadata{
-        .model = "test-model-default",
-        .scope_key = "agent:default",
-        .agent_key = "default",
-        .origin_kind = "web",
-        .origin_ref = "web:local",
-    };
-
-    const auto coder_session_id = store.save(messages, coder_metadata);
-    store.save(messages, default_metadata);
-
-    const auto coder_sessions = store.list_sessions_for_agent("coder");
-    ASSERT_EQ(coder_sessions.size(), 1U);
-    EXPECT_EQ(coder_sessions[0].id, coder_session_id);
-    EXPECT_EQ(coder_sessions[0].agent_key, "coder");
-}
-
-TEST_F(SessionStoreTest, SessionBelongsToAgentChecksOwnership) {
-    SessionStore store(db_path().string());
-
-    const std::vector<Message> messages = {Message::user_text("Hello")};
-    const SessionMetadata metadata{
-        .model = "test-model",
-        .scope_key = "agent:coder",
-        .agent_key = "coder",
-        .origin_kind = "channel",
-        .origin_ref = "qqbot:c2c:alice",
-    };
-    const auto session_id = store.save(messages, metadata);
-
-    EXPECT_TRUE(store.session_belongs_to_agent(session_id, "coder"));
-    EXPECT_FALSE(store.session_belongs_to_agent(session_id, "default"));
-}
-
-TEST_F(SessionStoreTest, RemoveDeletesSession) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("test")};
-    auto id = store.save(messages, "test-model");
-
-    EXPECT_EQ(store.list_sessions().size(), 1);
-
-    store.remove(id);
-
-    EXPECT_EQ(store.list_sessions().size(), 0);
-    EXPECT_THROW(store.load(id), std::runtime_error);
-}
-
-TEST_F(SessionStoreTest, LoadNonexistentSessionThrows) {
-    SessionStore store(db_path().string());
-    EXPECT_THROW(store.load("nonexistent-id"), std::runtime_error);
-}
-
-TEST_F(SessionStoreTest, CreateEmptySessionLoadsEmptyHistory) {
-    SessionStore store(db_path().string());
-
-    const auto session_id = store.create_empty("claude-sonnet-4-20250514", "scope:a");
-    EXPECT_FALSE(session_id.empty());
-
-    const auto loaded = store.load(session_id);
-    EXPECT_TRUE(loaded.empty());
-
-    const auto sessions = store.list_sessions("scope:a");
-    ASSERT_EQ(sessions.size(), 1);
-    EXPECT_EQ(sessions[0].id, session_id);
-    EXPECT_EQ(sessions[0].message_count, 0);
-}
-
-TEST_F(SessionStoreTest, AppendPopulatesPreviouslyEmptySession) {
-    SessionStore store(db_path().string());
-
-    const auto session_id = store.create_empty("claude-sonnet-4-20250514");
-    const std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
-    };
-
-    store.append(session_id, messages, 0);
-
-    const auto loaded = store.load(session_id);
-    ASSERT_EQ(loaded.size(), 2);
-    const auto *assistant_text = std::get_if<TextBlock>(&loaded[1].content[0]);
-    ASSERT_NE(assistant_text, nullptr);
-    EXPECT_EQ(assistant_text->text, "Hi there!");
-}
-
-TEST_F(SessionStoreTest, MultipleContentBlocksInOneMessage) {
-    SessionStore store(db_path().string());
-
-    std::vector<ContentBlock> content;
-    content.emplace_back(TextBlock{.text = "I'll run that command"});
-    content.emplace_back(ToolUseBlock{
-        .id = "call_1",
-        .name = "shell",
-        .input = json{{"command", "echo hi"}},
-    });
-
-    std::vector<Message> messages = {{.role = "assistant", .content = std::move(content)}};
-
-    auto id = store.save(messages, "test-model");
-    auto loaded = store.load(id);
-
-    ASSERT_EQ(loaded[0].content.size(), 2);
-    EXPECT_NE(std::get_if<TextBlock>(&loaded[0].content[0]), nullptr);
-    EXPECT_NE(std::get_if<ToolUseBlock>(&loaded[0].content[1]), nullptr);
-}
-
-TEST_F(SessionStoreTest, LatestSessionIdEmptyDb) {
-    SessionStore store(db_path().string());
-    EXPECT_EQ(store.latest_session_id(), std::nullopt);
-}
-
-TEST_F(SessionStoreTest, LatestSessionIdReturnsNewest) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    store.save(messages, "model-a");
-    auto second_id = store.save(messages, "model-b");
-
-    auto latest = store.latest_session_id();
-    ASSERT_TRUE(latest.has_value());
-    EXPECT_EQ(*latest, second_id);
-}
-
-TEST_F(SessionStoreTest, CanBindAndResolveSessionForJid) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto session_id = store.save(messages, "model-a");
-
-    EXPECT_EQ(store.bound_session_for_jid("qqbot:c2c:alice"), std::nullopt);
-
-    store.bind_jid("qqbot:c2c:alice", session_id);
-
-    auto bound = store.bound_session_for_jid("qqbot:c2c:alice");
-    ASSERT_TRUE(bound.has_value());
-    EXPECT_EQ(*bound, session_id);
-}
-
-TEST_F(SessionStoreTest, JidBindingsAreScopedByAgentKey) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto general_session_id = store.save(messages, "model-a", "agent:default|jid:qqbot:c2c:alice");
-    auto coder_session_id = store.save(messages, "model-b", "agent:coder|jid:qqbot:c2c:alice");
-
-    store.bind_jid("qqbot:c2c:alice", general_session_id, "default");
-    store.bind_jid("qqbot:c2c:alice", coder_session_id, "coder");
-
-    auto general_bound = store.bound_session_for_jid("qqbot:c2c:alice", "default");
-    auto coder_bound = store.bound_session_for_jid("qqbot:c2c:alice", "coder");
-
-    ASSERT_TRUE(general_bound.has_value());
-    ASSERT_TRUE(coder_bound.has_value());
-    EXPECT_EQ(*general_bound, general_session_id);
-    EXPECT_EQ(*coder_bound, coder_session_id);
-}
-
-TEST_F(SessionStoreTest, CanClearJidBinding) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto session_id = store.save(messages, "model-a");
-    store.bind_jid("qqbot:c2c:alice", session_id);
-
-    store.clear_jid("qqbot:c2c:alice");
-
-    EXPECT_EQ(store.bound_session_for_jid("qqbot:c2c:alice"), std::nullopt);
-}
-
-TEST_F(SessionStoreTest, RemovingSessionClearsJidBinding) {
-    SessionStore store(db_path().string());
-
-    auto messages = std::vector{Message::user_text("Hello")};
-    auto session_id = store.save(messages, "model-a");
-    store.bind_jid("qqbot:c2c:alice", session_id);
-
-    store.remove(session_id);
-
-    EXPECT_EQ(store.bound_session_for_jid("qqbot:c2c:alice"), std::nullopt);
-}
-
-TEST_F(SessionStoreTest, AppendAddsOnlyNewMessages) {
-    SessionStore store(db_path().string());
-
-    std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
-    };
-
-    auto session_id = store.save(messages, "model-a");
-    messages.push_back(Message::user_text("How are you?"));
-    messages.push_back(Message::assistant_text("Doing well."));
-
-    store.append(session_id, messages, 2);
-
-    auto loaded = store.load(session_id);
-    ASSERT_EQ(loaded.size(), 4);
-    const auto *last_text = std::get_if<TextBlock>(&loaded[3].content[0]);
-    ASSERT_NE(last_text, nullptr);
-    EXPECT_EQ(last_text->text, "Doing well.");
-}
-
-TEST_F(SessionStoreTest, UpdateAndAppendCanRefreshStoredModelMetadata) {
-    SessionStore store(db_path().string());
-
-    std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
-    };
-
-    const auto session_id = store.save(messages, "model-a", "scope:test");
-    store.update(session_id, messages, "model-b");
-
-    auto sessions = store.list_sessions("scope:test");
-    ASSERT_EQ(sessions.size(), 1U);
-    EXPECT_EQ(sessions[0].model, "model-b");
-
-    messages.push_back(Message::user_text("How are you?"));
-    store.append(session_id, messages, 2, "model-c");
-
-    sessions = store.list_sessions("scope:test");
-    ASSERT_EQ(sessions.size(), 1U);
-    EXPECT_EQ(sessions[0].model, "model-c");
-}
-
-TEST_F(SessionStoreTest, MigratesLegacySchemaForScopeAndCompositeBindingKey) {
-    sqlite3 *db = nullptr;
-    ASSERT_EQ(sqlite3_open(db_path().string().c_str(), &db), SQLITE_OK);
-
-    exec_sql(db, "CREATE TABLE sessions ("
-                 "id TEXT PRIMARY KEY,"
-                 "model TEXT NOT NULL,"
-                 "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                 ");"
-                 "CREATE TABLE messages ("
-                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                 "session_id TEXT NOT NULL,"
-                 "seq INTEGER NOT NULL,"
-                 "role TEXT NOT NULL,"
-                 "content_json TEXT NOT NULL"
-                 ");"
-                 "CREATE TABLE channel_session_bindings ("
-                 "jid TEXT PRIMARY KEY,"
-                 "session_id TEXT NOT NULL,"
-                 "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                 ");");
-
-    exec_sql(db, "INSERT INTO sessions (id, model) VALUES ('legacy-session', 'legacy-model');");
-    exec_sql(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES ("
-                 "'legacy-session', 0, 'user', '[{"
-                 "type"
-                 ":"
-                 "text"
-                 ","
-                 "text"
-                 ":"
-                 "hello"
-                 "}]'"
-                 ");");
-    exec_sql(db, "INSERT INTO channel_session_bindings (jid, session_id) VALUES ('qqbot:c2c:alice', 'legacy-session');");
-    sqlite3_close(db);
-
-    SessionStore store(db_path().string());
-
-    const auto sessions = store.list_sessions();
-    ASSERT_EQ(sessions.size(), 1);
-    EXPECT_EQ(sessions[0].id, "legacy-session");
-    EXPECT_TRUE(sessions[0].scope_key.empty());
-
-    sqlite3 *verify_db = nullptr;
-    ASSERT_EQ(sqlite3_open(db_path().string().c_str(), &verify_db), SQLITE_OK);
-    sqlite3_stmt *stmt = nullptr;
-    ASSERT_EQ(sqlite3_prepare_v2(verify_db, "PRAGMA table_info(channel_session_bindings)", -1, &stmt, nullptr), SQLITE_OK);
-
-    bool has_agent_key = false;
-    int jid_pk_position = 0;
-    int agent_key_pk_position = 0;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const auto *text = sqlite3_column_text(stmt, 1);
-        // sqlite3_column_text() returns UTF-8 bytes as unsigned char*; convert for std::string construction.
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        const auto *name = text != nullptr ? reinterpret_cast<const char *>(text) : nullptr;
-        const auto pk = sqlite3_column_int(stmt, 5);
-        const auto column_name = name != nullptr ? std::string(name) : std::string{};
-        if (column_name == "jid") {
-            jid_pk_position = pk;
-        }
-        if (column_name == "agent_key") {
-            has_agent_key = true;
-            agent_key_pk_position = pk;
-        }
-    }
-    sqlite3_finalize(stmt);
-    sqlite3_close(verify_db);
-
-    EXPECT_TRUE(has_agent_key);
-    EXPECT_EQ(jid_pk_position, 1);
-    EXPECT_EQ(agent_key_pk_position, 2);
-
-    const auto migrated_binding = store.bound_session_for_jid("qqbot:c2c:alice");
-    ASSERT_TRUE(migrated_binding.has_value());
-    EXPECT_EQ(*migrated_binding, "legacy-session");
-}

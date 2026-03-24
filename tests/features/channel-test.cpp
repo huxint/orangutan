@@ -4,8 +4,9 @@
 
 #include <chrono>
 #include <future>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -47,7 +48,9 @@ public:
     }
 
     void emit(const InboundMessage &msg) const {
-        ASSERT_TRUE(static_cast<bool>(on_message_));
+        if (!on_message_) {
+            throw std::runtime_error("mock channel not connected");
+        }
         on_message_(msg);
     }
 
@@ -64,121 +67,125 @@ private:
     std::vector<std::pair<std::string, std::string>> sent_messages_;
 };
 
-} // namespace
+boost::ut::suite channel_core_suite = [] {
+    using namespace boost::ut;
 
-TEST(AllowlistTest, EmptyAllowlistAllowsAnyJid) {
-    const Allowlist allowlist({}, {});
+    "empty_allowlist_allows_any_jid"_test = [] {
+        const Allowlist allowlist({}, {});
 
-    EXPECT_TRUE(allowlist.is_allowed("cli:local"));
-    EXPECT_TRUE(allowlist.is_allowed("qqbot:c2c:ABC123"));
-    EXPECT_TRUE(allowlist.is_allowed("qqbot:group:XYZ789"));
-}
+        expect(allowlist.is_allowed("cli:local"));
+        expect(allowlist.is_allowed("qqbot:c2c:ABC123"));
+        expect(allowlist.is_allowed("qqbot:group:XYZ789"));
+    };
 
-TEST(AllowlistTest, AllowPatternsSupportTerminalWildcard) {
-    const Allowlist allowlist({"cli:*", "qqbot:c2c:*"}, {});
+    "allow_patterns_support_terminal_wildcard"_test = [] {
+        const Allowlist allowlist({"cli:*", "qqbot:c2c:*"}, {});
 
-    EXPECT_TRUE(allowlist.is_allowed("cli:local"));
-    EXPECT_TRUE(allowlist.is_allowed("qqbot:c2c:ABC123"));
-    EXPECT_FALSE(allowlist.is_allowed("qqbot:group:ABC123"));
-}
+        expect(allowlist.is_allowed("cli:local"));
+        expect(allowlist.is_allowed("qqbot:c2c:ABC123"));
+        expect(not allowlist.is_allowed("qqbot:group:ABC123"));
+    };
 
-TEST(AllowlistTest, DenyPatternsOverrideAllowRules) {
-    const Allowlist allowlist({"qqbot:c2c:*"}, {"qqbot:c2c:BLOCKED"});
+    "deny_patterns_override_allow_rules"_test = [] {
+        const Allowlist allowlist({"qqbot:c2c:*"}, {"qqbot:c2c:BLOCKED"});
 
-    EXPECT_TRUE(allowlist.is_allowed("qqbot:c2c:ALLOWED"));
-    EXPECT_FALSE(allowlist.is_allowed("qqbot:c2c:BLOCKED"));
-}
+        expect(allowlist.is_allowed("qqbot:c2c:ALLOWED"));
+        expect(not allowlist.is_allowed("qqbot:c2c:BLOCKED"));
+    };
 
-TEST(MessageQueueTest, TryPopReturnsQueuedMessage) {
-    MessageQueue queue;
-    queue.push({
-        .jid = "qqbot:c2c:123",
-        .sender = "123",
-        .sender_name = "Alice",
-        .content = "hello",
-        .timestamp = "2026-03-12T12:00:00Z",
-        .is_group = false,
-    });
+    "try_pop_returns_queued_message"_test = [] {
+        MessageQueue queue;
+        queue.push({
+            .jid = "qqbot:c2c:123",
+            .sender = "123",
+            .sender_name = "Alice",
+            .content = "hello",
+            .timestamp = "2026-03-12T12:00:00Z",
+            .is_group = false,
+        });
 
-    InboundMessage message;
-    ASSERT_TRUE(queue.try_pop(message, std::chrono::milliseconds(10)));
-    EXPECT_EQ(message.jid, "qqbot:c2c:123");
-    EXPECT_EQ(message.content, "hello");
-}
-
-TEST(MessageQueueTest, TryPopTimesOutWhenQueueIsEmpty) {
-    MessageQueue queue;
-    InboundMessage message;
-
-    EXPECT_FALSE(queue.try_pop(message, std::chrono::milliseconds(20)));
-}
-
-TEST(MessageQueueTest, ShutdownUnblocksWaitingTryPop) {
-    MessageQueue queue;
-    auto future = std::async(std::launch::async, [&queue] {
         InboundMessage message;
-        return queue.try_pop(message, std::chrono::seconds(5));
-    });
+        expect(queue.try_pop(message, std::chrono::milliseconds(10)) >> fatal);
+        expect(message.jid == "qqbot:c2c:123");
+        expect(message.content == "hello");
+    };
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    queue.shutdown();
+    "try_pop_times_out_when_queue_is_empty"_test = [] {
+        MessageQueue queue;
+        InboundMessage message;
 
-    EXPECT_FALSE(future.get());
-}
+        expect(not queue.try_pop(message, std::chrono::milliseconds(20)));
+    };
 
-TEST(ChannelManagerTest, ConnectRoutesInboundMessagesAndOutboundReplies) {
-    ChannelManager manager;
+    "shutdown_unblocks_waiting_try_pop"_test = [] {
+        MessageQueue queue;
+        auto future = std::async(std::launch::async, [&queue] {
+            InboundMessage message;
+            return queue.try_pop(message, std::chrono::seconds(5));
+        });
 
-    auto cli_channel = std::make_unique<MockChannel>("cli", "cli:");
-    auto *cli = cli_channel.get();
-    manager.add_channel(std::move(cli_channel));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        queue.shutdown();
 
-    auto qq_channel = std::make_unique<MockChannel>("qqbot", "qqbot:");
-    auto *qq = qq_channel.get();
-    manager.add_channel(std::move(qq_channel));
+        expect(not future.get());
+    };
 
-    std::vector<InboundMessage> received;
-    manager.connect_all([&received](const InboundMessage &msg) {
-        received.push_back(msg);
-    });
+    "connect_routes_inbound_messages_and_outbound_replies"_test = [] {
+        ChannelManager manager;
 
-    ASSERT_TRUE(manager.has_channels());
-    ASSERT_TRUE(cli->is_connected());
-    ASSERT_TRUE(qq->is_connected());
+        auto cli_channel = std::make_unique<MockChannel>("cli", "cli:");
+        auto *cli = cli_channel.get();
+        manager.add_channel(std::move(cli_channel));
 
-    cli->emit({
-        .jid = "cli:local",
-        .sender = "local",
-        .sender_name = "user",
-        .content = "ping",
-        .timestamp = "2026-03-12T12:00:00Z",
-        .is_group = false,
-    });
-    qq->emit({
-        .jid = "qqbot:c2c:456",
-        .sender = "456",
-        .sender_name = "Bob",
-        .content = "pong",
-        .timestamp = "2026-03-12T12:00:01Z",
-        .is_group = false,
-    });
+        auto qq_channel = std::make_unique<MockChannel>("qqbot", "qqbot:");
+        auto *qq = qq_channel.get();
+        manager.add_channel(std::move(qq_channel));
 
-    ASSERT_EQ(received.size(), 2);
-    EXPECT_EQ(received[0].jid, "cli:local");
-    EXPECT_EQ(received[1].jid, "qqbot:c2c:456");
+        std::vector<InboundMessage> received;
+        manager.connect_all([&received](const InboundMessage &msg) {
+            received.push_back(msg);
+        });
 
-    manager.send("cli:local", "reply to cli");
-    manager.send("qqbot:c2c:456", "reply to qq");
+        expect(manager.has_channels() >> fatal);
+        expect(cli->is_connected());
+        expect(qq->is_connected());
 
-    ASSERT_EQ(cli->sent_messages().size(), 1);
-    EXPECT_EQ(cli->sent_messages()[0].first, "cli:local");
-    EXPECT_EQ(cli->sent_messages()[0].second, "reply to cli");
+        cli->emit({
+            .jid = "cli:local",
+            .sender = "local",
+            .sender_name = "user",
+            .content = "ping",
+            .timestamp = "2026-03-12T12:00:00Z",
+            .is_group = false,
+        });
+        qq->emit({
+            .jid = "qqbot:c2c:456",
+            .sender = "456",
+            .sender_name = "Bob",
+            .content = "pong",
+            .timestamp = "2026-03-12T12:00:01Z",
+            .is_group = false,
+        });
 
-    ASSERT_EQ(qq->sent_messages().size(), 1);
-    EXPECT_EQ(qq->sent_messages()[0].first, "qqbot:c2c:456");
-    EXPECT_EQ(qq->sent_messages()[0].second, "reply to qq");
+        expect(received.size() == 2_ul);
+        expect(received[0].jid == "cli:local");
+        expect(received[1].jid == "qqbot:c2c:456");
 
-    manager.disconnect_all();
-    EXPECT_FALSE(cli->is_connected());
-    EXPECT_FALSE(qq->is_connected());
-}
+        manager.send("cli:local", "reply to cli");
+        manager.send("qqbot:c2c:456", "reply to qq");
+
+        expect(cli->sent_messages().size() == 1_ul);
+        expect(cli->sent_messages()[0].first == "cli:local");
+        expect(cli->sent_messages()[0].second == "reply to cli");
+
+        expect(qq->sent_messages().size() == 1_ul);
+        expect(qq->sent_messages()[0].first == "qqbot:c2c:456");
+        expect(qq->sent_messages()[0].second == "reply to qq");
+
+        manager.disconnect_all();
+        expect(not cli->is_connected());
+        expect(not qq->is_connected());
+    };
+};
+
+} // namespace

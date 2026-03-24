@@ -1,5 +1,4 @@
 #include "app/runtime/agent-runtime.hpp"
-
 #include "app/runtime/identity.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
@@ -9,16 +8,13 @@
 #include "test-helpers.hpp"
 
 #include <algorithm>
-#include <chrono>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-#include <unistd.h>
 
 using namespace orangutan;
 
@@ -39,16 +35,6 @@ const ToolDef *find_tool_named(const std::vector<ToolDef> &definitions, const st
     return it == definitions.end() ? nullptr : &(*it);
 }
 
-std::string sanitize_path_component(std::string value) {
-    for (char &ch : value) {
-        if (std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '-' || ch == '_') {
-            continue;
-        }
-        ch = '_';
-    }
-    return value;
-}
-
 std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<automation::Store> &store,
                                                                                                             BackgroundCompletionResumeCallback resume_callback = {}) {
     return make_background_completion_runtime_bindings(
@@ -58,28 +44,18 @@ std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_
         std::move(resume_callback));
 }
 
-class RuntimeAgentRuntimeTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        std::string test_id = "runtime-agent-runtime";
-        if (const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info(); test_info != nullptr) {
-            test_id = sanitize_path_component(std::string(test_info->test_suite_name()) + "-" + test_info->name());
-        }
-
-        const auto nonce = static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count());
-        const auto run_id = test_id + "-" + std::to_string(static_cast<long long>(::getpid())) + "-" + std::to_string(nonce);
-
-        temp_root_ = std::filesystem::current_path() / "tmp" / "tests" / "runtime-agent-runtime" / run_id;
-        home_root_ = temp_root_ / "home";
-        workspace_root_ = temp_root_ / "workspace";
-        std::filesystem::remove_all(temp_root_);
+class RuntimeAgentRuntimeHarness {
+public:
+    RuntimeAgentRuntimeHarness()
+    : temp_root_(orangutan::testing::unique_test_root("runtime-agent-runtime")),
+      home_root_(temp_root_ / "home"),
+      workspace_root_(temp_root_ / "workspace"),
+      memory_store_(std::make_unique<MemoryStore>((temp_root_ / "memory.db").string())) {
         std::filesystem::create_directories(home_root_ / ".orangutan");
         std::filesystem::create_directories(workspace_root_);
-
-        memory_store_ = std::make_unique<MemoryStore>((temp_root_ / "memory.db").string());
     }
 
-    void TearDown() override {
+    ~RuntimeAgentRuntimeHarness() {
         memory_store_.reset();
         std::filesystem::remove_all(temp_root_);
     }
@@ -148,177 +124,188 @@ private:
     std::string current_session_id_;
 };
 
-TEST_F(RuntimeAgentRuntimeTest, BuildsRuntimeWithMemoryAndToolsAndPromptGuidance) {
-    auto input = make_input();
+boost::ut::suite runtime_agent_runtime_suite = [] {
+    using namespace boost::ut;
 
-    auto runtime = build_agent_runtime(input);
-    const auto definitions = runtime.tools.definitions();
-
-    ASSERT_NE(runtime.agent, nullptr);
-    ASSERT_NE(runtime.provider, nullptr);
-    ASSERT_NE(runtime.memory, nullptr);
-    EXPECT_TRUE(has_tool_named(definitions, "memory_list"));
-    EXPECT_TRUE(has_tool_named(definitions, "shell"));
-    EXPECT_TRUE(has_tool_named(definitions, "process_list"));
-    EXPECT_TRUE(has_tool_named(definitions, "process_poll"));
-    EXPECT_TRUE(has_tool_named(definitions, "process_kill"));
-    EXPECT_EQ(runtime.tool_context.background_completion_runtime, nullptr);
-    const auto *shell = find_tool_named(definitions, "shell");
-    ASSERT_NE(shell, nullptr);
-    ASSERT_TRUE(shell->input_schema.contains("properties"));
-    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
-    EXPECT_NE(runtime.system_prompt.find("subagent"), std::string::npos);
-    EXPECT_NE(runtime.system_prompt.find("subagent_spawn"), std::string::npos);
-}
-
-TEST_F(RuntimeAgentRuntimeTest, RuntimeWithoutExplicitCompletionBindingsDoesNotEnableCompletionRouting) {
-    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-no-owner.db").string());
-    auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-
-    auto input = make_input();
-    input.automation_runtime = automation_runtime.get();
-
-    auto runtime = build_agent_runtime(input);
-    const auto definitions = runtime.tools.definitions();
-    const auto *shell = find_tool_named(definitions, "shell");
-
-    ASSERT_NE(shell, nullptr);
-    ASSERT_TRUE(shell->input_schema.contains("properties"));
-    EXPECT_EQ(runtime.tool_context.background_completion_runtime, nullptr);
-    EXPECT_FALSE(shell->input_schema["properties"].contains("on_complete"));
-}
-
-TEST_F(RuntimeAgentRuntimeTest, RuntimeWithExplicitCompletionBindingsEnablesCompletionRouting) {
-    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-with-owner.db").string());
-    auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-    auto background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
-        return std::optional<std::string>{};
-    });
-
-    auto input = make_input();
-    input.automation_runtime = automation_runtime.get();
-    input.background_completion_runtime = background_completion_runtime;
-
-    auto runtime = build_agent_runtime(input);
-    const auto definitions = runtime.tools.definitions();
-    const auto *shell = find_tool_named(definitions, "shell");
-
-    ASSERT_EQ(runtime.tool_context.background_completion_runtime, background_completion_runtime);
-    ASSERT_NE(shell, nullptr);
-    ASSERT_TRUE(shell->input_schema.contains("properties"));
-    EXPECT_TRUE(shell->input_schema["properties"].contains("on_complete"));
-    EXPECT_EQ(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"], json::array({"inbox", "resume"}));
-
-    input.background_completion_runtime.reset();
-    ASSERT_NE(runtime.tool_context.background_completion_runtime, nullptr);
-    EXPECT_TRUE(runtime.tool_context.background_completion_runtime->supports_completion_routing());
-    EXPECT_TRUE(runtime.tool_context.background_completion_runtime->supports_resume_callback());
-}
-
-TEST_F(RuntimeAgentRuntimeTest, LoadsSkillsPromptFromConfiguredSkillDirectory) {
-    const auto skill_root = workspace_root() / "skills";
-    write_skill(skill_root, "delegation", "delegation", "Always report concise delegation status.");
-
-    auto input = make_input();
-    input.skill_paths = {skill_root.string()};
-
-    auto runtime = build_agent_runtime(input);
-
-    EXPECT_NE(runtime.skills_prompt.find("## Active Skills"), std::string::npos);
-    EXPECT_NE(runtime.skills_prompt.find("### delegation"), std::string::npos);
-    EXPECT_NE(runtime.skills_prompt.find("Always report concise delegation status."), std::string::npos);
-}
-
-TEST_F(RuntimeAgentRuntimeTest, LoadsHooksFromDefaultResolvedHookDirectories) {
-    const auto home_hooks_root = home_root() / ".orangutan" / "hooks";
-    const auto workspace_hooks_root = workspace_root() / ".orangutan" / "hooks";
-    write_executable_hook(home_hooks_root, "before_tool_call", "01-home.sh");
-    write_executable_hook(workspace_hooks_root, "before_tool_call", "02-workspace.sh");
-
-    ScopedEnvVar home_env("HOME", home_root().string());
-
-    auto input = make_input();
-    input.hook_paths.clear();
-
-    auto runtime = build_agent_runtime(input);
-
-    ASSERT_NE(runtime.hook_manager, nullptr);
-    EXPECT_EQ(runtime.hook_manager->hook_count(HookEvent::before_tool_call), 2);
-    EXPECT_EQ(runtime.hook_manager->total_hooks(), 2);
-}
-
-TEST_F(RuntimeAgentRuntimeTest, KeepsToolRegistryStableAndPermissionsAliveAfterMove) {
-    auto moved_runtime = [this] {
-        auto input = make_input();
-        input.permissions.shell_approval = ToolApprovalPolicy::deny;
-        input.custom_tools.push_back(Config::ScriptToolConfig{
-            .name = "custom_echo",
-            .description = "Custom echo script tool",
-            .command = "echo hello",
-        });
+    "builds_runtime_with_memory_and_tools_and_prompt_guidance"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        auto input = harness.make_input();
 
         auto runtime = build_agent_runtime(input);
-        EXPECT_TRUE(has_tool_named(runtime.tools.definitions(), "custom_echo"));
-        const auto *tools_before_move = &runtime.tools;
+        const auto definitions = runtime.tools.definitions();
 
-        auto moved = std::move(runtime);
-        EXPECT_EQ(&moved.tools, tools_before_move);
-        return moved;
-    }();
+        expect((runtime.agent != nullptr) >> fatal);
+        expect((runtime.provider != nullptr) >> fatal);
+        expect((runtime.memory != nullptr) >> fatal);
+        expect(has_tool_named(definitions, "memory_list"));
+        expect(has_tool_named(definitions, "shell"));
+        expect(has_tool_named(definitions, "process_list"));
+        expect(has_tool_named(definitions, "process_poll"));
+        expect(has_tool_named(definitions, "process_kill"));
+        expect(runtime.tool_context.background_completion_runtime == nullptr);
+        const auto *shell = find_tool_named(definitions, "shell");
+        expect((shell != nullptr) >> fatal);
+        expect(shell->input_schema.contains("properties"));
+        expect(not shell->input_schema["properties"].contains("on_complete"));
+        expect(runtime.system_prompt.find("subagent") != std::string::npos);
+        expect(runtime.system_prompt.find("subagent_spawn") != std::string::npos);
+    };
 
-    const auto result = moved_runtime.tools.execute(ToolUseBlock{
-        .id = "custom-echo",
-        .name = "custom_echo",
-        .input = json::object(),
-    });
+    "runtime_without_explicit_completion_bindings_does_not_enable_completion_routing"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-no-owner.db").string());
+        auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
 
-    EXPECT_TRUE(result.is_error);
-    EXPECT_NE(result.content.find("Shell tool blocked by approval policy."), std::string::npos);
-}
+        auto input = harness.make_input();
+        input.automation_runtime = automation_runtime.get();
 
-TEST_F(RuntimeAgentRuntimeTest, SharedCompletionBindingsRemainUsableAfterAnotherRuntimeIsDestroyed) {
-    auto automation_store = std::make_shared<automation::Store>((workspace_root() / "automation-shared.db").string());
-    size_t resume_callback_count = 0;
-    auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
-        ++resume_callback_count;
-        return std::optional<std::string>{};
-    });
+        auto runtime = build_agent_runtime(input);
+        const auto definitions = runtime.tools.definitions();
+        const auto *shell = find_tool_named(definitions, "shell");
 
-    auto first_input = make_input();
-    first_input.background_completion_runtime = shared_bindings;
+        expect((shell != nullptr) >> fatal);
+        expect(shell->input_schema.contains("properties"));
+        expect(runtime.tool_context.background_completion_runtime == nullptr);
+        expect(not shell->input_schema["properties"].contains("on_complete"));
+    };
 
-    auto second_input = make_input();
-    second_input.background_completion_runtime = shared_bindings;
-    second_input.identity.runtime_key += "|second";
+    "runtime_with_explicit_completion_bindings_enables_completion_routing"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-with-owner.db").string());
+        auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+        auto background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
+            return std::optional<std::string>{};
+        });
 
-    auto first_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(first_input));
-    auto second_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(second_input));
-    BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
+        auto input = harness.make_input();
+        input.automation_runtime = automation_runtime.get();
+        input.background_completion_runtime = background_completion_runtime;
 
-    first_runtime.reset();
+        auto runtime = build_agent_runtime(input);
+        const auto definitions = runtime.tools.definitions();
+        const auto *shell = find_tool_named(definitions, "shell");
 
-    const auto definitions = second_runtime->tools.definitions();
-    const auto *shell = find_tool_named(definitions, "shell");
-    ASSERT_NE(shell, nullptr);
-    ASSERT_TRUE(shell->input_schema.contains("properties"));
-    ASSERT_TRUE(shell->input_schema["properties"].contains("on_complete"));
-    EXPECT_TRUE(dispatcher.supports_resume_callback());
+        expect(runtime.tool_context.background_completion_runtime == background_completion_runtime);
+        expect((shell != nullptr) >> fatal);
+        expect(shell->input_schema.contains("properties"));
+        expect(shell->input_schema["properties"].contains("on_complete"));
+        expect(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == json::array({"inbox", "resume"}));
 
-    dispatcher.dispatch(BackgroundProcessCompletionEvent{
-        .process_id = "proc-shared",
-        .command = "printf 'done\\n'",
-        .working_dir = workspace_root().string(),
-        .pid = 1234,
-        .terminal_status = BackgroundProcessTerminalStatus::exited,
-        .exit_code = 0,
-        .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
-        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
-    });
+        input.background_completion_runtime.reset();
+        expect(runtime.tool_context.background_completion_runtime != nullptr);
+        expect(runtime.tool_context.background_completion_runtime->supports_completion_routing());
+        expect(runtime.tool_context.background_completion_runtime->supports_resume_callback());
+    };
 
-    const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
-    ASSERT_EQ(inbox_items.size(), 1U);
-    EXPECT_EQ(json::parse(inbox_items.front().body).at("process_id"), "proc-shared");
-    EXPECT_EQ(resume_callback_count, 1U);
-}
+    "loads_skills_prompt_from_configured_skill_directory"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        const auto skill_root = harness.workspace_root() / "skills";
+        RuntimeAgentRuntimeHarness::write_skill(skill_root, "delegation", "delegation", "Always report concise delegation status.");
+
+        auto input = harness.make_input();
+        input.skill_paths = {skill_root.string()};
+
+        auto runtime = build_agent_runtime(input);
+
+        expect(runtime.skills_prompt.find("## Active Skills") != std::string::npos);
+        expect(runtime.skills_prompt.find("### delegation") != std::string::npos);
+        expect(runtime.skills_prompt.find("Always report concise delegation status.") != std::string::npos);
+    };
+
+    "loads_hooks_from_default_resolved_hook_directories"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        const auto home_hooks_root = harness.home_root() / ".orangutan" / "hooks";
+        const auto workspace_hooks_root = harness.workspace_root() / ".orangutan" / "hooks";
+        RuntimeAgentRuntimeHarness::write_executable_hook(home_hooks_root, "before_tool_call", "01-home.sh");
+        RuntimeAgentRuntimeHarness::write_executable_hook(workspace_hooks_root, "before_tool_call", "02-workspace.sh");
+
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+
+        auto input = harness.make_input();
+        input.hook_paths.clear();
+
+        auto runtime = build_agent_runtime(input);
+
+        expect((runtime.hook_manager != nullptr) >> fatal);
+        expect(runtime.hook_manager->hook_count(HookEvent::before_tool_call) == 2_i);
+        expect(runtime.hook_manager->total_hooks() == 2_i);
+    };
+
+    "keeps_tool_registry_stable_and_permissions_alive_after_move"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        auto moved_runtime = [&] {
+            auto input = harness.make_input();
+            input.permissions.shell_approval = ToolApprovalPolicy::deny;
+            input.custom_tools.push_back(Config::ScriptToolConfig{
+                .name = "custom_echo",
+                .description = "Custom echo script tool",
+                .command = "echo hello",
+            });
+
+            auto runtime = build_agent_runtime(input);
+            expect(has_tool_named(runtime.tools.definitions(), "custom_echo"));
+            const auto *tools_before_move = &runtime.tools;
+
+            auto moved = std::move(runtime);
+            expect(&moved.tools == tools_before_move);
+            return moved;
+        }();
+
+        const auto result = moved_runtime.tools.execute(ToolUseBlock{
+            .id = "custom-echo",
+            .name = "custom_echo",
+            .input = json::object(),
+        });
+
+        expect(result.is_error);
+        expect(result.content.find("Shell tool blocked by approval policy.") != std::string::npos);
+    };
+
+    "shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed"_test = [] {
+        RuntimeAgentRuntimeHarness harness;
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-shared.db").string());
+        size_t resume_callback_count = 0;
+        auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
+            ++resume_callback_count;
+            return std::optional<std::string>{};
+        });
+
+        auto first_input = harness.make_input();
+        first_input.background_completion_runtime = shared_bindings;
+
+        auto second_input = harness.make_input();
+        second_input.background_completion_runtime = shared_bindings;
+        second_input.identity.runtime_key += "|second";
+
+        auto first_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(first_input));
+        auto second_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(second_input));
+        BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
+
+        first_runtime.reset();
+
+        const auto definitions = second_runtime->tools.definitions();
+        const auto *shell = find_tool_named(definitions, "shell");
+        expect((shell != nullptr) >> fatal);
+        expect(shell->input_schema.contains("properties"));
+        expect(shell->input_schema["properties"].contains("on_complete"));
+        expect(dispatcher.supports_resume_callback());
+
+        dispatcher.dispatch(BackgroundProcessCompletionEvent{
+            .process_id = "proc-shared",
+            .command = "printf 'done\\n'",
+            .working_dir = harness.workspace_root().string(),
+            .pid = 1234,
+            .terminal_status = BackgroundProcessTerminalStatus::exited,
+            .exit_code = 0,
+            .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
+            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+        });
+
+        const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
+        expect(inbox_items.size() == 1_ul);
+        expect(json::parse(inbox_items.front().body).at("process_id") == "proc-shared");
+        expect(resume_callback_count == 1_ul);
+    };
+};
 
 } // namespace

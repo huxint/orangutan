@@ -1,45 +1,55 @@
 #include "infra/config/config.hpp"
-#include <gtest/gtest.h>
+#include "test-helpers.hpp"
+#include "support/ut.hpp"
+
 #include <filesystem>
 
-TEST(ConfigSaveTest, RoundTripsSaveAndLoad) {
-    orangutan::Config cfg;
-    cfg.model = "test-model-42";
-    cfg.temperature = 0.7;
-    cfg.max_tokens = 2048;
-    cfg.provider = "openai";
-    cfg.base_url = "http://localhost:8080";
-    cfg.edit_mode = "search_replace";
-    cfg.auto_save = false;
+namespace {
 
-    auto path = "/tmp/orangutan-config-save-test.toml";
-    cfg.save_to(path);
+boost::ut::suite config_save_suite = [] {
+    using namespace boost::ut;
 
-    auto loaded = orangutan::Config::load_from(path);
-    EXPECT_EQ(loaded.model, "test-model-42");
-    EXPECT_DOUBLE_EQ(loaded.temperature, 0.7);
-    EXPECT_EQ(loaded.max_tokens, 2048);
-    EXPECT_EQ(loaded.provider, "openai");
-    EXPECT_EQ(loaded.base_url, "http://localhost:8080");
-    EXPECT_EQ(loaded.edit_mode, "search_replace");
-    EXPECT_FALSE(loaded.auto_save);
+    "round_trips_save_and_load"_test = [] {
+        orangutan::Config cfg;
+        cfg.model = "test-model-42";
+        cfg.temperature = 0.7;
+        cfg.max_tokens = 2048;
+        cfg.provider = "openai";
+        cfg.base_url = "http://localhost:8080";
+        cfg.edit_mode = "search_replace";
+        cfg.auto_save = false;
 
-    std::filesystem::remove(path);
-}
+        const auto path = orangutan::testing::unique_test_path("config-save", "config.toml");
+        cfg.save_to(path.string());
 
-TEST(ConfigSaveTest, PreservesMemoryConfig) {
-    orangutan::Config cfg;
-    cfg.memory.mirror_enabled = true;
-    cfg.memory.mirror_file = "custom.md";
-    cfg.memory.journal_dir = "custom-journal";
+        const auto loaded = orangutan::Config::load_from(path.string());
+        expect(loaded.model == "test-model-42");
+        expect(loaded.temperature == 0.7_d);
+        expect(loaded.max_tokens == 2048_i);
+        expect(loaded.provider == "openai");
+        expect(loaded.base_url == "http://localhost:8080");
+        expect(loaded.edit_mode == "search_replace");
+        expect(not loaded.auto_save);
 
-    auto path = "/tmp/orangutan-config-save-memory-test.toml";
-    cfg.save_to(path);
+        std::filesystem::remove_all(path.parent_path());
+    };
 
-    auto loaded = orangutan::Config::load_from(path);
-    EXPECT_TRUE(loaded.memory.mirror_enabled);
-    EXPECT_EQ(loaded.memory.mirror_file, "custom.md");
-    EXPECT_EQ(loaded.memory.journal_dir, "custom-journal");
+    "preserves_memory_config"_test = [] {
+        orangutan::Config cfg;
+        cfg.memory.mirror_enabled = true;
+        cfg.memory.mirror_file = "custom.md";
+        cfg.memory.journal_dir = "custom-journal";
 
-    std::filesystem::remove(path);
-}
+        const auto path = orangutan::testing::unique_test_path("config-save-memory", "config.toml");
+        cfg.save_to(path.string());
+
+        const auto loaded = orangutan::Config::load_from(path.string());
+        expect(loaded.memory.mirror_enabled);
+        expect(loaded.memory.mirror_file == "custom.md");
+        expect(loaded.memory.journal_dir == "custom-journal");
+
+        std::filesystem::remove_all(path.parent_path());
+    };
+};
+
+} // namespace

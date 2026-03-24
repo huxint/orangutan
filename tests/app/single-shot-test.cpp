@@ -2,9 +2,10 @@
 
 #include "infra/storage/session-store.hpp"
 #include "core/tools/tool.hpp"
+#include "test-helpers.hpp"
 
 #include <filesystem>
-#include <gtest/gtest.h>
+#include "support/ut.hpp"
 
 using namespace orangutan;
 
@@ -66,15 +67,13 @@ private:
     bool tool_round_completed_ = false;
 };
 
-class SingleShotTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        session_db_path_ = std::filesystem::temp_directory_path() / "orangutan_single_shot_test.db";
-        std::filesystem::remove(session_db_path_);
-    }
+class SingleShotHarness {
+public:
+    SingleShotHarness()
+    : session_db_path_(orangutan::testing::unique_test_db_path("single-shot", "sessions.db")) {}
 
-    void TearDown() override {
-        std::filesystem::remove(session_db_path_);
+    ~SingleShotHarness() {
+        std::filesystem::remove_all(session_db_path_.parent_path());
     }
 
     [[nodiscard]]
@@ -86,92 +85,102 @@ private:
     std::filesystem::path session_db_path_;
 };
 
-} // namespace
+boost::ut::suite single_shot_suite = [] {
+    using namespace boost::ut;
 
-TEST_F(SingleShotTest, RunSingleMessageEmitsEventsAndAutosavesSession) {
-    StreamingProvider provider;
-    ToolRegistry tools;
-    AgentLoop agent(provider, tools);
-    SessionStore store(session_db_path().string());
-    Config cfg;
-    cfg.auto_save = true;
+    "run_single_message_emits_events_and_autosaves_session"_test = [] {
+        SingleShotHarness harness;
+        StreamingProvider provider;
+        ToolRegistry tools;
+        AgentLoop agent(provider, tools);
+        SessionStore store(harness.session_db_path().string());
+        Config cfg;
+        cfg.auto_save = true;
 
-    std::vector<json> events;
-    std::string current_session_id;
-    const auto status = app::run_single_message(
-        agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
-        [&events](const json &event) {
-            events.push_back(event);
-        },
-        std::cerr);
-
-    EXPECT_EQ(status, 0);
-    EXPECT_FALSE(current_session_id.empty());
-    ASSERT_GE(events.size(), 3U);
-    EXPECT_EQ(events[0]["type"], "assistant_delta");
-    EXPECT_EQ(events[1]["type"], "session_saved");
-    EXPECT_EQ(events[2]["type"], "done");
-
-    const auto sessions = store.list_sessions("scope:test");
-    ASSERT_EQ(sessions.size(), 1U);
-    EXPECT_EQ(sessions[0].model, "test-model");
-    EXPECT_EQ(sessions[0].agent_key, "default");
-    EXPECT_EQ(sessions[0].origin_kind, "cli");
-    EXPECT_EQ(sessions[0].origin_ref, "cli:local");
-}
-
-TEST_F(SingleShotTest, RunSingleMessageUsesDistinctToolCallAndToolExecutionEvents) {
-    ToolStreamingProvider provider;
-    ToolRegistry tools;
-    tools.register_tool({
-        .definition = {.name = "fake_tool", .description = "fake", .input_schema = json::object()},
-        .execute =
-            [](const json &) {
-                return std::string{"ok"};
+        std::vector<json> events;
+        std::string current_session_id;
+        const auto status = app::run_single_message(
+            agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
+            [&events](const json &event) {
+                events.push_back(event);
             },
-    });
-    AgentLoop agent(provider, tools);
-    SessionStore store(session_db_path().string());
-    Config cfg;
-    cfg.auto_save = false;
+            std::cerr);
 
-    std::vector<json> events;
-    std::string current_session_id;
-    const auto status = app::run_single_message(
-        agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
-        [&events](const json &event) {
+        expect(status == 0_i);
+        expect(not current_session_id.empty());
+        expect(events.size() >= 3_ul);
+        expect(events[0]["type"] == "assistant_delta");
+        expect(events[1]["type"] == "session_saved");
+        expect(events[2]["type"] == "done");
+
+        const auto sessions = store.list_sessions("scope:test");
+        expect(sessions.size() == 1_ul);
+        expect(sessions[0].model == "test-model");
+        expect(sessions[0].agent_key == "default");
+        expect(sessions[0].origin_kind == "cli");
+        expect(sessions[0].origin_ref == "cli:local");
+    };
+
+    "run_single_message_uses_distinct_tool_call_and_tool_execution_events"_test = [] {
+        SingleShotHarness harness;
+        ToolStreamingProvider provider;
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = {.name = "fake_tool", .description = "fake", .input_schema = json::object()},
+            .execute =
+                [](const json &) {
+                    return std::string{"ok"};
+                },
+        });
+        AgentLoop agent(provider, tools);
+        SessionStore store(harness.session_db_path().string());
+        Config cfg;
+        cfg.auto_save = false;
+
+        std::vector<json> events;
+        std::string current_session_id;
+        const auto status = app::run_single_message(
+            agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
+            [&events](const json &event) {
+                events.push_back(event);
+            },
+            std::cerr);
+
+        expect(status == 0_i);
+
+        size_t tool_call_started_count = 0;
+        size_t tool_started_count = 0;
+        for (const auto &event : events) {
+            const auto type = event.at("type").get<std::string>();
+            if (type == "tool_call_started") {
+                ++tool_call_started_count;
+            }
+            if (type == "tool_started") {
+                ++tool_started_count;
+            }
+        }
+
+        expect(tool_call_started_count == 1_ul);
+        expect(tool_started_count == 1_ul);
+    };
+};
+
+boost::ut::suite single_shot_standalone_suite = [] {
+    using namespace boost::ut;
+
+    "emit_session_history_dump_wraps_history_with_lifecycle_events"_test = [] {
+        std::vector<json> events;
+        app::emit_session_history_dump({Message::user_text("hello")}, "session-1", [&events](const json &event) {
             events.push_back(event);
-        },
-        std::cerr);
+        });
 
-    EXPECT_EQ(status, 0);
+        expect(events.size() == 5_ul);
+        expect(events[0]["type"] == "session_resumed");
+        expect(events[1]["type"] == "session_history_started");
+        expect(events[2]["type"] == "history_message");
+        expect(events[3]["type"] == "session_history_finished");
+        expect(events[4]["type"] == "done");
+    };
+};
 
-    size_t tool_call_started_count = 0;
-    size_t tool_started_count = 0;
-    for (const auto &event : events) {
-        const auto type = event.at("type").get<std::string>();
-        if (type == "tool_call_started") {
-            ++tool_call_started_count;
-        }
-        if (type == "tool_started") {
-            ++tool_started_count;
-        }
-    }
-
-    EXPECT_EQ(tool_call_started_count, 1U);
-    EXPECT_EQ(tool_started_count, 1U);
-}
-
-TEST(SingleShotStandaloneTest, EmitSessionHistoryDumpWrapsHistoryWithLifecycleEvents) {
-    std::vector<json> events;
-    app::emit_session_history_dump({Message::user_text("hello")}, "session-1", [&events](const json &event) {
-        events.push_back(event);
-    });
-
-    ASSERT_EQ(events.size(), 5U);
-    EXPECT_EQ(events[0]["type"], "session_resumed");
-    EXPECT_EQ(events[1]["type"], "session_history_started");
-    EXPECT_EQ(events[2]["type"], "history_message");
-    EXPECT_EQ(events[3]["type"], "session_history_finished");
-    EXPECT_EQ(events[4]["type"], "done");
-}
+} // namespace
