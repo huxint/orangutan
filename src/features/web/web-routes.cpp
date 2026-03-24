@@ -658,7 +658,7 @@ void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res,
     res.set_content(body.dump(), "application/json");
 }
 
-void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::string *config_save_path) {
+void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::filesystem::path *config_save_path) {
     if (config == nullptr) {
         res.status = 503;
         res.set_content(R"({"error":"config not available"})", "application/json");

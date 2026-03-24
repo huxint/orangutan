@@ -2,6 +2,7 @@
 
 #include "infra/storage/sqlite.hpp"
 
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -49,7 +50,7 @@ struct SubagentRunRecord {
 class SubagentRunStore {
 public:
     SubagentRunStore();
-    explicit SubagentRunStore(const std::string &db_path);
+    explicit SubagentRunStore(const std::filesystem::path &db_path);
     ~SubagentRunStore() = default;
 
     SubagentRunStore(const SubagentRunStore &) = delete;

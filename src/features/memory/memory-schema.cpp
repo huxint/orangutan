@@ -11,15 +11,15 @@ constexpr char storage_delimiter = '\x1f';
 
 } // namespace
 
-std::string default_db_path() {
+std::filesystem::path default_db_path() {
     const char *home = std::getenv("HOME");
     if (home == nullptr) {
-        return "orangutan_memory.db";
+        return std::filesystem::path{"orangutan_memory.db"};
     }
 
     auto dir = std::filesystem::path(home) / ".orangutan";
     std::filesystem::create_directories(dir);
-    return (dir / "memory.db").string();
+    return dir / "memory.db";
 }
 
 MemorySchema inspect_memory_schema(sqlite::Database &db) {

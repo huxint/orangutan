@@ -27,7 +27,7 @@ struct ProtectConfigSecretsResult {
 };
 
 [[nodiscard]]
-std::string default_orangutan_config_path();
+std::filesystem::path default_orangutan_config_path();
 
 [[nodiscard]]
 bool is_protected_config_secret(std::string_view value);

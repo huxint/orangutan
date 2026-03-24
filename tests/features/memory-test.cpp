@@ -60,7 +60,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "remember_and_recall_by_key_or_content"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile");
         store.remember("project_context", "Working on orangutan", "project");
 
@@ -74,7 +74,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "recall_by_category_returns_only_matching_entries"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("preferred_language", "Python", "preferences");
         store.remember("preferred_editor", "Neovim", "preferences");
         store.remember("project_context", "orangutan", "project");
@@ -90,7 +90,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "search_returns_most_relevant_entries_first"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("project.current", "orangutan memory refactor", "project");
         store.remember("misc.note", "buy groceries later", "general");
 
@@ -101,7 +101,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "search_backfills_past_category_cap_when_only_one_category_matches"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("project.alpha", "shared project memory alpha", "project");
         store.remember("project.beta", "shared project memory beta", "project");
         store.remember("project.gamma", "shared project memory gamma", "project");
@@ -124,7 +124,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "forget_removes_existing_entry"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile");
 
         expect(store.forget("user_name"));
@@ -134,7 +134,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "remember_updates_existing_key"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile");
         store.remember("user_name", "Bob", "profile");
 
@@ -145,7 +145,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "update_can_merge_distinct_content_fragments"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("preference.general", "concise answers", "preference");
         store.update("preference.general", "short commit messages", "preference");
 
@@ -156,7 +156,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "update_preserves_existing_category_and_source_when_omitted"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("profile.name", "Alice", "profile", {}, "auto:session", 0.9);
 
         store.update("profile.name", "Alice Example");
@@ -174,7 +174,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "dump_all_includes_stored_memories"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile");
         store.remember("project_context", "Working on orangutan", "project");
 
@@ -187,7 +187,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "stats_count_manual_and_auto_entries"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile", {}, "manual", 0.9);
         static_cast<void>(store.auto_capture("my name is Bob and we are working on orangutan"));
 
@@ -200,7 +200,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "auto_capture_extracts_structured_memories"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("my name is Alice. We are working on orangutan. I prefer concise answers."));
 
         const auto name = store.recall("profile.name");
@@ -214,7 +214,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "auto_capture_merges_repeated_general_preferences"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("I prefer concise answers."));
         static_cast<void>(store.auto_capture("I prefer short commit messages."));
 
@@ -225,7 +225,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "scoped_memories_do_not_leak_across_identities"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("preferred_name", "Alice", "profile", "jid:alice");
         store.remember("preferred_name", "Bob", "profile", "jid:bob");
 
@@ -242,7 +242,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "builtin_memory_tools_register_and_execute"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         ToolRegistry registry;
         RuntimeMemory runtime_memory(store);
         register_builtin_tools(registry, &runtime_memory);
@@ -289,7 +289,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "plugin_style_memory_aliases_work"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         ToolRegistry registry;
         RuntimeMemory runtime_memory(store);
         register_builtin_tools(registry, &runtime_memory);
@@ -332,7 +332,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "builtin_memory_tools_respect_memory_scope"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         ToolRegistry alice_registry;
         ToolRegistry bob_registry;
         RuntimeMemory alice_memory(store, RuntimeMemoryContext{.scope = "jid:alice"});
@@ -392,14 +392,14 @@ boost::ut::suite memory_store_suite = [] {
         sqlite3_free(err_msg);
         sqlite3_close(db);
 
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         const auto recall = store.recall("preferred_name", "jid:alice");
         expect(recall.find("Alice") != std::string::npos);
     };
 
     "auto_capture_chinese_name_produces_valid_utf8"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("我是一个算法高手"));
 
         const auto name = store.recall("profile.name");
@@ -414,7 +414,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "auto_capture_chinese_remember_produces_valid_utf8"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("记住我是一个算法高手"));
 
         const auto stats = store.stats();
@@ -429,7 +429,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "auto_capture_accented_latin_produces_valid_utf8"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("my name is Jos\xc3\xa9"));
 
         const auto name = store.recall("profile.name");
@@ -442,7 +442,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "auto_capture_emoji_produces_valid_utf8"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("remember that the deploy emoji is \xf0\x9f\x9a\x80"));
 
         const auto stats = store.stats();
@@ -457,7 +457,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "stats_expose_journal_entries_separately"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("project.current", "orangutan memory refactor", "project", {}, "session:distilled", 0.9);
         store.remember("journal.1", "Reviewed recall ranking and mirror design", "journal", {}, "session:journal", 0.4);
 
@@ -470,7 +470,7 @@ boost::ut::suite memory_store_suite = [] {
         const auto workspace = orangutan::testing::unique_test_root("memory-snapshot");
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory runtime(store, RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
@@ -493,7 +493,7 @@ boost::ut::suite memory_store_suite = [] {
         const auto workspace = orangutan::testing::unique_test_root("memory-disabled-mirror");
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory runtime(store, RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
@@ -516,7 +516,7 @@ boost::ut::suite memory_store_suite = [] {
         }
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory runtime(store, RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
@@ -546,7 +546,7 @@ boost::ut::suite memory_store_suite = [] {
         }
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory runtime(store, RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
@@ -565,7 +565,7 @@ boost::ut::suite memory_store_suite = [] {
         const auto workspace = orangutan::testing::unique_test_root("memory-journal");
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory runtime(store, RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
@@ -593,7 +593,7 @@ boost::ut::suite memory_store_suite = [] {
 
     "search_falls_back_for_non_ascii_queries"_test = [] {
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         store.remember("fact.algorithms", "算法高手", "profile");
 
         const auto results = store.search("算法", {}, 4);
@@ -605,7 +605,7 @@ boost::ut::suite memory_store_suite = [] {
         const auto workspace = orangutan::testing::unique_test_root("memory-scope-aware");
 
         MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path().string());
+        MemoryStore store(harness.db_path());
         RuntimeMemory alpha(store, RuntimeMemoryContext{
                                        .scope = "scope:alpha",
                                        .workspace = workspace.string(),

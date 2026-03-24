@@ -20,9 +20,9 @@ boost::ut::suite config_save_suite = [] {
         cfg.auto_save = false;
 
         const auto path = orangutan::testing::unique_test_path("config-save", "config.toml");
-        cfg.save_to(path.string());
+        cfg.save_to(path);
 
-        const auto loaded = orangutan::Config::load_from(path.string());
+        const auto loaded = orangutan::Config::load_from(path);
         expect(loaded.model == "test-model-42");
         expect(loaded.temperature == 0.7_d);
         expect(loaded.max_tokens == 2048_i);
@@ -41,9 +41,9 @@ boost::ut::suite config_save_suite = [] {
         cfg.memory.journal_dir = "custom-journal";
 
         const auto path = orangutan::testing::unique_test_path("config-save-memory", "config.toml");
-        cfg.save_to(path.string());
+        cfg.save_to(path);
 
-        const auto loaded = orangutan::Config::load_from(path.string());
+        const auto loaded = orangutan::Config::load_from(path);
         expect(loaded.memory.mirror_enabled);
         expect(loaded.memory.mirror_file == "custom.md");
         expect(loaded.memory.journal_dir == "custom-journal");

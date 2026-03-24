@@ -320,7 +320,7 @@ public:
     }
 
     void create_sessions() const {
-        SessionStore session_store(session_db_path().string());
+        SessionStore session_store(session_db_path());
         const auto cli_identity = derive_cli_identity(workspace_root_.string(), "default");
         const std::vector<Message> history_a{
             Message{.role = "user", .content = {TextBlock{.text = "first"}}},
@@ -638,16 +638,16 @@ const boost::ut::suite bootstrap_suite = [] {
         BootstrapHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
         ScopedEnvVar home_env("HOME", harness.home_root().string());
 
-        const auto cfg = Config::load_from(harness.config_path().string());
+        const auto cfg = Config::load_from(harness.config_path());
         const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
         expect((runtime_configs.has_value()) >> fatal);
 
         const auto runtime_it = runtime_configs->find("default");
         expect((runtime_it != runtime_configs->end()) >> fatal);
 
-        MemoryStore memory_store((harness.home_root() / ".orangutan" / "memory.db").string());
+        MemoryStore memory_store((harness.home_root() / ".orangutan" / "memory.db"));
         const auto identity = derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
-        app::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db").string());
+        app::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db"));
         auto runtime = build_agent_runtime(AgentRuntimeBuildInput{
             .provider_name = runtime_it->second.provider_name,
             .api_key = runtime_it->second.api_key,

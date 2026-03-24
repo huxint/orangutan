@@ -261,7 +261,7 @@ boost::ut::suite agent_loop_suite = [] {
         ToolRegistry tools;
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
-        MemoryStore store(db_path.string());
+        MemoryStore store(db_path);
         auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
@@ -300,7 +300,7 @@ boost::ut::suite agent_loop_suite = [] {
         ToolRegistry tools;
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
-        MemoryStore store(db_path.string());
+        MemoryStore store(db_path);
         auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
@@ -324,7 +324,7 @@ boost::ut::suite agent_loop_suite = [] {
         ToolRegistry tools;
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
-        MemoryStore store(db_path.string());
+        MemoryStore store(db_path);
         auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
@@ -350,7 +350,7 @@ boost::ut::suite agent_loop_suite = [] {
         ToolRegistry tools;
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
-        MemoryStore store(db_path.string());
+        MemoryStore store(db_path);
         store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");
@@ -369,7 +369,7 @@ boost::ut::suite agent_loop_suite = [] {
         ToolRegistry tools;
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
-        MemoryStore store(db_path.string());
+        MemoryStore store(db_path);
         store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = make_scoped_runtime_memory(store, "agent:default|jid:test");

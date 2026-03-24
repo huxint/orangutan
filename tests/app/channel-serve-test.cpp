@@ -331,8 +331,8 @@ boost::ut::suite channel_serve_suite = [] {
 
     "conversation_runtime_preserves_channel_context_and_shared_capabilities"_test = [] {
         ChannelServeHarness harness;
-        MemoryStore memory_store((harness.temp_root() / "memory.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -393,8 +393,8 @@ boost::ut::suite channel_serve_suite = [] {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -601,8 +601,8 @@ boost::ut::suite channel_serve_suite = [] {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -664,8 +664,8 @@ boost::ut::suite channel_serve_suite = [] {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -728,8 +728,8 @@ boost::ut::suite channel_serve_suite = [] {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -788,10 +788,10 @@ boost::ut::suite channel_serve_suite = [] {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db").string());
+        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
         automation::Runtime automation_runtime(*automation_store);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -838,9 +838,9 @@ boost::ut::suite channel_serve_suite = [] {
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db").string());
+        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
         automation::Runtime automation_runtime(*automation_store);
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
@@ -958,9 +958,9 @@ boost::ut::suite channel_serve_suite = [] {
         const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
         const std::unordered_map<std::string, std::string> qq_bot_agents;
 
-        MemoryStore memory_store((harness.temp_root() / "memory.db").string());
-        SessionStore session_store((harness.temp_root() / "sessions.db").string());
-        SubagentRunStore run_store((harness.temp_root() / "runs.db").string());
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });

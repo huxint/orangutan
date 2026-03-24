@@ -406,13 +406,13 @@ bool validate_initial_options(const CliOptions &options) {
 }
 
 int run_protect_config_mode(const CliOptions &options) {
-    auto path = options.protect_config_path.empty() ? orangutan::default_orangutan_config_path() : options.protect_config_path;
+    const auto path = options.protect_config_path.empty() ? orangutan::default_orangutan_config_path() : std::filesystem::path{options.protect_config_path};
     if (path.empty()) {
         std::println(std::cerr, "Error: could not resolve the default config path.");
         return 1;
     }
     if (!std::filesystem::exists(path)) {
-        std::println(std::cerr, "Error: config file not found: {}", path);
+        std::println(std::cerr, "Error: config file not found: {}", path.string());
         return 1;
     }
 
@@ -424,7 +424,7 @@ int run_protect_config_mode(const CliOptions &options) {
         const auto password = orangutan::resolve_config_secret_password(secret_options);
         const auto result = orangutan::protect_config_file_secrets(path, password);
         if (!result.modified) {
-            std::println("No eligible plaintext config secrets found in {}.", path);
+            std::println("No eligible plaintext config secrets found in {}.", path.string());
             return 0;
         }
 
@@ -432,7 +432,7 @@ int run_protect_config_mode(const CliOptions &options) {
                                                                  .password_override = password,
                                                              }));
 
-        std::println("Protected {} config secret(s) in {}", result.protected_count, path);
+        std::println("Protected {} config secret(s) in {}", result.protected_count, path.string());
         std::println("Backup written to {}", result.backup_path.string());
         return 0;
     } catch (const orangutan::ConfigSecretProtectionError &e) {

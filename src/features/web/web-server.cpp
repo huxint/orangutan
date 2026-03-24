@@ -74,7 +74,7 @@ int WebServer::port() const {
     return port_;
 }
 
-void WebServer::set_static_dir(const std::string &path) {
+void WebServer::set_static_dir(const std::filesystem::path &path) {
     static_dir_ = path;
 }
 
@@ -90,7 +90,7 @@ void WebServer::set_subagent_manager(SubagentManager *manager) {
 void WebServer::set_config(Config *config) {
     config_ = config;
 }
-void WebServer::set_config_save_path(const std::string &path) {
+void WebServer::set_config_save_path(const std::filesystem::path &path) {
     config_save_path_ = path;
 }
 void WebServer::set_tool_registry(ToolRegistry *registry) {
@@ -214,7 +214,7 @@ void WebServer::setup_routes() {
     });
 
     if (!static_dir_.empty()) {
-        server_.set_mount_point("/", static_dir_);
+        server_.set_mount_point("/", static_dir_.string());
     }
 }
 

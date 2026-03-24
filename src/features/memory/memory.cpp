@@ -14,7 +14,7 @@ namespace orangutan {
 MemoryStore::MemoryStore()
 : MemoryStore(memory_detail::default_db_path()) {}
 
-MemoryStore::MemoryStore(const std::string &db_path)
+MemoryStore::MemoryStore(const std::filesystem::path &db_path)
 : db_(db_path) {
     ensure_schema();
 }

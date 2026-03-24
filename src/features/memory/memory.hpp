@@ -2,6 +2,7 @@
 
 #include "infra/storage/sqlite.hpp"
 
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -32,7 +33,7 @@ struct MemoryStats {
 class MemoryStore {
 public:
     MemoryStore();
-    explicit MemoryStore(const std::string &db_path);
+    explicit MemoryStore(const std::filesystem::path &db_path);
     ~MemoryStore();
 
     MemoryStore(const MemoryStore &) = delete;

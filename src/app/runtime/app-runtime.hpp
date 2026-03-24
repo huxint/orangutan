@@ -3,15 +3,15 @@
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
 
+#include <filesystem>
 #include <memory>
-#include <string>
 
 namespace orangutan::app {
 
 class AppRuntime {
 public:
     AppRuntime();
-    explicit AppRuntime(const std::string &automation_db_path);
+    explicit AppRuntime(const std::filesystem::path &automation_db_path);
     ~AppRuntime() = default;
 
     AppRuntime(const AppRuntime &) = delete;

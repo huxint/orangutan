@@ -46,7 +46,7 @@ boost::ut::suite heartbeat_md_suite = [] {
         const auto path = make_test_path("HEARTBEAT-load.md");
         expect(write_test_file(path, "# heartbeat\nready\n") >> fatal) << "expected heartbeat fixture file to be written";
 
-        const auto result = load_heartbeat_md(path.string());
+        const auto result = load_heartbeat_md(path);
 
         expect(result.has_value() >> fatal) << "expected heartbeat markdown to load";
         expect(*result == "# heartbeat\nready\n");
@@ -56,7 +56,7 @@ boost::ut::suite heartbeat_md_suite = [] {
         const auto path = make_test_path("HEARTBEAT.txt");
         expect(write_test_file(path, "not markdown") >> fatal) << "expected non-markdown fixture file to be written";
 
-        const auto result = load_heartbeat_md(path.string());
+        const auto result = load_heartbeat_md(path);
 
         expect(not result.has_value());
     };
@@ -65,7 +65,7 @@ boost::ut::suite heartbeat_md_suite = [] {
         const auto path = make_test_path("missing/HEARTBEAT.md");
         std::filesystem::remove_all(path.parent_path());
 
-        const auto result = load_heartbeat_md(path.string());
+        const auto result = load_heartbeat_md(path);
 
         expect(not result.has_value());
     };

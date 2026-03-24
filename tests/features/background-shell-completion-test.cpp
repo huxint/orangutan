@@ -88,7 +88,7 @@ public:
         std::filesystem::remove(db_path);
         std::filesystem::create_directories(workspace_root_);
 
-        store_ = std::make_shared<orangutan::automation::Store>(db_path.string());
+        store_ = std::make_shared<orangutan::automation::Store>(db_path);
         runtime_ = std::make_unique<orangutan::automation::Runtime>(*store_);
         resume_state_ = std::make_shared<ResumeMessagesState>();
         tool_context_ = ToolRuntimeContext{

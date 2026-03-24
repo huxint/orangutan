@@ -3,6 +3,7 @@
 #include "infra/storage/sqlite.hpp"
 #include "core/types.hpp"
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -35,7 +36,7 @@ public:
     SessionStore();
 
     // Use a specific database path (for testing)
-    explicit SessionStore(const std::string &db_path);
+    explicit SessionStore(const std::filesystem::path &db_path);
 
     ~SessionStore();
 

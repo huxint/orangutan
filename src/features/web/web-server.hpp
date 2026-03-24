@@ -3,6 +3,7 @@
 #include "features/web/web-types.hpp"
 #include <chrono>
 #include <httplib.h>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -39,13 +40,13 @@ public:
     [[nodiscard]]
     int port() const;
 
-    void set_static_dir(const std::string &path);
+    void set_static_dir(const std::filesystem::path &path);
 
     void set_session_store(SessionStore *store);
     void set_memory_store(MemoryStore *store);
     void set_subagent_manager(SubagentManager *manager);
     void set_config(Config *config);
-    void set_config_save_path(const std::string &path);
+    void set_config_save_path(const std::filesystem::path &path);
     void set_tool_registry(ToolRegistry *registry);
     void set_skill_loader(SkillLoader *loader);
     void set_automation_runtime(automation::Runtime *runtime);
@@ -53,7 +54,7 @@ public:
 private:
     httplib::Server server_;
     std::thread server_thread_;
-    std::string static_dir_;
+    std::filesystem::path static_dir_;
     int port_ = 0;
     std::atomic<bool> running_{false};
 
@@ -61,7 +62,7 @@ private:
     MemoryStore *memory_store_ = nullptr;
     SubagentManager *subagent_manager_ = nullptr;
     Config *config_ = nullptr;
-    std::string config_save_path_;
+    std::filesystem::path config_save_path_;
     ToolRegistry *tool_registry_ = nullptr;
     SkillLoader *skill_loader_ = nullptr;
     automation::Runtime *automation_runtime_ = nullptr;

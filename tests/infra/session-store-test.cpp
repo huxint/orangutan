@@ -19,7 +19,7 @@ struct SessionStoreHarness {
 
     [[nodiscard]]
     orangutan::SessionStore store() const {
-        return orangutan::SessionStore(db_path.string());
+        return orangutan::SessionStore(db_path);
     }
 
     std::filesystem::path db_path;

@@ -8,12 +8,12 @@
 namespace orangutan::automation {
 namespace {
 
-std::string default_db_path() {
+std::filesystem::path default_db_path() {
     const char *home = std::getenv("HOME");
     if (home == nullptr || std::string_view(home).empty()) {
-        return "automation.db";
+        return std::filesystem::path{"automation.db"};
     }
-    return (std::filesystem::path(home) / ".orangutan" / "automation.db").string();
+    return std::filesystem::path(home) / ".orangutan" / "automation.db";
 }
 
 std::string encode_optional_seconds(std::optional<std::int64_t> value) {
@@ -103,7 +103,7 @@ Store::Store()
     ensure_schema();
 }
 
-Store::Store(const std::string &db_path)
+Store::Store(const std::filesystem::path &db_path)
 : db_(db_path) {
     ensure_schema();
 }

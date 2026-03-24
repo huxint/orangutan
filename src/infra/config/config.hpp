@@ -3,6 +3,7 @@
 #include "infra/config/secret-protection.hpp"
 #include "core/tools/permissions.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -129,7 +130,7 @@ struct Config {
     static Config load(const ConfigSecretOptions &secret_options = {});
 
     // Load config from a specific path (for testing)
-    static Config load_from(const std::string &path, const ConfigSecretOptions &secret_options = {});
+    static Config load_from(const std::filesystem::path &path, const ConfigSecretOptions &secret_options = {});
 
     // Check if a tool is permitted by the allow/deny lists
     [[nodiscard]]
@@ -139,7 +140,7 @@ struct Config {
     std::optional<AgentConfig> find_agent(const std::string &key) const;
 
     // Serialize config to TOML and write to file
-    void save_to(const std::string &path) const;
+    void save_to(const std::filesystem::path &path) const;
 };
 
 // Expand ${VAR_NAME} patterns in a string with environment variable values.

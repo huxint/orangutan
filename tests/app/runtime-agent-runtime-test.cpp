@@ -50,7 +50,7 @@ public:
     : temp_root_(orangutan::testing::unique_test_root("runtime-agent-runtime")),
       home_root_(temp_root_ / "home"),
       workspace_root_(temp_root_ / "workspace"),
-      memory_store_(std::make_unique<MemoryStore>((temp_root_ / "memory.db").string())) {
+      memory_store_(std::make_unique<MemoryStore>((temp_root_ / "memory.db"))) {
         std::filesystem::create_directories(home_root_ / ".orangutan");
         std::filesystem::create_directories(workspace_root_);
     }
@@ -153,7 +153,7 @@ boost::ut::suite runtime_agent_runtime_suite = [] {
 
     "runtime_without_explicit_completion_bindings_does_not_enable_completion_routing"_test = [] {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-no-owner.db").string());
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-no-owner.db"));
         auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
 
         auto input = harness.make_input();
@@ -171,7 +171,7 @@ boost::ut::suite runtime_agent_runtime_suite = [] {
 
     "runtime_with_explicit_completion_bindings_enables_completion_routing"_test = [] {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-with-owner.db").string());
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-with-owner.db"));
         auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
         auto background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
             return std::optional<std::string>{};
@@ -263,7 +263,7 @@ boost::ut::suite runtime_agent_runtime_suite = [] {
 
     "shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed"_test = [] {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-shared.db").string());
+        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-shared.db"));
         size_t resume_callback_count = 0;
         auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
             ++resume_callback_count;

@@ -815,14 +815,14 @@ boost::ut::suite runtime_tool_loader_test_registers_usable_memory_and_subagent_t
         std::filesystem::remove(session_db);
 
         {
-            MemoryStore memory_store(memory_db.string());
+            MemoryStore memory_store(memory_db);
             RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:parent"});
-            SessionStore session_store(session_db.string());
+            SessionStore session_store(session_db);
             const auto parent_session_id = session_store.create_empty("test-model", "scope:parent");
             const auto child_session_id = session_store.create_empty("test-model", "scope:child");
 
             {
-                SubagentRunStore run_store(session_db.string());
+                SubagentRunStore run_store(session_db);
                 SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
                     return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
                 });

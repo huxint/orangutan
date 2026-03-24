@@ -106,8 +106,8 @@ boost::ut::suite subagent_integration_suite = [] {
 
     "parent_can_spawn_and_wait_for_real_child_run_with_isolated_transcript"_test = [] {
         SubagentIntegrationHarness harness;
-        SessionStore session_store(harness.db_path().string());
-        SubagentRunStore run_store(harness.db_path().string());
+        SessionStore session_store(harness.db_path());
+        SubagentRunStore run_store(harness.db_path());
         const auto parent_session_id = session_store.create_empty("parent-model", derive_cli_session_scope("default"));
 
         std::vector<std::string> parent_prompts;
@@ -260,8 +260,8 @@ boost::ut::suite subagent_integration_suite = [] {
 
     "child_run_uses_channel_caller_origin_for_scope_and_workspace"_test = [] {
         SubagentIntegrationHarness harness;
-        SessionStore session_store(harness.db_path().string());
-        SubagentRunStore run_store(harness.db_path().string());
+        SessionStore session_store(harness.db_path());
+        SubagentRunStore run_store(harness.db_path());
 
         std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
         child_configs.emplace("coder", SubagentChildRuntimeConfig{

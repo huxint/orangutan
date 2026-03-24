@@ -19,14 +19,15 @@ std::string sqlite_error(sqlite3 *db, std::string_view fallback = "unknown error
 
 } // namespace
 
-Database::Database(const std::string &path) {
-    const auto parent = std::filesystem::path(path).parent_path();
+Database::Database(const std::filesystem::path &path) {
+    const auto parent = path.parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
     }
 
-    if (sqlite3_open(path.c_str(), &db_) != SQLITE_OK) {
-        throw std::runtime_error("Failed to open sqlite database: " + path + ": " + sqlite_error(db_));
+    const auto path_text = path.string();
+    if (sqlite3_open(path_text.c_str(), &db_) != SQLITE_OK) {
+        throw std::runtime_error("Failed to open sqlite database: " + path_text + ": " + sqlite_error(db_));
     }
     if (sqlite3_busy_timeout(db_, default_busy_timeout_ms) != SQLITE_OK) {
         throw std::runtime_error("Failed to configure sqlite busy timeout: " + sqlite_error(db_));

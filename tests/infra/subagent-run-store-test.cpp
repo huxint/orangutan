@@ -28,7 +28,7 @@ struct SubagentRunStoreHarness {
 
     [[nodiscard]]
     std::array<std::string, 2> create_linked_sessions() const {
-        SessionStore session_store(db_path.string());
+        SessionStore session_store(db_path);
         return {
             session_store.create_empty("test-model", "scope:parent"),
             session_store.create_empty("test-model", "scope:child"),
@@ -79,7 +79,7 @@ boost::ut::suite subagent_run_store_suite = [] {
     "create_run_persists_metadata_and_starts_queued"_test = [] {
         SubagentRunStoreHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunStoreHarness::sample_create_params(parent_session_id, child_session_id));
 
@@ -105,7 +105,7 @@ boost::ut::suite subagent_run_store_suite = [] {
 
     "load_run_returns_nullopt_for_unknown_id"_test = [] {
         SubagentRunStoreHarness harness;
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         expect(store.load_run("missing-run") == std::nullopt);
     };
@@ -113,7 +113,7 @@ boost::ut::suite subagent_run_store_suite = [] {
     "mark_running_updates_status_and_started_at"_test = [] {
         SubagentRunStoreHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
         store.create_run(SubagentRunStoreHarness::sample_create_params(parent_session_id, child_session_id));
 
         store.mark_running("run-123");
@@ -129,7 +129,7 @@ boost::ut::suite subagent_run_store_suite = [] {
     "terminal_transitions_persist_summaries_and_errors"_test = [] {
         SubagentRunStoreHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunStoreHarness::sample_create_params(parent_session_id, child_session_id));
         store.mark_running("run-123");
@@ -194,7 +194,7 @@ boost::ut::suite subagent_run_store_suite = [] {
         const auto [succeeded_parent_session_id, succeeded_child_session_id] = harness.create_linked_sessions();
         const auto [failed_parent_session_id, failed_child_session_id] = harness.create_linked_sessions();
         const auto [timeout_parent_session_id, timeout_child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunCreateParams{
             .run_id = "queued-run",
@@ -282,7 +282,7 @@ boost::ut::suite subagent_run_store_suite = [] {
         const auto [queued_parent_session_id, queued_child_session_id] = harness.create_linked_sessions();
         const auto [running_parent_session_id, running_child_session_id] = harness.create_linked_sessions();
         const auto [succeeded_parent_session_id, succeeded_child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunCreateParams{
             .run_id = "queued-run",
@@ -341,7 +341,7 @@ boost::ut::suite subagent_run_store_suite = [] {
         const auto [first_parent_session_id, first_child_session_id] = harness.create_linked_sessions();
         const auto [second_parent_session_id, second_child_session_id] = harness.create_linked_sessions();
         const auto [third_parent_session_id, third_child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunCreateParams{
             .run_id = "runtime-a-queued",
@@ -430,7 +430,7 @@ boost::ut::suite subagent_run_store_suite = [] {
 
     "mark_running_throws_for_unknown_run_id"_test = [] {
         SubagentRunStoreHarness harness;
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         expect(throws<std::runtime_error>([&] {
             store.mark_running("missing-run");
@@ -440,7 +440,7 @@ boost::ut::suite subagent_run_store_suite = [] {
     "terminal_runs_reject_further_state_transitions"_test = [] {
         SubagentRunStoreHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         store.create_run(SubagentRunStoreHarness::sample_create_params(parent_session_id, child_session_id));
         store.mark_running("run-123");
@@ -465,9 +465,9 @@ boost::ut::suite subagent_run_store_suite = [] {
 
     "create_run_requires_existing_session_links"_test = [] {
         SubagentRunStoreHarness harness;
-        SessionStore session_store(harness.db_path.string());
+        SessionStore session_store(harness.db_path);
         const auto parent_session_id = session_store.create_empty("test-model", "scope:parent");
-        SubagentRunStore store(harness.db_path.string());
+        SubagentRunStore store(harness.db_path);
 
         expect(throws<std::runtime_error>([&] {
             store.create_run(SubagentRunCreateParams{

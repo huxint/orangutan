@@ -70,9 +70,9 @@ boost::ut::suite session_workflow_suite = [] {
         SessionWorkflowHarness harness;
         DistillingWorkflowProvider provider;
         ToolRegistry tools;
-        MemoryStore memory_store(harness.memory_db_path().string());
+        MemoryStore memory_store(harness.memory_db_path());
         RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:test"});
-        SessionStore session_store(harness.session_db_path().string());
+        SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools, {}, &runtime_memory);
 
         loop.set_history({
@@ -102,7 +102,7 @@ boost::ut::suite session_workflow_suite = [] {
         SessionWorkflowHarness harness;
         DistillingWorkflowProvider provider;
         ToolRegistry tools;
-        SessionStore session_store(harness.session_db_path().string());
+        SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools);
 
         const auto session_id = session_store.save({Message::user_text("hello")}, cli_metadata("test-model", "scope:one", "scope-one"));
@@ -116,7 +116,7 @@ boost::ut::suite session_workflow_suite = [] {
 
     "resolve_requested_session_supports_latest"_test = [] {
         SessionWorkflowHarness harness;
-        SessionStore session_store(harness.session_db_path().string());
+        SessionStore session_store(harness.session_db_path());
         const auto first_id = session_store.save({Message::user_text("first")}, cli_metadata("test-model", "scope:test", "coder"));
         const auto second_id = session_store.save({Message::user_text("second")}, cli_metadata("test-model", "scope:test", "coder"));
 
@@ -130,7 +130,7 @@ boost::ut::suite session_workflow_suite = [] {
 
     "resolve_requested_session_uses_agent_ownership_when_scope_is_empty"_test = [] {
         SessionWorkflowHarness harness;
-        SessionStore session_store(harness.session_db_path().string());
+        SessionStore session_store(harness.session_db_path());
         session_store.save({Message::user_text("coder")}, cli_metadata("test-model", "agent:coder", "coder"));
         const auto first_default = session_store.save({Message::user_text("first default")}, cli_metadata("test-model", "", "default"));
         const auto second_default = session_store.save({Message::user_text("second default")}, cli_metadata("test-model", "", "default"));
@@ -147,14 +147,14 @@ boost::ut::suite session_workflow_suite = [] {
         SessionWorkflowHarness harness;
         DistillingWorkflowProvider provider;
         ToolRegistry tools;
-        MemoryStore memory_store(harness.memory_db_path().string());
+        MemoryStore memory_store(harness.memory_db_path());
         const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
         RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{
                                                        .scope = "scope:test",
                                                        .workspace = workspace.string(),
                                                        .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                                    });
-        SessionStore session_store(harness.session_db_path().string());
+        SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools, {}, &runtime_memory);
 
         loop.set_history({

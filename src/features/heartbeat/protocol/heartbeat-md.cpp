@@ -37,34 +37,33 @@ bool is_empty_or_headers_only(const std::string &content) {
 
 } // namespace
 
-std::optional<std::string> load_heartbeat_md(const std::string &path) {
+std::optional<std::string> load_heartbeat_md(const std::filesystem::path &path) {
     if (path.empty()) {
         return std::nullopt;
     }
 
     std::error_code ec;
-    const auto heartbeat_path = std::filesystem::path(path);
-    if (heartbeat_path.extension() != ".md") {
+    if (path.extension() != ".md") {
         return std::nullopt;
     }
 
-    if (!std::filesystem::exists(heartbeat_path, ec)) {
+    if (!std::filesystem::exists(path, ec)) {
         return std::nullopt;
     }
 
     auto file_size = std::filesystem::file_size(path, ec);
     if (ec) {
-        spdlog::warn("Failed to get size of HEARTBEAT.md at '{}': {}", path, ec.message());
+        spdlog::warn("Failed to get size of HEARTBEAT.md at '{}': {}", path.string(), ec.message());
         return std::nullopt;
     }
 
     if (file_size > heartbeat_md_size_warning) {
-        spdlog::warn("HEARTBEAT.md at '{}' is {}KB — large files waste tokens on every heartbeat run", path, file_size / 1024);
+        spdlog::warn("HEARTBEAT.md at '{}' is {}KB — large files waste tokens on every heartbeat run", path.string(), file_size / 1024);
     }
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        spdlog::warn("Failed to open HEARTBEAT.md at '{}'", path);
+        spdlog::warn("Failed to open HEARTBEAT.md at '{}'", path.string());
         return std::nullopt;
     }
 

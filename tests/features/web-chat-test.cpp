@@ -393,8 +393,8 @@ boost::ut::suite web_chat_suite = [] {
         };
         config.agents["coder"].workspace = workspace.string();
 
-        MemoryStore memory_store((workspace / "memory.db").string());
-        SubagentRunStore run_store((workspace / "runs.db").string());
+        MemoryStore memory_store((workspace / "memory.db"));
+        SubagentRunStore run_store((workspace / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -425,7 +425,7 @@ boost::ut::suite web_chat_suite = [] {
 
     "tasks_slash_command_uses_runtime_tool_output"_test = [] {
         Config config = make_config();
-        auto automation_store = std::make_shared<automation::Store>(orangutan::testing::unique_test_db_path("web-chat-tasks", "automation.db").string());
+        auto automation_store = std::make_shared<automation::Store>(orangutan::testing::unique_test_db_path("web-chat-tasks", "automation.db"));
         automation::Runtime automation_runtime(*automation_store);
         WebChatServerHarness harness(&config, nullptr, &automation_runtime);
 
@@ -468,8 +468,8 @@ boost::ut::suite web_chat_suite = [] {
         config.hook_paths = {hook_root.string()};
         config.agents["default"].workspace = workspace.string();
 
-        MemoryStore memory_store((workspace / "memory.db").string());
-        SubagentRunStore run_store((workspace / "runs.db").string());
+        MemoryStore memory_store((workspace / "memory.db"));
+        SubagentRunStore run_store((workspace / "runs.db"));
         SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -484,7 +484,7 @@ boost::ut::suite web_chat_suite = [] {
 
     "completion_resume_after_session_shutdown_falls_back_to_inbox_notes"_test = [] {
         const auto automation_db_path = orangutan::testing::unique_test_db_path("web-chat-automation", "automation.db");
-        auto automation_store = std::make_shared<automation::Store>(automation_db_path.string());
+        auto automation_store = std::make_shared<automation::Store>(automation_db_path);
         automation::Runtime automation_runtime(*automation_store);
         ToolRegistry tools;
         size_t provider_calls = 0;

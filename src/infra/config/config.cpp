@@ -166,17 +166,17 @@ Config Config::load(const ConfigSecretOptions &secret_options) {
     return load_from(path, secret_options);
 }
 
-Config Config::load_from(const std::string &path, const ConfigSecretOptions &secret_options) {
+Config Config::load_from(const std::filesystem::path &path, const ConfigSecretOptions &secret_options) {
     try {
-        auto tbl = toml::parse_file(path);
+        auto tbl = toml::parse_file(path.string());
         return config_detail::parse_toml(tbl, secret_options);
     } catch (const ConfigSecretProtectionError &) {
         throw;
     } catch (const toml::parse_error &e) {
-        spdlog::warn("Failed to parse config file {}: {}", path, e.what());
+        spdlog::warn("Failed to parse config file {}: {}", path.string(), e.what());
         return {};
     } catch (const std::runtime_error &e) {
-        spdlog::warn("Invalid config file {}: {}", path, e.what());
+        spdlog::warn("Invalid config file {}: {}", path.string(), e.what());
         return {};
     }
 }
@@ -203,7 +203,7 @@ std::optional<AgentConfig> Config::find_agent(const std::string &key) const {
     return std::nullopt;
 }
 
-void Config::save_to(const std::string &path) const {
+void Config::save_to(const std::filesystem::path &path) const {
     toml::table tbl;
 
     // [agent] section
@@ -295,7 +295,7 @@ void Config::save_to(const std::string &path) const {
     // Write to file
     std::ofstream ofs(path);
     if (!ofs) {
-        throw std::runtime_error("Cannot open file for writing: " + path);
+        throw std::runtime_error("Cannot open file for writing: " + path.string());
     }
     ofs << tbl;
 }

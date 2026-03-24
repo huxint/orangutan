@@ -13,13 +13,13 @@ namespace orangutan {
 
 namespace {
 
-std::string db_path() {
+std::filesystem::path db_path() {
     const char *home = std::getenv("HOME");
     if (home == nullptr) {
-        return "orangutan_sessions.db";
+        return std::filesystem::path{"orangutan_sessions.db"};
     }
 
-    return (std::filesystem::path(home) / ".orangutan" / "sessions.db").string();
+    return std::filesystem::path(home) / ".orangutan" / "sessions.db";
 }
 
 json serialize_content(const std::vector<ContentBlock> &content) {
@@ -180,7 +180,7 @@ SessionStore::SessionStore()
     ensure_schema();
 }
 
-SessionStore::SessionStore(const std::string &path)
+SessionStore::SessionStore(const std::filesystem::path &path)
 : db_(path) {
     db_.exec("PRAGMA foreign_keys = ON;", "Failed to enable SQLite foreign keys");
     ensure_schema();

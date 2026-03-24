@@ -11,7 +11,7 @@ boost::ut::suite sqlite_suite = [] {
 
     "database_exec_and_statement_round_trip_values"_test = [] {
         const auto db_path = orangutan::testing::unique_test_db_path("sqlite", "sqlite.db");
-        orangutan::sqlite::Database db(db_path.string());
+        orangutan::sqlite::Database db(db_path);
         db.exec("CREATE TABLE sample (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL NOT NULL);", "create table failed");
 
         orangutan::sqlite::Statement insert(db, "INSERT INTO sample (name, score) VALUES (?, ?)");
@@ -29,7 +29,7 @@ boost::ut::suite sqlite_suite = [] {
 
     "transaction_rolls_back_when_not_committed"_test = [] {
         const auto db_path = orangutan::testing::unique_test_db_path("sqlite-rollback", "sqlite.db");
-        orangutan::sqlite::Database db(db_path.string());
+        orangutan::sqlite::Database db(db_path);
         db.exec("CREATE TABLE sample (value TEXT NOT NULL);", "create table failed");
 
         {
@@ -48,7 +48,7 @@ boost::ut::suite sqlite_suite = [] {
 
     "database_configures_busy_timeout"_test = [] {
         const auto db_path = orangutan::testing::unique_test_db_path("sqlite-timeout", "sqlite.db");
-        orangutan::sqlite::Database db(db_path.string());
+        orangutan::sqlite::Database db(db_path);
 
         orangutan::sqlite::Statement query(db, "PRAGMA busy_timeout");
         expect(query.step() >> fatal) << "expected PRAGMA busy_timeout to return one row";

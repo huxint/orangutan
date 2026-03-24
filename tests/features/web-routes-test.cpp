@@ -184,7 +184,7 @@ boost::ut::suite web_routes_suite = [] {
         cfg.model = "old-model";
         orangutan::WebServer server;
         server.set_config(&cfg);
-        server.set_config_save_path(harness.config_path().string());
+        server.set_config_save_path(harness.config_path());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
         const auto res = cli.Put("/api/config", R"({"model":"new-model"})", "application/json");
@@ -304,9 +304,9 @@ boost::ut::suite web_routes_suite = [] {
         std::filesystem::create_directories(workspace);
 
         auto cfg = make_runtime_config(workspace);
-        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db").string());
-        orangutan::MemoryStore memory_store((harness.temp_root() / "memory.db").string());
-        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db").string());
+        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
+        orangutan::MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
         orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
             return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
         });
@@ -377,8 +377,8 @@ boost::ut::suite web_routes_suite = [] {
         auto cfg = make_runtime_config(workspace);
         cfg.skill_paths = {skill_root.string()};
         cfg.hook_paths = {hook_root.string()};
-        orangutan::MemoryStore memory_store((harness.temp_root() / "memory-skills.db").string());
-        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs-skills.db").string());
+        orangutan::MemoryStore memory_store((harness.temp_root() / "memory-skills.db"));
+        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs-skills.db"));
         orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
             return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
         });
@@ -393,7 +393,7 @@ boost::ut::suite web_routes_suite = [] {
 
     "automation_endpoints_expose_shared_state"_test = [] {
         WebRoutesHarness harness;
-        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db").string());
+        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
         auto &automation_runtime = app_runtime.automation_runtime();
         orangutan::automation::TaskSpec task_spec;
         task_spec.agent_key = "default";

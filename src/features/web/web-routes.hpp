@@ -20,6 +20,7 @@ class Runtime;
 } // namespace orangutan
 
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -34,7 +35,7 @@ void handle_get_agent_session(const httplib::Request &req, httplib::Response &re
 void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
 
 void handle_get_config(const httplib::Request &req, httplib::Response &res, Config *config);
-void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::string *config_save_path = nullptr);
+void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::filesystem::path *config_save_path = nullptr);
 
 void handle_list_tools(const httplib::Request &req, httplib::Response &res, ToolRegistry *registry);
 void handle_list_agents(const httplib::Request &req, httplib::Response &res, Config *config);

@@ -6,7 +6,7 @@ AppRuntime::AppRuntime()
 : automation_store_(std::make_unique<orangutan::automation::Store>()),
   automation_runtime_(std::make_unique<orangutan::automation::Runtime>(*automation_store_)) {}
 
-AppRuntime::AppRuntime(const std::string &automation_db_path)
+AppRuntime::AppRuntime(const std::filesystem::path &automation_db_path)
 : automation_store_(std::make_unique<orangutan::automation::Store>(automation_db_path)),
   automation_runtime_(std::make_unique<orangutan::automation::Runtime>(*automation_store_)) {}
 

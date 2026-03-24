@@ -144,9 +144,9 @@ std::string prompt_for_password() {
 
 } // namespace
 
-std::string default_orangutan_config_path() {
+std::filesystem::path default_orangutan_config_path() {
     const char *home = std::getenv("HOME");
-    return home == nullptr || std::string_view{home}.empty() ? std::string{} : std::string(home) + "/.orangutan/config.toml";
+    return home == nullptr || std::string_view{home}.empty() ? std::filesystem::path{} : std::filesystem::path(home) / ".orangutan" / "config.toml";
 }
 
 std::string resolve_config_secret_password(const ConfigSecretOptions &options) {

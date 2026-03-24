@@ -3,6 +3,7 @@
 #include "features/automation/types.hpp"
 #include "infra/storage/sqlite.hpp"
 
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -13,7 +14,7 @@ namespace orangutan::automation {
 class Store {
 public:
     Store();
-    explicit Store(const std::string &db_path);
+    explicit Store(const std::filesystem::path &db_path);
     ~Store() = default;
 
     Store(const Store &) = delete;

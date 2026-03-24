@@ -93,7 +93,7 @@ boost::ut::suite single_shot_suite = [] {
         StreamingProvider provider;
         ToolRegistry tools;
         AgentLoop agent(provider, tools);
-        SessionStore store(harness.session_db_path().string());
+        SessionStore store(harness.session_db_path());
         Config cfg;
         cfg.auto_save = true;
 
@@ -133,7 +133,7 @@ boost::ut::suite single_shot_suite = [] {
                 },
         });
         AgentLoop agent(provider, tools);
-        SessionStore store(harness.session_db_path().string());
+        SessionStore store(harness.session_db_path());
         Config cfg;
         cfg.auto_save = false;
 

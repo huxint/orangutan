@@ -8,13 +8,13 @@ namespace orangutan {
 
 namespace {
 
-std::string db_path() {
+std::filesystem::path db_path() {
     const auto *home = std::getenv("HOME");
     if (home == nullptr) {
-        return "orangutan_sessions.db";
+        return std::filesystem::path{"orangutan_sessions.db"};
     }
 
-    return (std::filesystem::path(home) / ".orangutan" / "sessions.db").string();
+    return std::filesystem::path(home) / ".orangutan" / "sessions.db";
 }
 
 std::string status_to_string(SubagentRunStatus status) {
@@ -74,7 +74,7 @@ SubagentRunStore::SubagentRunStore()
     ensure_schema();
 }
 
-SubagentRunStore::SubagentRunStore(const std::string &db_path)
+SubagentRunStore::SubagentRunStore(const std::filesystem::path &db_path)
 : db_(db_path) {
     db_.exec("PRAGMA foreign_keys = ON;", "Failed to enable SQLite foreign keys");
     ensure_schema();

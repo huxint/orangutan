@@ -1,6 +1,6 @@
 #pragma once
 
-#include <memory>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -11,7 +11,7 @@ namespace orangutan::sqlite {
 
 class Database {
 public:
-    explicit Database(const std::string &path);
+    explicit Database(const std::filesystem::path &path);
     ~Database();
 
     Database(const Database &) = delete;

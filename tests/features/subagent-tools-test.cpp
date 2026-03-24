@@ -50,7 +50,7 @@ public:
 
     [[nodiscard]]
     std::array<std::string, 2> create_linked_sessions() const {
-        SessionStore session_store(db_path().string());
+        SessionStore session_store(db_path());
         return {
             session_store.create_empty("test-model", "scope:parent"),
             session_store.create_empty("test-model", "scope:child"),
@@ -72,7 +72,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "parent_runtime_registers_subagent_tools_when_child_agents_allowed"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -91,7 +91,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "child_runtime_does_not_register_subagent_tools"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -110,7 +110,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "incomplete_parent_runtime_context_does_not_register_subagent_tools"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -130,7 +130,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "spawn_rejects_agent_outside_allowlist"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -161,7 +161,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "status_and_wait_return_structured_json_responses"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{
                 .status = SubagentRunStatus::succeeded,
@@ -224,7 +224,7 @@ boost::ut::suite subagent_tools_suite = [] {
     "status_and_wait_hide_runs_from_other_runtimes"_test = [] {
         SubagentToolsHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path().string());
+        SubagentRunStore run_store(harness.db_path());
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{
                 .status = SubagentRunStatus::succeeded,

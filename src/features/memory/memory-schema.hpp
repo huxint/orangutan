@@ -2,6 +2,7 @@
 
 #include "features/memory/memory.hpp"
 
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -17,7 +18,7 @@ struct MemorySchema {
 };
 
 [[nodiscard]]
-std::string default_db_path();
+std::filesystem::path default_db_path();
 [[nodiscard]]
 MemorySchema inspect_memory_schema(sqlite::Database &db);
 void create_current_schema(sqlite::Database &db);

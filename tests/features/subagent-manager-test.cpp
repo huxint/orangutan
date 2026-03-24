@@ -78,7 +78,7 @@ struct SubagentManagerHarness {
 
     [[nodiscard]]
     std::array<std::string, 2> create_linked_sessions() const {
-        SessionStore session_store(db_path.string());
+        SessionStore session_store(db_path);
         return {
             session_store.create_empty("test-model", "scope:parent"),
             session_store.create_empty("test-model", "scope:child"),
@@ -119,11 +119,11 @@ boost::ut::suite subagent_manager_suite = [] {
     "spawn_returns_accepted_run_and_wait_returns_final_result_using_fake_worker"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
 
         auto row_existed_before_worker = false;
         SubagentManager manager(run_store, [&](const SubagentWorkerRequest &request) {
-            SubagentRunStore worker_store(harness.db_path.string());
+            SubagentRunStore worker_store(harness.db_path);
             row_existed_before_worker = worker_store.load_run(request.run_id).has_value();
             return SubagentWorkerResult{
                 .status = SubagentRunStatus::succeeded,
@@ -160,7 +160,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "child_callers_are_rejected"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -178,7 +178,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "allowlist_violations_are_rejected"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
         });
@@ -196,7 +196,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "wait_can_time_out_cleanly"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         std::promise<void> release_worker;
         auto release_future = release_worker.get_future().share();
         SubagentManager manager(run_store, [&](const SubagentWorkerRequest &) {
@@ -231,8 +231,8 @@ boost::ut::suite subagent_manager_suite = [] {
 
     "real_child_inherits_caller_approval_callback"_test = [] {
         SubagentManagerHarness harness;
-        SessionStore session_store(harness.db_path.string());
-        SubagentRunStore run_store(harness.db_path.string());
+        SessionStore session_store(harness.db_path);
+        SubagentRunStore run_store(harness.db_path);
 
         ToolPermissionSettings child_permissions;
         child_permissions.sandbox_mode = ToolSandboxMode::disabled;
@@ -305,8 +305,8 @@ boost::ut::suite subagent_manager_suite = [] {
 
     "real_child_uses_configured_hashline_edit_mode"_test = [] {
         SubagentManagerHarness harness;
-        SessionStore session_store(harness.db_path.string());
-        SubagentRunStore run_store(harness.db_path.string());
+        SessionStore session_store(harness.db_path);
+        SubagentRunStore run_store(harness.db_path);
 
         std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
         child_configs.emplace("coder", SubagentChildRuntimeConfig{
@@ -373,7 +373,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "constructor_does_not_abandon_stale_runs_and_explicit_cleanup_does"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         run_store.create_run(SubagentRunCreateParams{
             .run_id = "stale-run",
             .parent_runtime_key = "runtime:cli:default",
@@ -403,7 +403,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "explicit_cleanup_only_abandons_matching_runtime"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         run_store.create_run(SubagentRunCreateParams{
             .run_id = "matching-runtime-run",
             .parent_runtime_key = "runtime:cli:default",
@@ -443,7 +443,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "status_and_wait_only_return_runs_to_owning_runtime"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
             return SubagentWorkerResult{
                 .status = SubagentRunStatus::succeeded,
@@ -483,7 +483,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "status_polling_reaps_finished_runs_before_shutdown"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         std::promise<void> release_slow_worker;
         auto release_slow_worker_future = release_slow_worker.get_future().share();
         SubagentManager manager(run_store, [&](const SubagentWorkerRequest &request) {
@@ -537,7 +537,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "shutdown_abandons_only_managers_runs_and_requests_cooperative_cancellation"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         run_store.create_run(SubagentRunCreateParams{
             .run_id = "external-queued-run",
             .parent_runtime_key = "runtime:external",
@@ -597,7 +597,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "shutdown_unblocks_waiters_immediately_after_abandonment"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         std::promise<void> worker_started;
         std::promise<void> release_worker;
         auto worker_started_future = worker_started.get_future();
@@ -635,7 +635,7 @@ boost::ut::suite subagent_manager_suite = [] {
     "shutdown_ignores_runs_that_already_reached_terminal_state"_test = [] {
         SubagentManagerHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
-        SubagentRunStore run_store(harness.db_path.string());
+        SubagentRunStore run_store(harness.db_path);
         std::promise<void> worker_started;
         std::promise<void> allow_worker_to_finish;
         auto worker_started_future = worker_started.get_future();
