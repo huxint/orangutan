@@ -23,11 +23,11 @@ boost::ut::suite cli_ui_suite = [] {
     "format_runtime_status_includes_active_model_fallbacks_and_usage"_test = [] {
         class StatusProvider final : public orangutan::Provider {
         public:
-            orangutan::LLMResponse chat(const std::string &, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, int) override {
+            orangutan::LLMResponse chat(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, int) override {
                 return {};
             }
 
-            orangutan::LLMResponse chat_stream(const std::string &, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &,
+            orangutan::LLMResponse chat_stream(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &,
                                                const orangutan::StreamCallback &, int) override {
                 return {};
             }
@@ -62,8 +62,8 @@ boost::ut::suite cli_ui_suite = [] {
         orangutan::AgentLoop agent(provider, tools);
         agent.set_history({
             orangutan::Message::user_text("hello"),
-            {.role = "assistant", .content = {orangutan::ToolUseBlock{.id = "call-1", .name = "shell", .input = nlohmann::json{{"command", "pwd"}}}}},
-            {.role = "user", .content = {orangutan::ToolResultBlock{.tool_use_id = "call-1", .content = "permission denied", .is_error = true}}},
+            {.role = orangutan::Role::Assistant, .content = {orangutan::ToolUseBlock{.id = "call-1", .name = "shell", .input = nlohmann::json{{"command", "pwd"}}}}},
+            {.role = orangutan::Role::User, .content = {orangutan::ToolResultBlock{.tool_use_id = "call-1", .content = "permission denied", .is_error = true}}},
             orangutan::Message::assistant_text("done"),
         });
 

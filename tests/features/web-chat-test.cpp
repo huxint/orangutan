@@ -90,11 +90,11 @@ public:
     explicit ScriptedProvider(std::vector<Step> steps)
     : steps_(std::move(steps)) {}
 
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         throw std::runtime_error("chat should not be used in this test");
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         if (next_step_ >= steps_.size()) {
             throw std::runtime_error("no scripted response available");
         }

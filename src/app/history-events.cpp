@@ -32,7 +32,7 @@ json make_diff_line(const char *kind, const std::string &text) {
     };
 }
 
-json history_text_event(const std::string &role, const std::string &text) {
+json history_text_event(std::string_view role, const std::string &text) {
     return {
         {"type", "history_message"},
         {"role", role},
@@ -152,7 +152,7 @@ std::vector<json> build_session_history_events(const std::vector<Message> &histo
     for (const auto &message : history) {
         for (const auto &block : message.content) {
             if (const auto *text = std::get_if<TextBlock>(&block)) {
-                events.push_back(history_text_event(message.role, text->text));
+                events.push_back(history_text_event(role_to_string(message.role), text->text));
                 continue;
             }
 

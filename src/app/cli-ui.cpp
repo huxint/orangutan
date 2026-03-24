@@ -119,9 +119,9 @@ RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provi
     };
 
     for (const auto &message : agent.history()) {
-        if (message.role == "user") {
+        if (message.role == Role::User) {
             ++status.user_messages;
-        } else if (message.role == "assistant") {
+        } else if (message.role == Role::Assistant) {
             ++status.assistant_messages;
         }
 

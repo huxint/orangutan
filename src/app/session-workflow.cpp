@@ -10,13 +10,13 @@ namespace orangutan::app {
 namespace {
 
 std::string message_heading(const Message &message, size_t index) {
-    if (message.role == "user") {
+    if (message.role == Role::User) {
         return "User " + std::to_string(index + 1);
     }
-    if (message.role == "assistant") {
+    if (message.role == Role::Assistant) {
         return "Assistant " + std::to_string(index + 1);
     }
-    return message.role + ' ' + std::to_string(index + 1);
+    return std::string(role_to_string(message.role)) + ' ' + std::to_string(index + 1);
 }
 
 void append_message_markdown(std::FILE *file, const Message &message, size_t index) {

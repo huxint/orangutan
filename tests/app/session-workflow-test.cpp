@@ -15,7 +15,7 @@ namespace {
 
 class DistillingWorkflowProvider final : public Provider {
 public:
-    LLMResponse chat(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = "memory|project|project.current|0.8|orangutan refactor\n"
@@ -23,7 +23,7 @@ public:
         };
     }
 
-    LLMResponse chat_stream(const std::string &, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
         throw std::runtime_error("chat_stream should not be used");
     }
 
@@ -195,8 +195,8 @@ boost::ut::suite session_workflow_suite = [] {
         const auto result = app::export_session_markdown(
             {
                 Message::user_text("hello"),
-                {.role = "assistant", .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
-                {.role = "user", .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
+                {.role = Role::Assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
+                {.role = Role::User, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
             },
             "session-123", workspace.string());
 

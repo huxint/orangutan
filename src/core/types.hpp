@@ -16,6 +16,30 @@ enum class SubagentRuntimeOrigin {
     web,
 };
 
+enum class Role {
+    User,
+    Assistant,
+};
+
+[[nodiscard]]
+constexpr std::string_view role_to_string(Role role) {
+    switch (role) {
+        case Role::User:
+            return "user";
+        case Role::Assistant:
+            return "assistant";
+    }
+    return "user";
+}
+
+[[nodiscard]]
+constexpr Role role_from_string(std::string_view str) {
+    if (str == "assistant") {
+        return Role::Assistant;
+    }
+    return Role::User;
+}
+
 // A single content block in a message (text or tool related)
 struct TextBlock {
     std::string text;
@@ -37,16 +61,16 @@ using ContentBlock = std::variant<TextBlock, ToolUseBlock, ToolResultBlock>;
 
 // A message in the conversation
 struct Message {
-    std::string role; // "user" or "assistant"
+    Role role = Role::User;
     std::vector<ContentBlock> content;
 
     // Convenience: create a simple text message
     static Message user_text(std::string_view text) {
-        return {.role = "user", .content = {TextBlock{std::string{text}}}};
+        return {.role = Role::User, .content = {TextBlock{std::string{text}}}};
     }
 
     static Message assistant_text(std::string_view text) {
-        return {.role = "assistant", .content = {TextBlock{std::string{text}}}};
+        return {.role = Role::Assistant, .content = {TextBlock{std::string{text}}}};
     }
 };
 
@@ -86,7 +110,7 @@ inline json content_block_to_json(const ContentBlock &block) {
 // Serialize a Message to JSON
 inline json message_to_json(const Message &msg) {
     json j;
-    j["role"] = msg.role;
+    j["role"] = role_to_string(msg.role);
     j["content"] = json::array();
     for (const auto &block : msg.content) {
         j["content"].push_back(content_block_to_json(block));

@@ -28,8 +28,8 @@ boost::ut::suite history_events_suite = [] {
     "build_session_history_events_includes_tool_lifecycle_and_details"_test = [] {
         const std::vector<Message> history{
             Message::user_text("hello"),
-            {.role = "assistant", .content = {ToolUseBlock{.id = "edit-1", .name = "edit", .input = {{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}}}}},
-            {.role = "user", .content = {ToolResultBlock{.tool_use_id = "edit-1", .content = "done", .is_error = false}}},
+            {.role = Role::Assistant, .content = {ToolUseBlock{.id = "edit-1", .name = "edit", .input = {{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}}}}},
+            {.role = Role::User, .content = {ToolResultBlock{.tool_use_id = "edit-1", .content = "done", .is_error = false}}},
         };
 
         const auto events = app::build_session_history_events(history);
