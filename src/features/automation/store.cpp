@@ -1,5 +1,6 @@
 #include "features/automation/store.hpp"
 
+#include <charconv>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -24,7 +25,9 @@ std::optional<std::int64_t> decode_optional_seconds(std::string_view value) {
     if (value.empty()) {
         return std::nullopt;
     }
-    return std::stoll(std::string(value));
+    std::int64_t result{};
+    std::from_chars(value.data(), value.data() + value.size(), result);
+    return result;
 }
 
 bool matches_id_or_name(std::string_view candidate_id, std::string_view candidate_name, std::string_view id_or_name) {
@@ -73,7 +76,8 @@ RunRecord read_run(sqlite::Statement &stmt) {
     run.automation_id = stmt.column_text(2);
     run.agent_key = stmt.column_text(3);
     run.automation_name = stmt.column_text(4);
-    run.started_at = std::stoll(stmt.column_text(5));
+    const auto started_text = stmt.column_text(5);
+    std::from_chars(started_text.data(), started_text.data() + started_text.size(), run.started_at);
     run.finished_at = decode_optional_seconds(stmt.column_text(6));
     run.status = stmt.column_text(7);
     run.summary = stmt.column_text(8);
@@ -90,7 +94,8 @@ InboxItem read_inbox(sqlite::Statement &stmt) {
     item.source_run_id = stmt.column_text(3);
     item.title = stmt.column_text(4);
     item.body = stmt.column_text(5);
-    item.created_at = std::stoll(stmt.column_text(6));
+    const auto created_text = stmt.column_text(6);
+    std::from_chars(created_text.data(), created_text.data() + created_text.size(), item.created_at);
     item.acked_at = decode_optional_seconds(stmt.column_text(7));
     item.status = stmt.column_text(8);
     return item;

@@ -386,9 +386,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, c
             }
             // Check overlap: ranges [a_start, a_end] and [b_start, b_end]
             if (a_start <= b_end && b_start <= a_end) {
-                return {.ok = false,
-                        .error = "overlapping edits at lines " + std::to_string(a_start) + "-" + std::to_string(a_end) + " and " + std::to_string(b_start) + "-" +
-                                 std::to_string(b_end)};
+                return {.ok = false, .error = std::format("overlapping edits at lines {}-{} and {}-{}", a_start, a_end, b_start, b_end)};
             }
         }
     }

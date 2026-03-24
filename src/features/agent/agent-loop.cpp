@@ -4,14 +4,15 @@
 #include "features/memory/runtime-memory.hpp"
 #include "infra/execution/sender-utils.hpp"
 
-#include <cstdio>
 #include <cctype>
+#include <charconv>
+#include <cstdio>
+#include <format>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <print>
 #include <spdlog/spdlog.h>
-#include <format>
-#include <iterator>
 #include <sstream>
 
 namespace orangutan {
@@ -125,11 +126,7 @@ std::optional<DistilledMemoryEntry> parse_memory_line(std::string line) {
     }
 
     double importance = 0.5;
-    try {
-        importance = std::stod(importance_text);
-    } catch (...) {
-        importance = 0.5;
-    }
+    std::from_chars(importance_text.data(), importance_text.data() + importance_text.size(), importance);
     importance = std::clamp(importance, 0.0, 1.0);
 
     if (key.empty()) {

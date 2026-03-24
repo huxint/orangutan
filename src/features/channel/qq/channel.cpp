@@ -4,6 +4,7 @@
 #include "features/channel/qq/transport.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
@@ -62,7 +63,10 @@ long long parse_integer_like(const json &payload, std::string_view key, long lon
         return value.get<long long>();
     }
     if (value.is_string()) {
-        return std::stoll(value.get<std::string>());
+        const auto &str = value.get_ref<const std::string &>();
+        long long result = default_value;
+        std::from_chars(str.data(), str.data() + str.size(), result);
+        return result;
     }
 
     return default_value;
