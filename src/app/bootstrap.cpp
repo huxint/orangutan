@@ -10,7 +10,6 @@
 #include "core/tools/tool.hpp"
 #include "features/web/web-server.hpp"
 #include "features/channel/core/message-queue.hpp"
-#include "features/cron/parser.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
 #include "features/skills/skill-loader.hpp"
@@ -21,7 +20,6 @@
 #include "infra/storage/subagent-run-store.hpp"
 
 #include <CLI/CLI.hpp>
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>

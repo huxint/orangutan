@@ -1,10 +1,13 @@
 #include "infra/config/config-detail.hpp"
 #include "infra/config/secret-fields.hpp"
+#include "infra/files/file.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
+#include <format>
+#include <print>
+#include <sstream>
 #include <stdexcept>
 
 #include <spdlog/spdlog.h>
@@ -293,11 +296,16 @@ void Config::save_to(const std::filesystem::path &path) const {
     }
 
     // Write to file
-    std::ofstream ofs(path);
-    if (!ofs) {
-        throw std::runtime_error("Cannot open file for writing: " + path.string());
+    std::ostringstream rendered;
+    rendered << tbl;
+
+    fileio::File file(path, "w");
+    try {
+        std::print(file.get(), "{}", rendered.str());
+        file.close();
+    } catch (const std::exception &) {
+        throw std::runtime_error(std::format("Failed to write config file: {}", path.string()));
     }
-    ofs << tbl;
 }
 
 } // namespace orangutan

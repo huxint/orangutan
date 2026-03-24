@@ -1,8 +1,9 @@
 #include "features/automation/log-writer.hpp"
+#include "infra/files/file.hpp"
 
 #include <chrono>
 #include <filesystem>
-#include <fstream>
+#include <format>
 #include <print>
 #include <stdexcept>
 
@@ -29,11 +30,21 @@ std::string LogWriter::append(const std::string &workspace_root, const json &ent
     }
 
     const auto log_path = log_dir / (std::string(file_name.data()) + ".jsonl");
-    std::ofstream out(log_path, std::ios::app);
-    if (!out.is_open()) {
-        throw std::runtime_error("failed to open automation log file: " + log_path.string());
+    fileio::File file = [&]() -> fileio::File {
+        try {
+            return fileio::File(log_path, "a");
+        } catch (const std::runtime_error &) {
+            throw std::runtime_error("failed to open automation log file: " + log_path.string());
+        }
+    }();
+
+    try {
+        std::println(file.get(), "{}", entry.dump());
+        file.close();
+    } catch (const std::exception &) {
+        throw std::runtime_error("failed to write automation log file: " + log_path.string());
     }
-    std::println(out, "{}", entry.dump());
+
     return log_path.string();
 }
 

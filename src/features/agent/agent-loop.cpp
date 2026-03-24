@@ -7,10 +7,8 @@
 #include <cstdio>
 #include <cctype>
 #include <functional>
-#include <iostream>
 #include <optional>
 #include <print>
-#include <regex>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
@@ -372,14 +370,14 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
                 final_text += handle_continuation(effective_system_prompt, first_text, human_output, on_stream_event, on_tool_event, on_history_checkpoint);
             }
             if (human_output && !first_text) {
-                std::print("\n\n");
+                std::println("\n");
                 std::fflush(stdout);
             }
             break;
         }
 
         if (human_output && !first_text) {
-            std::print("\n");
+            std::println();
             std::fflush(stdout);
         }
 

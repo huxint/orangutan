@@ -30,7 +30,7 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
                   HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
     if (!persist_session(agent, store, current_session_id, make_cli_session_metadata(model, scope_key, agent_key))) {
-        std::print("💤 Nothing to save (empty history).\n\n");
+        std::println("💤 Nothing to save (empty history).\n");
         return;
     }
 
@@ -39,10 +39,10 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
     }
 
     if (updating_existing) {
-        std::print("💾 Session updated: {} (use -r {} to resume)\n\n", current_session_id, current_session_id);
+        std::println("💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         return;
     }
-    std::print("💾 Session saved: {} (use -r {} to resume)\n\n", current_session_id, current_session_id);
+    std::println("💾 Session saved: {} (use -r {} to resume)\n", current_session_id, current_session_id);
 }
 
 void print_slash_reply(const std::string &text) {
@@ -51,10 +51,10 @@ void print_slash_reply(const std::string &text) {
         return;
     }
     if (text.ends_with('\n')) {
-        std::print("{}\n", text);
+        std::println("{}", text);
         return;
     }
-    std::print("{}\n\n", text);
+    std::println("{}\n", text);
 }
 
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
@@ -69,7 +69,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/clear") {
         agent.clear_history();
-        std::print("History cleared.\n\n");
+        std::println("History cleared.\n");
         return true;
     }
     if (line == "/save") {
@@ -78,114 +78,104 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/skills") {
         if (skill_loader == nullptr || skill_loader->active_skills().empty()) {
-            std::print("No skills loaded.\n\n");
+            std::println("No skills loaded.\n");
         } else {
             std::println("Loaded skills:");
             for (const auto &skill : skill_loader->active_skills()) {
                 std::println("  {} — {}", skill.name, skill.description);
                 std::println("    source: {}", skill.source_path);
                 if (!skill.tools.empty()) {
-                    std::print("    tools: ");
-                    auto joined_tools = skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
-                                            return tool;
-                                        }) |
-                                        std::views::join_with(std::string_view{", "});
-                    std::ranges::copy(joined_tools, std::ostreambuf_iterator<char>(std::cout));
-                    std::println("");
+                    std::println("    tools: {}", skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
+                                                      return tool;
+                                                  }) | std::views::join_with(std::string_view{", "}) |
+                                                      std::ranges::to<std::string>());
                 }
             }
-            std::println("");
+            std::println();
         }
         return true;
     }
     if (line == "/tools") {
         if (tool_registry == nullptr) {
-            std::print("No tool registry available.\n\n");
+            std::println("No tool registry available.\n");
         } else {
             const auto defs = tool_registry->definitions();
             if (defs.empty()) {
-                std::print("No tools registered.\n\n");
+                std::println("No tools registered.\n");
             } else {
                 std::println("Registered tools ({}):", defs.size());
                 for (const auto &def : defs) {
                     std::println("  {} — {}", def.name, def.description);
                 }
-                std::println("");
+                std::println();
             }
         }
         return true;
     }
     if (const auto reply = dispatch_shared_slash_command(
-            line, {
-                      .surface = slash_command_surface::cli,
-                      .help =
-                          [] {
-                              return SlashCommandReply{.handled = true, .text = repl_help_text()};
-                          },
-                      .new_session =
-                          [&] {
-                              const auto previous_message_count = agent.history().size();
-                              const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
-                              dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
-                              return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
-                          },
-                      .export_session =
-                          [&] {
-                              if (current_session_id.empty() && !agent.history().empty() &&
-                                  persist_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key))) {
-                                  dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-                              }
-                              return SlashCommandReply{
-                                  .handled = true,
-                                  .text = describe_export_result(export_session_markdown(agent.history(), current_session_id, workspace_root)),
-                              };
-                          },
-                      .compress =
-                          [&] {
-                              const auto result = agent.compress_history();
-                              if (result.compacted && !current_session_id.empty()) {
-                                  store.update(current_session_id, agent.history(), make_cli_session_metadata(active_model, scope_key, agent_key));
-                              }
-                              return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
-                          },
-                      .session =
-                          [&] {
-                              return SlashCommandReply{.handled = true,
-                                                       .text = current_session_id.empty() ? "💤 No active session.\n\n" : "🧵 Current session: " + current_session_id};
-                          },
-                      .sessions =
-                          [&] {
-                              return SlashCommandReply{.handled = true, .text = render_saved_sessions(store, scope_key)};
-                          },
-                      .agent =
-                          [&] {
-                              return SlashCommandReply{.handled = true, .text = format_current_agent(agent_key)};
-                          },
-                      .status =
-                          [&] {
-                              return SlashCommandReply{
-                                  .handled = true,
-                                  .text = format_runtime_status(
-                                      collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)),
-                              };
-                          },
-                      .agents =
-                          [&] {
-                              return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, agent_key)};
-                          },
-                      .resume =
-                          [&](const std::string &session_id) {
-                              const auto previous_session_id = current_session_id;
-                              const auto previous_message_count = agent.history().size();
-                              const auto result = load_session_into_agent(session_id, agent, store, current_session_id, scope_key, agent_key);
-                              if (result.loaded && current_session_id != previous_session_id) {
-                                  dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
-                                  dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-                              }
-                              return SlashCommandReply{.handled = true, .text = result.status};
-                          },
-                      .tool_registry = tool_registry,
-                  });
+            line,
+            // clang-format off
+                {
+                    .surface = slash_command_surface::cli,
+                    .help = [] {
+                            return SlashCommandReply{.handled = true, .text = repl_help_text()};
+                        },
+                    .new_session = [&] {
+                            const auto previous_message_count = agent.history().size();
+                            const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
+                            dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
+                            return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
+                        },
+                    .export_session = [&] {
+                            if (current_session_id.empty() && !agent.history().empty() &&
+                                persist_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key))) {
+                                dispatch_session_start(hook_manager, current_session_id, agent.history().size());
+                            }
+                            return SlashCommandReply{
+                                .handled = true,
+                                .text = describe_export_result(export_session_markdown(agent.history(), current_session_id, workspace_root)),
+                            };
+                        },
+                    .compress = [&] {
+                            const auto result = agent.compress_history();
+                            if (result.compacted && !current_session_id.empty()) {
+                                store.update(current_session_id, agent.history(), make_cli_session_metadata(active_model, scope_key, agent_key));
+                            }
+                            return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
+                        },
+                    .session = [&] {
+                            return SlashCommandReply{.handled = true,
+                                                    .text = current_session_id.empty() ? "💤 No active session.\n\n" : "🧵 Current session: " + current_session_id};
+                        },
+                    .sessions = [&] {
+                            return SlashCommandReply{.handled = true, .text = render_saved_sessions(store, scope_key)};
+                        },
+                    .agent = [&] {
+                            return SlashCommandReply{.handled = true, .text = format_current_agent(agent_key)};
+                        },
+                    .status = [&] {
+                            return SlashCommandReply{
+                                .handled = true,
+                                .text = format_runtime_status(
+                                    collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)),
+                            };
+                        },
+                    .agents = [&] {
+                            return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, agent_key)};
+                        },
+                    .resume = [&](const std::string &session_id) {
+                            const auto previous_session_id = current_session_id;
+                            const auto previous_message_count = agent.history().size();
+                            const auto result = load_session_into_agent(session_id, agent, store, current_session_id, scope_key, agent_key);
+                            if (result.loaded && current_session_id != previous_session_id) {
+                                dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
+                                dispatch_session_start(hook_manager, current_session_id, agent.history().size());
+                            }
+                            return SlashCommandReply{.handled = true, .text = result.status};
+                        },
+                    .tool_registry = tool_registry
+                });
+        // clang-format on
         reply.handled) {
         print_slash_reply(reply.text);
         return true;
@@ -202,7 +192,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
               const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
               const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
     std::println("Orangutan v0.1.0");
-    std::print("Type /help for commands, Ctrl+D to quit\n\n");
+    std::println("Type /help for commands, Ctrl+D to quit\n");
     std::fflush(stdout);
 
     dispatch_session_start(hook_manager, current_session_id, agent.history().size());
@@ -236,7 +226,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
             try {
                 agent.run(line);
             } catch (const std::exception &e) {
-                std::print(std::cerr, "Error: {}\n\n", e.what());
+                std::println(std::cerr, "Error: {}\n", e.what());
             }
             return false;
         });
@@ -254,17 +244,17 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         const auto metadata = make_cli_session_metadata(active_model, scope_key, agent_key);
         if (!current_session_id.empty()) {
             store.update(current_session_id, agent.history(), metadata);
-            std::print("\n💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+            std::println("\n💾 Session updated: {} (use -r {} to resume)", current_session_id, current_session_id);
         } else {
             current_session_id = store.save(agent.history(), metadata);
             dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-            std::print("\n💾 Auto-saved session: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+            std::println("\n💾 Auto-saved session: {} (use -r {} to resume)", current_session_id, current_session_id);
         }
     }
 
     dispatch_session_end(hook_manager, current_session_id, agent.history().size());
 
-    std::print("\nBye!\n");
+    std::println("\nBye!");
 }
 
 } // namespace orangutan::app
