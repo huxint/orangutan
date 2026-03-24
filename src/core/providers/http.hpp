@@ -140,7 +140,7 @@ long http_post_stream(const std::string &url, const std::string &body, const Cur
     auto write_cb = +[](char *ptr, size_t size, size_t nmemb, void *userdata) -> size_t {
         auto *h = static_cast<StreamHandler *>(userdata);
         auto total = size * nmemb;
-        h->feed(ptr, total);
+        h->feed(std::string_view(ptr, total));
         return total;
     };
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_cb);

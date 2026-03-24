@@ -7,8 +7,8 @@ namespace orangutan {
 SseParser::SseParser(EventCallback callback)
 : callback_(std::move(callback)) {}
 
-void SseParser::feed(const char *data, size_t len) {
-    buffer_.append(data, len);
+void SseParser::feed(std::string_view data) {
+    buffer_.append(data);
 
     size_t pos = 0;
     while (pos < buffer_.size()) {

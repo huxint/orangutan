@@ -16,8 +16,8 @@ boost::ut::suite sse_parser_suite = [] {
 
         const std::string first_chunk = "event: message\ndata: {\"par";
         const std::string second_chunk = "tial\":1}\n\n";
-        parser.feed(first_chunk.data(), first_chunk.size());
-        parser.feed(second_chunk.data(), second_chunk.size());
+        parser.feed(first_chunk);
+        parser.feed(second_chunk);
 
         expect(events.size() == 1_ul) << "expected one parsed event";
         expect(events[0].first == "message");
@@ -30,7 +30,7 @@ boost::ut::suite sse_parser_suite = [] {
             events.emplace_back(event, data);
         });
 
-        parser.feed("event: chunk\ndata: first line\ndata: second line\n\n", 51);
+        parser.feed("event: chunk\ndata: first line\ndata: second line\n\n");
 
         expect(events.size() == 1_ul) << "expected one parsed event";
         expect(events[0].first == "chunk");

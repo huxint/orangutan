@@ -11,7 +11,7 @@ public:
     using EventCallback = std::function<void(const std::string &event, const std::string &data)>;
 
     explicit SseParser(EventCallback callback);
-    void feed(const char *data, size_t len);
+    void feed(std::string_view data);
 
 private:
     EventCallback callback_;
