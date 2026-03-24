@@ -113,69 +113,74 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
         return true;
     }
     if (const auto reply = dispatch_shared_slash_command(
-            line,
-            // clang-format off
-                {
-                    .surface = slash_command_surface::cli,
-                    .help = [] {
-                            return SlashCommandReply{.handled = true, .text = repl_help_text()};
-                        },
-                    .new_session = [&] {
-                            const auto previous_message_count = agent.history().size();
-                            const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
-                            dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
-                            return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
-                        },
-                    .export_session = [&] {
-                            if (current_session_id.empty() && !agent.history().empty() &&
-                                persist_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key))) {
-                                dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-                            }
-                            return SlashCommandReply{
-                                .handled = true,
-                                .text = describe_export_result(export_session_markdown(agent.history(), current_session_id, workspace_root)),
-                            };
-                        },
-                    .compress = [&] {
-                            const auto result = agent.compress_history();
-                            if (result.compacted && !current_session_id.empty()) {
-                                store.update(current_session_id, agent.history(), make_cli_session_metadata(active_model, scope_key, agent_key));
-                            }
-                            return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
-                        },
-                    .session = [&] {
-                            return SlashCommandReply{.handled = true,
+            line, {.surface = slash_command_surface::cli,
+                   .help =
+                       [] {
+                           return SlashCommandReply{.handled = true, .text = repl_help_text()};
+                       },
+                   .new_session =
+                       [&] {
+                           const auto previous_message_count = agent.history().size();
+                           const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
+                           dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
+                           return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
+                       },
+                   .export_session =
+                       [&] {
+                           if (current_session_id.empty() && !agent.history().empty() &&
+                               persist_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key))) {
+                               dispatch_session_start(hook_manager, current_session_id, agent.history().size());
+                           }
+                           return SlashCommandReply{
+                               .handled = true,
+                               .text = describe_export_result(export_session_markdown(agent.history(), current_session_id, workspace_root)),
+                           };
+                       },
+                   .compress =
+                       [&] {
+                           const auto result = agent.compress_history();
+                           if (result.compacted && !current_session_id.empty()) {
+                               store.update(current_session_id, agent.history(), make_cli_session_metadata(active_model, scope_key, agent_key));
+                           }
+                           return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
+                       },
+                   .session =
+                       [&] {
+                           return SlashCommandReply{.handled = true,
                                                     .text = current_session_id.empty() ? "💤 No active session.\n\n" : "🧵 Current session: " + current_session_id};
-                        },
-                    .sessions = [&] {
-                            return SlashCommandReply{.handled = true, .text = render_saved_sessions(store, scope_key)};
-                        },
-                    .agent = [&] {
-                            return SlashCommandReply{.handled = true, .text = format_current_agent(agent_key)};
-                        },
-                    .status = [&] {
-                            return SlashCommandReply{
-                                .handled = true,
-                                .text = format_runtime_status(
-                                    collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)),
-                            };
-                        },
-                    .agents = [&] {
-                            return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, agent_key)};
-                        },
-                    .resume = [&](const std::string &session_id) {
-                            const auto previous_session_id = current_session_id;
-                            const auto previous_message_count = agent.history().size();
-                            const auto result = load_session_into_agent(session_id, agent, store, current_session_id, scope_key, agent_key);
-                            if (result.loaded && current_session_id != previous_session_id) {
-                                dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
-                                dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-                            }
-                            return SlashCommandReply{.handled = true, .text = result.status};
-                        },
-                    .tool_registry = tool_registry
-                });
-        // clang-format on
+                       },
+                   .sessions =
+                       [&] {
+                           return SlashCommandReply{.handled = true, .text = render_saved_sessions(store, scope_key)};
+                       },
+                   .agent =
+                       [&] {
+                           return SlashCommandReply{.handled = true, .text = format_current_agent(agent_key)};
+                       },
+                   .status =
+                       [&] {
+                           return SlashCommandReply{
+                               .handled = true,
+                               .text = format_runtime_status(
+                                   collect_runtime_status(agent, provider, tool_registry, current_session_id, agent_key, configured_model, fallback_models, scope_key)),
+                           };
+                       },
+                   .agents =
+                       [&] {
+                           return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, agent_key)};
+                       },
+                   .resume =
+                       [&](const std::string &session_id) {
+                           const auto previous_session_id = current_session_id;
+                           const auto previous_message_count = agent.history().size();
+                           const auto result = load_session_into_agent(session_id, agent, store, current_session_id, scope_key, agent_key);
+                           if (result.loaded && current_session_id != previous_session_id) {
+                               dispatch_session_end(hook_manager, previous_session_id, previous_message_count);
+                               dispatch_session_start(hook_manager, current_session_id, agent.history().size());
+                           }
+                           return SlashCommandReply{.handled = true, .text = result.status};
+                       },
+                   .tool_registry = tool_registry});
         reply.handled) {
         print_slash_reply(reply.text);
         return true;

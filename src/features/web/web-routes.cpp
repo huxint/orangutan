@@ -281,74 +281,72 @@ app::SlashCommandReply handle_web_static_slash_command(const std::string &messag
                                                        const std::optional<SessionInfo> & /*existing_session*/, const SessionMetadata &metadata,
                                                        const std::string &current_session_id) {
     return app::dispatch_shared_slash_command(
-        message, {
-                     .surface = app::slash_command_surface::web,
-                     .help =
-                         [] {
-                             return app::SlashCommandReply{.handled = true, .text = app::web_help_text()};
-                         },
-                     .new_session =
-                         [&] {
-                             std::string new_session_id;
-                             if (store != nullptr) {
-                                 new_session_id = store->create_empty(metadata);
-                             } else {
-                                 new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-                             }
-                             return app::SlashCommandReply{.handled = true, .text = {}, .session_id = new_session_id};
-                         },
-                     .export_session =
-                         [&] {
-                             const auto maybe_agent = find_effective_agent(&config, agent_key);
-                             const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
-                             if (store == nullptr || current_session_id.empty()) {
-                                 return app::SlashCommandReply{
-                                     .handled = true,
-                                     .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root)),
-                                 };
-                             }
-                             return app::SlashCommandReply{
-                                 .handled = true,
-                                 .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root)),
-                             };
-                         },
-                     .session =
-                         [&] {
-                             return app::SlashCommandReply{.handled = true, .text = app::format_current_session(current_session_id, agent_key)};
-                         },
-                     .sessions =
-                         [&] {
-                             if (store == nullptr) {
-                                 return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
-                             }
-                             return app::SlashCommandReply{
-                                 .handled = true,
-                                 .text = app::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id),
-                             };
-                         },
-                     .agent =
-                         [&] {
-                             return app::SlashCommandReply{.handled = true, .text = app::format_current_agent(agent_key)};
-                         },
-                     .agents =
-                         [&] {
-                             return app::SlashCommandReply{.handled = true, .text = app::format_agent_list(config, agent_key)};
-                         },
-                     .resume =
-                         [&](const std::string &requested_session_id) {
-                             if (store == nullptr) {
-                                 return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
-                             }
-                             const auto resolved_session_id = app::resolve_requested_session(*store, requested_session_id, {}, agent_key);
-                             if (!resolved_session_id.has_value()) {
-                                 return app::SlashCommandReply{.handled = true, .text = "No saved sessions available for this agent."};
-                             }
-                             if (!store->session_belongs_to_agent(*resolved_session_id, agent_key)) {
-                                 return app::SlashCommandReply{.handled = true, .text = "That session does not belong to the current agent."};
-                             }
-                             return app::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + *resolved_session_id, .session_id = resolved_session_id};
-                         },
-                 });
+        message, {.surface = app::slash_command_surface::web,
+                  .help =
+                      [] {
+                          return app::SlashCommandReply{.handled = true, .text = app::web_help_text()};
+                      },
+                  .new_session =
+                      [&] {
+                          std::string new_session_id;
+                          if (store != nullptr) {
+                              new_session_id = store->create_empty(metadata);
+                          } else {
+                              new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+                          }
+                          return app::SlashCommandReply{.handled = true, .text = {}, .session_id = new_session_id};
+                      },
+                  .export_session =
+                      [&] {
+                          const auto maybe_agent = find_effective_agent(&config, agent_key);
+                          const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
+                          if (store == nullptr || current_session_id.empty()) {
+                              return app::SlashCommandReply{
+                                  .handled = true,
+                                  .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root)),
+                              };
+                          }
+                          return app::SlashCommandReply{
+                              .handled = true,
+                              .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root)),
+                          };
+                      },
+                  .session =
+                      [&] {
+                          return app::SlashCommandReply{.handled = true, .text = app::format_current_session(current_session_id, agent_key)};
+                      },
+                  .sessions =
+                      [&] {
+                          if (store == nullptr) {
+                              return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                          }
+                          return app::SlashCommandReply{
+                              .handled = true,
+                              .text = app::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id),
+                          };
+                      },
+                  .agent =
+                      [&] {
+                          return app::SlashCommandReply{.handled = true, .text = app::format_current_agent(agent_key)};
+                      },
+                  .agents =
+                      [&] {
+                          return app::SlashCommandReply{.handled = true, .text = app::format_agent_list(config, agent_key)};
+                      },
+                  .resume =
+                      [&](const std::string &requested_session_id) {
+                          if (store == nullptr) {
+                              return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                          }
+                          const auto resolved_session_id = app::resolve_requested_session(*store, requested_session_id, {}, agent_key);
+                          if (!resolved_session_id.has_value()) {
+                              return app::SlashCommandReply{.handled = true, .text = "No saved sessions available for this agent."};
+                          }
+                          if (!store->session_belongs_to_agent(*resolved_session_id, agent_key)) {
+                              return app::SlashCommandReply{.handled = true, .text = "That session does not belong to the current agent."};
+                          }
+                          return app::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + *resolved_session_id, .session_id = resolved_session_id};
+                      }});
 }
 
 app::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
