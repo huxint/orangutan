@@ -663,6 +663,30 @@ boost::ut::suite extract_auto_candidates_suite = [] {
         expect(found);
     };
 
+    "chinese_project_matches_mid_utterance_with_fixed_key"_test = [] {
+        const auto candidates = memory_detail::extract_auto_candidates("好的，我们在做编译器。");
+        bool found = false;
+        for (const auto &candidate : candidates) {
+            if (candidate.key == "project.current" && candidate.category == "project" && candidate.content == "编译器") {
+                found = true;
+                break;
+            }
+        }
+        expect(found);
+    };
+
+    "chinese_remember_matches_mid_utterance_with_hashed_key"_test = [] {
+        const auto candidates = memory_detail::extract_auto_candidates("好的，请记住：算法高手。");
+        bool found = false;
+        for (const auto &candidate : candidates) {
+            if (candidate.category == "fact" && candidate.content == "算法高手" && candidate.key.rfind("fact.note.", 0) == 0) {
+                found = true;
+                break;
+            }
+        }
+        expect(found);
+    };
+
     "chinese_name_stops_at_invalid_utf8"_test = [] {
         const auto candidates = memory_detail::extract_auto_candidates(std::string{"我叫阿"} + "\xff" + "明");
         bool found = false;

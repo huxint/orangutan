@@ -172,8 +172,18 @@ public:
 boost::ut::suite utf8_utility_suite = [] {
     using namespace boost::ut;
 
-    "truncate_valid_prefix_preserves_codepoint_boundary_with_ellipsis"_test = [] {
-        expect(utf8::truncate_valid_prefix("你好世界", 9, true) == std::string{"你好..."});
+    "sanitize_and_truncate_valid_prefix_preserves_codepoint_boundary_with_ellipsis"_test = [] {
+        expect(utf8::sanitize_and_truncate_valid_prefix("你好世界", 9, true) == std::string{"你好..."});
+    };
+
+    "sanitize_and_truncate_valid_prefix_sanitizes_before_bounding"_test = [] {
+        const std::string malformed = std::string{"A"} + "\xFF" + "你好世界";
+        expect(utf8::sanitize_and_truncate_valid_prefix(malformed, 8, false) == std::string{"A你好"});
+        expect(utf8::sanitize_and_truncate_valid_prefix(malformed, 8, true) == std::string{"A你..."});
+    };
+
+    "sanitize_and_truncate_valid_prefix_skips_ellipsis_when_not_truncated"_test = [] {
+        expect(utf8::sanitize_and_truncate_valid_prefix("ready", 16, true) == std::string{"ready"});
     };
 
     "truncate_valid_suffix_preserves_codepoint_boundary"_test = [] {

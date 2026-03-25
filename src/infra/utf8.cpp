@@ -56,6 +56,10 @@ std::string sanitize(std::string_view input) {
     return result;
 }
 
+std::string sanitize_and_truncate_valid_prefix(std::string_view input, size_t max_bytes, bool append_ellipsis) {
+    return truncate_valid_prefix(sanitize(input), max_bytes, append_ellipsis);
+}
+
 std::string truncate_valid_prefix(std::string_view input, size_t max_bytes, bool append_ellipsis) {
     if (input.size() <= max_bytes) {
         return std::string(input);

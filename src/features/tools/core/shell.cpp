@@ -93,7 +93,7 @@ BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, con
                 throw std::runtime_error("on_complete.prompt must be a string");
             }
             prompt_present = true;
-            prompt = utf8::truncate_valid_prefix(utf8::sanitize(prompt_it->get_ref<const std::string &>()), background_completion_prompt_max_chars, true);
+            prompt = utf8::sanitize_and_truncate_valid_prefix(prompt_it->get_ref<const std::string &>(), background_completion_prompt_max_chars, true);
         }
     }
 

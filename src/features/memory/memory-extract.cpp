@@ -38,7 +38,7 @@ bool is_ascii_whitespace(char32_t codepoint) {
 }
 
 template <typename Stop>
-std::string extract_utf8_prefix(std::string_view input, size_t start, size_t max_codepoints, Stop &&should_stop) {
+std::string extract_utf8_prefix(std::string_view input, size_t start, size_t max_codepoints, Stop should_stop) {
     if (start >= input.size() || max_codepoints == 0) {
         return {};
     }
@@ -96,6 +96,28 @@ size_t skip_optional_capture_prefix_separators(std::string_view input, size_t st
     return start + skipped_bytes;
 }
 
+enum class ChineseCaptureMode {
+    Run,
+    Sentence,
+};
+
+enum class ChineseKeyMode {
+    Fixed,
+    Hashed,
+};
+
+struct ChineseAutoCaptureRule {
+    std::span<const std::string_view> prefixes;
+    ChineseCaptureMode capture_mode;
+    size_t max_codepoints;
+    std::span<const char32_t> terminators;
+    bool skip_optional_separators;
+    ChineseKeyMode key_mode;
+    std::string_view key;
+    std::string_view category;
+    double importance;
+};
+
 // CJK punctuation/code-point terminators for literal-prefix captures.
 constexpr auto cjk_name_terminators = std::to_array<char32_t>({
     U'。',
@@ -130,6 +152,55 @@ constexpr auto chinese_remember_prefixes = std::to_array<std::string_view>({
     "记住",
 });
 
+constexpr auto chinese_auto_capture_rules = std::to_array<ChineseAutoCaptureRule>({
+    ChineseAutoCaptureRule{
+        .prefixes = chinese_name_prefixes,
+        .capture_mode = ChineseCaptureMode::Run,
+        .max_codepoints = 20,
+        .terminators = cjk_name_terminators,
+        .skip_optional_separators = false,
+        .key_mode = ChineseKeyMode::Fixed,
+        .key = "profile.name",
+        .category = "profile",
+        .importance = 0.95,
+    },
+    ChineseAutoCaptureRule{
+        .prefixes = chinese_project_prefixes,
+        .capture_mode = ChineseCaptureMode::Sentence,
+        .max_codepoints = 40,
+        .terminators = cjk_sentence_terminators,
+        .skip_optional_separators = false,
+        .key_mode = ChineseKeyMode::Fixed,
+        .key = "project.current",
+        .category = "project",
+        .importance = 0.8,
+    },
+    ChineseAutoCaptureRule{
+        .prefixes = chinese_prefer_prefixes,
+        .capture_mode = ChineseCaptureMode::Sentence,
+        .max_codepoints = 40,
+        .terminators = cjk_sentence_terminators,
+        .skip_optional_separators = false,
+        .key_mode = ChineseKeyMode::Fixed,
+        .key = "preference.general",
+        .category = "preference",
+        .importance = 0.65,
+    },
+    ChineseAutoCaptureRule{
+        .prefixes = chinese_remember_prefixes,
+        .capture_mode = ChineseCaptureMode::Sentence,
+        .max_codepoints = 60,
+        .terminators = cjk_sentence_terminators,
+        .skip_optional_separators = true,
+        .key_mode = ChineseKeyMode::Hashed,
+        .key = "fact.note.",
+        .category = "fact",
+        .importance = 0.85,
+    },
+});
+
+std::string hash_key(std::string_view prefix, std::string_view value);
+
 std::string make_slug(std::string_view value) {
     std::string slug;
     slug.reserve(value.size());
@@ -159,6 +230,26 @@ std::string make_slug(std::string_view value) {
         slug = std::to_string(std::hash<std::string_view>{}(value));
     }
     return slug;
+}
+
+std::string make_chinese_candidate_key(const ChineseAutoCaptureRule &rule, std::string_view content) {
+    if (rule.key_mode == ChineseKeyMode::Hashed) {
+        return hash_key(rule.key, content);
+    }
+
+    return std::string(rule.key);
+}
+
+std::string extract_chinese_candidate_content(std::string_view text, const ChineseAutoCaptureRule &rule, size_t start) {
+    if (rule.skip_optional_separators) {
+        start = skip_optional_capture_prefix_separators(text, start);
+    }
+
+    if (rule.capture_mode == ChineseCaptureMode::Run) {
+        return extract_utf8_run(text, start, rule.max_codepoints, rule.terminators);
+    }
+
+    return extract_utf8_sentence(text, start, rule.max_codepoints, rule.terminators);
 }
 
 std::string hash_key(std::string_view prefix, std::string_view value) {
@@ -214,6 +305,31 @@ bool should_attempt_auto_capture(const std::string &text) {
     return !(looks_question &&
              (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") || trimmed.contains("记忆")));
 }
+constexpr const ChineseAutoCaptureRule &chinese_name_rule = chinese_auto_capture_rules[0];
+constexpr const ChineseAutoCaptureRule &chinese_project_rule = chinese_auto_capture_rules[1];
+constexpr const ChineseAutoCaptureRule &chinese_prefer_rule = chinese_auto_capture_rules[2];
+constexpr const ChineseAutoCaptureRule &chinese_remember_rule = chinese_auto_capture_rules[3];
+
+bool push_chinese_auto_candidate(std::vector<AutoCandidate> &candidates, std::string_view text, const ChineseAutoCaptureRule &rule) {
+    auto pos = find_after_any(text, rule.prefixes);
+    if (pos == std::string_view::npos) {
+        return false;
+    }
+
+    auto content = trim_copy(extract_chinese_candidate_content(text, rule, pos));
+    if (content.empty()) {
+        return false;
+    }
+
+    candidates.push_back({
+        .key = make_chinese_candidate_key(rule, content),
+        .content = std::move(content),
+        .category = std::string(rule.category),
+        .importance = rule.importance,
+    });
+    return true;
+}
+
 std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     std::vector<AutoCandidate> candidates;
     const auto trimmed = trim_copy(text);
@@ -236,69 +352,17 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     };
 
     // --- Chinese patterns: literal prefix detection + code-point-aware extraction ---
-
-    const auto push_chinese_name = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, chinese_name_prefixes);
-        if (pos == std::string_view::npos) {
-            return false;
-        }
-        auto content = trim_copy(extract_utf8_run(trimmed, pos, 20, cjk_name_terminators));
-        if (content.empty()) {
-            return false;
-        }
-        candidates.push_back({.key = "profile.name", .content = std::move(content), .category = "profile", .importance = 0.95});
-        return true;
-    };
-
-    const auto push_chinese_project = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, chinese_project_prefixes);
-        if (pos == std::string_view::npos) {
-            return false;
-        }
-        auto content = trim_copy(extract_utf8_sentence(trimmed, pos, 40, cjk_sentence_terminators));
-        if (content.empty()) {
-            return false;
-        }
-        candidates.push_back({.key = "project.current", .content = std::move(content), .category = "project", .importance = 0.8});
-        return true;
-    };
-
-    const auto push_chinese_prefer = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, chinese_prefer_prefixes);
-        if (pos == std::string_view::npos) {
-            return false;
-        }
-        auto content = trim_copy(extract_utf8_sentence(trimmed, pos, 40, cjk_sentence_terminators));
-        if (content.empty()) {
-            return false;
-        }
-        candidates.push_back({.key = "preference.general", .content = std::move(content), .category = "preference", .importance = 0.65});
-        return true;
-    };
-
-    const auto push_chinese_remember = [&candidates, &trimmed]() {
-        auto pos = find_after_any(trimmed, chinese_remember_prefixes);
-        if (pos == std::string_view::npos) {
-            return false;
-        }
-        pos = skip_optional_capture_prefix_separators(trimmed, pos);
-        auto content = trim_copy(extract_utf8_sentence(trimmed, pos, 60, cjk_sentence_terminators));
-        if (content.empty()) {
-            return false;
-        }
-        candidates.push_back({.key = hash_key("fact.note.", content), .content = std::move(content), .category = "fact", .importance = 0.85});
-        return true;
-    };
+    // Keep these rule-driven so prefix lists, extraction mode, and keying stay in sync.
 
     // --- Name ---
     if (!push_ctre_match(ctre::search<R"((?i)\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))">(trimmed), "profile.name", "profile", 0.95)) {
-        static_cast<void>(push_chinese_name());
+        static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_name_rule));
     }
 
     // --- Project ---
     if (!push_ctre_match(ctre::search<R"((?i)\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))">(trimmed), "project.current", "project",
                          0.8)) {
-        static_cast<void>(push_chinese_project());
+        static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_project_rule));
     }
 
     // --- Favorite ---
@@ -312,7 +376,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     // --- Preference ---
     if (!push_ctre_match(ctre::search<R"((?i)\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))">(trimmed), "preference.general", "preference", 0.65)) {
-        static_cast<void>(push_chinese_prefer());
+        static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_prefer_rule));
     }
 
     // --- Remember ---
@@ -322,7 +386,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
             candidates.push_back({.key = hash_key("fact.note.", value), .content = value, .category = "fact", .importance = 0.85});
         }
     } else {
-        static_cast<void>(push_chinese_remember());
+        static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_remember_rule));
     }
 
     candidates.erase(std::ranges::remove_if(candidates,

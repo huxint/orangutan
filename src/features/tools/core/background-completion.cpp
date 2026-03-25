@@ -1,6 +1,5 @@
 #include "features/tools/core/background-completion.hpp"
 
-#include "features/automation/runtime.hpp"
 #include "features/automation/types.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "infra/utf8.hpp"
@@ -45,16 +44,12 @@ std::string process_status(const BackgroundProcessCompletionEvent &event) {
     }
 }
 
-std::string sanitize_and_truncate_text(std::string_view text, size_t max_bytes, bool append_ellipsis = true) {
-    return utf8::truncate_valid_prefix(utf8::sanitize(text), max_bytes, append_ellipsis);
-}
-
 std::string scrub_and_bound_title(std::string_view title) {
     return utf8::truncate_valid_prefix(scrub_tool_output(utf8::sanitize(title)), max_inbox_title_chars, true);
 }
 
 std::string clip_command(std::string_view command) {
-    return sanitize_and_truncate_text(command, max_title_command_chars);
+    return utf8::sanitize_and_truncate_valid_prefix(command, max_title_command_chars, true);
 }
 
 json summarize_output(const BackgroundProcessOutputMetadata &output) {
@@ -79,7 +74,7 @@ std::string completion_mode(const std::map<std::string, std::string> &metadata) 
 
 std::optional<std::string> completion_prompt(const std::map<std::string, std::string> &metadata) {
     if (const auto it = metadata.find(std::string(background_completion_prompt_metadata_key)); it != metadata.end()) {
-        return sanitize_and_truncate_text(it->second, background_completion_prompt_max_chars);
+        return utf8::sanitize_and_truncate_valid_prefix(it->second, background_completion_prompt_max_chars, true);
     }
     return std::nullopt;
 }
@@ -87,11 +82,11 @@ std::optional<std::string> completion_prompt(const std::map<std::string, std::st
 json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
     json payload = {
         {"type", completion_message_type},
-        {"runtime_key", sanitize_and_truncate_text(runtime_key, max_runtime_key_chars)},
-        {"agent_key", sanitize_and_truncate_text(agent_key, max_agent_key_chars)},
-        {"process_id", sanitize_and_truncate_text(event.process_id, max_process_id_chars)},
-        {"command", sanitize_and_truncate_text(event.command, max_command_chars)},
-        {"working_dir", sanitize_and_truncate_text(event.working_dir, max_working_dir_chars)},
+        {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key, max_runtime_key_chars, true)},
+        {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key, max_agent_key_chars, true)},
+        {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, max_process_id_chars, true)},
+        {"command", utf8::sanitize_and_truncate_valid_prefix(event.command, max_command_chars, true)},
+        {"working_dir", utf8::sanitize_and_truncate_valid_prefix(event.working_dir, max_working_dir_chars, true)},
         {"pid", event.pid},
         {"status", process_status(event)},
         {"kill_requested", event.kill_requested},
@@ -115,7 +110,7 @@ std::string failure_reason_or_default(const std::optional<std::string> &reason) 
     if (!reason.has_value() || reason->empty()) {
         return "resume callback returned an unspecified failure";
     }
-    return sanitize_and_truncate_text(*reason, max_failure_reason_chars);
+    return utf8::sanitize_and_truncate_valid_prefix(*reason, max_failure_reason_chars, true);
 }
 
 bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
@@ -180,10 +175,10 @@ void BackgroundCompletionDispatcher::dispatch(const BackgroundProcessCompletionE
     const auto insert_resume_failure_note = [&](std::string_view reason) {
         const auto failure_payload = json{
             {"type", completion_resume_failure_type},
-            {"runtime_key", sanitize_and_truncate_text(runtime_key_, max_runtime_key_chars)},
-            {"agent_key", sanitize_and_truncate_text(agent_key_, max_agent_key_chars)},
-            {"process_id", sanitize_and_truncate_text(event.process_id, max_process_id_chars)},
-            {"reason", sanitize_and_truncate_text(reason, max_failure_reason_chars)},
+            {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key_, max_runtime_key_chars, true)},
+            {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key_, max_agent_key_chars, true)},
+            {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, max_process_id_chars, true)},
+            {"reason", utf8::sanitize_and_truncate_valid_prefix(reason, max_failure_reason_chars, true)},
             {"completion", persisted_payload},
         };
         const auto failure_body = scrub_tool_output(failure_payload.dump(2));
