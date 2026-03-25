@@ -7,7 +7,7 @@
 
 #include <filesystem>
 #include <fstream>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 
@@ -59,164 +59,160 @@ private:
     std::filesystem::path memory_db_path_;
 };
 
-boost::ut::suite session_workflow_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("start_new_session_distills_and_persists_previous_history") {
+    SessionWorkflowHarness harness;
+    DistillingWorkflowProvider provider;
+    ToolRegistry tools;
+    MemoryStore memory_store(harness.memory_db_path());
+    RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:test"});
+    SessionStore session_store(harness.session_db_path());
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
 
-    "start_new_session_distills_and_persists_previous_history"_test = [] {
-        SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
-        ToolRegistry tools;
-        MemoryStore memory_store(harness.memory_db_path());
-        RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:test"});
-        SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+    loop.set_history({
+        Message::user_text("we are working on orangutan refactor"),
+        Message::assistant_text("Understood"),
+    });
 
-        loop.set_history({
-            Message::user_text("we are working on orangutan refactor"),
-            Message::assistant_text("Understood"),
-        });
+    std::string current_session_id;
+    const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
-        std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+    CHECK(result.had_history);
+    CHECK(result.distillation.distilled);
+    CHECK(loop.history().empty());
+    CHECK(current_session_id.empty());
 
-        expect(result.had_history);
-        expect(result.distillation.distilled);
-        expect(loop.history().empty());
-        expect(current_session_id.empty());
+    const auto sessions = session_store.list_sessions("scope:test");
+    CHECK(sessions.size() == 1ul);
+    CHECK(result.previous_session_id == sessions.front().id);
+    CHECK(sessions.front().agent_key == "coder");
+    CHECK(sessions.front().origin_kind == "cli");
+    CHECK(sessions.front().origin_ref == "cli:local");
+    const auto memory = memory_store.recall("project.current", "scope:test");
+    CHECK(memory.contains("orangutan refactor"));
+};
 
-        const auto sessions = session_store.list_sessions("scope:test");
-        expect(sessions.size() == 1_ul);
-        expect(result.previous_session_id == sessions.front().id);
-        expect(sessions.front().agent_key == "coder");
-        expect(sessions.front().origin_kind == "cli");
-        expect(sessions.front().origin_ref == "cli:local");
-        const auto memory = memory_store.recall("project.current", "scope:test");
-        expect(memory.find("orangutan refactor") != std::string::npos);
-    };
+TEST_CASE("load_session_into_agent_rejects_scope_mismatch") {
+    SessionWorkflowHarness harness;
+    DistillingWorkflowProvider provider;
+    ToolRegistry tools;
+    SessionStore session_store(harness.session_db_path());
+    AgentLoop loop(provider, tools);
 
-    "load_session_into_agent_rejects_scope_mismatch"_test = [] {
-        SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
-        ToolRegistry tools;
-        SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools);
+    const auto session_id = session_store.save({Message::user_text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
+    std::string current_session_id;
+    const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
 
-        const auto session_id = session_store.save({Message::user_text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
-        std::string current_session_id;
-        const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
+    CHECK_FALSE(result.loaded);
+    CHECK(result.status.contains("does not belong"));
+    CHECK(loop.history().empty());
+};
 
-        expect(not result.loaded);
-        expect(result.status.find("does not belong") != std::string::npos);
-        expect(loop.history().empty());
-    };
+TEST_CASE("resolve_requested_session_supports_latest") {
+    SessionWorkflowHarness harness;
+    SessionStore session_store(harness.session_db_path());
+    const auto first_id = session_store.save({Message::user_text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+    const auto second_id = session_store.save({Message::user_text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
-    "resolve_requested_session_supports_latest"_test = [] {
-        SessionWorkflowHarness harness;
-        SessionStore session_store(harness.session_db_path());
-        const auto first_id = session_store.save({Message::user_text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
-        const auto second_id = session_store.save({Message::user_text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+    const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
+    REQUIRE(latest.has_value());
+    if (latest.has_value()) {
+        CHECK(*latest != first_id);
+        CHECK(*latest == second_id);
+    }
+};
 
-        const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
-        expect(latest.has_value() >> fatal);
-        if (latest.has_value()) {
-            expect(*latest != first_id);
-            expect(*latest == second_id);
-        }
-    };
+TEST_CASE("resolve_requested_session_uses_agent_ownership_when_scope_is_empty") {
+    SessionWorkflowHarness harness;
+    SessionStore session_store(harness.session_db_path());
+    session_store.save({Message::user_text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
+    const auto first_default = session_store.save({Message::user_text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
+    const auto second_default = session_store.save({Message::user_text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
 
-    "resolve_requested_session_uses_agent_ownership_when_scope_is_empty"_test = [] {
-        SessionWorkflowHarness harness;
-        SessionStore session_store(harness.session_db_path());
-        session_store.save({Message::user_text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
-        const auto first_default = session_store.save({Message::user_text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
-        const auto second_default = session_store.save({Message::user_text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
+    const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
+    REQUIRE(latest.has_value());
+    if (latest.has_value()) {
+        CHECK(*latest != first_default);
+        CHECK(*latest == second_default);
+    }
+};
 
-        const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
-        expect(latest.has_value() >> fatal);
-        if (latest.has_value()) {
-            expect(*latest != first_default);
-            expect(*latest == second_default);
-        }
-    };
+TEST_CASE("start_new_session_writes_mirror_artifacts_when_enabled") {
+    SessionWorkflowHarness harness;
+    DistillingWorkflowProvider provider;
+    ToolRegistry tools;
+    MemoryStore memory_store(harness.memory_db_path());
+    const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
+    RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{
+                                                   .scope = "scope:test",
+                                                   .workspace = workspace.string(),
+                                                   .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
+                                               });
+    SessionStore session_store(harness.session_db_path());
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
 
-    "start_new_session_writes_mirror_artifacts_when_enabled"_test = [] {
-        SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
-        ToolRegistry tools;
-        MemoryStore memory_store(harness.memory_db_path());
-        const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
-        RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{
-                                                       .scope = "scope:test",
-                                                       .workspace = workspace.string(),
-                                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
-                                                   });
-        SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+    loop.set_history({
+        Message::user_text("we are working on orangutan refactor"),
+        Message::assistant_text("Understood"),
+    });
 
-        loop.set_history({
-            Message::user_text("we are working on orangutan refactor"),
-            Message::assistant_text("Understood"),
-        });
+    std::string current_session_id;
+    const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+    CHECK(result.distillation.distilled);
 
-        std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
-        expect(result.distillation.distilled);
+    const auto snapshot = workspace / "MEMORY.md";
+    REQUIRE(std::filesystem::exists(snapshot));
+    CHECK(std::ifstream(snapshot).peek() != std::ifstream::traits_type::eof());
 
-        const auto snapshot = workspace / "MEMORY.md";
-        expect(std::filesystem::exists(snapshot) >> fatal);
-        expect(std::ifstream(snapshot).peek() != std::ifstream::traits_type::eof());
+    const auto journal_root = workspace / "memory";
+    REQUIRE(std::filesystem::exists(journal_root));
+    auto it = std::filesystem::directory_iterator(journal_root);
+    REQUIRE(it != std::filesystem::directory_iterator{});
 
-        const auto journal_root = workspace / "memory";
-        expect(std::filesystem::exists(journal_root) >> fatal);
-        auto it = std::filesystem::directory_iterator(journal_root);
-        expect((it != std::filesystem::directory_iterator{}) >> fatal);
+    std::filesystem::remove_all(workspace);
+};
 
-        std::filesystem::remove_all(workspace);
-    };
+TEST_CASE("describe_new_session_result_uses_markdown_slash_reply_format") {
+    const auto text = app::describe_new_session_result(
+        app::NewSessionResult{
+            .had_history = true,
+            .distillation =
+                {
+                    .distilled = true,
+                    .memories_stored = 3,
+                },
+        },
+        true);
 
-    "describe_new_session_result_uses_markdown_slash_reply_format"_test = [] {
-        const auto text = app::describe_new_session_result(
-            app::NewSessionResult{
-                .had_history = true,
-                .distillation =
-                    {
-                        .distilled = true,
-                        .memories_stored = 3,
-                    },
-            },
-            true);
+    CHECK(text == "## Session\n- ✨ Started a new session.");
+};
 
-        expect(text == "## Session\n- ✨ Started a new session.");
-    };
+TEST_CASE("export_session_markdown_writes_complete_transcript_to_workspace_exports") {
+    const auto workspace = orangutan::testing::unique_test_root("session-export");
 
-    "export_session_markdown_writes_complete_transcript_to_workspace_exports"_test = [] {
-        const auto workspace = orangutan::testing::unique_test_root("session-export");
+    const auto result = app::export_session_markdown(
+        {
+            Message::user_text("hello"),
+            {.role = Role::assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
+            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
+        },
+        "session-123", workspace.string());
 
-        const auto result = app::export_session_markdown(
-            {
-                Message::user_text("hello"),
-                {.role = Role::assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
-                {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
-            },
-            "session-123", workspace.string());
+    REQUIRE(result.exported);
+    REQUIRE(std::filesystem::exists(result.path));
 
-        expect(result.exported >> fatal);
-        expect(std::filesystem::exists(result.path) >> fatal);
+    std::ifstream in(result.path);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content.contains("# Session Export"));
+    CHECK(content.contains("- Session: `session-123`"));
+    CHECK(content.contains("## User 1"));
+    CHECK(content.contains("hello"));
+    CHECK(content.contains("### Tool Use: `read`"));
+    CHECK(content.contains("\"path\": \"README.md\""));
+    CHECK(content.contains("### Tool Result"));
+    CHECK(content.contains("file contents"));
+    CHECK(app::describe_export_result(result) == "## Export\n- Saved current session to `" + result.path + '`');
 
-        std::ifstream in(result.path);
-        const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        expect(content.find("# Session Export") != std::string::npos);
-        expect(content.find("- Session: `session-123`") != std::string::npos);
-        expect(content.find("## User 1") != std::string::npos);
-        expect(content.find("hello") != std::string::npos);
-        expect(content.find("### Tool Use: `read`") != std::string::npos);
-        expect(content.find("\"path\": \"README.md\"") != std::string::npos);
-        expect(content.find("### Tool Result") != std::string::npos);
-        expect(content.find("file contents") != std::string::npos);
-        expect(app::describe_export_result(result) == "## Export\n- Saved current session to `" + result.path + '`');
-
-        std::filesystem::remove_all(workspace);
-    };
+    std::filesystem::remove_all(workspace);
 };
 
 } // namespace

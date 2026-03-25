@@ -13,7 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <mutex>
 #include <spdlog/logger.h>
@@ -207,786 +207,782 @@ private:
     std::filesystem::path workspace_root_;
 };
 
-boost::ut::suite channel_serve_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("resolves_agent_override_ahead_of_qq_routing") {
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "ping",
+        .agent_override = "assistant",
+    };
+    const std::unordered_map<std::string, std::string> qq_bot_agents{{"bot-a", "qq-agent"}};
 
-    "resolves_agent_override_ahead_of_qq_routing"_test = [] {
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "ping",
-            .agent_override = "assistant",
-        };
-        const std::unordered_map<std::string, std::string> qq_bot_agents{{"bot-a", "qq-agent"}};
+    CHECK(app::resolve_agent_key_for_message(message, qq_bot_agents) == "assistant");
+};
 
-        expect(app::resolve_agent_key_for_message(message, qq_bot_agents) == "assistant");
+TEST_CASE("delivers_cli_reply_without_calling_channel_send") {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger("channel-serve-test", sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "cli",
     };
 
-    "delivers_cli_reply_without_calling_channel_send"_test = [] {
-        auto sink = std::make_shared<MemorySink>();
-        ScopedDefaultLogger logger("channel-serve-test", sink);
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    CHECK(app::resolve_reply_target(message) == "cli");
+    CHECK(completes_without_throw([&] {
+        app::deliver_reply(message, "done", manager);
+    }));
+    CHECK(qq->sent_messages().empty());
+    CHECK(ChannelServeHarness::contains_line(sink->lines(), "done"));
+};
 
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "prompt",
-            .reply_target = "cli",
-        };
+TEST_CASE("empty_reply_target_falls_back_to_cli") {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger("channel-serve-test", sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        expect(app::resolve_reply_target(message) == "cli");
-        expect(completes_without_throw([&] {
-            app::deliver_reply(message, "done", manager);
-        }));
-        expect(qq->sent_messages().empty());
-        expect(ChannelServeHarness::contains_line(sink->lines(), "done"));
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "",
     };
 
-    "empty_reply_target_falls_back_to_cli"_test = [] {
-        auto sink = std::make_shared<MemorySink>();
-        ScopedDefaultLogger logger("channel-serve-test", sink);
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    CHECK(app::resolve_reply_target(message) == "cli");
+    CHECK(completes_without_throw([&] {
+        app::deliver_reply(message, "fallback", manager);
+    }));
+    CHECK(qq->sent_messages().empty());
+    CHECK(ChannelServeHarness::contains_line(sink->lines(), "fallback"));
+};
 
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "prompt",
-            .reply_target = "",
-        };
+TEST_CASE("delivers_explicit_outbound_jid_through_owning_channel") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        expect(app::resolve_reply_target(message) == "cli");
-        expect(completes_without_throw([&] {
-            app::deliver_reply(message, "fallback", manager);
-        }));
-        expect(qq->sent_messages().empty());
-        expect(ChannelServeHarness::contains_line(sink->lines(), "fallback"));
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "qqbot:c2c:42",
     };
 
-    "delivers_explicit_outbound_jid_through_owning_channel"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    CHECK(app::resolve_reply_target(message) == "qqbot:c2c:42");
+    CHECK(completes_without_throw([&] {
+        app::deliver_reply(message, "sent", manager);
+    }));
+    CHECK(qq->sent_messages().size() == 1ul);
+    CHECK(qq->sent_messages()[0].first == "qqbot:c2c:42");
+    CHECK(qq->sent_messages()[0].second == "sent");
+};
 
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "prompt",
-            .reply_target = "qqbot:c2c:42",
-        };
+TEST_CASE("logs_unowned_outbound_jid_without_throwing") {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger("channel-serve-test", sink);
+    ChannelManager manager;
 
-        expect(app::resolve_reply_target(message) == "qqbot:c2c:42");
-        expect(completes_without_throw([&] {
-            app::deliver_reply(message, "sent", manager);
-        }));
-        expect(qq->sent_messages().size() == 1_ul);
-        expect(qq->sent_messages()[0].first == "qqbot:c2c:42");
-        expect(qq->sent_messages()[0].second == "sent");
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "prompt",
+        .reply_target = "qqbot:c2c:missing",
     };
 
-    "logs_unowned_outbound_jid_without_throwing"_test = [] {
-        auto sink = std::make_shared<MemorySink>();
-        ScopedDefaultLogger logger("channel-serve-test", sink);
-        ChannelManager manager;
+    CHECK(completes_without_throw([&] {
+        app::deliver_reply(message, "still complete", manager);
+    }));
+    CHECK(ChannelServeHarness::contains_line(sink->lines(), "qqbot:c2c:missing"));
+};
 
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "prompt",
-            .reply_target = "qqbot:c2c:missing",
-        };
+TEST_CASE("builds_skill_prompt_for_effective_agent_workspace") {
+    ChannelServeHarness harness;
+    ChannelServeHarness::write_skill(harness.home_root() / ".orangutan" / "skills", "home-skill", "home-skill", "Home skill body");
+    ChannelServeHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
 
-        expect(completes_without_throw([&] {
-            app::deliver_reply(message, "still complete", manager);
-        }));
-        expect(ChannelServeHarness::contains_line(sink->lines(), "qqbot:c2c:missing"));
+    ScopedEnvVar home_env("HOME", harness.home_root().string());
+
+    Config cfg;
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "assistant",
+        .system_prompt = "You are the assistant.",
+        .workspace_root = harness.workspace_root().string(),
     };
 
-    "builds_skill_prompt_for_effective_agent_workspace"_test = [] {
-        ChannelServeHarness harness;
-        ChannelServeHarness::write_skill(harness.home_root() / ".orangutan" / "skills", "home-skill", "home-skill", "Home skill body");
-        ChannelServeHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
+    const auto prompt = app::build_skill_prompt_for_runtime(cfg, runtime_cfg);
+    CHECK(prompt.contains("## Active Skills"));
+    CHECK(prompt.contains("### home-skill"));
+    CHECK(prompt.contains("### workspace-skill"));
+};
 
-        ScopedEnvVar home_env("HOME", harness.home_root().string());
+TEST_CASE("conversation_runtime_preserves_channel_context_and_shared_capabilities") {
+    ChannelServeHarness harness;
+    MemoryStore memory_store((harness.temp_root() / "memory.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
 
-        Config cfg;
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "assistant",
-            .system_prompt = "You are the assistant.",
-            .workspace_root = harness.workspace_root().string(),
-        };
-
-        const auto prompt = app::build_skill_prompt_for_runtime(cfg, runtime_cfg);
-        expect(prompt.find("## Active Skills") != std::string::npos);
-        expect(prompt.find("### home-skill") != std::string::npos);
-        expect(prompt.find("### workspace-skill") != std::string::npos);
+    Config cfg;
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .fallback_models = {"gpt-fallback"},
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = harness.workspace_root().string(),
     };
 
-    "conversation_runtime_preserves_channel_context_and_shared_capabilities"_test = [] {
-        ChannelServeHarness harness;
-        MemoryStore memory_store((harness.temp_root() / "memory.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
+    const auto inspection = app::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
 
-        Config cfg;
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
-            .model = "gpt-test",
-            .fallback_models = {"gpt-fallback"},
-            .base_url = "https://example.test",
-            .system_prompt = "You are a test agent.",
-            .workspace_root = harness.workspace_root().string(),
-        };
+    CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
+    CHECK(inspection.runtime_origin == SubagentRuntimeOrigin::channel);
+    CHECK(inspection.raw_caller_id == "qqbot:c2c:alice");
+    CHECK(inspection.has_agent);
+    CHECK(inspection.has_hook_manager);
+    CHECK(inspection.session_scope_key == derive_channel_runtime_key("qqbot:c2c:alice", "default"));
+    CHECK(inspection.configured_model == "gpt-test");
+    CHECK(inspection.fallback_models.size() == 1ul);
+    CHECK(inspection.fallback_models.front() == "gpt-fallback");
+};
 
-        const auto inspection = app::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
+TEST_CASE("delivers_command_reply_to_cli_without_calling_channel_send") {
+    auto sink = std::make_shared<MemorySink>();
+    ScopedDefaultLogger logger("channel-serve-test", sink);
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        expect(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
-        expect(inspection.runtime_origin == SubagentRuntimeOrigin::channel);
-        expect(inspection.raw_caller_id == "qqbot:c2c:alice");
-        expect(inspection.has_agent);
-        expect(inspection.has_hook_manager);
-        expect(inspection.session_scope_key == derive_channel_runtime_key("qqbot:c2c:alice", "default"));
-        expect(inspection.configured_model == "gpt-test");
-        expect(inspection.fallback_models.size() == 1_ul);
-        expect(inspection.fallback_models.front() == "gpt-fallback");
+    const InboundMessage message{
+        .jid = "heartbeat:daily",
+        .content = "/agent",
+        .reply_target = "cli",
     };
 
-    "delivers_command_reply_to_cli_without_calling_channel_send"_test = [] {
-        auto sink = std::make_shared<MemorySink>();
-        ScopedDefaultLogger logger("channel-serve-test", sink);
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    CHECK(completes_without_throw([&] {
+        app::deliver_command_reply(message, "Current agent: assistant", manager);
+    }));
+    CHECK(qq->sent_messages().empty());
+    CHECK(ChannelServeHarness::contains_line(sink->lines(), "Current agent: assistant"));
+};
 
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "/agent",
-            .reply_target = "cli",
-        };
+TEST_CASE("run_channel_loop_replies_when_runtime_creation_fails") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        expect(completes_without_throw([&] {
-            app::deliver_command_reply(message, "Current agent: assistant", manager);
-        }));
-        expect(qq->sent_messages().empty());
-        expect(ChannelServeHarness::contains_line(sink->lines(), "Current agent: assistant"));
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs;
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
+    Config cfg;
+
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+    });
+
+    queue.push(InboundMessage{
+        .jid = "qqbot:c2c:42",
+        .content = "hello",
+        .agent_override = "missing",
+    });
+
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    stop_requested.store(true);
+    queue.shutdown();
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+    const auto sent_messages = qq->sent_messages();
+    REQUIRE(not sent_messages.empty());
+    CHECK(sent_messages[0].first == "qqbot:c2c:42");
+    CHECK(sent_messages[0].second.contains("Error: No runtime configuration for agent: missing"));
+};
+
+TEST_CASE("channel_approval_coordinator_prompts_and_accepts_replies") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    const InboundMessage request{
+        .jid = "qqbot:c2c:42",
+        .content = "run shell",
+    };
+    auto callback = coordinator.make_callback(request, manager);
+    REQUIRE(callback != nullptr);
+
+    auto future = std::async(std::launch::async, [&callback] {
+        return callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+    });
+
+    for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    const auto sent_messages = qq->sent_messages();
+    REQUIRE(not sent_messages.empty());
+    CHECK(sent_messages[0].first == "qqbot:c2c:42");
+    const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].second);
+    CHECK_FALSE(request_id.empty());
+    CHECK(sent_messages[0].second.contains(request_id + " yes"));
+
+    CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " yes"}, manager));
+    CHECK(future.get());
+};
+
+TEST_CASE("channel_approval_coordinator_consumes_invalid_replies_while_waiting") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    const InboundMessage request{
+        .jid = "qqbot:c2c:99",
+        .content = "run shell",
+    };
+    auto callback = coordinator.make_callback(request, manager);
+    REQUIRE(callback != nullptr);
+
+    auto future = std::async(std::launch::async, [&callback] {
+        return callback(ToolUseBlock{.id = "deny-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+    });
+
+    for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    auto sent_messages = qq->sent_messages();
+    REQUIRE(not sent_messages.empty());
+    const auto request_id = ChannelServeHarness::extract_request_id(sent_messages.front().second);
+    CHECK_FALSE(request_id.empty());
+
+    CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "maybe"}, manager));
+    sent_messages = qq->sent_messages();
+    CHECK(sent_messages.size() >= 2ul);
+    CHECK(sent_messages.back().second.contains(request_id + " yes"));
+
+    CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "shell-approval-999 no"}, manager));
+    sent_messages = qq->sent_messages();
+    CHECK(sent_messages.size() >= 3ul);
+    CHECK(sent_messages.back().second.contains("Shell approval is pending"));
+
+    CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " no"}, manager));
+    CHECK_FALSE(future.get());
+};
+
+TEST_CASE("channel_approval_coordinator_disables_prompts_when_replies_cannot_return_to_same_conversation") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+
+    CHECK(coordinator.make_callback(
+              InboundMessage{
+                  .jid = "heartbeat:nightly",
+                  .reply_target = "qqbot:c2c:42",
+              },
+              manager) == nullptr);
+
+    CHECK(coordinator.make_callback(
+              InboundMessage{
+                  .jid = "qqbot:c2c:42",
+                  .reply_target = "qqbot:c2c:other",
+              },
+              manager) == nullptr);
+};
+
+TEST_CASE("approval_wait_does_not_starve_other_jids_and_shutdown_cancels_it") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    JidTaskRunner runner(1);
+    app::ChannelApprovalCoordinator coordinator(std::chrono::seconds(5));
+    const InboundMessage approval_request{
+        .jid = "qqbot:c2c:42",
+        .content = "run shell",
     };
 
-    "run_channel_loop_replies_when_runtime_creation_fails"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    std::promise<void> bob_started;
+    auto bob_started_future = bob_started.get_future();
+    std::promise<void> approval_finished;
+    auto approval_finished_future = approval_finished.get_future();
+    std::atomic<bool> approval_result = true;
 
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
+    runner.submit(approval_request.jid, [&] {
+        auto callback = coordinator.make_callback(approval_request, manager, &runner);
+        approval_result.store(callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
+        approval_finished.set_value();
+    });
 
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs;
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
-        Config cfg;
+    runner.submit("qqbot:c2c:99", [&] {
+        bob_started.set_value();
+    });
 
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
-        });
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
-        queue.push(InboundMessage{
-            .jid = "qqbot:c2c:42",
-            .content = "hello",
-            .agent_override = "missing",
-        });
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(bob_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
 
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    coordinator.shutdown();
+    CHECK(approval_finished_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    CHECK_FALSE(approval_result.load());
 
-        stop_requested.store(true);
-        queue.shutdown();
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    const auto sent_messages = qq->sent_messages();
+    CHECK(sent_messages.size() == 1ul);
+    CHECK(sent_messages.front().second.contains("Request: shell-approval-"));
 
-        const auto sent_messages = qq->sent_messages();
-        expect(not sent_messages.empty() >> fatal);
-        expect(sent_messages[0].first == "qqbot:c2c:42");
-        expect(sent_messages[0].second.find("Error: No runtime configuration for agent: missing") != std::string::npos);
+    runner.shutdown(true);
+};
+
+TEST_CASE("channel_approval_coordinator_rejects_callbacks_after_shutdown") {
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    const InboundMessage request{
+        .jid = "qqbot:c2c:42",
+        .content = "run shell",
     };
+    auto callback = coordinator.make_callback(request, manager);
+    REQUIRE(callback != nullptr);
 
-    "channel_approval_coordinator_prompts_and_accepts_replies"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    coordinator.shutdown();
 
-        app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
-        const InboundMessage request{
-            .jid = "qqbot:c2c:42",
-            .content = "run shell",
-        };
-        auto callback = coordinator.make_callback(request, manager);
-        expect((callback != nullptr) >> fatal);
+    CHECK_FALSE(callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
+    CHECK(qq->sent_messages().empty());
+    CHECK(coordinator.make_callback(request, manager) == nullptr);
+};
 
-        auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
-        });
+TEST_CASE("new_command_updates_bound_session_with_channel_metadata") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
 
-        const auto sent_messages = qq->sent_messages();
-        expect(not sent_messages.empty() >> fatal);
-        expect(sent_messages[0].first == "qqbot:c2c:42");
-        const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].second);
-        expect(not request_id.empty());
-        expect(sent_messages[0].second.find(request_id + " yes") != std::string::npos);
-
-        expect(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " yes"}, manager));
-        expect(future.get());
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = harness.workspace_root().string(),
     };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
 
-    "channel_approval_coordinator_consumes_invalid_replies_while_waiting"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
+    const auto session_id =
+        session_store.save({Message::user_text("hello"), Message::assistant_text("hi")},
+                           orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+    session_store.bind_jid(jid, session_id, "default");
 
-        app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
-        const InboundMessage request{
-            .jid = "qqbot:c2c:99",
-            .content = "run shell",
-        };
-        auto callback = coordinator.make_callback(request, manager);
-        expect((callback != nullptr) >> fatal);
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+    });
 
-        auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUseBlock{.id = "deny-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
-        });
+    queue.push(InboundMessage{
+        .jid = jid,
+        .content = "/new",
+    });
 
-        for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
-        auto sent_messages = qq->sent_messages();
-        expect(not sent_messages.empty() >> fatal);
-        const auto request_id = ChannelServeHarness::extract_request_id(sent_messages.front().second);
-        expect(not request_id.empty());
+    stop_requested.store(true);
+    queue.shutdown();
 
-        expect(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "maybe"}, manager));
-        sent_messages = qq->sent_messages();
-        expect(sent_messages.size() >= 2_ul);
-        expect(sent_messages.back().second.find(request_id + " yes") != std::string::npos);
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
 
-        expect(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "shell-approval-999 no"}, manager));
-        sent_messages = qq->sent_messages();
-        expect(sent_messages.size() >= 3_ul);
-        expect(sent_messages.back().second.find("Shell approval is pending") != std::string::npos);
+    const auto sessions = session_store.list_sessions_for_agent("default");
+    CHECK(sessions.size() == 1ul);
+    CHECK(sessions[0].id == session_id);
+    CHECK(sessions[0].scope_key == identity.runtime_key);
+    CHECK(sessions[0].agent_key == "default");
+    CHECK(sessions[0].origin_kind == "channel");
+    CHECK(sessions[0].origin_ref == jid);
+};
 
-        expect(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " no"}, manager));
-        expect(not future.get());
+TEST_CASE("export_command_writes_transcript_to_workspace_and_replies_with_path") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
+
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = harness.workspace_root().string(),
     };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
 
-    "channel_approval_coordinator_disables_prompts_when_replies_cannot_return_to_same_conversation"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        manager.add_channel(std::move(qq_channel));
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
+    const auto session_id =
+        session_store.save({Message::user_text("hello"), {.role = Role::assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
+                           orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+    session_store.bind_jid(jid, session_id, "default");
+    const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
 
-        app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+    });
 
-        expect(coordinator.make_callback(
-                   InboundMessage{
-                       .jid = "heartbeat:nightly",
-                       .reply_target = "qqbot:c2c:42",
-                   },
-                   manager) == nullptr);
+    queue.push(InboundMessage{
+        .jid = jid,
+        .content = "/export",
+    });
 
-        expect(coordinator.make_callback(
-                   InboundMessage{
-                       .jid = "qqbot:c2c:42",
-                       .reply_target = "qqbot:c2c:other",
-                   },
-                   manager) == nullptr);
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    stop_requested.store(true);
+    queue.shutdown();
+
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(qq->sent_messages().front().second == "## Export\n- Saved current session to `" + export_path.string() + '`');
+    CHECK(std::filesystem::exists(export_path));
+
+    std::ifstream in(export_path);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content.contains("# Session Export"));
+    CHECK(content.contains("hello"));
+    CHECK(content.contains("### Tool Use: `read`"));
+};
+
+TEST_CASE("resume_command_trims_session_id_whitespace") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
+
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = harness.workspace_root().string(),
     };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
 
-    "approval_wait_does_not_starve_other_jids_and_shutdown_cancels_it"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
+    const auto session_id = session_store.save({Message::user_text("hello")}, SessionMetadata{
+                                                                                  .model = "gpt-test",
+                                                                                  .scope_key = identity.runtime_key,
+                                                                                  .agent_key = "default",
+                                                                                  .origin_kind = "channel",
+                                                                                  .origin_ref = jid,
+                                                                              });
 
-        JidTaskRunner runner(1);
-        app::ChannelApprovalCoordinator coordinator(std::chrono::seconds(5));
-        const InboundMessage approval_request{
-            .jid = "qqbot:c2c:42",
-            .content = "run shell",
-        };
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+    });
 
-        std::promise<void> bob_started;
-        auto bob_started_future = bob_started.get_future();
-        std::promise<void> approval_finished;
-        auto approval_finished_future = approval_finished.get_future();
-        std::atomic<bool> approval_result = true;
+    queue.push(InboundMessage{
+        .jid = jid,
+        .content = "/resume    latest   ",
+    });
 
-        runner.submit(approval_request.jid, [&] {
-            auto callback = coordinator.make_callback(approval_request, manager, &runner);
-            approval_result.store(callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
-            approval_finished.set_value();
-        });
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
-        runner.submit("qqbot:c2c:99", [&] {
-            bob_started.set_value();
-        });
+    stop_requested.store(true);
+    queue.shutdown();
 
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(qq->sent_messages().front().second == "🧵 Resumed session: " + session_id);
+};
 
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(bob_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+TEST_CASE("tasks_command_replies_with_task_tool_output") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        coordinator.shutdown();
-        expect(approval_finished_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
-        expect(not approval_result.load());
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
+    auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
+    automation::Runtime automation_runtime(*automation_store);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
 
-        const auto sent_messages = qq->sent_messages();
-        expect(sent_messages.size() == 1_ul);
-        expect(sent_messages.front().second.find("Request: shell-approval-") != std::string::npos);
-
-        runner.shutdown(true);
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "openai",
+        .api_key = "test-key",
+        .model = "gpt-test",
+        .base_url = "https://example.test",
+        .system_prompt = "You are a test agent.",
+        .workspace_root = harness.workspace_root().string(),
     };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
 
-    "channel_approval_coordinator_rejects_callbacks_after_shutdown"_test = [] {
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg, nullptr,
+                              &automation_runtime);
+    });
 
-        app::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
-        const InboundMessage request{
-            .jid = "qqbot:c2c:42",
-            .content = "run shell",
-        };
-        auto callback = coordinator.make_callback(request, manager);
-        expect((callback != nullptr) >> fatal);
+    queue.push(InboundMessage{
+        .jid = "qqbot:c2c:42",
+        .content = "/tasks",
+    });
 
-        coordinator.shutdown();
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
-        expect(not callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
-        expect(qq->sent_messages().empty());
-        expect(coordinator.make_callback(request, manager) == nullptr);
+    stop_requested.store(true);
+    queue.shutdown();
+
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(qq->sent_messages().front().second == "## Tasks\n- 🗓️ No tasks configured.");
+};
+
+TEST_CASE("completion_resume_persists_bound_session_and_replies_through_channel") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
+
+    auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
+    automation::Runtime automation_runtime(*automation_store);
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+
+    const std::string jid = "qqbot:c2c:42";
+    const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
+    std::vector<Message> history = {
+        Message::user_text("hello"),
+        Message::assistant_text("hi"),
     };
+    const auto session_id =
+        session_store.save(history, orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+    session_store.bind_jid(jid, session_id, "default");
 
-    "new_command_updates_bound_session_with_channel_metadata"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    ToolRegistry tools;
+    ScriptedProvider provider({
+        [](const std::vector<Message> &messages) {
+            if (messages.empty()) {
+                return LLMResponse{};
+            }
 
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
-        Config cfg;
+            CHECK(messages.back().role == Role::user);
+            const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
+            CHECK((text != nullptr));
+            if (text != nullptr) {
+                CHECK(text->text.contains("\"type\": \"background_process_completion\""));
+            }
 
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
-            .model = "gpt-test",
-            .base_url = "https://example.test",
-            .system_prompt = "You are a test agent.",
-            .workspace_root = harness.workspace_root().string(),
-        };
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+            LLMResponse response;
+            response.stop_reason = "end_turn";
+            response.content.emplace_back(TextBlock{.text = "Background reply"});
+            return response;
+        },
+    });
+    AgentLoop agent(provider, tools, "You are a test agent.");
+    agent.set_history(history);
 
-        const std::string jid = "qqbot:c2c:42";
-        const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id =
-            session_store.save({Message::user_text("hello"), Message::assistant_text("hi")},
-                               orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
-        session_store.bind_jid(jid, session_id, "default");
+    auto resume_state = std::make_shared<app::detail::ChannelCompletionResumeState>();
+    resume_state->agent = &agent;
+    resume_state->provider = &provider;
+    size_t persisted_message_count = history.size();
+    std::string current_session_id = session_id;
+    resume_state->current_session_id = &current_session_id;
+    resume_state->persisted_message_count = &persisted_message_count;
+    resume_state->session_store = &session_store;
+    resume_state->channel_manager = &manager;
+    resume_state->jid = jid;
+    resume_state->agent_key = "default";
+    resume_state->configured_model = "gpt-test";
+    resume_state->session_scope_key = identity.runtime_key;
+    resume_state->automation_runtime = &automation_runtime;
 
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
-        });
-
-        queue.push(InboundMessage{
-            .jid = jid,
-            .content = "/new",
-        });
-
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        stop_requested.store(true);
-        queue.shutdown();
-
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
-
-        const auto sessions = session_store.list_sessions_for_agent("default");
-        expect(sessions.size() == 1_ul);
-        expect(sessions[0].id == session_id);
-        expect(sessions[0].scope_key == identity.runtime_key);
-        expect(sessions[0].agent_key == "default");
-        expect(sessions[0].origin_kind == "channel");
-        expect(sessions[0].origin_ref == jid);
-    };
-
-    "export_command_writes_transcript_to_workspace_and_replies_with_path"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
-
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
-        Config cfg;
-
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
-            .model = "gpt-test",
-            .base_url = "https://example.test",
-            .system_prompt = "You are a test agent.",
-            .workspace_root = harness.workspace_root().string(),
-        };
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
-
-        const std::string jid = "qqbot:c2c:42";
-        const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id =
-            session_store.save({Message::user_text("hello"), {.role = Role::assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
-                               orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
-        session_store.bind_jid(jid, session_id, "default");
-        const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
-
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
-        });
-
-        queue.push(InboundMessage{
-            .jid = jid,
-            .content = "/export",
-        });
-
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        stop_requested.store(true);
-        queue.shutdown();
-
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(qq->sent_messages().front().second == "## Export\n- Saved current session to `" + export_path.string() + '`');
-        expect(std::filesystem::exists(export_path));
-
-        std::ifstream in(export_path);
-        const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        expect(content.find("# Session Export") != std::string::npos);
-        expect(content.find("hello") != std::string::npos);
-        expect(content.find("### Tool Use: `read`") != std::string::npos);
-    };
-
-    "resume_command_trims_session_id_whitespace"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
-
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
-        Config cfg;
-
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
-            .model = "gpt-test",
-            .base_url = "https://example.test",
-            .system_prompt = "You are a test agent.",
-            .workspace_root = harness.workspace_root().string(),
-        };
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
-
-        const std::string jid = "qqbot:c2c:42";
-        const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id = session_store.save({Message::user_text("hello")}, SessionMetadata{
-                                                                                      .model = "gpt-test",
-                                                                                      .scope_key = identity.runtime_key,
-                                                                                      .agent_key = "default",
-                                                                                      .origin_kind = "channel",
-                                                                                      .origin_ref = jid,
-                                                                                  });
-
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
-        });
-
-        queue.push(InboundMessage{
-            .jid = jid,
-            .content = "/resume    latest   ",
-        });
-
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        stop_requested.store(true);
-        queue.shutdown();
-
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(qq->sent_messages().front().second == "🧵 Resumed session: " + session_id);
-    };
-
-    "tasks_command_replies_with_task_tool_output"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
-
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
-        automation::Runtime automation_runtime(*automation_store);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
-        Config cfg;
-
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
-            .model = "gpt-test",
-            .base_url = "https://example.test",
-            .system_prompt = "You are a test agent.",
-            .workspace_root = harness.workspace_root().string(),
-        };
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
-
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg, nullptr,
-                                  &automation_runtime);
-        });
-
-        queue.push(InboundMessage{
-            .jid = "qqbot:c2c:42",
-            .content = "/tasks",
-        });
-
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        stop_requested.store(true);
-        queue.shutdown();
-
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(qq->sent_messages().front().second == "## Tasks\n- 🗓️ No tasks configured.");
-    };
-
-    "completion_resume_persists_bound_session_and_replies_through_channel"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
-
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
-        automation::Runtime automation_runtime(*automation_store);
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-
-        const std::string jid = "qqbot:c2c:42";
-        const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        std::vector<Message> history = {
-            Message::user_text("hello"),
-            Message::assistant_text("hi"),
-        };
-        const auto session_id = session_store.save(
-            history, orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
-        session_store.bind_jid(jid, session_id, "default");
-
-        ToolRegistry tools;
-        ScriptedProvider provider({
-            [](const std::vector<Message> &messages) {
-                if (messages.empty()) {
-                    return LLMResponse{};
-                }
-
-                boost::ut::expect(messages.back().role == Role::user);
-                const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
-                boost::ut::expect((text != nullptr) >> boost::ut::fatal);
-                if (text != nullptr) {
-                    boost::ut::expect(text->text.find("\"type\": \"background_process_completion\"") != std::string::npos);
-                }
-
-                LLMResponse response;
-                response.stop_reason = "end_turn";
-                response.content.emplace_back(TextBlock{.text = "Background reply"});
-                return response;
+    ToolRuntimeContext tool_context{
+        .runtime_key = identity.runtime_key,
+        .agent_key = "default",
+        .scope_key = identity.runtime_key,
+        .automation_runtime = &automation_runtime,
+        .background_completion_runtime = make_background_completion_runtime_bindings(
+            [automation_store](const automation::InboxItem &item) {
+                static_cast<void>(automation_store->insert_inbox(item));
             },
-        });
-        AgentLoop agent(provider, tools, "You are a test agent.");
-        agent.set_history(history);
-
-        auto resume_state = std::make_shared<app::detail::ChannelCompletionResumeState>();
-        resume_state->agent = &agent;
-        resume_state->provider = &provider;
-        size_t persisted_message_count = history.size();
-        std::string current_session_id = session_id;
-        resume_state->current_session_id = &current_session_id;
-        resume_state->persisted_message_count = &persisted_message_count;
-        resume_state->session_store = &session_store;
-        resume_state->channel_manager = &manager;
-        resume_state->jid = jid;
-        resume_state->agent_key = "default";
-        resume_state->configured_model = "gpt-test";
-        resume_state->session_scope_key = identity.runtime_key;
-        resume_state->automation_runtime = &automation_runtime;
-
-        ToolRuntimeContext tool_context{
-            .runtime_key = identity.runtime_key,
-            .agent_key = "default",
-            .scope_key = identity.runtime_key,
-            .automation_runtime = &automation_runtime,
-            .background_completion_runtime = make_background_completion_runtime_bindings(
-                [automation_store](const automation::InboxItem &item) {
-                    static_cast<void>(automation_store->insert_inbox(item));
-                },
-                app::detail::make_channel_completion_resume_callback(resume_state)),
-        };
-        BackgroundCompletionDispatcher dispatcher(&tool_context);
-
-        dispatcher.dispatch(BackgroundProcessCompletionEvent{
-            .process_id = "proc-channel",
-            .command = "printf 'done\\n'",
-            .working_dir = harness.workspace_root().string(),
-            .pid = 1234,
-            .terminal_status = BackgroundProcessTerminalStatus::exited,
-            .exit_code = 0,
-            .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
-        });
-
-        const auto inbox_items = automation_runtime.list_inbox("default");
-        expect(inbox_items.size() == 1_ul);
-        expect(not qq->sent_messages().empty() >> fatal);
-        expect(qq->sent_messages().front().first == jid);
-        expect(qq->sent_messages().front().second == "Background reply");
-
-        const auto persisted_history = session_store.load(session_id);
-        expect(current_session_id == session_id);
-        expect(persisted_message_count == persisted_history.size());
-        expect(persisted_history.size() >= 4_ul);
-        expect(persisted_history.back().role == Role::assistant);
-        const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
-        expect((reply_text != nullptr) >> fatal);
-        if (reply_text != nullptr) {
-            expect(reply_text->text == "Background reply");
-        }
-
-        const auto bound_session = session_store.bound_session_for_jid(jid, "default");
-        expect(bound_session.has_value() >> fatal);
-        if (bound_session.has_value()) {
-            expect(*bound_session == session_id);
-        }
+            app::detail::make_channel_completion_resume_callback(resume_state)),
     };
+    BackgroundCompletionDispatcher dispatcher(&tool_context);
 
-    "run_channel_loop_replies_with_runtime_errors"_test = [] {
-        ChannelServeHarness harness;
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
+    dispatcher.dispatch(BackgroundProcessCompletionEvent{
+        .process_id = "proc-channel",
+        .command = "printf 'done\\n'",
+        .working_dir = harness.workspace_root().string(),
+        .pid = 1234,
+        .terminal_status = BackgroundProcessTerminalStatus::exited,
+        .exit_code = 0,
+        .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
+        .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+    });
 
-        MessageQueue queue;
-        std::atomic<bool> stop_requested{false};
-        JidTaskRunner task_runner(1);
+    const auto inbox_items = automation_runtime.list_inbox("default");
+    CHECK(inbox_items.size() == 1ul);
+    REQUIRE(not qq->sent_messages().empty());
+    CHECK(qq->sent_messages().front().first == jid);
+    CHECK(qq->sent_messages().front().second == "Background reply");
 
-        const app::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "default",
-            .provider_name = "unknown-provider",
-            .api_key = "test-key",
-            .model = "broken-model",
-            .workspace_root = harness.workspace_root().string(),
-        };
-        const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+    const auto persisted_history = session_store.load(session_id);
+    CHECK(current_session_id == session_id);
+    CHECK(persisted_message_count == persisted_history.size());
+    CHECK(persisted_history.size() >= 4ul);
+    CHECK(persisted_history.back().role == Role::assistant);
+    const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
+    REQUIRE(reply_text != nullptr);
+    if (reply_text != nullptr) {
+        CHECK(reply_text->text == "Background reply");
+    }
 
-        MemoryStore memory_store((harness.temp_root() / "memory.db"));
-        SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
-        Config cfg;
+    const auto bound_session = session_store.bound_session_for_jid(jid, "default");
+    REQUIRE(bound_session.has_value());
+    if (bound_session.has_value()) {
+        CHECK(*bound_session == session_id);
+    }
+};
 
-        auto loop = std::async(std::launch::async, [&] {
-            app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, subagent_manager, cfg);
-        });
+TEST_CASE("run_channel_loop_replies_with_runtime_errors") {
+    ChannelServeHarness harness;
+    ChannelManager manager;
+    auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+    auto *qq = qq_channel.get();
+    manager.add_channel(std::move(qq_channel));
 
-        queue.push(InboundMessage{
-            .jid = "qqbot:c2c:42",
-            .content = "hello",
-        });
+    MessageQueue queue;
+    std::atomic<bool> stop_requested{false};
+    JidTaskRunner task_runner(1);
 
-        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        stop_requested.store(true);
-        queue.shutdown();
-
-        expect(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        const auto sent_messages = qq->sent_messages();
-        expect(not sent_messages.empty() >> fatal);
-        expect(sent_messages.back().first == "qqbot:c2c:42");
-        expect(sent_messages.back().second.find("Error:") != std::string::npos);
-        expect(sent_messages.back().second.find("Unknown provider") != std::string::npos);
+    const app::AgentRuntimeConfig runtime_cfg{
+        .agent_key = "default",
+        .provider_name = "unknown-provider",
+        .api_key = "test-key",
+        .model = "broken-model",
+        .workspace_root = harness.workspace_root().string(),
     };
+    const std::unordered_map<std::string, app::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+    const std::unordered_map<std::string, std::string> qq_bot_agents;
+
+    MemoryStore memory_store((harness.temp_root() / "memory.db"));
+    SessionStore session_store((harness.temp_root() / "sessions.db"));
+    SubagentRunStore run_store((harness.temp_root() / "runs.db"));
+    SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
+        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
+    });
+    Config cfg;
+
+    auto loop = std::async(std::launch::async, [&] {
+        app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, subagent_manager, cfg);
+    });
+
+    queue.push(InboundMessage{
+        .jid = "qqbot:c2c:42",
+        .content = "hello",
+    });
+
+    for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    stop_requested.store(true);
+    queue.shutdown();
+
+    CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    const auto sent_messages = qq->sent_messages();
+    REQUIRE(not sent_messages.empty());
+    CHECK(sent_messages.back().first == "qqbot:c2c:42");
+    CHECK(sent_messages.back().second.contains("Error:"));
+    CHECK(sent_messages.back().second.contains("Unknown provider"));
 };
 
 } // namespace

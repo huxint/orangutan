@@ -3,7 +3,7 @@
 #include "core/tools/tool.hpp"
 
 #include <filesystem>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 
@@ -27,79 +27,70 @@ Config::McpServerConfig make_server_config(const std::string &mode = "normal", i
     return config;
 }
 
-boost::ut::suite mcp_client_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("connects_and_lists_tools") {
+    McpClient client(make_server_config());
+    client.connect();
 
-    "connects_and_lists_tools"_test = [] {
-        McpClient client(make_server_config());
-        client.connect();
+    const auto tools = client.list_tools();
+    CHECK(tools.size() == 2ul);
+    CHECK(tools[0].name == "echo");
+    CHECK(tools[1].name == "structured");
 
-        const auto tools = client.list_tools();
-        expect(tools.size() == 2_ul);
-        expect(tools[0].name == "echo");
-        expect(tools[1].name == "structured");
+    client.disconnect();
+};
 
-        client.disconnect();
-    };
+TEST_CASE("calls_tool_and_flattens_text_content") {
+    McpClient client(make_server_config());
+    client.connect();
 
-    "calls_tool_and_flattens_text_content"_test = [] {
-        McpClient client(make_server_config());
-        client.connect();
+    const auto result = client.call_tool("echo", {{"message", "hello from mcp"}});
+    CHECK(result == "hello from mcp");
 
-        const auto result = client.call_tool("echo", {{"message", "hello from mcp"}});
-        expect(result == "hello from mcp");
+    client.disconnect();
+};
 
-        client.disconnect();
-    };
+TEST_CASE("handshake_timeout_throws") {
+    McpClient client(make_server_config("handshake-timeout"));
+    REQUIRE_THROWS_AS(client.connect(), std::runtime_error);
+    CHECK_FALSE(client.is_connected());
+};
 
-    "handshake_timeout_throws"_test = [] {
-        McpClient client(make_server_config("handshake-timeout"));
-        expect(throws<std::runtime_error>([&] {
-            client.connect();
-        }));
-        expect(not client.is_connected());
-    };
+TEST_CASE("tool_timeout_disconnects_client") {
+    McpClient client(make_server_config("tool-timeout", 1));
+    client.connect();
 
-    "tool_timeout_disconnects_client"_test = [] {
-        McpClient client(make_server_config("tool-timeout", 1));
-        client.connect();
+    REQUIRE_THROWS_AS(client.call_tool("echo", {{"message", "slow"}}), std::runtime_error);
+    CHECK_FALSE(client.is_connected());
+};
 
-        expect(throws<std::runtime_error>([&] {
-            static_cast<void>(client.call_tool("echo", {{"message", "slow"}}));
-        }));
-        expect(not client.is_connected());
-    };
+TEST_CASE("server_crash_during_call_disconnects_client") {
+    McpClient client(make_server_config("crash-on-call"));
+    client.connect();
 
-    "server_crash_during_call_disconnects_client"_test = [] {
-        McpClient client(make_server_config("crash-on-call"));
-        client.connect();
+    REQUIRE_THROWS_AS(client.call_tool("echo", {{"message", "boom"}}), std::runtime_error);
+    CHECK_FALSE(client.is_connected());
+};
 
-        expect(throws<std::runtime_error>([&] {
-            static_cast<void>(client.call_tool("echo", {{"message", "boom"}}));
-        }));
-        expect(not client.is_connected());
-    };
+TEST_CASE("registers_prefixed_tools_into_registry") {
+    ToolRegistry registry;
+    McpManager manager({make_server_config()});
 
-    "registers_prefixed_tools_into_registry"_test = [] {
-        ToolRegistry registry;
-        McpManager manager({make_server_config()});
+    manager.connect_all();
+    manager.register_tools(registry);
 
-        manager.connect_all();
-        manager.register_tools(registry);
+    const auto defs = registry.definitions();
+    const auto it = std::ranges::find(defs, std::string("mock:echo"), &ToolDef::name);
+    INFO("expected prefixed mock:echo tool registration");
+    REQUIRE(it != defs.end());
+    CHECK(it->description == "Echo a message back");
 
-        const auto defs = registry.definitions();
-        const auto it = std::ranges::find(defs, std::string("mock:echo"), &ToolDef::name);
-        expect((it != defs.end()) >> fatal) << "expected prefixed mock:echo tool registration";
-        expect(it->description == "Echo a message back");
-
-        const auto result = registry.execute(ToolUseBlock{
-            .id = "call-1",
-            .name = "mock:echo",
-            .input = {{"message", "via registry"}},
-        });
-        expect(not result.is_error);
-        expect(result.content == "via registry");
-    };
+    const auto result = registry.execute(ToolUseBlock{
+        .id = "call-1",
+        .name = "mock:echo",
+        .input = {{"message", "via registry"}},
+    });
+    CHECK_FALSE(result.is_error);
+    CHECK(result.content == "via registry");
 };
 
 } // namespace

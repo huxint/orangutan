@@ -3,7 +3,7 @@
 
 #include <filesystem>
 #include <fstream>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include <string_view>
 
 namespace orangutan {
@@ -25,46 +25,45 @@ bool write_test_file(const std::filesystem::path &path, std::string_view content
     return file.good();
 }
 
-boost::ut::suite heartbeat_md_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("missing_file_returns_nullopt") {
+    const auto result = load_heartbeat_md("/nonexistent/path/HEARTBEAT.md");
+    CHECK_FALSE(result.has_value());
+};
 
-    "missing_file_returns_nullopt"_test = [] {
-        const auto result = load_heartbeat_md("/nonexistent/path/HEARTBEAT.md");
-        expect(not result.has_value());
-    };
+TEST_CASE("empty_path_returns_nullopt") {
+    const auto result = load_heartbeat_md("");
+    CHECK_FALSE(result.has_value());
+};
 
-    "empty_path_returns_nullopt"_test = [] {
-        const auto result = load_heartbeat_md("");
-        expect(not result.has_value());
-    };
+TEST_CASE("loads_markdown_file_contents") {
+    const auto path = orangutan::testing::unique_test_path("heartbeat-md", "HEARTBEAT-load.md");
+    INFO("expected heartbeat fixture file to be written");
+    REQUIRE(write_test_file(path, "# heartbeat\nready\n"));
 
-    "loads_markdown_file_contents"_test = [] {
-        const auto path = orangutan::testing::unique_test_path("heartbeat-md", "HEARTBEAT-load.md");
-        expect(write_test_file(path, "# heartbeat\nready\n") >> fatal) << "expected heartbeat fixture file to be written";
+    const auto result = load_heartbeat_md(path);
 
-        const auto result = load_heartbeat_md(path);
+    INFO("expected heartbeat markdown to load");
+    REQUIRE(result.has_value());
+    CHECK(*result == "# heartbeat\nready\n");
+};
 
-        expect(result.has_value() >> fatal) << "expected heartbeat markdown to load";
-        expect(*result == "# heartbeat\nready\n");
-    };
+TEST_CASE("ignores_non_markdown_extension") {
+    const auto path = orangutan::testing::unique_test_path("heartbeat-md", "HEARTBEAT.txt");
+    INFO("expected non-markdown fixture file to be written");
+    REQUIRE(write_test_file(path, "not markdown"));
 
-    "ignores_non_markdown_extension"_test = [] {
-        const auto path = orangutan::testing::unique_test_path("heartbeat-md", "HEARTBEAT.txt");
-        expect(write_test_file(path, "not markdown") >> fatal) << "expected non-markdown fixture file to be written";
+    const auto result = load_heartbeat_md(path);
 
-        const auto result = load_heartbeat_md(path);
+    CHECK_FALSE(result.has_value());
+};
 
-        expect(not result.has_value());
-    };
+TEST_CASE("returns_nullopt_when_file_cannot_be_opened") {
+    const auto path = orangutan::testing::unique_test_path("heartbeat-md", "missing/HEARTBEAT.md");
+    std::filesystem::remove_all(path.parent_path());
 
-    "returns_nullopt_when_file_cannot_be_opened"_test = [] {
-        const auto path = orangutan::testing::unique_test_path("heartbeat-md", "missing/HEARTBEAT.md");
-        std::filesystem::remove_all(path.parent_path());
+    const auto result = load_heartbeat_md(path);
 
-        const auto result = load_heartbeat_md(path);
-
-        expect(not result.has_value());
-    };
+    CHECK_FALSE(result.has_value());
 };
 
 } // namespace

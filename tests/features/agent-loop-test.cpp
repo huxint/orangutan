@@ -4,7 +4,7 @@
 #include "test-helpers.hpp"
 
 #include <filesystem>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 using namespace orangutan;
 
 namespace {
@@ -165,7 +165,7 @@ std::string describe_message(const Message &message) {
 
         const auto *result = std::get_if<ToolResultBlock>(&block);
         if (result == nullptr) {
-            boost::ut::expect(false) << "Unexpected content block in checkpoint";
+            FAIL("Unexpected content block in checkpoint");
             description += "unexpected";
             continue;
         }
@@ -188,299 +188,295 @@ std::vector<std::vector<std::string>> capture_checkpoint_descriptions(AgentLoop 
     return checkpoints;
 }
 
-boost::ut::suite agent_loop_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
+    SummarizingProvider provider;
+    ToolRegistry tools;
+    AgentLoop loop(provider, tools);
 
-    "compress_history_summarizes_older_messages_and_keeps_recent_tail"_test = [] {
-        SummarizingProvider provider;
-        ToolRegistry tools;
-        AgentLoop loop(provider, tools);
+    std::vector<Message> history;
+    history.reserve(60);
+    for (int i = 0; i < 60; ++i) {
+        history.push_back(i % 2 == 0 ? Message::user_text("user-" + std::to_string(i)) : Message::assistant_text("assistant-" + std::to_string(i)));
+    }
+    loop.set_history(history);
 
-        std::vector<Message> history;
-        history.reserve(60);
-        for (int i = 0; i < 60; ++i) {
-            history.push_back(i % 2 == 0 ? Message::user_text("user-" + std::to_string(i)) : Message::assistant_text("assistant-" + std::to_string(i)));
-        }
-        loop.set_history(history);
+    const auto result = loop.compress_history();
 
-        const auto result = loop.compress_history();
+    CHECK(result.compacted);
+    CHECK(result.messages_before == 60);
+    CHECK(result.messages_after == 11);
+    CHECK(provider.last_summary_input_size_ == 50ul);
+    CHECK(provider.last_tool_count_ == 0ul);
+    CHECK(provider.last_system_prompt_.contains("conversation summarizer"));
 
-        expect(result.compacted);
-        expect(result.messages_before == 60_i);
-        expect(result.messages_after == 11_i);
-        expect(provider.last_summary_input_size_ == 50_ul);
-        expect(provider.last_tool_count_ == 0_ul);
-        expect(provider.last_system_prompt_.find("conversation summarizer") != std::string::npos);
+    const auto &compacted = loop.history();
+    REQUIRE(compacted.size() == 11ul);
+    const auto *summary = std::get_if<TextBlock>(&compacted[0].content[0]);
+    REQUIRE(summary != nullptr);
+    CHECK(summary->text.contains("Earlier conversation summary"));
 
-        const auto &compacted = loop.history();
-        expect((compacted.size() == 11_ul) >> fatal);
-        const auto *summary = std::get_if<TextBlock>(&compacted[0].content[0]);
-        expect((summary != nullptr) >> fatal);
-        expect(summary->text.find("Earlier conversation summary") != std::string::npos);
+    for (size_t i = 0; i < 10; ++i) {
+        const auto &expected = history[50 + i];
+        const auto &actual = compacted[1 + i];
+        CHECK(actual.role == expected.role);
+        REQUIRE(actual.content.size() == expected.content.size());
+        const auto *expected_text = std::get_if<TextBlock>(&expected.content[0]);
+        const auto *actual_text = std::get_if<TextBlock>(&actual.content[0]);
+        REQUIRE(expected_text != nullptr);
+        REQUIRE(actual_text != nullptr);
+        CHECK(actual_text->text == expected_text->text);
+    }
+};
 
-        for (size_t i = 0; i < 10; ++i) {
-            const auto &expected = history[50 + i];
-            const auto &actual = compacted[1 + i];
-            expect(actual.role == expected.role);
-            expect((actual.content.size() == expected.content.size()) >> fatal);
-            const auto *expected_text = std::get_if<TextBlock>(&expected.content[0]);
-            const auto *actual_text = std::get_if<TextBlock>(&actual.content[0]);
-            expect((expected_text != nullptr) >> fatal);
-            expect((actual_text != nullptr) >> fatal);
-            expect(actual_text->text == expected_text->text);
-        }
-    };
+TEST_CASE("compress_history_requires_older_messages_beyond_recent_tail") {
+    SummarizingProvider provider;
+    ToolRegistry tools;
+    AgentLoop loop(provider, tools);
 
-    "compress_history_requires_older_messages_beyond_recent_tail"_test = [] {
-        SummarizingProvider provider;
-        ToolRegistry tools;
-        AgentLoop loop(provider, tools);
+    std::vector<Message> history;
+    history.reserve(10);
+    for (int i = 0; i < 10; ++i) {
+        history.push_back(Message::user_text("message-" + std::to_string(i)));
+    }
+    loop.set_history(history);
 
-        std::vector<Message> history;
-        history.reserve(10);
-        for (int i = 0; i < 10; ++i) {
-            history.push_back(Message::user_text("message-" + std::to_string(i)));
-        }
-        loop.set_history(history);
+    const auto result = loop.compress_history();
 
-        const auto result = loop.compress_history();
+    CHECK_FALSE(result.compacted);
+    CHECK(result.messages_before == 10);
+    CHECK(result.messages_after == 10);
+    CHECK(result.status == "Not enough history to compress yet.");
+    CHECK(provider.last_summary_input_size_ == 0ul);
+};
 
-        expect(not result.compacted);
-        expect(result.messages_before == 10_i);
-        expect(result.messages_after == 10_i);
-        expect(result.status == "Not enough history to compress yet.");
-        expect(provider.last_summary_input_size_ == 0_ul);
-    };
+TEST_CASE("distill_session_memory_stores_long_term_memories") {
+    DistillingProvider provider;
+    ToolRegistry tools;
 
-    "distill_session_memory_stores_long_term_memories"_test = [] {
-        DistillingProvider provider;
-        ToolRegistry tools;
+    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
+    MemoryStore store(db_path);
+    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
-        MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
+    loop.set_history({
+        Message::user_text("we are working on orangutan memory refactor"),
+        Message::assistant_text("Got it, I will keep that in mind."),
+        Message::user_text("remember that qq bots stay fixed to one agent"),
+    });
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
-        loop.set_history({
-            Message::user_text("we are working on orangutan memory refactor"),
-            Message::assistant_text("Got it, I will keep that in mind."),
-            Message::user_text("remember that qq bots stay fixed to one agent"),
-        });
+    const auto result = loop.distill_session_memory();
 
-        const auto result = loop.distill_session_memory();
+    CHECK(result.distilled);
+    CHECK(result.memories_stored == 3ul);
+    CHECK(result.journal_stored);
+    CHECK(provider.last_messages_size_ == 1ul);
+    CHECK(provider.last_tool_count_ == 0ul);
+    CHECK(provider.last_system_prompt_.contains("distilling long-term memory"));
 
-        expect(result.distilled);
-        expect(result.memories_stored == 3_ul);
-        expect(result.journal_stored);
-        expect(provider.last_messages_size_ == 1_ul);
-        expect(provider.last_tool_count_ == 0_ul);
-        expect(provider.last_system_prompt_.find("distilling long-term memory") != std::string::npos);
+    const auto project = store.recall("project.current", "agent:default|jid:test");
+    const auto decision = store.recall("decision.routing", "agent:default|jid:test");
+    const auto learning = store.recall("learning.runtime-identity", "agent:default|jid:test");
+    const auto journals = store.list("agent:default|jid:test", "journal", 10);
 
-        const auto project = store.recall("project.current", "agent:default|jid:test");
-        const auto decision = store.recall("decision.routing", "agent:default|jid:test");
-        const auto learning = store.recall("learning.runtime-identity", "agent:default|jid:test");
-        const auto journals = store.list("agent:default|jid:test", "journal", 10);
+    CHECK(project.contains("orangutan memory refactor"));
+    CHECK(decision.contains("fixed to one agent"));
+    CHECK(learning.contains("jid plus agent key"));
+    REQUIRE(journals.size() == 1ul);
+    CHECK(journals.front().source == "session:journal");
+    CHECK(journals.front().content.contains("markdown mirror behavior"));
 
-        expect(project.find("orangutan memory refactor") != std::string::npos);
-        expect(decision.find("fixed to one agent") != std::string::npos);
-        expect(learning.find("jid plus agent key") != std::string::npos);
-        expect((journals.size() == 1_ul) >> fatal);
-        expect(journals.front().source == "session:journal");
-        expect(journals.front().content.find("markdown mirror behavior") != std::string::npos);
+    std::filesystem::remove_all(db_path.parent_path());
+};
 
-        std::filesystem::remove_all(db_path.parent_path());
-    };
+TEST_CASE("distill_session_memory_auto_capture_ignores_assistant_and_tool_result_text") {
+    EmptyDistillingProvider provider;
+    ToolRegistry tools;
 
-    "distill_session_memory_auto_capture_ignores_assistant_and_tool_result_text"_test = [] {
-        EmptyDistillingProvider provider;
-        ToolRegistry tools;
+    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
+    MemoryStore store(db_path);
+    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
-        MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
+    loop.set_history({
+        Message::user_text("please help with this task"),
+        Message::assistant_text("my name is Mallory"),
+        {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
+    });
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
-        loop.set_history({
-            Message::user_text("please help with this task"),
-            Message::assistant_text("my name is Mallory"),
-            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
-        });
+    const auto result = loop.distill_session_memory();
 
-        const auto result = loop.distill_session_memory();
+    CHECK_FALSE(result.distilled);
+    CHECK(store.recall("profile.name", "agent:default|jid:test") == "");
+    CHECK(store.recall("deployment key", "agent:default|jid:test") == "");
 
-        expect(not result.distilled);
-        expect(store.recall("profile.name", "agent:default|jid:test") == "");
-        expect(store.recall("deployment key", "agent:default|jid:test") == "");
+    std::filesystem::remove_all(db_path.parent_path());
+};
 
-        std::filesystem::remove_all(db_path.parent_path());
-    };
+TEST_CASE("distill_session_memory_keeps_durable_memories_when_journal_line_is_malformed") {
+    MalformedJournalProvider provider;
+    ToolRegistry tools;
 
-    "distill_session_memory_keeps_durable_memories_when_journal_line_is_malformed"_test = [] {
-        MalformedJournalProvider provider;
-        ToolRegistry tools;
+    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
+    MemoryStore store(db_path);
+    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
-        MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
+    loop.set_history({
+        Message::user_text("we are working on orangutan memory refactor"),
+        Message::assistant_text("Understood"),
+    });
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
-        loop.set_history({
-            Message::user_text("we are working on orangutan memory refactor"),
-            Message::assistant_text("Understood"),
-        });
+    const auto result = loop.distill_session_memory();
 
-        const auto result = loop.distill_session_memory();
+    CHECK(result.distilled);
+    CHECK(result.memories_stored == 1ul);
+    CHECK_FALSE(result.journal_stored);
+    CHECK(result.status.contains("journaling was skipped"));
+    CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));
+    CHECK(store.list("agent:default|jid:test", "journal", 10).empty());
 
-        expect(result.distilled);
-        expect(result.memories_stored == 1_ul);
-        expect(not result.journal_stored);
-        expect(result.status.find("journaling was skipped") != std::string::npos);
-        expect(store.recall("project.current", "agent:default|jid:test").find("orangutan memory refactor") != std::string::npos);
-        expect(store.list("agent:default|jid:test", "journal", 10).empty());
+    std::filesystem::remove_all(db_path.parent_path());
+};
 
-        std::filesystem::remove_all(db_path.parent_path());
-    };
+TEST_CASE("ordinary_prompts_exclude_journal_entries_from_relevant_memories") {
+    PromptCapturingProvider provider;
+    ToolRegistry tools;
 
-    "ordinary_prompts_exclude_journal_entries_from_relevant_memories"_test = [] {
-        PromptCapturingProvider provider;
-        ToolRegistry tools;
+    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
+    MemoryStore store(db_path);
+    store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
+    store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
-        MemoryStore store(db_path);
-        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
+    static_cast<void>(loop.run("what project am I working on?"));
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
-        static_cast<void>(loop.run("what project am I working on?"));
+    CHECK(provider.last_system_prompt_.contains("orangutan memory enhancements"));
+    CHECK_FALSE(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
 
-        expect(provider.last_system_prompt_.find("orangutan memory enhancements") != std::string::npos);
-        expect(provider.last_system_prompt_.find("Yesterday we debugged the failing mirror refresh.") == std::string::npos);
+    std::filesystem::remove_all(db_path.parent_path());
+};
 
-        std::filesystem::remove_all(db_path.parent_path());
-    };
+TEST_CASE("journal_queries_can_include_journal_entries_in_relevant_memories") {
+    PromptCapturingProvider provider;
+    ToolRegistry tools;
 
-    "journal_queries_can_include_journal_entries_in_relevant_memories"_test = [] {
-        PromptCapturingProvider provider;
-        ToolRegistry tools;
+    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
+    MemoryStore store(db_path);
+    store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
+    store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
-        MemoryStore store(db_path);
-        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    AgentLoop loop(provider, tools, {}, &runtime_memory);
+    static_cast<void>(loop.run("what happened in the previous session journal?"));
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
-        static_cast<void>(loop.run("what happened in the previous session journal?"));
+    CHECK(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
 
-        expect(provider.last_system_prompt_.find("Yesterday we debugged the failing mirror refresh.") != std::string::npos);
+    std::filesystem::remove_all(db_path.parent_path());
+};
 
-        std::filesystem::remove_all(db_path.parent_path());
-    };
-
-    "run_checkpoints_every_meaningful_mutation_in_tool_flow"_test = [] {
-        CheckpointingProvider provider({
-            {
-                .stop_reason = "tool_use",
-                .content =
-                    {
-                        TextBlock{.text = "Looking that up."},
-                        ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}},
-                    },
-            },
-            {
-                .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "All set."}},
-            },
-        });
-
-        ToolRegistry tools;
-        tools.register_tool({
-            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
-            .execute =
-                [](const json &) {
-                    return "tool result";
+TEST_CASE("run_checkpoints_every_meaningful_mutation_in_tool_flow") {
+    CheckpointingProvider provider({
+        {
+            .stop_reason = "tool_use",
+            .content =
+                {
+                    TextBlock{.text = "Looking that up."},
+                    ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}},
                 },
-        });
+        },
+        {
+            .stop_reason = "end_turn",
+            .content = {TextBlock{.text = "All set."}},
+        },
+    });
 
-        AgentLoop loop(provider, tools);
-        const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
-
-        expect(checkpoints == std::vector<std::vector<std::string>>{
-                                  {"user:text=check status"},
-                                  {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup"},
-                                  {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result"},
-                                  {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result", "assistant:text=All set."},
-                              });
-    };
-
-    "run_checkpoints_continuation_prompt_before_continuation_call"_test = [] {
-        CheckpointingProvider provider({
-            {
-                .stop_reason = "max_tokens",
-                .content = {TextBlock{.text = "Part one. "}},
+    ToolRegistry tools;
+    tools.register_tool({
+        .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+        .execute =
+            [](const json &) {
+                return "tool result";
             },
-            {
-                .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "Part two."}},
+    });
+
+    AgentLoop loop(provider, tools);
+    const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
+
+    CHECK(checkpoints == std::vector<std::vector<std::string>>{
+                             {"user:text=check status"},
+                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup"},
+                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result"},
+                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result", "assistant:text=All set."},
+                         });
+};
+
+TEST_CASE("run_checkpoints_continuation_prompt_before_continuation_call") {
+    CheckpointingProvider provider({
+        {
+            .stop_reason = "max_tokens",
+            .content = {TextBlock{.text = "Part one. "}},
+        },
+        {
+            .stop_reason = "end_turn",
+            .content = {TextBlock{.text = "Part two."}},
+        },
+    });
+
+    ToolRegistry tools;
+    AgentLoop loop(provider, tools);
+    const auto checkpoints = capture_checkpoint_descriptions(loop, "continue please");
+
+    CHECK(checkpoints == std::vector<std::vector<std::string>>{
+                             {"user:text=continue please"},
+                             {"user:text=continue please", "assistant:text=Part one. "},
+                             {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off."},
+                             {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off.", "assistant:text=Part two."},
+                         });
+};
+
+TEST_CASE("run_checkpoints_loop_detection_correction_before_retry") {
+    CheckpointingProvider provider({
+        {
+            .stop_reason = "tool_use",
+            .content = {ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}}},
+        },
+        {
+            .stop_reason = "tool_use",
+            .content = {ToolUseBlock{.id = "tool-2", .name = "lookup", .input = json{{"query", "status"}}}},
+        },
+        {
+            .stop_reason = "tool_use",
+            .content = {ToolUseBlock{.id = "tool-3", .name = "lookup", .input = json{{"query", "status"}}}},
+        },
+        {
+            .stop_reason = "end_turn",
+            .content = {TextBlock{.text = "Stopping loop."}},
+        },
+    });
+
+    ToolRegistry tools;
+    tools.register_tool({
+        .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+        .execute =
+            [](const json &) {
+                return "tool result";
             },
-        });
+    });
 
-        ToolRegistry tools;
-        AgentLoop loop(provider, tools);
-        const auto checkpoints = capture_checkpoint_descriptions(loop, "continue please");
+    AgentLoop loop(provider, tools);
+    const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
 
-        expect(checkpoints == std::vector<std::vector<std::string>>{
-                                  {"user:text=continue please"},
-                                  {"user:text=continue please", "assistant:text=Part one. "},
-                                  {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off."},
-                                  {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off.", "assistant:text=Part two."},
-                              });
-    };
-
-    "run_checkpoints_loop_detection_correction_before_retry"_test = [] {
-        CheckpointingProvider provider({
-            {
-                .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}}},
-            },
-            {
-                .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-2", .name = "lookup", .input = json{{"query", "status"}}}},
-            },
-            {
-                .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-3", .name = "lookup", .input = json{{"query", "status"}}}},
-            },
-            {
-                .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "Stopping loop."}},
-            },
-        });
-
-        ToolRegistry tools;
-        tools.register_tool({
-            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
-            .execute =
-                [](const json &) {
-                    return "tool result";
-                },
-        });
-
-        AgentLoop loop(provider, tools);
-        const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
-
-        expect((checkpoints.size() >= 8_ul) >> fatal);
-        expect(checkpoints[0] == std::vector<std::string>{"user:text=check status"});
-        expect(checkpoints[1] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup"});
-        expect(checkpoints[2] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup", "user:tool_result=tool result"});
-        expect(checkpoints[3].back() == "assistant:tool_use=lookup");
-        expect(checkpoints[4].back() == "user:tool_result=tool result");
-        expect(checkpoints[5].back() == "assistant:tool_use=lookup");
-        expect(checkpoints[6].back() == "user:tool_result=tool result");
-        expect(checkpoints[7].back() == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or explain "
-                                        "what you're trying to accomplish.");
-    };
+    REQUIRE(checkpoints.size() >= 8ul);
+    CHECK(checkpoints[0] == std::vector<std::string>{"user:text=check status"});
+    CHECK(checkpoints[1] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup"});
+    CHECK(checkpoints[2] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup", "user:tool_result=tool result"});
+    CHECK(checkpoints[3].back() == "assistant:tool_use=lookup");
+    CHECK(checkpoints[4].back() == "user:tool_result=tool result");
+    CHECK(checkpoints[5].back() == "assistant:tool_use=lookup");
+    CHECK(checkpoints[6].back() == "user:tool_result=tool result");
+    CHECK(checkpoints[7].back() == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or explain "
+                                   "what you're trying to accomplish.");
 };
 
 } // namespace

@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 using namespace orangutan::qq;
@@ -240,116 +240,110 @@ Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector) {
 
 } // namespace
 
-boost::ut::suite qq_reconnect_backoff_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("reconnect_backoff_uses_capped_exponential_sequence") {
+    ReconnectBackoff backoff;
 
-    "reconnect_backoff_uses_capped_exponential_sequence"_test = [] {
-        ReconnectBackoff backoff;
+    const auto first = backoff.next_delay();
+    const auto second = backoff.next_delay();
+    const auto third = backoff.next_delay();
+    const auto fourth = backoff.next_delay();
+    const auto fifth = backoff.next_delay();
+    const auto sixth = backoff.next_delay();
 
-        const auto first = backoff.next_delay();
-        const auto second = backoff.next_delay();
-        const auto third = backoff.next_delay();
-        const auto fourth = backoff.next_delay();
-        const auto fifth = backoff.next_delay();
-        const auto sixth = backoff.next_delay();
+    CHECK(first == std::chrono::seconds(1));
+    CHECK(second == std::chrono::seconds(2));
+    CHECK(third == std::chrono::seconds(4));
+    CHECK(fourth == std::chrono::seconds(8));
+    CHECK(fifth == std::chrono::seconds(15));
+    CHECK(sixth == std::chrono::seconds(15));
+};
 
-        expect(first == std::chrono::seconds(1));
-        expect(second == std::chrono::seconds(2));
-        expect(third == std::chrono::seconds(4));
-        expect(fourth == std::chrono::seconds(8));
-        expect(fifth == std::chrono::seconds(15));
-        expect(sixth == std::chrono::seconds(15));
-    };
+TEST_CASE("reconnect_backoff_reset_restarts_sequence") {
+    ReconnectBackoff backoff;
 
-    "reconnect_backoff_reset_restarts_sequence"_test = [] {
-        ReconnectBackoff backoff;
+    const auto first = backoff.next_delay();
+    const auto second = backoff.next_delay();
 
-        const auto first = backoff.next_delay();
-        const auto second = backoff.next_delay();
+    backoff.reset();
 
-        backoff.reset();
+    const auto reset_first = backoff.next_delay();
 
-        const auto reset_first = backoff.next_delay();
+    CHECK(first == std::chrono::seconds(1));
+    CHECK(second == std::chrono::seconds(2));
+    CHECK(reset_first == std::chrono::seconds(1));
+};
 
-        expect(first == std::chrono::seconds(1));
-        expect(second == std::chrono::seconds(2));
-        expect(reset_first == std::chrono::seconds(1));
-    };
+TEST_CASE("transport_start_connects_and_forwards_messages") {
+    FakeConnector connector;
+    CallbackRecorder recorder;
+    auto transport = make_transport(recorder, connector);
 
-    "transport_start_connects_and_forwards_messages"_test = [] {
-        FakeConnector connector;
-        CallbackRecorder recorder;
-        auto transport = make_transport(recorder, connector);
+    transport.start("wss://qq.example/ws");
+    auto connection = connector.wait_for_connection(1);
+    REQUIRE(recorder.wait_for_opens(1));
 
-        transport.start("wss://qq.example/ws");
-        auto connection = connector.wait_for_connection(1);
-        expect((recorder.wait_for_opens(1)) >> fatal);
+    transport.send_text("ping");
+    REQUIRE(connection->wait_for_sent_count(1));
+    CHECK(connection->sent_payloads().at(0) == "ping");
 
-        transport.send_text("ping");
-        expect((connection->wait_for_sent_count(1)) >> fatal);
-        expect(connection->sent_payloads().at(0) == "ping");
+    connection->push_text("gateway payload");
+    REQUIRE(recorder.wait_for_texts(1));
+    CHECK(recorder.texts.at(0) == "gateway payload");
 
-        connection->push_text("gateway payload");
-        expect((recorder.wait_for_texts(1)) >> fatal);
-        expect(recorder.texts.at(0) == "gateway payload");
+    transport.stop();
+};
 
-        transport.stop();
-    };
+TEST_CASE("transport_connect_failure_emits_error_and_reconnects") {
+    FakeConnector connector;
+    connector.fail_next_connects(1);
+    CallbackRecorder recorder;
+    auto transport = make_transport(recorder, connector);
 
-    "transport_connect_failure_emits_error_and_reconnects"_test = [] {
-        FakeConnector connector;
-        connector.fail_next_connects(1);
-        CallbackRecorder recorder;
-        auto transport = make_transport(recorder, connector);
+    transport.start("wss://qq.example/ws");
 
-        transport.start("wss://qq.example/ws");
+    REQUIRE(recorder.wait_for_errors(1));
+    auto connection = connector.wait_for_connection(1, std::chrono::seconds(5));
+    REQUIRE(recorder.wait_for_opens(1, std::chrono::seconds(5)));
+    REQUIRE(connection != nullptr);
+    CHECK(connector.connection_count() == 1ul);
+    CHECK(recorder.errors.size() == 1ul);
 
-        expect((recorder.wait_for_errors(1)) >> fatal);
-        auto connection = connector.wait_for_connection(1, std::chrono::seconds(5));
-        expect((recorder.wait_for_opens(1, std::chrono::seconds(5))) >> fatal);
-        expect((connection != nullptr) >> fatal);
-        expect(connector.connection_count() == 1_ul);
-        expect(recorder.errors.size() == 1_ul);
+    transport.stop();
+};
 
-        transport.stop();
-    };
+TEST_CASE("transport_request_reconnect_suppresses_close_callback_and_reopens") {
+    FakeConnector connector;
+    CallbackRecorder recorder;
+    auto transport = make_transport(recorder, connector);
 
-    "transport_request_reconnect_suppresses_close_callback_and_reopens"_test = [] {
-        FakeConnector connector;
-        CallbackRecorder recorder;
-        auto transport = make_transport(recorder, connector);
+    transport.start("wss://qq.example/ws");
+    auto first = connector.wait_for_connection(1);
+    REQUIRE(recorder.wait_for_opens(1));
 
-        transport.start("wss://qq.example/ws");
-        auto first = connector.wait_for_connection(1);
-        expect((recorder.wait_for_opens(1)) >> fatal);
+    transport.request_reconnect();
 
-        transport.request_reconnect();
+    auto second = connector.wait_for_connection(2, std::chrono::seconds(5));
+    REQUIRE(recorder.wait_for_opens(2, std::chrono::seconds(5)));
+    REQUIRE(first != second);
+    CHECK(recorder.closes.empty());
 
-        auto second = connector.wait_for_connection(2, std::chrono::seconds(5));
-        expect((recorder.wait_for_opens(2, std::chrono::seconds(5))) >> fatal);
-        expect((first != second) >> fatal);
-        expect(recorder.closes.empty());
+    transport.stop();
+};
 
-        transport.stop();
-    };
+TEST_CASE("transport_stop_prevents_further_sends_and_callbacks") {
+    FakeConnector connector;
+    CallbackRecorder recorder;
+    auto transport = make_transport(recorder, connector);
 
-    "transport_stop_prevents_further_sends_and_callbacks"_test = [] {
-        FakeConnector connector;
-        CallbackRecorder recorder;
-        auto transport = make_transport(recorder, connector);
+    transport.start("wss://qq.example/ws");
+    auto connection = connector.wait_for_connection(1);
+    REQUIRE(recorder.wait_for_opens(1));
 
-        transport.start("wss://qq.example/ws");
-        auto connection = connector.wait_for_connection(1);
-        expect((recorder.wait_for_opens(1)) >> fatal);
+    transport.stop();
 
-        transport.stop();
+    REQUIRE_THROWS_AS(transport.send_text("after-stop"), std::runtime_error);
 
-        expect(throws<std::runtime_error>([&] {
-            transport.send_text("after-stop");
-        }));
-
-        connection->push_error("late failure");
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
-        expect(recorder.errors.empty());
-    };
+    connection->push_error("late failure");
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    CHECK(recorder.errors.empty());
 };

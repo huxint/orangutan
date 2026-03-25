@@ -1,32 +1,29 @@
 #include "features/web/web-server.hpp"
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <thread>
 
 namespace {
 
-boost::ut::suite web_server_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("starts_and_stops_cleanly") {
+    orangutan::WebServer server;
+    server.start("127.0.0.1", 0);
+    CHECK(server.port() > 0);
+    CHECK(server.is_running());
+    server.stop();
+    CHECK_FALSE(server.is_running());
+};
 
-    "starts_and_stops_cleanly"_test = [] {
-        orangutan::WebServer server;
-        server.start("127.0.0.1", 0);
-        expect(server.port() > 0_i);
-        expect(server.is_running());
-        server.stop();
-        expect(not server.is_running());
-    };
-
-    "serves_health_endpoint"_test = [] {
-        orangutan::WebServer server;
-        server.start("127.0.0.1", 0);
-        httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/health");
-        expect(static_cast<bool>(res) >> fatal) << "expected /api/health response";
-        expect(res->status == 200_i);
-        server.stop();
-    };
+TEST_CASE("serves_health_endpoint") {
+    orangutan::WebServer server;
+    server.start("127.0.0.1", 0);
+    httplib::Client cli("127.0.0.1", server.port());
+    const auto res = cli.Get("/api/health");
+    INFO("expected /api/health response");
+    REQUIRE(static_cast<bool>(res));
+    CHECK(res->status == 200);
+    server.stop();
 };
 
 } // namespace

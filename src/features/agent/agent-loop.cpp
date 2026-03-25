@@ -10,6 +10,7 @@
 #include "infra/format.hpp"
 #include <functional>
 #include <optional>
+#include <fmt/color.h>
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -30,18 +31,13 @@ void emit_history_checkpoint(const AgentLoop::HistoryCheckpointCallback &on_hist
 
 } // namespace
 
-// ANSI color codes
-static constexpr const char *color_green = "\033[32m";
-static constexpr const char *color_cyan = "\033[36m";
-static constexpr const char *color_reset = "\033[0m";
-
 // Creates a streaming callback that mirrors text deltas to either stdout
 // (interactive CLI) or a structured observer (TUI/event-stream mode).
 static StreamCallback make_stream_callback(bool &first_text, bool human_output, const StreamCallback &on_event) {
     return [&first_text, human_output, &on_event](const std::string &event_type, const json &data) {
         if (event_type == "text_delta") {
             if (human_output && first_text) {
-                fmt::print("\n{}orangutan> {}", color_green, color_reset);
+                fmt::print("\n{}", fmt::styled("orangutan> ", fmt::fg(fmt::terminal_color::green)));
                 std::fflush(stdout);
                 first_text = false;
             }
@@ -272,7 +268,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
                                 state.loop_detected = true;
                             }
                             if (human_output) {
-                                fmt::println("  {}-> {}{}", color_cyan, state.call.name, color_reset);
+                                fmt::println("  -> {}", fmt::styled(state.call.name, fmt::fg(fmt::terminal_color::cyan)));
                             }
                             if (on_tool_event != nullptr) {
                                 on_tool_event("tool_started", state.call, nullptr);

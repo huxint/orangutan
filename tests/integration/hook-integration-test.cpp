@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -161,7 +161,7 @@ public:
     [[nodiscard]]
     bool contains_log(std::string_view needle) const {
         return std::ranges::any_of(sink_->lines(), [needle](const std::string &line) {
-            return line.find(needle) != std::string::npos;
+            return line.contains(needle);
         });
     }
 
@@ -176,84 +176,84 @@ private:
     ScopedDefaultLogger logger_;
 };
 
-boost::ut::suite hook_integration_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("before_tool_call_block_short_circuits_and_skips_tool_execution") {
+    HookIntegrationHarness harness;
+    harness.copy_fixture_script("before_tool_call/02-block.sh");
+    const auto marker = harness.temp_root() / "unexpected-hook-ran";
+    harness.write_hook_script("before_tool_call/03-should-not-run.sh", "#!/bin/sh\ntouch \"" + marker.string() + "\"\nexit 0\n");
 
-    "before_tool_call_block_short_circuits_and_skips_tool_execution"_test = [] {
-        HookIntegrationHarness harness;
-        harness.copy_fixture_script("before_tool_call/02-block.sh");
-        const auto marker = harness.temp_root() / "unexpected-hook-ran";
-        harness.write_hook_script("before_tool_call/03-should-not-run.sh", "#!/bin/sh\ntouch \"" + marker.string() + "\"\nexit 0\n");
+    const auto result = harness.run_agent();
 
-        const auto result = harness.run_agent();
+    CHECK(result.reply == "final reply");
+    INFO("expected tool result after hook short-circuit");
+    REQUIRE(result.tool_result.has_value());
+    CHECK(result.tool_result->is_error);
+    CHECK(result.tool_result->content.contains("02-block.sh"));
+    CHECK(result.tool_result->content.contains("blocked by hook"));
+    CHECK(result.execution_count == 0);
+    CHECK_FALSE(std::filesystem::exists(marker));
+};
 
-        expect(result.reply == "final reply");
-        expect(result.tool_result.has_value() >> fatal) << "expected tool result after hook short-circuit";
-        expect(result.tool_result->is_error);
-        expect(result.tool_result->content.find("02-block.sh") != std::string::npos);
-        expect(result.tool_result->content.find("blocked by hook") != std::string::npos);
-        expect(result.execution_count == 0_i);
-        expect(not std::filesystem::exists(marker));
-    };
+TEST_CASE("before_tool_call_timeout_blocks_tool_and_logs_warning") {
+    HookIntegrationHarness harness;
+    harness.copy_fixture_script("before_tool_call/03-timeout.sh");
 
-    "before_tool_call_timeout_blocks_tool_and_logs_warning"_test = [] {
-        HookIntegrationHarness harness;
-        harness.copy_fixture_script("before_tool_call/03-timeout.sh");
+    const auto result = harness.run_agent();
 
-        const auto result = harness.run_agent();
+    CHECK(result.reply == "final reply");
+    INFO("expected tool result after timeout");
+    REQUIRE(result.tool_result.has_value());
+    CHECK(result.tool_result->is_error);
+    CHECK(result.tool_result->content.contains("03-timeout.sh"));
+    CHECK(result.execution_count == 0);
+    CHECK(harness.contains_log("Hook timed out after 5s"));
+};
 
-        expect(result.reply == "final reply");
-        expect(result.tool_result.has_value() >> fatal) << "expected tool result after timeout";
-        expect(result.tool_result->is_error);
-        expect(result.tool_result->content.find("03-timeout.sh") != std::string::npos);
-        expect(result.execution_count == 0_i);
-        expect(harness.contains_log("Hook timed out after 5s"));
-    };
+TEST_CASE("after_tool_call_logs_stderr_without_changing_tool_result") {
+    HookIntegrationHarness harness;
+    harness.copy_fixture_script("after_tool_call/01-log.sh");
 
-    "after_tool_call_logs_stderr_without_changing_tool_result"_test = [] {
-        HookIntegrationHarness harness;
-        harness.copy_fixture_script("after_tool_call/01-log.sh");
+    const auto result = harness.run_agent();
 
-        const auto result = harness.run_agent();
+    CHECK(result.reply == "final reply");
+    INFO("expected tool result after after_tool_call hook");
+    REQUIRE(result.tool_result.has_value());
+    CHECK_FALSE(result.tool_result->is_error);
+    CHECK(result.tool_result->content == "tool output");
+    CHECK(result.execution_count == 1);
+    CHECK(harness.contains_log("[01-log.sh] after hook stderr"));
+};
 
-        expect(result.reply == "final reply");
-        expect(result.tool_result.has_value() >> fatal) << "expected tool result after after_tool_call hook";
-        expect(not result.tool_result->is_error);
-        expect(result.tool_result->content == "tool output");
-        expect(result.execution_count == 1_i);
-        expect(harness.contains_log("[01-log.sh] after hook stderr"));
-    };
+TEST_CASE("tool_hook_json_validation_fixtures_receive_expected_context") {
+    HookIntegrationHarness harness;
+    harness.copy_fixture_script("before_tool_call/04-validate-json.py");
+    harness.copy_fixture_script("after_tool_call/02-validate-json.py");
 
-    "tool_hook_json_validation_fixtures_receive_expected_context"_test = [] {
-        HookIntegrationHarness harness;
-        harness.copy_fixture_script("before_tool_call/04-validate-json.py");
-        harness.copy_fixture_script("after_tool_call/02-validate-json.py");
+    const auto result = harness.run_agent();
 
-        const auto result = harness.run_agent();
+    CHECK(result.reply == "final reply");
+    INFO("expected tool result after validation hooks");
+    REQUIRE(result.tool_result.has_value());
+    CHECK_FALSE(result.tool_result->is_error);
+    CHECK(result.tool_result->content == "tool output");
+    CHECK(result.execution_count == 1);
+    CHECK(harness.contains_log("validated before_tool_call"));
+    CHECK(harness.contains_log("validated after_tool_call"));
+};
 
-        expect(result.reply == "final reply");
-        expect(result.tool_result.has_value() >> fatal) << "expected tool result after validation hooks";
-        expect(not result.tool_result->is_error);
-        expect(result.tool_result->content == "tool output");
-        expect(result.execution_count == 1_i);
-        expect(harness.contains_log("validated before_tool_call"));
-        expect(harness.contains_log("validated after_tool_call"));
-    };
+TEST_CASE("session_dispatch_helpers_provide_expected_context") {
+    HookIntegrationHarness harness;
+    harness.copy_fixture_script("session_start/01-validate-json.py");
+    harness.copy_fixture_script("session_end/01-validate-json.py");
 
-    "session_dispatch_helpers_provide_expected_context"_test = [] {
-        HookIntegrationHarness harness;
-        harness.copy_fixture_script("session_start/01-validate-json.py");
-        harness.copy_fixture_script("session_end/01-validate-json.py");
+    HookManager manager;
+    manager.load_from_directories({harness.hook_root().string()});
 
-        HookManager manager;
-        manager.load_from_directories({harness.hook_root().string()});
+    dispatch_session_start(&manager, "session-123", 3);
+    dispatch_session_end(&manager, "session-123", 7);
 
-        dispatch_session_start(&manager, "session-123", 3);
-        dispatch_session_end(&manager, "session-123", 7);
-
-        expect(harness.contains_log("validated session_start"));
-        expect(harness.contains_log("validated session_end"));
-    };
+    CHECK(harness.contains_log("validated session_start"));
+    CHECK(harness.contains_log("validated session_end"));
 };
 
 } // namespace

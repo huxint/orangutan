@@ -1,88 +1,84 @@
 #include "app/slash-commands.hpp"
 
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 using namespace orangutan::app;
 
 namespace {
 
-boost::ut::suite slash_commands_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("dispatches_shared_commands_from_declarative_table") {
+    bool status_called = false;
 
-    "dispatches_shared_commands_from_declarative_table"_test = [] {
-        bool status_called = false;
+    const auto reply = dispatch_shared_slash_command("/status", {
+                                                                    .status =
+                                                                        [&] {
+                                                                            status_called = true;
+                                                                            return SlashCommandReply{.handled = true, .text = "status"};
+                                                                        },
+                                                                });
 
-        const auto reply = dispatch_shared_slash_command("/status", {
-                                                                        .status =
+    CHECK(status_called);
+    CHECK(reply.handled);
+    CHECK(reply.text == "status");
+};
+
+TEST_CASE("no_arg_commands_do_not_consume_trailing_arguments") {
+    bool help_called = false;
+
+    const auto reply = dispatch_shared_slash_command("/help extra", {
+                                                                        .help =
                                                                             [&] {
-                                                                                status_called = true;
-                                                                                return SlashCommandReply{.handled = true, .text = "status"};
+                                                                                help_called = true;
+                                                                                return SlashCommandReply{.handled = true, .text = "help"};
                                                                             },
                                                                     });
 
-        expect(status_called);
-        expect(reply.handled);
-        expect(reply.text == "status");
-    };
+    CHECK_FALSE(help_called);
+    CHECK_FALSE(reply.handled);
+};
 
-    "no_arg_commands_do_not_consume_trailing_arguments"_test = [] {
-        bool help_called = false;
+TEST_CASE("resume_command_trims_whitespace_and_handles_missing_id") {
+    std::string captured_session_id;
 
-        const auto reply = dispatch_shared_slash_command("/help extra", {
-                                                                            .help =
-                                                                                [&] {
-                                                                                    help_called = true;
-                                                                                    return SlashCommandReply{.handled = true, .text = "help"};
-                                                                                },
-                                                                        });
+    const auto resumed = dispatch_shared_slash_command("/resume    latest   ", {
+                                                                                   .resume =
+                                                                                       [&](const std::string &session_id) {
+                                                                                           captured_session_id = session_id;
+                                                                                           return SlashCommandReply{.handled = true, .text = "ok"};
+                                                                                       },
+                                                                               });
 
-        expect(not help_called);
-        expect(not reply.handled);
-    };
+    CHECK(resumed.handled);
+    CHECK(resumed.text == "ok");
+    CHECK(captured_session_id == "latest");
 
-    "resume_command_trims_whitespace_and_handles_missing_id"_test = [] {
-        std::string captured_session_id;
+    const auto usage = dispatch_shared_slash_command("/resume", {});
+    CHECK(usage.handled);
+    CHECK(usage.text == "Usage: /resume <session-id>");
+};
 
-        const auto resumed = dispatch_shared_slash_command("/resume    latest   ", {
-                                                                                       .resume =
-                                                                                           [&](const std::string &session_id) {
-                                                                                               captured_session_id = session_id;
-                                                                                               return SlashCommandReply{.handled = true, .text = "ok"};
-                                                                                           },
-                                                                                   });
+TEST_CASE("registry_commands_dispatch_from_parsed_root_command") {
+    ToolRegistry registry;
+    registry.register_tool({
+        .definition = {.name = "task", .description = "Task tool"},
+        .execute =
+            [](const json &input) {
+                if (input.at("op") == "run") {
+                    return std::string{"ran "} + input.at("id").get<std::string>();
+                }
+                return std::string{"listed"};
+            },
+    });
 
-        expect(resumed.handled);
-        expect(resumed.text == "ok");
-        expect(captured_session_id == "latest");
+    const auto list_reply = handle_registry_slash_command("/tasks", &registry);
+    CHECK(list_reply.handled);
+    CHECK(list_reply.text.contains("## Tasks"));
+    CHECK(list_reply.text.contains("listed"));
 
-        const auto usage = dispatch_shared_slash_command("/resume", {});
-        expect(usage.handled);
-        expect(usage.text == "Usage: /resume <session-id>");
-    };
-
-    "registry_commands_dispatch_from_parsed_root_command"_test = [] {
-        ToolRegistry registry;
-        registry.register_tool({
-            .definition = {.name = "task", .description = "Task tool"},
-            .execute =
-                [](const json &input) {
-                    if (input.at("op") == "run") {
-                        return std::string{"ran "} + input.at("id").get<std::string>();
-                    }
-                    return std::string{"listed"};
-                },
-        });
-
-        const auto list_reply = handle_registry_slash_command("/tasks", &registry);
-        expect(list_reply.handled);
-        expect(list_reply.text.find("## Tasks") != std::string::npos);
-        expect(list_reply.text.find("listed") != std::string::npos);
-
-        const auto run_reply = handle_registry_slash_command("/tasks run   abc   ", &registry);
-        expect(run_reply.handled);
-        expect(run_reply.text.find("ran abc") != std::string::npos);
-    };
+    const auto run_reply = handle_registry_slash_command("/tasks run   abc   ", &registry);
+    CHECK(run_reply.handled);
+    CHECK(run_reply.text.contains("ran abc"));
 };
 
 } // namespace

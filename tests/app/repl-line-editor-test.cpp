@@ -1,6 +1,6 @@
 #include "app/line-editor.hpp"
 
-#include "support/ut.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 #include <optional>
 #include <sstream>
@@ -38,70 +38,69 @@ private:
     size_t index_ = 0;
 };
 
-boost::ut::suite repl_line_editor_suite = [] {
-    using namespace boost::ut;
+TEST_CASE("read_repl_input_returns_single_line_and_appends_history") {
+    ScriptedLineEditor editor({std::optional<std::string>{"hello"}});
 
-    "read_repl_input_returns_single_line_and_appends_history"_test = [] {
-        ScriptedLineEditor editor({std::optional<std::string>{"hello"}});
+    const auto line = read_repl_input(editor);
 
-        const auto line = read_repl_input(editor);
+    INFO("expected read_repl_input to return a value");
+    REQUIRE(line.has_value());
+    CHECK(*line == "hello");
+    CHECK(editor.prompts.size() == 1ul);
+    CHECK(editor.prompts[0] == "you> ");
+    CHECK(editor.history.size() == 1ul);
+    CHECK(editor.history[0] == "hello");
+};
 
-        expect(line.has_value() >> fatal) << "expected read_repl_input to return a value";
-        expect(*line == "hello");
-        expect(editor.prompts.size() == 1_ul);
-        expect(editor.prompts[0] == "you> ");
-        expect(editor.history.size() == 1_ul);
-        expect(editor.history[0] == "hello");
-    };
+TEST_CASE("read_repl_input_leaves_continuation_out_of_history") {
+    ScriptedLineEditor editor({std::optional<std::string>{"first\\"}, std::optional<std::string>{"second"}});
 
-    "read_repl_input_leaves_continuation_out_of_history"_test = [] {
-        ScriptedLineEditor editor({std::optional<std::string>{"first\\"}, std::optional<std::string>{"second"}});
+    const auto line = read_repl_input(editor);
 
-        const auto line = read_repl_input(editor);
+    INFO("expected read_repl_input to return a continued line");
+    REQUIRE(line.has_value());
+    CHECK(*line == "first\nsecond");
+    CHECK(editor.prompts.size() == 2ul);
+    CHECK(editor.prompts[0] == "you> ");
+    CHECK(editor.prompts[1] == "... ");
+    CHECK(editor.history.empty());
+};
 
-        expect(line.has_value() >> fatal) << "expected read_repl_input to return a continued line";
-        expect(*line == "first\nsecond");
-        expect(editor.prompts.size() == 2_ul);
-        expect(editor.prompts[0] == "you> ");
-        expect(editor.prompts[1] == "... ");
-        expect(editor.history.empty());
-    };
+TEST_CASE("read_repl_input_skips_history_for_empty_line") {
+    ScriptedLineEditor editor({std::optional<std::string>{""}});
 
-    "read_repl_input_skips_history_for_empty_line"_test = [] {
-        ScriptedLineEditor editor({std::optional<std::string>{""}});
+    const auto line = read_repl_input(editor);
 
-        const auto line = read_repl_input(editor);
+    INFO("expected read_repl_input to return an empty line");
+    REQUIRE(line.has_value());
+    CHECK(line->empty());
+    CHECK(editor.history.empty());
+};
 
-        expect(line.has_value() >> fatal) << "expected read_repl_input to return an empty line";
-        expect(line->empty());
-        expect(editor.history.empty());
-    };
+TEST_CASE("read_repl_input_returns_nullopt_on_eof") {
+    ScriptedLineEditor editor({std::nullopt});
 
-    "read_repl_input_returns_nullopt_on_eof"_test = [] {
-        ScriptedLineEditor editor({std::nullopt});
+    const auto line = read_repl_input(editor);
 
-        const auto line = read_repl_input(editor);
+    CHECK_FALSE(line.has_value());
+    CHECK(editor.prompts.size() == 1ul);
+    CHECK(editor.prompts[0] == "you> ");
+    CHECK(editor.history.empty());
+};
 
-        expect(not line.has_value());
-        expect(editor.prompts.size() == 1_ul);
-        expect(editor.prompts[0] == "you> ");
-        expect(editor.history.empty());
-    };
+TEST_CASE("read_repl_multiline_collects_lines_until_blank_without_history") {
+    ScriptedLineEditor editor({std::optional<std::string>{"first"}, std::optional<std::string>{"second"}, std::optional<std::string>{""}});
+    std::ostringstream output;
 
-    "read_repl_multiline_collects_lines_until_blank_without_history"_test = [] {
-        ScriptedLineEditor editor({std::optional<std::string>{"first"}, std::optional<std::string>{"second"}, std::optional<std::string>{""}});
-        std::ostringstream output;
+    const auto text = read_repl_multiline(editor, output);
 
-        const auto text = read_repl_multiline(editor, output);
-
-        expect(text == "first\nsecond");
-        expect(output.str() == "Multi-line mode. Enter an empty line to finish.\n");
-        expect(editor.prompts.size() == 3_ul);
-        expect(editor.prompts[0] == "... ");
-        expect(editor.prompts[1] == "... ");
-        expect(editor.prompts[2] == "... ");
-        expect(editor.history.empty());
-    };
+    CHECK(text == "first\nsecond");
+    CHECK(output.str() == "Multi-line mode. Enter an empty line to finish.\n");
+    CHECK(editor.prompts.size() == 3ul);
+    CHECK(editor.prompts[0] == "... ");
+    CHECK(editor.prompts[1] == "... ");
+    CHECK(editor.prompts[2] == "... ");
+    CHECK(editor.history.empty());
 };
 
 } // namespace
