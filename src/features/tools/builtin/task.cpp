@@ -5,8 +5,8 @@
 #include "features/cron/parser.hpp"
 #include "features/tools/builtin/automation-tool-support.hpp"
 
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {
 namespace {
@@ -15,12 +15,12 @@ using automation::TaskScheduleKind;
 
 std::string format_task(const automation::TaskSpec &task) {
     std::string out;
-    std::format_to(std::back_inserter(out), "- {} [{}={}]", task.name, automation::task_schedule_kind_to_string(task.schedule.kind), task.schedule.value);
+    append(out, "- {} [{}={}]", task.name, magic_enum::enum_name(task.schedule.kind), task.schedule.value);
     if (task.last_run_at.has_value()) {
-        std::format_to(std::back_inserter(out), " last_run={}", *task.last_run_at);
+        append(out, " last_run={}", *task.last_run_at);
     }
     if (!task.last_status.empty()) {
-        std::format_to(std::back_inserter(out), " status={}", task.last_status);
+        append(out, " status={}", task.last_status);
     }
     return out;
 }
@@ -79,8 +79,8 @@ std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) 
     task.notes = input.value("notes", task.notes);
     task.enabled = input.contains("enabled") ? input.value("enabled", true) : task.enabled;
 
-    const auto schedule_kind_value = input.value("schedule_kind", automation::task_schedule_kind_to_string(task.schedule.kind));
-    const auto parsed_kind = automation::task_schedule_kind_from_string(schedule_kind_value);
+    const auto schedule_kind_value = input.value("schedule_kind", std::string{magic_enum::enum_name(task.schedule.kind)});
+    const auto parsed_kind = magic_enum::enum_cast<TaskScheduleKind>(schedule_kind_value);
     if (!parsed_kind.has_value()) {
         return "Error: schedule_kind must be 'at' or 'cron'.";
     }

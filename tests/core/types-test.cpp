@@ -10,7 +10,7 @@ boost::ut::suite types_test_suite = [] {
     "message_user_text_creates_correct_role"_test = [] {
         const auto msg = Message::user_text("hello");
 
-        expect(msg.role == Role::User);
+        expect(msg.role == Role::user);
         expect(msg.content.size() == 1_ul);
 
         const auto *text = std::get_if<TextBlock>(&msg.content[0]);
@@ -21,7 +21,7 @@ boost::ut::suite types_test_suite = [] {
     "message_assistant_text_creates_correct_role"_test = [] {
         const auto msg = Message::assistant_text("hi there");
 
-        expect(msg.role == Role::Assistant);
+        expect(msg.role == Role::assistant);
         expect(msg.content.size() == 1_ul);
 
         const auto *text = std::get_if<TextBlock>(&msg.content[0]);
@@ -97,7 +97,7 @@ boost::ut::suite types_test_suite = [] {
 
     "message_to_json_serializes_multi_block_message"_test = [] {
         const Message msg{
-            .role = Role::Assistant,
+            .role = Role::assistant,
             .content =
                 {
                     TextBlock{.text = "thinking..."},

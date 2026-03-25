@@ -38,6 +38,7 @@
 #include <utility>
 #include <vector>
 
+#include <magic_enum/magic_enum.hpp>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
@@ -302,7 +303,7 @@ void log_loaded_hooks(const std::vector<std::string> &hook_dirs, const orangutan
     }
     for (const auto event : {orangutan::HookEvent::before_tool_call, orangutan::HookEvent::after_tool_call, orangutan::HookEvent::message_received,
                              orangutan::HookEvent::message_sending, orangutan::HookEvent::session_start, orangutan::HookEvent::session_end}) {
-        spdlog::info("Hook count for '{}': {}", orangutan::hook_event_to_string(event), hook_manager.hook_count(event));
+        spdlog::info("Hook count for '{}': {}", magic_enum::enum_name(event), hook_manager.hook_count(event));
     }
     spdlog::info("Loaded {} hook(s) total", hook_manager.total_hooks());
 }

@@ -2,8 +2,7 @@
 
 #include "features/automation/runtime.hpp"
 
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 
 namespace orangutan {
 namespace {
@@ -24,7 +23,7 @@ std::string execute_inbox_tool(const json &input, const ToolRuntimeContext *ctx)
         }
         std::string out;
         for (const auto &item : items) {
-            std::format_to(std::back_inserter(out), "- {} [{}] {}\n", item.id, item.status, item.title);
+            append(out, "- {} [{}] {}\n", item.id, item.status, item.title);
             out.append("  ");
             out.append(item.body);
             out.push_back('\n');

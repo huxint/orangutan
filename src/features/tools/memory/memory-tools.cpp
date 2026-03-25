@@ -2,8 +2,7 @@
 #include "features/tools/builtin/register-builtin.hpp"
 
 #include <algorithm>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <vector>
 
 namespace orangutan {
@@ -26,7 +25,7 @@ std::string recall_memory(const json &input, RuntimeMemory &runtime_memory) {
         const auto entries = runtime_memory.recall_by_category(category, limit);
         std::string result;
         for (const auto &[key, content] : entries) {
-            std::format_to(std::back_inserter(result), "[{}] {}\n", key, content);
+            append(result, "[{}] {}\n", key, content);
         }
         return result.empty() ? "(no memories found)" : result;
     }
@@ -55,9 +54,9 @@ std::string update_memory(const json &input, RuntimeMemory &runtime_memory) {
 std::string format_memory_list(const std::vector<MemoryRecord> &entries) {
     std::string out;
     for (const auto &entry : entries) {
-        std::format_to(std::back_inserter(out), "[{}:{}] {}", entry.category, entry.key, entry.content);
+        append(out, "[{}:{}] {}", entry.category, entry.key, entry.content);
         if (!entry.source.empty()) {
-            std::format_to(std::back_inserter(out), " {{source={}}}", entry.source);
+            append(out, " {{source={}}}", entry.source);
         }
         out.push_back('\n');
     }

@@ -123,18 +123,6 @@ std::int64_t to_unix_seconds(TimePoint time);
 [[nodiscard]]
 TimePoint from_unix_seconds(std::int64_t seconds);
 [[nodiscard]]
-std::string kind_to_string(Kind kind);
-[[nodiscard]]
-std::optional<Kind> kind_from_string(std::string_view value);
-[[nodiscard]]
-std::string delivery_mode_to_string(DeliveryMode mode);
-[[nodiscard]]
-std::optional<DeliveryMode> delivery_mode_from_string(std::string_view value);
-[[nodiscard]]
-std::string task_schedule_kind_to_string(TaskScheduleKind kind);
-[[nodiscard]]
-std::optional<TaskScheduleKind> task_schedule_kind_from_string(std::string_view value);
-[[nodiscard]]
 json delivery_policy_to_json(const DeliveryPolicy &delivery);
 [[nodiscard]]
 DeliveryPolicy delivery_policy_from_json(const json &value);

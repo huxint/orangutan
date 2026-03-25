@@ -5,8 +5,7 @@
 #include "infra/time/local-format.hpp"
 
 #include <filesystem>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <print>
 #include <stdexcept>
 
@@ -20,14 +19,14 @@ std::string render_managed_block(const RuntimeMemoryContext &context, const std:
     std::string out;
     out.append(managed_begin_marker);
     out.push_back('\n');
-    std::format_to(std::back_inserter(out), "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
+    append(out, "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
     if (durable_records.empty()) {
         out.append("- No durable memories captured yet.\n");
     } else {
         for (const auto &record : durable_records) {
-            std::format_to(std::back_inserter(out), "- [{}:{}] {}", record.category, record.key, record.content);
+            append(out, "- [{}:{}] {}", record.category, record.key, record.content);
             if (!record.source.empty()) {
-                std::format_to(std::back_inserter(out), " {{source={}}}", record.source);
+                append(out, " {{source={}}}", record.source);
             }
             out.push_back('\n');
         }

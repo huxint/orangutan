@@ -21,6 +21,7 @@
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::web {
 
@@ -210,7 +211,7 @@ json task_to_json(const automation::TaskSpec &task) {
         {"agent_key", task.agent_key},
         {"name", task.name},
         {"enabled", task.enabled},
-        {"schedule_kind", automation::task_schedule_kind_to_string(task.schedule.kind)},
+        {"schedule_kind", magic_enum::enum_name(task.schedule.kind)},
         {"schedule", task.schedule.value},
         {"prompt", task.prompt},
         {"notes", task.notes},

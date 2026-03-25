@@ -2,8 +2,7 @@
 
 #include <array>
 #include <cstdint>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 
 namespace orangutan::app {
 
@@ -214,20 +213,20 @@ SlashCommandReply invoke_required_arg(std::string_view args, const SharedSlashCo
 
 std::string wrap_slash_reply(std::string_view title, std::string_view emoji, const std::string &text) {
     std::string out;
-    std::format_to(std::back_inserter(out), "## {}\n", title);
+    append(out, "## {}\n", title);
 
     if (text.empty()) {
-        std::format_to(std::back_inserter(out), "- {} No output.", emoji);
+        append(out, "- {} No output.", emoji);
         return out;
     }
 
     if (text.starts_with("Error: ")) {
-        std::format_to(std::back_inserter(out), "- ⚠️ {}", text.substr(7));
+        append(out, "- ⚠️ {}", text.substr(7));
         return out;
     }
 
     if (text.starts_with("Usage: ")) {
-        std::format_to(std::back_inserter(out), "- ℹ️ `{}`", text);
+        append(out, "- ℹ️ `{}`", text);
         return out;
     }
 
@@ -236,7 +235,7 @@ std::string wrap_slash_reply(std::string_view title, std::string_view emoji, con
         return out;
     }
 
-    std::format_to(std::back_inserter(out), "- {} {}", emoji, text);
+    append(out, "- {} {}", emoji, text);
     return out;
 }
 
@@ -436,7 +435,7 @@ void append_help_lines(std::string &out, const Specs &specs, slash_command_surfa
         if (description.empty()) {
             continue;
         }
-        std::format_to(std::back_inserter(out), "- `{}` - {}\n", spec.definition.usage, description);
+        append(out, "- `{}` - {}\n", spec.definition.usage, description);
     }
 }
 

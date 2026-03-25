@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <magic_enum/magic_enum.hpp>
+#include <stdexcept>
 
 namespace orangutan::automation {
 namespace {
@@ -40,7 +42,12 @@ TaskSpec read_task(sqlite::Statement &stmt) {
     task.agent_key = stmt.column_text(1);
     task.name = stmt.column_text(2);
     task.enabled = stmt.column_int(3) != 0;
-    task.schedule.kind = task_schedule_kind_from_string(stmt.column_text(4)).value_or(TaskScheduleKind::cron);
+    const auto schedule_kind = stmt.column_text(4);
+    if (const auto parsed = magic_enum::enum_cast<TaskScheduleKind>(schedule_kind); parsed.has_value()) {
+        task.schedule.kind = *parsed;
+    } else {
+        throw std::runtime_error("Unknown task schedule kind: " + schedule_kind);
+    }
     task.schedule.value = stmt.column_text(5);
     task.prompt = stmt.column_text(6);
     task.notes = stmt.column_text(7);
@@ -72,7 +79,12 @@ HeartbeatSpec read_heartbeat(sqlite::Statement &stmt) {
 RunRecord read_run(sqlite::Statement &stmt) {
     RunRecord run;
     run.id = stmt.column_text(0);
-    run.kind = kind_from_string(stmt.column_text(1)).value_or(Kind::task);
+    const auto kind = stmt.column_text(1);
+    if (const auto parsed = magic_enum::enum_cast<Kind>(kind); parsed.has_value()) {
+        run.kind = *parsed;
+    } else {
+        throw std::runtime_error("Unknown automation kind: " + kind);
+    }
     run.automation_id = stmt.column_text(2);
     run.agent_key = stmt.column_text(3);
     run.automation_name = stmt.column_text(4);
@@ -161,7 +173,7 @@ std::string Store::upsert_task(const TaskSpec &task_input) {
     stmt.bind_text(2, task.agent_key);
     stmt.bind_text(3, task.name);
     stmt.bind_int(4, task.enabled ? 1 : 0);
-    stmt.bind_text(5, task_schedule_kind_to_string(task.schedule.kind));
+    stmt.bind_text(5, magic_enum::enum_name(task.schedule.kind));
     stmt.bind_text(6, task.schedule.value);
     stmt.bind_text(7, task.prompt);
     stmt.bind_text(8, task.notes);
@@ -190,7 +202,7 @@ void Store::update_task_run_state(const std::string &task_id, std::optional<std:
     sqlite::Statement stmt(db_, "UPDATE tasks SET last_run_at = ?2, last_status = ?3, enabled = ?4 WHERE id = ?1");
     stmt.bind_text(1, task_id);
     stmt.bind_text(2, encode_optional_seconds(last_run_at));
-    stmt.bind_text(3, std::string(last_status));
+    stmt.bind_text(3, last_status);
     stmt.bind_int(4, enabled ? 1 : 0);
     static_cast<void>(stmt.step());
 }
@@ -284,7 +296,7 @@ void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::opt
     stmt.bind_text(1, heartbeat_id);
     stmt.bind_text(2, encode_optional_seconds(last_run_at));
     stmt.bind_text(3, encode_optional_seconds(next_due_at));
-    stmt.bind_text(4, std::string(last_status));
+    stmt.bind_text(4, last_status);
     stmt.bind_int(5, paused ? 1 : 0);
     static_cast<void>(stmt.step());
 }
@@ -300,7 +312,7 @@ std::string Store::insert_run(const RunRecord &run_input) {
                                 "(id, kind, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, delivery_status, log_path) "
                                 "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)");
     stmt.bind_text(1, run.id);
-    stmt.bind_text(2, kind_to_string(run.kind));
+    stmt.bind_text(2, magic_enum::enum_name(run.kind));
     stmt.bind_text(3, run.automation_id);
     stmt.bind_text(4, run.agent_key);
     stmt.bind_text(5, run.automation_name);
@@ -320,10 +332,10 @@ void Store::complete_run(const std::string &run_id, std::string_view status, std
     sqlite::Statement stmt(db_, "UPDATE automation_runs SET finished_at = ?2, status = ?3, summary = ?4, delivery_status = ?5, log_path = ?6 WHERE id = ?1");
     stmt.bind_text(1, run_id);
     stmt.bind_text(2, encode_optional_seconds(finished_at));
-    stmt.bind_text(3, std::string(status));
-    stmt.bind_text(4, std::string(summary));
-    stmt.bind_text(5, std::string(delivery_status));
-    stmt.bind_text(6, std::string(log_path));
+    stmt.bind_text(3, status);
+    stmt.bind_text(4, summary);
+    stmt.bind_text(5, delivery_status);
+    stmt.bind_text(6, log_path);
     static_cast<void>(stmt.step());
 }
 

@@ -5,8 +5,7 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -76,12 +75,12 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
             out += format_hashline(lines[static_cast<size_t>(i - 1)], static_cast<size_t>(i));
             out.push_back('\n');
         } else {
-            std::format_to(std::back_inserter(out), "{:>{}}\t{}\n", i, num_width, lines[static_cast<size_t>(i - 1)]);
+            append(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<size_t>(i - 1)]);
         }
     }
 
     if (end < total_lines) {
-        std::format_to(std::back_inserter(out), "... (showing {} of {} lines, use offset to read more)\n", output_count, total_lines);
+        append(out, "... (showing {} of {} lines, use offset to read more)\n", output_count, total_lines);
     }
 
     return out;
@@ -119,12 +118,12 @@ std::string read_file(const json &input, const std::filesystem::path &workspace_
         if (i > 0) {
             out.push_back('\n');
         }
-        std::format_to(std::back_inserter(out), "=== {} ===\n", path.string());
+        append(out, "=== {} ===\n", path.string());
 
         try {
             out += read_single_file(path, offset, limit, edit_mode);
         } catch (const std::exception &e) {
-            std::format_to(std::back_inserter(out), "Error: {}\n", e.what());
+            append(out, "Error: {}\n", e.what());
         }
     }
 

@@ -4,42 +4,10 @@
 #include <algorithm>
 #include <chrono>
 #include <optional>
-#include <stdexcept>
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {
 namespace {
-
-std::string subagent_run_status_to_string(SubagentRunStatus status) {
-    switch (status) {
-        case SubagentRunStatus::queued:
-            return "queued";
-        case SubagentRunStatus::running:
-            return "running";
-        case SubagentRunStatus::succeeded:
-            return "succeeded";
-        case SubagentRunStatus::failed:
-            return "failed";
-        case SubagentRunStatus::timed_out:
-            return "timed_out";
-        case SubagentRunStatus::abandoned:
-            return "abandoned";
-    }
-
-    throw std::runtime_error("unknown subagent run status");
-}
-
-std::string subagent_wait_state_to_string(SubagentWaitState state) {
-    switch (state) {
-        case SubagentWaitState::completed:
-            return "completed";
-        case SubagentWaitState::timed_out:
-            return "timed_out";
-        case SubagentWaitState::not_found:
-            return "not_found";
-    }
-
-    throw std::runtime_error("unknown subagent wait state");
-}
 
 json subagent_run_record_to_json(const SubagentRunRecord &run) {
     return json{
@@ -50,7 +18,7 @@ json subagent_run_record_to_json(const SubagentRunRecord &run) {
         {"child_session_id", run.child_session_id},
         {"child_agent_key", run.child_agent_key},
         {"child_scope_key", run.child_scope_key},
-        {"status", subagent_run_status_to_string(run.status)},
+        {"status", magic_enum::enum_name(run.status)},
         {"task_summary", run.task_summary},
         {"final_summary", run.final_summary},
         {"final_output", run.final_output},
@@ -119,7 +87,7 @@ std::string subagent_wait_tool(const json &input, SubagentManager &subagent_mana
         .timeout = std::chrono::milliseconds{timeout_ms},
         .caller = make_subagent_caller_context(tool_context),
     });
-    return json{{"state", subagent_wait_state_to_string(result.state)}, {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : json(nullptr)}}.dump();
+    return json{{"state", magic_enum::enum_name(result.state)}, {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : json(nullptr)}}.dump();
 }
 
 bool should_register_subagent_tools(const ToolRuntimeContext *tool_context) {

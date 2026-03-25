@@ -237,7 +237,7 @@ boost::ut::suite subagent_integration_suite = [] {
 
         const auto child_history = session_store.load(wait_run_result.run->child_session_id);
         expect(child_history.size() == 4_ul);
-        expect(child_history[0].role == Role::User);
+        expect(child_history[0].role == Role::user);
         expect(std::get<TextBlock>(child_history[0].content[0]).text == "Investigate parser regression");
         expect(std::get<TextBlock>(child_history[3].content[0]).text == "child completed delegated work");
 

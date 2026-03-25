@@ -77,8 +77,8 @@ boost::ut::suite session_store_suite = [] {
         const auto loaded = store.load(session_id);
 
         expect((loaded.size() == std::size_t{2}) >> fatal) << "expected two persisted messages";
-        expect(loaded[0].role == Role::User);
-        expect(loaded[1].role == Role::Assistant);
+        expect(loaded[0].role == Role::user);
+        expect(loaded[1].role == Role::assistant);
 
         const auto *user_text = std::get_if<TextBlock>(&loaded[0].content[0]);
         expect((user_text != nullptr) >> fatal);
@@ -106,7 +106,7 @@ boost::ut::suite session_store_suite = [] {
 
         std::vector<Message> messages = {
             Message::user_text("list files"),
-            {.role = Role::Assistant, .content = std::move(content)},
+            {.role = Role::assistant, .content = std::move(content)},
         };
 
         const auto session_id = store.save(messages, make_session_metadata("test-model"));
@@ -134,7 +134,7 @@ boost::ut::suite session_store_suite = [] {
         });
 
         std::vector<Message> messages = {
-            {.role = Role::User, .content = std::move(result_content)},
+            {.role = Role::user, .content = std::move(result_content)},
         };
 
         const auto session_id = store.save(messages, make_session_metadata("test-model"));
@@ -161,7 +161,7 @@ boost::ut::suite session_store_suite = [] {
             .is_error = true,
         });
 
-        std::vector<Message> messages = {{.role = Role::User, .content = std::move(content)}};
+        std::vector<Message> messages = {{.role = Role::user, .content = std::move(content)}};
 
         const auto session_id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(session_id);
@@ -387,7 +387,7 @@ boost::ut::suite session_store_suite = [] {
             .input = json{{"command", "echo hi"}},
         });
 
-        std::vector<Message> messages = {{.role = Role::Assistant, .content = std::move(content)}};
+        std::vector<Message> messages = {{.role = Role::assistant, .content = std::move(content)}};
 
         const auto id = store.save(messages, make_session_metadata("test-model"));
         const auto loaded = store.load(id);

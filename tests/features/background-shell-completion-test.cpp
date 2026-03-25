@@ -493,7 +493,7 @@ boost::ut::suite background_shell_completion_suite = [] {
                     return LLMResponse{};
                 }
 
-                boost::ut::expect(messages.back().role == Role::User);
+                boost::ut::expect(messages.back().role == Role::user);
                 const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
                 boost::ut::expect(text != nullptr) << "expected trailing user text block";
                 if (text != nullptr) {
@@ -526,7 +526,7 @@ boost::ut::suite background_shell_completion_suite = [] {
         expect(provider_started.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         expect(resume_result.get() == std::nullopt);
         expect(agent.history().size() >= 2U);
-        expect(agent.history().back().role == Role::Assistant);
+        expect(agent.history().back().role == Role::assistant);
     };
 
     "resume_dispatch_failures_become_inbox_visible_notes"_test = [] {

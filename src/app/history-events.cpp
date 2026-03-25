@@ -1,8 +1,7 @@
 #include "app/history-events.hpp"
 
 #include <algorithm>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <unordered_map>
 
 namespace orangutan::app {
@@ -104,7 +103,7 @@ json build_edit_details(const ToolUseBlock &call) {
     unified.append("+++ b/");
     unified.append(path.empty() ? "after" : path);
     unified.push_back('\n');
-    std::format_to(std::back_inserter(unified), "{}", header);
+    append(unified, "{}", header);
 
     for (size_t index = prefix_context_start; index < prefix; ++index) {
         unified.push_back('\n');
@@ -152,7 +151,7 @@ std::vector<json> build_session_history_events(const std::vector<Message> &histo
     for (const auto &message : history) {
         for (const auto &block : message.content) {
             if (const auto *text = std::get_if<TextBlock>(&block)) {
-                events.push_back(history_text_event(role_to_string(message.role), text->text));
+                events.push_back(history_text_event(magic_enum::enum_name(message.role), text->text));
                 continue;
             }
 

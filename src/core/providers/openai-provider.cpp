@@ -156,7 +156,7 @@ OpenAiProvider::OpenAiProvider(std::string api_key, std::string model, std::stri
 
 json OpenAiProvider::message_to_openai(const Message &msg) {
     // Handle assistant messages with tool calls
-    if (msg.role == Role::Assistant) {
+    if (msg.role == Role::assistant) {
         json j;
         j["role"] = "assistant";
 
@@ -185,7 +185,7 @@ json OpenAiProvider::message_to_openai(const Message &msg) {
     }
 
     // Handle user messages with tool results
-    if (msg.role == Role::User) {
+    if (msg.role == Role::user) {
         // Check if this contains tool results
         for (const auto &block : msg.content) {
             if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
@@ -208,7 +208,7 @@ json OpenAiProvider::message_to_openai(const Message &msg) {
     }
 
     // Fallback
-    return {{"role", role_to_string(msg.role)}, {"content", ""}};
+    return {{"role", magic_enum::enum_name(msg.role)}, {"content", ""}};
 }
 
 json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
@@ -229,7 +229,7 @@ json OpenAiProvider::build_request_body(std::string_view system_prompt, const st
 
     for (const auto &msg : messages) {
         // A user message might contain multiple tool results — each becomes a separate message
-        if (msg.role == Role::User) {
+        if (msg.role == Role::user) {
             bool has_tool_results = false;
             std::string user_text;
 

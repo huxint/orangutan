@@ -195,8 +195,8 @@ boost::ut::suite session_workflow_suite = [] {
         const auto result = app::export_session_markdown(
             {
                 Message::user_text("hello"),
-                {.role = Role::Assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
-                {.role = Role::User, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
+                {.role = Role::assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
+                {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
             },
             "session-123", workspace.string());
 

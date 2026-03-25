@@ -7,9 +7,8 @@
 #include <cctype>
 #include <charconv>
 #include <cstdio>
-#include <format>
+#include "infra/format.hpp"
 #include <functional>
-#include <iterator>
 #include <optional>
 #include <print>
 #include <spdlog/spdlog.h>
@@ -239,7 +238,7 @@ std::string AgentLoop::handle_continuation(const std::string &system_prompt, boo
         auto parts = split_response(response);
         continued_text += parts.text;
         history_.push_back(Message{
-            .role = Role::Assistant,
+            .role = Role::assistant,
             .content = std::move(parts.all_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -358,7 +357,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
         auto parts = split_response(response);
         final_text += parts.text;
         history_.push_back(Message{
-            .role = Role::Assistant,
+            .role = Role::assistant,
             .content = std::move(parts.all_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -383,7 +382,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
         // Execute tools and check for loops
         auto [result_blocks, loop_detected] = execute_tools(parts.tool_calls, human_output, on_tool_event);
         history_.push_back(Message{
-            .role = Role::User,
+            .role = Role::user,
             .content = std::move(result_blocks),
         });
         emit_history_checkpoint(on_history_checkpoint, history_);
@@ -489,7 +488,7 @@ std::string AgentLoop::build_session_memory_transcript() const {
     std::string transcript;
 
     for (const auto &message : history_) {
-        std::format_to(std::back_inserter(transcript), "{}:\n", role_to_string(message.role));
+        append(transcript, "{}:\n", magic_enum::enum_name(message.role));
         for (const auto &block : message.content) {
             if (const auto *text = std::get_if<TextBlock>(&block)) {
                 if (!text->text.empty()) {
@@ -500,7 +499,7 @@ std::string AgentLoop::build_session_memory_transcript() const {
             }
 
             if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
-                std::format_to(std::back_inserter(transcript), "[tool_use] {}\n", tool->name);
+                append(transcript, "[tool_use] {}\n", tool->name);
                 continue;
             }
 
@@ -548,7 +547,7 @@ AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
     }
 
     for (const auto &message : history_) {
-        if (message.role != Role::User) {
+        if (message.role != Role::user) {
             continue;
         }
         for (const auto &block : message.content) {
@@ -635,7 +634,7 @@ std::string AgentLoop::build_system_prompt(const std::string &user_input) const 
 
     for (const auto &record : records) {
         std::string candidate;
-        std::format_to(std::back_inserter(candidate), "- [{}:{}] {}", record.category, record.key, record.content);
+        append(candidate, "- [{}:{}] {}", record.category, record.key, record.content);
         if (used + candidate.size() + 1 > max_memory_prompt_bytes) {
             if (wrote_any) {
                 break;

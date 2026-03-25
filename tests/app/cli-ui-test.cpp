@@ -62,8 +62,8 @@ boost::ut::suite cli_ui_suite = [] {
         orangutan::AgentLoop agent(provider, tools);
         agent.set_history({
             orangutan::Message::user_text("hello"),
-            {.role = orangutan::Role::Assistant, .content = {orangutan::ToolUseBlock{.id = "call-1", .name = "shell", .input = nlohmann::json{{"command", "pwd"}}}}},
-            {.role = orangutan::Role::User, .content = {orangutan::ToolResultBlock{.tool_use_id = "call-1", .content = "permission denied", .is_error = true}}},
+            {.role = orangutan::Role::assistant, .content = {orangutan::ToolUseBlock{.id = "call-1", .name = "shell", .input = nlohmann::json{{"command", "pwd"}}}}},
+            {.role = orangutan::Role::user, .content = {orangutan::ToolResultBlock{.tool_use_id = "call-1", .content = "permission denied", .is_error = true}}},
             orangutan::Message::assistant_text("done"),
         });
 

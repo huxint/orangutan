@@ -163,6 +163,19 @@ denied_shell_commands = ["rm -rf", "shutdown"]
         expect(cfg.permissions.denied_shell_commands[1] == "shutdown");
     };
 
+    "parses_permission_enum_aliases"_test = [] {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(R"toml(
+[permissions]
+sandbox_mode = "workspace_write"
+shell_approval_policy = "ALLOW"
+)toml");
+
+        const auto cfg = Config::load_from(path);
+        expect(cfg.permissions.sandbox_mode == ToolSandboxMode::workspace_write);
+        expect(cfg.permissions.shell_approval == ToolApprovalPolicy::allow);
+    };
+
     "parses_custom_tools_section"_test = [] {
         ConfigFileHarness harness;
         const auto path = harness.write_config(R"toml(

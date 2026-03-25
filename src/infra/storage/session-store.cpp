@@ -124,7 +124,7 @@ void write_messages(sqlite::Database &db, const std::string &session_id, const s
 
         insert_msg.bind_text(1, session_id);
         insert_msg.bind_int(2, static_cast<int>(index));
-        insert_msg.bind_text(3, std::string(role_to_string(message.role)));
+        insert_msg.bind_text(3, magic_enum::enum_name(message.role));
         insert_msg.bind_text(4, content_json);
         static_cast<void>(insert_msg.step());
         insert_msg.reset();
@@ -339,7 +339,7 @@ std::vector<Message> SessionStore::load(const std::string &session_id) {
     std::vector<Message> messages;
     while (stmt.step()) {
         messages.push_back({
-            .role = role_from_string(stmt.column_text(0)),
+            .role = magic_enum::enum_cast<Role>(stmt.column_text(0)).value_or(Role::user),
             .content = deserialize_content(stmt.column_text(1)),
         });
     }

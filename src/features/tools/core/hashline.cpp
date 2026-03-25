@@ -8,7 +8,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <format>
+#include "infra/format.hpp"
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -321,7 +321,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, c
     if (!mismatches.empty()) {
         std::string error;
         for (const auto &mm : mismatches) {
-            std::format_to(std::back_inserter(error), "Hash mismatch at line {}: expected {}, got {}\n", mm.line, mm.expected, mm.actual.empty() ? "out-of-range" : mm.actual);
+            append(error, "Hash mismatch at line {}: expected {}, got {}\n", mm.line, mm.expected, mm.actual.empty() ? "out-of-range" : mm.actual);
             if (!mm.actual.empty()) {
                 error += format_mismatch_context(lines, mm);
             }

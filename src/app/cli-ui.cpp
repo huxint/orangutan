@@ -2,8 +2,7 @@
 #include "app/slash-commands.hpp"
 
 #include <algorithm>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 
 namespace orangutan::app {
 
@@ -26,13 +25,13 @@ std::string format_agent_list(const Config &cfg, const std::string &current_agen
 
     std::string out = "## Agents\n";
     for (const auto &[agent_key, agent_cfg] : cfg.agents) {
-        std::format_to(std::back_inserter(out), "- 🤖 `{}`", agent_key);
+        append(out, "- 🤖 `{}`", agent_key);
         if (agent_key == current_agent_key) {
             out += " **(current)**";
         }
-        std::format_to(std::back_inserter(out), " — model: `{}`", agent_cfg.model);
+        append(out, " — model: `{}`", agent_cfg.model);
         if (!agent_cfg.workspace.empty()) {
-            std::format_to(std::back_inserter(out), ", workspace: `{}`", agent_cfg.workspace);
+            append(out, ", workspace: `{}`", agent_cfg.workspace);
         }
         if (!agent_cfg.subagents.empty()) {
             out += ", subagents: ";
@@ -40,7 +39,7 @@ std::string format_agent_list(const Config &cfg, const std::string &current_agen
                 if (index > 0) {
                     out.push_back(',');
                 }
-                std::format_to(std::back_inserter(out), "`{}`", agent_cfg.subagents[index]);
+                append(out, "`{}`", agent_cfg.subagents[index]);
             }
         }
         out.push_back('\n');
@@ -69,14 +68,14 @@ std::string format_scoped_sessions(const std::vector<SessionInfo> &sessions, con
     const auto count = std::min(max_sessions_to_show, sessions.size());
     for (size_t index = 0; index < count; ++index) {
         const auto &session = sessions[index];
-        std::format_to(std::back_inserter(out), "- 🧵 `{}`", session.id);
+        append(out, "- 🧵 `{}`", session.id);
         if (session.id == current_session_id) {
             out += " **(current)**";
         }
-        std::format_to(std::back_inserter(out), " — {}, model: `{}`, messages: `{}`\n", session.created_at, session.model, session.message_count);
+        append(out, " — {}, model: `{}`, messages: `{}`\n", session.created_at, session.model, session.message_count);
     }
     if (sessions.size() > count) {
-        std::format_to(std::back_inserter(out), "- ➕ And `{}` more", sessions.size() - count);
+        append(out, "- ➕ And `{}` more", sessions.size() - count);
     }
     return out;
 }
@@ -97,7 +96,7 @@ std::string render_saved_sessions(SessionStore &store, const std::string &scope_
 
     std::string out = "🗂️ Saved sessions:\n";
     for (const auto &session : sessions) {
-        std::format_to(std::back_inserter(out), "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
+        append(out, "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
     }
     out.push_back('\n');
     return out;
@@ -119,9 +118,9 @@ RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provi
     };
 
     for (const auto &message : agent.history()) {
-        if (message.role == Role::User) {
+        if (message.role == Role::user) {
             ++status.user_messages;
-        } else if (message.role == Role::Assistant) {
+        } else if (message.role == Role::assistant) {
             ++status.assistant_messages;
         }
 
@@ -143,11 +142,11 @@ RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provi
 
 std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
     std::string out = "## Status\n";
-    std::format_to(std::back_inserter(out), "- 🤖 Agent: `{}`\n", status.agent_key);
-    std::format_to(std::back_inserter(out), "- 🔌 Provider: `{}`\n", status.provider_name);
-    std::format_to(std::back_inserter(out), "- 🧠 Model: `{}`\n", status.current_model);
+    append(out, "- 🤖 Agent: `{}`\n", status.agent_key);
+    append(out, "- 🔌 Provider: `{}`\n", status.provider_name);
+    append(out, "- 🧠 Model: `{}`\n", status.current_model);
     if (!status.configured_model.empty() && status.configured_model != status.current_model) {
-        std::format_to(std::back_inserter(out), "- 🎯 Configured Model: `{}`\n", status.configured_model);
+        append(out, "- 🎯 Configured Model: `{}`\n", status.configured_model);
     }
     if (!status.fallback_models.empty()) {
         out += "- 🔁 Fallback Models: ";
@@ -155,19 +154,18 @@ std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
             if (index > 0) {
                 out += ", ";
             }
-            std::format_to(std::back_inserter(out), "`{}`", status.fallback_models[index]);
+            append(out, "`{}`", status.fallback_models[index]);
         }
         out.push_back('\n');
     }
-    std::format_to(std::back_inserter(out), "- 🧵 Session: `{}`\n", status.current_session_id.empty() ? "none" : status.current_session_id);
+    append(out, "- 🧵 Session: `{}`\n", status.current_session_id.empty() ? "none" : status.current_session_id);
     if (!status.scope_key.empty()) {
-        std::format_to(std::back_inserter(out), "- 🗂️ Scope: `{}`\n", status.scope_key);
+        append(out, "- 🗂️ Scope: `{}`\n", status.scope_key);
     }
-    std::format_to(std::back_inserter(out), "- 📊 Usage: `llm_requests={}`, `attempts={}`, `fallbacks={}`, `failed_attempts={}`, `tool_calls={}`, `tool_errors={}`\n",
-                   status.provider_usage.logical_requests, status.provider_usage.attempt_count, status.provider_usage.fallback_switches, status.provider_usage.failed_attempts,
-                   status.tool_call_count, status.tool_error_count);
-    std::format_to(std::back_inserter(out), "- 💬 History: `messages={}`, `user={}`, `assistant={}`\n", status.history_messages, status.user_messages, status.assistant_messages);
-    std::format_to(std::back_inserter(out), "- 🛠️ Tools: `registered={}`", status.registered_tool_count);
+    append(out, "- 📊 Usage: `llm_requests={}`, `attempts={}`, `fallbacks={}`, `failed_attempts={}`, `tool_calls={}`, `tool_errors={}`\n", status.provider_usage.logical_requests,
+           status.provider_usage.attempt_count, status.provider_usage.fallback_switches, status.provider_usage.failed_attempts, status.tool_call_count, status.tool_error_count);
+    append(out, "- 💬 History: `messages={}`, `user={}`, `assistant={}`\n", status.history_messages, status.user_messages, status.assistant_messages);
+    append(out, "- 🛠️ Tools: `registered={}`", status.registered_tool_count);
     return out;
 }
 

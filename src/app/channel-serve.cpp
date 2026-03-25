@@ -21,8 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -177,7 +176,7 @@ std::string format_pending_channel_approval_prompt(const std::vector<std::string
 
     std::string prompt = "Multiple shell approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
     for (const auto &request_id : request_ids) {
-        std::format_to(std::back_inserter(prompt), " {}", request_id);
+        append(prompt, " {}", request_id);
     }
     return prompt;
 }

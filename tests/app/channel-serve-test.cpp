@@ -682,7 +682,7 @@ boost::ut::suite channel_serve_suite = [] {
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
         const auto session_id =
-            session_store.save({Message::user_text("hello"), {.role = Role::Assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
+            session_store.save({Message::user_text("hello"), {.role = Role::assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
                                orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
         const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
@@ -856,7 +856,7 @@ boost::ut::suite channel_serve_suite = [] {
                     return LLMResponse{};
                 }
 
-                boost::ut::expect(messages.back().role == Role::User);
+                boost::ut::expect(messages.back().role == Role::user);
                 const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
                 boost::ut::expect((text != nullptr) >> boost::ut::fatal);
                 if (text != nullptr) {
@@ -921,7 +921,7 @@ boost::ut::suite channel_serve_suite = [] {
         expect(current_session_id == session_id);
         expect(persisted_message_count == persisted_history.size());
         expect(persisted_history.size() >= 4_ul);
-        expect(persisted_history.back().role == Role::Assistant);
+        expect(persisted_history.back().role == Role::assistant);
         const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
         expect((reply_text != nullptr) >> fatal);
         if (reply_text != nullptr) {

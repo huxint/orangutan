@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {
 
@@ -17,46 +18,11 @@ std::filesystem::path db_path() {
     return std::filesystem::path(home) / ".orangutan" / "sessions.db";
 }
 
-std::string status_to_string(SubagentRunStatus status) {
-    switch (status) {
-        case SubagentRunStatus::queued:
-            return "queued";
-        case SubagentRunStatus::running:
-            return "running";
-        case SubagentRunStatus::succeeded:
-            return "succeeded";
-        case SubagentRunStatus::failed:
-            return "failed";
-        case SubagentRunStatus::timed_out:
-            return "timed_out";
-        case SubagentRunStatus::abandoned:
-            return "abandoned";
+SubagentRunStatus status_from_string(std::string_view status) {
+    if (const auto parsed = magic_enum::enum_cast<SubagentRunStatus>(status); parsed.has_value()) {
+        return *parsed;
     }
-
-    throw std::runtime_error("Unknown subagent run status enum value");
-}
-
-SubagentRunStatus status_from_string(const std::string &status) {
-    if (status == "queued") {
-        return SubagentRunStatus::queued;
-    }
-    if (status == "running") {
-        return SubagentRunStatus::running;
-    }
-    if (status == "succeeded") {
-        return SubagentRunStatus::succeeded;
-    }
-    if (status == "failed") {
-        return SubagentRunStatus::failed;
-    }
-    if (status == "timed_out") {
-        return SubagentRunStatus::timed_out;
-    }
-    if (status == "abandoned") {
-        return SubagentRunStatus::abandoned;
-    }
-
-    throw std::runtime_error("Unknown subagent run status: " + status);
+    throw std::runtime_error("Unknown subagent run status: " + std::string(status));
 }
 
 std::optional<std::string> optional_text(std::string value) {
@@ -127,7 +93,7 @@ void SubagentRunStore::create_run(const SubagentRunCreateParams &params) {
     stmt.bind_text(6, params.child_session_id);
     stmt.bind_text(7, params.child_agent_key);
     stmt.bind_text(8, params.child_scope_key);
-    stmt.bind_text(9, status_to_string(SubagentRunStatus::queued));
+    stmt.bind_text(9, magic_enum::enum_name(SubagentRunStatus::queued));
     stmt.bind_text(10, params.task_summary);
     static_cast<void>(stmt.step());
 }
@@ -168,9 +134,9 @@ void SubagentRunStore::mark_running(const std::string &run_id) {
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, started_at = COALESCE(started_at, datetime('now')) "
                                 "WHERE run_id = ? AND status = ?");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::running));
     stmt.bind_text(2, run_id);
-    stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
+    stmt.bind_text(3, magic_enum::enum_name(SubagentRunStatus::queued));
     static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark running");
 }
@@ -180,11 +146,11 @@ void SubagentRunStore::mark_succeeded(const std::string &run_id, const std::stri
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, final_summary = ?, final_output = ?, error_text = '', "
                                 "finished_at = datetime('now') WHERE run_id = ? AND status = ?");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::succeeded));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::succeeded));
     stmt.bind_text(2, summary);
     stmt.bind_text(3, output);
     stmt.bind_text(4, run_id);
-    stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(5, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark succeeded");
 }
@@ -194,11 +160,11 @@ void SubagentRunStore::mark_failed(const std::string &run_id, const std::string 
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, error_text = ?, finished_at = datetime('now') "
                                 "WHERE run_id = ? AND status IN (?, ?)");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::failed));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::failed));
     stmt.bind_text(2, error);
     stmt.bind_text(3, run_id);
-    stmt.bind_text(4, status_to_string(SubagentRunStatus::queued));
-    stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(4, magic_enum::enum_name(SubagentRunStatus::queued));
+    stmt.bind_text(5, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark failed");
 }
@@ -208,11 +174,11 @@ void SubagentRunStore::mark_timed_out(const std::string &run_id, const std::stri
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, error_text = ?, finished_at = datetime('now') "
                                 "WHERE run_id = ? AND status IN (?, ?)");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::timed_out));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::timed_out));
     stmt.bind_text(2, error);
     stmt.bind_text(3, run_id);
-    stmt.bind_text(4, status_to_string(SubagentRunStatus::queued));
-    stmt.bind_text(5, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(4, magic_enum::enum_name(SubagentRunStatus::queued));
+    stmt.bind_text(5, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark timed out");
 }
@@ -222,10 +188,10 @@ void SubagentRunStore::mark_abandoned(const std::string &run_id) {
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, finished_at = datetime('now') "
                                 "WHERE run_id = ? AND status IN (?, ?)");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::abandoned));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::abandoned));
     stmt.bind_text(2, run_id);
-    stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
-    stmt.bind_text(4, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(3, magic_enum::enum_name(SubagentRunStatus::queued));
+    stmt.bind_text(4, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
     require_updated_row(run_id, "mark abandoned");
 }
@@ -235,9 +201,9 @@ void SubagentRunStore::mark_active_runs_abandoned() {
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, finished_at = datetime('now') "
                                 "WHERE status IN (?, ?)");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::abandoned));
-    stmt.bind_text(2, status_to_string(SubagentRunStatus::queued));
-    stmt.bind_text(3, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::abandoned));
+    stmt.bind_text(2, magic_enum::enum_name(SubagentRunStatus::queued));
+    stmt.bind_text(3, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
 }
 
@@ -246,10 +212,10 @@ void SubagentRunStore::mark_active_runs_abandoned_for_runtime(const std::string 
 
     sqlite::Statement stmt(db_, "UPDATE subagent_runs SET status = ?, finished_at = datetime('now') "
                                 "WHERE parent_runtime_key = ? AND status IN (?, ?)");
-    stmt.bind_text(1, status_to_string(SubagentRunStatus::abandoned));
+    stmt.bind_text(1, magic_enum::enum_name(SubagentRunStatus::abandoned));
     stmt.bind_text(2, parent_runtime_key);
-    stmt.bind_text(3, status_to_string(SubagentRunStatus::queued));
-    stmt.bind_text(4, status_to_string(SubagentRunStatus::running));
+    stmt.bind_text(3, magic_enum::enum_name(SubagentRunStatus::queued));
+    stmt.bind_text(4, magic_enum::enum_name(SubagentRunStatus::running));
     static_cast<void>(stmt.step());
 }
 

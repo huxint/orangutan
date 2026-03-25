@@ -5,10 +5,10 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <functional>
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::automation {
 namespace {
@@ -20,7 +20,7 @@ struct RuntimeCallbacks {
 
 json make_log_entry(const Trigger &trigger, const ExecutionResult &result, std::int64_t started_at, std::string_view status) {
     return {
-        {"kind", kind_to_string(trigger.kind)},
+        {"kind", magic_enum::enum_name(trigger.kind)},
         {"automation_id", trigger.automation_id},
         {"agent_key", trigger.agent_key},
         {"name", trigger.name},
@@ -406,7 +406,7 @@ void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<st
 void Runtime::record_delivery_failure(const Trigger &trigger, std::string_view run_id, std::string_view title, std::string_view body) {
     static_cast<void>(store_.insert_inbox(InboxItem{
         .agent_key = trigger.agent_key,
-        .source_kind = kind_to_string(trigger.kind),
+        .source_kind = std::string(magic_enum::enum_name(trigger.kind)),
         .source_run_id = std::string(run_id),
         .title = std::string(title),
         .body = std::string(body),

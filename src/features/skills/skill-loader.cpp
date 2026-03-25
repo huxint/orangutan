@@ -6,8 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <spdlog/spdlog.h>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <toml++/toml.hpp>
 #include <unordered_map>
 
@@ -371,7 +370,7 @@ std::string SkillLoader::build_prompt_section() const {
     std::string out;
     out.append("\n\n## Active Skills\n");
     for (const auto &skill : skills_) {
-        std::format_to(std::back_inserter(out), "\n### {}\n", skill.name);
+        append(out, "\n### {}\n", skill.name);
         out.append(skill.body);
     }
     return out;

@@ -1,5 +1,7 @@
 #include "features/tools/builtin/automation-tool-support.hpp"
 
+#include <magic_enum/magic_enum.hpp>
+
 namespace orangutan::builtin::detail {
 
 std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const json &input, const automation::DeliveryPolicy &base) {
@@ -9,7 +11,7 @@ std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(con
         if (!it->is_string()) {
             return std::unexpected("invalid delivery configuration");
         }
-        const auto mode = automation::delivery_mode_from_string(it->get<std::string>());
+        const auto mode = magic_enum::enum_cast<automation::DeliveryMode>(it->get_ref<const std::string &>());
         if (!mode.has_value()) {
             return std::unexpected("invalid delivery configuration");
         }

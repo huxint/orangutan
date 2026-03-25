@@ -6,43 +6,15 @@
 #include "infra/subprocess/subprocess.hpp"
 #include "infra/time/local-format.hpp"
 
-#include <algorithm>
-#include <array>
 #include <exception>
 #include <filesystem>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <span>
 #include <string_view>
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {
-
-// ── Event name mapping ──────────────────────────
-
-using EventNameEntry = std::pair<HookEvent, std::string_view>;
-
-constexpr std::array<EventNameEntry, 6> event_names = {{
-    {HookEvent::before_tool_call, "before_tool_call"},
-    {HookEvent::after_tool_call, "after_tool_call"},
-    {HookEvent::message_received, "message_received"},
-    {HookEvent::message_sending, "message_sending"},
-    {HookEvent::session_start, "session_start"},
-    {HookEvent::session_end, "session_end"},
-}};
-
-std::string hook_event_to_string(HookEvent event) {
-    if (const auto *const it = std::ranges::find(event_names, event, &EventNameEntry::first); it != event_names.end()) {
-        return std::string(it->second);
-    }
-    return "unknown";
-}
-
-static std::optional<HookEvent> string_to_hook_event(std::string_view name) {
-    if (const auto *const it = std::ranges::find(event_names, name, &EventNameEntry::second); it != event_names.end()) {
-        return it->first;
-    }
-    return std::nullopt;
-}
 
 // ── ISO 8601 timestamp ──────────────────────────
 
@@ -66,7 +38,7 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
             }
 
             auto event_name = entry.path().filename().string();
-            auto event = string_to_hook_event(event_name);
+            auto event = magic_enum::enum_cast<HookEvent>(event_name);
             if (!event.has_value()) {
                 spdlog::debug("Ignoring unknown hook event directory: {}", event_name);
                 continue;
@@ -109,7 +81,7 @@ void HookManager::load_from_directories(const std::vector<std::string> &director
     // Log discovery results
     for (const auto &[event, hooks] : hooks_) {
         if (!hooks.empty()) {
-            spdlog::info("Discovered {} hook(s) for event '{}'", hooks.size(), hook_event_to_string(event));
+            spdlog::info("Discovered {} hook(s) for event '{}'", hooks.size(), magic_enum::enum_name(event));
         }
     }
 }
@@ -160,7 +132,7 @@ static std::optional<DispatchResult> process_hook_result(const HookDef &hook, Ho
     }
 
     if (is_blocking_event) {
-        spdlog::info("Hook '{}' blocked {} (exit code {})", hook.filename, hook_event_to_string(event), result.exit_code);
+        spdlog::info("Hook '{}' blocked {} (exit code {})", hook.filename, magic_enum::enum_name(event), result.exit_code);
         return DispatchResult{
             .allowed = false,
             .blocked_by = hook.filename,
@@ -168,7 +140,7 @@ static std::optional<DispatchResult> process_hook_result(const HookDef &hook, Ho
         };
     }
 
-    spdlog::warn("Hook '{}' for '{}' exited with code {}", hook.filename, hook_event_to_string(event), result.exit_code);
+    spdlog::warn("Hook '{}' for '{}' exited with code {}", hook.filename, magic_enum::enum_name(event), result.exit_code);
     return std::nullopt;
 }
 
@@ -180,7 +152,7 @@ static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, s
     const HookDef &hook = hooks[index];
 
     return execute_hook_sender(hook, *context) | stdexec::then([hook, event, is_blocking_event](HookResult result) {
-               spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, hook_event_to_string(event));
+               spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, magic_enum::enum_name(event));
                return process_hook_result(hook, event, is_blocking_event, std::move(result));
            }) |
            stdexec::let_value([hooks, index, event, context, is_blocking_event](std::optional<DispatchResult> blocked_result) -> dispatch_sender_t {
@@ -222,7 +194,7 @@ size_t HookManager::total_hooks() const {
 // ── Context builders ────────────────────────────
 
 static json build_tool_call_context(HookEvent event, std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error) {
-    json ctx = {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
+    json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
     if (event == HookEvent::after_tool_call) {
         ctx["tool_result"] = tool_result;
         ctx["is_error"] = is_error;
@@ -239,11 +211,11 @@ json build_after_tool_call_context(std::string_view tool_name, const json &tool_
 }
 
 json build_message_context(HookEvent event, std::string_view role, std::string_view content) {
-    return {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
+    return {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
 }
 
 json build_session_context(HookEvent event, std::string_view session_id, size_t message_count) {
-    json ctx = {{"event", hook_event_to_string(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
+    json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
     if (event == HookEvent::session_end) {
         ctx["message_count"] = message_count;
     }

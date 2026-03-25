@@ -2,23 +2,32 @@
 
 #include <algorithm>
 #include <cctype>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
+
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {
 namespace {
 
-std::string normalize_token(std::string_view value) {
+std::string normalize_enum_token(std::string_view value) {
     std::string normalized;
     normalized.reserve(value.size());
     for (const auto ch : value) {
         if (ch == '-' || ch == '_') {
-            normalized.push_back('-');
+            normalized.push_back('_');
             continue;
         }
         normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
     }
     return normalized;
+}
+
+template <typename Enum>
+std::string hyphenated_enum_name_or(Enum value, std::string_view fallback) {
+    const auto name = magic_enum::enum_name(value);
+    std::string rendered = name.empty() ? std::string(fallback) : std::string(name);
+    std::ranges::replace(rendered, '_', '-');
+    return rendered;
 }
 
 std::string lowercase_copy(std::string_view value) {
@@ -48,55 +57,19 @@ ToolResultBlock blocked_result(const ToolUseBlock &call, std::string message) {
 } // namespace
 
 std::optional<ToolSandboxMode> parse_tool_sandbox_mode(std::string_view value) {
-    const auto normalized = normalize_token(value);
-    if (normalized == "isolated") {
-        return ToolSandboxMode::isolated;
-    }
-    if (normalized == "workspace-write") {
-        return ToolSandboxMode::workspace_write;
-    }
-    if (normalized == "disabled") {
-        return ToolSandboxMode::disabled;
-    }
-    return std::nullopt;
+    return magic_enum::enum_cast<ToolSandboxMode>(normalize_enum_token(value));
 }
 
 std::optional<ToolApprovalPolicy> parse_tool_approval_policy(std::string_view value) {
-    const auto normalized = normalize_token(value);
-    if (normalized == "ask") {
-        return ToolApprovalPolicy::ask;
-    }
-    if (normalized == "allow") {
-        return ToolApprovalPolicy::allow;
-    }
-    if (normalized == "deny") {
-        return ToolApprovalPolicy::deny;
-    }
-    return std::nullopt;
+    return magic_enum::enum_cast<ToolApprovalPolicy>(normalize_enum_token(value));
 }
 
 std::string to_string(ToolSandboxMode mode) {
-    switch (mode) {
-        case ToolSandboxMode::isolated:
-            return "isolated";
-        case ToolSandboxMode::workspace_write:
-            return "workspace-write";
-        case ToolSandboxMode::disabled:
-            return "disabled";
-    }
-    return "disabled";
+    return hyphenated_enum_name_or(mode, "disabled");
 }
 
 std::string to_string(ToolApprovalPolicy policy) {
-    switch (policy) {
-        case ToolApprovalPolicy::ask:
-            return "ask";
-        case ToolApprovalPolicy::allow:
-            return "allow";
-        case ToolApprovalPolicy::deny:
-            return "deny";
-    }
-    return "deny";
+    return hyphenated_enum_name_or(policy, "deny");
 }
 
 bool is_tool_allowed(const ToolPermissionSettings &settings, std::string_view name) {
@@ -158,9 +131,9 @@ std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBl
 
     std::string prompt;
     prompt += "Shell command approval required.\n";
-    std::format_to(std::back_inserter(prompt), "Tool: {}\n", call.name);
-    std::format_to(std::back_inserter(prompt), "Sandbox mode: {}\n", to_string(settings.sandbox_mode));
-    std::format_to(std::back_inserter(prompt), "Command: {}", command);
+    append(prompt, "Tool: {}\n", call.name);
+    append(prompt, "Sandbox mode: {}\n", to_string(settings.sandbox_mode));
+    append(prompt, "Command: {}", command);
     if (!approval_callback(call, prompt)) {
         return blocked_result(call, "Shell command rejected by user.");
     }

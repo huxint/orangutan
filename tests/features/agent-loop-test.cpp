@@ -146,7 +146,7 @@ private:
 };
 
 std::string describe_message(const Message &message) {
-    std::string description = std::string(role_to_string(message.role)) + ":";
+    std::string description = std::string(magic_enum::enum_name(message.role)) + ":";
     bool first_block = true;
     for (const auto &block : message.content) {
         if (!first_block) {
@@ -303,7 +303,7 @@ boost::ut::suite agent_loop_suite = [] {
         loop.set_history({
             Message::user_text("please help with this task"),
             Message::assistant_text("my name is Mallory"),
-            {.role = Role::User, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
+            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
         });
 
         const auto result = loop.distill_session_memory();

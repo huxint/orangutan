@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include <magic_enum/magic_enum.hpp>
 #include "support/ut.hpp"
 
 using namespace orangutan;
@@ -273,9 +274,10 @@ boost::ut::suite hook_manager_suite = [] {
         expect(ctx["message_count"] == 42);
     };
 
-    "event_to_string"_test = [] {
-        expect(hook_event_to_string(HookEvent::before_tool_call) == "before_tool_call");
-        expect(hook_event_to_string(HookEvent::session_end) == "session_end");
+    "event_names_match_enum_tokens_in_public_contexts"_test = [] {
+        expect(build_before_tool_call_context("shell", {{"command", "ls"}})["event"] == std::string{magic_enum::enum_name(HookEvent::before_tool_call)});
+        expect(build_message_context(HookEvent::message_received, "user", "hello world")["event"] == std::string{magic_enum::enum_name(HookEvent::message_received)});
+        expect(build_session_context(HookEvent::session_end, "sess-123", 42)["event"] == std::string{magic_enum::enum_name(HookEvent::session_end)});
     };
 };
 

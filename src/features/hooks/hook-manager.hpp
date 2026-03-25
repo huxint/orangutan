@@ -63,9 +63,6 @@ private:
     std::unordered_map<HookEvent, std::vector<HookDef>, HookEventHash> hooks_;
 };
 
-// Convert event enum to directory name string
-std::string hook_event_to_string(HookEvent event);
-
 // Build JSON context for before/after tool call hooks
 json build_before_tool_call_context(std::string_view tool_name, const json &tool_input);
 json build_after_tool_call_context(std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error);

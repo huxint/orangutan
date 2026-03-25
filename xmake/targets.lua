@@ -2,7 +2,7 @@ local root = os.projectdir()
 
 local function add_orangutan_common()
     add_includedirs(path.join(root, "src"), {public = true})
-    add_packages("cli11", "nlohmann_json", "spdlog", "libcurl", "sqlite3", "toml++", "cpp-httplib", "stdexec", "rapidhash", "replxx", "mbedtls", "simdutf", "uni_algo", "ctre", {public = true})
+    add_packages("cli11", "nlohmann_json", "spdlog", "libcurl", "sqlite3", "toml++", "cpp-httplib", "stdexec", "rapidhash", "replxx", "mbedtls", "simdutf", "uni_algo", "ctre", "magic_enum", {public = true})
     add_syslinks("pthread", {public = true})
     if has_config("qq_channel") then
         add_defines("ORANGUTAN_ENABLE_QQ_CHANNEL=1", {public = true})

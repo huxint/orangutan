@@ -48,6 +48,14 @@
             },
             version = "8.11.0"
         },
+        ["magic_enum 0.9.7#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "93ebc4e5f4b9df3d07d9d9c300378496aa82a5dd",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v0.9.7"
+        },
         ["mbedtls#f56260b5"] = {
             repo = {
                 branch = "master",

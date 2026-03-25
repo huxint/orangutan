@@ -110,6 +110,26 @@ boost::ut::suite subagent_run_store_suite = [] {
         expect(store.load_run("missing-run") == std::nullopt);
     };
 
+    "load_run_throws_for_invalid_persisted_status_text"_test = [] {
+        SubagentRunStoreHarness harness;
+        const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();
+        SubagentRunStore store(harness.db_path);
+
+        store.create_run(SubagentRunStoreHarness::sample_create_params(parent_session_id, child_session_id));
+
+        sqlite3 *db = nullptr;
+        expect((sqlite3_open(harness.db_path.string().c_str(), &db) == SQLITE_OK) >> fatal);
+        expect((sqlite3_exec(db, "UPDATE subagent_runs SET status = 'bogus-status' WHERE run_id = 'run-123'", nullptr, nullptr, nullptr) == SQLITE_OK) >> fatal);
+        sqlite3_close(db);
+
+        try {
+            static_cast<void>(store.load_run("run-123"));
+            expect(false);
+        } catch (const std::runtime_error &error) {
+            expect(std::string_view{error.what()} == "Unknown subagent run status: bogus-status");
+        }
+    };
+
     "mark_running_updates_status_and_started_at"_test = [] {
         SubagentRunStoreHarness harness;
         const auto [parent_session_id, child_session_id] = harness.create_linked_sessions();

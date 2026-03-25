@@ -4,20 +4,19 @@
 #include "features/automation/runtime.hpp"
 #include "features/tools/builtin/automation-tool-support.hpp"
 
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 
 namespace orangutan {
 namespace {
 
 std::string format_heartbeat(const automation::HeartbeatSpec &heartbeat) {
     std::string out;
-    std::format_to(std::back_inserter(out), "- {} every={}s", heartbeat.name, heartbeat.every_seconds);
+    append(out, "- {} every={}s", heartbeat.name, heartbeat.every_seconds);
     if (heartbeat.jitter_seconds > 0) {
-        std::format_to(std::back_inserter(out), " jitter={}s", heartbeat.jitter_seconds);
+        append(out, " jitter={}s", heartbeat.jitter_seconds);
     }
     if (heartbeat.next_due_at.has_value()) {
-        std::format_to(std::back_inserter(out), " next_due={}", *heartbeat.next_due_at);
+        append(out, " next_due={}", *heartbeat.next_due_at);
     }
     if (heartbeat.paused) {
         out.append(" paused");

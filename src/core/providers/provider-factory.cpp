@@ -9,8 +9,7 @@
 #include <exception>
 #include <mutex>
 #include <optional>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>
@@ -169,7 +168,7 @@ private:
             summary.append(" (");
             summary.append(errors.front());
             for (size_t index = 1; index < errors.size(); ++index) {
-                std::format_to(std::back_inserter(summary), "; {}", errors[index]);
+                append(summary, "; {}", errors[index]);
             }
             summary.push_back(')');
         }
@@ -187,7 +186,7 @@ private:
             ++usage_.failed_attempts;
 
             std::string message;
-            std::format_to(std::back_inserter(message), "{}: {}", failed_model, error_message);
+            append(message, "{}: {}", failed_model, error_message);
             state.errors.push_back(std::move(message));
 
             if (state.attempt_index + 1 < endpoints_.size()) {

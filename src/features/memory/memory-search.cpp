@@ -3,8 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <set>
-#include <format>
-#include <iterator>
+#include "infra/format.hpp"
 #include <uni_algo/case.h>
 
 namespace orangutan::memory_detail {
@@ -135,9 +134,9 @@ double score_memory_match(const MemoryRecord &record, const std::string &query) 
 std::string format_records(const std::vector<MemoryRecord> &records) {
     std::string out;
     for (const auto &record : records) {
-        std::format_to(std::back_inserter(out), "[{}:{}] {}", record.category, record.key, record.content);
+        append(out, "[{}:{}] {}", record.category, record.key, record.content);
         if (!record.source.empty()) {
-            std::format_to(std::back_inserter(out), " {{source={}}}", record.source);
+            append(out, " {{source={}}}", record.source);
         }
         out.push_back('\n');
     }
