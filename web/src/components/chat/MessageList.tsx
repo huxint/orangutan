@@ -1,7 +1,11 @@
-import { useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  StickToBottom,
+  useStickToBottomContext,
+} from "use-stick-to-bottom";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage } from "./types";
+import { ArrowDown } from "lucide-react";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -77,14 +81,28 @@ function EmptyState({ onSuggest }: { onSuggest?: (text: string) => void }) {
   );
 }
 
+function ScrollToBottomButton() {
+  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+
+  if (isAtBottom) return null;
+
+  return (
+    <button
+      onClick={() => scrollToBottom()}
+      className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10
+        flex items-center gap-1.5 rounded-full border border-border
+        bg-bg-elevated/95 backdrop-blur-sm px-3 py-1.5
+        text-xs text-text-secondary shadow-lg
+        hover:text-text hover:border-accent/30
+        transition-all duration-200"
+    >
+      <ArrowDown size={14} />
+      Scroll to bottom
+    </button>
+  );
+}
+
 export function MessageList({ messages, onSuggest }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const visible = messages.filter((m) => m.content.length > 0);
 
   if (visible.length === 0) {
@@ -92,26 +110,28 @@ export function MessageList({ messages, onSuggest }: MessageListProps) {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-6">
-      <div className="mx-auto max-w-3xl space-y-4">
-        <AnimatePresence initial={false}>
-          {visible.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                type: "spring",
-                stiffness: 300,
-                damping: 25,
-              }}
-            >
-              <MessageBubble role={msg.role} content={msg.content} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        <div ref={bottomRef} />
-      </div>
-    </div>
+    <StickToBottom className="flex-1 min-h-0 relative" resize="smooth" initial="smooth">
+      <StickToBottom.Content className="px-4 py-6">
+        <div className="mx-auto max-w-3xl space-y-4">
+          <AnimatePresence initial={false}>
+            {visible.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  type: "spring",
+                  stiffness: 300,
+                  damping: 25,
+                }}
+              >
+                <MessageBubble role={msg.role} content={msg.content} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </StickToBottom.Content>
+      <ScrollToBottomButton />
+    </StickToBottom>
   );
 }
