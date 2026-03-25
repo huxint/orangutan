@@ -2,6 +2,7 @@
 
 #include "features/memory/memory-search.hpp"
 
+#include <uni_algo/case.h>
 #include <algorithm>
 #include <array>
 
@@ -119,7 +120,7 @@ bool RuntimeMemory::query_requests_journal(std::string_view query) {
     });
 
     const auto trimmed_query = memory_detail::trim_copy(std::string(query));
-    const auto normalized = memory_detail::to_lowercase(trimmed_query);
+    const auto normalized = una::cases::to_lowercase_utf8(trimmed_query);
     const auto trimmed_view = std::string_view(trimmed_query);
     return std::ranges::any_of(normalized_keywords,
                                [&normalized](std::string_view keyword) {

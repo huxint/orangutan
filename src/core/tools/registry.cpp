@@ -9,45 +9,55 @@ namespace orangutan {
 
 namespace {
 
-template <ctll::fixed_string Pattern, typename ReplaceFn>
-std::string ctre_replace_all(std::string_view input, ReplaceFn &&make_replacement) {
-    std::string result;
-    const char *pos = input.data();
-    const char *end = input.data() + input.size();
-
-    for (auto remaining = input; auto m = ctre::search<Pattern>(remaining);) {
-        auto full = m.template get<0>().to_view();
-        result.append(pos, full.data() - pos);
-        result.append(make_replacement(m));
-        pos = full.data() + full.size();
-        remaining = {pos, static_cast<std::size_t>(end - pos)};
-    }
-    result.append(pos, static_cast<std::size_t>(end - pos));
-    return result;
-}
-
 template <ctll::fixed_string Pattern>
 bool scrub_redact1(std::string &text) {
-    auto scrubbed = ctre_replace_all<Pattern>(text, [](auto &m) -> std::string {
-        return std::string(m.template get<1>().to_view()) + "[REDACTED]";
-    });
-    if (scrubbed != text) {
-        text = std::move(scrubbed);
-        return true;
+    std::string scrubbed;
+    scrubbed.reserve(text.size());
+    const auto input = std::string_view{text};
+    const char *pos = input.data();
+    const char *end = pos + input.size();
+    bool changed = false;
+
+    for (auto match : ctre::search_all<Pattern>(input)) {
+        const auto full = match.template get<0>().to_view();
+        scrubbed.append(pos, full.data() - pos);
+        scrubbed.append(match.template get<1>().to_view());
+        scrubbed += "[REDACTED]";
+        pos = full.data() + full.size();
+        changed = true;
     }
-    return false;
+    if (!changed) {
+        return false;
+    }
+    scrubbed.append(pos, static_cast<std::size_t>(end - pos));
+    text = std::move(scrubbed);
+    return true;
 }
 
 template <ctll::fixed_string Pattern>
 bool scrub_redact2(std::string &text) {
-    auto scrubbed = ctre_replace_all<Pattern>(text, [](auto &m) -> std::string {
-        return std::string(m.template get<1>().to_view()) + "[REDACTED]" + std::string(m.template get<2>().to_view());
-    });
-    if (scrubbed != text) {
-        text = std::move(scrubbed);
-        return true;
+    std::string scrubbed;
+    scrubbed.reserve(text.size());
+    const auto input = std::string_view{text};
+    const char *pos = input.data();
+    const char *end = pos + input.size();
+    bool changed = false;
+
+    for (auto match : ctre::search_all<Pattern>(input)) {
+        const auto full = match.template get<0>().to_view();
+        scrubbed.append(pos, full.data() - pos);
+        scrubbed.append(match.template get<1>().to_view());
+        scrubbed += "[REDACTED]";
+        scrubbed.append(match.template get<2>().to_view());
+        pos = full.data() + full.size();
+        changed = true;
     }
-    return false;
+    if (!changed) {
+        return false;
+    }
+    scrubbed.append(pos, static_cast<std::size_t>(end - pos));
+    text = std::move(scrubbed);
+    return true;
 }
 
 } // namespace

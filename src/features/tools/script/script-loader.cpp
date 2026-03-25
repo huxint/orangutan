@@ -30,14 +30,16 @@ std::string shell_escape(const std::string &value) {
 
 std::string substitute_params(const std::string &command_template, const json &input, const std::unordered_map<std::string, std::string> &schema) {
     std::string result;
-    const char *pos = command_template.data();
-    const char *end = pos + command_template.size();
+    result.reserve(command_template.size());
+    const auto template_view = std::string_view{command_template};
+    const char *pos = template_view.data();
+    const char *end = pos + template_view.size();
 
-    for (auto remaining = std::string_view{command_template}; auto m = ctre::search<R"(\$\{(\w+)\})">(remaining);) {
-        auto full = m.get<0>().to_view();
+    for (auto match : ctre::search_all<R"(\$\{(\w+)\})">(template_view)) {
+        const auto full = match.get<0>().to_view();
         result.append(pos, full.data() - pos);
 
-        auto param_name = std::string(m.get<1>().to_view());
+        auto param_name = std::string(match.get<1>().to_view());
         if (input.contains(param_name)) {
             const auto &val = input.at(param_name);
             std::string str_val;
@@ -52,7 +54,6 @@ std::string substitute_params(const std::string &command_template, const json &i
         }
 
         pos = full.data() + full.size();
-        remaining = {pos, static_cast<std::size_t>(end - pos)};
     }
     result.append(pos, static_cast<std::size_t>(end - pos));
     return result;

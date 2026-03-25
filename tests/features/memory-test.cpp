@@ -3,6 +3,7 @@
 #include "features/memory/runtime-memory.hpp"
 #include "app/runtime/memory-context.hpp"
 #include "core/tools/tool.hpp"
+#include "infra/utf8.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>
@@ -16,7 +17,6 @@
 #include <utility>
 
 using namespace orangutan;
-using orangutan::memory_detail::sanitize_utf8;
 
 namespace {
 
@@ -636,57 +636,102 @@ boost::ut::suite memory_store_suite = [] {
     };
 };
 
+boost::ut::suite extract_auto_candidates_suite = [] {
+    using namespace boost::ut;
+
+    "chinese_name_stops_at_cjk_comma"_test = [] {
+        const auto candidates = memory_detail::extract_auto_candidates("我叫阿明，做编译器");
+        bool found = false;
+        for (const auto &candidate : candidates) {
+            if (candidate.key == "profile.name" && candidate.content == "阿明") {
+                found = true;
+                break;
+            }
+        }
+        expect(found);
+    };
+
+    "chinese_remember_skips_fullwidth_colon"_test = [] {
+        const auto candidates = memory_detail::extract_auto_candidates("请记住：算法高手。");
+        bool found = false;
+        for (const auto &candidate : candidates) {
+            if (candidate.category == "fact" && candidate.content == "算法高手") {
+                found = true;
+                break;
+            }
+        }
+        expect(found);
+    };
+
+    "chinese_name_stops_at_invalid_utf8"_test = [] {
+        const auto candidates = memory_detail::extract_auto_candidates(std::string{"我叫阿"} + "\xff" + "明");
+        bool found = false;
+        for (const auto &candidate : candidates) {
+            if (candidate.key == "profile.name" && candidate.content == "阿") {
+                found = true;
+                break;
+            }
+        }
+        expect(found);
+    };
+};
+
 boost::ut::suite sanitize_utf8_suite = [] {
     using namespace boost::ut;
 
     "ascii_passes_through"_test = [] {
-        expect(sanitize_utf8("hello world") == std::string{"hello world"});
-        expect(sanitize_utf8("") == std::string{""});
+        expect(utf8::sanitize("hello world") == std::string{"hello world"});
+        expect(utf8::sanitize("") == std::string{""});
     };
 
     "valid_chinese_passes_through"_test = [] {
         const std::string input = "\xe7\xae\x97\xe6\xb3\x95\xe9\xab\x98\xe6\x89\x8b";
-        expect(sanitize_utf8(input) == input);
+        expect(utf8::sanitize(input) == input);
     };
 
     "truncated_chinese_character_is_stripped"_test = [] {
         const std::string truncated = "\xe7\xae";
-        expect(sanitize_utf8(truncated) == std::string{""});
+        expect(utf8::sanitize(truncated) == std::string{""});
     };
 
     "valid_text_followed_by_truncated_character"_test = [] {
         const std::string input = std::string{"hi"} + "\xe4\xb8";
-        expect(sanitize_utf8(input) == std::string{"hi"});
+        expect(utf8::sanitize(input) == std::string{"hi"});
     };
 
     "valid_chinese_followed_by_truncated_character"_test = [] {
         const std::string input = "\xe7\xae\x97\xe6";
-        expect(sanitize_utf8(input) == std::string{"\xe7\xae\x97"});
+        expect(utf8::sanitize(input) == std::string{"\xe7\xae\x97"});
     };
 
     "accented_latin_passes_through"_test = [] {
         const std::string input = "Jos\xc3\xa9";
-        expect(sanitize_utf8(input) == input);
+        expect(utf8::sanitize(input) == input);
     };
 
     "truncated_accented_latin_is_stripped"_test = [] {
         const std::string input = "Jos\xc3";
-        expect(sanitize_utf8(input) == std::string{"Jos"});
+        expect(utf8::sanitize(input) == std::string{"Jos"});
     };
 
     "emoji_passes_through"_test = [] {
         const std::string input = "\xf0\x9f\x9a\x80";
-        expect(sanitize_utf8(input) == input);
+        expect(utf8::sanitize(input) == input);
     };
 
     "truncated_emoji_is_stripped"_test = [] {
         const std::string input = "go\xf0\x9f\x9a";
-        expect(sanitize_utf8(input) == std::string{"go"});
+        expect(utf8::sanitize(input) == std::string{"go"});
+    };
+
+    "invalid_leading_byte_is_skipped_and_later_text_survives"_test = [] {
+        const std::string input = std::string{"ok"} + "\xff" + "再见";
+        expect(utf8::sanitize(input) == std::string{"ok再见"});
     };
 
     "stray_continuation_bytes_are_skipped"_test = [] {
         const std::string input = std::string{"ok"} + "\x80\xbf" + "fine";
-        expect(sanitize_utf8(input) == std::string{"okfine"});
+        expect(utf8::sanitize(input) == std::string{"okfine"});
     };
 };
 

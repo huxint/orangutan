@@ -14,6 +14,7 @@ target("orangutan-lib")
     add_orangutan_common()
     add_files(
         path.join(root, "src/core/**/*.cpp"),
+        path.join(root, "src/infra/*.cpp"),
         path.join(root, "src/infra/**/*.cpp"),
         path.join(root, "src/features/**/*.cpp"),
         path.join(root, "src/app/*.cpp"),

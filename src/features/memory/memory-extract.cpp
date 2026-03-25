@@ -1,188 +1,133 @@
 #include "features/memory/memory-extract.hpp"
 #include "features/memory/memory-search.hpp"
+#include "infra/utf8.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstddef>
 #include <ctre.hpp>
-#include <initializer_list>
 #include <simdutf.h>
 #include <span>
+#include <uni_algo/case.h>
+#include <uni_algo/ranges_conv.h>
 #include <set>
 #include <vector>
 
 namespace orangutan::memory_detail {
 
-std::string sanitize_utf8(std::string_view input) {
-    if (simdutf::validate_utf8(input.data(), input.size())) {
-        return std::string(input);
-    }
-
-    std::string result;
-    result.reserve(input.size());
-
-    size_t pos = 0;
-    while (pos < input.size()) {
-        const auto byte = static_cast<unsigned char>(input[pos]);
-
-        size_t expected = 0;
-        if (byte <= 0x7F) {
-            expected = 1;
-        } else if ((byte & 0xE0) == 0xC0) {
-            expected = 2;
-        } else if ((byte & 0xF0) == 0xE0) {
-            expected = 3;
-        } else if ((byte & 0xF8) == 0xF0) {
-            expected = 4;
-        } else {
-            ++pos;
-            continue;
-        }
-
-        if (pos + expected > input.size()) {
-            break;
-        }
-
-        bool valid = true;
-        for (size_t i = 1; i < expected; ++i) {
-            if ((static_cast<unsigned char>(input[pos + i]) & 0xC0) != 0x80) {
-                valid = false;
-                break;
-            }
-        }
-
-        if (!valid) {
-            ++pos;
-            continue;
-        }
-
-        result.append(input.substr(pos, expected));
-        pos += expected;
-    }
-
-    return result;
-}
-
 namespace {
 
-// Returns byte length of the UTF-8 code point at input[pos], or 0 if invalid/incomplete.
-size_t utf8_char_len(std::string_view input, size_t pos) {
-    if (pos >= input.size()) {
-        return 0;
+std::string_view leading_valid_utf8_span(std::string_view input) {
+    if (input.empty()) {
+        return input;
     }
-    const auto byte = static_cast<unsigned char>(input[pos]);
-    size_t expected = 0;
-    if (byte <= 0x7F) {
-        expected = 1;
-    } else if ((byte & 0xE0) == 0xC0) {
-        expected = 2;
-    } else if ((byte & 0xF0) == 0xE0) {
-        expected = 3;
-    } else if ((byte & 0xF8) == 0xF0) {
-        expected = 4;
-    } else {
-        return 0;
+
+    // Preserve the extraction helpers' old contract: stop at the first
+    // malformed sequence instead of decoding past it as replacement chars.
+    const auto validation = simdutf::validate_utf8_with_errors(input.data(), input.size());
+    if (validation.error == simdutf::error_code::SUCCESS) {
+        return input;
     }
-    if (pos + expected > input.size()) {
-        return 0;
-    }
-    for (size_t i = 1; i < expected; ++i) {
-        if ((static_cast<unsigned char>(input[pos + i]) & 0xC0) != 0x80) {
-            return 0;
-        }
-    }
-    return expected;
+
+    return input.substr(0, validation.count);
 }
 
-// Extract up to max_codepoints complete UTF-8 code points starting at byte offset,
-// stopping at whitespace or any of the given terminator strings.
-std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints, std::span<const std::string_view> terminators) {
-    std::string result;
-    size_t pos = start;
+bool is_ascii_whitespace(char32_t codepoint) {
+    return codepoint <= 0x7F && std::isspace(static_cast<unsigned char>(codepoint)) != 0;
+}
+
+template <typename Stop>
+std::string extract_utf8_prefix(std::string_view input, size_t start, size_t max_codepoints, Stop &&should_stop) {
+    if (start >= input.size() || max_codepoints == 0) {
+        return {};
+    }
+
+    const auto valid_suffix = leading_valid_utf8_span(input.substr(start));
+    if (valid_suffix.empty()) {
+        return {};
+    }
+
+    auto view = una::ranges::utf8_view{valid_suffix};
+    size_t consumed_bytes = 0;
     size_t count = 0;
-
-    while (pos < input.size() && count < max_codepoints) {
-        const size_t char_len = utf8_char_len(input, pos);
-        if (char_len == 0) {
+    for (auto it = view.begin(); it != view.end() && count < max_codepoints; ++it) {
+        const auto codepoint = *it;
+        if (should_stop(codepoint)) {
             break;
         }
 
-        const auto code_point = input.substr(pos, char_len);
-
-        if (char_len == 1 && (std::isspace(static_cast<unsigned char>(code_point[0])) != 0)) {
-            break;
-        }
-
-        bool is_terminator = false;
-        for (const auto &term : terminators) {
-            if (code_point == term) {
-                is_terminator = true;
-                break;
-            }
-        }
-        if (is_terminator) {
-            break;
-        }
-
-        result.append(code_point);
-        pos += char_len;
+        consumed_bytes = static_cast<size_t>(it.end() - valid_suffix.begin());
         ++count;
     }
 
-    return result;
+    return std::string(valid_suffix.substr(0, consumed_bytes));
+}
+
+// Extract up to max_codepoints complete UTF-8 code points starting at byte offset,
+// stopping at ASCII whitespace or any of the given terminator code points.
+std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints, std::span<const char32_t> terminators) {
+    return extract_utf8_prefix(input, start, max_codepoints, [&](char32_t codepoint) {
+        return is_ascii_whitespace(codepoint) || std::ranges::contains(terminators, codepoint);
+    });
 }
 
 // Like extract_utf8_run but allows spaces within (for sentence-level captures).
 // Stops at newline or any terminator.
-std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints, std::span<const std::string_view> terminators) {
-    std::string result;
-    size_t pos = start;
-    size_t count = 0;
-
-    while (pos < input.size() && count < max_codepoints) {
-        const size_t char_len = utf8_char_len(input, pos);
-        if (char_len == 0) {
-            break;
-        }
-
-        const auto code_point = input.substr(pos, char_len);
-
-        if (code_point == "\n") {
-            break;
-        }
-
-        bool is_terminator = false;
-        for (const auto &term : terminators) {
-            if (code_point == term) {
-                is_terminator = true;
-                break;
-            }
-        }
-        if (is_terminator) {
-            break;
-        }
-
-        result.append(code_point);
-        pos += char_len;
-        ++count;
-    }
-
-    return result;
+std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints, std::span<const char32_t> terminators) {
+    return extract_utf8_prefix(input, start, max_codepoints, [&](char32_t codepoint) {
+        return codepoint == U'\n' || std::ranges::contains(terminators, codepoint);
+    });
 }
 
-// CJK sentence terminators (as UTF-8 byte sequences).
-constexpr auto cjk_name_terminators = std::to_array<std::string_view>({
-    "\xe3\x80\x82", // 。
-    "\xef\xbc\x81", // ！
-    "\xef\xbc\x9f", // ？
-    "\xef\xbc\x8c", // ，
+size_t skip_optional_capture_prefix_separators(std::string_view input, size_t start) {
+    const auto valid_suffix = leading_valid_utf8_span(input.substr(start));
+    auto view = una::ranges::utf8_view{valid_suffix};
+    size_t skipped_bytes = 0;
+    for (auto it = view.begin(); it != view.end(); ++it) {
+        const auto codepoint = *it;
+        if (codepoint != U':' && codepoint != U'：' && codepoint != U' ') {
+            break;
+        }
+
+        skipped_bytes = static_cast<size_t>(it.end() - valid_suffix.begin());
+    }
+
+    return start + skipped_bytes;
+}
+
+// CJK punctuation/code-point terminators for literal-prefix captures.
+constexpr auto cjk_name_terminators = std::to_array<char32_t>({
+    U'。',
+    U'！',
+    U'？',
+    U'，',
 });
 
-constexpr auto cjk_sentence_terminators = std::to_array<std::string_view>({
-    "\xe3\x80\x82", // 。
-    "\xef\xbc\x81", // ！
-    "\xef\xbc\x9f", // ？
+constexpr auto cjk_sentence_terminators = std::to_array<char32_t>({
+    U'。',
+    U'！',
+    U'？',
+});
+
+constexpr auto chinese_name_prefixes = std::to_array<std::string_view>({
+    "我叫",
+    "我是",
+});
+
+constexpr auto chinese_project_prefixes = std::to_array<std::string_view>({
+    "我们在做",
+    "当前项目是",
+});
+
+constexpr auto chinese_prefer_prefixes = std::to_array<std::string_view>({
+    "我更喜欢",
+    "我喜欢",
+});
+
+constexpr auto chinese_remember_prefixes = std::to_array<std::string_view>({
+    "请记住",
+    "记住",
 });
 
 std::string make_slug(std::string_view value) {
@@ -220,20 +165,12 @@ std::string hash_key(std::string_view prefix, std::string_view value) {
     return std::string(prefix) + std::to_string(std::hash<std::string_view>{}(value));
 }
 
-// Find the byte offset immediately after a literal prefix, or npos.
-size_t find_after(std::string_view text, std::string_view prefix) {
-    const auto pos = text.find(prefix);
-    if (pos == std::string_view::npos) {
-        return std::string_view::npos;
-    }
-    return pos + prefix.size();
-}
-
-size_t find_after_any(std::string_view text, std::initializer_list<std::string_view> prefixes) {
-    for (std::string_view prefix : prefixes) {
-        const auto pos = find_after(text, prefix);
+// Find the byte offset immediately after the first matching literal prefix, or npos.
+size_t find_after_any(std::string_view text, std::span<const std::string_view> prefixes) {
+    for (const auto prefix : prefixes) {
+        const auto pos = text.find(prefix);
         if (pos != std::string_view::npos) {
-            return pos;
+            return pos + prefix.size();
         }
     }
     return std::string_view::npos;
@@ -247,7 +184,7 @@ bool should_attempt_auto_capture(const std::string &text) {
         return false;
     }
 
-    const auto normalized = to_lowercase(trimmed);
+    const auto normalized = una::cases::to_lowercase_utf8(trimmed);
     static constexpr auto exact_noise = std::to_array<std::string_view>({
         "hi",
         "hello",
@@ -286,11 +223,11 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     // --- English patterns (compile-time via CTRE) ---
 
-    const auto push_ctre_match = [&candidates, &trimmed](auto match_result, std::string key, std::string category, double importance) {
+    const auto push_ctre_match = [&candidates](auto match_result, std::string key, std::string category, double importance) {
         if (!match_result || !match_result.template get<1>()) {
             return false;
         }
-        auto content = sanitize_utf8(trim_copy(std::string(match_result.template get<1>().to_view())));
+        auto content = utf8::sanitize(trim_copy(std::string(match_result.template get<1>().to_view())));
         if (content.empty()) {
             return false;
         }
@@ -301,10 +238,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     // --- Chinese patterns: literal prefix detection + code-point-aware extraction ---
 
     const auto push_chinese_name = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, {
-                                                     "\xe6\x88\x91\xe5\x8f\xab", // 我叫
-                                                     "\xe6\x88\x91\xe6\x98\xaf", // 我是
-                                                 });
+        const auto pos = find_after_any(trimmed, chinese_name_prefixes);
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -317,10 +251,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     };
 
     const auto push_chinese_project = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, {
-                                                     "\xe6\x88\x91\xe4\xbb\xac\xe5\x9c\xa8\xe5\x81\x9a",             // 我们在做
-                                                     "\xe5\xbd\x93\xe5\x89\x8d\xe9\xa1\xb9\xe7\x9b\xae\xe6\x98\xaf", // 当前项目是
-                                                 });
+        const auto pos = find_after_any(trimmed, chinese_project_prefixes);
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -333,10 +264,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     };
 
     const auto push_chinese_prefer = [&candidates, &trimmed]() {
-        const auto pos = find_after_any(trimmed, {
-                                                     "\xe6\x88\x91\xe6\x9b\xb4\xe5\x96\x9c\xe6\xac\xa2", // 我更喜欢
-                                                     "\xe6\x88\x91\xe5\x96\x9c\xe6\xac\xa2",             // 我喜欢
-                                                 });
+        const auto pos = find_after_any(trimmed, chinese_prefer_prefixes);
         if (pos == std::string_view::npos) {
             return false;
         }
@@ -349,25 +277,11 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
     };
 
     const auto push_chinese_remember = [&candidates, &trimmed]() {
-        auto pos = find_after_any(trimmed, {
-                                               "\xe8\xaf\xb7\xe8\xae\xb0\xe4\xbd\x8f", // 请记住
-                                               "\xe8\xae\xb0\xe4\xbd\x8f",             // 记住
-                                           });
+        auto pos = find_after_any(trimmed, chinese_remember_prefixes);
         if (pos == std::string_view::npos) {
             return false;
         }
-        // Skip optional colon / fullwidth-colon / space after prefix.
-        while (pos < trimmed.size()) {
-            if (trimmed[pos] == ':' || trimmed[pos] == ' ') {
-                ++pos;
-                continue;
-            }
-            if (pos + 3 <= trimmed.size() && trimmed.substr(pos, 3) == "\xef\xbc\x9a") {
-                pos += 3;
-                continue;
-            }
-            break;
-        }
+        pos = skip_optional_capture_prefix_separators(trimmed, pos);
         auto content = trim_copy(extract_utf8_sentence(trimmed, pos, 60, cjk_sentence_terminators));
         if (content.empty()) {
             return false;
@@ -389,8 +303,8 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     // --- Favorite ---
     if (auto fm = ctre::search<R"((?i)\bmy favorite\s+([A-Za-z0-9 _\-]{1,32})\s+is\s+([^.!?\n]{1,120}))">(trimmed); fm) {
-        const auto aspect = sanitize_utf8(trim_copy(std::string(fm.get<1>().to_view())));
-        const auto value = sanitize_utf8(trim_copy(std::string(fm.get<2>().to_view())));
+        const auto aspect = utf8::sanitize(trim_copy(std::string(fm.get<1>().to_view())));
+        const auto value = utf8::sanitize(trim_copy(std::string(fm.get<2>().to_view())));
         if (!aspect.empty() && !value.empty()) {
             candidates.push_back({.key = "preference.favorite." + make_slug(aspect), .content = value, .category = "preference", .importance = 0.75});
         }
@@ -403,7 +317,7 @@ std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
 
     // --- Remember ---
     if (auto rm = ctre::search<R"((?i)\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))">(trimmed); rm) {
-        const auto value = sanitize_utf8(trim_copy(std::string(rm.get<1>().to_view())));
+        const auto value = utf8::sanitize(trim_copy(std::string(rm.get<1>().to_view())));
         if (!value.empty()) {
             candidates.push_back({.key = hash_key("fact.note.", value), .content = value, .category = "fact", .importance = 0.85});
         }

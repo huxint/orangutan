@@ -3,6 +3,7 @@
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
 #include "features/tools/core/background-completion.hpp"
+#include "infra/utf8.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>
@@ -166,6 +167,18 @@ public:
     std::shared_ptr<orangutan::automation::Store> store_;
     std::unique_ptr<orangutan::automation::Runtime> runtime_;
     std::shared_ptr<ResumeMessagesState> resume_state_;
+};
+
+boost::ut::suite utf8_utility_suite = [] {
+    using namespace boost::ut;
+
+    "truncate_valid_prefix_preserves_codepoint_boundary_with_ellipsis"_test = [] {
+        expect(utf8::truncate_valid_prefix("你好世界", 9, true) == std::string{"你好..."});
+    };
+
+    "truncate_valid_suffix_preserves_codepoint_boundary"_test = [] {
+        expect(utf8::truncate_valid_suffix("ab你好", 4) == std::string{"好"});
+    };
 };
 
 boost::ut::suite background_shell_completion_suite = [] {

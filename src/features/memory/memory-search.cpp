@@ -65,11 +65,6 @@ std::vector<std::string> split_memory_fragments(const std::string &value) {
     flush();
     return fragments;
 }
-
-std::string to_lowercase(std::string_view value) {
-    return una::cases::to_lowercase_utf8(value);
-}
-
 std::vector<std::string> tokenize_ascii_words(std::string_view value) {
     std::vector<std::string> tokens;
     std::string current;
@@ -107,10 +102,10 @@ double score_memory_match(const MemoryRecord &record, const std::string &query) 
         return 0.0;
     }
 
-    const auto normalized_query = to_lowercase(trimmed_query);
-    const auto normalized_key = to_lowercase(record.key);
-    const auto normalized_content = to_lowercase(record.content);
-    const auto normalized_category = to_lowercase(record.category);
+    const auto normalized_query = una::cases::to_lowercase_utf8(trimmed_query);
+    const auto normalized_key = una::cases::to_lowercase_utf8(record.key);
+    const auto normalized_content = una::cases::to_lowercase_utf8(record.content);
+    const auto normalized_category = una::cases::to_lowercase_utf8(record.category);
     const auto query_tokens = tokenize_ascii_words(trimmed_query);
     const bool query_has_non_ascii = contains_non_ascii(trimmed_query);
 
@@ -172,10 +167,10 @@ std::string merge_memory_content(const std::string &existing, const std::string 
     const auto incoming_fragments = split_memory_fragments(trimmed_incoming);
     std::set<std::string> seen;
     for (const auto &fragment : fragments) {
-        seen.insert(to_lowercase(fragment));
+        seen.insert(una::cases::to_lowercase_utf8(fragment));
     }
     for (const auto &fragment : incoming_fragments) {
-        if (seen.insert(to_lowercase(fragment)).second) {
+        if (seen.insert(una::cases::to_lowercase_utf8(fragment)).second) {
             fragments.push_back(fragment);
         }
     }

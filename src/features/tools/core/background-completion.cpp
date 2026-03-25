@@ -1,9 +1,9 @@
 #include "features/tools/core/background-completion.hpp"
 
-#include "features/memory/memory-extract.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/types.hpp"
 #include "infra/execution/sender-utils.hpp"
+#include "infra/utf8.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -45,78 +45,12 @@ std::string process_status(const BackgroundProcessCompletionEvent &event) {
     }
 }
 
-size_t utf8_char_len(std::string_view input, size_t pos) {
-    if (pos >= input.size()) {
-        return 0;
-    }
-
-    const auto byte = static_cast<unsigned char>(input[pos]);
-    size_t expected = 0;
-    if (byte <= 0x7F) {
-        expected = 1;
-    } else if ((byte & 0xE0) == 0xC0) {
-        expected = 2;
-    } else if ((byte & 0xF0) == 0xE0) {
-        expected = 3;
-    } else if ((byte & 0xF8) == 0xF0) {
-        expected = 4;
-    } else {
-        return 0;
-    }
-    if (pos + expected > input.size()) {
-        return 0;
-    }
-    for (size_t i = 1; i < expected; ++i) {
-        if ((static_cast<unsigned char>(input[pos + i]) & 0xC0) != 0x80) {
-            return 0;
-        }
-    }
-    return expected;
-}
-
-std::string truncate_valid_utf8_prefix(std::string_view text, size_t max_bytes, bool append_ellipsis = true) {
-    if (text.size() <= max_bytes) {
-        return std::string(text);
-    }
-    if (max_bytes == 0) {
-        return {};
-    }
-
-    const std::string_view ellipsis = append_ellipsis && max_bytes > 3 ? std::string_view{"..."} : std::string_view{};
-    const size_t limit = max_bytes - ellipsis.size();
-    size_t pos = 0;
-    while (pos < text.size()) {
-        const size_t char_len = utf8_char_len(text, pos);
-        if (char_len == 0 || pos + char_len > limit) {
-            break;
-        }
-        pos += char_len;
-    }
-
-    std::string result(text.substr(0, pos));
-    result.append(ellipsis);
-    return result;
-}
-
 std::string sanitize_and_truncate_text(std::string_view text, size_t max_bytes, bool append_ellipsis = true) {
-    return truncate_valid_utf8_prefix(memory_detail::sanitize_utf8(text), max_bytes, append_ellipsis);
-}
-
-std::string sanitize_and_suffix_text(std::string_view text, size_t max_bytes) {
-    std::string sanitized = memory_detail::sanitize_utf8(text);
-    if (sanitized.size() <= max_bytes) {
-        return sanitized;
-    }
-
-    size_t start = sanitized.size() - max_bytes;
-    while (start < sanitized.size() && (static_cast<unsigned char>(sanitized[start]) & 0xC0) == 0x80) {
-        ++start;
-    }
-    return sanitized.substr(start);
+    return utf8::truncate_valid_prefix(utf8::sanitize(text), max_bytes, append_ellipsis);
 }
 
 std::string scrub_and_bound_title(std::string_view title) {
-    return sanitize_and_truncate_text(scrub_tool_output(memory_detail::sanitize_utf8(title)), max_inbox_title_chars);
+    return utf8::truncate_valid_prefix(scrub_tool_output(utf8::sanitize(title)), max_inbox_title_chars, true);
 }
 
 std::string clip_command(std::string_view command) {
@@ -124,8 +58,8 @@ std::string clip_command(std::string_view command) {
 }
 
 json summarize_output(const BackgroundProcessOutputMetadata &output) {
-    const std::string sanitized_tail = memory_detail::sanitize_utf8(output.tail);
-    std::string tail = sanitize_and_suffix_text(output.tail, max_output_summary_bytes);
+    const std::string sanitized_tail = utf8::sanitize(output.tail);
+    std::string tail = utf8::truncate_valid_suffix(sanitized_tail, max_output_summary_bytes);
     bool truncated = output.truncated;
     truncated = truncated || tail.size() < sanitized_tail.size();
 
