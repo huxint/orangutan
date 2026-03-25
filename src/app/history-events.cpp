@@ -94,7 +94,7 @@ json build_edit_details(const ToolUseBlock &call) {
     const auto start_new = prefix_context_start + 1;
     const auto count_old = prefix_context_count + (old_lines.size() - prefix - suffix) + suffix_context_count;
     const auto count_new = prefix_context_count + (new_lines.size() - prefix - suffix) + suffix_context_count;
-    const auto header = std::format("@@ -{},{} +{},{} @@", start_old, count_old, start_new, count_new);
+    const auto header = fmt::format("@@ -{},{} +{},{} @@", start_old, count_old, start_new, count_new);
 
     std::string unified;
     unified.append("--- a/");

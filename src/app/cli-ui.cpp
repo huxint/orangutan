@@ -85,7 +85,7 @@ std::string format_history_compaction_result(const AgentLoop::HistoryCompactionR
         return "## Compression\n- " + result.status;
     }
 
-    return std::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
+    return fmt::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
 }
 
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key) {

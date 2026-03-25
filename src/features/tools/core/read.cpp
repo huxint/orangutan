@@ -47,7 +47,7 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
         if (ext.empty()) {
             ext = "unknown";
         }
-        return std::format("Binary file: {} ({} bytes, type: {})", path.string(), size, ext);
+        return fmt::format("Binary file: {} ({} bytes, type: {})", path.string(), size, ext);
     }
 
     const auto content = fileio::read_file(path);
@@ -61,7 +61,7 @@ std::string read_single_file(const std::filesystem::path &path, int offset, int 
 
     const auto total_lines = static_cast<int>(lines.size());
     if (offset > total_lines) {
-        return std::format("No content at offset {} (file has {} lines)", offset, total_lines);
+        return fmt::format("No content at offset {} (file has {} lines)", offset, total_lines);
     }
 
     const int start = offset;

@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <format>
+#include <fmt/format.h>
 #include <iterator>
 #include <random>
 #include <stdexcept>
@@ -241,7 +241,7 @@ std::string SessionStore::generate_uuid() {
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<uint32_t> dist;
 
-    return std::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen), dist(gen) & 0xFFFF);
+    return fmt::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen), dist(gen) & 0xFFFF);
 }
 
 std::string SessionStore::save(const std::vector<Message> &messages, const SessionMetadata &metadata) {

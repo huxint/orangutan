@@ -2,7 +2,7 @@
 #include "infra/files/file.hpp"
 
 #include <filesystem>
-#include <print>
+#include <fmt/format.h>
 
 namespace orangutan::app {
 
@@ -19,26 +19,26 @@ std::string message_heading(const Message &message, size_t index) {
 }
 
 void append_message_markdown(std::FILE *file, const Message &message, size_t index) {
-    std::println(file, "## {}\n", message_heading(message, index));
+    fmt::println(file, "## {}\n", message_heading(message, index));
 
     if (message.content.empty()) {
-        std::println(file, "_Empty message._\n");
+        fmt::println(file, "_Empty message._\n");
         return;
     }
 
     for (const auto &block : message.content) {
         if (const auto *text = std::get_if<TextBlock>(&block)) {
-            std::println(file, "{}\n", text->text);
+            fmt::println(file, "{}\n", text->text);
             continue;
         }
         if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
-            std::println(file, "### Tool Use: `{}`\n", tool->name);
-            std::println(file, "```json\n{}\n```\n", tool->input.dump(2));
+            fmt::println(file, "### Tool Use: `{}`\n", tool->name);
+            fmt::println(file, "```json\n{}\n```\n", tool->input.dump(2));
             continue;
         }
         if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
-            std::println(file, "{}\n", result->is_error ? "### Tool Result (error)" : "### Tool Result");
-            std::println(file, "```text\n{}\n```\n", result->content);
+            fmt::println(file, "{}\n", result->is_error ? "### Tool Result (error)" : "### Tool Result");
+            fmt::println(file, "```text\n{}\n```\n", result->content);
         }
     }
 }
@@ -166,9 +166,9 @@ SessionExportResult export_session_markdown(const std::vector<Message> &history,
     }
 
     try {
-        std::println(file->get(), "# Session Export\n");
-        std::println(file->get(), "- Session: `{}`", session_id);
-        std::println(file->get(), "- Messages: `{}`\n", history.size());
+        fmt::println(file->get(), "# Session Export\n");
+        fmt::println(file->get(), "- Session: `{}`", session_id);
+        fmt::println(file->get(), "- Messages: `{}`\n", history.size());
 
         for (size_t index = 0; index < history.size(); ++index) {
             append_message_markdown(file->get(), history[index], index);

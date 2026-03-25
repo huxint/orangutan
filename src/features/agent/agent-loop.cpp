@@ -10,7 +10,7 @@
 #include "infra/format.hpp"
 #include <functional>
 #include <optional>
-#include <print>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
@@ -41,12 +41,12 @@ static StreamCallback make_stream_callback(bool &first_text, bool human_output, 
     return [&first_text, human_output, &on_event](const std::string &event_type, const json &data) {
         if (event_type == "text_delta") {
             if (human_output && first_text) {
-                std::print("\n{}orangutan> {}", color_green, color_reset);
+                fmt::print("\n{}orangutan> {}", color_green, color_reset);
                 std::fflush(stdout);
                 first_text = false;
             }
             if (human_output) {
-                std::print("{}", data["text"].get<std::string>());
+                fmt::print("{}", data["text"].get<std::string>());
                 std::fflush(stdout);
             }
         }
@@ -272,7 +272,7 @@ std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::v
                                 state.loop_detected = true;
                             }
                             if (human_output) {
-                                std::println("  {}-> {}{}", color_cyan, state.call.name, color_reset);
+                                fmt::println("  {}-> {}{}", color_cyan, state.call.name, color_reset);
                             }
                             if (on_tool_event != nullptr) {
                                 on_tool_event("tool_started", state.call, nullptr);
@@ -368,14 +368,14 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
                 final_text += handle_continuation(effective_system_prompt, first_text, human_output, on_stream_event, on_tool_event, on_history_checkpoint);
             }
             if (human_output && !first_text) {
-                std::println("\n");
+                fmt::println("\n");
                 std::fflush(stdout);
             }
             break;
         }
 
         if (human_output && !first_text) {
-            std::println();
+            fmt::println("");
             std::fflush(stdout);
         }
 

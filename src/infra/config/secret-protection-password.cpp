@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <print>
+#include <fmt/format.h>
 #include <string>
 #include <string_view>
 
@@ -127,15 +127,15 @@ private:
 
 [[nodiscard]]
 std::string prompt_for_password() {
-    std::print(stderr, "Config password: ");
+    fmt::print(stderr, "Config password: ");
     std::fflush(stderr);
     EchoGuard echo_guard;
     std::string password;
     if (!std::getline(std::cin, password)) {
-        std::println(stderr, "");
+        fmt::println(stderr, "");
         throw ConfigSecretProtectionError("Unable to read config secret password from the terminal.");
     }
-    std::println(stderr, "");
+    fmt::println(stderr, "");
     if (password.empty()) {
         throw ConfigSecretProtectionError("Protected config secrets require a non-empty password.");
     }

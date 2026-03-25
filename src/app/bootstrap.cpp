@@ -32,7 +32,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <print>
+#include <fmt/format.h>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -175,7 +175,7 @@ std::string default_workspace_hint() {
 }
 
 void emit_json_event(const orangutan::json &event) {
-    std::println("{}", event.dump());
+    fmt::println("{}", event.dump());
     std::fflush(stdout);
 }
 
@@ -256,7 +256,7 @@ orangutan::ToolApprovalCallback make_cli_approval_callback(bool allow_prompting)
     }
 
     return [](const orangutan::ToolUseBlock &, const std::string &prompt_text) {
-        std::print("\n{}\nApprove? [y/N]: ", prompt_text);
+        fmt::print("\n{}\nApprove? [y/N]: ", prompt_text);
         std::fflush(stdout);
         std::string answer;
         if (!std::getline(std::cin, answer)) {
@@ -389,16 +389,16 @@ void warn_if_nonlocal_web_host(const std::string &web_host) {
 
 bool validate_initial_options(const CliOptions &options) {
     if (!options.cli_mode && !options.web_mode && !options.channel_mode) {
-        std::println(std::cerr, "Error: specify at least one entry flag: --cli, --web, or --channel.");
+        fmt::println(stderr, "Error: specify at least one entry flag: --cli, --web, or --channel.");
         return false;
     }
     if (options.protect_config_requested && (options.cli_mode || options.web_mode || options.channel_mode || options.resume_requested || !options.message.empty() ||
                                              options.event_stream || options.dump_session || !options.api_key.empty())) {
-        std::println(std::cerr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
+        fmt::println(stderr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
         return false;
     }
     if (!options.cli_mode && (options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session)) {
-        std::println(std::cerr, "Error: --message, --resume, --event-stream, and --dump-session require --cli.");
+        fmt::println(stderr, "Error: --message, --resume, --event-stream, and --dump-session require --cli.");
         return false;
     }
     return true;
@@ -407,11 +407,11 @@ bool validate_initial_options(const CliOptions &options) {
 int run_protect_config_mode(const CliOptions &options) {
     const auto path = options.protect_config_path.empty() ? orangutan::default_orangutan_config_path() : std::filesystem::path{options.protect_config_path};
     if (path.empty()) {
-        std::println(std::cerr, "Error: could not resolve the default config path.");
+        fmt::println(stderr, "Error: could not resolve the default config path.");
         return 1;
     }
     if (!std::filesystem::exists(path)) {
-        std::println(std::cerr, "Error: config file not found: {}", path.string());
+        fmt::println(stderr, "Error: config file not found: {}", path.string());
         return 1;
     }
 
@@ -423,7 +423,7 @@ int run_protect_config_mode(const CliOptions &options) {
         const auto password = orangutan::resolve_config_secret_password(secret_options);
         const auto result = orangutan::protect_config_file_secrets(path, password);
         if (!result.modified) {
-            std::println("No eligible plaintext config secrets found in {}.", path.string());
+            fmt::println("No eligible plaintext config secrets found in {}.", path.string());
             return 0;
         }
 
@@ -431,11 +431,11 @@ int run_protect_config_mode(const CliOptions &options) {
                                                                  .password_override = password,
                                                              }));
 
-        std::println("Protected {} config secret(s) in {}", result.protected_count, path.string());
-        std::println("Backup written to {}", result.backup_path.string());
+        fmt::println("Protected {} config secret(s) in {}", result.protected_count, path.string());
+        fmt::println("Backup written to {}", result.backup_path.string());
         return 0;
     } catch (const orangutan::ConfigSecretProtectionError &e) {
-        std::println(std::cerr, "Error: {}", e.what());
+        fmt::println(stderr, "Error: {}", e.what());
         return 1;
     }
 }
@@ -444,7 +444,7 @@ std::optional<orangutan::AgentConfig> resolve_selected_agent(const orangutan::Co
     const auto effective_agents = orangutan::app::detail::build_effective_agents(cfg);
     const auto agent_it = effective_agents.find(options.cli_agent_key);
     if (agent_it == effective_agents.end()) {
-        std::println(std::cerr, "Error: unknown agent: {}", options.cli_agent_key);
+        fmt::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
         return std::nullopt;
     }
 
@@ -472,7 +472,7 @@ std::optional<std::string> resolve_agent_workspace(const orangutan::AgentConfig 
         }
         return workspace;
     } catch (const std::exception &e) {
-        std::println(std::cerr, "Error: {}", e.what());
+        fmt::println(stderr, "Error: {}", e.what());
         return std::nullopt;
     }
 }
@@ -482,7 +482,7 @@ std::unique_ptr<Store> create_store(const char *name) {
     try {
         return std::make_unique<Store>();
     } catch (const std::exception &e) {
-        std::println(std::cerr, "Error: failed to initialize {}: {}", name, e.what());
+        fmt::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
         return nullptr;
     }
 }
@@ -620,7 +620,7 @@ std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_r
         try {
             resolved_workspace_root = orangutan::resolve_workspace_root(agent_cfg.workspace);
         } catch (const std::exception &e) {
-            std::println(std::cerr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
+            fmt::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
             return std::nullopt;
         }
 
@@ -695,8 +695,8 @@ std::unordered_map<std::string, std::string> build_qq_bot_agents(const orangutan
 
 bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &sessions, std::string &resume_session) {
     if (sessions.empty()) {
-        std::println(std::cerr, "Error: no saved sessions to resume.");
-        std::println(std::cerr, "Start a conversation first - sessions are auto-saved on exit.");
+        fmt::println(stderr, "Error: no saved sessions to resume.");
+        fmt::println(stderr, "Start a conversation first - sessions are auto-saved on exit.");
         return false;
     }
 
@@ -710,12 +710,12 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
         return true;
     }
 
-    std::println("Available sessions:");
+    fmt::println("Available sessions:");
     for (size_t index = 0; index < sessions.size(); ++index) {
         const auto &session = sessions[index];
-        std::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
+        fmt::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
     }
-    std::print("\nEnter number (or press Enter for latest): ");
+    fmt::print("\nEnter number (or press Enter for latest): ");
     std::fflush(stdout);
 
     std::string choice;
@@ -728,13 +728,13 @@ bool choose_resume_session_id(const std::vector<orangutan::SessionInfo> &session
     try {
         const auto idx = std::stoul(choice) - 1;
         if (idx >= sessions.size()) {
-            std::println(std::cerr, "Invalid selection.");
+            fmt::println(stderr, "Invalid selection.");
             return false;
         }
         resume_session = sessions[idx].id;
         return true;
     } catch (const std::exception &) {
-        std::println(std::cerr, "Invalid selection.");
+        fmt::println(stderr, "Invalid selection.");
         return false;
     }
 }
@@ -754,25 +754,25 @@ bool restore_requested_session(const CliOptions &options, orangutan::SessionStor
 
     try {
         if (!runtime_cfg.cli_memory_scope.empty() && !session_store.session_belongs_to_scope(resume_session, runtime_cfg.cli_memory_scope)) {
-            std::println(std::cerr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
+            fmt::println(stderr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
             return false;
         }
         auto messages = session_store.load(resume_session);
         agent.set_history(std::move(messages));
         current_session_id = resume_session;
         if (!options.event_stream) {
-            std::println("Resumed session: {}", resume_session);
+            fmt::println("Resumed session: {}", resume_session);
         }
         return true;
     } catch (const std::exception &) {
-        std::println(std::cerr, "Error: session not found: {}", resume_session);
+        fmt::println(stderr, "Error: session not found: {}", resume_session);
         auto sessions = session_store.list_sessions(runtime_cfg.cli_memory_scope);
         if (sessions.empty()) {
-            std::println(std::cerr, "No saved sessions available.");
+            fmt::println(stderr, "No saved sessions available.");
         } else {
-            std::println(std::cerr, "Available sessions:");
+            fmt::println(stderr, "Available sessions:");
             for (const auto &session : sessions) {
-                std::println(std::cerr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
+                fmt::println(stderr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
             }
         }
         return false;
@@ -793,18 +793,18 @@ std::string merge_stdin_message(std::string message) {
 
 bool validate_runtime_mode_options(const CliOptions &options, bool has_current_session) {
     if (options.event_stream && options.message.empty() && !options.dump_session) {
-        std::println(std::cerr, "Error: --event-stream requires --message or piped stdin.");
+        fmt::println(stderr, "Error: --event-stream requires --message or piped stdin.");
         return false;
     }
     if (!options.dump_session) {
         return true;
     }
     if (!options.event_stream) {
-        std::println(std::cerr, "Error: --dump-session requires --event-stream.");
+        fmt::println(stderr, "Error: --dump-session requires --event-stream.");
         return false;
     }
     if (!has_current_session) {
-        std::println(std::cerr, "Error: --dump-session requires --resume.");
+        fmt::println(stderr, "Error: --dump-session requires --resume.");
         return false;
     }
     return true;
@@ -826,7 +826,7 @@ int run_channel_mode(orangutan::ChannelManager &channel_manager, orangutan::Mess
                 message_queue.push(message);
             });
         } catch (const std::exception &e) {
-            std::println(std::cerr, "Error: failed to start configured channels: {}", e.what());
+            fmt::println(stderr, "Error: failed to start configured channels: {}", e.what());
             channel_manager.disconnect_all();
             return 1;
         }
@@ -872,7 +872,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
             .allow_interactive_password = true,
         });
     } catch (const orangutan::ConfigSecretProtectionError &e) {
-        std::println(std::cerr, "Error: {}", e.what());
+        fmt::println(stderr, "Error: {}", e.what());
         return 1;
     }
     apply_cli_edit_mode_override(cfg, options.edit_mode);
@@ -917,8 +917,8 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     }
 
     if (options.cli_mode && primary_api_key.empty()) {
-        std::println(std::cerr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
-        std::println(std::cerr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
+        fmt::println(stderr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
+        fmt::println(stderr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
         return 1;
     }
 
@@ -1077,7 +1077,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
             if (options.web_mode && !options.cli_mode) {
                 spdlog::warn("Web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
             } else {
-                std::println(std::cerr, "Error: failed to initialize primary runtime: {}", e.what());
+                fmt::println(stderr, "Error: failed to initialize primary runtime: {}", e.what());
                 app_runtime.automation_runtime().stop();
                 return 1;
             }
@@ -1097,7 +1097,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
         }
         warn_if_nonlocal_web_host(options.web_host);
         web_server->start(options.web_host, options.web_port);
-        std::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
+        fmt::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
     }
 
     orangutan::MessageQueue message_queue;
@@ -1127,7 +1127,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
     int exit_code = 0;
     if (options.cli_mode) {
         if (primary_runtime == nullptr || !maybe_primary_runtime_cfg.has_value()) {
-            std::println(std::cerr, "Error: failed to initialize CLI runtime.");
+            fmt::println(stderr, "Error: failed to initialize CLI runtime.");
             exit_code = 1;
         } else {
             auto resume_session = options.resume_session;
