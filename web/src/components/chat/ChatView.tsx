@@ -20,6 +20,7 @@ import type {
   ChatSessionEvent,
   ChatSessionSummary,
   ChatTextEvent,
+  ChatThinkingEvent,
   ChatToolEndEvent,
   ChatToolStartEvent,
   ContentBlock,
@@ -30,6 +31,16 @@ function appendAssistantBlock(
   content: ContentBlock[],
   block: ContentBlock,
 ): ContentBlock[] {
+  if (block.type === "thinking" && block.thinking) {
+    const last = content.at(-1);
+    if (last?.type === "thinking") {
+      return [
+        ...content.slice(0, -1),
+        { ...last, thinking: (last.thinking ?? "") + block.thinking },
+      ];
+    }
+  }
+
   if (block.type === "text" && block.text) {
     const last = content.at(-1);
     if (last?.type === "text") {
@@ -203,7 +214,18 @@ export function ChatView() {
         const transientAssistantMessage = transientAssistantMessageRef.current;
         if (transientAssistantMessage?.sessionId === targetSessionId) {
           transientAssistantMessageRef.current = null;
-          setMessages([...normalized, transientAssistantMessage.message]);
+          // Only append the transient message if the loaded session doesn't
+          // already contain the assistant reply (race: backend may have saved
+          // before this fetch completed).
+          const lastNormalized = normalized.at(-1);
+          const replyAlreadyLoaded =
+            lastNormalized?.role === "assistant" &&
+            lastNormalized.content.length > 0;
+          setMessages(
+            replyAlreadyLoaded
+              ? normalized
+              : [...normalized, transientAssistantMessage.message],
+          );
         } else {
           setMessages(normalized);
         }
@@ -449,6 +471,18 @@ export function ChatView() {
               assistantReplyContent = appendAssistantBlock(
                 assistantReplyContent,
                 { type: "text", text: textData.text },
+              );
+              updateAssistantMessage(
+                assistantMessageId,
+                () => assistantReplyContent,
+              );
+              break;
+            }
+            case "thinking": {
+              const thinkingData = data as ChatThinkingEvent;
+              assistantReplyContent = appendAssistantBlock(
+                assistantReplyContent,
+                { type: "thinking", thinking: thinkingData.thinking },
               );
               updateAssistantMessage(
                 assistantMessageId,

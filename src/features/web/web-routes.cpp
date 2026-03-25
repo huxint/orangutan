@@ -108,6 +108,7 @@ AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const Age
         .system_prompt = agent.system_prompt,
         .workspace_root = workspace_root,
         .edit_mode = agent.edit_mode,
+        .thinking_budget = agent.thinking_budget,
         .memory = config.memory,
         .permissions = agent.permissions,
         .allowed_child_agents = agent.subagents,
@@ -1058,6 +1059,10 @@ void handle_chat(const httplib::Request &req, httplib::Response &res, Config *co
                                                              if (event_type == "text_delta") {
                                                                  auto payload = nlohmann::json({{"text", data["text"]}}).dump();
                                                                  auto sse = "event: text\ndata: " + payload + "\n\n";
+                                                                 sink.write(sse.c_str(), sse.size());
+                                                             } else if (event_type == "thinking_delta") {
+                                                                 auto payload = nlohmann::json({{"thinking", data["thinking"]}}).dump();
+                                                                 auto sse = "event: thinking\ndata: " + payload + "\n\n";
                                                                  sink.write(sse.c_str(), sse.size());
                                                              }
                                                          },

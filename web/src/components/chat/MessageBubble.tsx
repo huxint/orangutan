@@ -1,11 +1,14 @@
-import { Children, isValidElement, type ReactNode } from "react";
+import { Children, isValidElement, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
+import { ChevronRight, Brain } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ToolCallCard } from "./ToolCallCard";
 import { normalizeMarkdownMath } from "../../lib/markdown/math";
+import { cn } from "../../lib/utils";
 import type { ContentBlock } from "./types";
 
 interface MessageBubbleProps {
@@ -193,6 +196,56 @@ function AssistantMarkdown({ text }: { text: string }) {
   );
 }
 
+function ThinkingCard({ thinking }: { thinking: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className={cn(
+        "my-2 overflow-hidden rounded-lg border transition-colors duration-200",
+        "border-border/50 bg-bg/30",
+      )}
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs group"
+      >
+        <ChevronRight
+          size={12}
+          className={cn(
+            "shrink-0 text-text-muted transition-transform duration-150",
+            open && "rotate-90",
+          )}
+        />
+        <div className="shrink-0 w-5 h-5 rounded flex items-center justify-center bg-violet-500/10 text-violet-400">
+          <Brain size={11} />
+        </div>
+        <span className="font-semibold text-text-secondary">Thinking</span>
+        <span className="text-[10px] text-text-muted/60 ml-auto">
+          {thinking.length} chars
+        </span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-border/50 px-3 py-2.5">
+              <pre className="overflow-x-auto text-[13px] text-text-secondary/80 whitespace-pre-wrap leading-relaxed font-sans">
+                {thinking}
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function renderAssistantBlocks(content: ContentBlock[]) {
   const blocks = [];
   let textBuffer = "";
@@ -212,6 +265,17 @@ function renderAssistantBlocks(content: ContentBlock[]) {
 
     if (block.type === "text" && block.text) {
       textBuffer += block.text;
+      continue;
+    }
+
+    if (block.type === "thinking" && block.thinking) {
+      flushTextBuffer();
+      blocks.push(
+        <ThinkingCard
+          key={`thinking-${blocks.length}`}
+          thinking={block.thinking}
+        />,
+      );
       continue;
     }
 

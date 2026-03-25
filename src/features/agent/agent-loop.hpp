@@ -40,6 +40,10 @@ public:
     // Clear conversation history
     void clear_history();
 
+    void set_thinking_budget(int budget) {
+        thinking_budget_ = budget;
+    }
+
     // Replace conversation history (for session loading)
     void set_history(std::vector<Message> messages) {
         history_ = std::move(messages);
@@ -65,6 +69,7 @@ private:
     RuntimeMemory *memory_ = nullptr;
     std::string skills_prompt_;
     HookManager *hook_manager_ = nullptr;
+    int thinking_budget_ = 0;
 
     static constexpr int max_iterations = 20;
     static constexpr int max_continuations = 3;

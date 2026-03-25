@@ -39,7 +39,11 @@ struct ToolResultBlock {
     bool is_error = false;
 };
 
-using ContentBlock = std::variant<TextBlock, ToolUseBlock, ToolResultBlock>;
+struct ThinkingBlock {
+    std::string thinking;
+};
+
+using ContentBlock = std::variant<TextBlock, ToolUseBlock, ToolResultBlock, ThinkingBlock>;
 
 // A message in the conversation
 struct Message {
@@ -78,12 +82,14 @@ inline json content_block_to_json(const ContentBlock &block) {
                 return {{"type", "text"}, {"text", b.text}};
             } else if constexpr (std::is_same_v<T, ToolUseBlock>) {
                 return {{"type", "tool_use"}, {"id", b.id}, {"name", b.name}, {"input", b.input}};
-            } else {
+            } else if constexpr (std::is_same_v<T, ToolResultBlock>) {
                 json j = {{"type", "tool_result"}, {"tool_use_id", b.tool_use_id}, {"content", b.content}};
                 if (b.is_error) {
                     j["is_error"] = true;
                 }
                 return j;
+            } else if constexpr (std::is_same_v<T, ThinkingBlock>) {
+                return {{"type", "thinking"}, {"thinking", b.thinking}};
             }
         },
         block);

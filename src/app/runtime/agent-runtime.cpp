@@ -94,6 +94,7 @@ AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
     runtime.hook_manager->load_from_directories(resolve_hook_directories(input));
 
     runtime.agent = std::make_unique<AgentLoop>(*runtime.provider, runtime.tools, runtime.system_prompt, runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
+    runtime.agent->set_thinking_budget(input.thinking_budget);
     return runtime;
 }
 

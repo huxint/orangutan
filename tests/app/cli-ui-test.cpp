@@ -20,12 +20,12 @@ TEST_CASE("format_agent_list_marks_current_agent_and_subagents") {
 TEST_CASE("format_runtime_status_includes_active_model_fallbacks_and_usage") {
     class StatusProvider final : public orangutan::Provider {
     public:
-        orangutan::LLMResponse chat(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, int) override {
+        orangutan::LLMResponse chat(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, int, int = 0) override {
             return {};
         }
 
         orangutan::LLMResponse chat_stream(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, const orangutan::StreamCallback &,
-                                           int) override {
+                                           int, int = 0) override {
             return {};
         }
 

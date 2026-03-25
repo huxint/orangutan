@@ -229,6 +229,7 @@ std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app
         .system_prompt = cfg.system_prompt,
         .workspace_root = cfg.workspace_root,
         .edit_mode = cfg.edit_mode,
+        .thinking_budget = cfg.thinking_budget,
         .memory = cfg.memory,
         .permissions = cfg.permissions,
         .allowed_child_agents = cfg.allowed_child_agents,

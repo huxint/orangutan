@@ -598,6 +598,7 @@ std::unordered_map<std::string, AgentConfig> build_effective_agents(const orangu
                                                          .permissions = cfg.permissions,
                                                          .subagents = {},
                                                          .edit_mode = cfg.edit_mode,
+                                                         .thinking_budget = cfg.thinking_budget,
                                                      });
     }
     for (auto &[agent_key, agent_cfg] : effective_agents) {
@@ -636,6 +637,7 @@ std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_r
                                       .system_prompt = agent_cfg.system_prompt,
                                       .workspace_root = resolved_workspace_root,
                                       .edit_mode = agent_cfg.edit_mode,
+                                      .thinking_budget = agent_cfg.thinking_budget,
                                       .cli_runtime_key = cli_identity.runtime_key,
                                       .cli_memory_scope = cli_identity.memory_scope,
                                       .memory = cfg.memory,
@@ -659,6 +661,7 @@ std::unordered_map<std::string, SubagentChildRuntimeConfig> build_subagent_child
                                       .system_prompt = runtime_cfg.system_prompt,
                                       .workspace_root = runtime_cfg.workspace_root,
                                       .edit_mode = runtime_cfg.edit_mode,
+                                      .thinking_budget = runtime_cfg.thinking_budget,
                                       .memory = runtime_cfg.memory,
                                       .permissions = runtime_cfg.permissions,
                                       .allowed_child_agents = runtime_cfg.allowed_child_agents,
@@ -908,6 +911,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
             .system_prompt = maybe_selected_agent->system_prompt,
             .workspace_root = *maybe_workspace,
             .edit_mode = maybe_selected_agent->edit_mode,
+            .thinking_budget = maybe_selected_agent->thinking_budget,
             .cli_runtime_key = maybe_primary_identity->runtime_key,
             .cli_memory_scope = maybe_primary_identity->memory_scope,
             .memory = cfg.memory,
@@ -976,6 +980,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                     .system_prompt = runtime_cfg.system_prompt,
                     .workspace_root = runtime_cfg.workspace_root,
                     .edit_mode = runtime_cfg.edit_mode,
+                    .thinking_budget = runtime_cfg.thinking_budget,
                     .memory = runtime_cfg.memory,
                     .permissions = runtime_cfg.permissions,
                     .allowed_child_agents = runtime_cfg.allowed_child_agents,

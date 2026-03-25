@@ -1,6 +1,7 @@
 export interface ContentBlock {
   type: string;
   text?: string;
+  thinking?: string;
   id?: string;
   name?: string;
   input?: object;
@@ -53,6 +54,10 @@ export interface ChatTextEvent {
   text: string;
 }
 
+export interface ChatThinkingEvent {
+  thinking: string;
+}
+
 export interface ChatToolStartEvent {
   id: string;
   name: string;
@@ -73,6 +78,7 @@ export interface ChatErrorEvent {
 export type ChatStreamEventType =
   | "session"
   | "text"
+  | "thinking"
   | "tool_start"
   | "tool_end"
   | "approval_request"
@@ -82,6 +88,7 @@ export type ChatStreamEventType =
 export type ChatStreamEventPayload =
   | ChatSessionEvent
   | ChatTextEvent
+  | ChatThinkingEvent
   | ChatToolStartEvent
   | ChatToolEndEvent
   | ApprovalRequest

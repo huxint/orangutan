@@ -60,14 +60,14 @@ public:
         }
     }
 
-    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) override {
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, int thinking_budget) override {
         return execute_with_fallback([&](Provider &provider) {
-            return provider.chat(system_prompt, messages, tools, max_tokens);
+            return provider.chat(system_prompt, messages, tools, max_tokens, thinking_budget);
         });
     }
 
-    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
-                            int max_tokens) override {
+    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event, int max_tokens,
+                            int thinking_budget) override {
         return execute_with_fallback([&](Provider &provider) {
             bool emitted_output = false;
             auto tracking_callback = [&on_event, &emitted_output](const std::string &event_type, const json &data) {
@@ -78,7 +78,7 @@ public:
             };
 
             try {
-                return provider.chat_stream(system_prompt, messages, tools, tracking_callback, max_tokens);
+                return provider.chat_stream(system_prompt, messages, tools, tracking_callback, max_tokens, thinking_budget);
             } catch (const std::exception &error) {
                 if (emitted_output) {
                     throw NonRetryableProviderError(error.what());

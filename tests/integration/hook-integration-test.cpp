@@ -54,11 +54,11 @@ using ScopedDefaultLogger = orangutan::testing::ScopedDefaultLogger<MemorySink>;
 
 class ToolCallingProvider final : public Provider {
 public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
         throw std::runtime_error("chat should not be used");
     }
 
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
         if (response_index_ == 0) {
             ++response_index_;
             return {

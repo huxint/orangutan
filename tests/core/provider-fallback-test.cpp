@@ -28,11 +28,11 @@ public:
       chat_handler_(std::move(chat_handler)),
       stream_handler_(std::move(stream_handler)) {}
 
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
         return chat_handler_();
     }
 
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
         return stream_handler_(on_event);
     }
 
@@ -216,7 +216,7 @@ TEST_CASE("keeps_primary_provider_alive_while_in_flight_request_completes") {
         ConcurrentPrimaryProvider(ConcurrentPrimaryProvider &&) = delete;
         ConcurrentPrimaryProvider &operator=(ConcurrentPrimaryProvider &&) = delete;
 
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             auto state = state_;
             const auto call_number = ++state->call_count;
             if (call_number == 1) {
@@ -230,7 +230,7 @@ TEST_CASE("keeps_primary_provider_alive_while_in_flight_request_completes") {
             throw std::runtime_error("primary unavailable");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
             throw std::runtime_error("stream should not be used");
         }
 
@@ -314,7 +314,7 @@ TEST_CASE("late_primary_failure_still_falls_back_after_another_request_switches_
           model_(std::move(model)),
           state_(std::move(state)) {}
 
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             const auto call_number = ++state_->call_count;
             if (call_number == 1) {
                 state_->first_call_started.set_value();
@@ -324,7 +324,7 @@ TEST_CASE("late_primary_failure_still_falls_back_after_another_request_switches_
             throw std::runtime_error("primary unavailable");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
             throw std::runtime_error("stream should not be used");
         }
 
@@ -403,7 +403,7 @@ TEST_CASE("concurrent_primary_failures_do_not_skip_fallback_models") {
           model_(std::move(model)),
           state_(std::move(state)) {}
 
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             const auto started = ++state_->call_count;
             if (started == 2 && !state_->both_calls_signaled.exchange(true)) {
                 state_->both_calls_started.set_value();
@@ -415,7 +415,7 @@ TEST_CASE("concurrent_primary_failures_do_not_skip_fallback_models") {
             throw std::runtime_error("primary unavailable");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
             throw std::runtime_error("stream should not be used");
         }
 
@@ -517,7 +517,7 @@ TEST_CASE("late_primary_failure_keeps_its_own_fallback_order") {
           model_(std::move(model)),
           state_(std::move(state)) {}
 
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             const auto call_number = ++state_->call_count;
             if (call_number == 1) {
                 state_->second_call_started_future.wait();
@@ -528,7 +528,7 @@ TEST_CASE("late_primary_failure_keeps_its_own_fallback_order") {
             throw std::runtime_error("primary unavailable");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
             throw std::runtime_error("stream should not be used");
         }
 

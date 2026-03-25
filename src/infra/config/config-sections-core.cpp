@@ -18,6 +18,7 @@ AgentConfig make_agent_config_from_legacy(const Config &cfg) {
         .permissions = cfg.permissions,
         .subagents = {},
         .edit_mode = cfg.edit_mode,
+        .thinking_budget = cfg.thinking_budget,
     };
 }
 
@@ -68,6 +69,9 @@ Config parse_agent_section(const toml::table &tbl, Config cfg) {
     }
     if (auto v = (*agent)["max_tokens"].value<int64_t>()) {
         cfg.max_tokens = static_cast<int>(*v);
+    }
+    if (auto v = (*agent)["thinking_budget"].value<int64_t>()) {
+        cfg.thinking_budget = static_cast<int>(*v);
     }
     if (auto v = (*agent)["workspace"].value<std::string>()) {
         cfg.workspace = *v;
@@ -271,6 +275,9 @@ Config parse_agents_section(const toml::table &tbl, Config cfg) {
         }
         if (auto v = (*agent)["edit_mode"].value<std::string>()) {
             agent_cfg.edit_mode = *v;
+        }
+        if (auto v = (*agent)["thinking_budget"].value<int64_t>()) {
+            agent_cfg.thinking_budget = static_cast<int>(*v);
         }
 
         cfg.agents.insert_or_assign(key, std::move(agent_cfg));

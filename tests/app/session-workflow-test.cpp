@@ -15,7 +15,7 @@ namespace {
 
 class DistillingWorkflowProvider final : public Provider {
 public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = "memory|project|project.current|0.8|orangutan refactor\n"
@@ -23,7 +23,7 @@ public:
         };
     }
 
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
         throw std::runtime_error("chat_stream should not be used");
     }
 

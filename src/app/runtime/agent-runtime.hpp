@@ -31,6 +31,7 @@ struct AgentRuntimeBuildInput {
     std::string system_prompt;
     std::string workspace_root;
     std::string edit_mode = "hashline";
+    int thinking_budget = 0;
     Config::MemoryConfig memory;
     ToolPermissionSettings permissions;
     std::vector<std::string> allowed_child_agents;

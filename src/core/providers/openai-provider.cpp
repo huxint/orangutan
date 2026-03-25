@@ -50,6 +50,7 @@ public:
 
         if (choice.contains("delta")) {
             handle_text_delta(choice["delta"]);
+            handle_reasoning_delta(choice["delta"]);
             handle_tool_call_deltas(choice["delta"]);
         }
     }
@@ -58,6 +59,10 @@ public:
     LLMResponse build_response() const {
         LLMResponse response;
         response.stop_reason = stop_reason_.empty() ? "end_turn" : stop_reason_;
+
+        if (!reasoning_content_.empty()) {
+            response.content.emplace_back(ThinkingBlock{.thinking = reasoning_content_});
+        }
 
         if (!text_content_.empty()) {
             response.content.emplace_back(TextBlock{.text = text_content_});
@@ -88,6 +93,7 @@ private:
 
     const StreamCallback &on_event_;
     std::string text_content_;
+    std::string reasoning_content_;
     std::vector<ToolCallState> tool_calls_;
     std::string stop_reason_;
 
@@ -107,6 +113,15 @@ private:
         json delta_event;
         delta_event["text"] = text;
         on_event_("text_delta", delta_event);
+    }
+
+    void handle_reasoning_delta(const json &delta) {
+        if (!delta.contains("reasoning_content") || delta["reasoning_content"].is_null()) {
+            return;
+        }
+        auto text = delta["reasoning_content"].get<std::string>();
+        reasoning_content_ += text;
+        on_event_("thinking_delta", {{"thinking", text}});
     }
 
     void handle_tool_call_deltas(const json &delta) {
@@ -164,6 +179,9 @@ json OpenAiProvider::message_to_openai(const Message &msg) {
         json tool_calls = json::array();
 
         for (const auto &block : msg.content) {
+            if (std::get_if<ThinkingBlock>(&block) != nullptr) {
+                continue; // OpenAI does not accept reasoning blocks in requests
+            }
             if (const auto *text = std::get_if<TextBlock>(&block)) {
                 text_content += text->text;
             } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
@@ -268,7 +286,7 @@ json OpenAiProvider::build_request_body(std::string_view system_prompt, const st
     return body;
 }
 
-LLMResponse OpenAiProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
+LLMResponse OpenAiProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, int /*thinking_budget*/) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, false);
     std::string request_body = body.dump();
     spdlog::debug("OpenAI request body: {}", request_body);
@@ -294,7 +312,7 @@ LLMResponse OpenAiProvider::chat(std::string_view system_prompt, const std::vect
 }
 
 LLMResponse OpenAiProvider::chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
-                                        int max_tokens) {
+                                        int max_tokens, int /*thinking_budget*/) {
     auto body = build_request_body(system_prompt, messages, tools, max_tokens, true);
     std::string request_body = body.dump();
     spdlog::debug("OpenAI stream request body: {}", request_body);
@@ -332,6 +350,11 @@ LLMResponse OpenAiProvider::parse_response(const json &resp) {
     result.stop_reason = map_finish_reason(choice.value("finish_reason", "stop"));
 
     const auto &message = choice["message"];
+
+    // Reasoning content (OpenAI reasoning models)
+    if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
+        result.content.emplace_back(ThinkingBlock{.thinking = message["reasoning_content"].get<std::string>()});
+    }
 
     // Text content
     if (message.contains("content") && !message["content"].is_null()) {

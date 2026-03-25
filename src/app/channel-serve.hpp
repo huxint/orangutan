@@ -42,6 +42,7 @@ struct AgentRuntimeConfig {
     std::string system_prompt;
     std::string workspace_root;
     std::string edit_mode = "hashline";
+    int thinking_budget = 0;
     std::string cli_runtime_key;
     std::string cli_memory_scope;
     Config::MemoryConfig memory;

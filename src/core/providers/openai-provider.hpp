@@ -13,10 +13,11 @@ class OpenAiProvider : public Provider {
 public:
     OpenAiProvider(std::string api_key, std::string model, std::string base_url = "https://api.openai.com");
 
-    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096) override;
+    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096,
+                     int thinking_budget = 0) override;
 
     LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
-                            int max_tokens = 4096) override;
+                            int max_tokens = 4096, int thinking_budget = 0) override;
 
     [[nodiscard]]
     std::string name() const override {

@@ -39,6 +39,8 @@ public:
         for (const auto &block : blocks_) {
             if (block.type == "text") {
                 response.content.emplace_back(TextBlock{.text = block.text});
+            } else if (block.type == "thinking") {
+                response.content.emplace_back(ThinkingBlock{.thinking = block.text});
             } else if (block.type == "tool_use") {
                 json input = json::object();
                 if (!block.input_json.empty()) {
@@ -111,6 +113,9 @@ private:
             on_event_("text_delta", delta);
         } else if (delta_type == "input_json_delta") {
             block.input_json += delta["partial_json"].get<std::string>();
+        } else if (delta_type == "thinking_delta") {
+            block.text += delta["thinking"].get<std::string>();
+            on_event_("thinking_delta", {{"thinking", delta["thinking"]}});
         }
     }
 
@@ -128,8 +133,8 @@ AnthropicProvider::AnthropicProvider(std::string api_key, std::string model, std
   model_(std::move(model)),
   base_url_(std::move(base_url)) {}
 
-json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
-                                           bool stream) const {
+json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
+                                           int thinking_budget) const {
     json body;
     body["model"] = model_;
     body["max_tokens"] = max_tokens;
@@ -151,11 +156,15 @@ json AnthropicProvider::build_request_body(std::string_view system_prompt, const
         }
     }
 
+    if (thinking_budget > 0) {
+        body["thinking"] = {{"type", "enabled"}, {"budget_tokens", thinking_budget}};
+    }
+
     return body;
 }
 
-LLMResponse AnthropicProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens) {
-    auto body = build_request_body(system_prompt, messages, tools, max_tokens, false);
+LLMResponse AnthropicProvider::chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, int thinking_budget) {
+    auto body = build_request_body(system_prompt, messages, tools, max_tokens, false, thinking_budget);
     std::string request_body = body.dump();
     spdlog::debug("Request body: {}", request_body);
 
@@ -181,8 +190,8 @@ LLMResponse AnthropicProvider::chat(std::string_view system_prompt, const std::v
 }
 
 LLMResponse AnthropicProvider::chat_stream(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, const StreamCallback &on_event,
-                                           int max_tokens) {
-    auto body = build_request_body(system_prompt, messages, tools, max_tokens, true);
+                                           int max_tokens, int thinking_budget) {
+    auto body = build_request_body(system_prompt, messages, tools, max_tokens, true, thinking_budget);
     std::string request_body = body.dump();
     spdlog::debug("Stream request body: {}", request_body);
 
@@ -216,6 +225,8 @@ LLMResponse AnthropicProvider::parse_response(const json &resp) {
 
         if (type == "text") {
             result.content.emplace_back(TextBlock{block["text"].get<std::string>()});
+        } else if (type == "thinking") {
+            result.content.emplace_back(ThinkingBlock{.thinking = block["thinking"].get<std::string>()});
         } else if (type == "tool_use") {
             result.content.emplace_back(ToolUseBlock{.id = block["id"].get<std::string>(), .name = block["name"].get<std::string>(), .input = block["input"]});
         }

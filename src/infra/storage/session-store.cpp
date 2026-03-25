@@ -51,6 +51,10 @@ std::vector<ContentBlock> deserialize_content(const std::string &json_str) {
                 .content = item.at("content").get<std::string>(),
                 .is_error = item.value("is_error", false),
             });
+            continue;
+        }
+        if (type == "thinking") {
+            blocks.emplace_back(ThinkingBlock{.thinking = item.at("thinking").get<std::string>()});
         }
     }
 

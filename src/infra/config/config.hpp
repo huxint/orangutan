@@ -26,6 +26,7 @@ struct AgentConfig {
     };
     std::vector<std::string> subagents;
     std::string edit_mode = "hashline";
+    int thinking_budget = 0;
 };
 
 struct QqBotConfig {
@@ -45,6 +46,7 @@ struct Config {
     double temperature = 1.0;
     int max_iterations = 20;
     int max_tokens = 4096;
+    int thinking_budget = 0;
     std::string workspace;
 
     // [tools] section

@@ -14,14 +14,14 @@ namespace {
 
 class StreamingProvider final : public Provider {
 public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = "hello"}},
         };
     }
 
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
         on_event("text_delta", json{{"text", "hello"}});
         return {
             .stop_reason = "end_turn",
@@ -36,14 +36,14 @@ public:
 
 class ToolStreamingProvider final : public Provider {
 public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int) override {
+    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
         return {
             .stop_reason = "end_turn",
             .content = {TextBlock{.text = "done"}},
         };
     }
 
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int) override {
+    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
         if (!tool_round_completed_) {
             on_event("tool_call_start", json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", json{{"value", 1}}}});
             tool_round_completed_ = true;

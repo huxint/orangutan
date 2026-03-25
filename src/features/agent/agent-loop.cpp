@@ -35,6 +35,17 @@ void emit_history_checkpoint(const AgentLoop::HistoryCheckpointCallback &on_hist
 // (interactive CLI) or a structured observer (TUI/event-stream mode).
 static StreamCallback make_stream_callback(bool &first_text, bool human_output, const StreamCallback &on_event) {
     return [&first_text, human_output, &on_event](const std::string &event_type, const json &data) {
+        if (event_type == "thinking_delta") {
+            if (human_output && first_text) {
+                fmt::print("\n{}", fmt::styled("orangutan> ", fmt::fg(fmt::terminal_color::green)));
+                std::fflush(stdout);
+                first_text = false;
+            }
+            if (human_output) {
+                fmt::print("{}", fmt::styled(data["thinking"].get<std::string>(), fmt::fg(fmt::terminal_color::bright_black)));
+                std::fflush(stdout);
+            }
+        }
         if (event_type == "text_delta") {
             if (human_output && first_text) {
                 fmt::print("\n{}", fmt::styled("orangutan> ", fmt::fg(fmt::terminal_color::green)));
@@ -46,7 +57,7 @@ static StreamCallback make_stream_callback(bool &first_text, bool human_output, 
                 std::fflush(stdout);
             }
         }
-        if (on_event != nullptr && (event_type == "text_delta" || event_type == "tool_call_start")) {
+        if (on_event != nullptr && (event_type == "text_delta" || event_type == "tool_call_start" || event_type == "thinking_delta")) {
             on_event(event_type, data);
         }
     };
@@ -229,7 +240,7 @@ std::string AgentLoop::handle_continuation(const std::string &system_prompt, boo
 
         auto tool_defs = tools_.definitions();
         auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-        LLMResponse response = provider_.chat_stream(system_prompt, history_, tool_defs, callback);
+        LLMResponse response = provider_.chat_stream(system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
 
         auto parts = split_response(response);
         continued_text += parts.text;
@@ -348,7 +359,7 @@ std::string AgentLoop::run(const std::string &user_input, const StreamCallback &
 
         bool first_text = true;
         auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-        LLMResponse response = provider_.chat_stream(effective_system_prompt, history_, tool_defs, callback);
+        LLMResponse response = provider_.chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
 
         auto parts = split_response(response);
         final_text += parts.text;
