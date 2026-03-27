@@ -3,7 +3,7 @@
 #include "infra/time/local-format.hpp"
 
 #include <filesystem>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <stdexcept>
 
 namespace orangutan::automation {
@@ -31,7 +31,7 @@ std::string LogWriter::append(const std::string &workspace_root, const json &ent
     }();
 
     try {
-        fmt::println(file.get(), "{}", entry.dump());
+        spdlog::fmt_lib::println(file.get(), "{}", entry.dump());
         file.close();
     } catch (const std::exception &) {
         throw std::runtime_error("failed to write automation log file: " + log_path.string());

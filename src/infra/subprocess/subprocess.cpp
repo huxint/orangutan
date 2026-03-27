@@ -10,7 +10,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fcntl.h>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <mutex>
 #include <optional>
 #include <poll.h>
@@ -131,7 +131,7 @@ std::string make_process_token() {
     static std::atomic<uint64_t> counter{0};
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    return fmt::format("{}-{}", ticks, ++counter);
+    return spdlog::fmt_lib::format("{}-{}", ticks, ++counter);
 }
 
 struct CapturedOutput {

@@ -1,5 +1,6 @@
 #include "features/tools/core/hashline.hpp"
 
+#include <spdlog/common.h>
 #include <rapidhash.h>
 
 #include <algorithm>
@@ -386,7 +387,7 @@ HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, c
             }
             // Check overlap: ranges [a_start, a_end] and [b_start, b_end]
             if (a_start <= b_end && b_start <= a_end) {
-                return {.ok = false, .error = fmt::format("overlapping edits at lines {}-{} and {}-{}", a_start, a_end, b_start, b_end)};
+                return {.ok = false, .error = spdlog::fmt_lib::format("overlapping edits at lines {}-{} and {}-{}", a_start, a_end, b_start, b_end)};
             }
         }
     }

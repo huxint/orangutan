@@ -1,6 +1,7 @@
 #include "features/memory/runtime-memory.hpp"
 #include "features/tools/builtin/register-builtin.hpp"
 
+#include <spdlog/common.h>
 #include <algorithm>
 #include "infra/format.hpp"
 #include <vector>
@@ -73,7 +74,8 @@ std::string list_memory(const json &input, RuntimeMemory &runtime_memory) {
 
 std::string stats_memory(RuntimeMemory &runtime_memory) {
     const auto stats = runtime_memory.stats();
-    return fmt::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries, stats.journal_entries);
+    return spdlog::fmt_lib::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
+                                   stats.journal_entries);
 }
 
 } // namespace

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <span>
@@ -310,7 +310,7 @@ std::string execute_hashline_edit(const json &input, const std::filesystem::path
 
     fileio::write_file(resolved_path, render_lines(result.lines, had_trailing_newline));
 
-    std::string summary = fmt::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
+    std::string summary = spdlog::fmt_lib::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
     if (!result.warnings.empty()) {
         summary += "\nWarnings: " + result.warnings;
     }
@@ -332,10 +332,10 @@ std::string execute_edit_tool(const json &input, const std::filesystem::path &wo
         if (!summary.empty()) {
             summary += ", ";
         }
-        summary += fmt::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
+        summary += spdlog::fmt_lib::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
     }
 
-    return fmt::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files", summary);
+    return spdlog::fmt_lib::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files", summary);
 }
 
 } // namespace

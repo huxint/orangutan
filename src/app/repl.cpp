@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <iostream>
 #include <optional>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <ranges>
 #include <string_view>
 namespace orangutan::app {
@@ -30,7 +30,7 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
                   HookManager *hook_manager) {
     const auto updating_existing = !current_session_id.empty();
     if (!persist_session(agent, store, current_session_id, make_cli_session_metadata(model, scope_key, agent_key))) {
-        fmt::println("💤 Nothing to save (empty history).\n");
+        spdlog::fmt_lib::println("💤 Nothing to save (empty history).\n");
         return;
     }
 
@@ -39,22 +39,22 @@ void save_session(AgentLoop &agent, SessionStore &store, const std::string &mode
     }
 
     if (updating_existing) {
-        fmt::println("💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+        spdlog::fmt_lib::println("💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         return;
     }
-    fmt::println("💾 Session saved: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+    spdlog::fmt_lib::println("💾 Session saved: {} (use -r {} to resume)\n", current_session_id, current_session_id);
 }
 
 void print_slash_reply(const std::string &text) {
     if (text.ends_with("\n\n")) {
-        fmt::print("{}", text);
+        spdlog::fmt_lib::print("{}", text);
         return;
     }
     if (text.ends_with('\n')) {
-        fmt::println("{}", text);
+        spdlog::fmt_lib::println("{}", text);
         return;
     }
-    fmt::println("{}\n", text);
+    spdlog::fmt_lib::println("{}\n", text);
 }
 
 bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
@@ -69,7 +69,7 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/clear") {
         agent.clear_history();
-        fmt::println("History cleared.\n");
+        spdlog::fmt_lib::println("History cleared.\n");
         return true;
     }
     if (line == "/save") {
@@ -78,36 +78,36 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
     }
     if (line == "/skills") {
         if (skill_loader == nullptr || skill_loader->active_skills().empty()) {
-            fmt::println("No skills loaded.\n");
+            spdlog::fmt_lib::println("No skills loaded.\n");
         } else {
-            fmt::println("Loaded skills:");
+            spdlog::fmt_lib::println("Loaded skills:");
             for (const auto &skill : skill_loader->active_skills()) {
-                fmt::println("  {} — {}", skill.name, skill.description);
-                fmt::println("    source: {}", skill.source_path);
+                spdlog::fmt_lib::println("  {} — {}", skill.name, skill.description);
+                spdlog::fmt_lib::println("    source: {}", skill.source_path);
                 if (!skill.tools.empty()) {
-                    fmt::println("    tools: {}", skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
-                                                      return tool;
-                                                  }) | std::views::join_with(std::string_view{", "}) |
-                                                      std::ranges::to<std::string>());
+                    spdlog::fmt_lib::println("    tools: {}", skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
+                                                                  return tool;
+                                                              }) | std::views::join_with(std::string_view{", "}) |
+                                                                  std::ranges::to<std::string>());
                 }
             }
-            fmt::println("");
+            spdlog::fmt_lib::println("");
         }
         return true;
     }
     if (line == "/tools") {
         if (tool_registry == nullptr) {
-            fmt::println("No tool registry available.\n");
+            spdlog::fmt_lib::println("No tool registry available.\n");
         } else {
             const auto defs = tool_registry->definitions();
             if (defs.empty()) {
-                fmt::println("No tools registered.\n");
+                spdlog::fmt_lib::println("No tools registered.\n");
             } else {
-                fmt::println("Registered tools ({}):", defs.size());
+                spdlog::fmt_lib::println("Registered tools ({}):", defs.size());
                 for (const auto &def : defs) {
-                    fmt::println("  {} — {}", def.name, def.description);
+                    spdlog::fmt_lib::println("  {} — {}", def.name, def.description);
                 }
-                fmt::println("");
+                spdlog::fmt_lib::println("");
             }
         }
         return true;
@@ -196,8 +196,8 @@ bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provi
 void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
               const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
               const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
-    fmt::println("Orangutan v0.1.0");
-    fmt::println("Type /help for commands, Ctrl+D to quit\n");
+    spdlog::fmt_lib::println("Orangutan v0.1.0");
+    spdlog::fmt_lib::println("Type /help for commands, Ctrl+D to quit\n");
     std::fflush(stdout);
 
     dispatch_session_start(hook_manager, current_session_id, agent.history().size());
@@ -231,7 +231,7 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
             try {
                 agent.run(line);
             } catch (const std::exception &e) {
-                fmt::println(stderr, "Error: {}\n", e.what());
+                spdlog::fmt_lib::println(stderr, "Error: {}\n", e.what());
             }
             return false;
         });
@@ -249,17 +249,17 @@ void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, c
         const auto metadata = make_cli_session_metadata(active_model, scope_key, agent_key);
         if (!current_session_id.empty()) {
             store.update(current_session_id, agent.history(), metadata);
-            fmt::println("\n💾 Session updated: {} (use -r {} to resume)", current_session_id, current_session_id);
+            spdlog::fmt_lib::println("\n💾 Session updated: {} (use -r {} to resume)", current_session_id, current_session_id);
         } else {
             current_session_id = store.save(agent.history(), metadata);
             dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-            fmt::println("\n💾 Auto-saved session: {} (use -r {} to resume)", current_session_id, current_session_id);
+            spdlog::fmt_lib::println("\n💾 Auto-saved session: {} (use -r {} to resume)", current_session_id, current_session_id);
         }
     }
 
     dispatch_session_end(hook_manager, current_session_id, agent.history().size());
 
-    fmt::println("\nBye!");
+    spdlog::fmt_lib::println("\nBye!");
 }
 
 } // namespace orangutan::app

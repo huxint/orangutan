@@ -2,7 +2,7 @@
 #include "infra/files/file-io.hpp"
 
 #include <filesystem>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
@@ -20,7 +20,7 @@ std::string write_file(const json &input, const std::filesystem::path &workspace
 
     fileio::write_file(path, content);
 
-    return fmt::format("Wrote {} bytes to {}", content.size(), path.string());
+    return spdlog::fmt_lib::format("Wrote {} bytes to {}", content.size(), path.string());
 }
 
 } // namespace

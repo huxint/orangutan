@@ -6,7 +6,7 @@
 
 #include <filesystem>
 #include "infra/format.hpp"
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <stdexcept>
 
 namespace orangutan {
@@ -99,12 +99,12 @@ JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryC
 
     fileio::File file(result.path, "a");
     if (has_existing_content) {
-        fmt::println(file.get(), "");
-        fmt::println(file.get(), "");
+        spdlog::fmt_lib::println(file.get(), "");
+        spdlog::fmt_lib::println(file.get(), "");
     }
-    fmt::println(file.get(), "## {}", time::current_local_timestamp());
-    fmt::print(file.get(), "{}", trimmed_summary);
-    fmt::println(file.get(), "");
+    spdlog::fmt_lib::println(file.get(), "## {}", time::current_local_timestamp());
+    spdlog::fmt_lib::print(file.get(), "{}", trimmed_summary);
+    spdlog::fmt_lib::println(file.get(), "");
     file.close();
 
     result.mirrored = true;

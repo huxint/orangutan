@@ -4,7 +4,7 @@
 
 #include <cctype>
 #include <filesystem>
-#include <fmt/format.h>
+#include <spdlog/common.h>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -131,7 +131,7 @@ std::filesystem::perms read_file_permissions(const std::filesystem::path &path) 
 [[nodiscard]]
 std::string make_temp_filename(const std::filesystem::path &path) {
     thread_local std::mt19937_64 generator{std::random_device{}()};
-    return fmt::format("{}.{:016x}.tmp", path.filename().string(), generator());
+    return spdlog::fmt_lib::format("{}.{:016x}.tmp", path.filename().string(), generator());
 }
 
 void prepare_parent_directory(const std::filesystem::path &path) {

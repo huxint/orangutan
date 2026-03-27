@@ -1,6 +1,7 @@
 #include "app/cli-ui.hpp"
 #include "app/slash-commands.hpp"
 
+#include <spdlog/common.h>
 #include <algorithm>
 #include "infra/format.hpp"
 
@@ -85,7 +86,7 @@ std::string format_history_compaction_result(const AgentLoop::HistoryCompactionR
         return "## Compression\n- " + result.status;
     }
 
-    return fmt::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
+    return spdlog::fmt_lib::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
 }
 
 std::string render_saved_sessions(SessionStore &store, const std::string &scope_key) {
