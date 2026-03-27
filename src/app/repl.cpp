@@ -9,8 +9,6 @@
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 
-#include <algorithm>
-#include <iterator>
 #include <cstdio>
 #include <iostream>
 #include <optional>

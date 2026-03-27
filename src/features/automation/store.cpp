@@ -28,7 +28,7 @@ namespace orangutan::automation {
                 return std::nullopt;
             }
             std::int64_t result{};
-            std::from_chars(value.data(), value.data() + value.size(), result);
+            std::from_chars(value.begin(), value.end(), result);
             return result;
         }
 

@@ -14,6 +14,7 @@
 #include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <string>
 
 namespace orangutan {
 
@@ -83,18 +84,13 @@ namespace orangutan {
         bool journal_parse_failed = false;
     };
 
-    std::string trim_copy(std::string value) {
-        const auto is_space = [](unsigned char ch) {
-            return std::isspace(ch) != 0;
+    std::string_view trim_copy(std::string_view value) {
+        const auto p = [](unsigned char c) {
+            return std::isspace(c);
         };
-
-        while (!value.empty() && is_space(static_cast<unsigned char>(value.front()))) {
-            value.erase(value.begin());
-        }
-        while (!value.empty() && is_space(static_cast<unsigned char>(value.back()))) {
-            value.pop_back();
-        }
-        return value;
+        const auto *l = std::ranges::find_if_not(value, p);
+        const auto *r = std::ranges::find_if_not(value | std::views::reverse, p).base();
+        return l >= r ? std::string_view{} : std::string_view(l, r);
     }
 
     std::string hash_key(std::string_view prefix, std::string_view value) {
@@ -119,10 +115,10 @@ namespace orangutan {
             return std::nullopt;
         }
 
-        auto category = trim_copy(line.substr(0, first));
-        auto key = trim_copy(line.substr(first + 1, second - first - 1));
-        const auto importance_text = trim_copy(line.substr(second + 1, third - second - 1));
-        auto content = trim_copy(line.substr(third + 1));
+        std::string category = trim_copy(line.substr(0, first)) | std::ranges::to<std::string>();
+        std::string key = trim_copy(line.substr(first + 1, second - first - 1)) | std::ranges::to<std::string>();
+        std::string_view importance_text = trim_copy(line.substr(second + 1, third - second - 1));
+        std::string content = trim_copy(line.substr(third + 1)) | std::ranges::to<std::string>();
         if (content.empty()) {
             return std::nullopt;
         }
@@ -132,7 +128,7 @@ namespace orangutan {
         }
 
         double importance = 0.5;
-        std::from_chars(importance_text.data(), importance_text.data() + importance_text.size(), importance);
+        std::from_chars(importance_text.begin(), importance_text.end(), importance);
         importance = std::clamp(importance, 0.0, 1.0);
 
         if (key.empty()) {
@@ -169,7 +165,7 @@ namespace orangutan {
                 if (summary.empty()) {
                     parsed.journal_parse_failed = true;
                 } else {
-                    parsed.journal_summary = std::move(summary);
+                    parsed.journal_summary = summary;
                 }
                 continue;
             }

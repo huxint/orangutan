@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/providers/provider.hpp"
-#include "core/providers/sse-parser.hpp"
 
 #include <string>
 #include <vector>

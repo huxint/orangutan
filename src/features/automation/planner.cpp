@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <random>

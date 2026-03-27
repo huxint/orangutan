@@ -3,7 +3,6 @@
 #include <replxx.hxx>
 
 #include <memory>
-#include <utility>
 
 namespace orangutan::app {
 

@@ -1,4 +1,5 @@
 #include "core/providers/anthropic-provider.hpp"
+#include "core/providers/sse-parser.hpp"
 #include "core/providers/http.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>

@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <spdlog/common.h>
-#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
