@@ -6,10 +6,10 @@
 
 namespace orangutan::automation {
 
-class LogWriter {
-public:
-    [[nodiscard]]
-    static std::string append(const std::string &workspace_root, const json &entry);
-};
+    class LogWriter {
+    public:
+        [[nodiscard]]
+        static std::string append(const std::string &workspace_root, const json &entry);
+    };
 
 } // namespace orangutan::automation

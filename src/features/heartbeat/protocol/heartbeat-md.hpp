@@ -6,9 +6,9 @@
 
 namespace orangutan {
 
-/// Load HEARTBEAT.md from disk. Returns std::nullopt if file doesn't exist.
-/// Returns empty string if the file is empty, whitespace-only, or contains only markdown headers (caller should skip the run).
-/// Returns file content if it has meaningful content.
-std::optional<std::string> load_heartbeat_md(const std::filesystem::path &path);
+    /// Load HEARTBEAT.md from disk. Returns std::nullopt if file doesn't exist.
+    /// Returns empty string if the file is empty, whitespace-only, or contains only markdown headers (caller should skip the run).
+    /// Returns file content if it has meaningful content.
+    std::optional<std::string> load_heartbeat_md(const std::filesystem::path &path);
 
 } // namespace orangutan

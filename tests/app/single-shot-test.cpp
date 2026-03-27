@@ -12,168 +12,168 @@ using namespace orangutan;
 
 namespace {
 
-class StreamingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "hello"}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
-        on_event("text_delta", json{{"text", "hello"}});
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "hello"}},
-        };
-    }
-
-    std::string name() const override {
-        return "streaming-provider";
-    }
-};
-
-class ToolStreamingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "done"}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
-        if (!tool_round_completed_) {
-            on_event("tool_call_start", json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", json{{"value", 1}}}});
-            tool_round_completed_ = true;
+    class StreamingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
-                .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-1", .name = "fake_tool", .input = {{"value", 1}}}},
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "hello"}},
             };
         }
 
-        on_event("text_delta", json{{"text", "done"}});
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "done"}},
-        };
-    }
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
+            on_event("text_delta", json{{"text", "hello"}});
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "hello"}},
+            };
+        }
 
-    std::string name() const override {
-        return "tool-streaming-provider";
-    }
+        std::string name() const override {
+            return "streaming-provider";
+        }
+    };
 
-private:
-    bool tool_round_completed_ = false;
-};
+    class ToolStreamingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "done"}},
+            };
+        }
 
-class SingleShotHarness {
-public:
-    SingleShotHarness()
-    : session_db_path_(orangutan::testing::unique_test_db_path("single-shot", "sessions.db")) {}
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
+            if (!tool_round_completed_) {
+                on_event("tool_call_start", json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", json{{"value", 1}}}});
+                tool_round_completed_ = true;
+                return {
+                    .stop_reason = "tool_use",
+                    .content = {ToolUseBlock{.id = "tool-1", .name = "fake_tool", .input = {{"value", 1}}}},
+                };
+            }
 
-    ~SingleShotHarness() {
-        std::filesystem::remove_all(session_db_path_.parent_path());
-    }
+            on_event("text_delta", json{{"text", "done"}});
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "done"}},
+            };
+        }
 
-    [[nodiscard]]
-    const std::filesystem::path &session_db_path() const {
-        return session_db_path_;
-    }
+        std::string name() const override {
+            return "tool-streaming-provider";
+        }
 
-private:
-    std::filesystem::path session_db_path_;
-};
+    private:
+        bool tool_round_completed_ = false;
+    };
 
-TEST_CASE("run_single_message_emits_events_and_autosaves_session") {
-    SingleShotHarness harness;
-    StreamingProvider provider;
-    ToolRegistry tools;
-    AgentLoop agent(provider, tools);
-    SessionStore store(harness.session_db_path());
-    Config cfg;
-    cfg.auto_save = true;
+    class SingleShotHarness {
+    public:
+        SingleShotHarness()
+        : session_db_path_(orangutan::testing::unique_test_db_path("single-shot", "sessions.db")) {}
 
-    std::vector<json> events;
-    std::string current_session_id;
-    const auto status = app::run_single_message(
-        agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
-        [&events](const json &event) {
-            events.push_back(event);
-        },
-        std::cerr);
+        ~SingleShotHarness() {
+            std::filesystem::remove_all(session_db_path_.parent_path());
+        }
 
-    CHECK(status == 0);
-    CHECK_FALSE(current_session_id.empty());
-    CHECK(events.size() >= 3ul);
-    CHECK(events[0]["type"] == "assistant_delta");
-    CHECK(events[1]["type"] == "session_saved");
-    CHECK(events[2]["type"] == "done");
+        [[nodiscard]]
+        const std::filesystem::path &session_db_path() const {
+            return session_db_path_;
+        }
 
-    const auto sessions = store.list_sessions("scope:test");
-    CHECK(sessions.size() == 1ul);
-    CHECK(sessions[0].model == "test-model");
-    CHECK(sessions[0].agent_key == "default");
-    CHECK(sessions[0].origin_kind == "cli");
-    CHECK(sessions[0].origin_ref == "cli:local");
-};
+    private:
+        std::filesystem::path session_db_path_;
+    };
 
-TEST_CASE("run_single_message_uses_distinct_tool_call_and_tool_execution_events") {
-    SingleShotHarness harness;
-    ToolStreamingProvider provider;
-    ToolRegistry tools;
-    tools.register_tool({
-        .definition = {.name = "fake_tool", .description = "fake", .input_schema = json::object()},
-        .execute =
-            [](const json &) {
-                return std::string{"ok"};
+    TEST_CASE("run_single_message_emits_events_and_autosaves_session") {
+        SingleShotHarness harness;
+        StreamingProvider provider;
+        ToolRegistry tools;
+        AgentLoop agent(provider, tools);
+        SessionStore store(harness.session_db_path());
+        Config cfg;
+        cfg.auto_save = true;
+
+        std::vector<json> events;
+        std::string current_session_id;
+        const auto status = app::run_single_message(
+            agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
+            [&events](const json &event) {
+                events.push_back(event);
             },
-    });
-    AgentLoop agent(provider, tools);
-    SessionStore store(harness.session_db_path());
-    Config cfg;
-    cfg.auto_save = false;
+            std::cerr);
 
-    std::vector<json> events;
-    std::string current_session_id;
-    const auto status = app::run_single_message(
-        agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
-        [&events](const json &event) {
+        CHECK(status == 0);
+        CHECK_FALSE(current_session_id.empty());
+        CHECK(events.size() >= 3ul);
+        CHECK(events[0]["type"] == "assistant_delta");
+        CHECK(events[1]["type"] == "session_saved");
+        CHECK(events[2]["type"] == "done");
+
+        const auto sessions = store.list_sessions("scope:test");
+        CHECK(sessions.size() == 1ul);
+        CHECK(sessions[0].model == "test-model");
+        CHECK(sessions[0].agent_key == "default");
+        CHECK(sessions[0].origin_kind == "cli");
+        CHECK(sessions[0].origin_ref == "cli:local");
+    };
+
+    TEST_CASE("run_single_message_uses_distinct_tool_call_and_tool_execution_events") {
+        SingleShotHarness harness;
+        ToolStreamingProvider provider;
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = {.name = "fake_tool", .description = "fake", .input_schema = json::object()},
+            .execute =
+                [](const json &) {
+                    return std::string{"ok"};
+                },
+        });
+        AgentLoop agent(provider, tools);
+        SessionStore store(harness.session_db_path());
+        Config cfg;
+        cfg.auto_save = false;
+
+        std::vector<json> events;
+        std::string current_session_id;
+        const auto status = app::run_single_message(
+            agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
+            [&events](const json &event) {
+                events.push_back(event);
+            },
+            std::cerr);
+
+        CHECK(status == 0);
+
+        size_t tool_call_started_count = 0;
+        size_t tool_started_count = 0;
+        for (const auto &event : events) {
+            const auto type = event.at("type").get<std::string>();
+            if (type == "tool_call_started") {
+                ++tool_call_started_count;
+            }
+            if (type == "tool_started") {
+                ++tool_started_count;
+            }
+        }
+
+        CHECK(tool_call_started_count == 1ul);
+        CHECK(tool_started_count == 1ul);
+    };
+
+    TEST_CASE("emit_session_history_dump_wraps_history_with_lifecycle_events") {
+        std::vector<json> events;
+        app::emit_session_history_dump({Message::user_text("hello")}, "session-1", [&events](const json &event) {
             events.push_back(event);
-        },
-        std::cerr);
+        });
 
-    CHECK(status == 0);
-
-    size_t tool_call_started_count = 0;
-    size_t tool_started_count = 0;
-    for (const auto &event : events) {
-        const auto type = event.at("type").get<std::string>();
-        if (type == "tool_call_started") {
-            ++tool_call_started_count;
-        }
-        if (type == "tool_started") {
-            ++tool_started_count;
-        }
-    }
-
-    CHECK(tool_call_started_count == 1ul);
-    CHECK(tool_started_count == 1ul);
-};
-
-TEST_CASE("emit_session_history_dump_wraps_history_with_lifecycle_events") {
-    std::vector<json> events;
-    app::emit_session_history_dump({Message::user_text("hello")}, "session-1", [&events](const json &event) {
-        events.push_back(event);
-    });
-
-    CHECK(events.size() == 5ul);
-    CHECK(events[0]["type"] == "session_resumed");
-    CHECK(events[1]["type"] == "session_history_started");
-    CHECK(events[2]["type"] == "history_message");
-    CHECK(events[3]["type"] == "session_history_finished");
-    CHECK(events[4]["type"] == "done");
-};
+        CHECK(events.size() == 5ul);
+        CHECK(events[0]["type"] == "session_resumed");
+        CHECK(events[1]["type"] == "session_history_started");
+        CHECK(events[2]["type"] == "history_message");
+        CHECK(events[3]["type"] == "session_history_finished");
+        CHECK(events[4]["type"] == "done");
+    };
 
 } // namespace

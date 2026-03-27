@@ -6,38 +6,38 @@ using namespace orangutan;
 
 namespace {
 
-TEST_CASE("build_edit_details_produces_unified_diff") {
-    ToolUseBlock call{
-        .id = "edit-1",
-        .name = "edit",
-        .input = {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}},
+    TEST_CASE("build_edit_details_produces_unified_diff") {
+        ToolUseBlock call{
+            .id = "edit-1",
+            .name = "edit",
+            .input = {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}},
+        };
+
+        const auto details = app::build_edit_details(call);
+        INFO("expected edit details to be a JSON object");
+        REQUIRE(details.is_object());
+        CHECK(details["type"] == "edit");
+        CHECK(details["path"] == "src/file.cpp");
+        const auto unified = details["diff"]["unified"].get<std::string>();
+        CHECK(unified.contains("-old"));
+        CHECK(unified.contains("+new"));
     };
 
-    const auto details = app::build_edit_details(call);
-    INFO("expected edit details to be a JSON object");
-    REQUIRE(details.is_object());
-    CHECK(details["type"] == "edit");
-    CHECK(details["path"] == "src/file.cpp");
-    const auto unified = details["diff"]["unified"].get<std::string>();
-    CHECK(unified.contains("-old"));
-    CHECK(unified.contains("+new"));
-};
+    TEST_CASE("build_session_history_events_includes_tool_lifecycle_and_details") {
+        const std::vector<Message> history{
+            Message::user_text("hello"),
+            {.role = Role::assistant, .content = {ToolUseBlock{.id = "edit-1", .name = "edit", .input = {{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}}}}},
+            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "edit-1", .content = "done", .is_error = false}}},
+        };
 
-TEST_CASE("build_session_history_events_includes_tool_lifecycle_and_details") {
-    const std::vector<Message> history{
-        Message::user_text("hello"),
-        {.role = Role::assistant, .content = {ToolUseBlock{.id = "edit-1", .name = "edit", .input = {{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}}}}},
-        {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "edit-1", .content = "done", .is_error = false}}},
+        const auto events = app::build_session_history_events(history);
+        CHECK(events.size() >= 5ul);
+        CHECK(events.front()["type"] == "session_history_started");
+        CHECK(events[1]["type"] == "history_message");
+        CHECK(events[2]["type"] == "tool_started");
+        CHECK(events[3]["type"] == "tool_finished");
+        CHECK(events[3]["details"].is_object());
+        CHECK(events.back()["type"] == "session_history_finished");
     };
-
-    const auto events = app::build_session_history_events(history);
-    CHECK(events.size() >= 5ul);
-    CHECK(events.front()["type"] == "session_history_started");
-    CHECK(events[1]["type"] == "history_message");
-    CHECK(events[2]["type"] == "tool_started");
-    CHECK(events[3]["type"] == "tool_finished");
-    CHECK(events[3]["details"].is_object());
-    CHECK(events.back()["type"] == "session_history_finished");
-};
 
 } // namespace

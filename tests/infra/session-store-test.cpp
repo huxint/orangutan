@@ -9,55 +9,55 @@
 
 namespace {
 
-struct SessionStoreHarness {
-    SessionStoreHarness()
-    : db_path(orangutan::testing::unique_test_db_path("session-store", "sessions.db")) {}
+    struct SessionStoreHarness {
+        SessionStoreHarness()
+        : db_path(orangutan::testing::unique_test_db_path("session-store", "sessions.db")) {}
 
-    ~SessionStoreHarness() {
-        std::filesystem::remove_all(db_path.parent_path());
-    }
-
-    [[nodiscard]]
-    orangutan::SessionStore store() const {
-        return orangutan::SessionStore(db_path);
-    }
-
-    std::filesystem::path db_path;
-};
-
-struct SqliteDb {
-    explicit SqliteDb(const std::filesystem::path &path) {
-        const auto rc = sqlite3_open(path.string().c_str(), &db);
-        INFO("failed to open sqlite database");
-        CHECK((rc == SQLITE_OK));
-    }
-
-    ~SqliteDb() {
-        if (db != nullptr) {
-            sqlite3_close(db);
+        ~SessionStoreHarness() {
+            std::filesystem::remove_all(db_path.parent_path());
         }
+
+        [[nodiscard]]
+        orangutan::SessionStore store() const {
+            return orangutan::SessionStore(db_path);
+        }
+
+        std::filesystem::path db_path;
+    };
+
+    struct SqliteDb {
+        explicit SqliteDb(const std::filesystem::path &path) {
+            const auto rc = sqlite3_open(path.string().c_str(), &db);
+            INFO("failed to open sqlite database");
+            CHECK((rc == SQLITE_OK));
+        }
+
+        ~SqliteDb() {
+            if (db != nullptr) {
+                sqlite3_close(db);
+            }
+        }
+
+        sqlite3 *db = nullptr;
+    };
+
+    void exec_sql(sqlite3 *db, const char *sql) {
+        char *err_msg = nullptr;
+        const auto rc = sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
+        INFO((err_msg != nullptr ? err_msg : "sqlite error"));
+        CHECK((rc == SQLITE_OK));
+        sqlite3_free(err_msg);
     }
 
-    sqlite3 *db = nullptr;
-};
-
-void exec_sql(sqlite3 *db, const char *sql) {
-    char *err_msg = nullptr;
-    const auto rc = sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
-    INFO((err_msg != nullptr ? err_msg : "sqlite error"));
-    CHECK((rc == SQLITE_OK));
-    sqlite3_free(err_msg);
-}
-
-orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key = {}) {
-    return orangutan::SessionMetadata{
-        .model = model,
-        .scope_key = scope_key,
-        .agent_key = "",
-        .origin_kind = "cli",
-        .origin_ref = "",
-    };
-}
+    orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key = {}) {
+        return orangutan::SessionMetadata{
+            .model = model,
+            .scope_key = scope_key,
+            .agent_key = "",
+            .origin_kind = "cli",
+            .origin_ref = "",
+        };
+    }
 
 } // namespace
 

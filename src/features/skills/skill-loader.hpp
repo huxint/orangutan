@@ -5,31 +5,31 @@
 
 namespace orangutan {
 
-std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::string &workspace_root);
+    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::string &workspace_root);
 
-struct SkillDef {
-    std::string name;
-    std::string description;
-    std::vector<std::string> tools;
-    std::vector<std::string> env;
-    std::string body;
-    std::string source_path;
-};
+    struct SkillDef {
+        std::string name;
+        std::string description;
+        std::vector<std::string> tools;
+        std::vector<std::string> env;
+        std::string body;
+        std::string source_path;
+    };
 
-class SkillLoader {
-public:
-    void load_from_directories(const std::vector<std::string> &directories);
+    class SkillLoader {
+    public:
+        void load_from_directories(const std::vector<std::string> &directories);
 
-    [[nodiscard]]
-    const std::vector<SkillDef> &active_skills() const {
-        return skills_;
-    }
+        [[nodiscard]]
+        const std::vector<SkillDef> &active_skills() const {
+            return skills_;
+        }
 
-    [[nodiscard]]
-    std::string build_prompt_section() const;
+        [[nodiscard]]
+        std::string build_prompt_section() const;
 
-private:
-    std::vector<SkillDef> skills_;
-};
+    private:
+        std::vector<SkillDef> skills_;
+    };
 
 } // namespace orangutan

@@ -9,11 +9,11 @@
 
 namespace orangutan::builtin::detail {
 
-using ParseError = std::string;
+    using ParseError = std::string;
 
-[[nodiscard]]
-std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const json &input, const automation::DeliveryPolicy &base);
-[[nodiscard]]
-std::expected<std::optional<std::vector<automation::ActiveHourWindow>>, ParseError> parse_active_hours_overlay(const json &input);
+    [[nodiscard]]
+    std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const json &input, const automation::DeliveryPolicy &base);
+    [[nodiscard]]
+    std::expected<std::optional<std::vector<automation::ActiveHourWindow>>, ParseError> parse_active_hours_overlay(const json &input);
 
 } // namespace orangutan::builtin::detail

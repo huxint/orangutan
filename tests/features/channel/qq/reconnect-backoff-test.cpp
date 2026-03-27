@@ -20,223 +20,223 @@ using namespace orangutan::qq;
 
 namespace {
 
-class FakeConnection final : public Transport::Connection {
-public:
-    void send_text(std::string payload) override {
-        {
-            std::scoped_lock lock(mutex_);
-            sent_payloads_.push_back(std::move(payload));
-        }
-        cv_.notify_all();
-    }
-
-    [[nodiscard]]
-    std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
-        std::unique_lock lock(mutex_);
-        cv_.wait_for(lock, timeout, [this] {
-            return closed_ || !events_.empty();
-        });
-
-        if (!events_.empty()) {
-            auto event = std::move(events_.front());
-            events_.pop_front();
-            return event;
-        }
-        if (closed_) {
-            return Transport::Event::close(1000, "client close");
-        }
-        return std::nullopt;
-    }
-
-    void close() override {
-        {
-            std::scoped_lock lock(mutex_);
-            closed_ = true;
-        }
-        cv_.notify_all();
-    }
-
-    void push_text(std::string payload) {
-        {
-            std::scoped_lock lock(mutex_);
-            events_.push_back(Transport::Event::text(std::move(payload)));
-        }
-        cv_.notify_all();
-    }
-
-    void push_close(uint16_t code, std::string reason) {
-        {
-            std::scoped_lock lock(mutex_);
-            events_.push_back(Transport::Event::close(code, std::move(reason)));
-        }
-        cv_.notify_all();
-    }
-
-    void push_error(std::string message) {
-        {
-            std::scoped_lock lock(mutex_);
-            events_.push_back(Transport::Event::error(std::move(message)));
-        }
-        cv_.notify_all();
-    }
-
-    [[nodiscard]]
-    bool wait_for_sent_count(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(1)) const {
-        std::unique_lock lock(mutex_);
-        return cv_.wait_for(lock, timeout, [this, expected] {
-            return sent_payloads_.size() >= expected;
-        });
-    }
-
-    [[nodiscard]]
-    std::vector<std::string> sent_payloads() const {
-        std::scoped_lock lock(mutex_);
-        return sent_payloads_;
-    }
-
-private:
-    mutable std::mutex mutex_;
-    mutable std::condition_variable cv_;
-    std::deque<Transport::Event> events_;
-    std::vector<std::string> sent_payloads_;
-    bool closed_ = false;
-};
-
-class FakeConnector {
-public:
-    [[nodiscard]]
-    Transport::ConnectionFactory factory() {
-        return [this](const std::string &url) {
-            std::scoped_lock lock(mutex_);
-            urls_.push_back(url);
-            if (failures_remaining_ > 0) {
-                --failures_remaining_;
-                throw std::runtime_error("synthetic connect failure");
-            }
-
-            auto connection = std::make_shared<FakeConnection>();
-            connections_.push_back(connection);
-            cv_.notify_all();
-            return std::unique_ptr<Transport::Connection>(new SharedFakeConnection(connection));
-        };
-    }
-
-    void fail_next_connects(std::size_t count) {
-        std::scoped_lock lock(mutex_);
-        failures_remaining_ = count;
-    }
-
-    [[nodiscard]]
-    std::shared_ptr<FakeConnection> wait_for_connection(std::size_t index, std::chrono::milliseconds timeout = std::chrono::seconds(3)) const {
-        std::unique_lock lock(mutex_);
-        const auto ready = cv_.wait_for(lock, timeout, [this, index] {
-            return connections_.size() >= index;
-        });
-        if (!ready) {
-            throw std::runtime_error("timed out waiting for connection");
-        }
-        return connections_.at(index - 1);
-    }
-
-    [[nodiscard]]
-    std::size_t connection_count() const {
-        std::scoped_lock lock(mutex_);
-        return connections_.size();
-    }
-
-private:
-    class SharedFakeConnection final : public Transport::Connection {
+    class FakeConnection final : public Transport::Connection {
     public:
-        explicit SharedFakeConnection(std::shared_ptr<FakeConnection> connection)
-        : connection_(std::move(connection)) {}
-
         void send_text(std::string payload) override {
-            connection_->send_text(std::move(payload));
+            {
+                std::scoped_lock lock(mutex_);
+                sent_payloads_.push_back(std::move(payload));
+            }
+            cv_.notify_all();
         }
 
         [[nodiscard]]
         std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
-            return connection_->wait_event(timeout);
+            std::unique_lock lock(mutex_);
+            cv_.wait_for(lock, timeout, [this] {
+                return closed_ || !events_.empty();
+            });
+
+            if (!events_.empty()) {
+                auto event = std::move(events_.front());
+                events_.pop_front();
+                return event;
+            }
+            if (closed_) {
+                return Transport::Event::close(1000, "client close");
+            }
+            return std::nullopt;
         }
 
         void close() override {
-            connection_->close();
+            {
+                std::scoped_lock lock(mutex_);
+                closed_ = true;
+            }
+            cv_.notify_all();
+        }
+
+        void push_text(std::string payload) {
+            {
+                std::scoped_lock lock(mutex_);
+                events_.push_back(Transport::Event::text(std::move(payload)));
+            }
+            cv_.notify_all();
+        }
+
+        void push_close(uint16_t code, std::string reason) {
+            {
+                std::scoped_lock lock(mutex_);
+                events_.push_back(Transport::Event::close(code, std::move(reason)));
+            }
+            cv_.notify_all();
+        }
+
+        void push_error(std::string message) {
+            {
+                std::scoped_lock lock(mutex_);
+                events_.push_back(Transport::Event::error(std::move(message)));
+            }
+            cv_.notify_all();
+        }
+
+        [[nodiscard]]
+        bool wait_for_sent_count(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(1)) const {
+            std::unique_lock lock(mutex_);
+            return cv_.wait_for(lock, timeout, [this, expected] {
+                return sent_payloads_.size() >= expected;
+            });
+        }
+
+        [[nodiscard]]
+        std::vector<std::string> sent_payloads() const {
+            std::scoped_lock lock(mutex_);
+            return sent_payloads_;
         }
 
     private:
-        std::shared_ptr<FakeConnection> connection_;
+        mutable std::mutex mutex_;
+        mutable std::condition_variable cv_;
+        std::deque<Transport::Event> events_;
+        std::vector<std::string> sent_payloads_;
+        bool closed_ = false;
     };
 
-    mutable std::mutex mutex_;
-    mutable std::condition_variable cv_;
-    std::vector<std::string> urls_;
-    std::vector<std::shared_ptr<FakeConnection>> connections_;
-    std::size_t failures_remaining_ = 0;
-};
+    class FakeConnector {
+    public:
+        [[nodiscard]]
+        Transport::ConnectionFactory factory() {
+            return [this](const std::string &url) {
+                std::scoped_lock lock(mutex_);
+                urls_.push_back(url);
+                if (failures_remaining_ > 0) {
+                    --failures_remaining_;
+                    throw std::runtime_error("synthetic connect failure");
+                }
 
-struct CallbackRecorder {
-    std::mutex mutex;
-    std::condition_variable cv;
-    std::size_t opens = 0;
-    std::vector<std::string> texts;
-    std::vector<std::pair<uint16_t, std::string>> closes;
-    std::vector<std::string> errors;
+                auto connection = std::make_shared<FakeConnection>();
+                connections_.push_back(connection);
+                cv_.notify_all();
+                return std::unique_ptr<Transport::Connection>(new SharedFakeConnection(connection));
+            };
+        }
+
+        void fail_next_connects(std::size_t count) {
+            std::scoped_lock lock(mutex_);
+            failures_remaining_ = count;
+        }
+
+        [[nodiscard]]
+        std::shared_ptr<FakeConnection> wait_for_connection(std::size_t index, std::chrono::milliseconds timeout = std::chrono::seconds(3)) const {
+            std::unique_lock lock(mutex_);
+            const auto ready = cv_.wait_for(lock, timeout, [this, index] {
+                return connections_.size() >= index;
+            });
+            if (!ready) {
+                throw std::runtime_error("timed out waiting for connection");
+            }
+            return connections_.at(index - 1);
+        }
+
+        [[nodiscard]]
+        std::size_t connection_count() const {
+            std::scoped_lock lock(mutex_);
+            return connections_.size();
+        }
+
+    private:
+        class SharedFakeConnection final : public Transport::Connection {
+        public:
+            explicit SharedFakeConnection(std::shared_ptr<FakeConnection> connection)
+            : connection_(std::move(connection)) {}
+
+            void send_text(std::string payload) override {
+                connection_->send_text(std::move(payload));
+            }
+
+            [[nodiscard]]
+            std::optional<Transport::Event> wait_event(std::chrono::milliseconds timeout) override {
+                return connection_->wait_event(timeout);
+            }
+
+            void close() override {
+                connection_->close();
+            }
+
+        private:
+            std::shared_ptr<FakeConnection> connection_;
+        };
+
+        mutable std::mutex mutex_;
+        mutable std::condition_variable cv_;
+        std::vector<std::string> urls_;
+        std::vector<std::shared_ptr<FakeConnection>> connections_;
+        std::size_t failures_remaining_ = 0;
+    };
+
+    struct CallbackRecorder {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::size_t opens = 0;
+        std::vector<std::string> texts;
+        std::vector<std::pair<uint16_t, std::string>> closes;
+        std::vector<std::string> errors;
+
+        [[nodiscard]]
+        bool wait_for_opens(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+            std::unique_lock lock(mutex);
+            return cv.wait_for(lock, timeout, [this, expected] {
+                return opens >= expected;
+            });
+        }
+
+        [[nodiscard]]
+        bool wait_for_texts(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+            std::unique_lock lock(mutex);
+            return cv.wait_for(lock, timeout, [this, expected] {
+                return texts.size() >= expected;
+            });
+        }
+
+        [[nodiscard]]
+        bool wait_for_errors(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+            std::unique_lock lock(mutex);
+            return cv.wait_for(lock, timeout, [this, expected] {
+                return errors.size() >= expected;
+            });
+        }
+    };
 
     [[nodiscard]]
-    bool wait_for_opens(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
-        std::unique_lock lock(mutex);
-        return cv.wait_for(lock, timeout, [this, expected] {
-            return opens >= expected;
-        });
+    Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector) {
+        return Transport({
+                             .on_open =
+                                 [&] {
+                                     std::scoped_lock lock(recorder.mutex);
+                                     ++recorder.opens;
+                                     recorder.cv.notify_all();
+                                 },
+                             .on_text =
+                                 [&](std::string text) {
+                                     std::scoped_lock lock(recorder.mutex);
+                                     recorder.texts.push_back(std::move(text));
+                                     recorder.cv.notify_all();
+                                 },
+                             .on_close =
+                                 [&](uint16_t code, std::string reason) {
+                                     std::scoped_lock lock(recorder.mutex);
+                                     recorder.closes.emplace_back(code, std::move(reason));
+                                     recorder.cv.notify_all();
+                                 },
+                             .on_error =
+                                 [&](std::string error) {
+                                     std::scoped_lock lock(recorder.mutex);
+                                     recorder.errors.push_back(std::move(error));
+                                     recorder.cv.notify_all();
+                                 },
+                         },
+                         connector.factory());
     }
-
-    [[nodiscard]]
-    bool wait_for_texts(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
-        std::unique_lock lock(mutex);
-        return cv.wait_for(lock, timeout, [this, expected] {
-            return texts.size() >= expected;
-        });
-    }
-
-    [[nodiscard]]
-    bool wait_for_errors(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
-        std::unique_lock lock(mutex);
-        return cv.wait_for(lock, timeout, [this, expected] {
-            return errors.size() >= expected;
-        });
-    }
-};
-
-[[nodiscard]]
-Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector) {
-    return Transport({
-                         .on_open =
-                             [&] {
-                                 std::scoped_lock lock(recorder.mutex);
-                                 ++recorder.opens;
-                                 recorder.cv.notify_all();
-                             },
-                         .on_text =
-                             [&](std::string text) {
-                                 std::scoped_lock lock(recorder.mutex);
-                                 recorder.texts.push_back(std::move(text));
-                                 recorder.cv.notify_all();
-                             },
-                         .on_close =
-                             [&](uint16_t code, std::string reason) {
-                                 std::scoped_lock lock(recorder.mutex);
-                                 recorder.closes.emplace_back(code, std::move(reason));
-                                 recorder.cv.notify_all();
-                             },
-                         .on_error =
-                             [&](std::string error) {
-                                 std::scoped_lock lock(recorder.mutex);
-                                 recorder.errors.push_back(std::move(error));
-                                 recorder.cv.notify_all();
-                             },
-                     },
-                     connector.factory());
-}
 
 } // namespace
 

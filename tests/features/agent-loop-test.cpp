@@ -9,474 +9,474 @@ using namespace orangutan;
 
 namespace {
 
-class SummarizingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/, int = 0) override {
-        last_system_prompt_ = system_prompt;
-        last_summary_input_size_ = messages.size();
-        last_tool_count_ = tools.size();
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "Earlier conversation summary"}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        throw std::runtime_error("chat_stream should not be used in this test");
-    }
-
-    std::string name() const override {
-        return "summarizing-test-provider";
-    }
-
-    std::string last_system_prompt_;
-    size_t last_summary_input_size_ = 0;
-    size_t last_tool_count_ = 0;
-};
-
-class DistillingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/, int = 0) override {
-        last_system_prompt_ = system_prompt;
-        last_messages_size_ = messages.size();
-        last_tool_count_ = tools.size();
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
-                                          "memory|decision|decision.routing|0.80|qq bots stay fixed to one agent\n"
-                                          "memory|learning|learning.runtime-identity|0.85|channel runtime identity should use jid plus agent key\n"
-                                          "journal|Reviewed memory ranking and markdown mirror behavior"}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        throw std::runtime_error("chat_stream should not be used in this test");
-    }
-
-    std::string name() const override {
-        return "distilling-test-provider";
-    }
-
-    std::string last_system_prompt_;
-    size_t last_messages_size_ = 0;
-    size_t last_tool_count_ = 0;
-};
-
-class EmptyDistillingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = ""}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        throw std::runtime_error("chat_stream should not be used in this test");
-    }
-
-    std::string name() const override {
-        return "empty-distilling-provider";
-    }
-};
-
-class MalformedJournalProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
-                                          "journal"}},
-        };
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        throw std::runtime_error("chat_stream should not be used in this test");
-    }
-
-    std::string name() const override {
-        return "malformed-journal-provider";
-    }
-};
-
-class PromptCapturingProvider final : public Provider {
-public:
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        throw std::runtime_error("chat should not be used in this test");
-    }
-
-    LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        last_system_prompt_ = system_prompt;
-        return {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "ok"}},
-        };
-    }
-
-    std::string name() const override {
-        return "prompt-capturing-provider";
-    }
-
-    std::string last_system_prompt_;
-};
-
-class CheckpointingProvider final : public Provider {
-public:
-    explicit CheckpointingProvider(std::vector<LLMResponse> responses)
-    : responses_(std::move(responses)) {}
-
-    LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-        throw std::runtime_error("chat should not be used in this test");
-    }
-
-    LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-        if (next_response_ >= responses_.size()) {
-            throw std::runtime_error("no more responses queued");
-        }
-        return responses_[next_response_++];
-    }
-
-    std::string name() const override {
-        return "checkpointing-provider";
-    }
-
-private:
-    std::vector<LLMResponse> responses_;
-    size_t next_response_ = 0;
-};
-
-std::string describe_message(const Message &message) {
-    std::string description = std::string(magic_enum::enum_name(message.role)) + ":";
-    bool first_block = true;
-    for (const auto &block : message.content) {
-        if (!first_block) {
-            description += "|";
-        }
-        first_block = false;
-
-        if (const auto *text = std::get_if<TextBlock>(&block)) {
-            description += "text=" + text->text;
-            continue;
-        }
-        if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
-            description += "tool_use=" + tool->name;
-            continue;
+    class SummarizingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/, int = 0) override {
+            last_system_prompt_ = system_prompt;
+            last_summary_input_size_ = messages.size();
+            last_tool_count_ = tools.size();
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "Earlier conversation summary"}},
+            };
         }
 
-        const auto *result = std::get_if<ToolResultBlock>(&block);
-        if (result == nullptr) {
-            FAIL("Unexpected content block in checkpoint");
-            description += "unexpected";
-            continue;
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            throw std::runtime_error("chat_stream should not be used in this test");
         }
-        description += "tool_result=" + result->content;
-    }
 
-    return description;
-}
-
-std::vector<std::vector<std::string>> capture_checkpoint_descriptions(AgentLoop &loop, const std::string &user_input) {
-    std::vector<std::vector<std::string>> checkpoints;
-    static_cast<void>(loop.run(user_input, {}, {}, [&checkpoints](const std::vector<Message> &history) {
-        std::vector<std::string> snapshot;
-        snapshot.reserve(history.size());
-        for (const auto &message : history) {
-            snapshot.push_back(describe_message(message));
+        std::string name() const override {
+            return "summarizing-test-provider";
         }
-        checkpoints.push_back(std::move(snapshot));
-    }));
-    return checkpoints;
-}
 
-TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
-    SummarizingProvider provider;
-    ToolRegistry tools;
-    AgentLoop loop(provider, tools);
+        std::string last_system_prompt_;
+        size_t last_summary_input_size_ = 0;
+        size_t last_tool_count_ = 0;
+    };
 
-    std::vector<Message> history;
-    history.reserve(60);
-    for (int i = 0; i < 60; ++i) {
-        history.push_back(i % 2 == 0 ? Message::user_text("user-" + std::to_string(i)) : Message::assistant_text("assistant-" + std::to_string(i)));
+    class DistillingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/, int = 0) override {
+            last_system_prompt_ = system_prompt;
+            last_messages_size_ = messages.size();
+            last_tool_count_ = tools.size();
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
+                                              "memory|decision|decision.routing|0.80|qq bots stay fixed to one agent\n"
+                                              "memory|learning|learning.runtime-identity|0.85|channel runtime identity should use jid plus agent key\n"
+                                              "journal|Reviewed memory ranking and markdown mirror behavior"}},
+            };
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            throw std::runtime_error("chat_stream should not be used in this test");
+        }
+
+        std::string name() const override {
+            return "distilling-test-provider";
+        }
+
+        std::string last_system_prompt_;
+        size_t last_messages_size_ = 0;
+        size_t last_tool_count_ = 0;
+    };
+
+    class EmptyDistillingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = ""}},
+            };
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            throw std::runtime_error("chat_stream should not be used in this test");
+        }
+
+        std::string name() const override {
+            return "empty-distilling-provider";
+        }
+    };
+
+    class MalformedJournalProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
+                                              "journal"}},
+            };
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            throw std::runtime_error("chat_stream should not be used in this test");
+        }
+
+        std::string name() const override {
+            return "malformed-journal-provider";
+        }
+    };
+
+    class PromptCapturingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            throw std::runtime_error("chat should not be used in this test");
+        }
+
+        LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            last_system_prompt_ = system_prompt;
+            return {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "ok"}},
+            };
+        }
+
+        std::string name() const override {
+            return "prompt-capturing-provider";
+        }
+
+        std::string last_system_prompt_;
+    };
+
+    class CheckpointingProvider final : public Provider {
+    public:
+        explicit CheckpointingProvider(std::vector<LLMResponse> responses)
+        : responses_(std::move(responses)) {}
+
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            throw std::runtime_error("chat should not be used in this test");
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            if (next_response_ >= responses_.size()) {
+                throw std::runtime_error("no more responses queued");
+            }
+            return responses_[next_response_++];
+        }
+
+        std::string name() const override {
+            return "checkpointing-provider";
+        }
+
+    private:
+        std::vector<LLMResponse> responses_;
+        size_t next_response_ = 0;
+    };
+
+    std::string describe_message(const Message &message) {
+        std::string description = std::string(magic_enum::enum_name(message.role)) + ":";
+        bool first_block = true;
+        for (const auto &block : message.content) {
+            if (!first_block) {
+                description += "|";
+            }
+            first_block = false;
+
+            if (const auto *text = std::get_if<TextBlock>(&block)) {
+                description += "text=" + text->text;
+                continue;
+            }
+            if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                description += "tool_use=" + tool->name;
+                continue;
+            }
+
+            const auto *result = std::get_if<ToolResultBlock>(&block);
+            if (result == nullptr) {
+                FAIL("Unexpected content block in checkpoint");
+                description += "unexpected";
+                continue;
+            }
+            description += "tool_result=" + result->content;
+        }
+
+        return description;
     }
-    loop.set_history(history);
 
-    const auto result = loop.compress_history();
-
-    CHECK(result.compacted);
-    CHECK(result.messages_before == 60);
-    CHECK(result.messages_after == 11);
-    CHECK(provider.last_summary_input_size_ == 50ul);
-    CHECK(provider.last_tool_count_ == 0ul);
-    CHECK(provider.last_system_prompt_.contains("conversation summarizer"));
-
-    const auto &compacted = loop.history();
-    REQUIRE(compacted.size() == 11ul);
-    const auto *summary = std::get_if<TextBlock>(&compacted[0].content[0]);
-    REQUIRE(summary != nullptr);
-    CHECK(summary->text.contains("Earlier conversation summary"));
-
-    for (size_t i = 0; i < 10; ++i) {
-        const auto &expected = history[50 + i];
-        const auto &actual = compacted[1 + i];
-        CHECK(actual.role == expected.role);
-        REQUIRE(actual.content.size() == expected.content.size());
-        const auto *expected_text = std::get_if<TextBlock>(&expected.content[0]);
-        const auto *actual_text = std::get_if<TextBlock>(&actual.content[0]);
-        REQUIRE(expected_text != nullptr);
-        REQUIRE(actual_text != nullptr);
-        CHECK(actual_text->text == expected_text->text);
+    std::vector<std::vector<std::string>> capture_checkpoint_descriptions(AgentLoop &loop, const std::string &user_input) {
+        std::vector<std::vector<std::string>> checkpoints;
+        static_cast<void>(loop.run(user_input, {}, {}, [&checkpoints](const std::vector<Message> &history) {
+            std::vector<std::string> snapshot;
+            snapshot.reserve(history.size());
+            for (const auto &message : history) {
+                snapshot.push_back(describe_message(message));
+            }
+            checkpoints.push_back(std::move(snapshot));
+        }));
+        return checkpoints;
     }
-};
 
-TEST_CASE("compress_history_requires_older_messages_beyond_recent_tail") {
-    SummarizingProvider provider;
-    ToolRegistry tools;
-    AgentLoop loop(provider, tools);
+    TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
+        SummarizingProvider provider;
+        ToolRegistry tools;
+        AgentLoop loop(provider, tools);
 
-    std::vector<Message> history;
-    history.reserve(10);
-    for (int i = 0; i < 10; ++i) {
-        history.push_back(Message::user_text("message-" + std::to_string(i)));
-    }
-    loop.set_history(history);
+        std::vector<Message> history;
+        history.reserve(60);
+        for (int i = 0; i < 60; ++i) {
+            history.push_back(i % 2 == 0 ? Message::user_text("user-" + std::to_string(i)) : Message::assistant_text("assistant-" + std::to_string(i)));
+        }
+        loop.set_history(history);
 
-    const auto result = loop.compress_history();
+        const auto result = loop.compress_history();
 
-    CHECK_FALSE(result.compacted);
-    CHECK(result.messages_before == 10);
-    CHECK(result.messages_after == 10);
-    CHECK(result.status == "Not enough history to compress yet.");
-    CHECK(provider.last_summary_input_size_ == 0ul);
-};
+        CHECK(result.compacted);
+        CHECK(result.messages_before == 60);
+        CHECK(result.messages_after == 11);
+        CHECK(provider.last_summary_input_size_ == 50ul);
+        CHECK(provider.last_tool_count_ == 0ul);
+        CHECK(provider.last_system_prompt_.contains("conversation summarizer"));
 
-TEST_CASE("distill_session_memory_stores_long_term_memories") {
-    DistillingProvider provider;
-    ToolRegistry tools;
+        const auto &compacted = loop.history();
+        REQUIRE(compacted.size() == 11ul);
+        const auto *summary = std::get_if<TextBlock>(&compacted[0].content[0]);
+        REQUIRE(summary != nullptr);
+        CHECK(summary->text.contains("Earlier conversation summary"));
 
-    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
-    MemoryStore store(db_path);
-    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        for (size_t i = 0; i < 10; ++i) {
+            const auto &expected = history[50 + i];
+            const auto &actual = compacted[1 + i];
+            CHECK(actual.role == expected.role);
+            REQUIRE(actual.content.size() == expected.content.size());
+            const auto *expected_text = std::get_if<TextBlock>(&expected.content[0]);
+            const auto *actual_text = std::get_if<TextBlock>(&actual.content[0]);
+            REQUIRE(expected_text != nullptr);
+            REQUIRE(actual_text != nullptr);
+            CHECK(actual_text->text == expected_text->text);
+        }
+    };
 
-    AgentLoop loop(provider, tools, {}, &runtime_memory);
-    loop.set_history({
-        Message::user_text("we are working on orangutan memory refactor"),
-        Message::assistant_text("Got it, I will keep that in mind."),
-        Message::user_text("remember that qq bots stay fixed to one agent"),
-    });
+    TEST_CASE("compress_history_requires_older_messages_beyond_recent_tail") {
+        SummarizingProvider provider;
+        ToolRegistry tools;
+        AgentLoop loop(provider, tools);
 
-    const auto result = loop.distill_session_memory();
+        std::vector<Message> history;
+        history.reserve(10);
+        for (int i = 0; i < 10; ++i) {
+            history.push_back(Message::user_text("message-" + std::to_string(i)));
+        }
+        loop.set_history(history);
 
-    CHECK(result.distilled);
-    CHECK(result.memories_stored == 3ul);
-    CHECK(result.journal_stored);
-    CHECK(provider.last_messages_size_ == 1ul);
-    CHECK(provider.last_tool_count_ == 0ul);
-    CHECK(provider.last_system_prompt_.contains("distilling long-term memory"));
+        const auto result = loop.compress_history();
 
-    const auto project = store.recall("project.current", "agent:default|jid:test");
-    const auto decision = store.recall("decision.routing", "agent:default|jid:test");
-    const auto learning = store.recall("learning.runtime-identity", "agent:default|jid:test");
-    const auto journals = store.list("agent:default|jid:test", "journal", 10);
+        CHECK_FALSE(result.compacted);
+        CHECK(result.messages_before == 10);
+        CHECK(result.messages_after == 10);
+        CHECK(result.status == "Not enough history to compress yet.");
+        CHECK(provider.last_summary_input_size_ == 0ul);
+    };
 
-    CHECK(project.contains("orangutan memory refactor"));
-    CHECK(decision.contains("fixed to one agent"));
-    CHECK(learning.contains("jid plus agent key"));
-    REQUIRE(journals.size() == 1ul);
-    CHECK(journals.front().source == "session:journal");
-    CHECK(journals.front().content.contains("markdown mirror behavior"));
+    TEST_CASE("distill_session_memory_stores_long_term_memories") {
+        DistillingProvider provider;
+        ToolRegistry tools;
 
-    std::filesystem::remove_all(db_path.parent_path());
-};
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
+        MemoryStore store(db_path);
+        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-TEST_CASE("distill_session_memory_auto_capture_ignores_assistant_and_tool_result_text") {
-    EmptyDistillingProvider provider;
-    ToolRegistry tools;
+        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        loop.set_history({
+            Message::user_text("we are working on orangutan memory refactor"),
+            Message::assistant_text("Got it, I will keep that in mind."),
+            Message::user_text("remember that qq bots stay fixed to one agent"),
+        });
 
-    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
-    MemoryStore store(db_path);
-    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        const auto result = loop.distill_session_memory();
 
-    AgentLoop loop(provider, tools, {}, &runtime_memory);
-    loop.set_history({
-        Message::user_text("please help with this task"),
-        Message::assistant_text("my name is Mallory"),
-        {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
-    });
+        CHECK(result.distilled);
+        CHECK(result.memories_stored == 3ul);
+        CHECK(result.journal_stored);
+        CHECK(provider.last_messages_size_ == 1ul);
+        CHECK(provider.last_tool_count_ == 0ul);
+        CHECK(provider.last_system_prompt_.contains("distilling long-term memory"));
 
-    const auto result = loop.distill_session_memory();
+        const auto project = store.recall("project.current", "agent:default|jid:test");
+        const auto decision = store.recall("decision.routing", "agent:default|jid:test");
+        const auto learning = store.recall("learning.runtime-identity", "agent:default|jid:test");
+        const auto journals = store.list("agent:default|jid:test", "journal", 10);
 
-    CHECK_FALSE(result.distilled);
-    CHECK(store.recall("profile.name", "agent:default|jid:test") == "");
-    CHECK(store.recall("deployment key", "agent:default|jid:test") == "");
+        CHECK(project.contains("orangutan memory refactor"));
+        CHECK(decision.contains("fixed to one agent"));
+        CHECK(learning.contains("jid plus agent key"));
+        REQUIRE(journals.size() == 1ul);
+        CHECK(journals.front().source == "session:journal");
+        CHECK(journals.front().content.contains("markdown mirror behavior"));
 
-    std::filesystem::remove_all(db_path.parent_path());
-};
+        std::filesystem::remove_all(db_path.parent_path());
+    };
 
-TEST_CASE("distill_session_memory_keeps_durable_memories_when_journal_line_is_malformed") {
-    MalformedJournalProvider provider;
-    ToolRegistry tools;
+    TEST_CASE("distill_session_memory_auto_capture_ignores_assistant_and_tool_result_text") {
+        EmptyDistillingProvider provider;
+        ToolRegistry tools;
 
-    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
-    MemoryStore store(db_path);
-    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
+        MemoryStore store(db_path);
+        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-    AgentLoop loop(provider, tools, {}, &runtime_memory);
-    loop.set_history({
-        Message::user_text("we are working on orangutan memory refactor"),
-        Message::assistant_text("Understood"),
-    });
+        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        loop.set_history({
+            Message::user_text("please help with this task"),
+            Message::assistant_text("my name is Mallory"),
+            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
+        });
 
-    const auto result = loop.distill_session_memory();
+        const auto result = loop.distill_session_memory();
 
-    CHECK(result.distilled);
-    CHECK(result.memories_stored == 1ul);
-    CHECK_FALSE(result.journal_stored);
-    CHECK(result.status.contains("journaling was skipped"));
-    CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));
-    CHECK(store.list("agent:default|jid:test", "journal", 10).empty());
+        CHECK_FALSE(result.distilled);
+        CHECK(store.recall("profile.name", "agent:default|jid:test") == "");
+        CHECK(store.recall("deployment key", "agent:default|jid:test") == "");
 
-    std::filesystem::remove_all(db_path.parent_path());
-};
+        std::filesystem::remove_all(db_path.parent_path());
+    };
 
-TEST_CASE("ordinary_prompts_exclude_journal_entries_from_relevant_memories") {
-    PromptCapturingProvider provider;
-    ToolRegistry tools;
+    TEST_CASE("distill_session_memory_keeps_durable_memories_when_journal_line_is_malformed") {
+        MalformedJournalProvider provider;
+        ToolRegistry tools;
 
-    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
-    MemoryStore store(db_path);
-    store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-    store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
+        MemoryStore store(db_path);
+        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-    AgentLoop loop(provider, tools, {}, &runtime_memory);
-    static_cast<void>(loop.run("what project am I working on?"));
+        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        loop.set_history({
+            Message::user_text("we are working on orangutan memory refactor"),
+            Message::assistant_text("Understood"),
+        });
 
-    CHECK(provider.last_system_prompt_.contains("orangutan memory enhancements"));
-    CHECK_FALSE(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
+        const auto result = loop.distill_session_memory();
 
-    std::filesystem::remove_all(db_path.parent_path());
-};
+        CHECK(result.distilled);
+        CHECK(result.memories_stored == 1ul);
+        CHECK_FALSE(result.journal_stored);
+        CHECK(result.status.contains("journaling was skipped"));
+        CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));
+        CHECK(store.list("agent:default|jid:test", "journal", 10).empty());
 
-TEST_CASE("journal_queries_can_include_journal_entries_in_relevant_memories") {
-    PromptCapturingProvider provider;
-    ToolRegistry tools;
+        std::filesystem::remove_all(db_path.parent_path());
+    };
 
-    const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
-    MemoryStore store(db_path);
-    store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-    store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-    auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+    TEST_CASE("ordinary_prompts_exclude_journal_entries_from_relevant_memories") {
+        PromptCapturingProvider provider;
+        ToolRegistry tools;
 
-    AgentLoop loop(provider, tools, {}, &runtime_memory);
-    static_cast<void>(loop.run("what happened in the previous session journal?"));
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
+        MemoryStore store(db_path);
+        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
+        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-    CHECK(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
+        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        static_cast<void>(loop.run("what project am I working on?"));
 
-    std::filesystem::remove_all(db_path.parent_path());
-};
+        CHECK(provider.last_system_prompt_.contains("orangutan memory enhancements"));
+        CHECK_FALSE(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
 
-TEST_CASE("run_checkpoints_every_meaningful_mutation_in_tool_flow") {
-    CheckpointingProvider provider({
-        {
-            .stop_reason = "tool_use",
-            .content =
-                {
-                    TextBlock{.text = "Looking that up."},
-                    ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}},
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    TEST_CASE("journal_queries_can_include_journal_entries_in_relevant_memories") {
+        PromptCapturingProvider provider;
+        ToolRegistry tools;
+
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
+        MemoryStore store(db_path);
+        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
+        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+
+        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        static_cast<void>(loop.run("what happened in the previous session journal?"));
+
+        CHECK(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    TEST_CASE("run_checkpoints_every_meaningful_mutation_in_tool_flow") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content =
+                    {
+                        TextBlock{.text = "Looking that up."},
+                        ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}},
+                    },
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "All set."}},
+            },
+        });
+
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+            .execute =
+                [](const json &) {
+                    return "tool result";
                 },
-        },
-        {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "All set."}},
-        },
-    });
+        });
 
-    ToolRegistry tools;
-    tools.register_tool({
-        .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
-        .execute =
-            [](const json &) {
-                return "tool result";
+        AgentLoop loop(provider, tools);
+        const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
+
+        CHECK(checkpoints == std::vector<std::vector<std::string>>{
+                                 {"user:text=check status"},
+                                 {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup"},
+                                 {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result"},
+                                 {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result", "assistant:text=All set."},
+                             });
+    };
+
+    TEST_CASE("run_checkpoints_continuation_prompt_before_continuation_call") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "max_tokens",
+                .content = {TextBlock{.text = "Part one. "}},
             },
-    });
-
-    AgentLoop loop(provider, tools);
-    const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
-
-    CHECK(checkpoints == std::vector<std::vector<std::string>>{
-                             {"user:text=check status"},
-                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup"},
-                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result"},
-                             {"user:text=check status", "assistant:text=Looking that up.|tool_use=lookup", "user:tool_result=tool result", "assistant:text=All set."},
-                         });
-};
-
-TEST_CASE("run_checkpoints_continuation_prompt_before_continuation_call") {
-    CheckpointingProvider provider({
-        {
-            .stop_reason = "max_tokens",
-            .content = {TextBlock{.text = "Part one. "}},
-        },
-        {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "Part two."}},
-        },
-    });
-
-    ToolRegistry tools;
-    AgentLoop loop(provider, tools);
-    const auto checkpoints = capture_checkpoint_descriptions(loop, "continue please");
-
-    CHECK(checkpoints == std::vector<std::vector<std::string>>{
-                             {"user:text=continue please"},
-                             {"user:text=continue please", "assistant:text=Part one. "},
-                             {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off."},
-                             {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off.", "assistant:text=Part two."},
-                         });
-};
-
-TEST_CASE("run_checkpoints_loop_detection_correction_before_retry") {
-    CheckpointingProvider provider({
-        {
-            .stop_reason = "tool_use",
-            .content = {ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}}},
-        },
-        {
-            .stop_reason = "tool_use",
-            .content = {ToolUseBlock{.id = "tool-2", .name = "lookup", .input = json{{"query", "status"}}}},
-        },
-        {
-            .stop_reason = "tool_use",
-            .content = {ToolUseBlock{.id = "tool-3", .name = "lookup", .input = json{{"query", "status"}}}},
-        },
-        {
-            .stop_reason = "end_turn",
-            .content = {TextBlock{.text = "Stopping loop."}},
-        },
-    });
-
-    ToolRegistry tools;
-    tools.register_tool({
-        .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
-        .execute =
-            [](const json &) {
-                return "tool result";
+            {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "Part two."}},
             },
-    });
+        });
 
-    AgentLoop loop(provider, tools);
-    const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
+        ToolRegistry tools;
+        AgentLoop loop(provider, tools);
+        const auto checkpoints = capture_checkpoint_descriptions(loop, "continue please");
 
-    REQUIRE(checkpoints.size() >= 8ul);
-    CHECK(checkpoints[0] == std::vector<std::string>{"user:text=check status"});
-    CHECK(checkpoints[1] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup"});
-    CHECK(checkpoints[2] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup", "user:tool_result=tool result"});
-    CHECK(checkpoints[3].back() == "assistant:tool_use=lookup");
-    CHECK(checkpoints[4].back() == "user:tool_result=tool result");
-    CHECK(checkpoints[5].back() == "assistant:tool_use=lookup");
-    CHECK(checkpoints[6].back() == "user:tool_result=tool result");
-    CHECK(checkpoints[7].back() == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or explain "
-                                   "what you're trying to accomplish.");
-};
+        CHECK(checkpoints == std::vector<std::vector<std::string>>{
+                                 {"user:text=continue please"},
+                                 {"user:text=continue please", "assistant:text=Part one. "},
+                                 {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off."},
+                                 {"user:text=continue please", "assistant:text=Part one. ", "user:text=Please continue from where you left off.", "assistant:text=Part two."},
+                             });
+    };
+
+    TEST_CASE("run_checkpoints_loop_detection_correction_before_retry") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}}},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUseBlock{.id = "tool-2", .name = "lookup", .input = json{{"query", "status"}}}},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUseBlock{.id = "tool-3", .name = "lookup", .input = json{{"query", "status"}}}},
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {TextBlock{.text = "Stopping loop."}},
+            },
+        });
+
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+            .execute =
+                [](const json &) {
+                    return "tool result";
+                },
+        });
+
+        AgentLoop loop(provider, tools);
+        const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
+
+        REQUIRE(checkpoints.size() >= 8ul);
+        CHECK(checkpoints[0] == std::vector<std::string>{"user:text=check status"});
+        CHECK(checkpoints[1] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup"});
+        CHECK(checkpoints[2] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup", "user:tool_result=tool result"});
+        CHECK(checkpoints[3].back() == "assistant:tool_use=lookup");
+        CHECK(checkpoints[4].back() == "user:tool_result=tool result");
+        CHECK(checkpoints[5].back() == "assistant:tool_use=lookup");
+        CHECK(checkpoints[6].back() == "user:tool_result=tool result");
+        CHECK(checkpoints[7].back() == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or explain "
+                                       "what you're trying to accomplish.");
+    };
 
 } // namespace

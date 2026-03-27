@@ -21,128 +21,128 @@
 
 namespace orangutan {
 
-class AgentLoop;
-class HookManager;
-class Provider;
-namespace automation {
-class Runtime;
-}
+    class AgentLoop;
+    class HookManager;
+    class Provider;
+    namespace automation {
+        class Runtime;
+    }
 
 } // namespace orangutan
 
 namespace orangutan::app {
 
-struct AgentRuntimeConfig {
-    std::string agent_key;
-    std::string provider_name;
-    std::string api_key;
-    std::string model;
-    std::vector<std::string> fallback_models;
-    std::string base_url;
-    std::string system_prompt;
-    std::string workspace_root;
-    std::string edit_mode = "hashline";
-    int thinking_budget = 0;
-    std::string cli_runtime_key;
-    std::string cli_memory_scope;
-    Config::MemoryConfig memory;
-    ToolPermissionSettings permissions;
-    std::vector<std::string> allowed_child_agents;
-};
-
-struct ConversationRuntimeInspection {
-    std::vector<ToolDef> tool_definitions;
-    SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
-    std::string raw_caller_id;
-    bool has_agent = false;
-    bool has_hook_manager = false;
-    std::string session_scope_key;
-    std::string configured_model;
-    std::vector<std::string> fallback_models;
-};
-
-class ChannelApprovalCoordinator {
-public:
-    explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
-
-    [[nodiscard]]
-    ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
-
-    [[nodiscard]]
-    bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
-
-    void shutdown();
-
-private:
-    struct PendingApproval {
-        std::string request_id;
-        std::string jid;
-        std::mutex mutex;
-        std::condition_variable cv;
-        bool resolved = false;
-        bool approved = false;
-        bool cancelled = false;
+    struct AgentRuntimeConfig {
+        std::string agent_key;
+        std::string provider_name;
+        std::string api_key;
+        std::string model;
+        std::vector<std::string> fallback_models;
+        std::string base_url;
+        std::string system_prompt;
+        std::string workspace_root;
+        std::string edit_mode = "hashline";
+        int thinking_budget = 0;
+        std::string cli_runtime_key;
+        std::string cli_memory_scope;
+        Config::MemoryConfig memory;
+        ToolPermissionSettings permissions;
+        std::vector<std::string> allowed_child_agents;
     };
 
-    std::chrono::milliseconds timeout_;
-    std::mutex mutex_;
-    std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
-    std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
-    std::uint64_t next_prompt_id_ = 0;
-    bool shutting_down_ = false;
+    struct ConversationRuntimeInspection {
+        std::vector<ToolDef> tool_definitions;
+        SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+        std::string raw_caller_id;
+        bool has_agent = false;
+        bool has_hook_manager = false;
+        std::string session_scope_key;
+        std::string configured_model;
+        std::vector<std::string> fallback_models;
+    };
 
-    void clear_pending(const std::shared_ptr<PendingApproval> &pending);
-};
+    class ChannelApprovalCoordinator {
+    public:
+        explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
-[[nodiscard]]
-size_t default_serve_worker_count();
+        [[nodiscard]]
+        ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
 
-[[nodiscard]]
-std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents);
+        [[nodiscard]]
+        bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
 
-[[nodiscard]]
-std::string resolve_reply_target(const InboundMessage &message);
+        void shutdown();
 
-void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
+    private:
+        struct PendingApproval {
+            std::string request_id;
+            std::string jid;
+            std::mutex mutex;
+            std::condition_variable cv;
+            bool resolved = false;
+            bool approved = false;
+            bool cancelled = false;
+        };
 
-void deliver_command_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
+        std::chrono::milliseconds timeout_;
+        std::mutex mutex_;
+        std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
+        std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
+        std::uint64_t next_prompt_id_ = 0;
+        bool shutting_down_ = false;
 
-[[nodiscard]]
-std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
+        void clear_pending(const std::shared_ptr<PendingApproval> &pending);
+    };
 
-namespace detail {
+    [[nodiscard]]
+    size_t default_serve_worker_count();
 
-struct ChannelCompletionResumeState {
-    std::mutex mutex;
-    AgentLoop *agent = nullptr;
-    Provider *provider = nullptr;
-    HookManager *hook_manager = nullptr;
-    std::string *current_session_id = nullptr;
-    size_t *persisted_message_count = nullptr;
-    SessionStore *session_store = nullptr;
-    ChannelManager *channel_manager = nullptr;
-    std::string jid;
-    std::string agent_key;
-    std::string configured_model;
-    std::string session_scope_key;
-    automation::Runtime *automation_runtime = nullptr;
-};
+    [[nodiscard]]
+    std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents);
 
-[[nodiscard]]
-ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store, SubagentManager &subagent_manager,
-                                                           const std::string &raw_caller_id, orangutan::HookManager *hook_manager = nullptr,
-                                                           automation::Runtime *automation_runtime = nullptr);
+    [[nodiscard]]
+    std::string resolve_reply_target(const InboundMessage &message);
 
-[[nodiscard]]
-BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
+    void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
 
-} // namespace detail
+    void deliver_command_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
 
-void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
+    [[nodiscard]]
+    std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
 
-void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
-                      const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                      MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg, orangutan::HookManager *hook_manager = nullptr,
-                      automation::Runtime *automation_runtime = nullptr);
+    namespace detail {
+
+        struct ChannelCompletionResumeState {
+            std::mutex mutex;
+            AgentLoop *agent = nullptr;
+            Provider *provider = nullptr;
+            HookManager *hook_manager = nullptr;
+            std::string *current_session_id = nullptr;
+            size_t *persisted_message_count = nullptr;
+            SessionStore *session_store = nullptr;
+            ChannelManager *channel_manager = nullptr;
+            std::string jid;
+            std::string agent_key;
+            std::string configured_model;
+            std::string session_scope_key;
+            automation::Runtime *automation_runtime = nullptr;
+        };
+
+        [[nodiscard]]
+        ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
+                                                                   SubagentManager &subagent_manager, const std::string &raw_caller_id,
+                                                                   orangutan::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
+
+        [[nodiscard]]
+        BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
+
+    } // namespace detail
+
+    void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
+
+    void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
+                          const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
+                          MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg,
+                          orangutan::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
 
 } // namespace orangutan::app

@@ -15,378 +15,381 @@
 #include <vector>
 
 namespace orangutan {
-namespace {
+    namespace {
 
-struct PatchHunk {
-    std::string search;
-    std::string replace;
-};
+        struct PatchHunk {
+            std::string search;
+            std::string replace;
+        };
 
-struct FilePatch {
-    std::string path;
-    std::vector<PatchHunk> hunks;
-};
+        struct FilePatch {
+            std::string path;
+            std::vector<PatchHunk> hunks;
+        };
 
-struct ValidatedFile {
-    std::filesystem::path resolved;
-    std::string content;
-    std::vector<std::pair<size_t, size_t>> match_positions;
-    bool is_new_file = false;
-};
-
-std::string render_lines(std::span<const std::string> lines, bool trailing_newline) {
-    if (lines.empty()) {
-        return {};
-    }
-
-    size_t total_size = trailing_newline ? 1 : 0;
-    for (const auto &line : lines) {
-        total_size += line.size();
-    }
-    total_size += lines.size() - 1;
-
-    std::string output;
-    output.reserve(total_size);
-    output.append(lines.front());
-    for (const auto &line : lines | std::views::drop(1)) {
-        output.push_back('\n');
-        output.append(line);
-    }
-    if (trailing_newline) {
-        output.push_back('\n');
-    }
-    return output;
-}
-
-std::vector<FilePatch> parse_patch(std::string_view patch) {
-    if (patch.empty()) {
-        throw std::runtime_error("patch is empty");
-    }
-
-    std::vector<FilePatch> files;
-    std::istringstream stream{std::string(patch)};
-    std::string line;
-
-    constexpr std::string_view file_header = "*** ";
-    constexpr std::string_view search_marker = "<<<<<<< SEARCH";
-    constexpr std::string_view separator = "=======";
-    constexpr std::string_view replace_marker = ">>>>>>> REPLACE";
-
-    enum class State {
-        idle,
-        search,
-        replace,
-    };
-    auto state = State::idle;
-    std::string search_buf;
-    std::string replace_buf;
-
-    while (std::getline(stream, line)) {
-        switch (state) {
-            case State::idle:
-                if (line.starts_with(file_header)) {
-                    auto path = line.substr(file_header.size());
-                    while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\r')) {
-                        path.pop_back();
-                    }
-                    if (path.empty()) {
-                        throw std::runtime_error("file header has no path");
-                    }
-
-                    const auto it = std::ranges::find_if(files, [&](const FilePatch &file) {
-                        return file.path == path;
-                    });
-                    if (it == files.end()) {
-                        files.push_back({.path = std::move(path), .hunks = {}});
-                    }
-                } else if (line == search_marker) {
-                    if (files.empty()) {
-                        throw std::runtime_error("hunk before any *** file header");
-                    }
-                    state = State::search;
-                    search_buf.clear();
-                }
-                break;
-
-            case State::search:
-                if (line == separator) {
-                    state = State::replace;
-                    replace_buf.clear();
-                } else {
-                    if (!search_buf.empty()) {
-                        search_buf += '\n';
-                    }
-                    search_buf += line;
-                }
-                break;
-
-            case State::replace:
-                if (line == replace_marker) {
-                    files.back().hunks.push_back({.search = std::move(search_buf), .replace = std::move(replace_buf)});
-                    search_buf.clear();
-                    replace_buf.clear();
-                    state = State::idle;
-                } else {
-                    if (!replace_buf.empty()) {
-                        replace_buf += '\n';
-                    }
-                    replace_buf += line;
-                }
-                break;
-        }
-    }
-
-    if (state == State::search) {
-        throw std::runtime_error("unclosed hunk: missing ======= separator");
-    }
-    if (state == State::replace) {
-        throw std::runtime_error("unclosed hunk: missing >>>>>>> REPLACE marker");
-    }
-
-    const bool has_hunks = std::ranges::any_of(files, [](const FilePatch &file) {
-        return !file.hunks.empty();
-    });
-    if (!has_hunks) {
-        throw std::runtime_error("patch contains no hunks");
-    }
-
-    return files;
-}
-
-std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root) {
-    std::vector<ValidatedFile> validated;
-    validated.reserve(files.size());
-
-    for (const auto &file : files) {
-        auto resolved = resolve_tool_path(std::filesystem::path(file.path), workspace_root);
-        ValidatedFile validated_file{.resolved = std::move(resolved)};
-
-        for (size_t i = 0; i < file.hunks.size(); ++i) {
-            const auto &hunk = file.hunks[i];
-
-            if (hunk.search.empty()) {
-                if (std::filesystem::exists(validated_file.resolved)) {
-                    throw std::runtime_error("file already exists: " + file.path);
-                }
-                validated_file.is_new_file = true;
-                validated_file.match_positions.emplace_back(0, i);
-                continue;
-            }
-
-            if (validated_file.content.empty() && !validated_file.is_new_file) {
-                if (!std::filesystem::exists(validated_file.resolved)) {
-                    throw std::runtime_error("file not found: " + file.path);
-                }
-                validated_file.content = fileio::read_file(validated_file.resolved);
-            }
-
-            const auto pos = validated_file.content.find(hunk.search);
-            if (pos == std::string::npos) {
-                throw std::runtime_error("search text not found in " + file.path);
-            }
-
-            const auto second = validated_file.content.find(hunk.search, pos + 1);
-            if (second != std::string::npos) {
-                throw std::runtime_error("search text matches multiple locations in " + file.path);
-            }
-
-            validated_file.match_positions.emplace_back(pos, i);
-        }
-
-        validated.push_back(std::move(validated_file));
-    }
-
-    return validated;
-}
-
-void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePatch> &files) {
-    for (size_t file_index = 0; file_index < validated.size(); ++file_index) {
-        auto &validated_file = validated[file_index];
-        const auto &file = files[file_index];
-
-        if (validated_file.is_new_file) {
-            if (validated_file.resolved.has_parent_path()) {
-                std::filesystem::create_directories(validated_file.resolved.parent_path());
-            }
-
+        struct ValidatedFile {
+            std::filesystem::path resolved;
             std::string content;
-            for (const auto &hunk : file.hunks) {
-                content += hunk.replace;
+            std::vector<std::pair<size_t, size_t>> match_positions;
+            bool is_new_file = false;
+        };
+
+        std::string render_lines(std::span<const std::string> lines, bool trailing_newline) {
+            if (lines.empty()) {
+                return {};
             }
 
-            fileio::write_file(validated_file.resolved, content);
-            continue;
+            size_t total_size = trailing_newline ? 1 : 0;
+            for (const auto &line : lines) {
+                total_size += line.size();
+            }
+            total_size += lines.size() - 1;
+
+            std::string output;
+            output.reserve(total_size);
+            output.append(lines.front());
+            for (const auto &line : lines | std::views::drop(1)) {
+                output.push_back('\n');
+                output.append(line);
+            }
+            if (trailing_newline) {
+                output.push_back('\n');
+            }
+            return output;
         }
 
-        auto positions = validated_file.match_positions;
-        std::ranges::sort(positions, [](const auto &left, const auto &right) {
-            return left.first > right.first;
-        });
+        std::vector<FilePatch> parse_patch(std::string_view patch) {
+            if (patch.empty()) {
+                throw std::runtime_error("patch is empty");
+            }
 
-        for (const auto &[pos, hunk_index] : positions) {
-            const auto &hunk = file.hunks[hunk_index];
-            validated_file.content.replace(pos, hunk.search.size(), hunk.replace);
+            std::vector<FilePatch> files;
+            std::istringstream stream{std::string(patch)};
+            std::string line;
+
+            constexpr std::string_view file_header = "*** ";
+            constexpr std::string_view search_marker = "<<<<<<< SEARCH";
+            constexpr std::string_view separator = "=======";
+            constexpr std::string_view replace_marker = ">>>>>>> REPLACE";
+
+            enum class State {
+                idle,
+                search,
+                replace,
+            };
+            auto state = State::idle;
+            std::string search_buf;
+            std::string replace_buf;
+
+            while (std::getline(stream, line)) {
+                switch (state) {
+                    case State::idle:
+                        if (line.starts_with(file_header)) {
+                            auto path = line.substr(file_header.size());
+                            while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\r')) {
+                                path.pop_back();
+                            }
+                            if (path.empty()) {
+                                throw std::runtime_error("file header has no path");
+                            }
+
+                            const auto it = std::ranges::find_if(files, [&](const FilePatch &file) {
+                                return file.path == path;
+                            });
+                            if (it == files.end()) {
+                                files.push_back({.path = std::move(path), .hunks = {}});
+                            }
+                        } else if (line == search_marker) {
+                            if (files.empty()) {
+                                throw std::runtime_error("hunk before any *** file header");
+                            }
+                            state = State::search;
+                            search_buf.clear();
+                        }
+                        break;
+
+                    case State::search:
+                        if (line == separator) {
+                            state = State::replace;
+                            replace_buf.clear();
+                        } else {
+                            if (!search_buf.empty()) {
+                                search_buf += '\n';
+                            }
+                            search_buf += line;
+                        }
+                        break;
+
+                    case State::replace:
+                        if (line == replace_marker) {
+                            files.back().hunks.push_back({.search = std::move(search_buf), .replace = std::move(replace_buf)});
+                            search_buf.clear();
+                            replace_buf.clear();
+                            state = State::idle;
+                        } else {
+                            if (!replace_buf.empty()) {
+                                replace_buf += '\n';
+                            }
+                            replace_buf += line;
+                        }
+                        break;
+                }
+            }
+
+            if (state == State::search) {
+                throw std::runtime_error("unclosed hunk: missing ======= separator");
+            }
+            if (state == State::replace) {
+                throw std::runtime_error("unclosed hunk: missing >>>>>>> REPLACE marker");
+            }
+
+            const bool has_hunks = std::ranges::any_of(files, [](const FilePatch &file) {
+                return !file.hunks.empty();
+            });
+            if (!has_hunks) {
+                throw std::runtime_error("patch contains no hunks");
+            }
+
+            return files;
         }
 
-        fileio::write_file(validated_file.resolved, validated_file.content);
-    }
-}
+        std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root) {
+            std::vector<ValidatedFile> validated;
+            validated.reserve(files.size());
 
-std::string execute_hashline_edit(const json &input, const std::filesystem::path &workspace_root) {
-    const auto path_str = input.at("path").get<std::string>();
-    const auto &edits_json = input.at("edits");
-    spdlog::info("  [tool] edit (hashline): {} edits on {}", edits_json.size(), path_str);
+            for (const auto &file : files) {
+                auto resolved = resolve_tool_path(std::filesystem::path(file.path), workspace_root);
+                ValidatedFile validated_file{.resolved = std::move(resolved)};
 
-    auto resolved_path = resolve_tool_path(std::filesystem::path(path_str), workspace_root);
+                for (size_t i = 0; i < file.hunks.size(); ++i) {
+                    const auto &hunk = file.hunks[i];
 
-    if (!std::filesystem::exists(resolved_path)) {
-        throw std::runtime_error("file not found: " + path_str);
-    }
+                    if (hunk.search.empty()) {
+                        if (std::filesystem::exists(validated_file.resolved)) {
+                            throw std::runtime_error("file already exists: " + file.path);
+                        }
+                        validated_file.is_new_file = true;
+                        validated_file.match_positions.emplace_back(0, i);
+                        continue;
+                    }
 
-    // Read file into lines
-    std::vector<std::string> lines;
-    bool had_trailing_newline = false;
-    {
-        const auto content = fileio::read_file(resolved_path);
-        had_trailing_newline = !content.empty() && content.back() == '\n';
+                    if (validated_file.content.empty() && !validated_file.is_new_file) {
+                        if (!std::filesystem::exists(validated_file.resolved)) {
+                            throw std::runtime_error("file not found: " + file.path);
+                        }
+                        validated_file.content = fileio::read_file(validated_file.resolved);
+                    }
 
-        std::istringstream line_stream(content);
-        std::string line;
-        while (std::getline(line_stream, line)) {
-            lines.push_back(std::move(line));
+                    const auto pos = validated_file.content.find(hunk.search);
+                    if (pos == std::string::npos) {
+                        throw std::runtime_error("search text not found in " + file.path);
+                    }
+
+                    const auto second = validated_file.content.find(hunk.search, pos + 1);
+                    if (second != std::string::npos) {
+                        throw std::runtime_error("search text matches multiple locations in " + file.path);
+                    }
+
+                    validated_file.match_positions.emplace_back(pos, i);
+                }
+
+                validated.push_back(std::move(validated_file));
+            }
+
+            return validated;
         }
-    }
 
-    // Convert JSON edits to HashlineEdit structs
-    std::vector<HashlineEdit> edits;
-    edits.reserve(edits_json.size());
-    for (const auto &edit_json : edits_json) {
-        HashlineEdit edit;
+        void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePatch> &files) {
+            for (size_t file_index = 0; file_index < validated.size(); ++file_index) {
+                auto &validated_file = validated[file_index];
+                const auto &file = files[file_index];
 
-        const auto op_str = edit_json.at("op").get<std::string>();
-        if (op_str == "replace") {
-            edit.op = HashlineEditOp::replace;
-        } else if (op_str == "insert_after") {
-            edit.op = HashlineEditOp::insert_after;
-        } else if (op_str == "insert_before") {
-            edit.op = HashlineEditOp::insert_before;
-        } else if (op_str == "delete") {
-            edit.op = HashlineEditOp::del;
+                if (validated_file.is_new_file) {
+                    if (validated_file.resolved.has_parent_path()) {
+                        std::filesystem::create_directories(validated_file.resolved.parent_path());
+                    }
+
+                    std::string content;
+                    for (const auto &hunk : file.hunks) {
+                        content += hunk.replace;
+                    }
+
+                    fileio::write_file(validated_file.resolved, content);
+                    continue;
+                }
+
+                auto positions = validated_file.match_positions;
+                std::ranges::sort(positions, [](const auto &left, const auto &right) {
+                    return left.first > right.first;
+                });
+
+                for (const auto &[pos, hunk_index] : positions) {
+                    const auto &hunk = file.hunks[hunk_index];
+                    validated_file.content.replace(pos, hunk.search.size(), hunk.replace);
+                }
+
+                fileio::write_file(validated_file.resolved, validated_file.content);
+            }
+        }
+
+        std::string execute_hashline_edit(const json &input, const std::filesystem::path &workspace_root) {
+            const auto path_str = input.at("path").get<std::string>();
+            const auto &edits_json = input.at("edits");
+            spdlog::info("  [tool] edit (hashline): {} edits on {}", edits_json.size(), path_str);
+
+            auto resolved_path = resolve_tool_path(std::filesystem::path(path_str), workspace_root);
+
+            if (!std::filesystem::exists(resolved_path)) {
+                throw std::runtime_error("file not found: " + path_str);
+            }
+
+            // Read file into lines
+            std::vector<std::string> lines;
+            bool had_trailing_newline = false;
+            {
+                const auto content = fileio::read_file(resolved_path);
+                had_trailing_newline = !content.empty() && content.back() == '\n';
+
+                std::istringstream line_stream(content);
+                std::string line;
+                while (std::getline(line_stream, line)) {
+                    lines.push_back(std::move(line));
+                }
+            }
+
+            // Convert JSON edits to HashlineEdit structs
+            std::vector<HashlineEdit> edits;
+            edits.reserve(edits_json.size());
+            for (const auto &edit_json : edits_json) {
+                HashlineEdit edit;
+
+                const auto op_str = edit_json.at("op").get<std::string>();
+                if (op_str == "replace") {
+                    edit.op = HashlineEditOp::replace;
+                } else if (op_str == "insert_after") {
+                    edit.op = HashlineEditOp::insert_after;
+                } else if (op_str == "insert_before") {
+                    edit.op = HashlineEditOp::insert_before;
+                } else if (op_str == "delete") {
+                    edit.op = HashlineEditOp::del;
+                } else {
+                    throw std::runtime_error("unknown edit op: " + op_str);
+                }
+
+                if (edit_json.contains("anchor")) {
+                    edit.anchor = edit_json.at("anchor").get<std::string>();
+                }
+                if (edit_json.contains("end_anchor")) {
+                    edit.end_anchor = edit_json.at("end_anchor").get<std::string>();
+                }
+
+                if (edit_json.contains("content")) {
+                    const auto &content = edit_json.at("content");
+                    if (content.is_string()) {
+                        // Split string content on newlines
+                        const auto content_str = content.get<std::string>();
+                        std::istringstream stream(content_str);
+                        std::string segment;
+                        while (std::getline(stream, segment)) {
+                            edit.content.push_back(std::move(segment));
+                        }
+                    } else if (content.is_array()) {
+                        for (const auto &item : content) {
+                            edit.content.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+
+                edits.push_back(std::move(edit));
+            }
+
+            auto result = apply_hashline_edits(lines, edits);
+            if (!result.ok) {
+                throw std::runtime_error(result.error);
+            }
+
+            fileio::write_file(resolved_path, render_lines(result.lines, had_trailing_newline));
+
+            std::string summary = spdlog::fmt_lib::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
+            if (!result.warnings.empty()) {
+                summary += "\nWarnings: " + result.warnings;
+            }
+            return summary;
+        }
+
+        std::string execute_edit_tool(const json &input, const std::filesystem::path &workspace_root) {
+            const auto patch = input.at("patch").get<std::string>();
+            spdlog::info("  [tool] edit: {} bytes", patch.size());
+
+            const auto files = parse_patch(patch);
+            auto validated = validate_hunks(files, workspace_root);
+            apply_hunks(validated, files);
+
+            size_t total_hunks = 0;
+            std::string summary;
+            for (const auto &file : files) {
+                total_hunks += file.hunks.size();
+                if (!summary.empty()) {
+                    summary += ", ";
+                }
+                summary += spdlog::fmt_lib::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
+            }
+
+            return spdlog::fmt_lib::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files",
+                                           summary);
+        }
+
+    } // namespace
+
+    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+        if (edit_mode == "hashline") {
+            registry.register_tool(
+                {.definition = {.name = "edit",
+                                .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
+                                               "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
+                                               "\n"
+                                               "Operations:\n"
+                                               "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
+                                               "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
+                                               "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
+                                               "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
+                                               "\n"
+                                               "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
+                                .input_schema = {{"type", "object"},
+                                                 {"properties",
+                                                  {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
+                                                   {"edits",
+                                                    {{"type", "array"},
+                                                     {"items",
+                                                      {{"type", "object"},
+                                                       {"properties",
+                                                        {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
+                                                         {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
+                                                         {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
+                                                         {"content",
+                                                          {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
+                                                           {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
+                                                       {"required", json::array({"op"})}}}}}}},
+                                                 {"required", json::array({"path", "edits"})}}},
+                 .execute = [workspace_root](const json &input) {
+                     return execute_hashline_edit(input, workspace_root);
+                 }});
         } else {
-            throw std::runtime_error("unknown edit op: " + op_str);
+            registry.register_tool(
+                {.definition = {.name = "edit",
+                                .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan "
+                                               "configuration area. All hunks are validated before any file is written.",
+                                .input_schema = {{"type", "object"},
+                                                 {"properties",
+                                                  {{"patch",
+                                                    {{"type", "string"},
+                                                     {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
+                                                                     "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
+                                                 {"required", json::array({"patch"})}}},
+                 .execute = [workspace_root](const json &input) {
+                     return execute_edit_tool(input, workspace_root);
+                 }});
         }
-
-        if (edit_json.contains("anchor")) {
-            edit.anchor = edit_json.at("anchor").get<std::string>();
-        }
-        if (edit_json.contains("end_anchor")) {
-            edit.end_anchor = edit_json.at("end_anchor").get<std::string>();
-        }
-
-        if (edit_json.contains("content")) {
-            const auto &content = edit_json.at("content");
-            if (content.is_string()) {
-                // Split string content on newlines
-                const auto content_str = content.get<std::string>();
-                std::istringstream stream(content_str);
-                std::string segment;
-                while (std::getline(stream, segment)) {
-                    edit.content.push_back(std::move(segment));
-                }
-            } else if (content.is_array()) {
-                for (const auto &item : content) {
-                    edit.content.push_back(item.get<std::string>());
-                }
-            }
-        }
-
-        edits.push_back(std::move(edit));
     }
-
-    auto result = apply_hashline_edits(lines, edits);
-    if (!result.ok) {
-        throw std::runtime_error(result.error);
-    }
-
-    fileio::write_file(resolved_path, render_lines(result.lines, had_trailing_newline));
-
-    std::string summary = spdlog::fmt_lib::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
-    if (!result.warnings.empty()) {
-        summary += "\nWarnings: " + result.warnings;
-    }
-    return summary;
-}
-
-std::string execute_edit_tool(const json &input, const std::filesystem::path &workspace_root) {
-    const auto patch = input.at("patch").get<std::string>();
-    spdlog::info("  [tool] edit: {} bytes", patch.size());
-
-    const auto files = parse_patch(patch);
-    auto validated = validate_hunks(files, workspace_root);
-    apply_hunks(validated, files);
-
-    size_t total_hunks = 0;
-    std::string summary;
-    for (const auto &file : files) {
-        total_hunks += file.hunks.size();
-        if (!summary.empty()) {
-            summary += ", ";
-        }
-        summary += spdlog::fmt_lib::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
-    }
-
-    return spdlog::fmt_lib::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files", summary);
-}
-
-} // namespace
-
-void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
-    if (edit_mode == "hashline") {
-        registry.register_tool({.definition = {.name = "edit",
-                                               .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
-                                                              "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
-                                                              "\n"
-                                                              "Operations:\n"
-                                                              "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
-                                                              "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
-                                                              "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
-                                                              "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
-                                                              "\n"
-                                                              "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
-                                                                  {"edits",
-                                                                   {{"type", "array"},
-                                                                    {"items",
-                                                                     {{"type", "object"},
-                                                                      {"properties",
-                                                                       {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
-                                                                        {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
-                                                                        {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
-                                                                        {"content",
-                                                                         {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
-                                                                          {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
-                                                                      {"required", json::array({"op"})}}}}}}},
-                                                                {"required", json::array({"path", "edits"})}}},
-                                .execute = [workspace_root](const json &input) {
-                                    return execute_hashline_edit(input, workspace_root);
-                                }});
-    } else {
-        registry.register_tool({.definition = {.name = "edit",
-                                               .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan "
-                                                              "configuration area. All hunks are validated before any file is written.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"patch",
-                                                                   {{"type", "string"},
-                                                                    {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
-                                                                                    "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
-                                                                {"required", json::array({"patch"})}}},
-                                .execute = [workspace_root](const json &input) {
-                                    return execute_edit_tool(input, workspace_root);
-                                }});
-    }
-}
 
 } // namespace orangutan

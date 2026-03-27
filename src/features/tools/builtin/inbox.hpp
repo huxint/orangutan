@@ -4,6 +4,6 @@
 
 namespace orangutan {
 
-void register_inbox_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+    void register_inbox_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 
 } // namespace orangutan

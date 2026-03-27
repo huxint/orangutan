@@ -24,70 +24,71 @@ using orangutan::testing::test_tmp_root;
 
 namespace {
 
-json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
-    json input = {
-        {"command", command},
-        {"background", true},
-    };
-    if (!working_dir.empty()) {
-        input["working_dir"] = working_dir;
-    }
+    json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
+        json input = {
+            {"command", command},
+            {"background", true},
+        };
+        if (!working_dir.empty()) {
+            input["working_dir"] = working_dir;
+        }
 
-    const auto result = registry.execute(ToolUseBlock{
-        .id = "background-shell",
-        .name = "shell",
-        .input = std::move(input),
-    });
-    CHECK_FALSE((result.is_error));
-    if (result.is_error) {
-        return {};
-    }
-
-    return json::parse(result.content);
-}
-
-json wait_for_background_process(ToolRegistry &registry, const std::string &process_id, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    json last_snapshot;
-
-    while (std::chrono::steady_clock::now() < deadline) {
         const auto result = registry.execute(ToolUseBlock{
-            .id = "poll-background",
-            .name = "process_poll",
-            .input = {{"process_id", process_id}},
+            .id = "background-shell",
+            .name = "shell",
+            .input = std::move(input),
         });
         CHECK_FALSE((result.is_error));
         if (result.is_error) {
             return {};
         }
 
-        last_snapshot = json::parse(result.content);
-        if (!last_snapshot.value("running", true)) {
-            return last_snapshot;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        return json::parse(result.content);
     }
 
-    INFO("background process did not finish in time: " << process_id);
-    FAIL();
-    return last_snapshot;
-}
+    json wait_for_background_process(ToolRegistry &registry, const std::string &process_id, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        json last_snapshot;
 
-ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::string *current_session_id = nullptr, std::vector<std::string> allowed_child_agents = {"reviewer"}) {
-    return ToolRuntimeContext{
-        .runtime_key = "runtime:cli:default",
-        .agent_key = "default",
-        .scope_key = "scope:parent",
-        .current_session_id = current_session_id,
-        .allowed_child_agents = std::move(allowed_child_agents),
-        .subagent_manager = manager,
-        .runtime_origin = SubagentRuntimeOrigin::cli,
-        .raw_caller_id = "cli:local",
-    };
-}
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto result = registry.execute(ToolUseBlock{
+                .id = "poll-background",
+                .name = "process_poll",
+                .input = {{"process_id", process_id}},
+            });
+            CHECK_FALSE((result.is_error));
+            if (result.is_error) {
+                return {};
+            }
 
-using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
+            last_snapshot = json::parse(result.content);
+            if (!last_snapshot.value("running", true)) {
+                return last_snapshot;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        INFO("background process did not finish in time: " << process_id);
+        FAIL();
+        return last_snapshot;
+    }
+
+    ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::string *current_session_id = nullptr,
+                                                 std::vector<std::string> allowed_child_agents = {"reviewer"}) {
+        return ToolRuntimeContext{
+            .runtime_key = "runtime:cli:default",
+            .agent_key = "default",
+            .scope_key = "scope:parent",
+            .current_session_id = current_session_id,
+            .allowed_child_agents = std::move(allowed_child_agents),
+            .subagent_manager = manager,
+            .runtime_origin = SubagentRuntimeOrigin::cli,
+            .raw_caller_id = "cli:local",
+        };
+    }
+
+    using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
 } // namespace
 
