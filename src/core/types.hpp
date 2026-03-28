@@ -1,5 +1,7 @@
 #pragma once
 
+#include <spdlog/common.h>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <magic_enum/magic_enum.hpp>
 #include <string>
@@ -9,15 +11,31 @@
 
 namespace orangutan {
 
-    using json = nlohmann::json;
+    namespace base {
+        using f32 = float;
+        using f64 = double;
 
-    enum class SubagentRuntimeOrigin {
+        using i8 = std::int8_t;
+        using i16 = std::int16_t;
+        using i32 = std::int32_t;
+        using i64 = std::int64_t;
+
+        using u8 = std::uint8_t;
+        using u16 = std::uint16_t;
+        using u32 = std::uint32_t;
+        using u64 = std::uint64_t;
+    } // namespace base
+
+    using json = nlohmann::json;
+    namespace fmt = spdlog::fmt_lib;
+
+    enum class SubagentRuntimeOrigin : base::u8 {
         cli,
         channel,
         web,
     };
 
-    enum class Role {
+    enum class Role : base::u8 {
         user,
         assistant,
     };

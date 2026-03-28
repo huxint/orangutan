@@ -15,16 +15,21 @@ local function add_test_target(name, files)
         add_tests("default")
 end
 
-add_test_target("test_app", rooted("tests/app/*.cpp"))
-add_test_target("test_core", rooted("tests/core/*.cpp"))
-add_test_target("test_infra_config", rooted("tests/infra/config-*.cpp"))
-add_test_target("test_infra_storage", {
+add_test_target("test-app", rooted("tests/app/*.cpp"))
+
+add_test_target("test-core", rooted("tests/core/*.cpp"))
+
+add_test_target("test-infra-config", rooted("tests/infra/config-*.cpp"))
+
+add_test_target("test-infra-storage", {
     rooted("tests/infra/session-store-test.cpp"),
     rooted("tests/infra/sqlite-test.cpp"),
     rooted("tests/infra/subagent-run-store-test.cpp"),
 })
-add_test_target("test_infra_subprocess", rooted("tests/infra/subprocess-test.cpp"))
-add_test_target("test_features_tools", {
+
+add_test_target("test-infra-subprocess", rooted("tests/infra/subprocess-test.cpp"))
+
+add_test_target("test-features-tools", {
     rooted("tests/features/background-shell-completion-test.cpp"),
     rooted("tests/features/hashline-test.cpp"),
     rooted("tests/features/heartbeat-tool-test.cpp"),
@@ -33,22 +38,26 @@ add_test_target("test_features_tools", {
     rooted("tests/features/script-tool-test.cpp"),
     rooted("tests/features/task-tool-test.cpp"),
 })
-add_test_target("test_features_memory", {
+
+add_test_target("test-features-memory", {
     rooted("tests/features/memory-test.cpp"),
     rooted("tests/features/automation-runtime-test.cpp"),
     rooted("tests/features/automation-store-test.cpp"),
 })
-add_test_target("test_features_web", {
+
+add_test_target("test-features-web", {
     rooted("tests/features/web-server-test.cpp"),
     rooted("tests/features/web-routes-test.cpp"),
     rooted("tests/features/web-chat-test.cpp"),
 })
-add_test_target("test_features_channel", {
+
+add_test_target("test-features-channel", {
     rooted("tests/features/channel-test.cpp"),
     rooted("tests/features/jid-task-runner-test.cpp"),
     rooted("tests/features/channel/qq/reconnect-backoff-test.cpp"),
 })
-add_test_target("test_features_misc", {
+
+add_test_target("test-features-misc", {
     rooted("tests/features/agent-loop-test.cpp"),
     rooted("tests/features/cron-parser-test.cpp"),
     rooted("tests/features/heartbeat-md-test.cpp"),
@@ -58,4 +67,5 @@ add_test_target("test_features_misc", {
     rooted("tests/features/subagent-manager-test.cpp"),
     rooted("tests/features/subagent-tools-test.cpp"),
 })
-add_test_target("test_integration", rooted("tests/integration/*.cpp"))
+
+add_test_target("test-integration", rooted("tests/integration/*.cpp"))
