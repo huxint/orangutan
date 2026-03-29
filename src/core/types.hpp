@@ -36,8 +36,6 @@ namespace orangutan {
         };
     }
 
-    using json = nlohmann::json;
-
     struct Text {
         std::string text;
     };
@@ -58,12 +56,7 @@ namespace orangutan {
         bool is_error = false;
     };
 
-    using text = Text;
-    using thinking = Thinking;
-    using tool_use = ToolUse;
-    using tool_result = ToolResult;
-
-    using content = std::variant<text, thinking, tool_use, tool_result>;
+    using content = std::variant<Text, Thinking, ToolUse, ToolResult>;
 
     class Message {
     public:
@@ -75,19 +68,19 @@ namespace orangutan {
             return role_;
         }
 
-        auto text(this auto &&self, text value) -> decltype(auto) {
+        auto text(this auto &&self, Text value) -> decltype(auto) {
             return append(std::forward<decltype(self)>(self), std::move(value));
         }
 
-        auto thinking(this auto &&self, thinking value) -> decltype(auto) {
+        auto thinking(this auto &&self, Thinking value) -> decltype(auto) {
             return append(std::forward<decltype(self)>(self), std::move(value));
         }
 
-        auto tool_use(this auto &&self, tool_use value) -> decltype(auto) {
+        auto tool_use(this auto &&self, ToolUse value) -> decltype(auto) {
             return append(std::forward<decltype(self)>(self), std::move(value));
         }
 
-        auto tool_result(this auto &&self, tool_result value) -> decltype(auto) {
+        auto tool_result(this auto &&self, ToolResult value) -> decltype(auto) {
             return append(std::forward<decltype(self)>(self), std::move(value));
         }
 
@@ -192,13 +185,13 @@ namespace orangutan {
         static void emplace_one(Message &msg, T &&value) {
             using U = std::remove_cvref_t<T>;
 
-            if constexpr (std::same_as<U, text>) {
+            if constexpr (std::same_as<U, Text>) {
                 msg.text(std::forward<T>(value));
-            } else if constexpr (std::same_as<U, thinking>) {
+            } else if constexpr (std::same_as<U, Thinking>) {
                 msg.thinking(std::forward<T>(value));
-            } else if constexpr (std::same_as<U, tool_use>) {
+            } else if constexpr (std::same_as<U, ToolUse>) {
                 msg.tool_use(std::forward<T>(value));
-            } else if constexpr (std::same_as<U, tool_result>) {
+            } else if constexpr (std::same_as<U, ToolResult>) {
                 msg.tool_result(std::forward<T>(value));
             }
         }
@@ -209,13 +202,13 @@ namespace orangutan {
         return std::visit(
             [](auto &&blk) -> nlohmann::json {
                 using T = std::decay_t<decltype(blk)>;
-                if constexpr (std::same_as<T, text>) {
+                if constexpr (std::same_as<T, Text>) {
                     return {{"type", "text"}, {"text", blk.text}};
-                } else if constexpr (std::same_as<T, thinking>) {
+                } else if constexpr (std::same_as<T, Thinking>) {
                     return {{"type", "thinking"}, {"thinking", blk.thinking}};
-                } else if constexpr (std::same_as<T, tool_use>) {
+                } else if constexpr (std::same_as<T, ToolUse>) {
                     return {{"type", "tool_use"}, {"id", blk.id}, {"name", blk.name}, {"input", blk.input}};
-                } else if constexpr (std::same_as<T, tool_result>) {
+                } else if constexpr (std::same_as<T, ToolResult>) {
                     nlohmann::json json = {{"type", "tool_result"}, {"tool_use_id", blk.tool_use_id}, {"content", blk.content}};
                     if (blk.is_error) {
                         json["is_error"] = true;
