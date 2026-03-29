@@ -88,9 +88,9 @@ namespace orangutan::testing {
     class ScopedDefaultLogger {
     public:
         ScopedDefaultLogger(std::string name, const std::shared_ptr<Sink> &sink)
-        : previous_(spdlog::default_logger()),
+        : logger_(std::make_shared<spdlog::logger>(std::move(name), sink)),
+          previous_(spdlog::default_logger()),
           previous_level_(spdlog::get_level()) {
-            logger_ = std::make_shared<spdlog::logger>(std::move(name), sink);
             logger_->set_pattern("%l %v");
             spdlog::set_default_logger(logger_);
             spdlog::set_level(spdlog::level::debug);

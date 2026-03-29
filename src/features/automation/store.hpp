@@ -30,7 +30,7 @@ namespace orangutan::automation {
         std::string upsert_task(const TaskSpec &task);
         [[nodiscard]]
         bool remove_task(const std::string &agent_key, const std::string &id_or_name);
-        void update_task_run_state(const std::string &task_id, std::optional<std::int64_t> last_run_at, std::string_view last_status, bool enabled);
+        void update_task_run_state(const std::string &task_id, std::optional<orangutan::base::i64> last_run_at, std::string_view last_status, bool enabled);
 
         [[nodiscard]]
         std::vector<HeartbeatSpec> list_heartbeats(const std::string &agent_key = {}) const;
@@ -40,13 +40,13 @@ namespace orangutan::automation {
         std::string upsert_heartbeat(const HeartbeatSpec &heartbeat);
         [[nodiscard]]
         bool remove_heartbeat(const std::string &agent_key, const std::string &id_or_name);
-        void update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<std::int64_t> last_run_at, std::optional<std::int64_t> next_due_at,
+        void update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<orangutan::base::i64> last_run_at, std::optional<orangutan::base::i64> next_due_at,
                                         std::string_view last_status, bool paused);
 
         [[nodiscard]]
         std::string insert_run(const RunRecord &run);
         void complete_run(const std::string &run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
-                          std::optional<std::int64_t> finished_at);
+                          std::optional<orangutan::base::i64> finished_at);
         [[nodiscard]]
         std::vector<RunRecord> list_runs(const std::string &agent_key = {}) const;
 

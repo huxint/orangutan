@@ -90,7 +90,7 @@ namespace orangutan::sqlite {
         sqlite3_bind_int(stmt_, index, value);
     }
 
-    void Statement::bind_double(int index, double value) {
+    void Statement::bind_double(int index, orangutan::base::f64 value) {
         sqlite3_bind_double(stmt_, index, value);
     }
 
@@ -122,7 +122,7 @@ namespace orangutan::sqlite {
         return sqlite3_column_int(stmt_, index);
     }
 
-    double Statement::column_double(int index) const {
+    orangutan::base::f64 Statement::column_double(int index) const {
         return sqlite3_column_double(stmt_, index);
     }
 

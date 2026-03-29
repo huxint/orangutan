@@ -45,7 +45,7 @@ namespace orangutan::sqlite {
 
         void bind_text(int index, std::string_view value);
         void bind_int(int index, int value);
-        void bind_double(int index, double value);
+        void bind_double(int index, orangutan::base::f64 value);
         [[nodiscard]]
         bool step();
         [[nodiscard]]
@@ -53,7 +53,7 @@ namespace orangutan::sqlite {
         [[nodiscard]]
         int column_int(int index) const;
         [[nodiscard]]
-        double column_double(int index) const;
+        orangutan::base::f64 column_double(int index) const;
         void reset();
 
     private:

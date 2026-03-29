@@ -43,7 +43,7 @@ namespace orangutan {
         std::vector<std::string> fallback_models;
         std::string base_url = "https://api.anthropic.com";
         std::string api_key;
-        double temperature = 1.0;
+        orangutan::base::f64 temperature = 1.0;
         int max_iterations = 20;
         int max_tokens = 4096;
         int thinking_budget = 0;

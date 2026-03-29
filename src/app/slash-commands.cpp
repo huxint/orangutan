@@ -23,7 +23,7 @@ namespace orangutan::app {
             required,
         };
 
-        enum class slash_command_surface_mask : std::uint8_t {
+        enum class slash_command_surface_mask : orangutan::base::u8 {
             none = 0,
             cli = 1 << 0,
             channel = 1 << 1,
@@ -89,7 +89,7 @@ namespace orangutan::app {
         };
 
         constexpr slash_command_surface_mask operator|(slash_command_surface_mask lhs, slash_command_surface_mask rhs) {
-            return static_cast<slash_command_surface_mask>(static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
+            return static_cast<slash_command_surface_mask>(static_cast<orangutan::base::u8>(lhs) | static_cast<orangutan::base::u8>(rhs));
         }
 
         constexpr bool supports_surface(slash_command_surface_mask mask, slash_command_surface surface) {
@@ -104,7 +104,7 @@ namespace orangutan::app {
                 }
                 return slash_command_surface_mask::none;
             }();
-            return (static_cast<std::uint8_t>(mask) & static_cast<std::uint8_t>(bit)) != 0;
+            return (static_cast<orangutan::base::u8>(mask) & static_cast<orangutan::base::u8>(bit)) != 0;
         }
 
         std::string_view description_for_surface(const SlashCommandDescription &description, slash_command_surface surface) {

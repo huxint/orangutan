@@ -61,7 +61,7 @@ namespace orangutan::config_detail {
         if (auto v = (*agent)["base_url"].value<std::string>()) {
             cfg.base_url = *v;
         }
-        if (auto v = (*agent)["temperature"].value<double>()) {
+        if (auto v = (*agent)["temperature"].value<orangutan::base::f64>()) {
             cfg.temperature = *v;
         }
         if (auto v = (*agent)["max_iterations"].value<int64_t>()) {

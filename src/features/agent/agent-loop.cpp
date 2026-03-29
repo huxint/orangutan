@@ -74,7 +74,7 @@ namespace orangutan {
     struct DistilledMemoryEntry {
         std::string category;
         std::string key;
-        double importance = 0.5;
+        orangutan::base::f64 importance = 0.5;
         std::string content;
     };
 
@@ -127,7 +127,7 @@ namespace orangutan {
             category = "general";
         }
 
-        double importance = 0.5;
+        orangutan::base::f64 importance = 0.5;
         std::from_chars(importance_text.begin(), importance_text.end(), importance);
         importance = std::clamp(importance, 0.0, 1.0);
 

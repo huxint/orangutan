@@ -20,12 +20,13 @@ namespace orangutan {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &source, double importance) {
+    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &source, orangutan::base::f64 importance) {
         store_.remember(key, content, category, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
 
-    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, bool merge, const std::string &source, double importance) {
+    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, bool merge, const std::string &source,
+                               orangutan::base::f64 importance) {
         store_.update(key, content, category, context_.scope, merge, source, importance);
         refresh_mirror_after_write();
     }

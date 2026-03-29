@@ -38,13 +38,13 @@ namespace orangutan {
     }
 
     void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &scope, const std::string &source,
-                               double importance) {
+                               orangutan::base::f64 importance) {
         std::scoped_lock lock(mutex_);
         memory_detail::upsert_memory_record(db_, scope, key, content, category, source, importance);
     }
 
     void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, const std::string &scope, bool merge, const std::string &source,
-                             double importance) {
+                             orangutan::base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto existing = memory_detail::fetch_memory_by_key(db_, scope, key);
 
@@ -84,7 +84,7 @@ namespace orangutan {
         }
 
         const auto effective_limit = limit == 0 ? memory_detail::default_search_limit : limit;
-        std::unordered_map<int, double> fts_bonus_by_id;
+        std::unordered_map<int, orangutan::base::f64> fts_bonus_by_id;
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
                 sqlite::Statement fts_stmt(db_, "SELECT m.id, m.memory_key, m.content, m.category, m.scope, m.source, m.updated_at, m.importance, m.access_count "
@@ -94,7 +94,7 @@ namespace orangutan {
                 fts_stmt.bind_text(2, scope);
                 auto fts_records = memory_detail::collect_records(fts_stmt);
                 for (size_t index = 0; index < fts_records.size(); ++index) {
-                    fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<double>(index));
+                    fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<orangutan::base::f64>(index));
                 }
             }
         }
@@ -107,7 +107,7 @@ namespace orangutan {
         auto records = memory_detail::collect_records(stmt);
         struct RankedRecord {
             MemoryRecord record;
-            double score = 0.0;
+            orangutan::base::f64 score = 0.0;
         };
 
         std::vector<RankedRecord> ranked;

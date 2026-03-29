@@ -60,7 +60,7 @@ namespace orangutan::automation {
             return std::chrono::local_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
         }
 
-        bool within_active_hours(const HeartbeatSpec &heartbeat, std::int64_t candidate) {
+        bool within_active_hours(const HeartbeatSpec &heartbeat, orangutan::base::i64 candidate) {
             if (heartbeat.active_hours.empty()) {
                 return true;
             }
@@ -75,13 +75,13 @@ namespace orangutan::automation {
             });
         }
 
-        std::int64_t clamp_to_active_hours(const HeartbeatSpec &heartbeat, std::int64_t candidate) {
+        orangutan::base::i64 clamp_to_active_hours(const HeartbeatSpec &heartbeat, orangutan::base::i64 candidate) {
             if (heartbeat.active_hours.empty()) {
                 return candidate;
             }
 
             for (int day_offset = 0; day_offset < 8; ++day_offset) {
-                const auto shifted = candidate + (static_cast<std::int64_t>(day_offset) * 24 * 60 * 60);
+                const auto shifted = candidate + (static_cast<orangutan::base::i64>(day_offset) * 24 * 60 * 60);
                 const auto local_time = time::local_time_from(from_unix_seconds(shifted));
                 const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
                 const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
@@ -101,12 +101,12 @@ namespace orangutan::automation {
             return candidate;
         }
 
-        std::int64_t stable_jitter_offset(const HeartbeatSpec &heartbeat, std::int64_t base) {
+        orangutan::base::i64 stable_jitter_offset(const HeartbeatSpec &heartbeat, orangutan::base::i64 base) {
             if (heartbeat.jitter_seconds <= 0) {
                 return 0;
             }
 
-            const auto seed = static_cast<std::uint64_t>(std::hash<std::string>{}(heartbeat.id + ":" + std::to_string(base)));
+            const auto seed = static_cast<orangutan::base::u64>(std::hash<std::string>{}(heartbeat.id + ":" + std::to_string(base)));
             std::mt19937_64 rng(seed);
             std::uniform_int_distribution<int> dist(-heartbeat.jitter_seconds, heartbeat.jitter_seconds);
             return dist(rng);
@@ -147,10 +147,10 @@ namespace orangutan::automation {
         }
     }
 
-    std::optional<std::int64_t> parse_absolute_time(std::string_view value) {
+    std::optional<orangutan::base::i64> parse_absolute_time(std::string_view value) {
         long long numeric = 0;
         if (parse_integer(value, numeric)) {
-            return static_cast<std::int64_t>(numeric);
+            return static_cast<orangutan::base::i64>(numeric);
         }
 
         const auto parsed = parse_local_date_time(value);
@@ -165,7 +165,7 @@ namespace orangutan::automation {
         }
     }
 
-    bool is_task_due(const TaskSpec &task, TimePoint now, std::int64_t startup_time) {
+    bool is_task_due(const TaskSpec &task, TimePoint now, orangutan::base::i64 startup_time) {
         if (!task.enabled) {
             return false;
         }
@@ -209,7 +209,7 @@ namespace orangutan::automation {
         return *heartbeat.next_due_at <= to_unix_seconds(now);
     }
 
-    DueItems collect_due_items(const std::vector<TaskSpec> &tasks, const std::vector<HeartbeatSpec> &heartbeats, TimePoint now, std::int64_t startup_time) {
+    DueItems collect_due_items(const std::vector<TaskSpec> &tasks, const std::vector<HeartbeatSpec> &heartbeats, TimePoint now, orangutan::base::i64 startup_time) {
         DueItems due;
         for (const auto &task : tasks) {
             if (is_task_due(task, now, startup_time)) {
@@ -224,7 +224,7 @@ namespace orangutan::automation {
         return due;
     }
 
-    std::optional<std::int64_t> plan_next_heartbeat_due(const HeartbeatSpec &heartbeat, TimePoint from) {
+    std::optional<orangutan::base::i64> plan_next_heartbeat_due(const HeartbeatSpec &heartbeat, TimePoint from) {
         if (heartbeat.every_seconds <= 0) {
             return std::nullopt;
         }

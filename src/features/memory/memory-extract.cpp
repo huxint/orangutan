@@ -115,7 +115,7 @@ namespace orangutan::memory_detail {
             ChineseKeyMode key_mode;
             std::string_view key;
             std::string_view category;
-            double importance;
+            orangutan::base::f64 importance;
         };
 
         // CJK punctuation/code-point terminators for literal-prefix captures.
@@ -339,7 +339,7 @@ namespace orangutan::memory_detail {
 
         // --- English patterns (compile-time via CTRE) ---
 
-        const auto push_ctre_match = [&candidates](auto match_result, std::string key, std::string category, double importance) {
+        const auto push_ctre_match = [&candidates](auto match_result, std::string key, std::string category, orangutan::base::f64 importance) {
             if (!match_result || !match_result.template get<1>()) {
                 return false;
             }

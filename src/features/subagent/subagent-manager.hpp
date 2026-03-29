@@ -163,7 +163,7 @@ namespace orangutan {
         std::mutex mutex_;
         std::unordered_map<std::string, std::shared_ptr<ActiveRunState>> active_runs_;
         bool shutting_down_ = false;
-        std::uint64_t next_run_id_ = 0;
+        orangutan::base::u64 next_run_id_ = 0;
 
         [[nodiscard]]
         std::string make_run_id();

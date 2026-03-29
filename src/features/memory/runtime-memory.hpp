@@ -27,9 +27,10 @@ namespace orangutan {
             return context_;
         }
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", const std::string &source = "manual", double importance = 0.5);
+        void remember(const std::string &key, const std::string &content, const std::string &category = "general", const std::string &source = "manual",
+                      orangutan::base::f64 importance = 0.5);
         void update(const std::string &key, const std::string &content, const std::string &category = {}, bool merge = true, const std::string &source = {},
-                    double importance = 0.5);
+                    orangutan::base::f64 importance = 0.5);
 
         [[nodiscard]]
         bool forget(const std::string &key);
