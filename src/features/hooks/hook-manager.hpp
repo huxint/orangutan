@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/types.hpp"
+
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>

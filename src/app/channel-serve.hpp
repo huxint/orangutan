@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/types.hpp"
 #include "features/channel/core/channel.hpp"
 #include "core/tools/tool.hpp"
 #include "infra/config/config.hpp"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/types.hpp"
 #include "features/memory/memory.hpp"
 
 #include <optional>

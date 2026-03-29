@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/types.hpp"
 #include "infra/storage/sqlite.hpp"
 
 #include <filesystem>
