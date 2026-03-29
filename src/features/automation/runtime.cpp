@@ -18,7 +18,7 @@ namespace orangutan::automation {
             Runtime::Notifier notifier;
         };
 
-        nlohmann::json make_log_entry(const Trigger &trigger, const ExecutionResult &result, orangutan::base::i64 started_at, std::string_view status) {
+        nlohmann::json make_log_entry(const Trigger &trigger, const ExecutionResult &result, base::i64 started_at, std::string_view status) {
             return {
                 {"kind", magic_enum::enum_name(trigger.kind)},
                 {"automation_id", trigger.automation_id},
@@ -301,7 +301,7 @@ namespace orangutan::automation {
         return gate;
     }
 
-    Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, orangutan::base::i64 started_at) {
+    Runtime::CompletedExecution Runtime::execute_trigger(const Trigger &trigger, base::i64 started_at) {
         auto callbacks = RuntimeCallbacks{};
         {
             std::scoped_lock lock(mutex_);
@@ -367,7 +367,7 @@ namespace orangutan::automation {
         return completed;
     }
 
-    void Runtime::execute_task(const TaskSpec &task, std::optional<orangutan::base::i64> forced_timestamp) {
+    void Runtime::execute_task(const TaskSpec &task, std::optional<base::i64> forced_timestamp) {
         const auto started_at = forced_timestamp.value_or(to_unix_seconds(Clock::now()));
         const Trigger trigger{
             .kind = Kind::task,
@@ -385,7 +385,7 @@ namespace orangutan::automation {
         store_.update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == TaskScheduleKind::cron);
     }
 
-    void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<orangutan::base::i64> forced_timestamp) {
+    void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<base::i64> forced_timestamp) {
         const auto started_at = forced_timestamp.value_or(to_unix_seconds(Clock::now()));
         const Trigger trigger{
             .kind = Kind::heartbeat,

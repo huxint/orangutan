@@ -31,11 +31,11 @@ namespace orangutan::automation {
         return std::string(prefix) + "-" + std::to_string(now) + "-" + random_hex(10);
     }
 
-    orangutan::base::i64 to_unix_seconds(TimePoint time) {
+    base::i64 to_unix_seconds(TimePoint time) {
         return std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count();
     }
 
-    TimePoint from_unix_seconds(orangutan::base::i64 seconds) {
+    TimePoint from_unix_seconds(base::i64 seconds) {
         return TimePoint{std::chrono::seconds(seconds)};
     }
 

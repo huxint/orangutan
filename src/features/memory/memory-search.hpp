@@ -22,7 +22,7 @@ namespace orangutan::memory_detail {
     [[nodiscard]]
     bool contains_non_ascii(std::string_view value);
     [[nodiscard]]
-    orangutan::base::f64 score_memory_match(const MemoryRecord &record, const std::string &query);
+    base::f64 score_memory_match(const MemoryRecord &record, const std::string &query);
     [[nodiscard]]
     std::string format_records(const std::vector<MemoryRecord> &records);
     [[nodiscard]]
@@ -34,7 +34,7 @@ namespace orangutan::memory_detail {
     [[nodiscard]]
     std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, const std::string &scope, const std::string &key);
     void upsert_memory_record(sqlite::Database &db, const std::string &scope, const std::string &key, const std::string &content, const std::string &category,
-                              const std::string &source, orangutan::base::f64 importance);
+                              const std::string &source, base::f64 importance);
     [[nodiscard]]
     std::vector<MemoryRecord> dedupe_records_by_key(std::vector<MemoryRecord> records);
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records);

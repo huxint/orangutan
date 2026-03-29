@@ -105,7 +105,7 @@ namespace orangutan::automation {
         mutable std::mutex mutex_;
         std::condition_variable cv_;
         std::atomic<bool> running_{false};
-        orangutan::base::i64 startup_time_ = 0;
+        base::i64 startup_time_ = 0;
         std::mutex agent_execution_gates_mutex_;
         std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
 
@@ -113,7 +113,7 @@ namespace orangutan::automation {
         void normalize_state(TimePoint now);
         struct CompletedExecution {
             ExecutionResult result;
-            orangutan::base::i64 finished_at = 0;
+            base::i64 finished_at = 0;
             std::string status;
             std::string delivery_status = "silent";
             std::string log_path;
@@ -122,9 +122,9 @@ namespace orangutan::automation {
         [[nodiscard]]
         std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(const std::string &agent_key);
         [[nodiscard]]
-        CompletedExecution execute_trigger(const Trigger &trigger, orangutan::base::i64 started_at);
-        void execute_task(const TaskSpec &task, std::optional<orangutan::base::i64> forced_timestamp = std::nullopt);
-        void execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<orangutan::base::i64> forced_timestamp = std::nullopt);
+        CompletedExecution execute_trigger(const Trigger &trigger, base::i64 started_at);
+        void execute_task(const TaskSpec &task, std::optional<base::i64> forced_timestamp = std::nullopt);
+        void execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<base::i64> forced_timestamp = std::nullopt);
         void record_delivery_failure(const Trigger &trigger, std::string_view run_id, std::string_view title, std::string_view body);
     };
 

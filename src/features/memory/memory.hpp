@@ -18,7 +18,7 @@ namespace orangutan {
         std::string scope;
         std::string source;
         std::string updated_at;
-        orangutan::base::f64 importance = 0.5;
+        base::f64 importance = 0.5;
         int access_count = 0;
     };
 
@@ -42,10 +42,10 @@ namespace orangutan {
         MemoryStore &operator=(MemoryStore &&) = delete;
 
         void remember(const std::string &key, const std::string &content, const std::string &category = "general", const std::string &scope = {},
-                      const std::string &source = "manual", orangutan::base::f64 importance = 0.5);
+                      const std::string &source = "manual", base::f64 importance = 0.5);
 
         void update(const std::string &key, const std::string &content, const std::string &category = {}, const std::string &scope = {}, bool merge = true,
-                    const std::string &source = {}, orangutan::base::f64 importance = 0.5);
+                    const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
         std::vector<MemoryRecord> search(const std::string &query, const std::string &scope = {}, size_t limit = 8);

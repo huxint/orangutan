@@ -199,7 +199,7 @@ namespace orangutan::web {
             return "default";
         }
 
-        nlohmann::json unix_time_to_json(const std::optional<orangutan::base::i64> &value) {
+        nlohmann::json unix_time_to_json(const std::optional<base::i64> &value) {
             if (!value.has_value()) {
                 return nullptr;
             }
@@ -684,7 +684,7 @@ namespace orangutan::web {
             config->base_url = input["base_url"].get<std::string>();
         }
         if (input.contains("temperature")) {
-            config->temperature = input["temperature"].get<orangutan::base::f64>();
+            config->temperature = input["temperature"].get<base::f64>();
         }
         if (input.contains("max_iterations")) {
             config->max_iterations = input["max_iterations"].get<int>();

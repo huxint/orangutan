@@ -53,7 +53,7 @@ namespace orangutan::automation {
         std::string prompt;
         std::string notes;
         DeliveryPolicy delivery;
-        std::optional<orangutan::base::i64> last_run_at;
+        std::optional<base::i64> last_run_at;
         std::string last_status;
     };
 
@@ -69,8 +69,8 @@ namespace orangutan::automation {
         std::string notes;
         DeliveryPolicy delivery;
         bool paused = false;
-        std::optional<orangutan::base::i64> next_due_at;
-        std::optional<orangutan::base::i64> last_run_at;
+        std::optional<base::i64> next_due_at;
+        std::optional<base::i64> last_run_at;
         std::string last_status;
     };
 
@@ -80,8 +80,8 @@ namespace orangutan::automation {
         std::string automation_id;
         std::string agent_key;
         std::string automation_name;
-        orangutan::base::i64 started_at = 0;
-        std::optional<orangutan::base::i64> finished_at;
+        base::i64 started_at = 0;
+        std::optional<base::i64> finished_at;
         std::string status;
         std::string summary;
         std::string delivery_status;
@@ -95,8 +95,8 @@ namespace orangutan::automation {
         std::string source_run_id;
         std::string title;
         std::string body;
-        orangutan::base::i64 created_at = 0;
-        std::optional<orangutan::base::i64> acked_at;
+        base::i64 created_at = 0;
+        std::optional<base::i64> acked_at;
         std::string status = "unread";
     };
 
@@ -119,9 +119,9 @@ namespace orangutan::automation {
     [[nodiscard]]
     std::string generate_id(std::string_view prefix);
     [[nodiscard]]
-    orangutan::base::i64 to_unix_seconds(TimePoint time);
+    base::i64 to_unix_seconds(TimePoint time);
     [[nodiscard]]
-    TimePoint from_unix_seconds(orangutan::base::i64 seconds);
+    TimePoint from_unix_seconds(base::i64 seconds);
     [[nodiscard]]
     nlohmann::json delivery_policy_to_json(const DeliveryPolicy &delivery);
     [[nodiscard]]

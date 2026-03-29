@@ -20,6 +20,7 @@
 #include <optional>
 #include <thread>
 
+using namespace orangutan;
 using orangutan::testing::ScopedEnvVar;
 
 namespace {
@@ -315,7 +316,7 @@ namespace {
         CHECK(orangutan::testing::has_tool_named(definitions, "task"));
         CHECK(orangutan::testing::has_tool_named(definitions, "heartbeat"));
         CHECK(orangutan::testing::has_tool_named(definitions, "inbox"));
-        CHECK(runtime.tool_context.runtime_origin == orangutan::base::origin::web);
+        CHECK(runtime.tool_context.runtime_origin == base::origin::web);
         CHECK(runtime.tool_context.raw_caller_id == "web:local");
         CHECK(runtime.tool_context.current_session_id == &session_id);
         CHECK(runtime.tool_context.allowed_child_agents == std::vector<std::string>({"coder"}));

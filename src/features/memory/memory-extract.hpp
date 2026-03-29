@@ -10,7 +10,7 @@ namespace orangutan::memory_detail {
         std::string key;
         std::string content;
         std::string category;
-        orangutan::base::f64 importance = 0.5;
+        base::f64 importance = 0.5;
     };
 
     [[nodiscard]]

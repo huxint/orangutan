@@ -19,15 +19,15 @@ namespace orangutan::automation {
             return std::filesystem::path(home) / ".orangutan" / "automation.db";
         }
 
-        std::string encode_optional_seconds(std::optional<orangutan::base::i64> value) {
+        std::string encode_optional_seconds(std::optional<base::i64> value) {
             return value.has_value() ? std::to_string(*value) : std::string{};
         }
 
-        std::optional<orangutan::base::i64> decode_optional_seconds(std::string_view value) {
+        std::optional<base::i64> decode_optional_seconds(std::string_view value) {
             if (value.empty()) {
                 return std::nullopt;
             }
-            orangutan::base::i64 result{};
+            base::i64 result{};
             std::from_chars(value.begin(), value.end(), result);
             return result;
         }
@@ -197,7 +197,7 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::update_task_run_state(const std::string &task_id, std::optional<orangutan::base::i64> last_run_at, std::string_view last_status, bool enabled) {
+    void Store::update_task_run_state(const std::string &task_id, std::optional<base::i64> last_run_at, std::string_view last_status, bool enabled) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE tasks SET last_run_at = ?2, last_status = ?3, enabled = ?4 WHERE id = ?1");
         stmt.bind_text(1, task_id);
@@ -288,7 +288,7 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<orangutan::base::i64> last_run_at, std::optional<orangutan::base::i64> next_due_at,
+    void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at,
                                            std::string_view last_status, bool paused) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE heartbeats SET last_run_at = ?2, next_due_at = ?3, last_status = ?4, paused = ?5 WHERE id = ?1");
@@ -326,7 +326,7 @@ namespace orangutan::automation {
     }
 
     void Store::complete_run(const std::string &run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
-                             std::optional<orangutan::base::i64> finished_at) {
+                             std::optional<base::i64> finished_at) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE automation_runs SET finished_at = ?2, status = ?3, summary = ?4, delivery_status = ?5, log_path = ?6 WHERE id = ?1");
         stmt.bind_text(1, run_id);
