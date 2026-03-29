@@ -18,8 +18,8 @@ namespace {
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "memory|project|project.current|0.8|orangutan refactor\n"
-                                              "journal|Reviewed session decisions"}},
+                .content = {Text{"memory|project|project.current|0.8|orangutan refactor\n"
+                                 "journal|Reviewed session decisions"}},
             };
         }
 
@@ -69,8 +69,8 @@ namespace {
         AgentLoop loop(provider, tools, {}, &runtime_memory);
 
         loop.set_history({
-            Message::user_text("we are working on orangutan refactor"),
-            Message::assistant_text("Understood"),
+            Message::user().text("we are working on orangutan refactor"),
+            Message::assistant().text("Understood"),
         });
 
         std::string current_session_id;
@@ -98,7 +98,7 @@ namespace {
         SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools);
 
-        const auto session_id = session_store.save({Message::user_text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
+        const auto session_id = session_store.save({Message::user().text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
         std::string current_session_id;
         const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
 
@@ -110,8 +110,8 @@ namespace {
     TEST_CASE("resolve_requested_session_supports_latest") {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        const auto first_id = session_store.save({Message::user_text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
-        const auto second_id = session_store.save({Message::user_text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto first_id = session_store.save({Message::user().text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto second_id = session_store.save({Message::user().text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
         const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
         REQUIRE(latest.has_value());
@@ -124,9 +124,9 @@ namespace {
     TEST_CASE("resolve_requested_session_uses_agent_ownership_when_scope_is_empty") {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        session_store.save({Message::user_text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
-        const auto first_default = session_store.save({Message::user_text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
-        const auto second_default = session_store.save({Message::user_text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
+        session_store.save({Message::user().text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
+        const auto first_default = session_store.save({Message::user().text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
+        const auto second_default = session_store.save({Message::user().text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
 
         const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
         REQUIRE(latest.has_value());
@@ -151,8 +151,8 @@ namespace {
         AgentLoop loop(provider, tools, {}, &runtime_memory);
 
         loop.set_history({
-            Message::user_text("we are working on orangutan refactor"),
-            Message::assistant_text("Understood"),
+            Message::user().text("we are working on orangutan refactor"),
+            Message::assistant().text("Understood"),
         });
 
         std::string current_session_id;
@@ -191,9 +191,9 @@ namespace {
 
         const auto result = app::export_session_markdown(
             {
-                Message::user_text("hello"),
-                {.role = Role::assistant, .content = {ToolUseBlock{.id = "call-1", .name = "read", .input = json{{"path", "README.md"}}}}},
-                {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "call-1", .content = "file contents", .is_error = false}}},
+                Message::user().text("hello"),
+                Message(base::role::assistant, {ToolUse("call-1", "read", nlohmann::json{{"path", "README.md"}})}),
+                Message(base::role::user, {ToolResult("call-1", "file contents", false)}),
             },
             "session-123", workspace.string());
 

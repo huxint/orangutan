@@ -52,7 +52,7 @@ namespace orangutan::app {
 
     struct ConversationRuntimeInspection {
         std::vector<ToolDef> tool_definitions;
-        SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+        base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         bool has_agent = false;
         bool has_hook_manager = false;

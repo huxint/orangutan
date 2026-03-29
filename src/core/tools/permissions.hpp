@@ -30,7 +30,7 @@ namespace orangutan {
         std::vector<std::string> denied_shell_commands;
     };
 
-    using ToolApprovalCallback = std::function<bool(const ToolUseBlock &call, const std::string &prompt_text)>;
+    using ToolApprovalCallback = std::function<bool(const ToolUse &call, const std::string &prompt_text)>;
 
     [[nodiscard]]
     std::optional<ToolSandboxMode> parse_tool_sandbox_mode(std::string_view value);
@@ -51,10 +51,10 @@ namespace orangutan {
     std::optional<std::string> blocked_shell_command_pattern(const ToolPermissionSettings &settings, std::string_view command);
 
     [[nodiscard]]
-    std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, std::string_view command,
-                                                                     const ToolApprovalCallback &approval_callback = {});
+    std::optional<ToolResult> evaluate_shell_command_permission(const ToolUse &call, const ToolPermissionSettings &settings, std::string_view command,
+                                                                const ToolApprovalCallback &approval_callback = {});
 
     [[nodiscard]]
-    std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback = {});
+    std::optional<ToolResult> evaluate_tool_permission(const ToolUse &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback = {});
 
 } // namespace orangutan

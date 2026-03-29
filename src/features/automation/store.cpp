@@ -51,7 +51,7 @@ namespace orangutan::automation {
             task.schedule.value = stmt.column_text(5);
             task.prompt = stmt.column_text(6);
             task.notes = stmt.column_text(7);
-            task.delivery = delivery_policy_from_json(json::parse(stmt.column_text(8), nullptr, false));
+            task.delivery = delivery_policy_from_json(nlohmann::json::parse(stmt.column_text(8), nullptr, false));
             task.last_run_at = decode_optional_seconds(stmt.column_text(9));
             task.last_status = stmt.column_text(10);
             return task;
@@ -65,10 +65,10 @@ namespace orangutan::automation {
             heartbeat.enabled = stmt.column_int(3) != 0;
             heartbeat.every_seconds = stmt.column_int(4);
             heartbeat.jitter_seconds = stmt.column_int(5);
-            heartbeat.active_hours = active_hours_from_json(json::parse(stmt.column_text(6), nullptr, false));
+            heartbeat.active_hours = active_hours_from_json(nlohmann::json::parse(stmt.column_text(6), nullptr, false));
             heartbeat.prompt = stmt.column_text(7);
             heartbeat.notes = stmt.column_text(8);
-            heartbeat.delivery = delivery_policy_from_json(json::parse(stmt.column_text(9), nullptr, false));
+            heartbeat.delivery = delivery_policy_from_json(nlohmann::json::parse(stmt.column_text(9), nullptr, false));
             heartbeat.paused = stmt.column_int(10) != 0;
             heartbeat.next_due_at = decode_optional_seconds(stmt.column_text(11));
             heartbeat.last_run_at = decode_optional_seconds(stmt.column_text(12));

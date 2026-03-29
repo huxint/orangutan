@@ -42,7 +42,7 @@ namespace {
         orangutan::ToolRegistry registry;
         orangutan::register_heartbeat_tool(registry, &context);
 
-        const auto result = registry.execute(orangutan::ToolUseBlock{
+        const auto result = registry.execute(orangutan::ToolUse{
             .id = "heartbeat-update",
             .name = "heartbeat",
             .input =

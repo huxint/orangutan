@@ -25,7 +25,7 @@ namespace orangutan {
     class SessionStore;
 
     struct SubagentCallerContext {
-        SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+        base::origin runtime_origin = base::origin::cli;
         std::string runtime_key;
         std::string agent_key;
         std::string scope_key;

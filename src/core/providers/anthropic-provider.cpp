@@ -19,10 +19,10 @@ namespace orangutan {
                 return;
             }
 
-            json event_data;
+            nlohmann::json event_data;
             try {
-                event_data = json::parse(data);
-            } catch (const json::parse_error &e) {
+                event_data = nlohmann::json::parse(data);
+            } catch (const nlohmann::json::parse_error &e) {
                 spdlog::warn("Failed to parse SSE data: {}", e.what());
                 return;
             }
@@ -39,19 +39,19 @@ namespace orangutan {
 
             for (const auto &block : blocks_) {
                 if (block.type == "text") {
-                    response.content.emplace_back(TextBlock{.text = block.text});
+                    response.content.emplace_back(Text{block.text});
                 } else if (block.type == "thinking") {
-                    response.content.emplace_back(ThinkingBlock{.thinking = block.text});
+                    response.content.emplace_back(Thinking{block.text});
                 } else if (block.type == "tool_use") {
-                    json input = json::object();
+                    nlohmann::json input = nlohmann::json::object();
                     if (!block.input_json.empty()) {
                         try {
-                            input = json::parse(block.input_json);
-                        } catch (const json::parse_error &) {
+                            input = nlohmann::json::parse(block.input_json);
+                        } catch (const nlohmann::json::parse_error &) {
                             spdlog::warn("Failed to parse accumulated tool input JSON");
                         }
                     }
-                    response.content.emplace_back(ToolUseBlock{.id = block.id, .name = block.name, .input = std::move(input)});
+                    response.content.emplace_back(ToolUse(block.id, block.name, std::move(input)));
                 }
             }
 
@@ -71,7 +71,7 @@ namespace orangutan {
         std::vector<BlockState> blocks_;
         std::string stop_reason_;
 
-        void dispatch_event(const std::string &type, const json &event_data) {
+        void dispatch_event(const std::string &type, const nlohmann::json &event_data) {
             if (type == "content_block_start") {
                 handle_block_start(event_data);
             } else if (type == "content_block_delta") {
@@ -81,7 +81,7 @@ namespace orangutan {
             }
         }
 
-        void handle_block_start(const json &event_data) {
+        void handle_block_start(const nlohmann::json &event_data) {
             auto block = event_data["content_block"];
             auto block_type = block["type"].get<std::string>();
 
@@ -93,13 +93,13 @@ namespace orangutan {
                 on_event_("tool_call_start", {
                                                  {"id", state.id},
                                                  {"name", state.name},
-                                                 {"input", json::object()},
+                                                 {"input", nlohmann::json::object()},
                                              });
             }
             blocks_.push_back(std::move(state));
         }
 
-        void handle_block_delta(const json &event_data) {
+        void handle_block_delta(const nlohmann::json &event_data) {
             auto index = event_data["index"].get<size_t>();
             if (index >= blocks_.size()) {
                 return;
@@ -120,7 +120,7 @@ namespace orangutan {
             }
         }
 
-        void handle_message_delta(const json &event_data) {
+        void handle_message_delta(const nlohmann::json &event_data) {
             if (event_data.contains("delta") && event_data["delta"].contains("stop_reason")) {
                 stop_reason_ = event_data["delta"]["stop_reason"].get<std::string>();
             }
@@ -134,9 +134,9 @@ namespace orangutan {
       model_(std::move(model)),
       base_url_(std::move(base_url)) {}
 
-    json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
-                                               int thinking_budget) const {
-        json body;
+    nlohmann::json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
+                                                         bool stream, int thinking_budget) const {
+        nlohmann::json body;
         body["model"] = model_;
         body["max_tokens"] = max_tokens;
         body["system"] = system_prompt;
@@ -145,13 +145,13 @@ namespace orangutan {
             body["stream"] = true;
         }
 
-        body["messages"] = json::array();
+        body["messages"] = nlohmann::json::array();
         for (const auto &msg : messages) {
             body["messages"].push_back(message_to_json(msg));
         }
 
         if (!tools.empty()) {
-            body["tools"] = json::array();
+            body["tools"] = nlohmann::json::array();
             for (const auto &tool : tools) {
                 body["tools"].push_back({{"name", tool.name}, {"description", tool.description}, {"input_schema", tool.input_schema}});
             }
@@ -178,7 +178,7 @@ namespace orangutan {
         std::string url = base_url_ + "/v1/messages";
         auto response_body = http_post(url, request_body, headers);
 
-        json resp = json::parse(response_body);
+        nlohmann::json resp = nlohmann::json::parse(response_body);
 
         if (resp.contains("error")) {
             std::string err_msg = "API error";
@@ -218,7 +218,7 @@ namespace orangutan {
         return accumulator.build_response();
     }
 
-    LLMResponse AnthropicProvider::parse_response(const json &resp) {
+    LLMResponse AnthropicProvider::parse_response(const nlohmann::json &resp) {
         LLMResponse result;
         result.stop_reason = resp.value("stop_reason", "end_turn");
 
@@ -226,11 +226,11 @@ namespace orangutan {
             std::string type = block["type"].get<std::string>();
 
             if (type == "text") {
-                result.content.emplace_back(TextBlock{block["text"].get<std::string>()});
+                result.content.emplace_back(Text{block["text"].get<std::string>()});
             } else if (type == "thinking") {
-                result.content.emplace_back(ThinkingBlock{.thinking = block["thinking"].get<std::string>()});
+                result.content.emplace_back(Thinking{block["thinking"].get<std::string>()});
             } else if (type == "tool_use") {
-                result.content.emplace_back(ToolUseBlock{.id = block["id"].get<std::string>(), .name = block["name"].get<std::string>(), .input = block["input"]});
+                result.content.emplace_back(ToolUse(block["id"].get<std::string>(), block["name"].get<std::string>(), block["input"]));
             }
         }
 

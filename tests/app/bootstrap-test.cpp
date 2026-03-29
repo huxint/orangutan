@@ -317,12 +317,12 @@ namespace {
             SessionStore session_store(session_db_path());
             const auto cli_identity = derive_cli_identity(workspace_root_.string(), "default");
             const std::vector<Message> history_a{
-                Message{.role = Role::user, .content = {TextBlock{.text = "first"}}},
-                Message{.role = Role::assistant, .content = {TextBlock{.text = "reply"}}},
+                Message(base::role::user, {Text{"first"}}),
+                Message(base::role::assistant, {Text{"reply"}}),
             };
             const std::vector<Message> history_b{
-                Message{.role = Role::user, .content = {TextBlock{.text = "second"}}},
-                Message{.role = Role::assistant, .content = {TextBlock{.text = "reply two"}}},
+                Message(base::role::user, {Text{"second"}}),
+                Message(base::role::assistant, {Text{"reply two"}}),
             };
             const SessionMetadata metadata{
                 .model = "gpt-test",

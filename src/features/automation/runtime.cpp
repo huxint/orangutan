@@ -18,7 +18,7 @@ namespace orangutan::automation {
             Runtime::Notifier notifier;
         };
 
-        json make_log_entry(const Trigger &trigger, const ExecutionResult &result, std::int64_t started_at, std::string_view status) {
+        nlohmann::json make_log_entry(const Trigger &trigger, const ExecutionResult &result, std::int64_t started_at, std::string_view status) {
             return {
                 {"kind", magic_enum::enum_name(trigger.kind)},
                 {"automation_id", trigger.automation_id},

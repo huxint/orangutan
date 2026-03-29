@@ -86,7 +86,7 @@ namespace orangutan {
             return out;
         }
 
-        std::string read_file(const json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+        std::string read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
             const bool has_paths = input.contains("paths") && !input["paths"].is_null();
 
@@ -150,7 +150,7 @@ namespace orangutan {
                            {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
                          {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                          {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
-             .execute = [workspace_root, mode = std::string(edit_mode)](const json &input) {
+             .execute = [workspace_root, mode = std::string(edit_mode)](const nlohmann::json &input) {
                  return read_file(input, workspace_root, mode);
              }});
     }

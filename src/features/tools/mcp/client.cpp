@@ -109,7 +109,7 @@ namespace orangutan {
             return command;
         }
 
-        std::string flatten_json(const json &value) {
+        std::string flatten_json(const nlohmann::json &value) {
             if (value.is_string()) {
                 return value.get<std::string>();
             }
@@ -119,7 +119,7 @@ namespace orangutan {
             return value.dump();
         }
 
-        std::string flatten_tool_result(const json &result) {
+        std::string flatten_tool_result(const nlohmann::json &result) {
             if (const auto content_it = result.find("content"); content_it != result.end()) {
                 if (content_it->is_string()) {
                     return content_it->get<std::string>();
@@ -184,7 +184,7 @@ namespace orangutan {
             const auto result = send_request("initialize",
                                              {
                                                  {"protocolVersion", protocol_version},
-                                                 {"capabilities", json::object()},
+                                                 {"capabilities", nlohmann::json::object()},
                                                  {"clientInfo", {{"name", "orangutan"}, {"version", "0.1.0"}}},
                                              },
                                              initialize_timeout);
@@ -194,7 +194,7 @@ namespace orangutan {
                 spdlog::warn("MCP server '{}' reported protocol '{}', client requested '{}'", config_.name, server_protocol, protocol_version);
             }
 
-            send_notification("notifications/initialized", json::object(), initialize_timeout);
+            send_notification("notifications/initialized", nlohmann::json::object(), initialize_timeout);
         } catch (...) {
             disconnect();
             throw;
@@ -239,7 +239,7 @@ namespace orangutan {
             throw std::runtime_error("MCP server '" + config_.name + "' is not connected");
         }
 
-        const auto result = send_request("tools/list", json::object(), std::chrono::seconds(config_.timeout));
+        const auto result = send_request("tools/list", nlohmann::json::object(), std::chrono::seconds(config_.timeout));
         std::vector<McpToolInfo> tools;
 
         const auto tool_array = result.find("tools");
@@ -269,7 +269,7 @@ namespace orangutan {
         return tools;
     }
 
-    std::string McpClient::call_tool(const std::string &tool_name, const json &arguments) {
+    std::string McpClient::call_tool(const std::string &tool_name, const nlohmann::json &arguments) {
         if (!is_connected()) {
             throw std::runtime_error("MCP server '" + config_.name + "' is not connected");
         }
@@ -359,7 +359,7 @@ namespace orangutan {
         close_if_open(stdout_fd_);
     }
 
-    void McpClient::write_message(const json &message, std::chrono::steady_clock::time_point deadline) {
+    void McpClient::write_message(const nlohmann::json &message, std::chrono::steady_clock::time_point deadline) {
         if (stdin_fd_ == -1) {
             throw std::runtime_error("stdin pipe is closed for MCP server '" + config_.name + "'");
         }
@@ -395,7 +395,7 @@ namespace orangutan {
         }
     }
 
-    json McpClient::read_message(std::chrono::steady_clock::time_point deadline) {
+    nlohmann::json McpClient::read_message(std::chrono::steady_clock::time_point deadline) {
         while (true) {
             if (const auto newline = read_buffer_.find('\n'); newline != std::string::npos) {
                 auto line = read_buffer_.substr(0, newline);
@@ -407,7 +407,7 @@ namespace orangutan {
                     continue;
                 }
                 try {
-                    return json::parse(line);
+                    return nlohmann::json::parse(line);
                 } catch (const std::exception &e) {
                     throw std::runtime_error("Invalid JSON from MCP server '" + config_.name + "': " + std::string(e.what()));
                 }
@@ -453,7 +453,7 @@ namespace orangutan {
         }
     }
 
-    json McpClient::send_request(const std::string &method, const json &params, std::chrono::seconds timeout) {
+    nlohmann::json McpClient::send_request(const std::string &method, const nlohmann::json &params, std::chrono::seconds timeout) {
         const int request_id = next_request_id_++;
         const auto deadline = std::chrono::steady_clock::now() + timeout;
 
@@ -482,7 +482,7 @@ namespace orangutan {
         }
     }
 
-    void McpClient::send_notification(const std::string &method, const json &params, std::chrono::seconds timeout) {
+    void McpClient::send_notification(const std::string &method, const nlohmann::json &params, std::chrono::seconds timeout) {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         write_message(
             {

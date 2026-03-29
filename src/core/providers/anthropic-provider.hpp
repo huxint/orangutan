@@ -33,11 +33,11 @@ namespace orangutan {
         std::string base_url_;
 
         [[nodiscard]]
-        json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
-                                int thinking_budget = 0) const;
+        nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
+                                          int thinking_budget = 0) const;
 
         [[nodiscard]]
-        static LLMResponse parse_response(const json &response_json);
+        static LLMResponse parse_response(const nlohmann::json &response_json);
     };
 
 } // namespace orangutan

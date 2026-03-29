@@ -11,7 +11,7 @@
 namespace orangutan {
 
     // Callback for streaming events: (event_type, json_data)
-    using StreamCallback = std::function<void(const std::string &event_type, const json &data)>;
+    using StreamCallback = std::function<void(const std::string &event_type, const nlohmann::json &data)>;
 
     struct ProviderUsageStats {
         size_t logical_requests = 0;

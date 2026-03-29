@@ -13,7 +13,7 @@ namespace {
     LLMResponse text_response(const std::string &text) {
         return {
             .stop_reason = "end_turn",
-            .content = {TextBlock{.text = text}},
+            .content = {Text{text}},
         };
     }
 
@@ -83,7 +83,7 @@ namespace {
         const auto response = provider->chat("", {}, {}, 1024);
 
         CHECK(response.content.size() == 1ul);
-        const auto *text = std::get_if<TextBlock>(&response.content[0]);
+        const auto *text = std::get_if<Text>(&response.content[0]);
         REQUIRE(text != nullptr);
         if (text != nullptr) {
             CHECK(text->text == "fallback response");
@@ -138,7 +138,7 @@ namespace {
                                                                    },
                                                                    [&](const StreamCallback &on_event) -> LLMResponse {
                                                                        ++primary_stream_attempts;
-                                                                       on_event("text_delta", json{{"text", "partial"}});
+                                                                       on_event("text_delta", nlohmann::json{{"text", "partial"}});
                                                                        throw std::runtime_error("stream interrupted");
                                                                    });
                                                            }
@@ -150,7 +150,7 @@ namespace {
                                                                },
                                                                [&](const StreamCallback &on_event) -> LLMResponse {
                                                                    ++fallback_stream_attempts;
-                                                                   on_event("text_delta", json{{"text", "fallback"}});
+                                                                   on_event("text_delta", nlohmann::json{{"text", "fallback"}});
                                                                    return text_response("fallback response");
                                                                });
                                                        });
@@ -158,7 +158,7 @@ namespace {
         try {
             static_cast<void>(provider->chat_stream(
                 "", {}, {},
-                [&observed_chunks](const std::string &event_type, const json &data) {
+                [&observed_chunks](const std::string &event_type, const nlohmann::json &data) {
                     if (event_type == "text_delta") {
                         observed_chunks.push_back(data.at("text").get<std::string>());
                     }
@@ -277,7 +277,7 @@ namespace {
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto fallback_response = second_result.get();
         CHECK(fallback_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(fallback_response.content[0]).text == "fallback response");
+        CHECK(std::get<Text>(fallback_response.content[0]).text == "fallback response");
 
         CHECK_FALSE(primary_state->destroyed.load());
 
@@ -285,7 +285,7 @@ namespace {
         CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto primary_response = first_result.get();
         CHECK(primary_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(primary_response.content[0]).text == "primary response");
+        CHECK(std::get<Text>(primary_response.content[0]).text == "primary response");
 
         CHECK(primary_state->destroyed_promise.get_future().wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         CHECK(primary_state->destroyed.load());
@@ -371,13 +371,13 @@ namespace {
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto second_response = second_result.get();
         CHECK(second_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(second_response.content[0]).text == "fallback response");
+        CHECK(std::get<Text>(second_response.content[0]).text == "fallback response");
 
         primary_state->release_first_failure.set_value();
         CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto first_response = first_result.get();
         CHECK(first_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(first_response.content[0]).text == "fallback response");
+        CHECK(std::get<Text>(first_response.content[0]).text == "fallback response");
         CHECK(fallback_attempts.load() == 2ul);
 
         const auto usage = provider->usage();
@@ -484,8 +484,8 @@ namespace {
         const auto second_response = second_result.get();
         CHECK(first_response.content.size() == 1ul);
         CHECK(second_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(first_response.content[0]).text == "fallback-a");
-        CHECK(std::get<TextBlock>(second_response.content[0]).text == "fallback-a");
+        CHECK(std::get<Text>(first_response.content[0]).text == "fallback-a");
+        CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
         CHECK(first_fallback_attempts.load() == 2ul);
         CHECK(second_fallback_attempts.load() == 0ul);
         CHECK(provider->current_model() == "gpt-fallback-a");
@@ -589,13 +589,13 @@ namespace {
 
         const auto first_response = first_result.get();
         CHECK(first_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(first_response.content[0]).text == "fallback-b");
+        CHECK(std::get<Text>(first_response.content[0]).text == "fallback-b");
 
         primary_state->release_second_failure.set_value();
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto second_response = second_result.get();
         CHECK(second_response.content.size() == 1ul);
-        CHECK(std::get<TextBlock>(second_response.content[0]).text == "fallback-a");
+        CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
 
         CHECK(fallback_a_attempts.load() == 2ul);
         CHECK(fallback_b_attempts.load() == 1ul);

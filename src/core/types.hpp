@@ -1,10 +1,13 @@
 #pragma once
 
 #include <spdlog/common.h>
+#include <concepts>
 #include <cstdint>
+#include <initializer_list>
 #include <nlohmann/json.hpp>
 #include <magic_enum/magic_enum.hpp>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -38,30 +41,61 @@ namespace orangutan {
 
     struct Text {
         std::string text;
+
+        Text() = default;
+        Text(std::string_view value)
+        : text(value) {}
     };
 
     struct Thinking {
         std::string thinking;
+
+        Thinking() = default;
+        Thinking(std::string_view value)
+        : thinking(value) {}
     };
 
     struct ToolUse {
         std::string id;
         std::string name;
         nlohmann::json input;
+
+        ToolUse() = default;
+        ToolUse(std::string id, std::string name, nlohmann::json input)
+        : id(std::move(id)),
+          name(std::move(name)),
+          input(std::move(input)) {}
     };
 
     struct ToolResult {
         std::string tool_use_id;
         std::string content;
         bool is_error = false;
+
+        ToolResult() = default;
+        ToolResult(std::string tool_use_id, std::string content, bool is_error = false)
+        : tool_use_id(std::move(tool_use_id)),
+          content(std::move(content)),
+          is_error(is_error) {}
     };
 
-    using content = std::variant<Text, Thinking, ToolUse, ToolResult>;
+    using Content = std::variant<Text, Thinking, ToolUse, ToolResult>;
 
     class Message {
     public:
         explicit Message(base::role role)
         : role_{role} {}
+
+        Message(base::role role, std::initializer_list<Content> blocks)
+        : role_{role} {
+            for (const auto &block : blocks) {
+                content_.push_back(block);
+            }
+        }
+
+        Message(base::role role, std::vector<Content> blocks)
+        : role_{role},
+          content_{std::move(blocks)} {}
 
         [[nodiscard]]
         base::role role() const noexcept {
@@ -112,9 +146,19 @@ namespace orangutan {
             return content_.end();
         }
 
+        [[nodiscard]]
+        bool empty() const noexcept {
+            return content_.empty();
+        }
+
+        [[nodiscard]]
+        std::size_t size() const noexcept {
+            return content_.size();
+        }
+
     private:
         base::role role_;
-        std::vector<content> content_;
+        std::vector<Content> content_;
 
         static auto append(auto &&self, auto &&value) -> decltype(self) {
             self.content_.emplace_back(std::forward<decltype(value)>(value));
@@ -139,7 +183,7 @@ namespace orangutan {
             return *this;
         }
 
-        // conversation.user(block::text{"hello"}, block::thinking{"..."})
+        // conversation.user("hello", Thinking{"..."})
         template <typename... Args>
         auto user(Args &&...args) -> Conversation & {
             return emplace(base::role::user, std::forward<Args>(args)...);
@@ -185,7 +229,9 @@ namespace orangutan {
         static void emplace_one(Message &msg, T &&value) {
             using U = std::remove_cvref_t<T>;
 
-            if constexpr (std::same_as<U, Text>) {
+            if constexpr (std::convertible_to<T, std::string_view>) {
+                msg.text(std::forward<T>(value));
+            } else if constexpr (std::same_as<U, Text>) {
                 msg.text(std::forward<T>(value));
             } else if constexpr (std::same_as<U, Thinking>) {
                 msg.thinking(std::forward<T>(value));
@@ -198,7 +244,7 @@ namespace orangutan {
     };
 
     // Serialize content to JSON for API request
-    nlohmann::json content_block_to_json(const content &block) {
+    nlohmann::json content_block_to_json(const Content &block) {
         return std::visit(
             [](auto &&blk) -> nlohmann::json {
                 using T = std::decay_t<decltype(blk)>;
@@ -240,6 +286,6 @@ namespace orangutan {
     // API response metadata
     struct LLMResponse {
         std::string stop_reason; // "end_turn", "tool_use", etc.
-        std::vector<content> content;
+        std::vector<Content> content;
     };
 }

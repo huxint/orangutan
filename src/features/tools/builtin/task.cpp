@@ -25,7 +25,7 @@ namespace orangutan {
             return out;
         }
 
-        std::string execute_task_tool(const json &input, const ToolRuntimeContext *ctx) {
+        std::string execute_task_tool(const nlohmann::json &input, const ToolRuntimeContext *ctx) {
             if (ctx == nullptr || ctx->automation_runtime == nullptr) {
                 return "Error: task tool is not available in this context.";
             }
@@ -128,22 +128,22 @@ namespace orangutan {
                             {"type", "object"},
                             {"properties",
                              {
-                                 {"op", {{"type", "string"}, {"enum", json::array({"add", "update", "remove", "list", "run"})}}},
+                                 {"op", {{"type", "string"}, {"enum", nlohmann::json::array({"add", "update", "remove", "list", "run"})}}},
                                  {"id", {{"type", "string"}}},
                                  {"name", {{"type", "string"}}},
-                                 {"schedule_kind", {{"type", "string"}, {"enum", json::array({"at", "cron"})}}},
+                                 {"schedule_kind", {{"type", "string"}, {"enum", nlohmann::json::array({"at", "cron"})}}},
                                  {"schedule", {{"type", "string"}}},
                                  {"prompt", {{"type", "string"}}},
                                  {"notes", {{"type", "string"}}},
                                  {"enabled", {{"type", "boolean"}}},
-                                 {"delivery_mode", {{"type", "string"}, {"enum", json::array({"silent", "notify"})}}},
+                                 {"delivery_mode", {{"type", "string"}, {"enum", nlohmann::json::array({"silent", "notify"})}}},
                                  {"targets", {{"type", "array"}, {"items", {{"type", "string"}}}}},
                              }},
-                            {"required", json::array({"op"})},
+                            {"required", nlohmann::json::array({"op"})},
                         },
                 },
             .execute =
-                [tool_context](const json &input) {
+                [tool_context](const nlohmann::json &input) {
                     return execute_task_tool(input, tool_context);
                 },
         });

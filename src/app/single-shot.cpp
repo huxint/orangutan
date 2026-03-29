@@ -16,7 +16,7 @@ namespace orangutan::app {
             return current_model.empty() ? configured_model : current_model;
         }
 
-        json done_event(const std::string &session_id) {
+        nlohmann::json done_event(const std::string &session_id) {
             return {
                 {"type", "done"},
                 {"session_id", session_id},
@@ -36,7 +36,7 @@ namespace orangutan::app {
         }
 
         auto make_stream_event_emitter(const JsonEmitter &emit) {
-            return [&emit](const std::string &event_type, const json &data) {
+            return [&emit](const std::string &event_type, const nlohmann::json &data) {
                 if (event_type == "text_delta") {
                     emit({
                         {"type", "assistant_delta"},
@@ -50,14 +50,14 @@ namespace orangutan::app {
                         {"type", "tool_call_started"},
                         {"id", data.value("id", "")},
                         {"name", data.value("name", "")},
-                        {"input", data.value("input", json::object())},
+                        {"input", data.value("input", nlohmann::json::object())},
                     });
                 }
             };
         }
 
         auto make_tool_event_emitter(const JsonEmitter &emit) {
-            return [&emit](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+            return [&emit](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
                 if (event_type == "tool_started") {
                     emit({
                         {"type", "tool_started"},
@@ -89,7 +89,7 @@ namespace orangutan::app {
             automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
                 std::string reply;
                 if (suppress_human_output) {
-                    reply = agent.run(message, [](const std::string &, const json &) {}, [](const std::string &, const ToolUseBlock &, const ToolResultBlock *) {});
+                    reply = agent.run(message, [](const std::string &, const nlohmann::json &) {}, [](const std::string &, const ToolUse &, const ToolResult *) {});
                 } else {
                     reply = agent.run(message);
                 }

@@ -9,11 +9,11 @@
 namespace orangutan {
     namespace {
 
-        json subagent_run_record_to_json(const SubagentRunRecord &run) {
-            return json{
+        nlohmann::json subagent_run_record_to_json(const SubagentRunRecord &run) {
+            return nlohmann::json{
                 {"run_id", run.run_id},
                 {"parent_runtime_key", run.parent_runtime_key},
-                {"parent_session_id", run.parent_session_id.has_value() ? json(*run.parent_session_id) : json(nullptr)},
+                {"parent_session_id", run.parent_session_id.has_value() ? nlohmann::json(*run.parent_session_id) : nlohmann::json(nullptr)},
                 {"parent_agent_key", run.parent_agent_key},
                 {"child_session_id", run.child_session_id},
                 {"child_agent_key", run.child_agent_key},
@@ -24,8 +24,8 @@ namespace orangutan {
                 {"final_output", run.final_output},
                 {"error_text", run.error_text},
                 {"created_at", run.created_at},
-                {"started_at", run.started_at.has_value() ? json(*run.started_at) : json(nullptr)},
-                {"finished_at", run.finished_at.has_value() ? json(*run.finished_at) : json(nullptr)},
+                {"started_at", run.started_at.has_value() ? nlohmann::json(*run.started_at) : nlohmann::json(nullptr)},
+                {"finished_at", run.finished_at.has_value() ? nlohmann::json(*run.finished_at) : nlohmann::json(nullptr)},
             };
         }
 
@@ -55,7 +55,7 @@ namespace orangutan {
             };
         }
 
-        std::string spawn_subagent_tool(const json &input, const ToolRuntimeContext &tool_context) {
+        std::string spawn_subagent_tool(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
             auto request = SubagentSpawnRequest{
                 .caller = make_subagent_caller_context(tool_context),
                 .child_agent_key = input.at("child_agent_key").get<std::string>(),
@@ -69,25 +69,27 @@ namespace orangutan {
             }
 
             const auto result = tool_context.subagent_manager->spawn(request);
-            return json{{"accepted", result.accepted}, {"run_id", result.run_id}, {"error", result.error}}.dump();
+            return nlohmann::json{{"accepted", result.accepted}, {"run_id", result.run_id}, {"error", result.error}}.dump();
         }
 
-        std::string subagent_status_tool(const json &input, SubagentManager &subagent_manager, const ToolRuntimeContext &tool_context) {
+        std::string subagent_status_tool(const nlohmann::json &input, SubagentManager &subagent_manager, const ToolRuntimeContext &tool_context) {
             const auto result = subagent_manager.status(SubagentStatusRequest{
                 .run_id = input.at("run_id").get<std::string>(),
                 .caller = make_subagent_caller_context(tool_context),
             });
-            return json{{"found", result.run.has_value()}, {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : json(nullptr)}}.dump();
+            return nlohmann::json{{"found", result.run.has_value()}, {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : nlohmann::json(nullptr)}}.dump();
         }
 
-        std::string subagent_wait_tool(const json &input, SubagentManager &subagent_manager, const ToolRuntimeContext &tool_context) {
+        std::string subagent_wait_tool(const nlohmann::json &input, SubagentManager &subagent_manager, const ToolRuntimeContext &tool_context) {
             const auto timeout_ms = std::max(0, input.value("timeout_ms", 0));
             const auto result = subagent_manager.wait(SubagentWaitRequest{
                 .run_id = input.at("run_id").get<std::string>(),
                 .timeout = std::chrono::milliseconds{timeout_ms},
                 .caller = make_subagent_caller_context(tool_context),
             });
-            return json{{"state", magic_enum::enum_name(result.state)}, {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : json(nullptr)}}.dump();
+            return nlohmann::json{{"state", magic_enum::enum_name(result.state)},
+                                  {"run", result.run.has_value() ? subagent_run_record_to_json(*result.run) : nlohmann::json(nullptr)}}
+                .dump();
         }
 
         bool should_register_subagent_tools(const ToolRuntimeContext *tool_context) {
@@ -108,8 +110,8 @@ namespace orangutan {
                                                                 {"properties",
                                                                  {{"child_agent_key", {{"type", "string"}, {"description", "Allowed child agent key to run"}}},
                                                                   {"task_summary", {{"type", "string"}, {"description", "Summary of the work for the child run"}}}}},
-                                                                {"required", json::array({"child_agent_key", "task_summary"})}}},
-                                .execute = [tool_context](const json &input) {
+                                                                {"required", nlohmann::json::array({"child_agent_key", "task_summary"})}}},
+                                .execute = [tool_context](const nlohmann::json &input) {
                                     return spawn_subagent_tool(input, *tool_context);
                                 }});
 
@@ -117,8 +119,8 @@ namespace orangutan {
                                                .description = "Inspect a subagent run and return structured status metadata.",
                                                .input_schema = {{"type", "object"},
                                                                 {"properties", {{"run_id", {{"type", "string"}, {"description", "Subagent run id"}}}}},
-                                                                {"required", json::array({"run_id"})}}},
-                                .execute = [tool_context](const json &input) {
+                                                                {"required", nlohmann::json::array({"run_id"})}}},
+                                .execute = [tool_context](const nlohmann::json &input) {
                                     return subagent_status_tool(input, *tool_context->subagent_manager, *tool_context);
                                 }});
 
@@ -128,8 +130,8 @@ namespace orangutan {
                                                                 {"properties",
                                                                  {{"run_id", {{"type", "string"}, {"description", "Subagent run id"}}},
                                                                   {"timeout_ms", {{"type", "integer"}, {"description", "Maximum time to wait in milliseconds"}}}}},
-                                                                {"required", json::array({"run_id"})}}},
-                                .execute = [tool_context](const json &input) {
+                                                                {"required", nlohmann::json::array({"run_id"})}}},
+                                .execute = [tool_context](const nlohmann::json &input) {
                                     return subagent_wait_tool(input, *tool_context->subagent_manager, *tool_context);
                                 }});
     }

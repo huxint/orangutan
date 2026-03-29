@@ -17,7 +17,7 @@ namespace {
             last_tool_count_ = tools.size();
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "Earlier conversation summary"}},
+                .content = {Text{"Earlier conversation summary"}},
             };
         }
 
@@ -42,10 +42,10 @@ namespace {
             last_tool_count_ = tools.size();
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
-                                              "memory|decision|decision.routing|0.80|qq bots stay fixed to one agent\n"
-                                              "memory|learning|learning.runtime-identity|0.85|channel runtime identity should use jid plus agent key\n"
-                                              "journal|Reviewed memory ranking and markdown mirror behavior"}},
+                .content = {Text{"memory|project|project.current|0.90|orangutan memory refactor\n"
+                                 "memory|decision|decision.routing|0.80|qq bots stay fixed to one agent\n"
+                                 "memory|learning|learning.runtime-identity|0.85|channel runtime identity should use jid plus agent key\n"
+                                 "journal|Reviewed memory ranking and markdown mirror behavior"}},
             };
         }
 
@@ -67,7 +67,7 @@ namespace {
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = ""}},
+                .content = {Text{""}},
             };
         }
 
@@ -85,8 +85,8 @@ namespace {
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "memory|project|project.current|0.90|orangutan memory refactor\n"
-                                              "journal"}},
+                .content = {Text{"memory|project|project.current|0.90|orangutan memory refactor\n"
+                                 "journal"}},
             };
         }
 
@@ -109,7 +109,7 @@ namespace {
             last_system_prompt_ = system_prompt;
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "ok"}},
+                .content = {Text{"ok"}},
             };
         }
 
@@ -146,24 +146,24 @@ namespace {
     };
 
     std::string describe_message(const Message &message) {
-        std::string description = std::string(magic_enum::enum_name(message.role)) + ":";
+        std::string description = std::string(magic_enum::enum_name(message.role())) + ":";
         bool first_block = true;
-        for (const auto &block : message.content) {
+        for (const auto &block : message) {
             if (!first_block) {
                 description += "|";
             }
             first_block = false;
 
-            if (const auto *text = std::get_if<TextBlock>(&block)) {
+            if (const auto *text = std::get_if<Text>(&block)) {
                 description += "text=" + text->text;
                 continue;
             }
-            if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+            if (const auto *tool = std::get_if<ToolUse>(&block)) {
                 description += "tool_use=" + tool->name;
                 continue;
             }
 
-            const auto *result = std::get_if<ToolResultBlock>(&block);
+            const auto *result = std::get_if<ToolResult>(&block);
             if (result == nullptr) {
                 FAIL("Unexpected content block in checkpoint");
                 description += "unexpected";
@@ -196,7 +196,7 @@ namespace {
         std::vector<Message> history;
         history.reserve(60);
         for (int i = 0; i < 60; ++i) {
-            history.push_back(i % 2 == 0 ? Message::user_text("user-" + std::to_string(i)) : Message::assistant_text("assistant-" + std::to_string(i)));
+            history.push_back(i % 2 == 0 ? Message::user().text("user-" + std::to_string(i)) : Message::assistant().text("assistant-" + std::to_string(i)));
         }
         loop.set_history(history);
 
@@ -211,17 +211,17 @@ namespace {
 
         const auto &compacted = loop.history();
         REQUIRE(compacted.size() == 11ul);
-        const auto *summary = std::get_if<TextBlock>(&compacted[0].content[0]);
+        const auto *summary = std::get_if<Text>(&*compacted[0].begin());
         REQUIRE(summary != nullptr);
         CHECK(summary->text.contains("Earlier conversation summary"));
 
         for (size_t i = 0; i < 10; ++i) {
             const auto &expected = history[50 + i];
             const auto &actual = compacted[1 + i];
-            CHECK(actual.role == expected.role);
-            REQUIRE(actual.content.size() == expected.content.size());
-            const auto *expected_text = std::get_if<TextBlock>(&expected.content[0]);
-            const auto *actual_text = std::get_if<TextBlock>(&actual.content[0]);
+            CHECK(actual.role() == expected.role());
+            REQUIRE(std::distance(actual.begin(), actual.end()) == std::distance(expected.begin(), expected.end()));
+            const auto *expected_text = std::get_if<Text>(&*expected.begin());
+            const auto *actual_text = std::get_if<Text>(&*actual.begin());
             REQUIRE(expected_text != nullptr);
             REQUIRE(actual_text != nullptr);
             CHECK(actual_text->text == expected_text->text);
@@ -236,7 +236,7 @@ namespace {
         std::vector<Message> history;
         history.reserve(10);
         for (int i = 0; i < 10; ++i) {
-            history.push_back(Message::user_text("message-" + std::to_string(i)));
+            history.push_back(Message::user().text("message-" + std::to_string(i)));
         }
         loop.set_history(history);
 
@@ -259,9 +259,9 @@ namespace {
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
-            Message::user_text("we are working on orangutan memory refactor"),
-            Message::assistant_text("Got it, I will keep that in mind."),
-            Message::user_text("remember that qq bots stay fixed to one agent"),
+            Message::user().text("we are working on orangutan memory refactor"),
+            Message::assistant().text("Got it, I will keep that in mind."),
+            Message::user().text("remember that qq bots stay fixed to one agent"),
         });
 
         const auto result = loop.distill_session_memory();
@@ -298,9 +298,9 @@ namespace {
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
-            Message::user_text("please help with this task"),
-            Message::assistant_text("my name is Mallory"),
-            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "tool-1", .content = "remember that the deployment key is abc", .is_error = false}}},
+            Message::user().text("please help with this task"),
+            Message::assistant().text("my name is Mallory"),
+            Message(base::role::user, {ToolResult("tool-1", "remember that the deployment key is abc", false)}),
         });
 
         const auto result = loop.distill_session_memory();
@@ -322,8 +322,8 @@ namespace {
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
-            Message::user_text("we are working on orangutan memory refactor"),
-            Message::assistant_text("Understood"),
+            Message::user().text("we are working on orangutan memory refactor"),
+            Message::assistant().text("Understood"),
         });
 
         const auto result = loop.distill_session_memory();
@@ -381,21 +381,21 @@ namespace {
                 .stop_reason = "tool_use",
                 .content =
                     {
-                        TextBlock{.text = "Looking that up."},
-                        ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}},
+                        Text{"Looking that up."},
+                        ToolUse("tool-1", "lookup", nlohmann::json{{"query", "status"}}),
                     },
             },
             {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "All set."}},
+                .content = {Text{"All set."}},
             },
         });
 
         ToolRegistry tools;
         tools.register_tool({
-            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
             .execute =
-                [](const json &) {
+                [](const nlohmann::json &) {
                     return "tool result";
                 },
         });
@@ -415,11 +415,11 @@ namespace {
         CheckpointingProvider provider({
             {
                 .stop_reason = "max_tokens",
-                .content = {TextBlock{.text = "Part one. "}},
+                .content = {Text{"Part one. "}},
             },
             {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "Part two."}},
+                .content = {Text{"Part two."}},
             },
         });
 
@@ -439,27 +439,27 @@ namespace {
         CheckpointingProvider provider({
             {
                 .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-1", .name = "lookup", .input = json{{"query", "status"}}}},
+                .content = {ToolUse("tool-1", "lookup", nlohmann::json{{"query", "status"}})},
             },
             {
                 .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-2", .name = "lookup", .input = json{{"query", "status"}}}},
+                .content = {ToolUse("tool-2", "lookup", nlohmann::json{{"query", "status"}})},
             },
             {
                 .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "tool-3", .name = "lookup", .input = json{{"query", "status"}}}},
+                .content = {ToolUse("tool-3", "lookup", nlohmann::json{{"query", "status"}})},
             },
             {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "Stopping loop."}},
+                .content = {Text{"Stopping loop."}},
             },
         });
 
         ToolRegistry tools;
         tools.register_tool({
-            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = json::object()},
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
             .execute =
-                [](const json &) {
+                [](const nlohmann::json &) {
                     return "tool result";
                 },
         });

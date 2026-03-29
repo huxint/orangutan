@@ -65,7 +65,7 @@ namespace {
 
     const orangutan::automation::InboxItem *find_inbox_item_by_body_type(const std::vector<orangutan::automation::InboxItem> &items, const std::string &type) {
         const auto it = std::ranges::find_if(items, [&](const orangutan::automation::InboxItem &item) {
-            return json::parse(item.body).value("type", "") == type;
+            return nlohmann::json::parse(item.body).value("type", "") == type;
         });
         return it == items.end() ? nullptr : &(*it);
     }
@@ -114,9 +114,9 @@ namespace {
             std::filesystem::remove_all(workspace_root_);
         }
 
-        json start_background_shell(json input) {
+        nlohmann::json start_background_shell(nlohmann::json input) {
             input["background"] = true;
-            const auto result = registry_.execute(ToolUseBlock{
+            const auto result = registry_.execute(ToolUse{
                 .id = "background-shell",
                 .name = "shell",
                 .input = std::move(input),
@@ -127,7 +127,7 @@ namespace {
                 return {};
             }
 
-            return json::parse(result.content);
+            return nlohmann::json::parse(result.content);
         }
 
         std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
@@ -207,7 +207,7 @@ namespace {
         CHECK(on_complete.contains("properties"));
         CHECK(on_complete["properties"].contains("mode"));
         CHECK(on_complete["properties"].contains("prompt"));
-        CHECK(on_complete["properties"]["mode"]["enum"] == json::array({"inbox", "resume"}));
+        CHECK(on_complete["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox", "resume"}));
     };
 
     TEST_CASE("inbox_only_completion_routing_exposes_on_complete_but_rejects_resume") {
@@ -229,9 +229,9 @@ namespace {
 
         CHECK(shell->input_schema.contains("properties"));
         CHECK(shell->input_schema["properties"].contains("on_complete"));
-        CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == json::array({"inbox"}));
+        CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox"}));
 
-        const auto result = inbox_only_registry.execute(ToolUseBlock{
+        const auto result = inbox_only_registry.execute(ToolUse{
             .id = "inbox-only-resume",
             .name = "shell",
             .input =
@@ -264,7 +264,7 @@ namespace {
             return;
         }
 
-        const auto completion = json::parse(items.front().body);
+        const auto completion = nlohmann::json::parse(items.front().body);
         CHECK(completion.at("type") == "background_process_completion");
         CHECK(completion.at("process_id") == start_payload.at("process_id"));
         CHECK(completion.at("on_complete").at("mode") == "inbox");
@@ -287,8 +287,8 @@ namespace {
             return;
         }
 
-        const auto inbox_completion = json::parse(items.front().body);
-        const auto resume_completion = json::parse(resume_messages.front());
+        const auto inbox_completion = nlohmann::json::parse(items.front().body);
+        const auto resume_completion = nlohmann::json::parse(resume_messages.front());
 
         CHECK(inbox_completion.at("process_id") == start_payload.at("process_id"));
         CHECK(inbox_completion.at("on_complete").at("mode") == "resume");
@@ -319,8 +319,8 @@ namespace {
             return;
         }
 
-        const auto inbox_completion = json::parse(items.front().body);
-        const auto resume_completion = json::parse(resume_messages.front());
+        const auto inbox_completion = nlohmann::json::parse(items.front().body);
+        const auto resume_completion = nlohmann::json::parse(resume_messages.front());
         const auto inbox_prompt = inbox_completion.at("on_complete").at("prompt").get<std::string>();
         const auto resume_prompt = resume_completion.at("on_complete").at("prompt").get<std::string>();
 
@@ -351,7 +351,7 @@ namespace {
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
-        const auto result = unsupported_registry.execute(ToolUseBlock{
+        const auto result = unsupported_registry.execute(ToolUse{
             .id = "unsupported-on-complete",
             .name = "shell",
             .input =
@@ -392,8 +392,8 @@ namespace {
             return;
         }
 
-        const auto inbox_payload = json::parse(items.front().body);
-        const auto resume_payload = json::parse(resume_messages.front());
+        const auto inbox_payload = nlohmann::json::parse(items.front().body);
+        const auto resume_payload = nlohmann::json::parse(resume_messages.front());
 
         CHECK(inbox_payload.at("stdout").at("tail").get<std::string>().contains("[REDACTED]"));
         CHECK(inbox_payload.at("stderr").at("tail").get<std::string>().contains("[REDACTED]"));
@@ -462,8 +462,8 @@ namespace {
             return;
         }
 
-        const auto inbox_payload = json::parse(items.front().body);
-        const auto resume_payload = json::parse(resume_messages.front());
+        const auto inbox_payload = nlohmann::json::parse(items.front().body);
+        const auto resume_payload = nlohmann::json::parse(resume_messages.front());
         const std::string expected_prompt = "Prompt \xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
         const std::string expected_stdout = "ok\xE4\xB8\xAD";
         const std::string expected_stderr = "err";
@@ -490,8 +490,8 @@ namespace {
                     return LLMResponse{};
                 }
 
-                CHECK(messages.back().role == Role::user);
-                const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
+                CHECK(messages.back().role() == base::role::user);
+                const auto *text = messages.back().begin() == messages.back().end() ? nullptr : std::get_if<Text>(&*messages.back().begin());
                 INFO("expected trailing user text block");
                 CHECK(text != nullptr);
                 if (text != nullptr) {
@@ -500,7 +500,7 @@ namespace {
 
                 LLMResponse response;
                 response.stop_reason = "end_turn";
-                response.content.emplace_back(TextBlock{.text = "resume complete"});
+                response.content.emplace_back(Text{"resume complete"});
                 return response;
             },
         });
@@ -524,7 +524,7 @@ namespace {
         CHECK(provider_started.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         CHECK(resume_result.get() == std::nullopt);
         CHECK(agent.history().size() >= 2U);
-        CHECK(agent.history().back().role == Role::assistant);
+        CHECK(agent.history().back().role() == base::role::assistant);
     };
 
     TEST_CASE("resume_dispatch_failures_become_inbox_visible_notes") {
@@ -564,8 +564,8 @@ namespace {
             return;
         }
 
-        const auto completion = json::parse(completion_item->body);
-        const auto failure = json::parse(failure_item->body);
+        const auto completion = nlohmann::json::parse(completion_item->body);
+        const auto failure = nlohmann::json::parse(failure_item->body);
 
         CHECK(completion.at("process_id") == "proc-test");
         CHECK(completion.at("on_complete").at("mode") == "resume");

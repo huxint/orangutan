@@ -17,15 +17,15 @@ namespace {
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "hello"}},
+                .content = {Text{"hello"}},
             };
         }
 
         LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
-            on_event("text_delta", json{{"text", "hello"}});
+            on_event("text_delta", nlohmann::json{{"text", "hello"}});
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "hello"}},
+                .content = {Text{"hello"}},
             };
         }
 
@@ -39,24 +39,24 @@ namespace {
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "done"}},
+                .content = {Text{"done"}},
             };
         }
 
         LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
             if (!tool_round_completed_) {
-                on_event("tool_call_start", json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", json{{"value", 1}}}});
+                on_event("tool_call_start", nlohmann::json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", nlohmann::json{{"value", 1}}}});
                 tool_round_completed_ = true;
                 return {
                     .stop_reason = "tool_use",
-                    .content = {ToolUseBlock{.id = "tool-1", .name = "fake_tool", .input = {{"value", 1}}}},
+                    .content = {ToolUse("tool-1", "fake_tool", nlohmann::json{{"value", 1}})},
                 };
             }
 
-            on_event("text_delta", json{{"text", "done"}});
+            on_event("text_delta", nlohmann::json{{"text", "done"}});
             return {
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "done"}},
+                .content = {Text{"done"}},
             };
         }
 
@@ -95,11 +95,11 @@ namespace {
         Config cfg;
         cfg.auto_save = true;
 
-        std::vector<json> events;
+        std::vector<nlohmann::json> events;
         std::string current_session_id;
         const auto status = app::run_single_message(
             agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
-            [&events](const json &event) {
+            [&events](const nlohmann::json &event) {
                 events.push_back(event);
             },
             std::cerr);
@@ -124,9 +124,9 @@ namespace {
         ToolStreamingProvider provider;
         ToolRegistry tools;
         tools.register_tool({
-            .definition = {.name = "fake_tool", .description = "fake", .input_schema = json::object()},
+            .definition = {.name = "fake_tool", .description = "fake", .input_schema = nlohmann::json::object()},
             .execute =
-                [](const json &) {
+                [](const nlohmann::json &) {
                     return std::string{"ok"};
                 },
         });
@@ -135,11 +135,11 @@ namespace {
         Config cfg;
         cfg.auto_save = false;
 
-        std::vector<json> events;
+        std::vector<nlohmann::json> events;
         std::string current_session_id;
         const auto status = app::run_single_message(
             agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
-            [&events](const json &event) {
+            [&events](const nlohmann::json &event) {
                 events.push_back(event);
             },
             std::cerr);
@@ -163,8 +163,8 @@ namespace {
     };
 
     TEST_CASE("emit_session_history_dump_wraps_history_with_lifecycle_events") {
-        std::vector<json> events;
-        app::emit_session_history_dump({Message::user_text("hello")}, "session-1", [&events](const json &event) {
+        std::vector<nlohmann::json> events;
+        app::emit_session_history_dump({Message::user().text("hello")}, "session-1", [&events](const nlohmann::json &event) {
             events.push_back(event);
         });
 

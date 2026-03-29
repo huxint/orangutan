@@ -9,34 +9,34 @@ namespace orangutan::app {
     namespace {
 
         std::string message_heading(const Message &message, size_t index) {
-            if (message.role == Role::user) {
+            if (message.role() == base::role::user) {
                 return "User " + std::to_string(index + 1);
             }
-            if (message.role == Role::assistant) {
+            if (message.role() == base::role::assistant) {
                 return "Assistant " + std::to_string(index + 1);
             }
-            return std::string(magic_enum::enum_name(message.role)) + " " + std::to_string(index + 1);
+            return std::string(magic_enum::enum_name(message.role())) + " " + std::to_string(index + 1);
         }
 
         void append_message_markdown(std::FILE *file, const Message &message, size_t index) {
             spdlog::fmt_lib::println(file, "## {}\n", message_heading(message, index));
 
-            if (message.content.empty()) {
+            if (message.empty()) {
                 spdlog::fmt_lib::println(file, "_Empty message._\n");
                 return;
             }
 
-            for (const auto &block : message.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
+            for (const auto &block : message) {
+                if (const auto *text = std::get_if<Text>(&block)) {
                     spdlog::fmt_lib::println(file, "{}\n", text->text);
                     continue;
                 }
-                if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                if (const auto *tool = std::get_if<ToolUse>(&block)) {
                     spdlog::fmt_lib::println(file, "### Tool Use: `{}`\n", tool->name);
                     spdlog::fmt_lib::println(file, "```json\n{}\n```\n", tool->input.dump(2));
                     continue;
                 }
-                if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
+                if (const auto *result = std::get_if<ToolResult>(&block)) {
                     spdlog::fmt_lib::println(file, "{}\n", result->is_error ? "### Tool Result (error)" : "### Tool Result");
                     spdlog::fmt_lib::println(file, "```text\n{}\n```\n", result->content);
                 }

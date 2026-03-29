@@ -70,7 +70,7 @@ namespace {
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
             input.current_session_id = &current_session_id_;
-            input.runtime_origin = SubagentRuntimeOrigin::cli;
+            input.runtime_origin = base::origin::cli;
             input.raw_caller_id = "cli:local";
             return input;
         }
@@ -180,7 +180,7 @@ namespace {
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));
         CHECK(shell->input_schema["properties"].contains("on_complete"));
-        CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == json::array({"inbox", "resume"}));
+        CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox", "resume"}));
 
         input.background_completion_runtime.reset();
         CHECK(runtime.tool_context.background_completion_runtime != nullptr);
@@ -242,10 +242,10 @@ namespace {
             return moved;
         }();
 
-        const auto result = moved_runtime.tools.execute(ToolUseBlock{
+        const auto result = moved_runtime.tools.execute(ToolUse{
             .id = "custom-echo",
             .name = "custom_echo",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         });
 
         CHECK(result.is_error);
@@ -294,7 +294,7 @@ namespace {
 
         const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
         CHECK(inbox_items.size() == 1ul);
-        CHECK(json::parse(inbox_items.front().body).at("process_id") == "proc-shared");
+        CHECK(nlohmann::json::parse(inbox_items.front().body).at("process_id") == "proc-shared");
         CHECK(resume_callback_count == 1ul);
     };
 

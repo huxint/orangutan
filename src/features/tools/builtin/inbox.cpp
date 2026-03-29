@@ -7,7 +7,7 @@
 namespace orangutan {
     namespace {
 
-        std::string execute_inbox_tool(const json &input, const ToolRuntimeContext *ctx) {
+        std::string execute_inbox_tool(const nlohmann::json &input, const ToolRuntimeContext *ctx) {
             if (ctx == nullptr || ctx->automation_runtime == nullptr) {
                 return "Error: inbox tool is not available in this context.";
             }
@@ -65,14 +65,14 @@ namespace orangutan {
                             {"type", "object"},
                             {"properties",
                              {
-                                 {"op", {{"type", "string"}, {"enum", json::array({"list", "ack", "clear"})}}},
+                                 {"op", {{"type", "string"}, {"enum", nlohmann::json::array({"list", "ack", "clear"})}}},
                                  {"id", {{"type", "string"}}},
                              }},
-                            {"required", json::array({"op"})},
+                            {"required", nlohmann::json::array({"op"})},
                         },
                 },
             .execute =
-                [tool_context](const json &input) {
+                [tool_context](const nlohmann::json &input) {
                     return execute_inbox_tool(input, tool_context);
                 },
         });

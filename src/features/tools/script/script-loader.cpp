@@ -28,7 +28,7 @@ namespace orangutan {
 
     // ── Parameter Substitution ──────────────────────
 
-    std::string substitute_params(const std::string &command_template, const json &input, const std::unordered_map<std::string, std::string> &schema) {
+    std::string substitute_params(const std::string &command_template, const nlohmann::json &input, const std::unordered_map<std::string, std::string> &schema) {
         std::string result;
         result.reserve(command_template.size());
         const auto template_view = std::string_view{command_template};
@@ -61,9 +61,9 @@ namespace orangutan {
 
     // ── JSON Schema Generation ──────────────────────
 
-    json generate_input_schema(const std::unordered_map<std::string, std::string> &schema) {
-        json properties = json::object();
-        json required = json::array();
+    nlohmann::json generate_input_schema(const std::unordered_map<std::string, std::string> &schema) {
+        nlohmann::json properties = nlohmann::json::object();
+        nlohmann::json required = nlohmann::json::array();
 
         for (const auto &[name, type_str] : schema) {
             std::string json_type = type_str;
@@ -98,7 +98,7 @@ namespace orangutan {
                                  ToolApprovalCallback approval_callback) {
         return Tool{
             .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
-            .execute = [config, workspace, permissions, tool_context, approval_callback = std::move(approval_callback)](const json &input) -> std::string {
+            .execute = [config, workspace, permissions, tool_context, approval_callback = std::move(approval_callback)](const nlohmann::json &input) -> std::string {
                 std::string command = substitute_params(config.command, input, config.input_schema);
                 const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
                 const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
@@ -106,7 +106,7 @@ namespace orangutan {
                 const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
 
                 if (permissions != nullptr) {
-                    const ToolUseBlock synthetic_call{
+                    const ToolUse synthetic_call{
                         .id = config.name,
                         .name = config.name,
                         .input = input,

@@ -33,10 +33,10 @@ namespace orangutan {
                 return;
             }
 
-            json event_data;
+            nlohmann::json event_data;
             try {
-                event_data = json::parse(data);
-            } catch (const json::parse_error &e) {
+                event_data = nlohmann::json::parse(data);
+            } catch (const nlohmann::json::parse_error &e) {
                 spdlog::warn("Failed to parse OpenAI SSE data: {}", e.what());
                 return;
             }
@@ -61,23 +61,23 @@ namespace orangutan {
             response.stop_reason = stop_reason_.empty() ? "end_turn" : stop_reason_;
 
             if (!reasoning_content_.empty()) {
-                response.content.emplace_back(ThinkingBlock{.thinking = reasoning_content_});
+                response.content.emplace_back(Thinking{reasoning_content_});
             }
 
             if (!text_content_.empty()) {
-                response.content.emplace_back(TextBlock{.text = text_content_});
+                response.content.emplace_back(Text{text_content_});
             }
 
             for (const auto &tc : tool_calls_) {
-                json input = json::object();
+                nlohmann::json input = nlohmann::json::object();
                 if (!tc.arguments.empty()) {
                     try {
-                        input = json::parse(tc.arguments);
-                    } catch (const json::parse_error &) {
+                        input = nlohmann::json::parse(tc.arguments);
+                    } catch (const nlohmann::json::parse_error &) {
                         spdlog::warn("Failed to parse OpenAI tool call arguments");
                     }
                 }
-                response.content.emplace_back(ToolUseBlock{.id = tc.id, .name = tc.name, .input = std::move(input)});
+                response.content.emplace_back(ToolUse(tc.id, tc.name, std::move(input)));
             }
 
             return response;
@@ -97,25 +97,25 @@ namespace orangutan {
         std::vector<ToolCallState> tool_calls_;
         std::string stop_reason_;
 
-        void handle_finish_reason(const json &choice) {
+        void handle_finish_reason(const nlohmann::json &choice) {
             if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
                 stop_reason_ = map_finish_reason(choice["finish_reason"].get<std::string>());
             }
         }
 
-        void handle_text_delta(const json &delta) {
+        void handle_text_delta(const nlohmann::json &delta) {
             if (!delta.contains("content") || delta["content"].is_null()) {
                 return;
             }
             auto text = delta["content"].get<std::string>();
             text_content_ += text;
 
-            json delta_event;
+            nlohmann::json delta_event;
             delta_event["text"] = text;
             on_event_("text_delta", delta_event);
         }
 
-        void handle_reasoning_delta(const json &delta) {
+        void handle_reasoning_delta(const nlohmann::json &delta) {
             if (!delta.contains("reasoning_content") || delta["reasoning_content"].is_null()) {
                 return;
             }
@@ -124,7 +124,7 @@ namespace orangutan {
             on_event_("thinking_delta", {{"thinking", text}});
         }
 
-        void handle_tool_call_deltas(const json &delta) {
+        void handle_tool_call_deltas(const nlohmann::json &delta) {
             if (!delta.contains("tool_calls")) {
                 return;
             }
@@ -151,10 +151,10 @@ namespace orangutan {
                 }
 
                 if (!call.announced && !call.id.empty() && !call.name.empty()) {
-                    json event;
+                    nlohmann::json event;
                     event["id"] = call.id;
                     event["name"] = call.name;
-                    event["input"] = json::object();
+                    event["input"] = nlohmann::json::object();
                     on_event_("tool_call_start", event);
                     call.announced = true;
                 }
@@ -169,22 +169,22 @@ namespace orangutan {
       model_(std::move(model)),
       base_url_(std::move(base_url)) {}
 
-    json OpenAiProvider::message_to_openai(const Message &msg) {
+    nlohmann::json OpenAiProvider::message_to_openai(const Message &msg) {
         // Handle assistant messages with tool calls
-        if (msg.role == Role::assistant) {
-            json j;
+        if (msg.role() == base::role::assistant) {
+            nlohmann::json j;
             j["role"] = "assistant";
 
             std::string text_content;
-            json tool_calls = json::array();
+            nlohmann::json tool_calls = nlohmann::json::array();
 
-            for (const auto &block : msg.content) {
-                if (std::get_if<ThinkingBlock>(&block) != nullptr) {
+            for (const auto &block : msg) {
+                if (std::get_if<Thinking>(&block) != nullptr) {
                     continue; // OpenAI does not accept reasoning blocks in requests
                 }
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
+                if (const auto *text = std::get_if<Text>(&block)) {
                     text_content += text->text;
-                } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                } else if (const auto *tool = std::get_if<ToolUse>(&block)) {
                     tool_calls.push_back({{"id", tool->id}, {"type", "function"}, {"function", {{"name", tool->name}, {"arguments", tool->input.dump()}}}});
                 }
             }
@@ -203,11 +203,11 @@ namespace orangutan {
         }
 
         // Handle user messages with tool results
-        if (msg.role == Role::user) {
+        if (msg.role() == base::role::user) {
             // Check if this contains tool results
-            for (const auto &block : msg.content) {
-                if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
-                    json j;
+            for (const auto &block : msg) {
+                if (const auto *result = std::get_if<ToolResult>(&block)) {
+                    nlohmann::json j;
                     j["role"] = "tool";
                     j["tool_call_id"] = result->tool_use_id;
                     j["content"] = result->content;
@@ -217,8 +217,8 @@ namespace orangutan {
 
             // Regular user message — combine text blocks
             std::string text;
-            for (const auto &block : msg.content) {
-                if (const auto *tb = std::get_if<TextBlock>(&block)) {
+            for (const auto &block : msg) {
+                if (const auto *tb = std::get_if<Text>(&block)) {
                     text += tb->text;
                 }
             }
@@ -226,12 +226,12 @@ namespace orangutan {
         }
 
         // Fallback
-        return {{"role", magic_enum::enum_name(msg.role)}, {"content", ""}};
+        return {{"role", magic_enum::enum_name(msg.role())}, {"content", ""}};
     }
 
-    json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
-                                            bool stream) const {
-        json body;
+    nlohmann::json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
+                                                      bool stream) const {
+        nlohmann::json body;
         body["model"] = model_;
         body["max_tokens"] = max_tokens;
 
@@ -240,26 +240,26 @@ namespace orangutan {
         }
 
         // Build messages array — system prompt is a message in OpenAI format
-        body["messages"] = json::array();
+        body["messages"] = nlohmann::json::array();
         if (!system_prompt.empty()) {
             body["messages"].push_back({{"role", "system"}, {"content", system_prompt}});
         }
 
         for (const auto &msg : messages) {
             // A user message might contain multiple tool results — each becomes a separate message
-            if (msg.role == Role::user) {
+            if (msg.role() == base::role::user) {
                 bool has_tool_results = false;
                 std::string user_text;
 
-                for (const auto &block : msg.content) {
-                    if (const auto *result = std::get_if<ToolResultBlock>(&block)) {
+                for (const auto &block : msg) {
+                    if (const auto *result = std::get_if<ToolResult>(&block)) {
                         has_tool_results = true;
-                        json tool_msg;
+                        nlohmann::json tool_msg;
                         tool_msg["role"] = "tool";
                         tool_msg["tool_call_id"] = result->tool_use_id;
                         tool_msg["content"] = result->content;
                         body["messages"].push_back(std::move(tool_msg));
-                    } else if (const auto *tb = std::get_if<TextBlock>(&block)) {
+                    } else if (const auto *tb = std::get_if<Text>(&block)) {
                         user_text += tb->text;
                     }
                 }
@@ -277,7 +277,7 @@ namespace orangutan {
 
         // Tools in OpenAI format
         if (!tools.empty()) {
-            body["tools"] = json::array();
+            body["tools"] = nlohmann::json::array();
             for (const auto &tool : tools) {
                 body["tools"].push_back({{"type", "function"}, {"function", {{"name", tool.name}, {"description", tool.description}, {"parameters", tool.input_schema}}}});
             }
@@ -299,7 +299,7 @@ namespace orangutan {
         std::string url = base_url_ + "/v1/chat/completions";
         auto response_body = http_post(url, request_body, headers);
 
-        json resp = json::parse(response_body);
+        nlohmann::json resp = nlohmann::json::parse(response_body);
 
         if (resp.contains("error")) {
             std::string err_msg = "API error";
@@ -338,7 +338,7 @@ namespace orangutan {
         return accumulator.build_response();
     }
 
-    LLMResponse OpenAiProvider::parse_response(const json &resp) {
+    LLMResponse OpenAiProvider::parse_response(const nlohmann::json &resp) {
         LLMResponse result;
 
         if (!resp.contains("choices") || resp["choices"].empty()) {
@@ -354,27 +354,27 @@ namespace orangutan {
 
         // Reasoning content (OpenAI reasoning models)
         if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
-            result.content.emplace_back(ThinkingBlock{.thinking = message["reasoning_content"].get<std::string>()});
+            result.content.emplace_back(Thinking{message["reasoning_content"].get<std::string>()});
         }
 
         // Text content
         if (message.contains("content") && !message["content"].is_null()) {
-            result.content.emplace_back(TextBlock{.text = message["content"].get<std::string>()});
+            result.content.emplace_back(Text{message["content"].get<std::string>()});
         }
 
         // Tool calls
         if (message.contains("tool_calls")) {
             for (const auto &tc : message["tool_calls"]) {
                 auto func = tc["function"];
-                json input = json::object();
+                nlohmann::json input = nlohmann::json::object();
                 if (func.contains("arguments") && !func["arguments"].is_null()) {
                     try {
-                        input = json::parse(func["arguments"].get<std::string>());
-                    } catch (const json::parse_error &) {
+                        input = nlohmann::json::parse(func["arguments"].get<std::string>());
+                    } catch (const nlohmann::json::parse_error &) {
                         spdlog::warn("Failed to parse OpenAI tool call arguments");
                     }
                 }
-                result.content.emplace_back(ToolUseBlock{.id = tc["id"].get<std::string>(), .name = func["name"].get<std::string>(), .input = std::move(input)});
+                result.content.emplace_back(ToolUse(tc["id"].get<std::string>(), func["name"].get<std::string>(), std::move(input)));
             }
         }
 

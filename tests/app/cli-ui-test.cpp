@@ -58,10 +58,10 @@ namespace {
 
         orangutan::AgentLoop agent(provider, tools);
         agent.set_history({
-            orangutan::Message::user_text("hello"),
-            {.role = orangutan::Role::assistant, .content = {orangutan::ToolUseBlock{.id = "call-1", .name = "shell", .input = nlohmann::json{{"command", "pwd"}}}}},
-            {.role = orangutan::Role::user, .content = {orangutan::ToolResultBlock{.tool_use_id = "call-1", .content = "permission denied", .is_error = true}}},
-            orangutan::Message::assistant_text("done"),
+            orangutan::Message::user().text("hello"),
+            Message(base::role::assistant, {orangutan::ToolUse("call-1", "shell", nlohmann::json{{"command", "pwd"}})}),
+            Message(base::role::user, {orangutan::ToolResult("call-1", "permission denied", true)}),
+            orangutan::Message::assistant().text("done"),
         });
 
         const auto status = orangutan::app::collect_runtime_status(agent, provider, &tools, "session-1", "coder", "gpt-primary", {"gpt-fallback"}, "scope:coder");

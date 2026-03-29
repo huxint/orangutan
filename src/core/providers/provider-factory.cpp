@@ -71,7 +71,7 @@ namespace orangutan {
                                     int max_tokens, int thinking_budget) override {
                 return execute_with_fallback([&](Provider &provider) {
                     bool emitted_output = false;
-                    auto tracking_callback = [&on_event, &emitted_output](const std::string &event_type, const json &data) {
+                    auto tracking_callback = [&on_event, &emitted_output](const std::string &event_type, const nlohmann::json &data) {
                         emitted_output = true;
                         if (on_event != nullptr) {
                             on_event(event_type, data);

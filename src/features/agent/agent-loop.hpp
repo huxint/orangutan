@@ -14,7 +14,7 @@ namespace orangutan {
 
     class AgentLoop {
     public:
-        using ToolEventCallback = std::function<void(const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result)>;
+        using ToolEventCallback = std::function<void(const std::string &event_type, const ToolUse &call, const ToolResult *result)>;
         using HistoryCheckpointCallback = std::function<void(const std::vector<Message> &history)>;
         struct HistoryCompactionResult {
             bool compacted = false;
@@ -97,10 +97,10 @@ namespace orangutan {
         std::unordered_map<ToolCallSignature, int, SignatureHash> call_counts_;
 
         // Returns true if loop detected (and injects correction message)
-        bool check_loop_detection(const ToolUseBlock &call);
+        bool check_loop_detection(const ToolUse &call);
 
         // Execute tools, check for loops, return (result_blocks, loop_detected)
-        std::pair<std::vector<ContentBlock>, bool> execute_tools(const std::vector<ToolUseBlock> &calls, bool human_output, const ToolEventCallback &on_tool_event);
+        std::pair<std::vector<Content>, bool> execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event);
 
         // Handle max_tokens continuation (returns appended text)
         std::string handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,

@@ -23,30 +23,30 @@ namespace orangutan {
             return std::filesystem::path(home) / ".orangutan" / "sessions.db";
         }
 
-        json serialize_content(const std::vector<ContentBlock> &content) {
-            auto arr = json::array();
-            for (const auto &block : content) {
+        nlohmann::json serialize_content(const Message &message) {
+            auto arr = nlohmann::json::array();
+            for (const auto &block : message) {
                 arr.push_back(content_block_to_json(block));
             }
             return arr;
         }
 
-        std::vector<ContentBlock> deserialize_content(const std::string &json_str) {
-            std::vector<ContentBlock> blocks;
-            const auto arr = json::parse(json_str);
+        std::vector<Content> deserialize_content(const std::string &json_str) {
+            std::vector<Content> blocks;
+            const auto arr = nlohmann::json::parse(json_str);
 
             for (const auto &item : arr) {
                 const auto type = item.at("type").get<std::string>();
                 if (type == "text") {
-                    blocks.emplace_back(TextBlock{.text = item.at("text").get<std::string>()});
+                    blocks.emplace_back(Text{item.at("text").get<std::string>()});
                     continue;
                 }
                 if (type == "tool_use") {
-                    blocks.emplace_back(ToolUseBlock{.id = item.at("id").get<std::string>(), .name = item.at("name").get<std::string>(), .input = item.at("input")});
+                    blocks.emplace_back(ToolUse(item.at("id").get<std::string>(), item.at("name").get<std::string>(), item.at("input")));
                     continue;
                 }
                 if (type == "tool_result") {
-                    blocks.emplace_back(ToolResultBlock{
+                    blocks.emplace_back(ToolResult{
                         .tool_use_id = item.at("tool_use_id").get<std::string>(),
                         .content = item.at("content").get<std::string>(),
                         .is_error = item.value("is_error", false),
@@ -54,7 +54,7 @@ namespace orangutan {
                     continue;
                 }
                 if (type == "thinking") {
-                    blocks.emplace_back(ThinkingBlock{.thinking = item.at("thinking").get<std::string>()});
+                    blocks.emplace_back(Thinking{item.at("thinking").get<std::string>()});
                 }
             }
 
@@ -124,11 +124,11 @@ namespace orangutan {
             sqlite::Statement insert_msg(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
             for (size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
-                const auto content_json = serialize_content(message.content).dump();
+                const auto content_json = serialize_content(message).dump();
 
                 insert_msg.bind_text(1, session_id);
                 insert_msg.bind_int(2, static_cast<int>(index));
-                insert_msg.bind_text(3, magic_enum::enum_name(message.role));
+                insert_msg.bind_text(3, magic_enum::enum_name(message.role()));
                 insert_msg.bind_text(4, content_json);
                 static_cast<void>(insert_msg.step());
                 insert_msg.reset();
@@ -343,10 +343,24 @@ namespace orangutan {
 
         std::vector<Message> messages;
         while (stmt.step()) {
-            messages.push_back({
-                .role = magic_enum::enum_cast<Role>(stmt.column_text(0)).value_or(Role::user),
-                .content = deserialize_content(stmt.column_text(1)),
-            });
+            Message message{magic_enum::enum_cast<base::role>(stmt.column_text(0)).value_or(base::role::user)};
+            for (auto &block : deserialize_content(stmt.column_text(1))) {
+                std::visit(
+                    [&](auto &&item) {
+                        using T = std::decay_t<decltype(item)>;
+                        if constexpr (std::same_as<T, Text>) {
+                            message.text(std::move(item));
+                        } else if constexpr (std::same_as<T, Thinking>) {
+                            message.thinking(std::move(item));
+                        } else if constexpr (std::same_as<T, ToolUse>) {
+                            message.tool_use(std::move(item));
+                        } else if constexpr (std::same_as<T, ToolResult>) {
+                            message.tool_result(std::move(item));
+                        }
+                    },
+                    block);
+            }
+            messages.push_back(std::move(message));
         }
 
         if (messages.empty() && !session_exists(db_, session_id)) {

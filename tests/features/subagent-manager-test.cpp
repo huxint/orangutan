@@ -89,7 +89,7 @@ namespace {
         [[nodiscard]]
         static SubagentCallerContext sample_caller_context(const std::string &parent_session_id, bool is_child_run = false) {
             return SubagentCallerContext{
-                .runtime_origin = SubagentRuntimeOrigin::cli,
+                .runtime_origin = base::origin::cli,
                 .runtime_key = "runtime:cli:default",
                 .agent_key = "default",
                 .scope_key = "scope:parent",
@@ -260,13 +260,13 @@ namespace {
                                                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                                                            return LLMResponse{
                                                                .stop_reason = "tool_use",
-                                                               .content = {ToolUseBlock{.id = "child-shell", .name = "shell", .input = {{"command", "echo child"}}}},
+                                                               .content = {ToolUse("child-shell", "shell", nlohmann::json{{"command", "echo child"}})},
                                                            };
                                                        });
                                                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
                                                            return LLMResponse{
                                                                .stop_reason = "end_turn",
-                                                               .content = {TextBlock{.text = "child completed"}},
+                                                               .content = {Text{"child completed"}},
                                                            };
                                                        });
                                                        return std::make_unique<ScriptedProvider>(std::move(steps));
@@ -276,7 +276,7 @@ namespace {
         auto caller = SubagentManagerHarness::sample_caller_context(std::string{});
         caller.session_id = std::nullopt;
         caller.allowed_child_agents = {"coder"};
-        caller.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+        caller.approval_callback = [&prompted](const ToolUse &call, const std::string &prompt_text) {
             prompted = true;
             CHECK(call.name == "shell");
             CHECK(prompt_text.contains("echo child"));
@@ -340,7 +340,7 @@ namespace {
 
                                                            return LLMResponse{
                                                                .stop_reason = "end_turn",
-                                                               .content = {TextBlock{.text = "child completed"}},
+                                                               .content = {Text{"child completed"}},
                                                            };
                                                        });
                                                        return std::make_unique<ScriptedProvider>(std::move(steps));

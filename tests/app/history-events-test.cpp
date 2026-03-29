@@ -7,7 +7,7 @@ using namespace orangutan;
 namespace {
 
     TEST_CASE("build_edit_details_produces_unified_diff") {
-        ToolUseBlock call{
+        ToolUse call{
             .id = "edit-1",
             .name = "edit",
             .input = {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}},
@@ -25,9 +25,9 @@ namespace {
 
     TEST_CASE("build_session_history_events_includes_tool_lifecycle_and_details") {
         const std::vector<Message> history{
-            Message::user_text("hello"),
-            {.role = Role::assistant, .content = {ToolUseBlock{.id = "edit-1", .name = "edit", .input = {{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}}}}},
-            {.role = Role::user, .content = {ToolResultBlock{.tool_use_id = "edit-1", .content = "done", .is_error = false}}},
+            Message::user().text("hello"),
+            Message(base::role::assistant, {ToolUse("edit-1", "edit", nlohmann::json{{"path", "a.txt"}, {"old_text", "a"}, {"new_text", "b"}})}),
+            Message(base::role::user, {ToolResult("edit-1", "done", false)}),
         };
 
         const auto events = app::build_session_history_events(history);

@@ -123,12 +123,12 @@ namespace orangutan::automation {
     [[nodiscard]]
     TimePoint from_unix_seconds(std::int64_t seconds);
     [[nodiscard]]
-    json delivery_policy_to_json(const DeliveryPolicy &delivery);
+    nlohmann::json delivery_policy_to_json(const DeliveryPolicy &delivery);
     [[nodiscard]]
-    DeliveryPolicy delivery_policy_from_json(const json &value);
+    DeliveryPolicy delivery_policy_from_json(const nlohmann::json &value);
     [[nodiscard]]
-    json active_hours_to_json(const std::vector<ActiveHourWindow> &windows);
+    nlohmann::json active_hours_to_json(const std::vector<ActiveHourWindow> &windows);
     [[nodiscard]]
-    std::vector<ActiveHourWindow> active_hours_from_json(const json &value);
+    std::vector<ActiveHourWindow> active_hours_from_json(const nlohmann::json &value);
 
 } // namespace orangutan::automation

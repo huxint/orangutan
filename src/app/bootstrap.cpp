@@ -174,7 +174,7 @@ namespace {
         return (std::filesystem::path(home) / ".orangutan" / "workspace" / "main").lexically_normal().string();
     }
 
-    void emit_json_event(const orangutan::json &event) {
+    void emit_json_event(const nlohmann::json &event) {
         spdlog::fmt_lib::println("{}", event.dump());
         std::fflush(stdout);
     }
@@ -255,7 +255,7 @@ namespace {
             return {};
         }
 
-        return [](const orangutan::ToolUseBlock &, const std::string &prompt_text) {
+        return [](const orangutan::ToolUse &, const std::string &prompt_text) {
             spdlog::fmt_lib::print("\n{}\nApprove? [y/N]: ", prompt_text);
             std::fflush(stdout);
             std::string answer;
@@ -989,7 +989,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                     .memory_store = memory_store,
                     .current_session_id = &current_session_id,
                     .subagent_manager = &subagent_manager,
-                    .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
+                    .runtime_origin = orangutan::base::origin::cli,
                     .raw_caller_id = identity.runtime_key,
                     .automation_runtime = &app_runtime.automation_runtime(),
                     .custom_tools = cfg.custom_tools,
@@ -1063,7 +1063,7 @@ int orangutan::app::run_bootstrap(int argc, char **argv) {
                 .memory_store = memory_store.get(),
                 .current_session_id = &current_session_id,
                 .subagent_manager = &subagent_manager,
-                .runtime_origin = orangutan::SubagentRuntimeOrigin::cli,
+                .runtime_origin = orangutan::base::origin::cli,
                 .raw_caller_id = "cli:local",
                 .automation_runtime = &app_runtime.automation_runtime(),
                 .approval_callback = approval_callback,

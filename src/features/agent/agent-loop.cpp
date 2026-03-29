@@ -35,7 +35,7 @@ namespace orangutan {
     // Creates a streaming callback that mirrors text deltas to either stdout
     // (interactive CLI) or a structured observer (TUI/event-stream mode).
     static StreamCallback make_stream_callback(bool &first_text, bool human_output, const StreamCallback &on_event) {
-        return [&first_text, human_output, &on_event](const std::string &event_type, const json &data) {
+        return [&first_text, human_output, &on_event](const std::string &event_type, const nlohmann::json &data) {
             if (event_type == "thinking_delta") {
                 if (human_output && first_text) {
                     spdlog::fmt_lib::print("\n{}", spdlog::fmt_lib::styled("orangutan> ", spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::green)));
@@ -66,8 +66,8 @@ namespace orangutan {
 
     // Separates response content into text and tool_use blocks
     struct ResponseParts {
-        std::vector<ContentBlock> all_blocks;
-        std::vector<ToolUseBlock> tool_calls;
+        std::vector<Content> all_blocks;
+        std::vector<ToolUse> tool_calls;
         std::string text;
     };
 
@@ -193,9 +193,9 @@ namespace orangutan {
         ResponseParts parts;
         for (const auto &block : response.content) {
             parts.all_blocks.push_back(block);
-            if (const auto *text = std::get_if<TextBlock>(&block)) {
+            if (const auto *text = std::get_if<Text>(&block)) {
                 parts.text += text->text;
-            } else if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+            } else if (const auto *tool = std::get_if<ToolUse>(&block)) {
                 parts.tool_calls.push_back(*tool);
             }
         }
@@ -210,7 +210,7 @@ namespace orangutan {
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
 
-    bool AgentLoop::check_loop_detection(const ToolUseBlock &call) {
+    bool AgentLoop::check_loop_detection(const ToolUse &call) {
         auto input_hash = std::hash<std::string>{}(call.input.dump());
         ToolCallSignature sig{.name = call.name, .input_hash = input_hash};
 
@@ -231,7 +231,7 @@ namespace orangutan {
         for (int attempt = 0; attempt < max_continuations; ++attempt) {
             spdlog::debug("Max-token continuation attempt {}", attempt + 1);
 
-            history_.push_back(Message::user_text("Please continue from where you left off."));
+            history_.push_back(Message::user().text("Please continue from where you left off."));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             auto tool_defs = tools_.definitions();
@@ -240,10 +240,7 @@ namespace orangutan {
 
             auto parts = split_response(response);
             continued_text += parts.text;
-            history_.push_back(Message{
-                .role = Role::assistant,
-                .content = std::move(parts.all_blocks),
-            });
+            history_.push_back(Message(base::role::assistant, std::move(parts.all_blocks)));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (response.stop_reason != "max_tokens") {
@@ -254,19 +251,19 @@ namespace orangutan {
         return continued_text;
     }
 
-    std::pair<std::vector<ContentBlock>, bool> AgentLoop::execute_tools(const std::vector<ToolUseBlock> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
+    std::pair<std::vector<Content>, bool> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
         struct ToolExecutionState {
-            ToolUseBlock call;
+            ToolUse call;
             bool loop_detected = false;
-            std::optional<ToolResultBlock> result;
+            std::optional<ToolResult> result;
         };
 
         struct ToolExecutionOutcome {
-            ToolResultBlock result;
+            ToolResult result;
             bool loop_detected = false;
         };
 
-        std::vector<ContentBlock> result_blocks;
+        std::vector<Content> result_blocks;
         bool loop_detected = false;
 
         for (const auto &call : calls) {
@@ -294,7 +291,7 @@ namespace orangutan {
                                     if (!hook_result.block_reason.empty()) {
                                         block_msg += ": " + hook_result.block_reason;
                                     }
-                                    state.result = ToolResultBlock{
+                                    state.result = ToolResult{
                                         .tool_use_id = state.call.id,
                                         .content = std::move(block_msg),
                                         .is_error = true,
@@ -342,7 +339,7 @@ namespace orangutan {
             static_cast<void>(hook_manager_->dispatch(HookEvent::message_received, ctx));
         }
 
-        history_.push_back(Message::user_text(user_input));
+        history_.push_back(Message::user().text(user_input));
         emit_history_checkpoint(on_history_checkpoint, history_);
 
         auto tool_defs = tools_.definitions();
@@ -359,10 +356,7 @@ namespace orangutan {
 
             auto parts = split_response(response);
             final_text += parts.text;
-            history_.push_back(Message{
-                .role = Role::assistant,
-                .content = std::move(parts.all_blocks),
-            });
+            history_.push_back(Message(base::role::assistant, std::move(parts.all_blocks)));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             // No tool calls — possibly done or truncated
@@ -384,16 +378,13 @@ namespace orangutan {
 
             // Execute tools and check for loops
             auto [result_blocks, loop_detected] = execute_tools(parts.tool_calls, human_output, on_tool_event);
-            history_.push_back(Message{
-                .role = Role::user,
-                .content = std::move(result_blocks),
-            });
+            history_.push_back(Message(base::role::user, std::move(result_blocks)));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (loop_detected) {
-                history_.push_back(Message::user_text("You are repeating the same tool call with the same arguments. "
-                                                      "This is not making progress. Try a different approach or "
-                                                      "explain what you're trying to accomplish."));
+                history_.push_back(Message::user().text("You are repeating the same tool call with the same arguments. "
+                                                        "This is not making progress. Try a different approach or "
+                                                        "explain what you're trying to accomplish."));
                 emit_history_checkpoint(on_history_checkpoint, history_);
             }
 
@@ -459,7 +450,7 @@ namespace orangutan {
             // Extract summary text
             std::string summary_text;
             for (const auto &block : response.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
+                if (const auto *text = std::get_if<Text>(&block)) {
                     summary_text += text->text;
                 }
             }
@@ -472,7 +463,7 @@ namespace orangutan {
 
             // Replace old history: summary + recent messages
             std::vector<Message> compacted;
-            compacted.push_back(Message::user_text("[Conversation summary]\n" + summary_text));
+            compacted.push_back(Message::user().text("[Conversation summary]\n" + summary_text));
             compacted.insert(compacted.end(), history_.begin() + keep_start, history_.end());
             history_ = std::move(compacted);
 
@@ -491,9 +482,9 @@ namespace orangutan {
         std::string transcript;
 
         for (const auto &message : history_) {
-            append(transcript, "{}:\n", magic_enum::enum_name(message.role));
-            for (const auto &block : message.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
+            append(transcript, "{}:\n", magic_enum::enum_name(message.role()));
+            for (const auto &block : message) {
+                if (const auto *text = std::get_if<Text>(&block)) {
                     if (!text->text.empty()) {
                         transcript.append(text->text);
                         transcript.push_back('\n');
@@ -501,12 +492,12 @@ namespace orangutan {
                     continue;
                 }
 
-                if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                if (const auto *tool = std::get_if<ToolUse>(&block)) {
                     append(transcript, "[tool_use] {}\n", tool->name);
                     continue;
                 }
 
-                const auto *result = std::get_if<ToolResultBlock>(&block);
+                const auto *result = std::get_if<ToolResult>(&block);
                 if (result != nullptr && !result->content.empty()) {
                     transcript.append("[tool_result] ");
                     transcript.append(result->content);
@@ -550,11 +541,11 @@ namespace orangutan {
         }
 
         for (const auto &message : history_) {
-            if (message.role != Role::user) {
+            if (message.role() != base::role::user) {
                 continue;
             }
-            for (const auto &block : message.content) {
-                const auto *text = std::get_if<TextBlock>(&block);
+            for (const auto &block : message) {
+                const auto *text = std::get_if<Text>(&block);
                 if (text == nullptr || text->text.empty()) {
                     continue;
                 }
@@ -578,13 +569,13 @@ namespace orangutan {
 
         try {
             std::vector<Message> messages;
-            messages.push_back(Message::user_text(transcript));
+            messages.push_back(Message::user().text(transcript));
             std::vector<ToolDef> no_tools;
             const auto response = provider_.chat(std::string(distillation_prompt), messages, no_tools, 1024);
 
             std::string distilled_text;
             for (const auto &block : response.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
+                if (const auto *text = std::get_if<Text>(&block)) {
                     distilled_text += text->text;
                 }
             }

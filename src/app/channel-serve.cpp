@@ -237,7 +237,7 @@ namespace orangutan::app {
                 .memory_store = memory_store,
                 .current_session_id = &runtime->current_session_id,
                 .subagent_manager = &subagent_manager,
-                .runtime_origin = SubagentRuntimeOrigin::channel,
+                .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
                 .automation_runtime = automation_runtime,
                 .custom_tools = app_cfg.custom_tools,
@@ -519,7 +519,7 @@ namespace orangutan::app {
             }
         }
 
-        return [this, message, &channel_manager, task_runner](const ToolUseBlock &, const std::string &prompt_text) {
+        return [this, message, &channel_manager, task_runner](const ToolUse &, const std::string &prompt_text) {
             struct WaitOutcome {
                 std::shared_ptr<PendingApproval> pending;
                 bool resolved = false;

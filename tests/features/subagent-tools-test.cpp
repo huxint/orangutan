@@ -21,15 +21,15 @@ namespace {
             .allowed_child_agents = std::move(allowed_child_agents),
             .is_child_run = is_child_run,
             .subagent_manager = manager,
-            .runtime_origin = SubagentRuntimeOrigin::cli,
+            .runtime_origin = base::origin::cli,
             .raw_caller_id = "cli:local",
         };
     }
 
-    json parse_tool_json(const ToolResultBlock &result) {
+    nlohmann::json parse_tool_json(const ToolResult &result) {
 
         REQUIRE(not result.is_error);
-        return json::parse(result.content);
+        return nlohmann::json::parse(result.content);
     }
 
     class SubagentToolsHarness {
@@ -130,7 +130,7 @@ namespace {
         ToolRegistry registry;
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-        const auto result = registry.execute(ToolUseBlock{
+        const auto result = registry.execute(ToolUse{
             .id = "spawn-reject",
             .name = "subagent_spawn",
             .input =
@@ -165,7 +165,7 @@ namespace {
         ToolRegistry registry;
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-        const auto spawn_result = registry.execute(ToolUseBlock{
+        const auto spawn_result = registry.execute(ToolUse{
             .id = "spawn-ok",
             .name = "subagent_spawn",
             .input =
@@ -181,7 +181,7 @@ namespace {
         const auto run_id = spawn_payload.at("run_id").get<std::string>();
         REQUIRE(not run_id.empty());
 
-        const auto status_result = registry.execute(ToolUseBlock{
+        const auto status_result = registry.execute(ToolUse{
             .id = "status-ok",
             .name = "subagent_status",
             .input = {{"run_id", run_id}},
@@ -193,7 +193,7 @@ namespace {
         CHECK(status_payload.at("run").at("child_agent_key").get<std::string>() == "coder");
         CHECK(status_payload.at("run").at("task_summary").get<std::string>() == "Investigate failing parser tests");
 
-        const auto wait_result = registry.execute(ToolUseBlock{
+        const auto wait_result = registry.execute(ToolUse{
             .id = "wait-ok",
             .name = "subagent_wait",
             .input =
@@ -228,7 +228,7 @@ namespace {
         ToolRegistry parent_registry;
         register_builtin_tools(parent_registry, nullptr, {}, &parent_context);
 
-        const auto spawn_result = parent_registry.execute(ToolUseBlock{
+        const auto spawn_result = parent_registry.execute(ToolUse{
             .id = "spawn-owner",
             .name = "subagent_spawn",
             .input =
@@ -250,7 +250,7 @@ namespace {
         ToolRegistry other_registry;
         register_builtin_tools(other_registry, nullptr, {}, &other_context);
 
-        const auto status_result = other_registry.execute(ToolUseBlock{
+        const auto status_result = other_registry.execute(ToolUse{
             .id = "status-other",
             .name = "subagent_status",
             .input = {{"run_id", run_id}},
@@ -259,7 +259,7 @@ namespace {
         CHECK_FALSE(status_payload.at("found").get<bool>());
         CHECK(status_payload.at("run").is_null());
 
-        const auto wait_result = other_registry.execute(ToolUseBlock{
+        const auto wait_result = other_registry.execute(ToolUse{
             .id = "wait-other",
             .name = "subagent_wait",
             .input =

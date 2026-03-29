@@ -16,8 +16,6 @@
 
 namespace orangutan {
 
-    using json = nlohmann::json;
-
     namespace {
 
         constexpr std::string_view qq_c2c_prefix = "qqbot:c2c:";
@@ -53,7 +51,7 @@ namespace orangutan {
             return std::string(jid.substr(prefix.size()));
         }
 
-        long long parse_integer_like(const json &payload, std::string_view key, long long default_value) {
+        long long parse_integer_like(const nlohmann::json &payload, std::string_view key, long long default_value) {
             if (!payload.contains(key)) {
                 return default_value;
             }
@@ -209,13 +207,13 @@ namespace orangutan {
         CurlHeaders headers;
         headers.append("Content-Type: application/json");
 
-        const json request = {
+        const nlohmann::json request = {
             {"appId", app_id_},
             {"clientSecret", client_secret_},
         };
 
         const auto response = http_post("https://bots.qq.com/app/getAppAccessToken", request.dump(), headers);
-        const auto payload = json::parse(response);
+        const auto payload = nlohmann::json::parse(response);
         if (payload.value("code", 0) != 0) {
             throw std::runtime_error("QQ access token request failed: " + payload.value("message", std::string{"unknown error"}));
         }
@@ -232,7 +230,7 @@ namespace orangutan {
         headers.append("Authorization: QQBot " + access_token_);
 
         const auto response = http_get("https://api.sgroup.qq.com/gateway", headers);
-        const auto payload = json::parse(response);
+        const auto payload = nlohmann::json::parse(response);
         if (payload.contains("code") && payload.value("code", 0) != 0) {
             throw std::runtime_error("QQ gateway request failed: " + payload.value("message", std::string{"unknown error"}));
         }
@@ -287,7 +285,7 @@ namespace orangutan {
     }
 
     void QqChannel::send_gateway_identity_or_resume() {
-        json payload;
+        nlohmann::json payload;
         const auto token = std::string("QQBot ") + access_token_;
 
         {
@@ -309,7 +307,7 @@ namespace orangutan {
                      {
                          {"token", token},
                          {"intents", intent_group_messages | intent_guild_at_message | intent_direct_messages},
-                         {"shard", json::array({0, 1})},
+                         {"shard", nlohmann::json::array({0, 1})},
                          {"properties",
                           {
                               {"$os", getenv_or_default("OSTYPE", "linux")},
@@ -324,7 +322,7 @@ namespace orangutan {
         send_gateway_payload(payload);
     }
 
-    void QqChannel::send_gateway_payload(const json &payload) {
+    void QqChannel::send_gateway_payload(const nlohmann::json &payload) {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
         if (runtime_->websocket == nullptr) {
             return;
@@ -352,7 +350,7 @@ namespace orangutan {
                     break;
                 }
 
-                json heartbeat{
+                nlohmann::json heartbeat{
                     {"op", gateway_op_heartbeat},
                 };
 
@@ -385,7 +383,7 @@ namespace orangutan {
     }
 
     void QqChannel::handle_ws_message(const std::string &data) {
-        const auto payload = json::parse(data);
+        const auto payload = nlohmann::json::parse(data);
 
         if (payload.contains("s") && !payload.at("s").is_null()) {
             std::scoped_lock lock(runtime_->mutex);
@@ -395,7 +393,7 @@ namespace orangutan {
         const auto op = payload.value("op", -1);
         switch (op) {
             case gateway_op_hello: {
-                const auto hello = payload.value("d", json::object());
+                const auto hello = payload.value("d", nlohmann::json::object());
                 const auto interval = std::chrono::milliseconds(parse_integer_like(hello, "heartbeat_interval", 41250));
                 {
                     std::scoped_lock lock(runtime_->mutex);
@@ -408,7 +406,7 @@ namespace orangutan {
             }
             case gateway_op_dispatch: {
                 const auto event_type = payload.value("t", std::string{});
-                const auto event_data = payload.value("d", json::object());
+                const auto event_data = payload.value("d", nlohmann::json::object());
                 if (event_type == "READY") {
                     std::scoped_lock lock(runtime_->mutex);
                     runtime_->session_id = event_data.value("session_id", std::string{});
@@ -463,7 +461,7 @@ namespace orangutan {
         }
     }
 
-    void QqChannel::handle_dispatch(const std::string &event_type, const json &data) {
+    void QqChannel::handle_dispatch(const std::string &event_type, const nlohmann::json &data) {
         if (event_type == "C2C_MESSAGE_CREATE") {
             handle_c2c_message(data);
             return;
@@ -474,12 +472,12 @@ namespace orangutan {
         }
     }
 
-    void QqChannel::handle_c2c_message(const json &data) {
+    void QqChannel::handle_c2c_message(const nlohmann::json &data) {
         if (on_message_ == nullptr) {
             return;
         }
 
-        const auto author = data.value("author", json::object());
+        const auto author = data.value("author", nlohmann::json::object());
         const auto openid = author.value("user_openid", author.value("id", std::string{}));
         const auto sender_id = author.value("id", std::string{});
         on_message_({
@@ -492,12 +490,12 @@ namespace orangutan {
         });
     }
 
-    void QqChannel::handle_group_message(const json &data) {
+    void QqChannel::handle_group_message(const nlohmann::json &data) {
         if (on_message_ == nullptr) {
             return;
         }
 
-        const auto author = data.value("author", json::object());
+        const auto author = data.value("author", nlohmann::json::object());
         const auto group_openid = data.value("group_openid", std::string{});
         on_message_({
             .jid = make_qq_jid(bot_name_, "group", group_openid),
@@ -517,7 +515,7 @@ namespace orangutan {
         headers.append("Content-Type: application/json");
 
         for (const auto &chunk : chunk_text(content, 4000)) {
-            const json payload = {
+            const nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
             };
@@ -533,7 +531,7 @@ namespace orangutan {
         headers.append("Content-Type: application/json");
 
         for (const auto &chunk : chunk_text(content, 4000)) {
-            const json payload = {
+            const nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
             };

@@ -52,26 +52,26 @@ namespace {
     };
 
     TEST_CASE("substitute_single_param") {
-        json input = {{"url", "https://example.com"}};
+        nlohmann::json input = {{"url", "https://example.com"}};
         const auto result = substitute_params("curl -sL ${url}", input, {{"url", "string"}});
         CHECK(result.contains("example.com"));
         CHECK(result.contains('\''));
     };
 
     TEST_CASE("substitute_missing_param") {
-        json input = json::object();
+        nlohmann::json input = nlohmann::json::object();
         const auto result = substitute_params("ls ${path}", input, {{"path", "string"}});
         CHECK(result == "ls ");
     };
 
     TEST_CASE("substitute_no_params") {
-        json input = json::object();
+        nlohmann::json input = nlohmann::json::object();
         const auto result = substitute_params("docker ps", input, {});
         CHECK(result == "docker ps");
     };
 
     TEST_CASE("substitute_multiple_params") {
-        json input = {{"pattern", "TODO"}, {"path", "src/"}};
+        nlohmann::json input = {{"pattern", "TODO"}, {"path", "src/"}};
         const auto result = substitute_params("grep ${pattern} ${path}", input, {{"pattern", "string"}, {"path", "string"}});
         CHECK(result.contains("TODO"));
         CHECK(result.contains("src/"));
@@ -140,10 +140,10 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUseBlock call{
+        ToolUse call{
             .id = "id1",
             .name = "echo-hello",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         };
         const auto result = registry.execute(call);
         CHECK_FALSE(result.is_error);
@@ -160,7 +160,7 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUseBlock call{
+        ToolUse call{
             .id = "id1",
             .name = "echo-msg",
             .input = {{"msg", "world"}},
@@ -179,10 +179,10 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUseBlock call{
+        ToolUse call{
             .id = "id1",
             .name = "fail-tool",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         };
         const auto result = registry.execute(call);
         CHECK(result.is_error);
@@ -198,10 +198,10 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUseBlock call{
+        ToolUse call{
             .id = "id1",
             .name = "missing-cmd",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         };
         const auto result = registry.execute(call);
         CHECK(result.is_error);
@@ -223,10 +223,10 @@ namespace {
         }};
         register_script_tools(registry, tools, workspace.string());
 
-        ToolUseBlock call{
+        ToolUse call{
             .id = "id_ws_escape",
             .name = "pwd-tool",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         };
         const auto result = registry.execute(call);
         CHECK(result.is_error);

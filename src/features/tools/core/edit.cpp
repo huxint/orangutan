@@ -232,7 +232,7 @@ namespace orangutan {
             }
         }
 
-        std::string execute_hashline_edit(const json &input, const std::filesystem::path &workspace_root) {
+        std::string execute_hashline_edit(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
             const auto path_str = input.at("path").get<std::string>();
             const auto &edits_json = input.at("edits");
             spdlog::info("  [tool] edit (hashline): {} edits on {}", edits_json.size(), path_str);
@@ -317,7 +317,7 @@ namespace orangutan {
             return summary;
         }
 
-        std::string execute_edit_tool(const json &input, const std::filesystem::path &workspace_root) {
+        std::string execute_edit_tool(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
             const auto patch = input.at("patch").get<std::string>();
             spdlog::info("  [tool] edit: {} bytes", patch.size());
 
@@ -363,15 +363,15 @@ namespace orangutan {
                                                      {"items",
                                                       {{"type", "object"},
                                                        {"properties",
-                                                        {{"op", {{"type", "string"}, {"enum", json::array({"replace", "insert_after", "insert_before", "delete"})}}},
+                                                        {{"op", {{"type", "string"}, {"enum", nlohmann::json::array({"replace", "insert_after", "insert_before", "delete"})}}},
                                                          {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
                                                          {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
                                                          {"content",
-                                                          {{"oneOf", json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
+                                                          {{"oneOf", nlohmann::json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
                                                            {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
-                                                       {"required", json::array({"op"})}}}}}}},
-                                                 {"required", json::array({"path", "edits"})}}},
-                 .execute = [workspace_root](const json &input) {
+                                                       {"required", nlohmann::json::array({"op"})}}}}}}},
+                                                 {"required", nlohmann::json::array({"path", "edits"})}}},
+                 .execute = [workspace_root](const nlohmann::json &input) {
                      return execute_hashline_edit(input, workspace_root);
                  }});
         } else {
@@ -385,8 +385,8 @@ namespace orangutan {
                                                     {{"type", "string"},
                                                      {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
                                                                      "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
-                                                 {"required", json::array({"patch"})}}},
-                 .execute = [workspace_root](const json &input) {
+                                                 {"required", nlohmann::json::array({"patch"})}}},
+                 .execute = [workspace_root](const nlohmann::json &input) {
                      return execute_edit_tool(input, workspace_root);
                  }});
         }

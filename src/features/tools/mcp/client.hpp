@@ -13,7 +13,7 @@ namespace orangutan {
     struct McpToolInfo {
         std::string name;
         std::string description;
-        json input_schema = json::object();
+        nlohmann::json input_schema = nlohmann::json::object();
     };
 
     class McpClient {
@@ -42,7 +42,7 @@ namespace orangutan {
         std::vector<McpToolInfo> list_tools();
 
         [[nodiscard]]
-        std::string call_tool(const std::string &tool_name, const json &arguments);
+        std::string call_tool(const std::string &tool_name, const nlohmann::json &arguments);
 
     private:
         Config::McpServerConfig config_;
@@ -54,10 +54,10 @@ namespace orangutan {
 
         void spawn_process();
         void cleanup_fds();
-        void write_message(const json &message, std::chrono::steady_clock::time_point deadline);
-        json read_message(std::chrono::steady_clock::time_point deadline);
-        json send_request(const std::string &method, const json &params, std::chrono::seconds timeout);
-        void send_notification(const std::string &method, const json &params, std::chrono::seconds timeout);
+        void write_message(const nlohmann::json &message, std::chrono::steady_clock::time_point deadline);
+        nlohmann::json read_message(std::chrono::steady_clock::time_point deadline);
+        nlohmann::json send_request(const std::string &method, const nlohmann::json &params, std::chrono::seconds timeout);
+        void send_notification(const std::string &method, const nlohmann::json &params, std::chrono::seconds timeout);
     };
 
 } // namespace orangutan

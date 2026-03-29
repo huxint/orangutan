@@ -62,14 +62,15 @@ namespace {
 } // namespace
 
 using namespace orangutan;
+using namespace orangutan::testing;
 
 TEST_CASE("save_and_load_text_messages") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
     std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
+        Message::user().text("Hello"),
+        Message::assistant().text("Hi there!"),
     };
 
     const auto session_id = store.save(messages, make_session_metadata("claude-sonnet-4-20250514"));
@@ -77,16 +78,16 @@ TEST_CASE("save_and_load_text_messages") {
 
     INFO("expected two persisted messages");
     REQUIRE(loaded.size() == std::size_t{2});
-    CHECK(loaded[0].role == Role::user);
-    CHECK(loaded[1].role == Role::assistant);
+    CHECK(loaded[0].role() == base::role::user);
+    CHECK(loaded[1].role() == base::role::assistant);
 
-    const auto *user_text = std::get_if<TextBlock>(&loaded[0].content[0]);
+    const auto *user_text = std::get_if<Text>(&*loaded[0].begin());
     REQUIRE(user_text != nullptr);
     if (user_text != nullptr) {
         CHECK(user_text->text == "Hello");
     }
 
-    const auto *asst_text = std::get_if<TextBlock>(&loaded[1].content[0]);
+    const auto *asst_text = std::get_if<Text>(&*loaded[1].begin());
     REQUIRE(asst_text != nullptr);
     if (asst_text != nullptr) {
         CHECK(asst_text->text == "Hi there!");
@@ -97,16 +98,16 @@ TEST_CASE("save_and_load_tool_use_blocks") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    std::vector<ContentBlock> content;
-    content.emplace_back(ToolUseBlock{
+    std::vector<Content> content;
+    content.emplace_back(ToolUse{
         .id = "tool_123",
         .name = "shell",
-        .input = json{{"command", "ls -la"}},
+        .input = nlohmann::json{{"command", "ls -la"}},
     });
 
     std::vector<Message> messages = {
-        Message::user_text("list files"),
-        {.role = Role::assistant, .content = std::move(content)},
+        Message::user().text("list files"),
+        Message(base::role::assistant, std::move(content)),
     };
 
     const auto session_id = store.save(messages, make_session_metadata("test-model"));
@@ -114,7 +115,7 @@ TEST_CASE("save_and_load_tool_use_blocks") {
 
     INFO("expected tool-use history roundtrip");
     REQUIRE(loaded.size() == std::size_t{2});
-    const auto *tool = std::get_if<ToolUseBlock>(&loaded[1].content[0]);
+    const auto *tool = std::get_if<ToolUse>(&*loaded[1].begin());
     REQUIRE(tool != nullptr);
     if (tool != nullptr) {
         CHECK(tool->id == "tool_123");
@@ -127,15 +128,15 @@ TEST_CASE("save_and_load_tool_result_blocks") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    std::vector<ContentBlock> result_content;
-    result_content.emplace_back(ToolResultBlock{
+    std::vector<Content> result_content;
+    result_content.emplace_back(ToolResult{
         .tool_use_id = "tool_123",
         .content = "file1.txt\nfile2.cpp",
         .is_error = false,
     });
 
     std::vector<Message> messages = {
-        {.role = Role::user, .content = std::move(result_content)},
+        Message(base::role::user, std::move(result_content)),
     };
 
     const auto session_id = store.save(messages, make_session_metadata("test-model"));
@@ -143,7 +144,7 @@ TEST_CASE("save_and_load_tool_result_blocks") {
 
     INFO("expected one persisted tool result");
     REQUIRE(loaded.size() == std::size_t{1});
-    const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
+    const auto *result = std::get_if<ToolResult>(&*loaded[0].begin());
     REQUIRE(result != nullptr);
     if (result != nullptr) {
         CHECK(result->tool_use_id == "tool_123");
@@ -156,20 +157,20 @@ TEST_CASE("tool_result_preserves_error_flag") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    std::vector<ContentBlock> content;
-    content.emplace_back(ToolResultBlock{
+    std::vector<Content> content;
+    content.emplace_back(ToolResult{
         .tool_use_id = "err_1",
         .content = "command not found",
         .is_error = true,
     });
 
-    std::vector<Message> messages = {{.role = Role::user, .content = std::move(content)}};
+    std::vector<Message> messages = {Message(base::role::user, std::move(content))};
 
     const auto session_id = store.save(messages, make_session_metadata("test-model"));
     const auto loaded = store.load(session_id);
 
     REQUIRE(loaded.size() == std::size_t{1});
-    const auto *result = std::get_if<ToolResultBlock>(&loaded[0].content[0]);
+    const auto *result = std::get_if<ToolResult>(&*loaded[0].begin());
     REQUIRE(result != nullptr);
     if (result != nullptr) {
         CHECK(result->is_error);
@@ -180,7 +181,7 @@ TEST_CASE("list_sessions_returns_saved_sessions") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     store.save(messages, make_session_metadata("model-a", "scope:a"));
     store.save(messages, make_session_metadata("model-b", "scope:b"));
 
@@ -200,7 +201,7 @@ TEST_CASE("list_sessions_can_filter_by_scope") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto scope_a = store.save(messages, make_session_metadata("model-a", "scope:a"));
     store.save(messages, make_session_metadata("model-b", "scope:b"));
 
@@ -214,7 +215,7 @@ TEST_CASE("session_belongs_to_scope_checks_ownership") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto session_id = store.save(messages, make_session_metadata("model-a", "scope:a"));
 
     CHECK(store.session_belongs_to_scope(session_id, "scope:a"));
@@ -232,7 +233,7 @@ TEST_CASE("save_persists_explicit_session_metadata") {
         .origin_kind = "channel",
         .origin_ref = "qqbot:c2c:alice",
     };
-    const std::vector<Message> messages = {Message::user_text("Hello")};
+    const std::vector<Message> messages = {Message::user().text("Hello")};
 
     const auto session_id = store.save(messages, metadata);
     const auto sessions = store.list_sessions();
@@ -273,7 +274,7 @@ TEST_CASE("list_sessions_for_agent_returns_only_matching_sessions") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    const std::vector<Message> messages = {Message::user_text("Hello")};
+    const std::vector<Message> messages = {Message::user().text("Hello")};
     const SessionMetadata coder_metadata{
         .model = "test-model-coder",
         .scope_key = "agent:coder",
@@ -302,7 +303,7 @@ TEST_CASE("session_belongs_to_agent_checks_ownership") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    const std::vector<Message> messages = {Message::user_text("Hello")};
+    const std::vector<Message> messages = {Message::user().text("Hello")};
     const SessionMetadata metadata{
         .model = "test-model",
         .scope_key = "agent:coder",
@@ -320,7 +321,7 @@ TEST_CASE("remove_deletes_session") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("test")};
+    auto messages = std::vector{Message::user().text("test")};
     const auto id = store.save(messages, make_session_metadata("test-model"));
 
     CHECK(store.list_sessions().size() == std::size_t{1});
@@ -358,15 +359,15 @@ TEST_CASE("append_populates_previously_empty_session") {
 
     const auto session_id = store.create_empty(make_session_metadata("claude-sonnet-4-20250514"));
     const std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
+        Message::user().text("Hello"),
+        Message::assistant().text("Hi there!"),
     };
 
     store.append(session_id, messages, 0);
 
     const auto loaded = store.load(session_id);
     REQUIRE(loaded.size() == std::size_t{2});
-    const auto *assistant_text = std::get_if<TextBlock>(&loaded[1].content[0]);
+    const auto *assistant_text = std::get_if<Text>(&*loaded[1].begin());
     REQUIRE(assistant_text != nullptr);
     if (assistant_text != nullptr) {
         CHECK(assistant_text->text == "Hi there!");
@@ -377,23 +378,26 @@ TEST_CASE("multiple_content_blocks_in_one_message") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    std::vector<ContentBlock> content;
-    content.emplace_back(TextBlock{.text = "I'll run that command"});
-    content.emplace_back(ToolUseBlock{
+    std::vector<Content> content;
+    content.emplace_back(Text{"I'll run that command"});
+    content.emplace_back(ToolUse{
         .id = "call_1",
         .name = "shell",
-        .input = json{{"command", "echo hi"}},
+        .input = nlohmann::json{{"command", "echo hi"}},
     });
 
-    std::vector<Message> messages = {{.role = Role::assistant, .content = std::move(content)}};
+    std::vector<Message> messages = {Message(base::role::assistant, std::move(content))};
 
     const auto id = store.save(messages, make_session_metadata("test-model"));
     const auto loaded = store.load(id);
 
     REQUIRE(loaded.size() == std::size_t{1});
-    REQUIRE(loaded[0].content.size() == std::size_t{2});
-    CHECK(std::get_if<TextBlock>(&loaded[0].content[0]) != nullptr);
-    CHECK(std::get_if<ToolUseBlock>(&loaded[0].content[1]) != nullptr);
+    auto first = loaded[0].begin();
+    auto second = first;
+    ++second;
+    REQUIRE(second != loaded[0].end());
+    CHECK(std::get_if<Text>(&*first) != nullptr);
+    CHECK(std::get_if<ToolUse>(&*second) != nullptr);
 };
 
 TEST_CASE("latest_session_id_empty_db") {
@@ -407,7 +411,7 @@ TEST_CASE("latest_session_id_returns_newest") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     store.save(messages, make_session_metadata("model-a"));
     const auto second_id = store.save(messages, make_session_metadata("model-b"));
 
@@ -422,7 +426,7 @@ TEST_CASE("can_bind_and_resolve_session_for_jid") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto session_id = store.save(messages, make_session_metadata("model-a"));
 
     CHECK(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
@@ -439,7 +443,7 @@ TEST_CASE("jid_bindings_are_scoped_by_agent_key") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto general_session_id = store.save(messages, make_session_metadata("model-a", "agent:default|jid:qqbot:c2c:alice"));
     const auto coder_session_id = store.save(messages, make_session_metadata("model-b", "agent:coder|jid:qqbot:c2c:alice"));
 
@@ -463,7 +467,7 @@ TEST_CASE("can_clear_jid_binding") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto session_id = store.save(messages, make_session_metadata("model-a"));
     store.bind_jid("qqbot:c2c:alice", session_id);
 
@@ -475,7 +479,7 @@ TEST_CASE("removing_session_clears_jid_binding") {
     SessionStoreHarness harness;
     auto store = harness.store();
 
-    auto messages = std::vector{Message::user_text("Hello")};
+    auto messages = std::vector{Message::user().text("Hello")};
     const auto session_id = store.save(messages, make_session_metadata("model-a"));
     store.bind_jid("qqbot:c2c:alice", session_id);
 
@@ -488,19 +492,19 @@ TEST_CASE("append_adds_only_new_messages") {
     auto store = harness.store();
 
     std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
+        Message::user().text("Hello"),
+        Message::assistant().text("Hi there!"),
     };
 
     const auto session_id = store.save(messages, make_session_metadata("model-a"));
-    messages.push_back(Message::user_text("How are you?"));
-    messages.push_back(Message::assistant_text("Doing well."));
+    messages.push_back(Message::user().text("How are you?"));
+    messages.push_back(Message::assistant().text("Doing well."));
 
     store.append(session_id, messages, 2);
 
     const auto loaded = store.load(session_id);
     REQUIRE(loaded.size() == std::size_t{4});
-    const auto *last_text = std::get_if<TextBlock>(&loaded[3].content[0]);
+    const auto *last_text = std::get_if<Text>(&*loaded[3].begin());
     REQUIRE(last_text != nullptr);
     if (last_text != nullptr) {
         CHECK(last_text->text == "Doing well.");
@@ -512,8 +516,8 @@ TEST_CASE("update_and_append_can_refresh_stored_model_metadata") {
     auto store = harness.store();
 
     std::vector<Message> messages = {
-        Message::user_text("Hello"),
-        Message::assistant_text("Hi there!"),
+        Message::user().text("Hello"),
+        Message::assistant().text("Hi there!"),
     };
 
     const auto session_id = store.save(messages, make_session_metadata("model-a", "scope:test"));
@@ -523,7 +527,7 @@ TEST_CASE("update_and_append_can_refresh_stored_model_metadata") {
     REQUIRE(sessions.size() == std::size_t{1});
     CHECK(sessions[0].model == "model-b");
 
-    messages.push_back(Message::user_text("How are you?"));
+    messages.push_back(Message::user().text("How are you?"));
     store.append(session_id, messages, 2, "model-c");
 
     sessions = store.list_sessions("scope:test");

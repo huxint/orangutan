@@ -63,7 +63,7 @@ namespace {
         registry.register_tool({
             .definition = {.name = "task", .description = "Task tool"},
             .execute =
-                [](const json &input) {
+                [](const nlohmann::json &input) {
                     if (input.at("op") == "run") {
                         return std::string{"ran "} + input.at("id").get<std::string>();
                     }

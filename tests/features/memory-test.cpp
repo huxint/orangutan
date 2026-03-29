@@ -260,14 +260,14 @@ namespace {
         CHECK(tool_names.contains("memory_list"));
         CHECK(tool_names.contains("memory_stats"));
 
-        auto remember_result = registry.execute(ToolUseBlock{
+        auto remember_result = registry.execute(ToolUse{
             .id = "remember-1",
             .name = "remember",
             .input = {{"key", "preferred_language"}, {"content", "C++"}, {"category", "preferences"}},
         });
         CHECK_FALSE(remember_result.is_error);
 
-        auto recall_result = registry.execute(ToolUseBlock{
+        auto recall_result = registry.execute(ToolUse{
             .id = "recall-1",
             .name = "recall",
             .input = {{"query", "preferred_language"}},
@@ -275,7 +275,7 @@ namespace {
         CHECK_FALSE(recall_result.is_error);
         CHECK(recall_result.content.contains("C++"));
 
-        auto forget_result = registry.execute(ToolUseBlock{
+        auto forget_result = registry.execute(ToolUse{
             .id = "forget-1",
             .name = "forget",
             .input = {{"key", "preferred_language"}},
@@ -291,27 +291,27 @@ namespace {
         RuntimeMemory runtime_memory(store);
         register_builtin_tools(registry, &runtime_memory);
 
-        auto store_result = registry.execute(ToolUseBlock{
+        auto store_result = registry.execute(ToolUse{
             .id = "memory-store-1",
             .name = "memory_store",
             .input = {{"key", "profile.name"}, {"content", "Alice"}, {"category", "profile"}},
         });
-        auto recall_result = registry.execute(ToolUseBlock{
+        auto recall_result = registry.execute(ToolUse{
             .id = "memory-recall-1",
             .name = "memory_recall",
             .input = {{"query", "profile.name"}},
         });
-        auto update_result = registry.execute(ToolUseBlock{
+        auto update_result = registry.execute(ToolUse{
             .id = "memory-update-1",
             .name = "memory_update",
             .input = {{"key", "profile.name"}, {"content", "Alice Example"}, {"category", "profile"}, {"merge", false}},
         });
-        auto stats_result = registry.execute(ToolUseBlock{
+        auto stats_result = registry.execute(ToolUse{
             .id = "memory-stats-1",
             .name = "memory_stats",
-            .input = json::object(),
+            .input = nlohmann::json::object(),
         });
-        auto list_result = registry.execute(ToolUseBlock{
+        auto list_result = registry.execute(ToolUse{
             .id = "memory-list-1",
             .name = "memory_list",
             .input = {{"category", "profile"}},
@@ -337,17 +337,17 @@ namespace {
         register_builtin_tools(alice_registry, &alice_memory);
         register_builtin_tools(bob_registry, &bob_memory);
 
-        auto alice_remember = alice_registry.execute(ToolUseBlock{
+        auto alice_remember = alice_registry.execute(ToolUse{
             .id = "remember-alice",
             .name = "remember",
             .input = {{"key", "favorite_color"}, {"content", "green"}},
         });
-        auto bob_recall = bob_registry.execute(ToolUseBlock{
+        auto bob_recall = bob_registry.execute(ToolUse{
             .id = "recall-bob",
             .name = "recall",
             .input = {{"query", "favorite_color"}},
         });
-        auto alice_recall = alice_registry.execute(ToolUseBlock{
+        auto alice_recall = alice_registry.execute(ToolUse{
             .id = "recall-alice",
             .name = "recall",
             .input = {{"query", "favorite_color"}},

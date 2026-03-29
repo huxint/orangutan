@@ -17,10 +17,10 @@ namespace orangutan {
     std::string shell_escape(const std::string &value);
 
     // Substitute ${param} patterns in a command template with shell-escaped values from input JSON.
-    std::string substitute_params(const std::string &command_template, const json &input, const std::unordered_map<std::string, std::string> &schema);
+    std::string substitute_params(const std::string &command_template, const nlohmann::json &input, const std::unordered_map<std::string, std::string> &schema);
 
     // Generate a JSON Schema object from a flat param_name → type_string map.
-    json generate_input_schema(const std::unordered_map<std::string, std::string> &schema);
+    nlohmann::json generate_input_schema(const std::unordered_map<std::string, std::string> &schema);
 
     // Register user-defined script tools from config into the registry.
     void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace = {},

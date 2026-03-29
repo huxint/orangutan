@@ -9,7 +9,7 @@
 namespace orangutan {
     namespace {
 
-        std::string write_file(const json &input, const std::filesystem::path &workspace_root) {
+        std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
             const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root);
             const auto content = input.at("content").get<std::string>();
             spdlog::info("  [tool] write: {}", path.string());
@@ -35,8 +35,8 @@ namespace orangutan {
                                                 {{"type", "string"},
                                                  {"description", "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
                                                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
-                                             {"required", json::array({"path", "content"})}}},
-             .execute = [workspace_root](const json &input) {
+                                             {"required", nlohmann::json::array({"path", "content"})}}},
+             .execute = [workspace_root](const nlohmann::json &input) {
                  return write_file(input, workspace_root);
              }});
     }

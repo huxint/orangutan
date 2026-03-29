@@ -24,8 +24,8 @@ using orangutan::testing::test_tmp_root;
 
 namespace {
 
-    json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
-        json input = {
+    nlohmann::json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
+        nlohmann::json input = {
             {"command", command},
             {"background", true},
         };
@@ -33,7 +33,7 @@ namespace {
             input["working_dir"] = working_dir;
         }
 
-        const auto result = registry.execute(ToolUseBlock{
+        const auto result = registry.execute(ToolUse{
             .id = "background-shell",
             .name = "shell",
             .input = std::move(input),
@@ -43,15 +43,15 @@ namespace {
             return {};
         }
 
-        return json::parse(result.content);
+        return nlohmann::json::parse(result.content);
     }
 
-    json wait_for_background_process(ToolRegistry &registry, const std::string &process_id, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+    nlohmann::json wait_for_background_process(ToolRegistry &registry, const std::string &process_id, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
-        json last_snapshot;
+        nlohmann::json last_snapshot;
 
         while (std::chrono::steady_clock::now() < deadline) {
-            const auto result = registry.execute(ToolUseBlock{
+            const auto result = registry.execute(ToolUse{
                 .id = "poll-background",
                 .name = "process_poll",
                 .input = {{"process_id", process_id}},
@@ -61,7 +61,7 @@ namespace {
                 return {};
             }
 
-            last_snapshot = json::parse(result.content);
+            last_snapshot = nlohmann::json::parse(result.content);
             if (!last_snapshot.value("running", true)) {
                 return last_snapshot;
             }
@@ -83,7 +83,7 @@ namespace {
             .current_session_id = current_session_id,
             .allowed_child_agents = std::move(allowed_child_agents),
             .subagent_manager = manager,
-            .runtime_origin = SubagentRuntimeOrigin::cli,
+            .runtime_origin = base::origin::cli,
             .raw_caller_id = "cli:local",
         };
     }
@@ -101,7 +101,7 @@ TEST_CASE("StartsEmpty") {
 
 TEST_CASE("RegisterAndRetrieveDefinition") {
     ToolRegistry registry;
-    registry.register_tool({.definition = {.name = "echo", .description = "Echoes input", .input_schema = {{"type", "object"}}}, .execute = [](const json &input) {
+    registry.register_tool({.definition = {.name = "echo", .description = "Echoes input", .input_schema = {{"type", "object"}}}, .execute = [](const nlohmann::json &input) {
                                 return input.at("text").get<std::string>();
                             }});
 
@@ -113,11 +113,11 @@ TEST_CASE("RegisterAndRetrieveDefinition") {
 
 TEST_CASE("ExecutesRegisteredTool") {
     ToolRegistry registry;
-    registry.register_tool({.definition = {.name = "greet", .description = "Greets"}, .execute = [](const json &input) {
+    registry.register_tool({.definition = {.name = "greet", .description = "Greets"}, .execute = [](const nlohmann::json &input) {
                                 return "Hello, " + input.at("name").get<std::string>() + "!";
                             }});
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_1",
         .name = "greet",
         .input = {{"name", "Alice"}},
@@ -131,7 +131,7 @@ TEST_CASE("ExecutesRegisteredTool") {
 
 TEST_CASE("UnknownToolReturnsError") {
     const ToolRegistry registry;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_2",
         .name = "nonexistent",
         .input = {},
@@ -144,11 +144,11 @@ TEST_CASE("UnknownToolReturnsError") {
 
 TEST_CASE("ToolExceptionBecomesError") {
     ToolRegistry registry;
-    registry.register_tool({.definition = {.name = "boom", .description = "Always fails"}, .execute = [](const json &) -> std::string {
+    registry.register_tool({.definition = {.name = "boom", .description = "Always fails"}, .execute = [](const nlohmann::json &) -> std::string {
                                 throw std::runtime_error("kaboom");
                             }});
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_3",
         .name = "boom",
         .input = {},
@@ -161,10 +161,10 @@ TEST_CASE("ToolExceptionBecomesError") {
 
 TEST_CASE("DuplicateRegistrationReplacesExistingExecutor") {
     ToolRegistry registry;
-    registry.register_tool({.definition = {.name = "echo", .description = "First"}, .execute = [](const json &) {
+    registry.register_tool({.definition = {.name = "echo", .description = "First"}, .execute = [](const nlohmann::json &) {
                                 return std::string{"first"};
                             }});
-    registry.register_tool({.definition = {.name = "echo", .description = "Second"}, .execute = [](const json &) {
+    registry.register_tool({.definition = {.name = "echo", .description = "Second"}, .execute = [](const nlohmann::json &) {
                                 return std::string{"second"};
                             }});
 
@@ -172,7 +172,7 @@ TEST_CASE("DuplicateRegistrationReplacesExistingExecutor") {
     REQUIRE((defs.size()) == (1));
     CHECK(defs[0].description == "Second");
 
-    const auto result = registry.execute(ToolUseBlock{
+    const auto result = registry.execute(ToolUse{
         .id = "id_dup",
         .name = "echo",
         .input = {},
@@ -311,7 +311,7 @@ TEST_CASE("DoesNotRegisterMemoryToolsWithoutMemoryStore") {
 
 TEST_CASE("ShellRunsSimpleCommand") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_sh",
         .name = "shell",
         .input = {{"command", "echo hello"}},
@@ -324,7 +324,7 @@ TEST_CASE("ShellRunsSimpleCommand") {
 
 TEST_CASE("ShellReportsNonZeroExitCode") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_sh2",
         .name = "shell",
         .input = {{"command", "false"}},
@@ -343,7 +343,7 @@ TEST_CASE("ReadFileReturnsLineNumberedContents") {
         ofs << "aaa\nbbb\nccc\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_rf",
         .name = "read",
         .input = {{"path", tmp.string()}},
@@ -361,7 +361,7 @@ TEST_CASE("ReadFileReturnsLineNumberedContents") {
 
 TEST_CASE("ReadFileMissingReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_rf2",
         .name = "read",
         .input = {{"path", "/tmp/orangutan_nonexistent_file_xyz.txt"}},
@@ -379,7 +379,7 @@ TEST_CASE("WriteCreatesFile") {
     const auto tmp = test_tmp_root() / "orangutan_write_test.txt";
     std::filesystem::remove(tmp); // ensure clean state
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_wf",
         .name = "write",
         .input = {{"path", tmp.string()}, {"content", "hello world"}},
@@ -402,7 +402,7 @@ TEST_CASE("WriteCreatesParentDirectories") {
     const auto tmp = test_tmp_root() / "orangutan_test_dir" / "sub" / "file.txt";
     std::filesystem::remove_all(test_tmp_root() / "orangutan_test_dir");
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_wf2",
         .name = "write",
         .input = {{"path", tmp.string()}, {"content", "nested"}},
@@ -427,7 +427,7 @@ TEST_CASE("ReadFileWithOffset") {
         }
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_off",
         .name = "read",
         .input = {{"path", tmp.string()}, {"offset", 10}},
@@ -453,7 +453,7 @@ TEST_CASE("ReadFileWithLimit") {
         }
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_lim",
         .name = "read",
         .input = {{"path", tmp.string()}, {"limit", 5}},
@@ -481,7 +481,7 @@ TEST_CASE("ReadFileWithOffsetAndLimit") {
         }
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_ol",
         .name = "read",
         .input = {{"path", tmp.string()}, {"offset", 100}, {"limit", 50}},
@@ -506,7 +506,7 @@ TEST_CASE("ReadFileOffsetBeyondEOF") {
         ofs << "only\nthree\nlines\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_eof",
         .name = "read",
         .input = {{"path", tmp.string()}, {"offset", 100}},
@@ -528,7 +528,7 @@ TEST_CASE("ReadRejectsNonPositiveOffset") {
         ofs << "line1\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_invalid_offset",
         .name = "read",
         .input = {{"path", tmp.string()}, {"offset", 0}},
@@ -549,7 +549,7 @@ TEST_CASE("ReadRejectsNonPositiveLimit") {
         ofs << "line1\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_invalid_limit",
         .name = "read",
         .input = {{"path", tmp.string()}, {"limit", 0}},
@@ -574,7 +574,7 @@ TEST_CASE("ReadBinaryFileReturnsMetadata") {
         ofs << "binary data here";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_bin",
         .name = "read",
         .input = {{"path", tmp.string()}},
@@ -597,7 +597,7 @@ TEST_CASE("ReadTextFileReadsNormally") {
         ofs << "just text\nno nulls\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_txt",
         .name = "read",
         .input = {{"path", tmp.string()}},
@@ -622,10 +622,10 @@ TEST_CASE("ReadMultipleFiles") {
         std::ofstream(tmp_b) << "content_b\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_multi",
         .name = "read",
-        .input = {{"paths", json::array({tmp_a.string(), tmp_b.string()})}},
+        .input = {{"paths", nlohmann::json::array({tmp_a.string(), tmp_b.string()})}},
     };
     const auto result = fixture.registry().execute(call);
 
@@ -646,10 +646,10 @@ TEST_CASE("ReadMultiPathOneFailsContinuesOthers") {
         std::ofstream(tmp) << "good content\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_mpf",
         .name = "read",
-        .input = {{"paths", json::array({tmp.string(), "/tmp/orangutan_nonexistent_xyz.txt"})}},
+        .input = {{"paths", nlohmann::json::array({tmp.string(), "/tmp/orangutan_nonexistent_xyz.txt"})}},
     };
     const auto result = fixture.registry().execute(call);
 
@@ -662,10 +662,10 @@ TEST_CASE("ReadMultiPathOneFailsContinuesOthers") {
 
 TEST_CASE("ReadBothPathAndPathsReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_both",
         .name = "read",
-        .input = {{"path", "/tmp/a.txt"}, {"paths", json::array({"/tmp/b.txt"})}},
+        .input = {{"path", "/tmp/a.txt"}, {"paths", nlohmann::json::array({"/tmp/b.txt"})}},
     };
     const auto result = fixture.registry().execute(call);
 
@@ -675,10 +675,10 @@ TEST_CASE("ReadBothPathAndPathsReturnsError") {
 
 TEST_CASE("ReadNeitherPathNorPathsReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_neither",
         .name = "read",
-        .input = json::object(),
+        .input = nlohmann::json::object(),
     };
     const auto result = fixture.registry().execute(call);
 
@@ -787,14 +787,14 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             CHECK(orangutan::testing::has_tool_named(defs, "memory_recall"));
             CHECK(orangutan::testing::has_tool_named(defs, "memory_stats"));
 
-            const auto remember = registry.execute(ToolUseBlock{
+            const auto remember = registry.execute(ToolUse{
                 .id = "remember-runtime",
                 .name = "remember",
                 .input = {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}},
             });
             CHECK(not(remember.is_error));
 
-            const auto recall = registry.execute(ToolUseBlock{
+            const auto recall = registry.execute(ToolUse{
                 .id = "recall-runtime",
                 .name = "memory_recall",
                 .input = {{"query", "theme"}},
@@ -802,7 +802,7 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
 
-            const auto spawn = registry.execute(ToolUseBlock{
+            const auto spawn = registry.execute(ToolUse{
                 .id = "spawn-runtime",
                 .name = "subagent_spawn",
                 .input = {{"child_agent_key", "reviewer"},
@@ -811,18 +811,18 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
                           {"task_summary", "Review the tool layout refactor"}},
             });
             CHECK(not(spawn.is_error));
-            const auto spawn_payload = json::parse(spawn.content);
+            const auto spawn_payload = nlohmann::json::parse(spawn.content);
             REQUIRE(spawn_payload.at("accepted").get<bool>());
             const auto run_id = spawn_payload.at("run_id").get<std::string>();
             CHECK(not(run_id.empty()));
 
-            const auto wait = registry.execute(ToolUseBlock{
+            const auto wait = registry.execute(ToolUse{
                 .id = "wait-runtime",
                 .name = "subagent_wait",
                 .input = {{"run_id", run_id}, {"timeout_ms", 1000}},
             });
             CHECK(not(wait.is_error));
-            const auto wait_payload = json::parse(wait.content);
+            const auto wait_payload = nlohmann::json::parse(wait.content);
             CHECK(wait_payload.at("state").get<std::string>() == "completed");
         }
     }
@@ -844,7 +844,7 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
     CHECK(not(orangutan::testing::has_tool_named(defs, "shell")));
     CHECK(orangutan::testing::has_tool_named(defs, "read"));
 
-    const auto shell_result = registry.execute(ToolUseBlock{
+    const auto shell_result = registry.execute(ToolUse{
         .id = "deny-shell",
         .name = "shell",
         .input = {{"command", "echo hello"}},
@@ -861,7 +861,7 @@ TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
-    const auto shell_result = registry.execute(ToolUseBlock{
+    const auto shell_result = registry.execute(ToolUse{
         .id = "ask-shell",
         .name = "shell",
         .input = {{"command", "echo hello"}},
@@ -877,14 +877,14 @@ TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
     permissions.shell_approval = ToolApprovalPolicy::ask;
 
     bool prompted = false;
-    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUse &call, const std::string &prompt_text) {
         prompted = true;
         CHECK(call.name == "shell");
         CHECK(prompt_text.contains("echo hello"));
         return true;
     }));
 
-    const auto shell_result = registry.execute(ToolUseBlock{
+    const auto shell_result = registry.execute(ToolUse{
         .id = "allow-shell",
         .name = "shell",
         .input = {{"command", "echo hello"}},
@@ -908,14 +908,14 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     bool prompted = false;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
-    tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+    tool_context.approval_callback = [&prompted](const ToolUse &call, const std::string &prompt_text) {
         prompted = true;
         CHECK(call.name == "shell");
         CHECK(prompt_text.contains("echo hello"));
         return true;
     };
 
-    const auto shell_result = registry.execute(ToolUseBlock{
+    const auto shell_result = registry.execute(ToolUse{
         .id = "context-allow-shell",
         .name = "shell",
         .input = {{"command", "echo hello"}},
@@ -934,7 +934,7 @@ TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
-    const auto shell_result = registry.execute(ToolUseBlock{
+    const auto shell_result = registry.execute(ToolUse{
         .id = "blocked-shell",
         .name = "shell",
         .input = {{"command", "rm -rf build"}},
@@ -957,10 +957,10 @@ TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
-    const auto result = registry.execute(ToolUseBlock{
+    const auto result = registry.execute(ToolUse{
         .id = "deny-script-shell",
         .name = "echo_custom",
-        .input = json::object(),
+        .input = nlohmann::json::object(),
     });
     CHECK(result.is_error);
     CHECK(result.content.contains("approval policy"));
@@ -982,7 +982,7 @@ TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
-    const auto result = registry.execute(ToolUseBlock{
+    const auto result = registry.execute(ToolUse{
         .id = "deny-script-command",
         .name = "wipe",
         .input = {{"path", "build"}},
@@ -1011,17 +1011,17 @@ TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
     }};
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, custom_tools, {}, &permissions));
-    tool_context.approval_callback = [&prompted](const ToolUseBlock &call, const std::string &prompt_text) {
+    tool_context.approval_callback = [&prompted](const ToolUse &call, const std::string &prompt_text) {
         prompted = true;
         CHECK(call.name == "echo_custom");
         CHECK(prompt_text.contains("echo custom"));
         return true;
     };
 
-    const auto result = registry.execute(ToolUseBlock{
+    const auto result = registry.execute(ToolUse{
         .id = "allow-script-shell",
         .name = "echo_custom",
-        .input = json::object(),
+        .input = nlohmann::json::object(),
     });
     CHECK(prompted);
     CHECK(not(result.is_error));
@@ -1037,7 +1037,7 @@ TEST_CASE("LsListsDirectory") {
         std::ofstream(tmp_dir / "file.txt") << "hello";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_ls",
         .name = "ls",
         .input = {{"path", tmp_dir.string()}},
@@ -1053,7 +1053,7 @@ TEST_CASE("LsListsDirectory") {
 
 TEST_CASE("LsMissingPathReturnsError") {
     ScriptToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_ls2",
         .name = "ls",
         .input = {{"path", "/tmp/orangutan_nonexistent_dir_xyz"}},
@@ -1076,7 +1076,7 @@ TEST_CASE("GrepFindsPattern") {
         std::ofstream(tmp_dir / "b.txt") << "nothing here\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_gr",
         .name = "grep",
         .input = {{"pattern", "hello"}, {"path", tmp_dir.string()}},
@@ -1098,7 +1098,7 @@ TEST_CASE("GrepNoMatchesReturnsError") {
         std::ofstream(tmp_dir / "a.txt") << "hello\n";
     }
 
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_gr2",
         .name = "grep",
         .input = {{"pattern", "zzzznotfound"}, {"path", tmp_dir.string()}},
@@ -1115,7 +1115,7 @@ TEST_CASE("GrepNoMatchesReturnsError") {
 
 TEST_CASE("ScrubsApiKeyInShellOutput") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_scrub",
         .name = "shell",
         .input = {{"command", "echo 'api_key: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"}},
@@ -1129,7 +1129,7 @@ TEST_CASE("ScrubsApiKeyInShellOutput") {
 
 TEST_CASE("ScrubsBearerToken") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_scrub2",
         .name = "shell",
         .input = {{"command", "echo 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxxxxxxxxxxx'"}},
@@ -1142,7 +1142,7 @@ TEST_CASE("ScrubsBearerToken") {
 
 TEST_CASE("DoesNotScrubNormalOutput") {
     BuiltinToolsTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_noscrub",
         .name = "shell",
         .input = {{"command", "echo 'hello world this is normal output'"}},
@@ -1156,7 +1156,7 @@ TEST_CASE("DoesNotScrubNormalOutput") {
 
 TEST_CASE("RelativePathsResolveAgainstWorkspace") {
     BuiltinToolsWorkspaceTest fixture;
-    const ToolUseBlock write_call{
+    const ToolUse write_call{
         .id = "id_ws_write",
         .name = "write",
         .input = {{"path", "notes/todo.txt"}, {"content", "ship it"}},
@@ -1166,7 +1166,7 @@ TEST_CASE("RelativePathsResolveAgainstWorkspace") {
     CHECK(not(write_result.is_error));
     CHECK(std::filesystem::exists(fixture.workspace() / "notes" / "todo.txt"));
 
-    const ToolUseBlock read_call{
+    const ToolUse read_call{
         .id = "id_ws_read",
         .name = "read",
         .input = {{"path", "notes/todo.txt"}},
@@ -1183,7 +1183,7 @@ TEST_CASE("AbsolutePathsInsideWorkspaceRemainAllowed") {
     std::filesystem::create_directories(file_path.parent_path());
     std::ofstream(file_path) << "inside sandbox\n";
 
-    const ToolUseBlock read_call{
+    const ToolUse read_call{
         .id = "id_ws_abs_read",
         .name = "read",
         .input = {{"path", file_path.string()}},
@@ -1199,7 +1199,7 @@ TEST_CASE("ReadRejectsAbsolutePathOutsideWorkspace") {
     const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_read.txt";
     std::ofstream(outside_path) << "outside sandbox\n";
 
-    const ToolUseBlock read_call{
+    const ToolUse read_call{
         .id = "id_ws_escape_read",
         .name = "read",
         .input = {{"path", outside_path.string()}},
@@ -1217,7 +1217,7 @@ TEST_CASE("WriteRejectsTraversalOutsideWorkspace") {
     const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_write.txt";
     std::filesystem::remove(outside_path);
 
-    const ToolUseBlock write_call{
+    const ToolUse write_call{
         .id = "id_ws_escape_write",
         .name = "write",
         .input = {{"path", "../orangutan_escape_write.txt"}, {"content", "escaped"}},
@@ -1231,7 +1231,7 @@ TEST_CASE("WriteRejectsTraversalOutsideWorkspace") {
 
 TEST_CASE("ShellRunsInsideWorkspace") {
     BuiltinToolsWorkspaceTest fixture;
-    const ToolUseBlock call{
+    const ToolUse call{
         .id = "id_ws_shell",
         .name = "shell",
         .input = {{"command", "pwd"}},
@@ -1265,23 +1265,23 @@ TEST_CASE("ProcessListIncludesRunningBackgroundProcess") {
     const auto start_payload = start_background_process(fixture.registry(), "python3 -c \"import time; print('ready', flush=True); time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
-    const auto list_result = fixture.registry().execute(ToolUseBlock{
+    const auto list_result = fixture.registry().execute(ToolUse{
         .id = "list-background",
         .name = "process_list",
-        .input = json::object(),
+        .input = nlohmann::json::object(),
     });
     REQUIRE(not(list_result.is_error));
 
-    const auto list_payload = json::parse(list_result.content);
+    const auto list_payload = nlohmann::json::parse(list_result.content);
     REQUIRE(list_payload.contains("processes"));
     const auto &processes = list_payload.at("processes");
-    const auto it = std::ranges::find_if(processes, [&](const json &process) {
+    const auto it = std::ranges::find_if(processes, [&](const nlohmann::json &process) {
         return process.at("process_id").get<std::string>() == process_id;
     });
     REQUIRE((it) != (processes.end()));
     CHECK(it->at("running").get<bool>());
 
-    const auto kill_result = fixture.registry().execute(ToolUseBlock{
+    const auto kill_result = fixture.registry().execute(ToolUse{
         .id = "kill-after-list",
         .name = "process_kill",
         .input = {{"process_id", process_id}},
@@ -1294,14 +1294,14 @@ TEST_CASE("ProcessKillStopsBackgroundProcess") {
     const auto start_payload = start_background_process(fixture.registry(), "python3 -c \"import time; time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
-    const auto kill_result = fixture.registry().execute(ToolUseBlock{
+    const auto kill_result = fixture.registry().execute(ToolUse{
         .id = "kill-background",
         .name = "process_kill",
         .input = {{"process_id", process_id}},
     });
     REQUIRE(not(kill_result.is_error));
 
-    const auto kill_payload = json::parse(kill_result.content);
+    const auto kill_payload = nlohmann::json::parse(kill_result.content);
     CHECK(not(kill_payload.at("running").get<bool>()));
     CHECK(kill_payload.at("kill_requested").get<bool>());
     CHECK(kill_payload.at("status").get<std::string>() != "running");
@@ -1719,7 +1719,7 @@ TEST_CASE("ReadMultiPathHasHashTags") {
     std::ofstream(fixture.workspace() / "a.txt") << "aaa\n";
     std::ofstream(fixture.workspace() / "b.txt") << "bbb\n";
 
-    const auto result = fixture.registry().execute({.id = "r3", .name = "read", .input = {{"paths", json::array({"a.txt", "b.txt"})}}});
+    const auto result = fixture.registry().execute({.id = "r3", .name = "read", .input = {{"paths", nlohmann::json::array({"a.txt", "b.txt"})}}});
     CHECK(not(result.is_error));
     CHECK(result.content.contains("=== "));
     CHECK(result.content.contains("1#"));
@@ -1734,7 +1734,7 @@ TEST_CASE("EditReplaceSingleLine") {
     auto hash = orangutan::compute_line_hash("    return 0;", 2);
     std::string anchor = "2#" + hash;
 
-    json edits = json::array({{{"op", "replace"}, {"anchor", anchor}, {"content", json::array({"    return 42;"})}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", anchor}, {"content", nlohmann::json::array({"    return 42;"})}}});
 
     const auto result = fixture.registry().execute({.id = "e1", .name = "edit", .input = {{"path", "target.cpp"}, {"edits", edits}}});
     CHECK(not(result.is_error));
@@ -1750,7 +1750,7 @@ TEST_CASE("EditPreservesMissingFinalNewline") {
     std::ofstream(fixture.workspace() / "noeol.txt") << "aaa\nbbb";
 
     auto hash = orangutan::compute_line_hash("bbb", 2);
-    json edits = json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", json::array({"ccc"})}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", nlohmann::json::array({"ccc"})}}});
 
     const auto result = fixture.registry().execute({.id = "e1b", .name = "edit", .input = {{"path", "noeol.txt"}, {"edits", edits}}});
     CHECK(not(result.is_error));
@@ -1765,7 +1765,7 @@ TEST_CASE("EditDeleteLine") {
     std::ofstream(fixture.workspace() / "del.txt") << "aaa\nbbb\nccc\n";
 
     auto hash = orangutan::compute_line_hash("bbb", 2);
-    json edits = json::array({{{"op", "delete"}, {"anchor", "2#" + hash}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "delete"}, {"anchor", "2#" + hash}}});
 
     const auto result = fixture.registry().execute({.id = "e2", .name = "edit", .input = {{"path", "del.txt"}, {"edits", edits}}});
     CHECK(not(result.is_error));
@@ -1779,7 +1779,7 @@ TEST_CASE("EditInsertAfterEOF") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "ins.txt") << "aaa\nbbb\n";
 
-    json edits = json::array({{{"op", "insert_after"}, {"content", json::array({"ccc"})}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "insert_after"}, {"content", nlohmann::json::array({"ccc"})}}});
 
     const auto result = fixture.registry().execute({.id = "e3", .name = "edit", .input = {{"path", "ins.txt"}, {"edits", edits}}});
     CHECK(not(result.is_error));
@@ -1795,7 +1795,7 @@ TEST_CASE("EditHashMismatchReturnsErrorWithContext") {
 
     auto actual_hash = orangutan::compute_line_hash("bbb", 2);
     const std::string wrong_hash = actual_hash == "ZZ" ? "ZY" : "ZZ";
-    json edits = json::array({{{"op", "replace"}, {"anchor", "2#" + wrong_hash}, {"content", json::array({"XXX"})}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + wrong_hash}, {"content", nlohmann::json::array({"XXX"})}}});
 
     const auto result = fixture.registry().execute({.id = "e4", .name = "edit", .input = {{"path", "stale.txt"}, {"edits", edits}}});
     CHECK(result.is_error);
@@ -1808,7 +1808,7 @@ TEST_CASE("EditContentAsStringIsSplitOnNewlines") {
     std::ofstream(fixture.workspace() / "str.txt") << "aaa\nbbb\n";
 
     auto hash = orangutan::compute_line_hash("bbb", 2);
-    json edits = json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
 
     const auto result = fixture.registry().execute({.id = "e5", .name = "edit", .input = {{"path", "str.txt"}, {"edits", edits}}});
     CHECK(not(result.is_error));
@@ -1822,7 +1822,7 @@ TEST_CASE("EditMissingAnchorForReplaceReturnsError") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "missing.txt") << "aaa\n";
 
-    json edits = json::array({{{"op", "replace"}, {"content", json::array({"XXX"})}}});
+    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"content", nlohmann::json::array({"XXX"})}}});
 
     const auto result = fixture.registry().execute({.id = "e6", .name = "edit", .input = {{"path", "missing.txt"}, {"edits", edits}}});
     CHECK(result.is_error);

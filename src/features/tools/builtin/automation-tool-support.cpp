@@ -4,7 +4,7 @@
 
 namespace orangutan::builtin::detail {
 
-    std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const json &input, const automation::DeliveryPolicy &base) {
+    std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const nlohmann::json &input, const automation::DeliveryPolicy &base) {
         auto delivery = base;
 
         if (const auto it = input.find("delivery_mode"); it != input.end()) {
@@ -36,7 +36,7 @@ namespace orangutan::builtin::detail {
         return delivery;
     }
 
-    std::expected<std::optional<std::vector<automation::ActiveHourWindow>>, ParseError> parse_active_hours_overlay(const json &input) {
+    std::expected<std::optional<std::vector<automation::ActiveHourWindow>>, ParseError> parse_active_hours_overlay(const nlohmann::json &input) {
         const auto it = input.find("active_hours");
         if (it == input.end()) {
             return std::optional<std::vector<automation::ActiveHourWindow>>{};

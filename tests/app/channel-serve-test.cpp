@@ -343,7 +343,7 @@ namespace {
         const auto inspection = app::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
 
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
-        CHECK(inspection.runtime_origin == SubagentRuntimeOrigin::channel);
+        CHECK(inspection.runtime_origin == base::origin::channel);
         CHECK(inspection.raw_caller_id == "qqbot:c2c:alice");
         CHECK(inspection.has_agent);
         CHECK(inspection.has_hook_manager);
@@ -433,7 +433,7 @@ namespace {
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required.");
         });
 
         for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
@@ -466,7 +466,7 @@ namespace {
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUseBlock{.id = "deny-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required.");
+            return callback(ToolUse("deny-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required.");
         });
 
         for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
@@ -535,7 +535,7 @@ namespace {
 
         runner.submit(approval_request.jid, [&] {
             auto callback = coordinator.make_callback(approval_request, manager, &runner);
-            approval_result.store(callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
+            approval_result.store(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required."));
             approval_finished.set_value();
         });
 
@@ -577,7 +577,7 @@ namespace {
 
         coordinator.shutdown();
 
-        CHECK_FALSE(callback(ToolUseBlock{.id = "approve-shell", .name = "shell", .input = {{"command", "echo hello"}}}, "Shell command approval required."));
+        CHECK_FALSE(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required."));
         CHECK(qq->sent_messages().empty());
         CHECK(coordinator.make_callback(request, manager) == nullptr);
     };
@@ -614,7 +614,7 @@ namespace {
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
         const auto session_id =
-            session_store.save({Message::user_text("hello"), Message::assistant_text("hi")},
+            session_store.save({Message::user().text("hello"), Message::assistant().text("hi")},
                                orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
 
@@ -679,7 +679,7 @@ namespace {
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
         const auto session_id =
-            session_store.save({Message::user_text("hello"), {.role = Role::assistant, .content = {ToolUseBlock{.id = "1", .name = "read", .input = json::object()}}}},
+            session_store.save({Message::user().text("hello"), Message(base::role::assistant, {ToolUse("1", "read", nlohmann::json::object())})},
                                orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
         const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
@@ -743,13 +743,13 @@ namespace {
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id = session_store.save({Message::user_text("hello")}, SessionMetadata{
-                                                                                      .model = "gpt-test",
-                                                                                      .scope_key = identity.runtime_key,
-                                                                                      .agent_key = "default",
-                                                                                      .origin_kind = "channel",
-                                                                                      .origin_ref = jid,
-                                                                                  });
+        const auto session_id = session_store.save({Message::user().text("hello")}, SessionMetadata{
+                                                                                        .model = "gpt-test",
+                                                                                        .scope_key = identity.runtime_key,
+                                                                                        .agent_key = "default",
+                                                                                        .origin_kind = "channel",
+                                                                                        .origin_ref = jid,
+                                                                                    });
 
         auto loop = std::async(std::launch::async, [&] {
             app::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
@@ -839,8 +839,8 @@ namespace {
         const std::string jid = "qqbot:c2c:42";
         const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
         std::vector<Message> history = {
-            Message::user_text("hello"),
-            Message::assistant_text("hi"),
+            Message::user().text("hello"),
+            Message::assistant().text("hi"),
         };
         const auto session_id = session_store.save(
             history, orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
@@ -853,8 +853,8 @@ namespace {
                     return LLMResponse{};
                 }
 
-                CHECK(messages.back().role == Role::user);
-                const auto *text = messages.back().content.empty() ? nullptr : std::get_if<TextBlock>(&messages.back().content.front());
+                CHECK(messages.back().role() == base::role::user);
+                const auto *text = messages.back().begin() == messages.back().end() ? nullptr : std::get_if<Text>(&*messages.back().begin());
                 CHECK((text != nullptr));
                 if (text != nullptr) {
                     CHECK(text->text.contains("\"type\": \"background_process_completion\""));
@@ -862,7 +862,7 @@ namespace {
 
                 LLMResponse response;
                 response.stop_reason = "end_turn";
-                response.content.emplace_back(TextBlock{.text = "Background reply"});
+                response.content.emplace_back(Text{"Background reply"});
                 return response;
             },
         });
@@ -918,8 +918,8 @@ namespace {
         CHECK(current_session_id == session_id);
         CHECK(persisted_message_count == persisted_history.size());
         CHECK(persisted_history.size() >= 4ul);
-        CHECK(persisted_history.back().role == Role::assistant);
-        const auto *reply_text = persisted_history.back().content.empty() ? nullptr : std::get_if<TextBlock>(&persisted_history.back().content.front());
+        CHECK(persisted_history.back().role() == base::role::assistant);
+        const auto *reply_text = persisted_history.back().begin() == persisted_history.back().end() ? nullptr : std::get_if<Text>(&*persisted_history.back().begin());
         REQUIRE(reply_text != nullptr);
         if (reply_text != nullptr) {
             CHECK(reply_text->text == "Background reply");

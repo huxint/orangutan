@@ -77,7 +77,7 @@ namespace orangutan::web {
         }
 
         ToolApprovalCallback default_web_approval_callback() {
-            return [](const ToolUseBlock & /*call*/, const std::string & /*prompt_text*/) {
+            return [](const ToolUse & /*call*/, const std::string & /*prompt_text*/) {
                 // Task 3 keeps approval callback parity in runtime context.
                 // Task 4 will replace this with request/response coordination.
                 return false;
@@ -116,7 +116,7 @@ namespace orangutan::web {
                 .memory_store = memory_store,
                 .current_session_id = current_session_id,
                 .subagent_manager = subagent_manager,
-                .runtime_origin = SubagentRuntimeOrigin::web,
+                .runtime_origin = base::origin::web,
                 .raw_caller_id = "web:local",
                 .automation_runtime = automation_runtime,
                 .approval_callback = effective_approval_callback,
@@ -163,7 +163,7 @@ namespace orangutan::web {
             return std::nullopt;
         }
 
-        std::optional<std::string> extract_approval_command(const ToolUseBlock &call) {
+        std::optional<std::string> extract_approval_command(const ToolUse &call) {
             if (!call.input.is_object()) {
                 return std::nullopt;
             }
@@ -179,8 +179,8 @@ namespace orangutan::web {
             return "approval-" + std::to_string(next_request_id.fetch_add(1, std::memory_order_relaxed));
         }
 
-        json approval_payload(const WebPendingApproval &approval) {
-            json payload = {
+        nlohmann::json approval_payload(const WebPendingApproval &approval) {
+            nlohmann::json payload = {
                 {"request_id", approval.request_id},
                 {"tool", approval.tool},
                 {"sandbox_mode", approval.sandbox_mode},
@@ -199,14 +199,14 @@ namespace orangutan::web {
             return "default";
         }
 
-        json unix_time_to_json(const std::optional<std::int64_t> &value) {
+        nlohmann::json unix_time_to_json(const std::optional<std::int64_t> &value) {
             if (!value.has_value()) {
                 return nullptr;
             }
             return *value;
         }
 
-        json task_to_json(const automation::TaskSpec &task) {
+        nlohmann::json task_to_json(const automation::TaskSpec &task) {
             return {
                 {"id", task.id},
                 {"agent_key", task.agent_key},
@@ -222,7 +222,7 @@ namespace orangutan::web {
             };
         }
 
-        json heartbeat_to_json(const automation::HeartbeatSpec &heartbeat) {
+        nlohmann::json heartbeat_to_json(const automation::HeartbeatSpec &heartbeat) {
             return {
                 {"id", heartbeat.id},
                 {"agent_key", heartbeat.agent_key},
@@ -241,7 +241,7 @@ namespace orangutan::web {
             };
         }
 
-        json inbox_item_to_json(const automation::InboxItem &item) {
+        nlohmann::json inbox_item_to_json(const automation::InboxItem &item) {
             return {
                 {"id", item.id},         {"agent_key", item.agent_key}, {"source_kind", item.source_kind}, {"source_run_id", item.source_run_id},
                 {"title", item.title},   {"body", item.body},           {"created_at", item.created_at},   {"acked_at", unix_time_to_json(item.acked_at)},
@@ -260,7 +260,7 @@ namespace orangutan::web {
             approval.condition.notify_all();
         }
 
-        void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const json &payload) {
+        void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const nlohmann::json &payload) {
             const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
             sink.write(sse.c_str(), sse.size());
         }
@@ -273,7 +273,7 @@ namespace orangutan::web {
                 if (!command_response.text.empty()) {
                     write_sse_event(sink, "text", {{"text", command_response.text}});
                 }
-                write_sse_event(sink, "done", json::object());
+                write_sse_event(sink, "done", nlohmann::json::object());
                 sink.done();
                 return false;
             });
@@ -407,7 +407,7 @@ namespace orangutan::web {
         };
     }
 
-    bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUseBlock &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
+    bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
                                     const web_approval_event_emitter &event_emitter, const std::function<bool()> &stream_open, std::chrono::milliseconds timeout) {
         auto approval = std::make_shared<WebPendingApproval>();
         approval->request_id = make_approval_request_id();
@@ -975,7 +975,7 @@ namespace orangutan::web {
             // so they intentionally do not advertise background completion routing.
             session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(
                 *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
-                [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUseBlock &call,
+                [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUse &call,
                                                                                                                                                    const std::string &prompt_text) {
                     return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
                                                       approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
@@ -1008,9 +1008,9 @@ namespace orangutan::web {
             const auto permissions = maybe_agent->permissions;
             auto *tool_context = &session->runtime->tool_context;
             if (auto *tools = session->tools(); tools != nullptr) {
-                tools->set_execution_guard([abort_flag, permissions, tool_context](const ToolUseBlock &call) -> std::optional<ToolResultBlock> {
+                tools->set_execution_guard([abort_flag, permissions, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
                     if (abort_flag->load()) {
-                        return ToolResultBlock{.tool_use_id = call.id, .content = "Operation aborted by user", .is_error = true};
+                        return ToolResult(call.id, "Operation aborted by user", true);
                     }
                     const auto &approval_callback = tool_context != nullptr ? tool_context->approval_callback : ToolApprovalCallback{};
                     return evaluate_tool_permission(call, permissions, approval_callback);
@@ -1032,7 +1032,7 @@ namespace orangutan::web {
                                               approval_event_emitter, approval_stream_open, agent_key, automation_runtime, &sessions_mutex,
                                               &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
                                                  if (approval_event_emitter != nullptr) {
-                                                     *approval_event_emitter = [&sink](std::string_view event_name, const json &payload) {
+                                                     *approval_event_emitter = [&sink](std::string_view event_name, const nlohmann::json &payload) {
                                                          const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
                                                          return sink.write(sse.c_str(), sse.size());
                                                      };
@@ -1069,7 +1069,7 @@ namespace orangutan::web {
                                                                  }
                                                              },
                                                              // ToolEventCallback
-                                                             [&sink, session_ptr](const std::string &event_type, const ToolUseBlock &call, const ToolResultBlock *result) {
+                                                             [&sink, session_ptr](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
                                                                  if (session_ptr->abort_requested) {
                                                                      return;
                                                                  }

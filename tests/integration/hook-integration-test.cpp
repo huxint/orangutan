@@ -63,14 +63,14 @@ namespace {
                 ++response_index_;
                 return {
                     .stop_reason = "tool_use",
-                    .content = {ToolUseBlock{.id = "tool-1", .name = "demo", .input = json{{"value", "from-provider"}}}},
+                    .content = {ToolUse("tool-1", "demo", nlohmann::json{{"value", "from-provider"}})},
                 };
             }
             if (response_index_ == 1) {
                 ++response_index_;
                 return {
                     .stop_reason = "end_turn",
-                    .content = {TextBlock{.text = "final reply"}},
+                    .content = {Text{"final reply"}},
                 };
             }
             throw std::runtime_error("no more responses queued");
@@ -86,7 +86,7 @@ namespace {
 
     struct AgentRunResult {
         std::string reply;
-        std::optional<ToolResultBlock> tool_result;
+        std::optional<ToolResult> tool_result;
         int execution_count = 0;
     };
 
@@ -133,10 +133,10 @@ namespace {
                     ToolDef{
                         .name = "demo",
                         .description = "demo tool",
-                        .input_schema = json{{"type", "object"}},
+                        .input_schema = nlohmann::json{{"type", "object"}},
                     },
                 .execute =
-                    [&execution_count](const json &) {
+                    [&execution_count](const nlohmann::json &) {
                         ++execution_count;
                         return std::string{"tool output"};
                     },
@@ -144,8 +144,8 @@ namespace {
 
             AgentLoop loop(provider, tools, "test system prompt", nullptr, {}, &manager);
 
-            std::optional<ToolResultBlock> tool_result;
-            const auto reply = loop.run("please run the demo tool", {}, [&tool_result](const std::string &event_type, const ToolUseBlock &, const ToolResultBlock *result) {
+            std::optional<ToolResult> tool_result;
+            const auto reply = loop.run("please run the demo tool", {}, [&tool_result](const std::string &event_type, const ToolUse &, const ToolResult *result) {
                 if (event_type == "tool_finished" && result != nullptr) {
                     tool_result = *result;
                 }

@@ -88,12 +88,12 @@ namespace orangutan {
 
     // ── Hook execution ──────────────────────────────
 
-    static auto execute_hook_sender(const HookDef &hook, json context) {
+    static auto execute_hook_sender(const HookDef &hook, nlohmann::json context) {
         constexpr int hook_timeout_seconds = 5;
         auto hook_path = hook.path;
         auto hook_filename = hook.filename;
 
-        return stdexec::just(std::move(context)) | stdexec::then([](const json &active_context) {
+        return stdexec::just(std::move(context)) | stdexec::then([](const nlohmann::json &active_context) {
                    return active_context.dump();
                }) |
                stdexec::let_value([hook_path = std::move(hook_path), hook_timeout_seconds](std::string stdin_data) mutable {
@@ -144,7 +144,7 @@ namespace orangutan {
         return std::nullopt;
     }
 
-    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, const std::shared_ptr<const json> &context,
+    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, const std::shared_ptr<const nlohmann::json> &context,
                                                    bool is_blocking_event) {
         if (index >= hooks.size()) {
             return stdexec::just(DispatchResult{});
@@ -166,14 +166,14 @@ namespace orangutan {
 
     // ── Hook dispatch ───────────────────────────────
 
-    DispatchResult HookManager::dispatch(HookEvent event, const json &context) const {
+    DispatchResult HookManager::dispatch(HookEvent event, const nlohmann::json &context) const {
         auto it = hooks_.find(event);
         if (it == hooks_.end() || it->second.empty()) {
             return {};
         }
 
         bool is_blocking_event = (event == HookEvent::before_tool_call);
-        auto context_ptr = std::make_shared<json>(context);
+        auto context_ptr = std::make_shared<nlohmann::json>(context);
         auto pipeline = dispatch_hooks_sender(it->second, 0, event, std::move(context_ptr), is_blocking_event);
         auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "hook dispatch pipeline");
         return result;
@@ -194,8 +194,8 @@ namespace orangutan {
 
     // ── Context builders ────────────────────────────
 
-    static json build_tool_call_context(HookEvent event, std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error) {
-        json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
+    static nlohmann::json build_tool_call_context(HookEvent event, std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error) {
+        nlohmann::json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
         if (event == HookEvent::after_tool_call) {
             ctx["tool_result"] = tool_result;
             ctx["is_error"] = is_error;
@@ -203,20 +203,20 @@ namespace orangutan {
         return ctx;
     }
 
-    json build_before_tool_call_context(std::string_view tool_name, const json &tool_input) {
+    nlohmann::json build_before_tool_call_context(std::string_view tool_name, const nlohmann::json &tool_input) {
         return build_tool_call_context(HookEvent::before_tool_call, tool_name, tool_input, {}, false);
     }
 
-    json build_after_tool_call_context(std::string_view tool_name, const json &tool_input, std::string_view tool_result, bool is_error) {
+    nlohmann::json build_after_tool_call_context(std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error) {
         return build_tool_call_context(HookEvent::after_tool_call, tool_name, tool_input, tool_result, is_error);
     }
 
-    json build_message_context(HookEvent event, std::string_view role, std::string_view content) {
+    nlohmann::json build_message_context(HookEvent event, std::string_view role, std::string_view content) {
         return {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
     }
 
-    json build_session_context(HookEvent event, std::string_view session_id, size_t message_count) {
-        json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
+    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, size_t message_count) {
+        nlohmann::json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
         if (event == HookEvent::session_end) {
             ctx["message_count"] = message_count;
         }

@@ -62,12 +62,12 @@ namespace orangutan {
 
         const automation::InboxItem *find_inbox_item_by_body_type(const std::vector<automation::InboxItem> &items, const std::string &type) {
             const auto it = std::ranges::find_if(items, [&](const automation::InboxItem &item) {
-                return json::parse(item.body).value("type", "") == type;
+                return nlohmann::json::parse(item.body).value("type", "") == type;
             });
             return it == items.end() ? nullptr : &(*it);
         }
 
-        std::optional<json> find_sse_event_payload(std::string_view body, std::string_view event_name) {
+        std::optional<nlohmann::json> find_sse_event_payload(std::string_view body, std::string_view event_name) {
             const auto marker = "event: " + std::string(event_name) + "\ndata: ";
             const auto start = body.find(marker);
             if (start == std::string_view::npos) {
@@ -80,7 +80,7 @@ namespace orangutan {
                 return std::nullopt;
             }
 
-            return json::parse(std::string(body.substr(payload_start, payload_end - payload_start)));
+            return nlohmann::json::parse(std::string(body.substr(payload_start, payload_end - payload_start)));
         }
 
         class ScriptedProvider final : public Provider {
@@ -258,10 +258,11 @@ namespace orangutan {
             WebChatStoreHarness store_harness;
             Config config = make_config();
             const auto session_id =
-                store_harness.store().save({Message::user_text("hello")}, make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
+                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
             WebChatServerHarness harness(&config, &store_harness.store());
 
-            const auto res = harness.client().Post("/api/chat", json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+            const auto res =
+                harness.client().Post("/api/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 409);
@@ -270,10 +271,12 @@ namespace orangutan {
         TEST_CASE("chat_endpoint_rejects_cross_agent_session_access") {
             WebChatStoreHarness store_harness;
             Config config = make_config();
-            const auto session_id = store_harness.store().save({Message::user_text("hello")}, make_session_metadata("coder-test", "agent:coder|web", "coder", "web", "web:local"));
+            const auto session_id =
+                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("coder-test", "agent:coder|web", "coder", "web", "web:local"));
             WebChatServerHarness harness(&config, &store_harness.store());
 
-            const auto res = harness.client().Post("/api/chat", json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+            const auto res =
+                harness.client().Post("/api/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 404);
@@ -284,10 +287,11 @@ namespace orangutan {
             Config config = make_config();
             config.api_key.clear();
             config.agents["default"].api_key.clear();
-            const auto session_id = store_harness.store().save({Message::user_text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+            const auto session_id = store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
             WebChatServerHarness harness(&config, &store_harness.store());
 
-            const auto res = harness.client().Post("/api/chat", json{{"message", std::string("/resume ") + session_id}, {"agent_key", "default"}}.dump(), "application/json");
+            const auto res =
+                harness.client().Post("/api/chat", nlohmann::json{{"message", std::string("/resume ") + session_id}, {"agent_key", "default"}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -305,11 +309,11 @@ namespace orangutan {
             config.api_key.clear();
             config.agents["default"].api_key.clear();
             const auto existing_session_id =
-                store_harness.store().save({Message::user_text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", json{{"message", "/new"}, {"agent_key", "default"}, {"session_id", existing_session_id}}.dump(), "application/json");
+                harness.client().Post("/api/chat", nlohmann::json{{"message", "/new"}, {"agent_key", "default"}, {"session_id", existing_session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -327,12 +331,13 @@ namespace orangutan {
             const auto workspace = orangutan::testing::unique_test_root("web-chat-export");
             config.agents["default"].workspace = workspace.string();
 
-            const auto session_id = store_harness.store().save({Message::user_text("hello"), Message::assistant_text("copied reply")},
+            const auto session_id = store_harness.store().save({Message::user().text("hello"), Message::assistant().text("copied reply")},
                                                                make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
             const auto export_path = workspace / ".exports" / (session_id + ".md");
             WebChatServerHarness harness(&config, &store_harness.store());
 
-            const auto res = harness.client().Post("/api/chat", json{{"message", "/export"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+            const auto res =
+                harness.client().Post("/api/chat", nlohmann::json{{"message", "/export"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -393,20 +398,20 @@ namespace orangutan {
             std::string session_id = "web-chat-runtime-session";
 
             auto runtime =
-                web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr, [](const ToolUseBlock &, const std::string &) {
+                web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr, [](const ToolUse &, const std::string &) {
                     return false;
                 });
 
             CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "memory_list"));
             CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
-            CHECK(runtime.tool_context.runtime_origin == SubagentRuntimeOrigin::web);
+            CHECK(runtime.tool_context.runtime_origin == base::origin::web);
             CHECK(runtime.tool_context.raw_caller_id == "web:local");
             CHECK(runtime.tool_context.current_session_id == &session_id);
             CHECK(runtime.tool_context.allowed_child_agents == std::vector<std::string>{"coder"});
             CHECK(static_cast<bool>(runtime.tool_context.approval_callback));
             REQUIRE(runtime.agent != nullptr);
 
-            const auto shell_result = runtime.tools.execute(ToolUseBlock{
+            const auto shell_result = runtime.tools.execute(ToolUse{
                 .id = "web-shell",
                 .name = "shell",
                 .input = {{"command", "echo hello"}},
@@ -485,7 +490,7 @@ namespace orangutan {
                     ++provider_calls;
                     LLMResponse response;
                     response.stop_reason = "end_turn";
-                    response.content.emplace_back(TextBlock{.text = "should not run"});
+                    response.content.emplace_back(Text{"should not run"});
                     return response;
                 },
             });
@@ -532,7 +537,7 @@ namespace orangutan {
             const auto *failure_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion_resume_failure");
             REQUIRE(completion_item != nullptr);
             REQUIRE(failure_item != nullptr);
-            CHECK(json::parse(failure_item->body).at("reason") == "web session is no longer live");
+            CHECK(nlohmann::json::parse(failure_item->body).at("reason") == "web session is no longer live");
             std::filesystem::remove(automation_db_path);
         };
 
@@ -552,9 +557,9 @@ namespace orangutan {
 
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-deny", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+                    *session_ptr, sessions_mutex, ToolUse("shell-deny", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
                     "Shell command approval required.",
-                    [&](std::string_view, const json &payload) {
+                    [&](std::string_view, const nlohmann::json &payload) {
                         std::lock_guard lock(event_mutex);
                         event_payload = payload;
                         event_cv.notify_one();
@@ -600,9 +605,9 @@ namespace orangutan {
             auto approval_future = approval_result.get_future();
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-abort", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+                    *session_ptr, sessions_mutex, ToolUse("shell-abort", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
                     "Shell command approval required.",
-                    [](std::string_view, const json &) {
+                    [](std::string_view, const nlohmann::json &) {
                         return true;
                     },
                     {}, std::chrono::seconds(5)));
@@ -642,9 +647,9 @@ namespace orangutan {
             sessions.emplace(session->session_id, std::move(session));
 
             const auto approved = web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-timeout", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+                *session_ptr, sessions_mutex, ToolUse("shell-timeout", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
                 "Shell command approval required.",
-                [](std::string_view, const json &) {
+                [](std::string_view, const nlohmann::json &) {
                     return true;
                 },
                 {}, std::chrono::milliseconds(50));
@@ -666,9 +671,9 @@ namespace orangutan {
             auto approval_future = approval_result.get_future();
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUseBlock{.id = "shell-cleanup", .name = "shell", .input = {{"command", "echo hello"}}}, ToolSandboxMode::isolated,
+                    *session_ptr, sessions_mutex, ToolUse("shell-cleanup", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
                     "Shell command approval required.",
-                    [](std::string_view, const json &) {
+                    [](std::string_view, const nlohmann::json &) {
                         return true;
                     },
                     {}, std::chrono::seconds(5)));

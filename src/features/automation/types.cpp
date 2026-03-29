@@ -39,14 +39,14 @@ namespace orangutan::automation {
         return TimePoint{std::chrono::seconds(seconds)};
     }
 
-    json delivery_policy_to_json(const DeliveryPolicy &delivery) {
+    nlohmann::json delivery_policy_to_json(const DeliveryPolicy &delivery) {
         return {
             {"mode", magic_enum::enum_name(delivery.mode)},
             {"targets", delivery.targets},
         };
     }
 
-    DeliveryPolicy delivery_policy_from_json(const json &value) {
+    DeliveryPolicy delivery_policy_from_json(const nlohmann::json &value) {
         DeliveryPolicy delivery;
         if (!value.is_object()) {
             return delivery;
@@ -69,8 +69,8 @@ namespace orangutan::automation {
         return delivery;
     }
 
-    json active_hours_to_json(const std::vector<ActiveHourWindow> &windows) {
-        json result = json::array();
+    nlohmann::json active_hours_to_json(const std::vector<ActiveHourWindow> &windows) {
+        nlohmann::json result = nlohmann::json::array();
         for (const auto &window : windows) {
             result.push_back({
                 {"start_minute", window.start_minute},
@@ -80,7 +80,7 @@ namespace orangutan::automation {
         return result;
     }
 
-    std::vector<ActiveHourWindow> active_hours_from_json(const json &value) {
+    std::vector<ActiveHourWindow> active_hours_from_json(const nlohmann::json &value) {
         std::vector<ActiveHourWindow> windows;
         if (!value.is_array()) {
             return windows;

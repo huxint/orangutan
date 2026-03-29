@@ -52,7 +52,7 @@ namespace orangutan {
             return utf8::sanitize_and_truncate_valid_prefix(command, max_title_command_chars, true);
         }
 
-        json summarize_output(const BackgroundProcessOutputMetadata &output) {
+        nlohmann::json summarize_output(const BackgroundProcessOutputMetadata &output) {
             const std::string sanitized_tail = utf8::sanitize(output.tail);
             std::string tail = utf8::truncate_valid_suffix(sanitized_tail, max_output_summary_bytes);
             bool truncated = output.truncated;
@@ -79,8 +79,8 @@ namespace orangutan {
             return std::nullopt;
         }
 
-        json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
-            json payload = {
+        nlohmann::json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
+            nlohmann::json payload = {
                 {"type", completion_message_type},
                 {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key, max_runtime_key_chars, true)},
                 {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key, max_agent_key_chars, true)},
@@ -94,8 +94,8 @@ namespace orangutan {
                 {"stderr", summarize_output(event.stderr)},
                 {"on_complete", {{"mode", completion_mode(event.metadata)}}},
             };
-            payload["exit_code"] = event.exit_code.has_value() ? json(*event.exit_code) : json(nullptr);
-            payload["signal_number"] = event.signal_number.has_value() ? json(*event.signal_number) : json(nullptr);
+            payload["exit_code"] = event.exit_code.has_value() ? nlohmann::json(*event.exit_code) : nlohmann::json(nullptr);
+            payload["signal_number"] = event.signal_number.has_value() ? nlohmann::json(*event.signal_number) : nlohmann::json(nullptr);
             if (const auto prompt = completion_prompt(event.metadata); prompt.has_value()) {
                 payload["on_complete"]["prompt"] = *prompt;
             }
@@ -169,11 +169,11 @@ namespace orangutan {
             spdlog::warn("background completion payload exceeded bounded size for process {}", event.process_id);
             return;
         }
-        const auto persisted_payload = json::parse(payload_text);
+        const auto persisted_payload = nlohmann::json::parse(payload_text);
         const auto requested_completion_mode = completion_mode(event.metadata);
 
         const auto insert_resume_failure_note = [&](std::string_view reason) {
-            const auto failure_payload = json{
+            const auto failure_payload = nlohmann::json{
                 {"type", completion_resume_failure_type},
                 {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key_, max_runtime_key_chars, true)},
                 {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key_, max_agent_key_chars, true)},

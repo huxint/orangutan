@@ -16,7 +16,7 @@ namespace orangutan::automation {
 
 namespace orangutan::app {
 
-    using JsonEmitter = std::function<void(const json &event)>;
+    using JsonEmitter = std::function<void(const nlohmann::json &event)>;
     using CompletionResumePostRunCallback = std::function<std::optional<std::string>(const std::string &reply)>;
 
     void emit_session_history_dump(const std::vector<Message> &history, const std::string &current_session_id, const JsonEmitter &emit);

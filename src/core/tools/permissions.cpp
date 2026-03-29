@@ -39,15 +39,15 @@ namespace orangutan {
             return lowered;
         }
 
-        std::optional<std::string> extract_shell_command(const ToolUseBlock &call) {
+        std::optional<std::string> extract_shell_command(const ToolUse &call) {
             if (call.name != "shell" || !call.input.contains("command") || !call.input["command"].is_string()) {
                 return std::nullopt;
             }
             return call.input.at("command").get<std::string>();
         }
 
-        ToolResultBlock blocked_result(const ToolUseBlock &call, std::string message) {
-            return ToolResultBlock{
+        ToolResult blocked_result(const ToolUse &call, std::string message) {
+            return ToolResult{
                 .tool_use_id = call.id,
                 .content = std::move(message),
                 .is_error = true,
@@ -93,7 +93,7 @@ namespace orangutan {
         return std::nullopt;
     }
 
-    std::optional<ToolResultBlock> evaluate_tool_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback) {
+    std::optional<ToolResult> evaluate_tool_permission(const ToolUse &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback) {
         if (!is_tool_allowed(settings, call.name)) {
             return blocked_result(call, "Tool '" + call.name + "' blocked by permission policy.");
         }
@@ -106,8 +106,8 @@ namespace orangutan {
         return evaluate_shell_command_permission(call, settings, *maybe_command, approval_callback);
     }
 
-    std::optional<ToolResultBlock> evaluate_shell_command_permission(const ToolUseBlock &call, const ToolPermissionSettings &settings, std::string_view command,
-                                                                     const ToolApprovalCallback &approval_callback) {
+    std::optional<ToolResult> evaluate_shell_command_permission(const ToolUse &call, const ToolPermissionSettings &settings, std::string_view command,
+                                                                const ToolApprovalCallback &approval_callback) {
         if (!is_tool_allowed(settings, call.name)) {
             return blocked_result(call, "Tool '" + call.name + "' blocked by permission policy.");
         }

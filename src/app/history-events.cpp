@@ -25,14 +25,14 @@ namespace orangutan::app {
             return lines;
         }
 
-        json make_diff_line(const char *kind, const std::string &text) {
+        nlohmann::json make_diff_line(const char *kind, const std::string &text) {
             return {
                 {"kind", kind},
                 {"text", text},
             };
         }
 
-        json history_text_event(std::string_view role, const std::string &text) {
+        nlohmann::json history_text_event(std::string_view role, const std::string &text) {
             return {
                 {"type", "history_message"},
                 {"role", role},
@@ -42,7 +42,7 @@ namespace orangutan::app {
 
     } // namespace
 
-    json make_session_event_json(const char *type, const std::string &session_id, const std::string &action) {
+    nlohmann::json make_session_event_json(const char *type, const std::string &session_id, const std::string &action) {
         return {
             {"type", type},
             {"session_id", session_id},
@@ -50,7 +50,7 @@ namespace orangutan::app {
         };
     }
 
-    json build_edit_details(const ToolUseBlock &call) {
+    nlohmann::json build_edit_details(const ToolUse &call) {
         if (call.name != "edit") {
             return nullptr;
         }
@@ -78,7 +78,7 @@ namespace orangutan::app {
         const auto suffix_context_start = old_lines.size() - suffix;
         const auto suffix_context_count = std::min(suffix, context_lines);
 
-        auto hunk_lines = json::array();
+        auto hunk_lines = nlohmann::json::array();
         for (size_t index = prefix_context_start; index < prefix; ++index) {
             hunk_lines.push_back(make_diff_line("context", old_lines[index]));
         }
@@ -128,7 +128,7 @@ namespace orangutan::app {
             unified.append(old_lines[index]);
         }
 
-        auto hunks = json::array();
+        auto hunks = nlohmann::json::array();
         hunks.push_back({
             {"header", header},
             {"lines", hunk_lines},
@@ -145,19 +145,19 @@ namespace orangutan::app {
         };
     }
 
-    std::vector<json> build_session_history_events(const std::vector<Message> &history) {
-        std::vector<json> events;
+    std::vector<nlohmann::json> build_session_history_events(const std::vector<Message> &history) {
+        std::vector<nlohmann::json> events;
         events.push_back({{"type", "session_history_started"}});
 
-        std::unordered_map<std::string, ToolUseBlock> tool_calls;
+        std::unordered_map<std::string, ToolUse> tool_calls;
         for (const auto &message : history) {
-            for (const auto &block : message.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block)) {
-                    events.push_back(history_text_event(magic_enum::enum_name(message.role), text->text));
+            for (const auto &block : message) {
+                if (const auto *text = std::get_if<Text>(&block)) {
+                    events.push_back(history_text_event(magic_enum::enum_name(message.role()), text->text));
                     continue;
                 }
 
-                if (const auto *tool = std::get_if<ToolUseBlock>(&block)) {
+                if (const auto *tool = std::get_if<ToolUse>(&block)) {
                     tool_calls.insert_or_assign(tool->id, *tool);
                     events.push_back({
                         {"type", "tool_started"},
@@ -168,15 +168,15 @@ namespace orangutan::app {
                     continue;
                 }
 
-                const auto *result = std::get_if<ToolResultBlock>(&block);
+                const auto *result = std::get_if<ToolResult>(&block);
                 if (result == nullptr) {
                     continue;
                 }
 
                 const auto tool_it = tool_calls.find(result->tool_use_id);
                 const auto tool_name = tool_it != tool_calls.end() ? tool_it->second.name : "tool";
-                const auto tool_input = tool_it != tool_calls.end() ? tool_it->second.input : json::object();
-                const auto details = tool_it != tool_calls.end() ? build_edit_details(tool_it->second) : json(nullptr);
+                const auto tool_input = tool_it != tool_calls.end() ? tool_it->second.input : nlohmann::json::object();
+                const auto details = tool_it != tool_calls.end() ? build_edit_details(tool_it->second) : nlohmann::json(nullptr);
 
                 events.push_back({
                     {"type", "tool_finished"},

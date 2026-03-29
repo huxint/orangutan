@@ -61,7 +61,7 @@ namespace orangutan {
                             .description = tool.description,
                             .input_schema = tool.input_schema,
                         },
-                    .execute = [client = server.client.get(), server_name = server.config.name, tool_name = tool.name](const json &input) -> std::string {
+                    .execute = [client = server.client.get(), server_name = server.config.name, tool_name = tool.name](const nlohmann::json &input) -> std::string {
                         spdlog::debug("  [mcp-tool] {}:{}", server_name, tool_name);
                         return client->call_tool(tool_name, input);
                     },

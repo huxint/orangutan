@@ -24,7 +24,7 @@ namespace orangutan {
             registry.set_definition_filter([settings](const ToolDef &definition) {
                 return should_expose_tool(settings, definition.name);
             });
-            registry.set_execution_guard([settings, approval_callback = std::move(approval_callback), tool_context](const ToolUseBlock &call) {
+            registry.set_execution_guard([settings, approval_callback = std::move(approval_callback), tool_context](const ToolUse &call) {
                 const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
                 return evaluate_tool_permission(call, settings, active_callback);
             });

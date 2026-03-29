@@ -84,7 +84,7 @@ namespace {
         REQUIRE(it != defs.end());
         CHECK(it->description == "Echo a message back");
 
-        const auto result = registry.execute(ToolUseBlock{
+        const auto result = registry.execute(ToolUse{
             .id = "call-1",
             .name = "mock:echo",
             .input = {{"message", "via registry"}},

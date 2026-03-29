@@ -24,7 +24,7 @@ namespace orangutan {
             return out;
         }
 
-        std::string execute_heartbeat_tool(const json &input, const ToolRuntimeContext *ctx) {
+        std::string execute_heartbeat_tool(const nlohmann::json &input, const ToolRuntimeContext *ctx) {
             if (ctx == nullptr || ctx->automation_runtime == nullptr) {
                 return "Error: heartbeat tool is not available in this context.";
             }
@@ -145,7 +145,7 @@ namespace orangutan {
                             {"type", "object"},
                             {"properties",
                              {
-                                 {"op", {{"type", "string"}, {"enum", json::array({"add", "update", "remove", "list", "run", "pause", "resume"})}}},
+                                 {"op", {{"type", "string"}, {"enum", nlohmann::json::array({"add", "update", "remove", "list", "run", "pause", "resume"})}}},
                                  {"id", {{"type", "string"}}},
                                  {"name", {{"type", "string"}}},
                                  {"every", {{"type", "string"}}},
@@ -154,15 +154,15 @@ namespace orangutan {
                                  {"notes", {{"type", "string"}}},
                                  {"enabled", {{"type", "boolean"}}},
                                  {"paused", {{"type", "boolean"}}},
-                                 {"delivery_mode", {{"type", "string"}, {"enum", json::array({"silent", "notify"})}}},
+                                 {"delivery_mode", {{"type", "string"}, {"enum", nlohmann::json::array({"silent", "notify"})}}},
                                  {"targets", {{"type", "array"}, {"items", {{"type", "string"}}}}},
                                  {"active_hours", {{"type", "array"}, {"items", {{"type", "object"}}}}},
                              }},
-                            {"required", json::array({"op"})},
+                            {"required", nlohmann::json::array({"op"})},
                         },
                 },
             .execute =
-                [tool_context](const json &input) {
+                [tool_context](const nlohmann::json &input) {
                     return execute_heartbeat_tool(input, tool_context);
                 },
         });

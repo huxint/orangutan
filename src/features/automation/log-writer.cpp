@@ -8,7 +8,7 @@
 
 namespace orangutan::automation {
 
-    std::string LogWriter::append(const std::string &workspace_root, const json &entry) {
+    std::string LogWriter::append(const std::string &workspace_root, const nlohmann::json &entry) {
         if (workspace_root.empty()) {
             throw std::runtime_error("workspace root is empty");
         }

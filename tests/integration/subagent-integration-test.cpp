@@ -40,10 +40,10 @@ namespace {
         size_t next_step_ = 0;
     };
 
-    const ToolResultBlock *last_tool_result(const std::vector<Message> &history) {
+    const ToolResult *last_tool_result(const std::vector<Message> &history) {
         for (const auto &message : std::ranges::reverse_view(history)) {
-            for (const auto &block : std::ranges::reverse_view(message.content)) {
-                if (const auto *result = std::get_if<ToolResultBlock>(&block); result != nullptr) {
+            for (const auto &block : std::ranges::reverse_view(message)) {
+                if (const auto *result = std::get_if<ToolResult>(&block); result != nullptr) {
                     return result;
                 }
             }
@@ -86,7 +86,7 @@ namespace {
                 .allowed_child_agents = {"coder"},
                 .is_child_run = false,
                 .subagent_manager = &manager,
-                .runtime_origin = SubagentRuntimeOrigin::cli,
+                .runtime_origin = base::origin::cli,
                 .raw_caller_id = "cli:local",
             };
         }
@@ -119,39 +119,38 @@ namespace {
                                        });
 
         SubagentManager manager(
-            run_store,
-            SubagentExecutionEnvironment{
-                .agent_configs = &child_configs,
-                .session_store = &session_store,
-                .memory_store = nullptr,
-                .provider_factory =
-                    [&](const SubagentChildRuntimeConfig &config) {
-                        CHECK(config.agent_key == "coder");
-                        std::vector<ScriptedProvider::Step> steps;
-                        steps.reserve(2);
-                        steps.emplace_back([&](std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools) -> LLMResponse {
-                            child_prompts.emplace_back(system_prompt);
-                            CHECK(system_prompt.contains("delegated worker"));
-                            CHECK(system_prompt.contains("cannot spawn subagents"));
-                            CHECK_FALSE(orangutan::testing::has_tool_named(tools, "subagent_spawn"));
-                            CHECK(messages.size() == 1ul);
-                            const auto *text = std::get_if<TextBlock>(&messages[0].content[0]);
-                            REQUIRE(text != nullptr);
-                            CHECK(text->text == "Investigate parser regression");
-                            return LLMResponse{
-                                .stop_reason = "tool_use",
-                                .content = {ToolUseBlock{.id = "child-write", .name = "write", .input = {{"path", "child-notes.txt"}, {"content", "child touched its workspace"}}}},
-                            };
-                        });
-                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
-                            return LLMResponse{
-                                .stop_reason = "end_turn",
-                                .content = {TextBlock{.text = "child completed delegated work"}},
-                            };
-                        });
-                        return std::make_unique<ScriptedProvider>(std::move(steps));
-                    },
-            });
+            run_store, SubagentExecutionEnvironment{
+                           .agent_configs = &child_configs,
+                           .session_store = &session_store,
+                           .memory_store = nullptr,
+                           .provider_factory =
+                               [&](const SubagentChildRuntimeConfig &config) {
+                                   CHECK(config.agent_key == "coder");
+                                   std::vector<ScriptedProvider::Step> steps;
+                                   steps.reserve(2);
+                                   steps.emplace_back([&](std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools) -> LLMResponse {
+                                       child_prompts.emplace_back(system_prompt);
+                                       CHECK(system_prompt.contains("delegated worker"));
+                                       CHECK(system_prompt.contains("cannot spawn subagents"));
+                                       CHECK_FALSE(orangutan::testing::has_tool_named(tools, "subagent_spawn"));
+                                       CHECK(messages.size() == 1ul);
+                                       const auto *text = std::get_if<Text>(&*messages.front().begin());
+                                       REQUIRE(text != nullptr);
+                                       CHECK(text->text == "Investigate parser regression");
+                                       return LLMResponse{
+                                           .stop_reason = "tool_use",
+                                           .content = {ToolUse("child-write", "write", nlohmann::json{{"path", "child-notes.txt"}, {"content", "child touched its workspace"}})},
+                                       };
+                                   });
+                                   steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                       return LLMResponse{
+                                           .stop_reason = "end_turn",
+                                           .content = {Text{"child completed delegated work"}},
+                                       };
+                                   });
+                                   return std::make_unique<ScriptedProvider>(std::move(steps));
+                               },
+                       });
 
         auto current_session_id = parent_session_id;
         auto tool_context = SubagentIntegrationHarness::make_parent_tool_context(manager, current_session_id);
@@ -169,29 +168,29 @@ namespace {
             CHECK(orangutan::testing::has_tool_named(tools, "subagent_wait"));
             return LLMResponse{
                 .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "spawn-1", .name = "subagent_spawn", .input = {{"child_agent_key", "coder"}, {"task_summary", "Investigate parser regression"}}}},
+                .content = {ToolUse("spawn-1", "subagent_spawn", nlohmann::json{{"child_agent_key", "coder"}, {"task_summary", "Investigate parser regression"}})},
             };
         });
         parent_steps.emplace_back([&](std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
             const auto *spawn_result = last_tool_result(messages);
             REQUIRE(spawn_result != nullptr);
-            const auto payload = json::parse(spawn_result->content);
+            const auto payload = nlohmann::json::parse(spawn_result->content);
             REQUIRE(payload.at("accepted").get<bool>());
             return LLMResponse{
                 .stop_reason = "tool_use",
-                .content = {ToolUseBlock{.id = "wait-1", .name = "subagent_wait", .input = {{"run_id", payload.at("run_id")}, {"timeout_ms", 1000}}}},
+                .content = {ToolUse("wait-1", "subagent_wait", nlohmann::json{{"run_id", payload.at("run_id")}, {"timeout_ms", 1000}})},
             };
         });
         parent_steps.emplace_back([&](std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &) -> LLMResponse {
             const auto *wait_result = last_tool_result(messages);
             REQUIRE(wait_result != nullptr);
-            const auto payload = json::parse(wait_result->content);
+            const auto payload = nlohmann::json::parse(wait_result->content);
             CHECK(payload.at("state").get<std::string>() == "completed");
             CHECK(payload.at("run").at("status").get<std::string>() == "succeeded");
             CHECK(payload.at("run").at("final_output").get<std::string>() == "child completed delegated work");
             return LLMResponse{
                 .stop_reason = "end_turn",
-                .content = {TextBlock{.text = "parent finished after child run"}},
+                .content = {Text{"parent finished after child run"}},
             };
         });
         ScriptedProvider parent_provider(std::move(parent_steps));
@@ -209,14 +208,14 @@ namespace {
 
         const auto *parent_wait_result = last_tool_result(parent_loop.history());
         REQUIRE(parent_wait_result != nullptr);
-        const auto parent_wait_payload = json::parse(parent_wait_result->content);
+        const auto parent_wait_payload = nlohmann::json::parse(parent_wait_result->content);
 
         const auto wait_run_result = manager.wait(SubagentWaitRequest{
             .run_id = parent_wait_payload.at("run").at("run_id").get<std::string>(),
             .timeout = std::chrono::milliseconds{1},
             .caller =
                 SubagentCallerContext{
-                    .runtime_origin = SubagentRuntimeOrigin::cli,
+                    .runtime_origin = base::origin::cli,
                     .runtime_key = derive_cli_runtime_key("default"),
                     .agent_key = "default",
                     .scope_key = derive_cli_session_scope("default"),
@@ -235,16 +234,16 @@ namespace {
 
         const auto child_history = session_store.load(wait_run_result.run->child_session_id);
         CHECK(child_history.size() == 4ul);
-        CHECK(child_history[0].role == Role::user);
-        CHECK(std::get<TextBlock>(child_history[0].content[0]).text == "Investigate parser regression");
-        CHECK(std::get<TextBlock>(child_history[3].content[0]).text == "child completed delegated work");
+        CHECK(child_history[0].role() == base::role::user);
+        CHECK(std::get<Text>(*child_history[0].begin()).text == "Investigate parser regression");
+        CHECK(std::get<Text>(*child_history[3].begin()).text == "child completed delegated work");
 
         const auto parent_history = session_store.load(parent_session_id);
         REQUIRE(not parent_history.empty());
-        CHECK(std::get<TextBlock>(parent_history[0].content[0]).text == "Handle the parser issue");
+        CHECK(std::get<Text>(*parent_history[0].begin()).text == "Handle the parser issue");
         for (const auto &message : parent_history) {
-            for (const auto &block : message.content) {
-                if (const auto *text = std::get_if<TextBlock>(&block); text != nullptr) {
+            for (const auto &block : message) {
+                if (const auto *text = std::get_if<Text>(&block); text != nullptr) {
                     CHECK_FALSE(text->text.contains("child completed delegated work"));
                 }
             }
@@ -267,36 +266,35 @@ namespace {
                                            .workspace_root = (harness.workspace_root() / "channel-child-root").string(),
                                        });
 
-        SubagentManager manager(
-            run_store,
-            SubagentExecutionEnvironment{
-                .agent_configs = &child_configs,
-                .session_store = &session_store,
-                .memory_store = nullptr,
-                .provider_factory =
-                    [&](const SubagentChildRuntimeConfig &) {
-                        std::vector<ScriptedProvider::Step> steps;
-                        steps.reserve(2);
-                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
-                            return LLMResponse{
-                                .stop_reason = "tool_use",
-                                .content = {ToolUseBlock{.id = "write-1", .name = "write", .input = {{"path", "channel-child.txt"}, {"content", "channel child workspace"}}}},
-                            };
-                        });
-                        steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
-                            return LLMResponse{
-                                .stop_reason = "end_turn",
-                                .content = {TextBlock{.text = "channel child done"}},
-                            };
-                        });
-                        return std::make_unique<ScriptedProvider>(std::move(steps));
-                    },
-            });
+        SubagentManager manager(run_store,
+                                SubagentExecutionEnvironment{
+                                    .agent_configs = &child_configs,
+                                    .session_store = &session_store,
+                                    .memory_store = nullptr,
+                                    .provider_factory =
+                                        [&](const SubagentChildRuntimeConfig &) {
+                                            std::vector<ScriptedProvider::Step> steps;
+                                            steps.reserve(2);
+                                            steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                return LLMResponse{
+                                                    .stop_reason = "tool_use",
+                                                    .content = {ToolUse("write-1", "write", nlohmann::json{{"path", "channel-child.txt"}, {"content", "channel child workspace"}})},
+                                                };
+                                            });
+                                            steps.emplace_back([&](std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &) -> LLMResponse {
+                                                return LLMResponse{
+                                                    .stop_reason = "end_turn",
+                                                    .content = {Text{"channel child done"}},
+                                                };
+                                            });
+                                            return std::make_unique<ScriptedProvider>(std::move(steps));
+                                        },
+                                });
 
         const auto spawn_result = manager.spawn(SubagentSpawnRequest{
             .caller =
                 SubagentCallerContext{
-                    .runtime_origin = SubagentRuntimeOrigin::channel,
+                    .runtime_origin = base::origin::channel,
                     .runtime_key = "agent:default|jid:qqbot:c2c:alice",
                     .agent_key = "default",
                     .scope_key = "agent:default|jid:qqbot:c2c:alice",
@@ -315,7 +313,7 @@ namespace {
             .timeout = std::chrono::seconds{1},
             .caller =
                 SubagentCallerContext{
-                    .runtime_origin = SubagentRuntimeOrigin::channel,
+                    .runtime_origin = base::origin::channel,
                     .runtime_key = "agent:default|jid:qqbot:c2c:alice",
                     .agent_key = "default",
                     .scope_key = "agent:default|jid:qqbot:c2c:alice",

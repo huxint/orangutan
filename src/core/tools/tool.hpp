@@ -73,7 +73,7 @@ namespace orangutan {
         std::vector<std::string> allowed_child_agents;
         bool is_child_run = false;
         SubagentManager *subagent_manager = nullptr;
-        SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+        base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         automation::Runtime *automation_runtime = nullptr;
         ToolApprovalCallback approval_callback;
@@ -82,12 +82,12 @@ namespace orangutan {
 
     struct Tool {
         ToolDef definition;
-        std::function<std::string(const json &input)> execute;
+        std::function<std::string(const nlohmann::json &input)> execute;
     };
 
     class ToolRegistry {
     public:
-        using ExecutionGuard = std::function<std::optional<ToolResultBlock>(const ToolUseBlock &call)>;
+        using ExecutionGuard = std::function<std::optional<ToolResult>(const ToolUse &call)>;
         using DefinitionFilter = std::function<bool(const ToolDef &definition)>;
 
         void register_tool(Tool tool);
@@ -96,7 +96,7 @@ namespace orangutan {
 
         std::vector<ToolDef> definitions() const;
 
-        ToolResultBlock execute(const ToolUseBlock &call) const;
+        ToolResult execute(const ToolUse &call) const;
 
     private:
         std::unordered_map<std::string, Tool> tools_;

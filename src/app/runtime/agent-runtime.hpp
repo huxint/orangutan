@@ -40,7 +40,7 @@ namespace orangutan {
         MemoryStore *memory_store = nullptr;
         std::string *current_session_id = nullptr;
         SubagentManager *subagent_manager = nullptr;
-        SubagentRuntimeOrigin runtime_origin = SubagentRuntimeOrigin::cli;
+        base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
         automation::Runtime *automation_runtime = nullptr;
         bool is_child_run = false;

@@ -239,12 +239,12 @@ namespace orangutan::app {
             return out;
         }
 
-        SlashCommandReply execute_registry_command(const ToolRegistry *tool_registry, std::string_view tool_name, const json &input, std::string_view tool_use_id) {
+        SlashCommandReply execute_registry_command(const ToolRegistry *tool_registry, std::string_view tool_name, const nlohmann::json &input, std::string_view tool_use_id) {
             if (tool_registry == nullptr) {
                 return {.handled = true, .text = "No tool registry available."};
             }
 
-            const auto result = tool_registry->execute(ToolUseBlock{
+            const auto result = tool_registry->execute(ToolUse{
                 .id = std::string(tool_use_id),
                 .name = std::string(tool_name),
                 .input = input,

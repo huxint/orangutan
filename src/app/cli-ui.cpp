@@ -119,16 +119,16 @@ namespace orangutan::app {
         };
 
         for (const auto &message : agent.history()) {
-            if (message.role == Role::user) {
+            if (message.role() == base::role::user) {
                 ++status.user_messages;
-            } else if (message.role == Role::assistant) {
+            } else if (message.role() == base::role::assistant) {
                 ++status.assistant_messages;
             }
 
-            for (const auto &block : message.content) {
-                if (std::get_if<ToolUseBlock>(&block) != nullptr) {
+            for (const auto &block : message) {
+                if (std::get_if<ToolUse>(&block) != nullptr) {
                     ++status.tool_call_count;
-                } else if (const auto *result = std::get_if<ToolResultBlock>(&block); result != nullptr && result->is_error) {
+                } else if (const auto *result = std::get_if<ToolResult>(&block); result != nullptr && result->is_error) {
                     ++status.tool_error_count;
                 }
             }

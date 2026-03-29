@@ -106,7 +106,7 @@ namespace orangutan {
         return defs;
     }
 
-    ToolResultBlock ToolRegistry::execute(const ToolUseBlock &call) const {
+    ToolResult ToolRegistry::execute(const ToolUse &call) const {
         if (execution_guard_ != nullptr) {
             if (auto blocked = execution_guard_(call); blocked.has_value()) {
                 return *blocked;

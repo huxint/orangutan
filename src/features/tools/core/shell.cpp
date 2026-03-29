@@ -13,11 +13,11 @@
 namespace orangutan {
     namespace {
 
-        json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
+        nlohmann::json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
             if (completion_dispatcher != nullptr && completion_dispatcher->supports_resume_callback()) {
-                return json::array({"inbox", "resume"});
+                return nlohmann::json::array({"inbox", "resume"});
             }
-            return json::array({"inbox"});
+            return nlohmann::json::array({"inbox"});
         }
 
         bool supports_resume_mode(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
@@ -37,8 +37,8 @@ namespace orangutan {
             return "failed";
         }
 
-        json process_summary_json(const BackgroundProcessSummary &summary) {
-            json payload = {
+        nlohmann::json process_summary_json(const BackgroundProcessSummary &summary) {
+            nlohmann::json payload = {
                 {"process_id", summary.process_id},
                 {"pid", summary.pid},
                 {"command", summary.command},
@@ -49,13 +49,13 @@ namespace orangutan {
                 {"stdout_bytes", summary.stdout_bytes},
                 {"stderr_bytes", summary.stderr_bytes},
             };
-            payload["exit_code"] = summary.exit_code.has_value() ? json(*summary.exit_code) : json(nullptr);
-            payload["signal_number"] = summary.signal_number.has_value() ? json(*summary.signal_number) : json(nullptr);
+            payload["exit_code"] = summary.exit_code.has_value() ? nlohmann::json(*summary.exit_code) : nlohmann::json(nullptr);
+            payload["signal_number"] = summary.signal_number.has_value() ? nlohmann::json(*summary.signal_number) : nlohmann::json(nullptr);
             return payload;
         }
 
-        json process_snapshot_json(const BackgroundProcessSnapshot &snapshot) {
-            json payload = process_summary_json(snapshot);
+        nlohmann::json process_snapshot_json(const BackgroundProcessSnapshot &snapshot) {
+            nlohmann::json payload = process_summary_json(snapshot);
             payload["stdout"] = snapshot.stdout_output;
             payload["stderr"] = snapshot.stderr_output;
             payload["stdout_truncated"] = snapshot.stdout_truncated;
@@ -63,7 +63,7 @@ namespace orangutan {
             return payload;
         }
 
-        BackgroundProcessCompletionPolicy parse_completion_policy(const json &input, const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
+        BackgroundProcessCompletionPolicy parse_completion_policy(const nlohmann::json &input, const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
             std::string mode = "inbox";
             bool prompt_present = false;
             std::string prompt;
@@ -154,7 +154,7 @@ namespace orangutan {
             return output;
         }
 
-        std::string run_shell(const json &input, const std::string &workspace, const ToolPermissionSettings *permissions,
+        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionSettings *permissions,
                               const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             const auto command = input.at("command").get<std::string>();
             const bool background = input.value("background", false);
@@ -189,18 +189,18 @@ namespace orangutan {
         }
 
         std::string list_processes(const std::shared_ptr<BackgroundProcessManager> &process_manager) {
-            json processes = json::array();
+            nlohmann::json processes = nlohmann::json::array();
             for (const auto &summary : process_manager->list()) {
                 processes.push_back(process_summary_json(summary));
             }
-            return json{{"processes", std::move(processes)}}.dump(2);
+            return nlohmann::json{{"processes", std::move(processes)}}.dump(2);
         }
 
-        std::string poll_process(const json &input, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
+        std::string poll_process(const nlohmann::json &input, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             return process_snapshot_json(process_manager->poll(input.at("process_id").get<std::string>())).dump(2);
         }
 
-        std::string kill_process(const json &input, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
+        std::string kill_process(const nlohmann::json &input, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             auto payload = process_snapshot_json(process_manager->kill(input.at("process_id").get<std::string>()));
             payload["message"] = "Termination requested.";
             return payload.dump(2);
@@ -213,7 +213,7 @@ namespace orangutan {
         const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
         const bool resume_supported = supports_resume_mode(completion_dispatcher);
         std::string description = "Execute a shell command. Set background=true for long-running commands to return immediately.";
-        json properties = {
+        nlohmann::json properties = {
             {"command", {{"type", "string"}, {"description", "The shell command to execute"}}},
             {"background", {{"type", "boolean"}, {"description", "Run the command in the background and return a process id"}}},
             {"working_dir", {{"type", "string"}, {"description", "Optional working directory inside the workspace"}}},
@@ -242,10 +242,10 @@ namespace orangutan {
                  }},
             };
         }
-        const json input_schema = {
+        const nlohmann::json input_schema = {
             {"type", "object"},
             {"properties", std::move(properties)},
-            {"required", json::array({"command"})},
+            {"required", nlohmann::json::array({"command"})},
         };
 
         registry.register_tool({
@@ -256,7 +256,7 @@ namespace orangutan {
                     .input_schema = input_schema,
                 },
             .execute =
-                [workspace, permissions, completion_dispatcher, process_manager](const json &input) {
+                [workspace, permissions, completion_dispatcher, process_manager](const nlohmann::json &input) {
                     return run_shell(input, workspace, permissions, completion_dispatcher, process_manager);
                 },
         });
@@ -265,8 +265,8 @@ namespace orangutan {
     void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
         registry.register_tool({.definition = {.name = "process_list",
                                                .description = "List background processes started by this agent runtime.",
-                                               .input_schema = {{"type", "object"}, {"properties", json::object()}}},
-                                .execute = [process_manager](const json &) {
+                                               .input_schema = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                                .execute = [process_manager](const nlohmann::json &) {
                                     return list_processes(process_manager);
                                 }});
 
@@ -275,8 +275,8 @@ namespace orangutan {
                             .description = "Get the latest status and captured output for a background process.",
                             .input_schema = {{"type", "object"},
                                              {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
-                                             {"required", json::array({"process_id"})}}},
-             .execute = [process_manager](const json &input) {
+                                             {"required", nlohmann::json::array({"process_id"})}}},
+             .execute = [process_manager](const nlohmann::json &input) {
                  return poll_process(input, process_manager);
              }});
 
@@ -285,8 +285,8 @@ namespace orangutan {
                             .description = "Stop a background process and return its latest status.",
                             .input_schema = {{"type", "object"},
                                              {"properties", {{"process_id", {{"type", "string"}, {"description", "The process id returned by shell(background=true)"}}}}},
-                                             {"required", json::array({"process_id"})}}},
-             .execute = [process_manager](const json &input) {
+                                             {"required", nlohmann::json::array({"process_id"})}}},
+             .execute = [process_manager](const nlohmann::json &input) {
                  return kill_process(input, process_manager);
              }});
     }

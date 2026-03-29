@@ -233,9 +233,9 @@ namespace {
         cfg.agents["default"] = orangutan::AgentConfig{.model = "default-model"};
         cfg.agents["coder"] = orangutan::AgentConfig{.model = "coder-model"};
 
-        harness.session_store()->save({orangutan::Message::user_text("default")}, make_session_metadata("default-model", "agent:default|web", "default", "web", "web:local"));
-        harness.session_store()->save({orangutan::Message::user_text("coder")}, make_session_metadata("coder-model", "agent:coder|web", "coder", "web", "web:local"));
-        harness.session_store()->save({orangutan::Message::user_text("channel")},
+        harness.session_store()->save({orangutan::Message::user().text("default")}, make_session_metadata("default-model", "agent:default|web", "default", "web", "web:local"));
+        harness.session_store()->save({orangutan::Message::user().text("coder")}, make_session_metadata("coder-model", "agent:coder|web", "coder", "web", "web:local"));
+        harness.session_store()->save({orangutan::Message::user().text("channel")},
                                       make_session_metadata("coder-model", "agent:coder|jid:qqbot:c2c:42", "coder", "channel", "qqbot:c2c:42"));
 
         orangutan::WebServer server;
@@ -262,7 +262,7 @@ namespace {
         cfg.agents["default"] = orangutan::AgentConfig{.model = "default-model"};
         cfg.agents["coder"] = orangutan::AgentConfig{.model = "coder-model"};
         const auto coder_session_id =
-            harness.session_store()->save({orangutan::Message::user_text("coder")}, make_session_metadata("coder-model", "agent:coder|web", "coder", "web", "web:local"));
+            harness.session_store()->save({orangutan::Message::user().text("coder")}, make_session_metadata("coder-model", "agent:coder|web", "coder", "web", "web:local"));
 
         orangutan::WebServer server;
         server.set_config(&cfg);
@@ -304,7 +304,7 @@ namespace {
         std::string session_id = "web-session";
 
         auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, &app_runtime.automation_runtime(),
-                                                                        [](const orangutan::ToolUseBlock &, const std::string &) {
+                                                                        [](const orangutan::ToolUse &, const std::string &) {
                                                                             return false;
                                                                         });
 
@@ -315,7 +315,7 @@ namespace {
         CHECK(orangutan::testing::has_tool_named(definitions, "task"));
         CHECK(orangutan::testing::has_tool_named(definitions, "heartbeat"));
         CHECK(orangutan::testing::has_tool_named(definitions, "inbox"));
-        CHECK(runtime.tool_context.runtime_origin == orangutan::SubagentRuntimeOrigin::web);
+        CHECK(runtime.tool_context.runtime_origin == orangutan::base::origin::web);
         CHECK(runtime.tool_context.raw_caller_id == "web:local");
         CHECK(runtime.tool_context.current_session_id == &session_id);
         CHECK(runtime.tool_context.allowed_child_agents == std::vector<std::string>({"coder"}));
@@ -330,7 +330,7 @@ namespace {
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
-        const auto shell_result = runtime.tools.execute(orangutan::ToolUseBlock{
+        const auto shell_result = runtime.tools.execute(orangutan::ToolUse{
             .id = "web-shell",
             .name = "shell",
             .input = {{"command", "echo hello"}},
@@ -491,9 +491,9 @@ namespace {
 
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, orangutan::ToolUseBlock{.id = "shell-approval", .name = "shell", .input = {{"command", "echo hello"}}},
-                orangutan::ToolSandboxMode::isolated, "Shell command approval required.",
-                [&](std::string_view current_event_name, const orangutan::json &payload) {
+                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}), orangutan::ToolSandboxMode::isolated,
+                "Shell command approval required.",
+                [&](std::string_view current_event_name, const nlohmann::json &payload) {
                     std::scoped_lock lock(event_mutex);
                     event_name = std::string(current_event_name);
                     event_payload = payload;
@@ -547,9 +547,9 @@ namespace {
         auto approval_future = approval_result.get_future();
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, orangutan::ToolUseBlock{.id = "shell-approval", .name = "shell", .input = {{"command", "echo hello"}}},
-                orangutan::ToolSandboxMode::isolated, "Shell command approval required.",
-                [](std::string_view, const orangutan::json &) {
+                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}), orangutan::ToolSandboxMode::isolated,
+                "Shell command approval required.",
+                [](std::string_view, const nlohmann::json &) {
                     return true;
                 },
                 {}, std::chrono::seconds(5)));
