@@ -206,7 +206,7 @@ namespace {
         CHECK(result.messages_before == 60);
         CHECK(result.messages_after == 11);
         CHECK(provider.last_summary_input_size_ == 50ul);
-        CHECK(provider.last_tool_count_ == 0ul);
+        CHECK(provider.last_tool_count_ == 0UL);
         CHECK(provider.last_system_prompt_.contains("conversation summarizer"));
 
         const auto &compacted = loop.history();
@@ -246,7 +246,7 @@ namespace {
         CHECK(result.messages_before == 10);
         CHECK(result.messages_after == 10);
         CHECK(result.status == "Not enough history to compress yet.");
-        CHECK(provider.last_summary_input_size_ == 0ul);
+        CHECK(provider.last_summary_input_size_ == 0UL);
     };
 
     TEST_CASE("distill_session_memory_stores_long_term_memories") {
@@ -270,7 +270,7 @@ namespace {
         CHECK(result.memories_stored == 3ul);
         CHECK(result.journal_stored);
         CHECK(provider.last_messages_size_ == 1UL);
-        CHECK(provider.last_tool_count_ == 0ul);
+        CHECK(provider.last_tool_count_ == 0UL);
         CHECK(provider.last_system_prompt_.contains("distilling long-term memory"));
 
         const auto project = store.recall("project.current", "agent:default|jid:test");

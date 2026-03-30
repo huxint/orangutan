@@ -89,7 +89,7 @@ namespace {
 
         manager.load_from_directories({temp_dir.string()});
 
-        CHECK(manager.total_hooks() == 0ul);
+        CHECK(manager.total_hooks() == 0UL);
     };
 
     TEST_CASE("nonexistent_directory_has_no_hooks") {
@@ -97,7 +97,7 @@ namespace {
 
         manager.load_from_directories({orangutan::testing::unique_test_path("nonexistent-hooks").string()});
 
-        CHECK(manager.total_hooks() == 0ul);
+        CHECK(manager.total_hooks() == 0UL);
     };
 
     TEST_CASE("skips_non_executable_files") {
@@ -107,7 +107,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({temp_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 0ul);
+        CHECK(manager.hook_count(HookEvent::before_tool_call) == 0UL);
     };
 
     TEST_CASE("ignores_unknown_event_directories") {
@@ -117,7 +117,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({temp_dir.string()});
 
-        CHECK(manager.total_hooks() == 0ul);
+        CHECK(manager.total_hooks() == 0UL);
     };
 
     TEST_CASE("before_tool_call_allows_when_all_hooks_pass") {

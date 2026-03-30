@@ -525,7 +525,7 @@ namespace orangutan {
                 .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
             });
 
-            CHECK(provider_calls == 0ul);
+            CHECK(provider_calls == 0UL);
             const auto inbox_items = automation_runtime.list_inbox("default");
             REQUIRE(inbox_items.size() == 2UL);
 

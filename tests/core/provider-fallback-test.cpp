@@ -120,7 +120,7 @@ namespace {
         CHECK(usage.logical_requests == 1UL);
         CHECK(usage.attempt_count == 1UL);
         CHECK(usage.failed_attempts == 1UL);
-        CHECK(usage.fallback_switches == 0ul);
+        CHECK(usage.fallback_switches == 0UL);
     };
 
     TEST_CASE("does_not_fallback_after_streaming_output_has_started") {
@@ -171,14 +171,14 @@ namespace {
         CHECK(observed_chunks.size() == 1UL);
         CHECK(observed_chunks[0] == "partial");
         CHECK(primary_stream_attempts == 1UL);
-        CHECK(fallback_stream_attempts == 0ul);
+        CHECK(fallback_stream_attempts == 0UL);
         CHECK(provider->current_model() == "gpt-primary");
 
         const auto usage = provider->usage();
         CHECK(usage.logical_requests == 1UL);
         CHECK(usage.attempt_count == 1UL);
         CHECK(usage.failed_attempts == 1UL);
-        CHECK(usage.fallback_switches == 0ul);
+        CHECK(usage.fallback_switches == 0UL);
     };
 
     TEST_CASE("keeps_primary_provider_alive_while_in_flight_request_completes") {
@@ -487,7 +487,7 @@ namespace {
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback-a");
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
         CHECK(first_fallback_attempts.load() == 2UL);
-        CHECK(second_fallback_attempts.load() == 0ul);
+        CHECK(second_fallback_attempts.load() == 0UL);
         CHECK(provider->current_model() == "gpt-fallback-a");
 
         const auto usage = provider->usage();
