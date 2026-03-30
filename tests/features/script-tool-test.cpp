@@ -36,7 +36,7 @@ namespace {
         const auto schema = generate_input_schema({{"file", "string"}, {"line", "integer"}});
         CHECK(schema["properties"]["file"]["type"] == "string");
         CHECK(schema["properties"]["line"]["type"] == "integer");
-        CHECK(schema["required"].size() == 2ul);
+        CHECK(schema["required"].size() == 2UL);
     };
 
     TEST_CASE("generate_schema_no_params") {
@@ -93,7 +93,7 @@ namespace {
                                                }};
         register_script_tools(registry, tools);
         const auto defs = registry.definitions();
-        CHECK(defs.size() == 2ul);
+        CHECK(defs.size() == 2UL);
 
         bool has_ls = false;
         bool has_grep = false;

@@ -188,7 +188,7 @@ namespace {
     TEST_CASE("parses_comma_values") {
         const auto expr = parse_cron("0,30 * * * *");
         REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 2ul);
+        CHECK(expr->minute.values.size() == 2UL);
         CHECK(expr->minute.values.contains(0));
         CHECK(expr->minute.values.contains(30));
     };

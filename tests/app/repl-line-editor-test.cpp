@@ -60,7 +60,7 @@ namespace orangutan::app {
             INFO("expected read_repl_input to return a continued line");
             REQUIRE(line.has_value());
             CHECK(*line == "first\nsecond");
-            CHECK(editor.prompts.size() == 2ul);
+            CHECK(editor.prompts.size() == 2UL);
             CHECK(editor.prompts[0] == "you> ");
             CHECK(editor.prompts[1] == "... ");
             CHECK(editor.history.empty());

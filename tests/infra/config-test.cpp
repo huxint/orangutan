@@ -95,16 +95,16 @@ fallback_models = ["coder-fallback-a", "coder-fallback-b"]
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.fallback_models.size() == 2ul);
+        CHECK(cfg.fallback_models.size() == 2UL);
         CHECK(cfg.fallback_models[0] == "global-fallback-a");
         CHECK(cfg.fallback_models[1] == "global-fallback-b");
 
         REQUIRE(cfg.agents.contains("default"));
         REQUIRE(cfg.agents.contains("coder"));
-        CHECK(cfg.agents.at("default").fallback_models.size() == 2ul);
+        CHECK(cfg.agents.at("default").fallback_models.size() == 2UL);
         CHECK(cfg.agents.at("default").fallback_models[0] == "global-fallback-a");
         CHECK(cfg.agents.at("default").fallback_models[1] == "global-fallback-b");
-        CHECK(cfg.agents.at("coder").fallback_models.size() == 2ul);
+        CHECK(cfg.agents.at("coder").fallback_models.size() == 2UL);
         CHECK(cfg.agents.at("coder").fallback_models[0] == "coder-fallback-a");
         CHECK(cfg.agents.at("coder").fallback_models[1] == "coder-fallback-b");
     };
@@ -146,12 +146,12 @@ denied_shell_commands = ["rm -rf", "shutdown"]
         const auto cfg = Config::load_from(path);
         CHECK(cfg.permissions.sandbox_mode == ToolSandboxMode::workspace_write);
         CHECK(cfg.permissions.shell_approval == ToolApprovalPolicy::deny);
-        CHECK(cfg.permissions.allowed_tools.size() == 2ul);
+        CHECK(cfg.permissions.allowed_tools.size() == 2UL);
         CHECK(cfg.permissions.allowed_tools[0] == "read");
         CHECK(cfg.permissions.allowed_tools[1] == "write");
         CHECK(cfg.permissions.denied_tools.size() == 1UL);
         CHECK(cfg.permissions.denied_tools[0] == "shell");
-        CHECK(cfg.permissions.denied_shell_commands.size() == 2ul);
+        CHECK(cfg.permissions.denied_shell_commands.size() == 2UL);
         CHECK(cfg.permissions.denied_shell_commands[0] == "rm -rf");
         CHECK(cfg.permissions.denied_shell_commands[1] == "shutdown");
     };
@@ -196,7 +196,7 @@ path = "string"
         REQUIRE(home != nullptr);
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.custom_tools.size() == 2ul);
+        CHECK(cfg.custom_tools.size() == 2UL);
         CHECK(cfg.custom_tools[0].name == "ls");
         CHECK(cfg.custom_tools[0].command == "ls -la ${path}");
         CHECK(cfg.custom_tools[0].timeout == 15);
@@ -320,14 +320,14 @@ agent = "coder"
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.agents.size() == 2ul);
+        CHECK(cfg.agents.size() == 2UL);
         REQUIRE(cfg.agents.contains("default"));
         REQUIRE(cfg.agents.contains("coder"));
         CHECK(cfg.agents.at("default").model == "default-model");
         CHECK(cfg.agents.at("default").subagents[0] == "coder");
         CHECK(cfg.agents.at("coder").provider == "openai");
         CHECK(cfg.agents.at("coder").api_key == "coder-key");
-        CHECK(cfg.qq_bots.size() == 2ul);
+        CHECK(cfg.qq_bots.size() == 2UL);
         CHECK(cfg.qq_bots[0].name == "primary");
         CHECK(cfg.qq_bots[0].agent == "default");
         CHECK(cfg.qq_bots[1].name == "coder-bot");
@@ -374,7 +374,7 @@ denied_shell_commands = ["curl"]
         const auto &coder_agent = cfg.agents.at("coder");
         CHECK(coder_agent.permissions.sandbox_mode == ToolSandboxMode::workspace_write);
         CHECK(coder_agent.permissions.shell_approval == ToolApprovalPolicy::ask);
-        CHECK(coder_agent.permissions.allowed_tools.size() == 2ul);
+        CHECK(coder_agent.permissions.allowed_tools.size() == 2UL);
         CHECK(coder_agent.permissions.allowed_tools[0] == "read");
         CHECK(coder_agent.permissions.allowed_tools[1] == "write");
         CHECK(coder_agent.permissions.denied_tools.size() == 1UL);
@@ -392,7 +392,7 @@ deny = ["qqbot:c2c:blocked"]
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.allow.size() == 2ul);
+        CHECK(cfg.allow.size() == 2UL);
         CHECK(cfg.allow[0] == "cli:*");
         CHECK(cfg.allow[1] == "qqbot:c2c:*");
         CHECK(cfg.deny.size() == 1UL);
@@ -420,7 +420,7 @@ ROOT = "${HOME}/workspace"
         const auto &server = cfg.mcp_servers[0];
         CHECK(server.name == "github");
         CHECK(server.command == std::string(home) + "/bin/mock-mcp");
-        CHECK(server.args.size() == 2ul);
+        CHECK(server.args.size() == 2UL);
         CHECK(server.args[0] == "--token");
         CHECK(server.args[1] == std::string(home) + "/token.txt");
         CHECK(server.timeout == 12);

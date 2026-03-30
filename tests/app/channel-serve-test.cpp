@@ -480,7 +480,7 @@ namespace {
 
         CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "maybe"}, manager));
         sent_messages = qq->sent_messages();
-        CHECK(sent_messages.size() >= 2ul);
+        CHECK(sent_messages.size() >= 2UL);
         CHECK(sent_messages.back().second.contains(request_id + " yes"));
 
         CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "shell-approval-999 no"}, manager));

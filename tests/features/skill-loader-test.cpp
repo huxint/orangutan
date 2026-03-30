@@ -46,7 +46,7 @@ namespace {
         INFO("expected 'test-skill' to be loaded");
         REQUIRE(skill != nullptr);
         CHECK(skill->description == "A test skill for unit testing");
-        CHECK(skill->tools.size() == 2ul);
+        CHECK(skill->tools.size() == 2UL);
         CHECK(skill->tools[0] == "read");
         CHECK(skill->tools[1] == "grep");
         CHECK(skill->body.contains("test skill body"));
@@ -252,7 +252,7 @@ alpha override body
         SkillLoader loader;
         loader.load_from_directories({base_dir.string(), override_root.string()});
 
-        CHECK(loader.active_skills().size() == 2ul);
+        CHECK(loader.active_skills().size() == 2UL);
         CHECK(loader.active_skills()[0].name == "alpha");
         CHECK(loader.active_skills()[0].description == "alpha override");
         CHECK(loader.active_skills()[1].name == "zebra");
@@ -269,7 +269,7 @@ alpha override body
         INFO("expected 'yaml-skill' to be loaded");
         REQUIRE(skill != nullptr);
         CHECK(skill->description == "A skill using YAML frontmatter");
-        CHECK(skill->tools.size() == 2ul);
+        CHECK(skill->tools.size() == 2UL);
         CHECK(skill->tools[0] == "read");
         CHECK(skill->tools[1] == "write");
         CHECK(skill->body.contains("YAML skill body"));
@@ -292,7 +292,7 @@ YAML body content here.
         CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "my-yaml-skill");
         CHECK(loader.active_skills()[0].description == "Skill with YAML frontmatter");
-        CHECK(loader.active_skills()[0].tools.size() == 2ul);
+        CHECK(loader.active_skills()[0].tools.size() == 2UL);
         CHECK(loader.active_skills()[0].tools[0] == "shell");
         CHECK(loader.active_skills()[0].tools[1] == "grep");
         CHECK(loader.active_skills()[0].body.contains("YAML body content"));
@@ -316,7 +316,7 @@ Quoted values body.
         CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "quoted-skill");
         CHECK(loader.active_skills()[0].description == "Single-quoted description");
-        CHECK(loader.active_skills()[0].tools.size() == 2ul);
+        CHECK(loader.active_skills()[0].tools.size() == 2UL);
 
         std::filesystem::remove_all(temp_dir);
     };

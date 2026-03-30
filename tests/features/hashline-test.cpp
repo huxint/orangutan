@@ -31,7 +31,7 @@ static std::string anchor_for(const std::string &content, std::size_t line_numbe
 
 TEST_CASE("compute_line_hash_returns_2_char_string") {
     const auto hash = compute_line_hash("int x = 42;", 1);
-    CHECK(hash.size() == 2ul);
+    CHECK(hash.size() == 2UL);
 };
 
 TEST_CASE("hash_chars_are_from_alphabet") {
@@ -89,7 +89,7 @@ TEST_CASE("format_hashline_hash_part_is_2_chars") {
     // Format: "10#XX:return 0;"
     const auto hash_start = line.find('#') + 1;
     const auto colon_pos = line.find(':');
-    CHECK(colon_pos - hash_start == 2ul);
+    CHECK(colon_pos - hash_start == 2UL);
 };
 
 // ── Anchor parsing ──────────────────────────────
@@ -143,7 +143,7 @@ TEST_CASE("validate_anchor_wrong_hash") {
     const auto mismatch = validate_anchor(anchor, lines);
     REQUIRE(mismatch.has_value());
     if (mismatch) {
-        CHECK(mismatch->line == 2ul);
+        CHECK(mismatch->line == 2UL);
         CHECK(mismatch->expected == anchor.hash);
         CHECK(mismatch->actual == actual_hash);
     }
@@ -249,7 +249,7 @@ TEST_CASE("delete_single_line") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 2ul);
+    CHECK(result.lines.size() == 2UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "ccc");
 };
@@ -263,7 +263,7 @@ TEST_CASE("delete_range") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 2ul);
+    CHECK(result.lines.size() == 2UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "ddd");
 };
@@ -337,7 +337,7 @@ TEST_CASE("replace_with_empty_content_deletes_line") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 2ul);
+    CHECK(result.lines.size() == 2UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "ccc");
 };

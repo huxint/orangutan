@@ -77,7 +77,7 @@ namespace {
         store.remember("project_context", "orangutan", "project");
 
         const auto entries = store.recall_by_category("preferences");
-        REQUIRE(entries.size() == 2ul);
+        REQUIRE(entries.size() == 2UL);
 
         std::set<std::pair<std::string, std::string>> actual(entries.begin(), entries.end());
         CHECK(actual.contains({"preferred_language", "Python"}));

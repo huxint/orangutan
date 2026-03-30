@@ -12,13 +12,13 @@ TEST_CASE("delivery_policy_json_roundtrips") {
 
     const auto value = delivery_policy_to_json(delivery);
     CHECK(value["mode"] == "notify");
-    CHECK(value["targets"].size() == 2ul);
+    CHECK(value["targets"].size() == 2UL);
     CHECK(value["targets"][0] == "ops");
     CHECK(value["targets"][1] == "pager");
 
     const auto parsed = delivery_policy_from_json(value);
     CHECK(parsed.mode == DeliveryMode::notify);
-    CHECK(parsed.targets.size() == 2ul);
+    CHECK(parsed.targets.size() == 2UL);
     CHECK(parsed.targets[0] == "ops");
     CHECK(parsed.targets[1] == "pager");
 };

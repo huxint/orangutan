@@ -94,7 +94,7 @@ namespace {
 
         const auto usage = provider->usage();
         CHECK(usage.logical_requests == 1UL);
-        CHECK(usage.attempt_count == 2ul);
+        CHECK(usage.attempt_count == 2UL);
         CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 1UL);
     };
@@ -291,7 +291,7 @@ namespace {
         CHECK(primary_state->destroyed.load());
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 2ul);
+        CHECK(usage.logical_requests == 2UL);
         CHECK(usage.attempt_count == 3ul);
         CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 1UL);
@@ -378,12 +378,12 @@ namespace {
         const auto first_response = first_result.get();
         CHECK(first_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback response");
-        CHECK(fallback_attempts.load() == 2ul);
+        CHECK(fallback_attempts.load() == 2UL);
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 2ul);
+        CHECK(usage.logical_requests == 2UL);
         CHECK(usage.attempt_count == 4ul);
-        CHECK(usage.failed_attempts == 2ul);
+        CHECK(usage.failed_attempts == 2UL);
         CHECK(usage.fallback_switches == 1UL);
     };
 
@@ -486,14 +486,14 @@ namespace {
         CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback-a");
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
-        CHECK(first_fallback_attempts.load() == 2ul);
+        CHECK(first_fallback_attempts.load() == 2UL);
         CHECK(second_fallback_attempts.load() == 0ul);
         CHECK(provider->current_model() == "gpt-fallback-a");
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 2ul);
+        CHECK(usage.logical_requests == 2UL);
         CHECK(usage.attempt_count == 4ul);
-        CHECK(usage.failed_attempts == 2ul);
+        CHECK(usage.failed_attempts == 2UL);
         CHECK(usage.fallback_switches == 1UL);
     };
 
@@ -597,15 +597,15 @@ namespace {
         CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
 
-        CHECK(fallback_a_attempts.load() == 2ul);
+        CHECK(fallback_a_attempts.load() == 2UL);
         CHECK(fallback_b_attempts.load() == 1UL);
         CHECK(provider->current_model() == "gpt-fallback-b");
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 2ul);
+        CHECK(usage.logical_requests == 2UL);
         CHECK(usage.attempt_count == 5ul);
         CHECK(usage.failed_attempts == 3ul);
-        CHECK(usage.fallback_switches == 2ul);
+        CHECK(usage.fallback_switches == 2UL);
     };
 
 } // namespace

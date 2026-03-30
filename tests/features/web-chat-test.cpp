@@ -527,7 +527,7 @@ namespace orangutan {
 
             CHECK(provider_calls == 0ul);
             const auto inbox_items = automation_runtime.list_inbox("default");
-            REQUIRE(inbox_items.size() == 2ul);
+            REQUIRE(inbox_items.size() == 2UL);
 
             const auto *completion_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion");
             const auto *failure_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion_resume_failure");

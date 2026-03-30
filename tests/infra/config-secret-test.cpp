@@ -97,7 +97,7 @@ mirror_file = "notes/MEMORY.md"
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
         INFO("expected protect_config_file_secrets to modify the config");
         REQUIRE(result.modified);
-        CHECK(result.protected_count == 2ul);
+        CHECK(result.protected_count == 2UL);
         CHECK(std::filesystem::exists(result.backup_path));
 
         const auto updated = ConfigSecretFileHarness::read_config(harness.config_path());

@@ -211,7 +211,7 @@ namespace {
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
         CHECK(body.is_array());
-        CHECK(body.size() == 2ul);
+        CHECK(body.size() == 2UL);
         bool saw_default = false;
         bool saw_helper = false;
         for (const auto &agent : body) {
@@ -250,7 +250,7 @@ namespace {
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
         REQUIRE(body.is_array());
-        CHECK(body.size() == 2ul);
+        CHECK(body.size() == 2UL);
         CHECK(body[0]["agent_key"] == "coder");
         CHECK(body[1]["agent_key"] == "coder");
         CHECK((body[0]["read_only"].get<bool>() || body[1]["read_only"].get<bool>()));

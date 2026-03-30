@@ -86,7 +86,7 @@ TEST_CASE("message_to_json_serializes_multi_block_message") {
     const nlohmann::json j = message_to_json(msg);
 
     CHECK(j["role"] == "assistant");
-    CHECK(j["content"].size() == 2ul);
+    CHECK(j["content"].size() == 2UL);
     CHECK(j["content"][0]["type"] == "text");
     CHECK(j["content"][1]["type"] == "tool_use");
 };

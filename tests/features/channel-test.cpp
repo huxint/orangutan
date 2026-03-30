@@ -164,7 +164,7 @@ namespace {
             .is_group = false,
         });
 
-        CHECK(received.size() == 2ul);
+        CHECK(received.size() == 2UL);
         CHECK(received[0].jid == "cli:local");
         CHECK(received[1].jid == "qqbot:c2c:456");
 

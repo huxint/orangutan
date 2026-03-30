@@ -32,7 +32,7 @@ namespace {
         client.connect();
 
         const auto tools = client.list_tools();
-        CHECK(tools.size() == 2ul);
+        CHECK(tools.size() == 2UL);
         CHECK(tools[0].name == "echo");
         CHECK(tools[1].name == "structured");
 
