@@ -46,7 +46,7 @@ namespace orangutan::fileio {
 
         [[nodiscard]]
         static file_ptr open(const std::filesystem::path &path, std::string_view mode) {
-#if defined(_WIN32)
+#ifdef _WIN32
             const std::wstring wide_mode(mode.begin(), mode.end());
             return file_ptr(_wfopen(path.c_str(), wide_mode.c_str()));
 #else
