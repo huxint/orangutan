@@ -30,8 +30,8 @@ namespace {
         }
 
         std::string last_system_prompt_;
-        size_t last_summary_input_size_ = 0;
-        size_t last_tool_count_ = 0;
+        std::size_t last_summary_input_size_ = 0;
+        std::size_t last_tool_count_ = 0;
     };
 
     class DistillingProvider final : public Provider {
@@ -58,8 +58,8 @@ namespace {
         }
 
         std::string last_system_prompt_;
-        size_t last_messages_size_ = 0;
-        size_t last_tool_count_ = 0;
+        std::size_t last_messages_size_ = 0;
+        std::size_t last_tool_count_ = 0;
     };
 
     class EmptyDistillingProvider final : public Provider {
@@ -142,7 +142,7 @@ namespace {
 
     private:
         std::vector<LLMResponse> responses_;
-        size_t next_response_ = 0;
+        std::size_t next_response_ = 0;
     };
 
     std::string describe_message(const Message &message) {
@@ -215,7 +215,7 @@ namespace {
         REQUIRE(summary != nullptr);
         CHECK(summary->text.contains("Earlier conversation summary"));
 
-        for (size_t i = 0; i < 10; ++i) {
+        for (std::size_t i = 0; i < 10; ++i) {
             const auto &expected = history[50 + i];
             const auto &actual = compacted[1 + i];
             CHECK(actual.role() == expected.role());

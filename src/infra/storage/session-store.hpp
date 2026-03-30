@@ -56,8 +56,8 @@ namespace orangutan {
         void update(const std::string &session_id, const std::vector<Message> &messages, const SessionMetadata &metadata);
 
         // Append messages starting at start_index to an existing session
-        void append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const std::string &model = {});
-        void append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const SessionMetadata &metadata);
+        void append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const std::string &model = {});
+        void append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const SessionMetadata &metadata);
 
         // Load a session's messages by ID
         std::vector<Message> load(const std::string &session_id);

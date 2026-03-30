@@ -255,7 +255,7 @@ namespace {
     TEST_CASE("shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed") {
         RuntimeAgentRuntimeHarness harness;
         auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-shared.db"));
-        size_t resume_callback_count = 0;
+        std::size_t resume_callback_count = 0;
         auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
             ++resume_callback_count;
             return std::optional<std::string>{};

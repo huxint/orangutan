@@ -175,7 +175,7 @@ namespace orangutan::memory_detail {
         }
 
         std::string merged;
-        for (size_t index = 0; index < fragments.size(); ++index) {
+        for (std::size_t index = 0; index < fragments.size(); ++index) {
             if (index > 0) {
                 merged.push_back('\n');
             }
@@ -191,7 +191,7 @@ namespace orangutan::memory_detail {
         }
 
         std::string out;
-        for (size_t index = 0; index < tokens.size(); ++index) {
+        for (std::size_t index = 0; index < tokens.size(); ++index) {
             if (index > 0) {
                 out.append(" OR ");
             }

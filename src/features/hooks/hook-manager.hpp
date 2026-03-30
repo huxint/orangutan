@@ -21,7 +21,7 @@ namespace orangutan {
     };
 
     struct HookEventHash {
-        std::size_t operator()(HookEvent e) const noexcept {
+        std::std::size_t operator()(HookEvent e) const noexcept {
             return std::hash<base::u8>{}(std::to_underlying(e));
         }
     };
@@ -54,10 +54,10 @@ namespace orangutan {
         DispatchResult dispatch(HookEvent event, const nlohmann::json &context) const;
 
         [[nodiscard]]
-        size_t hook_count(HookEvent event) const;
+        std::size_t hook_count(HookEvent event) const;
 
         [[nodiscard]]
-        size_t total_hooks() const;
+        std::size_t total_hooks() const;
 
     private:
         std::unordered_map<HookEvent, std::vector<HookDef>, HookEventHash> hooks_;
@@ -71,9 +71,9 @@ namespace orangutan {
     nlohmann::json build_message_context(HookEvent event, std::string_view role, std::string_view content);
 
     // Build JSON context for session hooks
-    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, size_t message_count = 0);
+    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, std::size_t message_count = 0);
 
-    void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, size_t message_count = 0);
-    void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, size_t message_count = 0);
+    void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
+    void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
 
 } // namespace orangutan

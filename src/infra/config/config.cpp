@@ -15,7 +15,7 @@ namespace orangutan {
         std::string result;
         result.reserve(input.size());
 
-        size_t pos = 0;
+        std::size_t pos = 0;
         while (pos < input.size()) {
             auto start = input.find("${", pos);
             if (start == std::string::npos) {
@@ -136,7 +136,7 @@ namespace orangutan {
                 });
             }
 
-            for (size_t index = 0; index < cfg.qq_bots.size(); ++index) {
+            for (std::size_t index = 0; index < cfg.qq_bots.size(); ++index) {
                 auto &bot = cfg.qq_bots[index];
                 bot.name = expand_env_vars(bot.name);
                 bot.app_id = expand_env_vars(bot.app_id);

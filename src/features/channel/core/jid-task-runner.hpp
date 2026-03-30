@@ -37,7 +37,7 @@ namespace orangutan {
             JidTaskRunner *runner_ = nullptr;
         };
 
-        explicit JidTaskRunner(size_t worker_count);
+        explicit JidTaskRunner(std::size_t worker_count);
         ~JidTaskRunner();
 
         JidTaskRunner(const JidTaskRunner &) = delete;
@@ -52,7 +52,7 @@ namespace orangutan {
         BlockingLease acquire_blocking_lease();
 
         [[nodiscard]]
-        size_t worker_count() const;
+        std::size_t worker_count() const;
 
     private:
         struct QueuedTask;
@@ -67,9 +67,9 @@ namespace orangutan {
         std::condition_variable cv_;
         std::unordered_map<std::string, Bucket> buckets_;
         std::queue<std::string> ready_jids_;
-        size_t base_worker_count_ = 0;
-        size_t desired_worker_count_ = 0;
-        size_t live_worker_count_ = 0;
+        std::size_t base_worker_count_ = 0;
+        std::size_t desired_worker_count_ = 0;
+        std::size_t live_worker_count_ = 0;
         std::vector<std::thread> workers_;
         std::atomic<bool> stopping_{false};
         std::atomic<bool> discard_pending_{false};

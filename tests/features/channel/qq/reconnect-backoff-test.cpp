@@ -81,7 +81,7 @@ namespace {
         }
 
         [[nodiscard]]
-        bool wait_for_sent_count(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(1)) const {
+        bool wait_for_sent_count(std::std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(1)) const {
             std::unique_lock lock(mutex_);
             return cv_.wait_for(lock, timeout, [this, expected] {
                 return sent_payloads_.size() >= expected;
@@ -121,13 +121,13 @@ namespace {
             };
         }
 
-        void fail_next_connects(std::size_t count) {
+        void fail_next_connects(std::std::size_t count) {
             std::scoped_lock lock(mutex_);
             failures_remaining_ = count;
         }
 
         [[nodiscard]]
-        std::shared_ptr<FakeConnection> wait_for_connection(std::size_t index, std::chrono::milliseconds timeout = std::chrono::seconds(3)) const {
+        std::shared_ptr<FakeConnection> wait_for_connection(std::std::size_t index, std::chrono::milliseconds timeout = std::chrono::seconds(3)) const {
             std::unique_lock lock(mutex_);
             const auto ready = cv_.wait_for(lock, timeout, [this, index] {
                 return connections_.size() >= index;
@@ -139,7 +139,7 @@ namespace {
         }
 
         [[nodiscard]]
-        std::size_t connection_count() const {
+        std::std::size_t connection_count() const {
             std::scoped_lock lock(mutex_);
             return connections_.size();
         }
@@ -171,19 +171,19 @@ namespace {
         mutable std::condition_variable cv_;
         std::vector<std::string> urls_;
         std::vector<std::shared_ptr<FakeConnection>> connections_;
-        std::size_t failures_remaining_ = 0;
+        std::std::size_t failures_remaining_ = 0;
     };
 
     struct CallbackRecorder {
         std::mutex mutex;
         std::condition_variable cv;
-        std::size_t opens = 0;
+        std::std::size_t opens = 0;
         std::vector<std::string> texts;
         std::vector<std::pair<uint16_t, std::string>> closes;
         std::vector<std::string> errors;
 
         [[nodiscard]]
-        bool wait_for_opens(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        bool wait_for_opens(std::std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
             std::unique_lock lock(mutex);
             return cv.wait_for(lock, timeout, [this, expected] {
                 return opens >= expected;
@@ -191,7 +191,7 @@ namespace {
         }
 
         [[nodiscard]]
-        bool wait_for_texts(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        bool wait_for_texts(std::std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
             std::unique_lock lock(mutex);
             return cv.wait_for(lock, timeout, [this, expected] {
                 return texts.size() >= expected;
@@ -199,7 +199,7 @@ namespace {
         }
 
         [[nodiscard]]
-        bool wait_for_errors(std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+        bool wait_for_errors(std::std::size_t expected, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
             std::unique_lock lock(mutex);
             return cv.wait_for(lock, timeout, [this, expected] {
                 return errors.size() >= expected;

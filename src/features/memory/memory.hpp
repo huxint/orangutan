@@ -49,16 +49,16 @@ namespace orangutan {
                     const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> search(const std::string &query, const std::string &scope = {}, size_t limit = 8);
+        std::vector<MemoryRecord> search(const std::string &query, const std::string &scope = {}, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::string recall(const std::string &query, const std::string &scope = {}, size_t limit = 8);
+        std::string recall(const std::string &query, const std::string &scope = {}, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, const std::string &scope = {}, size_t limit = 20);
+        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, const std::string &scope = {}, std::size_t limit = 20);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> list(const std::string &scope = {}, const std::string &category = {}, size_t limit = 20);
+        std::vector<MemoryRecord> list(const std::string &scope = {}, const std::string &category = {}, std::size_t limit = 20);
 
         [[nodiscard]]
         MemoryStats stats(const std::string &scope = {});
@@ -67,10 +67,10 @@ namespace orangutan {
         bool forget(const std::string &key, const std::string &scope = {});
 
         [[nodiscard]]
-        std::string dump_all(const std::string &scope = {}, size_t limit = 50);
+        std::string dump_all(const std::string &scope = {}, std::size_t limit = 50);
 
         [[nodiscard]]
-        size_t auto_capture(const std::string &text, const std::string &scope = {}, const std::string &source = "auto:user");
+        std::size_t auto_capture(const std::string &text, const std::string &scope = {}, const std::string &source = "auto:user");
 
     private:
         sqlite::Database db_;

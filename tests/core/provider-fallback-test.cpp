@@ -52,8 +52,8 @@ namespace {
     };
 
     TEST_CASE("falls_back_to_next_model_and_tracks_usage") {
-        size_t primary_attempts = 0;
-        size_t fallback_attempts = 0;
+        std::size_t primary_attempts = 0;
+        std::size_t fallback_attempts = 0;
 
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
                                                        [&](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
@@ -124,8 +124,8 @@ namespace {
     };
 
     TEST_CASE("does_not_fallback_after_streaming_output_has_started") {
-        size_t primary_stream_attempts = 0;
-        size_t fallback_stream_attempts = 0;
+        std::size_t primary_stream_attempts = 0;
+        std::size_t fallback_stream_attempts = 0;
         std::vector<std::string> observed_chunks;
 
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
@@ -183,7 +183,7 @@ namespace {
 
     TEST_CASE("keeps_primary_provider_alive_while_in_flight_request_completes") {
         struct PrimaryState {
-            std::atomic<size_t> call_count{0};
+            std::atomic<std::size_t> call_count{0};
             std::atomic<bool> started{false};
             std::atomic<bool> destroyed{false};
             std::atomic<bool> destructor_signaled{false};
@@ -302,7 +302,7 @@ namespace {
             std::promise<void> first_call_started;
             std::promise<void> release_first_failure;
             std::shared_future<void> release_first_failure_future = release_first_failure.get_future().share();
-            std::atomic<size_t> call_count{0};
+            std::atomic<std::size_t> call_count{0};
         };
 
         auto primary_state = std::make_shared<PrimaryState>();
@@ -342,7 +342,7 @@ namespace {
             std::shared_ptr<PrimaryState> state_;
         };
 
-        std::atomic<size_t> fallback_attempts{0};
+        std::atomic<std::size_t> fallback_attempts{0};
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
                                                        [primary_state, &fallback_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
@@ -389,7 +389,7 @@ namespace {
 
     TEST_CASE("concurrent_primary_failures_do_not_skip_fallback_models") {
         struct PrimaryFailureState {
-            std::atomic<size_t> call_count{0};
+            std::atomic<std::size_t> call_count{0};
             std::atomic<bool> both_calls_signaled{false};
             std::promise<void> both_calls_started;
             std::promise<void> release_failures;
@@ -434,8 +434,8 @@ namespace {
         };
 
         auto primary_state = std::make_shared<PrimaryFailureState>();
-        std::atomic<size_t> first_fallback_attempts{0};
-        std::atomic<size_t> second_fallback_attempts{0};
+        std::atomic<std::size_t> first_fallback_attempts{0};
+        std::atomic<std::size_t> second_fallback_attempts{0};
 
         auto provider =
             create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback-a", "gpt-fallback-b"},
@@ -503,12 +503,12 @@ namespace {
             std::shared_future<void> second_call_started_future = second_call_started.get_future().share();
             std::promise<void> release_second_failure;
             std::shared_future<void> release_second_failure_future = release_second_failure.get_future().share();
-            std::atomic<size_t> call_count{0};
+            std::atomic<std::size_t> call_count{0};
         };
 
         auto primary_state = std::make_shared<PrimaryState>();
-        std::atomic<size_t> fallback_a_attempts{0};
-        std::atomic<size_t> fallback_b_attempts{0};
+        std::atomic<std::size_t> fallback_a_attempts{0};
+        std::atomic<std::size_t> fallback_b_attempts{0};
 
         class OrderedFailingPrimaryProvider final : public Provider {
         public:

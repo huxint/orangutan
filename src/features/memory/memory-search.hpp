@@ -10,9 +10,9 @@
 
 namespace orangutan::memory_detail {
 
-    inline constexpr size_t default_search_limit = 8;
-    inline constexpr size_t default_list_limit = 20;
-    inline constexpr size_t search_scan_limit = 200;
+    inline constexpr std::size_t default_search_limit = 8;
+    inline constexpr std::size_t default_list_limit = 20;
+    inline constexpr std::size_t search_scan_limit = 200;
 
     [[nodiscard]]
     std::string trim_copy(std::string value);

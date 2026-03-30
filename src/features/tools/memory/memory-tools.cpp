@@ -20,7 +20,7 @@ namespace orangutan {
         }
 
         std::string recall_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
-            const auto limit = static_cast<size_t>(std::max(1, input.value("limit", 8)));
+            const auto limit = static_cast<std::size_t>(std::max(1, input.value("limit", 8)));
             if (input.contains("category")) {
                 const auto category = input.at("category").get<std::string>();
                 const auto entries = runtime_memory.recall_by_category(category, limit);
@@ -66,7 +66,7 @@ namespace orangutan {
 
         std::string list_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
             const auto category = input.value("category", std::string{});
-            const auto limit = static_cast<size_t>(std::max(1, input.value("limit", 20)));
+            const auto limit = static_cast<std::size_t>(std::max(1, input.value("limit", 20)));
             const auto entries = runtime_memory.list(category, limit);
             const auto result = format_memory_list(entries);
             return result.empty() ? "(no memories found)" : result;

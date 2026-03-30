@@ -23,7 +23,7 @@ static std::string valid_hash_different_from(std::string_view actual) {
     throw std::runtime_error("hash alphabet unexpectedly empty");
 }
 
-static std::string anchor_for(const std::string &content, size_t line_number) {
+static std::string anchor_for(const std::string &content, std::size_t line_number) {
     return std::to_string(line_number) + "#" + compute_line_hash(content, line_number);
 }
 

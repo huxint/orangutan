@@ -19,7 +19,7 @@ namespace orangutan {
             try {
                 fileio::File file(path, "rb");
 
-                constexpr std::size_t sample_size = 8192;
+                constexpr std::std::size_t sample_size = 8192;
                 std::vector<char> buf(sample_size);
                 const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
                 if (std::ferror(file.get()) != 0) {
@@ -72,10 +72,10 @@ namespace orangutan {
             std::string out;
             for (int i = start; i <= end; ++i) {
                 if (edit_mode == "hashline") {
-                    out += format_hashline(lines[static_cast<size_t>(i - 1)], static_cast<size_t>(i));
+                    out += format_hashline(lines[static_cast<std::size_t>(i - 1)], static_cast<std::size_t>(i));
                     out.push_back('\n');
                 } else {
-                    append(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<size_t>(i - 1)]);
+                    append(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<std::size_t>(i - 1)]);
                 }
             }
 
@@ -113,7 +113,7 @@ namespace orangutan {
 
             const auto &paths = input.at("paths");
             std::string out;
-            for (size_t i = 0; i < paths.size(); ++i) {
+            for (std::size_t i = 0; i < paths.size(); ++i) {
                 const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root);
                 if (i > 0) {
                     out.push_back('\n');

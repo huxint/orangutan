@@ -130,7 +130,7 @@ namespace orangutan {
             }
 
             for (const auto &tc : delta["tool_calls"]) {
-                auto index = tc["index"].get<size_t>();
+                auto index = tc["index"].get<std::size_t>();
 
                 while (tool_calls_.size() <= index) {
                     tool_calls_.push_back({});

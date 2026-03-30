@@ -170,13 +170,13 @@ namespace {
 
     TEST_CASE("background_manager_publishes_completion_event_exactly_once_with_bounded_output") {
         ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
-        constexpr size_t max_output_tail_bytes = 16384;
+        constexpr std::size_t max_output_tail_bytes = 16384;
         const std::string stdout_text = std::string(20000, 'O') + "stdout-tail\n";
         const std::string stderr_text = std::string(19000, 'E') + "stderr-tail\n";
 
         std::mutex mutex;
         std::condition_variable cv;
-        size_t callback_count = 0;
+        std::size_t callback_count = 0;
         std::optional<BackgroundProcessCompletionEvent> completion_event;
 
         BackgroundProcessManager manager([&](const BackgroundProcessCompletionEvent &event) {
@@ -261,7 +261,7 @@ namespace {
         ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
         std::mutex mutex;
         std::condition_variable cv;
-        size_t callback_count = 0;
+        std::size_t callback_count = 0;
         std::optional<BackgroundProcessCompletionEvent> completion_event;
         std::optional<BackgroundProcessSnapshot> callback_snapshot;
         BackgroundProcessManager *manager_ptr = nullptr;

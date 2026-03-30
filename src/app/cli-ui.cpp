@@ -36,7 +36,7 @@ namespace orangutan::app {
             }
             if (!agent_cfg.subagents.empty()) {
                 out += ", subagents: ";
-                for (size_t index = 0; index < agent_cfg.subagents.size(); ++index) {
+                for (std::size_t index = 0; index < agent_cfg.subagents.size(); ++index) {
                     if (index > 0) {
                         out.push_back(',');
                     }
@@ -65,9 +65,9 @@ namespace orangutan::app {
         }
 
         std::string out = "## Sessions\n";
-        constexpr size_t max_sessions_to_show = 10;
+        constexpr std::size_t max_sessions_to_show = 10;
         const auto count = std::min(max_sessions_to_show, sessions.size());
-        for (size_t index = 0; index < count; ++index) {
+        for (std::size_t index = 0; index < count; ++index) {
             const auto &session = sessions[index];
             append(out, "- 🧵 `{}`", session.id);
             if (session.id == current_session_id) {
@@ -151,7 +151,7 @@ namespace orangutan::app {
         }
         if (!status.fallback_models.empty()) {
             out += "- 🔁 Fallback Models: ";
-            for (size_t index = 0; index < status.fallback_models.size(); ++index) {
+            for (std::size_t index = 0; index < status.fallback_models.size(); ++index) {
                 if (index > 0) {
                     out += ", ";
                 }

@@ -68,7 +68,7 @@ namespace orangutan {
         void clear_ready_state();
 
         [[nodiscard]]
-        static std::vector<std::string> chunk_text(const std::string &text, size_t limit);
+        static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);
     };
 
 } // namespace orangutan

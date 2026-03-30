@@ -38,12 +38,12 @@ namespace orangutan {
         return forgot;
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::search(const std::string &query, size_t limit) {
+    std::vector<MemoryRecord> RuntimeMemory::search(const std::string &query, std::size_t limit) {
         return store_.search(query, context_.scope, limit);
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::prompt_memories(const std::string &query, size_t limit) {
-        auto records = search(query, std::max<size_t>(limit, 8));
+    std::vector<MemoryRecord> RuntimeMemory::prompt_memories(const std::string &query, std::size_t limit) {
+        auto records = search(query, std::max<std::size_t>(limit, 8));
         if (query_requests_journal(query)) {
             if (records.size() > limit) {
                 records.resize(limit);
@@ -60,15 +60,15 @@ namespace orangutan {
         return records;
     }
 
-    std::string RuntimeMemory::recall(const std::string &query, size_t limit) {
+    std::string RuntimeMemory::recall(const std::string &query, std::size_t limit) {
         return store_.recall(query, context_.scope, limit);
     }
 
-    std::vector<std::pair<std::string, std::string>> RuntimeMemory::recall_by_category(const std::string &category, size_t limit) {
+    std::vector<std::pair<std::string, std::string>> RuntimeMemory::recall_by_category(const std::string &category, std::size_t limit) {
         return store_.recall_by_category(category, context_.scope, limit);
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::list(const std::string &category, size_t limit) {
+    std::vector<MemoryRecord> RuntimeMemory::list(const std::string &category, std::size_t limit) {
         return store_.list(context_.scope, category, limit);
     }
 
@@ -76,7 +76,7 @@ namespace orangutan {
         return store_.stats(context_.scope);
     }
 
-    size_t RuntimeMemory::auto_capture(const std::string &text, const std::string &source) {
+    std::size_t RuntimeMemory::auto_capture(const std::string &text, const std::string &source) {
         const auto stored = store_.auto_capture(text, context_.scope, source);
         if (stored > 0) {
             refresh_mirror_after_write();

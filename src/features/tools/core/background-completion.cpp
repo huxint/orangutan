@@ -18,16 +18,16 @@ namespace orangutan {
         constexpr std::string_view completion_resume_failure_type = "background_process_completion_resume_failure";
         constexpr std::string_view inbox_source_kind = "background_process";
         constexpr std::string_view default_agent_key = "default";
-        constexpr size_t max_output_summary_bytes = 2048;
-        constexpr size_t max_runtime_key_chars = 256;
-        constexpr size_t max_agent_key_chars = 128;
-        constexpr size_t max_process_id_chars = 128;
-        constexpr size_t max_command_chars = 2048;
-        constexpr size_t max_working_dir_chars = 1024;
-        constexpr size_t max_failure_reason_chars = 512;
-        constexpr size_t max_failure_payload_bytes = background_completion_payload_max_bytes * 2;
-        constexpr size_t max_title_command_chars = 80;
-        constexpr size_t max_inbox_title_chars = 160;
+        constexpr std::size_t max_output_summary_bytes = 2048;
+        constexpr std::size_t max_runtime_key_chars = 256;
+        constexpr std::size_t max_agent_key_chars = 128;
+        constexpr std::size_t max_process_id_chars = 128;
+        constexpr std::size_t max_command_chars = 2048;
+        constexpr std::size_t max_working_dir_chars = 1024;
+        constexpr std::size_t max_failure_reason_chars = 512;
+        constexpr std::size_t max_failure_payload_bytes = background_completion_payload_max_bytes * 2;
+        constexpr std::size_t max_title_command_chars = 80;
+        constexpr std::size_t max_inbox_title_chars = 160;
 
         std::string process_status(const BackgroundProcessCompletionEvent &event) {
             switch (event.terminal_status) {

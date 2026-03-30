@@ -14,10 +14,10 @@ namespace orangutan {
     using StreamCallback = std::function<void(const std::string &event_type, const nlohmann::json &data)>;
 
     struct ProviderUsageStats {
-        size_t logical_requests = 0;
-        size_t attempt_count = 0;
-        size_t failed_attempts = 0;
-        size_t fallback_switches = 0;
+        std::size_t logical_requests = 0;
+        std::size_t attempt_count = 0;
+        std::size_t failed_attempts = 0;
+        std::size_t fallback_switches = 0;
     };
 
     struct ProviderEndpoint {

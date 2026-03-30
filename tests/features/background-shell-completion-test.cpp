@@ -53,7 +53,7 @@ namespace {
 
     private:
         std::vector<Step> steps_;
-        size_t next_step_ = 0;
+        std::size_t next_step_ = 0;
     };
 
     const ToolDef *find_tool(const std::vector<ToolDef> &definitions, const std::string &name) {
@@ -130,7 +130,7 @@ namespace {
             return nlohmann::json::parse(result.content);
         }
 
-        std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+        std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
             const auto deadline = std::chrono::steady_clock::now() + timeout;
             while (std::chrono::steady_clock::now() < deadline) {
                 auto items = runtime_->list_inbox(tool_context_.agent_key);
@@ -144,7 +144,7 @@ namespace {
             return runtime_->list_inbox(tool_context_.agent_key);
         }
 
-        std::vector<std::string> wait_for_resume_messages_size(size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+        std::vector<std::string> wait_for_resume_messages_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
             const auto deadline = std::chrono::steady_clock::now() + timeout;
             while (std::chrono::steady_clock::now() < deadline) {
                 {
@@ -303,7 +303,7 @@ namespace {
 
         const std::string prompt_unit = "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
         std::string prompt;
-        for (size_t i = 0; i < background_completion_prompt_max_chars; ++i) {
+        for (std::size_t i = 0; i < background_completion_prompt_max_chars; ++i) {
             prompt += prompt_unit;
         }
         const auto start_payload = harness.start_background_shell({

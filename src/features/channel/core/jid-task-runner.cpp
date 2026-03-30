@@ -138,7 +138,7 @@ namespace orangutan {
         return *this;
     }
 
-    JidTaskRunner::JidTaskRunner(size_t worker_count)
+    JidTaskRunner::JidTaskRunner(std::size_t worker_count)
     : base_worker_count_(worker_count),
       desired_worker_count_(worker_count) {
         if (worker_count == 0) {
@@ -146,7 +146,7 @@ namespace orangutan {
         }
 
         workers_.reserve(worker_count);
-        for (size_t i = 0; i < worker_count; ++i) {
+        for (std::size_t i = 0; i < worker_count; ++i) {
             spawn_worker_locked();
         }
     }
@@ -256,7 +256,7 @@ namespace orangutan {
         return BlockingLease(this);
     }
 
-    size_t JidTaskRunner::worker_count() const {
+    std::size_t JidTaskRunner::worker_count() const {
         return base_worker_count_;
     }
 

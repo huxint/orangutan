@@ -15,7 +15,7 @@ namespace orangutan::fileio {
         }
 
         File file(path, "rb");
-        std::string content(static_cast<std::size_t>(size), '\0');
+        std::string content(static_cast<std::std::size_t>(size), '\0');
         if (!content.empty()) {
             const auto bytes_read = std::fread(content.data(), sizeof(char), content.size(), file.get());
             if (bytes_read != content.size()) {

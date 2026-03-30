@@ -547,7 +547,7 @@ namespace orangutan {
         runtime_->last_error.clear();
     }
 
-    std::vector<std::string> QqChannel::chunk_text(const std::string &text, size_t limit) {
+    std::vector<std::string> QqChannel::chunk_text(const std::string &text, std::size_t limit) {
         if (text.empty() || text.size() <= limit) {
             return {text};
         }
@@ -560,7 +560,7 @@ namespace orangutan {
                 break;
             }
 
-            size_t split_at = remaining.rfind('\n', limit);
+            std::size_t split_at = remaining.rfind('\n', limit);
             if (split_at == std::string::npos || split_at < limit / 2) {
                 split_at = remaining.rfind(' ', limit);
             }

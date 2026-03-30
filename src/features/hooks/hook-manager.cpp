@@ -144,7 +144,7 @@ namespace orangutan {
         return std::nullopt;
     }
 
-    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, size_t index, HookEvent event, const std::shared_ptr<const nlohmann::json> &context,
+    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, std::size_t index, HookEvent event, const std::shared_ptr<const nlohmann::json> &context,
                                                    bool is_blocking_event) {
         if (index >= hooks.size()) {
             return stdexec::just(DispatchResult{});
@@ -179,13 +179,13 @@ namespace orangutan {
         return result;
     }
 
-    size_t HookManager::hook_count(HookEvent event) const {
+    std::size_t HookManager::hook_count(HookEvent event) const {
         auto it = hooks_.find(event);
         return (it != hooks_.end()) ? it->second.size() : 0;
     }
 
-    size_t HookManager::total_hooks() const {
-        size_t total = 0;
+    std::size_t HookManager::total_hooks() const {
+        std::size_t total = 0;
         for (const auto &[_, hooks] : hooks_) {
             total += hooks.size();
         }
@@ -215,7 +215,7 @@ namespace orangutan {
         return {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
     }
 
-    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, size_t message_count) {
+    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, std::size_t message_count) {
         nlohmann::json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
         if (event == HookEvent::session_end) {
             ctx["message_count"] = message_count;
@@ -223,14 +223,14 @@ namespace orangutan {
         return ctx;
     }
 
-    void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, size_t message_count) {
+    void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, std::size_t message_count) {
         if (hook_manager == nullptr || session_id.empty()) {
             return;
         }
         static_cast<void>(hook_manager->dispatch(HookEvent::session_start, build_session_context(HookEvent::session_start, session_id, message_count)));
     }
 
-    void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, size_t message_count) {
+    void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, std::size_t message_count) {
         if (hook_manager == nullptr || session_id.empty()) {
             return;
         }

@@ -146,8 +146,8 @@ namespace {
 
         CHECK(status == 0);
 
-        size_t tool_call_started_count = 0;
-        size_t tool_started_count = 0;
+        std::size_t tool_call_started_count = 0;
+        std::size_t tool_started_count = 0;
         for (const auto &event : events) {
             const auto type = event.at("type").get<std::string>();
             if (type == "tool_call_started") {

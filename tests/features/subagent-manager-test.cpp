@@ -44,7 +44,7 @@ namespace {
 
     private:
         std::vector<Step> steps_;
-        size_t next_step_ = 0;
+        std::size_t next_step_ = 0;
     };
 
     const ToolDef *find_tool(const std::vector<ToolDef> &tools, const std::string &name) {

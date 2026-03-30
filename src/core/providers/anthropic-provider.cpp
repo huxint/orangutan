@@ -100,7 +100,7 @@ namespace orangutan {
         }
 
         void handle_block_delta(const nlohmann::json &event_data) {
-            auto index = event_data["index"].get<size_t>();
+            auto index = event_data["index"].get<std::size_t>();
             if (index >= blocks_.size()) {
                 return;
             }

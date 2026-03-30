@@ -17,7 +17,7 @@ namespace orangutan {
 
         constexpr uint64_t fnv_offset_basis = 14695981039346656037ULL;
         constexpr uint64_t fnv_prime = 1099511628211ULL;
-        constexpr size_t max_identity_label_length = 48;
+        constexpr std::size_t max_identity_label_length = 48;
 
         uint64_t fnv1a_64(std::string_view input) {
             uint64_t hash = fnv_offset_basis;
@@ -203,7 +203,7 @@ namespace orangutan {
 
         append_separator();
         prompt += "Subagent delegation is available for: ";
-        for (size_t index = 0; index < allowed_child_agents.size(); ++index) {
+        for (std::size_t index = 0; index < allowed_child_agents.size(); ++index) {
             if (index > 0) {
                 prompt += ", ";
             }

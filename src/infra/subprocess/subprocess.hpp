@@ -47,8 +47,8 @@ namespace orangutan {
         bool kill_requested = false;
         std::optional<int> exit_code;
         std::optional<int> signal_number;
-        size_t stdout_bytes = 0;
-        size_t stderr_bytes = 0;
+        std::size_t stdout_bytes = 0;
+        std::size_t stderr_bytes = 0;
     };
 
     struct BackgroundProcessSnapshot : BackgroundProcessSummary {
@@ -66,7 +66,7 @@ namespace orangutan {
 
     struct BackgroundProcessOutputMetadata {
         std::string tail;
-        size_t total_bytes = 0;
+        std::size_t total_bytes = 0;
         bool truncated = false;
     };
 

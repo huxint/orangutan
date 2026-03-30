@@ -76,7 +76,7 @@ namespace orangutan {
         memory_detail::upsert_memory_record(db_, scope, key, final_content, final_category, final_source, final_importance);
     }
 
-    std::vector<MemoryRecord> MemoryStore::search(const std::string &query, const std::string &scope, size_t limit) {
+    std::vector<MemoryRecord> MemoryStore::search(const std::string &query, const std::string &scope, std::size_t limit) {
         std::scoped_lock lock(mutex_);
         const auto trimmed_query = memory_detail::trim_copy(query);
         if (trimmed_query.empty()) {
@@ -93,7 +93,7 @@ namespace orangutan {
                 fts_stmt.bind_text(1, *fts_query);
                 fts_stmt.bind_text(2, scope);
                 auto fts_records = memory_detail::collect_records(fts_stmt);
-                for (size_t index = 0; index < fts_records.size(); ++index) {
+                for (std::size_t index = 0; index < fts_records.size(); ++index) {
                     fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<base::f64>(index));
                 }
             }
@@ -132,9 +132,9 @@ namespace orangutan {
             return left.record.id > right.record.id;
         });
 
-        const auto category_cap = std::max<size_t>(1, (effective_limit + 1) / 2);
+        const auto category_cap = std::max<std::size_t>(1, (effective_limit + 1) / 2);
         std::set<std::string> selected_keys;
-        std::unordered_map<std::string, size_t> category_counts;
+        std::unordered_map<std::string, std::size_t> category_counts;
         std::vector<MemoryRecord> selected;
         selected.reserve(std::min(effective_limit, ranked.size()));
         for (const auto &entry : ranked) {
@@ -168,11 +168,11 @@ namespace orangutan {
         return selected;
     }
 
-    std::string MemoryStore::recall(const std::string &query, const std::string &scope, size_t limit) {
+    std::string MemoryStore::recall(const std::string &query, const std::string &scope, std::size_t limit) {
         return memory_detail::format_records(search(query, scope, limit));
     }
 
-    std::vector<std::pair<std::string, std::string>> MemoryStore::recall_by_category(const std::string &category, const std::string &scope, size_t limit) {
+    std::vector<std::pair<std::string, std::string>> MemoryStore::recall_by_category(const std::string &category, const std::string &scope, std::size_t limit) {
         auto records = list(scope, category, limit);
 
         std::vector<std::pair<std::string, std::string>> entries;
@@ -183,7 +183,7 @@ namespace orangutan {
         return entries;
     }
 
-    std::vector<MemoryRecord> MemoryStore::list(const std::string &scope, const std::string &category, size_t limit) {
+    std::vector<MemoryRecord> MemoryStore::list(const std::string &scope, const std::string &category, std::size_t limit) {
         std::scoped_lock lock(mutex_);
         const auto capped_limit = static_cast<int>(limit == 0 ? memory_detail::default_list_limit : limit);
 
@@ -231,17 +231,17 @@ namespace orangutan {
         return db_.changes() > 0;
     }
 
-    std::string MemoryStore::dump_all(const std::string &scope, size_t limit) {
+    std::string MemoryStore::dump_all(const std::string &scope, std::size_t limit) {
         return memory_detail::format_records(list(scope, {}, limit));
     }
 
-    size_t MemoryStore::auto_capture(const std::string &text, const std::string &scope, const std::string &source) {
+    std::size_t MemoryStore::auto_capture(const std::string &text, const std::string &scope, const std::string &source) {
         if (!memory_detail::should_attempt_auto_capture(text)) {
             return 0;
         }
 
         const auto candidates = memory_detail::extract_auto_candidates(text);
-        size_t stored = 0;
+        std::size_t stored = 0;
         for (const auto &candidate : candidates) {
             update(candidate.key, candidate.content, candidate.category, scope, memory_detail::should_merge_auto_candidate(candidate.key), source, candidate.importance);
             ++stored;

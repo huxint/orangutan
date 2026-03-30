@@ -18,7 +18,7 @@ namespace orangutan::automation {
             auto result = std::from_chars(value.begin(), value.end(), out);
             return result.ec == std::errc{} && result.ptr == value.end();
         }
-        std::optional<int> parse_fixed_int(std::string_view value, size_t offset, size_t width) {
+        std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
             if (offset + width > value.size()) {
                 return std::nullopt;
             }

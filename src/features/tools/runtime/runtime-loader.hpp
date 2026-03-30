@@ -12,7 +12,7 @@ namespace orangutan {
 
     struct RuntimeToolBootstrapResult {
         std::unique_ptr<McpManager> mcp_manager;
-        size_t mcp_tool_count = 0;
+        std::size_t mcp_tool_count = 0;
     };
 
     RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,

@@ -114,7 +114,7 @@ namespace orangutan {
             using response_sender_t = any_sender_of<stdexec::set_value_t(LLMResponse), stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
 
             struct RequestAttemptState {
-                size_t attempt_index = 0;
+                std::size_t attempt_index = 0;
                 std::vector<std::string> errors;
             };
 
@@ -127,12 +127,12 @@ namespace orangutan {
             std::vector<ProviderEndpoint> endpoints_;
             ProviderFactory factory_;
             mutable std::mutex mutex_;
-            size_t preferred_index_ = 0;
+            std::size_t preferred_index_ = 0;
             std::vector<std::weak_ptr<Provider>> providers_;
             std::shared_ptr<Provider> preferred_provider_;
             ProviderUsageStats usage_;
 
-            std::shared_ptr<Provider> provider_for_index_locked(size_t index) {
+            std::shared_ptr<Provider> provider_for_index_locked(std::size_t index) {
                 if (providers_.empty()) {
                     providers_.resize(endpoints_.size());
                 }
@@ -168,7 +168,7 @@ namespace orangutan {
                 if (!errors.empty()) {
                     summary.append(" (");
                     summary.append(errors.front());
-                    for (size_t index = 1; index < errors.size(); ++index) {
+                    for (std::size_t index = 1; index < errors.size(); ++index) {
                         append(summary, "; {}", errors[index]);
                     }
                     summary.push_back(')');
@@ -179,7 +179,7 @@ namespace orangutan {
             [[nodiscard]]
             std::optional<std::string> advance_after_retryable_failure(RequestAttemptState &state, std::string_view error_message) {
                 const auto failed_model = endpoints_[state.attempt_index].model;
-                std::optional<size_t> next_index;
+                std::optional<std::size_t> next_index;
                 std::string next_model;
 
                 {

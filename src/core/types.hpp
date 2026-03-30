@@ -152,7 +152,7 @@ namespace orangutan {
         }
 
         [[nodiscard]]
-        std::size_t size() const noexcept {
+        std::std::size_t size() const noexcept {
             return content_.size();
         }
 
@@ -169,7 +169,7 @@ namespace orangutan {
     class Conversation {
     public:
         [[nodiscard]]
-        std::size_t size() const noexcept {
+        std::std::size_t size() const noexcept {
             return messages_.size();
         }
 

@@ -19,12 +19,12 @@ namespace orangutan::app {
         std::vector<std::string> fallback_models;
         std::string current_session_id;
         std::string scope_key;
-        size_t history_messages = 0;
-        size_t user_messages = 0;
-        size_t assistant_messages = 0;
-        size_t tool_call_count = 0;
-        size_t tool_error_count = 0;
-        size_t registered_tool_count = 0;
+        std::size_t history_messages = 0;
+        std::size_t user_messages = 0;
+        std::size_t assistant_messages = 0;
+        std::size_t tool_call_count = 0;
+        std::size_t tool_error_count = 0;
+        std::size_t registered_tool_count = 0;
         ProviderUsageStats provider_usage;
     };
 

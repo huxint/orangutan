@@ -77,7 +77,7 @@ TEST_CASE("save_and_load_text_messages") {
     const auto loaded = store.load(session_id);
 
     INFO("expected two persisted messages");
-    REQUIRE(loaded.size() == std::size_t{2});
+    REQUIRE(loaded.size() == std::std::size_t{2});
     CHECK(loaded[0].role() == base::role::user);
     CHECK(loaded[1].role() == base::role::assistant);
 
@@ -114,7 +114,7 @@ TEST_CASE("save_and_load_tool_use_blocks") {
     const auto loaded = store.load(session_id);
 
     INFO("expected tool-use history roundtrip");
-    REQUIRE(loaded.size() == std::size_t{2});
+    REQUIRE(loaded.size() == std::std::size_t{2});
     const auto *tool = std::get_if<ToolUse>(&*loaded[1].begin());
     REQUIRE(tool != nullptr);
     if (tool != nullptr) {
@@ -143,7 +143,7 @@ TEST_CASE("save_and_load_tool_result_blocks") {
     const auto loaded = store.load(session_id);
 
     INFO("expected one persisted tool result");
-    REQUIRE(loaded.size() == std::size_t{1});
+    REQUIRE(loaded.size() == std::std::size_t{1});
     const auto *result = std::get_if<ToolResult>(&*loaded[0].begin());
     REQUIRE(result != nullptr);
     if (result != nullptr) {
@@ -169,7 +169,7 @@ TEST_CASE("tool_result_preserves_error_flag") {
     const auto session_id = store.save(messages, make_session_metadata("test-model"));
     const auto loaded = store.load(session_id);
 
-    REQUIRE(loaded.size() == std::size_t{1});
+    REQUIRE(loaded.size() == std::std::size_t{1});
     const auto *result = std::get_if<ToolResult>(&*loaded[0].begin());
     REQUIRE(result != nullptr);
     if (result != nullptr) {
@@ -186,7 +186,7 @@ TEST_CASE("list_sessions_returns_saved_sessions") {
     store.save(messages, make_session_metadata("model-b", "scope:b"));
 
     const auto sessions = store.list_sessions();
-    CHECK(sessions.size() == std::size_t{2});
+    CHECK(sessions.size() == std::std::size_t{2});
 
     std::set<std::string> models;
     for (const auto &session : sessions) {
@@ -206,7 +206,7 @@ TEST_CASE("list_sessions_can_filter_by_scope") {
     store.save(messages, make_session_metadata("model-b", "scope:b"));
 
     const auto sessions = store.list_sessions("scope:a");
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].id == scope_a);
     CHECK(sessions[0].scope_key == "scope:a");
 };
@@ -238,7 +238,7 @@ TEST_CASE("save_persists_explicit_session_metadata") {
     const auto session_id = store.save(messages, metadata);
     const auto sessions = store.list_sessions();
 
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].id == session_id);
     CHECK(sessions[0].model == metadata.model);
     CHECK(sessions[0].scope_key == metadata.scope_key);
@@ -262,7 +262,7 @@ TEST_CASE("create_empty_persists_explicit_session_metadata") {
     const auto session_id = store.create_empty(metadata);
     const auto sessions = store.list_sessions();
 
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].id == session_id);
     CHECK(sessions[0].message_count == 0);
     CHECK(sessions[0].agent_key == metadata.agent_key);
@@ -294,7 +294,7 @@ TEST_CASE("list_sessions_for_agent_returns_only_matching_sessions") {
     store.save(messages, default_metadata);
 
     const auto coder_sessions = store.list_sessions_for_agent("coder");
-    REQUIRE(coder_sessions.size() == std::size_t{1});
+    REQUIRE(coder_sessions.size() == std::std::size_t{1});
     CHECK(coder_sessions[0].id == coder_session_id);
     CHECK(coder_sessions[0].agent_key == "coder");
 };
@@ -324,7 +324,7 @@ TEST_CASE("remove_deletes_session") {
     auto messages = std::vector{Message::user().text("test")};
     const auto id = store.save(messages, make_session_metadata("test-model"));
 
-    CHECK(store.list_sessions().size() == std::size_t{1});
+    CHECK(store.list_sessions().size() == std::std::size_t{1});
     store.remove(id);
     CHECK(store.list_sessions().empty());
     REQUIRE_THROWS_AS(store.load(id), std::runtime_error);
@@ -348,7 +348,7 @@ TEST_CASE("create_empty_session_loads_empty_history") {
     CHECK(loaded.empty());
 
     const auto sessions = store.list_sessions("scope:a");
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].id == session_id);
     CHECK(sessions[0].message_count == 0);
 };
@@ -366,7 +366,7 @@ TEST_CASE("append_populates_previously_empty_session") {
     store.append(session_id, messages, 0);
 
     const auto loaded = store.load(session_id);
-    REQUIRE(loaded.size() == std::size_t{2});
+    REQUIRE(loaded.size() == std::std::size_t{2});
     const auto *assistant_text = std::get_if<Text>(&*loaded[1].begin());
     REQUIRE(assistant_text != nullptr);
     if (assistant_text != nullptr) {
@@ -391,7 +391,7 @@ TEST_CASE("multiple_content_blocks_in_one_message") {
     const auto id = store.save(messages, make_session_metadata("test-model"));
     const auto loaded = store.load(id);
 
-    REQUIRE(loaded.size() == std::size_t{1});
+    REQUIRE(loaded.size() == std::std::size_t{1});
     auto first = loaded[0].begin();
     auto second = first;
     ++second;
@@ -503,7 +503,7 @@ TEST_CASE("append_adds_only_new_messages") {
     store.append(session_id, messages, 2);
 
     const auto loaded = store.load(session_id);
-    REQUIRE(loaded.size() == std::size_t{4});
+    REQUIRE(loaded.size() == std::std::size_t{4});
     const auto *last_text = std::get_if<Text>(&*loaded[3].begin());
     REQUIRE(last_text != nullptr);
     if (last_text != nullptr) {
@@ -524,14 +524,14 @@ TEST_CASE("update_and_append_can_refresh_stored_model_metadata") {
     store.update(session_id, messages, "model-b");
 
     auto sessions = store.list_sessions("scope:test");
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].model == "model-b");
 
     messages.push_back(Message::user().text("How are you?"));
     store.append(session_id, messages, 2, "model-c");
 
     sessions = store.list_sessions("scope:test");
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].model == "model-c");
 };
 
@@ -575,7 +575,7 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
     auto store = harness.store();
 
     const auto sessions = store.list_sessions();
-    REQUIRE(sessions.size() == std::size_t{1});
+    REQUIRE(sessions.size() == std::std::size_t{1});
     CHECK(sessions[0].id == "legacy-session");
     CHECK(sessions[0].scope_key.empty());
 

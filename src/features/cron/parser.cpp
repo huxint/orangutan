@@ -107,7 +107,7 @@ namespace orangutan {
 
         std::vector<std::string_view> split_whitespace(std::string_view sv) {
             std::vector<std::string_view> tokens;
-            size_t i = 0;
+            std::size_t i = 0;
             while (i < sv.size()) {
                 while (i < sv.size() && (sv[i] == ' ' || sv[i] == '\t')) {
                     ++i;
@@ -115,7 +115,7 @@ namespace orangutan {
                 if (i >= sv.size()) {
                     break;
                 }
-                size_t start = i;
+                std::size_t start = i;
                 while (i < sv.size() && sv[i] != ' ' && sv[i] != '\t') {
                     ++i;
                 }

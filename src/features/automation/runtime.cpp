@@ -53,7 +53,7 @@ namespace orangutan::automation {
         std::mutex mutex;
         std::condition_variable cv;
         std::thread::id owner;
-        size_t depth = 0;
+        std::size_t depth = 0;
     };
 
     Runtime::AgentExecutionLease::AgentExecutionLease(std::shared_ptr<AgentExecutionGate> gate)

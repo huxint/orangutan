@@ -120,9 +120,9 @@ namespace orangutan {
             db.exec("CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);", "Failed to recreate binding index");
         }
 
-        void write_messages(sqlite::Database &db, const std::string &session_id, const std::vector<Message> &messages, size_t start_index) {
+        void write_messages(sqlite::Database &db, const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index) {
             sqlite::Statement insert_msg(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
-            for (size_t index = start_index; index < messages.size(); ++index) {
+            for (std::size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
                 const auto content_json = serialize_content(message).dump();
 
@@ -307,7 +307,7 @@ namespace orangutan {
         spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
     }
 
-    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const std::string &model) {
+    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const std::string &model) {
         std::scoped_lock lock(mutex_);
         if (start_index > messages.size()) {
             throw std::runtime_error("append start_index is out of range");
@@ -321,7 +321,7 @@ namespace orangutan {
         spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
 
-    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, size_t start_index, const SessionMetadata &metadata) {
+    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
         if (start_index > messages.size()) {
             throw std::runtime_error("append start_index is out of range");

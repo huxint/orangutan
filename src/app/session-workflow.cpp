@@ -8,7 +8,7 @@ namespace orangutan::app {
 
     namespace {
 
-        std::string message_heading(const Message &message, size_t index) {
+        std::string message_heading(const Message &message, std::size_t index) {
             if (message.role() == base::role::user) {
                 return "User " + std::to_string(index + 1);
             }
@@ -18,7 +18,7 @@ namespace orangutan::app {
             return std::string(magic_enum::enum_name(message.role())) + " " + std::to_string(index + 1);
         }
 
-        void append_message_markdown(std::FILE *file, const Message &message, size_t index) {
+        void append_message_markdown(std::FILE *file, const Message &message, std::size_t index) {
             spdlog::fmt_lib::println(file, "## {}\n", message_heading(message, index));
 
             if (message.empty()) {
@@ -170,7 +170,7 @@ namespace orangutan::app {
             spdlog::fmt_lib::println(file->get(), "- Session: `{}`", session_id);
             spdlog::fmt_lib::println(file->get(), "- Messages: `{}`\n", history.size());
 
-            for (size_t index = 0; index < history.size(); ++index) {
+            for (std::size_t index = 0; index < history.size(); ++index) {
                 append_message_markdown(file->get(), history[index], index);
             }
 

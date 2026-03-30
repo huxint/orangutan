@@ -77,7 +77,7 @@ namespace orangutan {
         curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, body.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, timeout);
 
-        auto write_cb = +[](char *ptr, size_t size, size_t nmemb, std::string *data) -> size_t {
+        auto write_cb = +[](char *ptr, std::size_t size, std::size_t nmemb, std::string *data) -> std::size_t {
             data->append(ptr, size * nmemb);
             return size * nmemb;
         };
@@ -107,7 +107,7 @@ namespace orangutan {
         curl_easy_setopt(curl.get(), CURLOPT_HTTPGET, 1L);
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, timeout);
 
-        auto write_cb = +[](char *ptr, size_t size, size_t nmemb, std::string *data) -> size_t {
+        auto write_cb = +[](char *ptr, std::size_t size, std::size_t nmemb, std::string *data) -> std::size_t {
             data->append(ptr, size * nmemb);
             return size * nmemb;
         };
@@ -137,7 +137,7 @@ namespace orangutan {
         curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, body.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, timeout);
 
-        auto write_cb = +[](char *ptr, size_t size, size_t nmemb, void *userdata) -> size_t {
+        auto write_cb = +[](char *ptr, std::size_t size, std::size_t nmemb, void *userdata) -> std::size_t {
             auto *h = static_cast<StreamHandler *>(userdata);
             auto total = size * nmemb;
             h->feed(std::string_view(ptr, total));

@@ -19,12 +19,12 @@ namespace orangutan {
     namespace {
 
         void write_all(int fd, std::string_view text) {
-            size_t written = 0;
+            std::size_t written = 0;
             while (written < text.size()) {
                 const auto pending = text.substr(written);
                 const auto count = write(fd, pending.data(), pending.size());
                 if (count > 0) {
-                    written += static_cast<size_t>(count);
+                    written += static_cast<std::size_t>(count);
                     continue;
                 }
                 if (count < 0 && errno == EINTR) {
@@ -366,13 +366,13 @@ namespace orangutan {
 
         std::string payload = message.dump();
         payload.push_back('\n');
-        size_t written = 0;
+        std::size_t written = 0;
 
         while (written < payload.size()) {
             const auto pending = std::string_view(payload).substr(written);
             const auto n = write(stdin_fd_, pending.data(), pending.size());
             if (n > 0) {
-                written += static_cast<size_t>(n);
+                written += static_cast<std::size_t>(n);
                 continue;
             }
             if (n < 0 && errno == EINTR) {
@@ -437,7 +437,7 @@ namespace orangutan {
             std::array<char, 4096> buffer{};
             const auto n = read(stdout_fd_, buffer.data(), buffer.size());
             if (n > 0) {
-                read_buffer_.append(buffer.data(), static_cast<size_t>(n));
+                read_buffer_.append(buffer.data(), static_cast<std::size_t>(n));
                 continue;
             }
             if (n == 0) {

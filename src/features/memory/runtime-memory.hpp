@@ -37,25 +37,25 @@ namespace orangutan {
         bool forget(const std::string &key);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> search(const std::string &query, size_t limit = 8);
+        std::vector<MemoryRecord> search(const std::string &query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> prompt_memories(const std::string &query, size_t limit = 8);
+        std::vector<MemoryRecord> prompt_memories(const std::string &query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::string recall(const std::string &query, size_t limit = 8);
+        std::string recall(const std::string &query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, size_t limit = 20);
+        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, std::size_t limit = 20);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> list(const std::string &category = {}, size_t limit = 20);
+        std::vector<MemoryRecord> list(const std::string &category = {}, std::size_t limit = 20);
 
         [[nodiscard]]
         MemoryStats stats();
 
         [[nodiscard]]
-        size_t auto_capture(const std::string &text, const std::string &source = "auto:user");
+        std::size_t auto_capture(const std::string &text, const std::string &source = "auto:user");
 
         [[nodiscard]]
         MemoryMirrorRefreshResult refresh_mirror() const;

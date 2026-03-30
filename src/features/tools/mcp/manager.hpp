@@ -23,10 +23,10 @@ namespace orangutan {
         void shutdown();
 
         [[nodiscard]]
-        size_t connected_server_count() const;
+        std::size_t connected_server_count() const;
 
         [[nodiscard]]
-        size_t total_tool_count() const;
+        std::size_t total_tool_count() const;
 
     private:
         struct ServerState {

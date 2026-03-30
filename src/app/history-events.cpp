@@ -61,34 +61,34 @@ namespace orangutan::app {
         const auto old_lines = split_lines(old_text);
         const auto new_lines = split_lines(new_text);
 
-        size_t prefix = 0;
+        std::size_t prefix = 0;
         while (prefix < old_lines.size() && prefix < new_lines.size() && old_lines[prefix] == new_lines[prefix]) {
             ++prefix;
         }
 
-        size_t suffix = 0;
+        std::size_t suffix = 0;
         while (suffix < (old_lines.size() - prefix) && suffix < (new_lines.size() - prefix) &&
                old_lines[old_lines.size() - 1 - suffix] == new_lines[new_lines.size() - 1 - suffix]) {
             ++suffix;
         }
 
-        constexpr size_t context_lines = 3;
+        constexpr std::size_t context_lines = 3;
         const auto prefix_context_start = prefix > context_lines ? prefix - context_lines : 0;
         const auto prefix_context_count = prefix - prefix_context_start;
         const auto suffix_context_start = old_lines.size() - suffix;
         const auto suffix_context_count = std::min(suffix, context_lines);
 
         auto hunk_lines = nlohmann::json::array();
-        for (size_t index = prefix_context_start; index < prefix; ++index) {
+        for (std::size_t index = prefix_context_start; index < prefix; ++index) {
             hunk_lines.push_back(make_diff_line("context", old_lines[index]));
         }
-        for (size_t index = prefix; index < old_lines.size() - suffix; ++index) {
+        for (std::size_t index = prefix; index < old_lines.size() - suffix; ++index) {
             hunk_lines.push_back(make_diff_line("removal", old_lines[index]));
         }
-        for (size_t index = prefix; index < new_lines.size() - suffix; ++index) {
+        for (std::size_t index = prefix; index < new_lines.size() - suffix; ++index) {
             hunk_lines.push_back(make_diff_line("addition", new_lines[index]));
         }
-        for (size_t index = suffix_context_start; index < suffix_context_start + suffix_context_count; ++index) {
+        for (std::size_t index = suffix_context_start; index < suffix_context_start + suffix_context_count; ++index) {
             hunk_lines.push_back(make_diff_line("context", old_lines[index]));
         }
 
@@ -107,22 +107,22 @@ namespace orangutan::app {
         unified.push_back('\n');
         append(unified, "{}", header);
 
-        for (size_t index = prefix_context_start; index < prefix; ++index) {
+        for (std::size_t index = prefix_context_start; index < prefix; ++index) {
             unified.push_back('\n');
             unified.push_back(' ');
             unified.append(old_lines[index]);
         }
-        for (size_t index = prefix; index < old_lines.size() - suffix; ++index) {
+        for (std::size_t index = prefix; index < old_lines.size() - suffix; ++index) {
             unified.push_back('\n');
             unified.push_back('-');
             unified.append(old_lines[index]);
         }
-        for (size_t index = prefix; index < new_lines.size() - suffix; ++index) {
+        for (std::size_t index = prefix; index < new_lines.size() - suffix; ++index) {
             unified.push_back('\n');
             unified.push_back('+');
             unified.append(new_lines[index]);
         }
-        for (size_t index = suffix_context_start; index < suffix_context_start + suffix_context_count; ++index) {
+        for (std::size_t index = suffix_context_start; index < suffix_context_start + suffix_context_count; ++index) {
             unified.push_back('\n');
             unified.push_back(' ');
             unified.append(old_lines[index]);

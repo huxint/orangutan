@@ -18,14 +18,14 @@ namespace orangutan {
         using HistoryCheckpointCallback = std::function<void(const std::vector<Message> &history)>;
         struct HistoryCompactionResult {
             bool compacted = false;
-            size_t messages_before = 0;
-            size_t messages_after = 0;
+            std::size_t messages_before = 0;
+            std::size_t messages_after = 0;
             std::string status;
         };
 
         struct SessionMemoryDistillationResult {
             bool distilled = false;
-            size_t memories_stored = 0;
+            std::size_t memories_stored = 0;
             bool journal_stored = false;
             std::string status;
         };
@@ -76,18 +76,18 @@ namespace orangutan {
         static constexpr int loop_detection_threshold = 3;
         static constexpr int compaction_threshold = 50;
         static constexpr int compaction_keep_recent = 10;
-        static constexpr size_t max_memory_prompt_bytes = 2048;
+        static constexpr std::size_t max_memory_prompt_bytes = 2048;
 
         // Loop detection: tracks (tool_name, input_hash) call counts per run
         struct ToolCallSignature {
             std::string name;
-            std::size_t input_hash;
+            std::std::size_t input_hash;
 
             bool operator==(const ToolCallSignature &other) const = default;
         };
 
         struct SignatureHash {
-            std::size_t operator()(const ToolCallSignature &sig) const {
+            std::std::size_t operator()(const ToolCallSignature &sig) const {
                 auto h1 = std::hash<std::string>{}(sig.name);
                 auto h2 = sig.input_hash;
                 return h1 ^ (h2 << 1);
@@ -108,7 +108,7 @@ namespace orangutan {
 
         // Compact history if it exceeds the threshold
         [[nodiscard]]
-        HistoryCompactionResult compact_history(size_t minimum_history_size);
+        HistoryCompactionResult compact_history(std::size_t minimum_history_size);
 
         [[nodiscard]]
         std::string build_system_prompt(const std::string &user_input) const;

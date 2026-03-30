@@ -715,7 +715,7 @@ namespace {
         }
 
         spdlog::fmt_lib::println("Available sessions:");
-        for (size_t index = 0; index < sessions.size(); ++index) {
+        for (std::size_t index = 0; index < sessions.size(); ++index) {
             const auto &session = sessions[index];
             spdlog::fmt_lib::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
         }

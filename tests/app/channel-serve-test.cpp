@@ -136,7 +136,7 @@ namespace {
 
     private:
         std::vector<Step> steps_;
-        size_t next_step_ = 0;
+        std::size_t next_step_ = 0;
     };
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
@@ -872,7 +872,7 @@ namespace {
         auto resume_state = std::make_shared<app::detail::ChannelCompletionResumeState>();
         resume_state->agent = &agent;
         resume_state->provider = &provider;
-        size_t persisted_message_count = history.size();
+        std::size_t persisted_message_count = history.size();
         std::string current_session_id = session_id;
         resume_state->current_session_id = &current_session_id;
         resume_state->persisted_message_count = &persisted_message_count;

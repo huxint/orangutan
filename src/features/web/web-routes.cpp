@@ -266,7 +266,7 @@ namespace orangutan::web {
         }
 
         void send_web_command_stream(httplib::Response &res, const app::SlashCommandReply &command_response) {
-            res.set_chunked_content_provider("text/event-stream", [command_response](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+            res.set_chunked_content_provider("text/event-stream", [command_response](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
                 if (command_response.session_id.has_value()) {
                     write_sse_event(sink, "session", {{"session_id", *command_response.session_id}});
                 }
@@ -864,7 +864,7 @@ namespace orangutan::web {
         auto now = std::chrono::steady_clock::now();
         auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
 
-        size_t active_sessions = 0;
+        std::size_t active_sessions = 0;
         {
             std::scoped_lock lock(sessions_mutex);
             active_sessions = sessions.size();
@@ -1030,7 +1030,7 @@ namespace orangutan::web {
             res.set_chunked_content_provider("text/event-stream",
                                              [agent_ptr, session_ptr, store_ptr, captured_session_id = active_session_id, captured_metadata = metadata, message,
                                               approval_event_emitter, approval_stream_open, agent_key, automation_runtime, &sessions_mutex,
-                                              &sessions](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                                              &sessions](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
                                                  if (approval_event_emitter != nullptr) {
                                                      *approval_event_emitter = [&sink](std::string_view event_name, const nlohmann::json &payload) {
                                                          const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";

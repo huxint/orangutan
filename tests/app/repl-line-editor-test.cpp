@@ -35,7 +35,7 @@ namespace orangutan::app {
 
         private:
             std::vector<std::optional<std::string>> responses_;
-            size_t index_ = 0;
+            std::size_t index_ = 0;
         };
 
         TEST_CASE("read_repl_input_returns_single_line_and_appends_history") {

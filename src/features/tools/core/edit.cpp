@@ -30,7 +30,7 @@ namespace orangutan {
         struct ValidatedFile {
             std::filesystem::path resolved;
             std::string content;
-            std::vector<std::pair<size_t, size_t>> match_positions;
+            std::vector<std::pair<std::size_t, std::size_t>> match_positions;
             bool is_new_file = false;
         };
 
@@ -39,7 +39,7 @@ namespace orangutan {
                 return {};
             }
 
-            size_t total_size = trailing_newline ? 1 : 0;
+            std::size_t total_size = trailing_newline ? 1 : 0;
             for (const auto &line : lines) {
                 total_size += line.size();
             }
@@ -161,7 +161,7 @@ namespace orangutan {
                 auto resolved = resolve_tool_path(std::filesystem::path(file.path), workspace_root);
                 ValidatedFile validated_file{.resolved = std::move(resolved)};
 
-                for (size_t i = 0; i < file.hunks.size(); ++i) {
+                for (std::size_t i = 0; i < file.hunks.size(); ++i) {
                     const auto &hunk = file.hunks[i];
 
                     if (hunk.search.empty()) {
@@ -200,7 +200,7 @@ namespace orangutan {
         }
 
         void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePatch> &files) {
-            for (size_t file_index = 0; file_index < validated.size(); ++file_index) {
+            for (std::size_t file_index = 0; file_index < validated.size(); ++file_index) {
                 auto &validated_file = validated[file_index];
                 const auto &file = files[file_index];
 
@@ -325,7 +325,7 @@ namespace orangutan {
             auto validated = validate_hunks(files, workspace_root);
             apply_hunks(validated, files);
 
-            size_t total_hunks = 0;
+            std::size_t total_hunks = 0;
             std::string summary;
             for (const auto &file : files) {
                 total_hunks += file.hunks.size();

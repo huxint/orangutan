@@ -107,7 +107,7 @@ namespace orangutan {
 
         private:
             std::vector<Step> steps_;
-            size_t next_step_ = 0;
+            std::size_t next_step_ = 0;
         };
 
         class WebChatStoreHarness {
@@ -484,7 +484,7 @@ namespace orangutan {
             auto automation_store = std::make_shared<automation::Store>(automation_db_path);
             automation::Runtime automation_runtime(*automation_store);
             ToolRegistry tools;
-            size_t provider_calls = 0;
+            std::size_t provider_calls = 0;
             ScriptedProvider provider({
                 [&provider_calls](const std::vector<Message> &) {
                     ++provider_calls;

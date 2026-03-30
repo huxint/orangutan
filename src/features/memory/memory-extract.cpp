@@ -38,7 +38,7 @@ namespace orangutan::memory_detail {
         }
 
         template <typename Stop>
-        std::string extract_utf8_prefix(std::string_view input, size_t start, size_t max_codepoints, Stop should_stop) {
+        std::string extract_utf8_prefix(std::string_view input, std::size_t start, std::size_t max_codepoints, Stop should_stop) {
             if (start >= input.size() || max_codepoints == 0) {
                 return {};
             }
@@ -49,15 +49,15 @@ namespace orangutan::memory_detail {
             }
 
             auto view = una::ranges::utf8_view{valid_suffix};
-            size_t consumed_bytes = 0;
-            size_t count = 0;
+            std::size_t consumed_bytes = 0;
+            std::size_t count = 0;
             for (auto it = view.begin(); it != view.end() && count < max_codepoints; ++it) {
                 const auto codepoint = *it;
                 if (should_stop(codepoint)) {
                     break;
                 }
 
-                consumed_bytes = static_cast<size_t>(it.end() - valid_suffix.begin());
+                consumed_bytes = static_cast<std::size_t>(it.end() - valid_suffix.begin());
                 ++count;
             }
 
@@ -66,7 +66,7 @@ namespace orangutan::memory_detail {
 
         // Extract up to max_codepoints complete UTF-8 code points starting at byte offset,
         // stopping at ASCII whitespace or any of the given terminator code points.
-        std::string extract_utf8_run(std::string_view input, size_t start, size_t max_codepoints, std::span<const char32_t> terminators) {
+        std::string extract_utf8_run(std::string_view input, std::size_t start, std::size_t max_codepoints, std::span<const char32_t> terminators) {
             return extract_utf8_prefix(input, start, max_codepoints, [&](char32_t codepoint) {
                 return is_ascii_whitespace(codepoint) || std::ranges::contains(terminators, codepoint);
             });
@@ -74,23 +74,23 @@ namespace orangutan::memory_detail {
 
         // Like extract_utf8_run but allows spaces within (for sentence-level captures).
         // Stops at newline or any terminator.
-        std::string extract_utf8_sentence(std::string_view input, size_t start, size_t max_codepoints, std::span<const char32_t> terminators) {
+        std::string extract_utf8_sentence(std::string_view input, std::size_t start, std::size_t max_codepoints, std::span<const char32_t> terminators) {
             return extract_utf8_prefix(input, start, max_codepoints, [&](char32_t codepoint) {
                 return codepoint == U'\n' || std::ranges::contains(terminators, codepoint);
             });
         }
 
-        size_t skip_optional_capture_prefix_separators(std::string_view input, size_t start) {
+        std::size_t skip_optional_capture_prefix_separators(std::string_view input, std::size_t start) {
             const auto valid_suffix = leading_valid_utf8_span(input.substr(start));
             auto view = una::ranges::utf8_view{valid_suffix};
-            size_t skipped_bytes = 0;
+            std::size_t skipped_bytes = 0;
             for (auto it = view.begin(); it != view.end(); ++it) {
                 const auto codepoint = *it;
                 if (codepoint != U':' && codepoint != U'：' && codepoint != U' ') {
                     break;
                 }
 
-                skipped_bytes = static_cast<size_t>(it.end() - valid_suffix.begin());
+                skipped_bytes = static_cast<std::size_t>(it.end() - valid_suffix.begin());
             }
 
             return start + skipped_bytes;
@@ -109,7 +109,7 @@ namespace orangutan::memory_detail {
         struct ChineseAutoCaptureRule {
             std::span<const std::string_view> prefixes;
             ChineseCaptureMode capture_mode;
-            size_t max_codepoints;
+            std::size_t max_codepoints;
             std::span<const char32_t> terminators;
             bool skip_optional_separators;
             ChineseKeyMode key_mode;
@@ -240,7 +240,7 @@ namespace orangutan::memory_detail {
             return std::string(rule.key);
         }
 
-        std::string extract_chinese_candidate_content(std::string_view text, const ChineseAutoCaptureRule &rule, size_t start) {
+        std::string extract_chinese_candidate_content(std::string_view text, const ChineseAutoCaptureRule &rule, std::size_t start) {
             if (rule.skip_optional_separators) {
                 start = skip_optional_capture_prefix_separators(text, start);
             }
@@ -257,7 +257,7 @@ namespace orangutan::memory_detail {
         }
 
         // Find the byte offset immediately after the first matching literal prefix, or npos.
-        size_t find_after_any(std::string_view text, std::span<const std::string_view> prefixes) {
+        std::size_t find_after_any(std::string_view text, std::span<const std::string_view> prefixes) {
             for (const auto prefix : prefixes) {
                 const auto pos = text.find(prefix);
                 if (pos != std::string_view::npos) {

@@ -96,7 +96,7 @@ namespace orangutan::app {
     };
 
     [[nodiscard]]
-    size_t default_serve_worker_count();
+    std::size_t default_serve_worker_count();
 
     [[nodiscard]]
     std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents);
@@ -119,7 +119,7 @@ namespace orangutan::app {
             Provider *provider = nullptr;
             HookManager *hook_manager = nullptr;
             std::string *current_session_id = nullptr;
-            size_t *persisted_message_count = nullptr;
+            std::size_t *persisted_message_count = nullptr;
             SessionStore *session_store = nullptr;
             ChannelManager *channel_manager = nullptr;
             std::string jid;

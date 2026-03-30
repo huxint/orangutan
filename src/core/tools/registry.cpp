@@ -29,7 +29,7 @@ namespace orangutan {
             if (!changed) {
                 return false;
             }
-            scrubbed.append(pos, static_cast<std::size_t>(end - pos));
+            scrubbed.append(pos, static_cast<std::std::size_t>(end - pos));
             text = std::move(scrubbed);
             return true;
         }
@@ -55,7 +55,7 @@ namespace orangutan {
             if (!changed) {
                 return false;
             }
-            scrubbed.append(pos, static_cast<std::size_t>(end - pos));
+            scrubbed.append(pos, static_cast<std::std::size_t>(end - pos));
             text = std::move(scrubbed);
             return true;
         }

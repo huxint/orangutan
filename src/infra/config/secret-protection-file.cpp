@@ -24,12 +24,12 @@ namespace orangutan {
 
         [[nodiscard]]
         std::string trim_copy(std::string_view input) {
-            size_t begin = 0;
+            std::size_t begin = 0;
             while (begin < input.size() && std::isspace(static_cast<unsigned char>(input[begin])) != 0) {
                 ++begin;
             }
 
-            size_t end = input.size();
+            std::size_t end = input.size();
             while (end > begin && std::isspace(static_cast<unsigned char>(input[end - 1])) != 0) {
                 --end;
             }
@@ -45,7 +45,7 @@ namespace orangutan {
 
         [[nodiscard]]
         std::optional<ParsedSecretAssignment> parse_secret_assignment_line(const std::string &line, std::string_view key_name) {
-            size_t pos = 0;
+            std::size_t pos = 0;
             while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) {
                 ++pos;
             }
@@ -176,7 +176,7 @@ namespace orangutan {
         }
 
         const ConfigSecretFieldSpec *active_field = nullptr;
-        size_t protected_count = 0;
+        std::size_t protected_count = 0;
 
         for (auto &current_line : lines) {
             const auto cleaned = strip_line_comment(current_line);
@@ -203,7 +203,7 @@ namespace orangutan {
         }
 
         std::string rebuilt;
-        for (size_t index = 0; index < lines.size(); ++index) {
+        for (std::size_t index = 0; index < lines.size(); ++index) {
             rebuilt += lines[index];
             if (index + 1 < lines.size() || had_trailing_newline) {
                 rebuilt.push_back('\n');

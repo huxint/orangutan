@@ -28,12 +28,12 @@ namespace orangutan {
     namespace {
 
         void write_all(int fd, std::string_view text) {
-            size_t written = 0;
+            std::size_t written = 0;
             while (written < text.size()) {
                 const auto pending = text.substr(written);
                 const auto count = write(fd, pending.data(), pending.size());
                 if (count > 0) {
-                    written += static_cast<size_t>(count);
+                    written += static_cast<std::size_t>(count);
                     continue;
                 }
                 if (count < 0 && errno == EINTR) {
@@ -76,7 +76,7 @@ namespace orangutan {
             while (true) {
                 auto n = read(fd, buffer.data(), buffer.size());
                 if (n > 0) {
-                    output.append(buffer.data(), static_cast<size_t>(n));
+                    output.append(buffer.data(), static_cast<std::size_t>(n));
                     continue;
                 }
                 if (n == 0) {
@@ -98,12 +98,12 @@ namespace orangutan {
             done,
         };
 
-        WriteStatus write_pending(int fd, std::string_view data, size_t &written) {
+        WriteStatus write_pending(int fd, std::string_view data, std::size_t &written) {
             while (written < data.size()) {
                 const auto pending = data.substr(written);
                 auto n = write(fd, pending.data(), pending.size());
                 if (n > 0) {
-                    written += static_cast<size_t>(n);
+                    written += static_cast<std::size_t>(n);
                     continue;
                 }
                 if (n < 0 && errno == EINTR) {
@@ -136,11 +136,11 @@ namespace orangutan {
 
         struct CapturedOutput {
             std::string text;
-            size_t total_bytes = 0;
+            std::size_t total_bytes = 0;
             bool truncated = false;
         };
 
-        CapturedOutput read_output_tail(const std::filesystem::path &path, size_t max_bytes = 16384) {
+        CapturedOutput read_output_tail(const std::filesystem::path &path, std::size_t max_bytes = 16384) {
             try {
                 fileio::File file(path, "rb");
 
@@ -151,7 +151,7 @@ namespace orangutan {
                 }
 
                 CapturedOutput captured;
-                captured.total_bytes = static_cast<size_t>(total_bytes);
+                captured.total_bytes = static_cast<std::size_t>(total_bytes);
                 captured.truncated = captured.total_bytes > max_bytes;
 
                 if (captured.truncated) {
@@ -183,13 +183,13 @@ namespace orangutan {
             };
         }
 
-        size_t file_size_or_zero(const std::filesystem::path &path) {
+        std::size_t file_size_or_zero(const std::filesystem::path &path) {
             std::error_code ec;
             const auto size = std::filesystem::file_size(path, ec);
             if (ec) {
                 return 0;
             }
-            return static_cast<size_t>(size);
+            return static_cast<std::size_t>(size);
         }
 
         pid_t spawn_background_subprocess(const SubprocessConfig &config, const std::filesystem::path &stdout_path, const std::filesystem::path &stderr_path) {
@@ -385,7 +385,7 @@ namespace orangutan {
         // Poll-based stdin/stdout/stderr loop with deadline
         auto deadline = std::chrono::steady_clock::now() + config.timeout;
         SubprocessResult result;
-        size_t stdin_written = 0;
+        std::size_t stdin_written = 0;
         int stdin_fd = need_stdin_pipe ? stdin_pipe[1] : -1;
         int stdout_fd = stdout_pipe[0];
         int stderr_fd = stderr_pipe[0];
@@ -525,7 +525,7 @@ namespace orangutan {
         std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
         BackgroundProcessManager::CompletionCallback completion_callback;
         bool shutting_down = false;
-        size_t pending_starts = 0;
+        std::size_t pending_starts = 0;
 
         Impl(const Impl &) = delete;
         Impl &operator=(const Impl &) = delete;

@@ -244,14 +244,14 @@ namespace {
                 throw std::runtime_error("pipe write end is closed");
             }
 
-            size_t written_total = 0;
+            std::size_t written_total = 0;
             while (written_total < content.size()) {
                 const auto remaining = content.substr(written_total);
                 const auto written = ::write(fds_[1], remaining.data(), remaining.size());
                 if (written <= 0) {
                     throw std::runtime_error("pipe write failed");
                 }
-                written_total += static_cast<size_t>(written);
+                written_total += static_cast<std::size_t>(written);
             }
         }
 
@@ -382,9 +382,9 @@ namespace {
 
             std::string output;
             std::array<char, 256> buffer{};
-            ssize_t read_bytes = 0;
+            sstd::size_t read_bytes = 0;
             while ((read_bytes = ::read(output_pipe.read_end(), buffer.data(), buffer.size())) > 0) {
-                output.append(buffer.data(), static_cast<size_t>(read_bytes));
+                output.append(buffer.data(), static_cast<std::size_t>(read_bytes));
             }
             output_pipe.close_read();
 

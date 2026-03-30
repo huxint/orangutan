@@ -81,7 +81,7 @@ namespace {
         }
 
     private:
-        size_t response_index_ = 0;
+        std::size_t response_index_ = 0;
     };
 
     struct AgentRunResult {

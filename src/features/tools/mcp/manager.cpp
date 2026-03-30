@@ -80,14 +80,14 @@ namespace orangutan {
         }
     }
 
-    size_t McpManager::connected_server_count() const {
-        return static_cast<size_t>(std::count_if(servers_.begin(), servers_.end(), [](const ServerState &server) {
+    std::size_t McpManager::connected_server_count() const {
+        return static_cast<std::size_t>(std::count_if(servers_.begin(), servers_.end(), [](const ServerState &server) {
             return server.connected;
         }));
     }
 
-    size_t McpManager::total_tool_count() const {
-        size_t total = 0;
+    std::size_t McpManager::total_tool_count() const {
+        std::size_t total = 0;
         for (const auto &server : servers_) {
             total += server.tools.size();
         }

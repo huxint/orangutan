@@ -26,7 +26,7 @@ namespace orangutan {
 
             consteval HashDict()
             : entries{} {
-                for (size_t i = 0; i < 256; ++i) {
+                for (std::size_t i = 0; i < 256; ++i) {
                     entries.at(i).at(0) = hash_alphabet.at(i >> 4);
                     entries.at(i).at(1) = hash_alphabet.at(i & 0xF);
                 }
@@ -63,7 +63,7 @@ namespace orangutan {
 
     } // namespace
 
-    std::string compute_line_hash(std::string_view line, size_t line_number) {
+    std::string compute_line_hash(std::string_view line, std::size_t line_number) {
         const auto processed = preprocess_line(line);
         const auto seed = is_symbol_only(processed) ? static_cast<uint64_t>(line_number) : 0;
         const auto hash = hash_index_for_line(processed, seed);
@@ -71,7 +71,7 @@ namespace orangutan {
         return {entry.at(0), entry.at(1)};
     }
 
-    std::string format_hashline(std::string_view line, size_t line_number) {
+    std::string format_hashline(std::string_view line, std::size_t line_number) {
         auto hash = compute_line_hash(line, line_number);
         return std::to_string(line_number) + "#" + hash + ":" + std::string(line);
     }
@@ -90,7 +90,7 @@ namespace orangutan {
         const auto hash_part = anchor_str.substr(sep + 1);
 
         // Parse line number
-        size_t line_number = 0;
+        std::size_t line_number = 0;
         auto [ptr, ec] = std::from_chars(line_part.begin(), line_part.end(), line_number);
         if (ec != std::errc{} || ptr != line_part.end()) {
             throw std::runtime_error("anchor line number is not a valid integer");
@@ -131,8 +131,8 @@ namespace orangutan {
 
         // Check if a string matches the hashline prefix pattern: ^\d+#[ZPMQVRWSNKTXJBYH]{2}:(.*)
         // Returns the position after the colon if matched, or std::nullopt.
-        std::optional<size_t> match_hashline_prefix(std::string_view s) {
-            size_t pos = 0;
+        std::optional<std::size_t> match_hashline_prefix(std::string_view s) {
+            std::size_t pos = 0;
             // Must start with one or more digits
             if (pos >= s.size() || std::isdigit(static_cast<unsigned char>(s[pos])) == 0) {
                 return std::nullopt;
@@ -149,7 +149,7 @@ namespace orangutan {
             if (pos + 2 > s.size()) {
                 return std::nullopt;
             }
-            for (size_t i = 0; i < 2; ++i) {
+            for (std::size_t i = 0; i < 2; ++i) {
                 if (!hash_alphabet.contains(s.at(pos + i))) {
                     return std::nullopt;
                 }
@@ -165,29 +165,29 @@ namespace orangutan {
 
         // Internal resolved edit with parsed anchors
         struct ResolvedEdit {
-            size_t index; // original index in edits vector
+            std::size_t index; // original index in edits vector
             HashlineEditOp op;
-            std::optional<size_t> start_line; // 1-based, from anchor
-            std::optional<size_t> end_line;   // 1-based, from end_anchor
+            std::optional<std::size_t> start_line; // 1-based, from anchor
+            std::optional<std::size_t> end_line;   // 1-based, from end_anchor
             std::vector<std::string> content;
         };
 
         struct RangeEditGroup {
-            size_t start_line;
-            size_t end_line;
+            std::size_t start_line;
+            std::size_t end_line;
             std::vector<std::string> before_content;
             std::vector<std::string> replacement_content;
             std::vector<std::string> after_content;
-            size_t edit_count = 0;
-            size_t order = 0;
+            std::size_t edit_count = 0;
+            std::size_t order = 0;
         };
 
         struct AnchorInsertGroup {
-            size_t line;
+            std::size_t line;
             std::vector<std::string> before_content;
             std::vector<std::string> after_content;
-            size_t edit_count = 0;
-            size_t order = 0;
+            std::size_t edit_count = 0;
+            std::size_t order = 0;
         };
 
         enum class ApplyGroupKind {
@@ -199,14 +199,14 @@ namespace orangutan {
 
         struct ApplyGroup {
             ApplyGroupKind kind;
-            size_t sort_line;
-            size_t start_line = 0;
-            size_t end_line = 0;
+            std::size_t sort_line;
+            std::size_t start_line = 0;
+            std::size_t end_line = 0;
             std::vector<std::string> before_content;
             std::vector<std::string> replacement_content;
             std::vector<std::string> after_content;
-            size_t edit_count = 0;
-            size_t order = 0;
+            std::size_t edit_count = 0;
+            std::size_t order = 0;
         };
 
         // Format context lines around a mismatch for error messages.
@@ -214,7 +214,7 @@ namespace orangutan {
             std::string out;
             auto line_idx = mm.line - 1; // 0-based
             // 2 lines of context before
-            for (size_t ctx = (line_idx >= 2 ? line_idx - 2 : 0); ctx < line_idx; ++ctx) {
+            for (std::size_t ctx = (line_idx >= 2 ? line_idx - 2 : 0); ctx < line_idx; ++ctx) {
                 out += "  ";
                 out += format_hashline(lines[ctx], ctx + 1);
                 out.push_back('\n');
@@ -224,7 +224,7 @@ namespace orangutan {
             out += format_hashline(lines[line_idx], line_idx + 1);
             out += "  // <-- actual content\n";
             // 2 lines of context after
-            for (size_t ctx = line_idx + 1; ctx < std::min(lines.size(), line_idx + 3); ++ctx) {
+            for (std::size_t ctx = line_idx + 1; ctx < std::min(lines.size(), line_idx + 3); ++ctx) {
                 out += "  ";
                 out += format_hashline(lines[ctx], ctx + 1);
                 out.push_back('\n');
@@ -234,7 +234,7 @@ namespace orangutan {
 
         // Effective range of a resolved edit (1-based, inclusive).
         // For anchor-less inserts, returns {0,0} as they don't occupy a line range.
-        std::pair<size_t, size_t> effective_range(const ResolvedEdit &e) {
+        std::pair<std::size_t, std::size_t> effective_range(const ResolvedEdit &e) {
             if (!e.start_line.has_value()) {
                 return {0, 0};
             }
@@ -263,7 +263,7 @@ namespace orangutan {
         resolved.reserve(edits.size());
         std::vector<HashMismatch> mismatches;
 
-        for (size_t i = 0; i < edits.size(); ++i) {
+        for (std::size_t i = 0; i < edits.size(); ++i) {
             const auto &edit = edits[i];
             ResolvedEdit re{.index = i, .op = edit.op, .content = edit.content};
 
@@ -342,8 +342,8 @@ namespace orangutan {
         // Step 5: Deduplication -- identical edits collapsed, same target with different content = error
         // Build a key for each edit to detect duplicates/conflicts.
         // We compare (op, start_line, end_line, content).
-        for (size_t i = 0; i < resolved.size(); ++i) {
-            for (size_t j = i + 1; j < resolved.size(); ++j) {
+        for (std::size_t i = 0; i < resolved.size(); ++i) {
+            for (std::size_t j = i + 1; j < resolved.size(); ++j) {
                 const auto &a = resolved[i];
                 const auto &b = resolved[j];
                 if (a.op == b.op && a.start_line == b.start_line && a.end_line == b.end_line) {
@@ -369,7 +369,7 @@ namespace orangutan {
         });
 
         // Step 4: Detect overlapping ranges (only for replace/delete that occupy line ranges)
-        for (size_t i = 0; i < resolved.size(); ++i) {
+        for (std::size_t i = 0; i < resolved.size(); ++i) {
             if (resolved[i].op != HashlineEditOp::replace && resolved[i].op != HashlineEditOp::del) {
                 continue;
             }
@@ -377,7 +377,7 @@ namespace orangutan {
             if (a_start == 0) {
                 continue;
             }
-            for (size_t j = i + 1; j < resolved.size(); ++j) {
+            for (std::size_t j = i + 1; j < resolved.size(); ++j) {
                 if (resolved[j].op != HashlineEditOp::replace && resolved[j].op != HashlineEditOp::del) {
                     continue;
                 }
@@ -445,7 +445,7 @@ namespace orangutan {
             auto span_size = end - start + 1;
             if (re.content.size() == span_size) {
                 bool same = true;
-                for (size_t k = 0; k < span_size; ++k) {
+                for (std::size_t k = 0; k < span_size; ++k) {
                     if (lines[start - 1 + k] != re.content[k]) {
                         same = false;
                         break;
@@ -612,7 +612,7 @@ namespace orangutan {
 
         // Step 9: Apply grouped edits bottom-up
         auto result_lines = lines;
-        size_t edits_applied = 0;
+        std::size_t edits_applied = 0;
 
         for (const auto &group : apply_groups) {
             switch (group.kind) {

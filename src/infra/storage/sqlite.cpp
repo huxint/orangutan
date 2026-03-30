@@ -111,7 +111,7 @@ namespace orangutan::sqlite {
             return {};
         }
 
-        const auto size = static_cast<size_t>(sqlite3_column_bytes(stmt_, index));
+        const auto size = static_cast<std::size_t>(sqlite3_column_bytes(stmt_, index));
         std::string result;
         result.reserve(size);
         std::ranges::copy_n(text, static_cast<std::ptrdiff_t>(size), std::back_inserter(result));

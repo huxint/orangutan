@@ -22,7 +22,7 @@ namespace orangutan {
 
     struct ProtectConfigSecretsResult {
         bool modified = false;
-        size_t protected_count = 0;
+        std::size_t protected_count = 0;
         std::filesystem::path backup_path;
     };
 

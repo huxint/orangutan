@@ -10,7 +10,7 @@ namespace orangutan {
     void SseParser::feed(std::string_view data) {
         buffer_.append(data);
 
-        size_t pos = 0;
+        std::size_t pos = 0;
         while (pos < buffer_.size()) {
             const auto newline = buffer_.find('\n', pos);
             if (newline == std::string::npos) {

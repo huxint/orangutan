@@ -22,15 +22,15 @@ namespace orangutan {
 
         constexpr std::string_view protected_prefix = "enc:v1:";
         constexpr unsigned int pbkdf2_iterations = 200000;
-        constexpr size_t salt_size = 16;
-        constexpr size_t iv_size = 12;
-        constexpr size_t tag_size = 16;
-        constexpr size_t key_size = 32;
+        constexpr std::size_t salt_size = 16;
+        constexpr std::size_t iv_size = 12;
+        constexpr std::size_t tag_size = 16;
+        constexpr std::size_t key_size = 32;
         constexpr std::string_view base64url_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         constexpr int invalid_base64url_char = -1;
         constexpr std::string_view rng_personalization = "orangutan-config-secret";
 
-        template <size_t Size>
+        template <std::size_t Size>
         using byte_array = std::array<std::byte, Size>;
 
         using byte_vector = std::vector<std::byte>;
@@ -60,8 +60,8 @@ namespace orangutan {
             decode_table table{};
             table.fill(invalid_base64url_char);
 
-            for (size_t index = 0; index < base64url_alphabet.size(); ++index) {
-                table.at(static_cast<size_t>(to_unsigned_char(base64url_alphabet.at(index)))) = static_cast<int>(index);
+            for (std::size_t index = 0; index < base64url_alphabet.size(); ++index) {
+                table.at(static_cast<std::size_t>(to_unsigned_char(base64url_alphabet.at(index)))) = static_cast<int>(index);
             }
             return table;
         }
@@ -70,7 +70,7 @@ namespace orangutan {
 
         [[nodiscard]]
         constexpr bool is_base64url_char(char ch) noexcept {
-            return base64url_decode_table.at(static_cast<size_t>(to_unsigned_char(ch))) != invalid_base64url_char;
+            return base64url_decode_table.at(static_cast<std::size_t>(to_unsigned_char(ch))) != invalid_base64url_char;
         }
 
         [[nodiscard]]
@@ -117,7 +117,7 @@ namespace orangutan {
             for (const auto chunk : data | std::views::chunk(3)) {
                 byte_array<3> bytes{};
                 const auto copy_result = std::ranges::copy(chunk, bytes.begin());
-                const auto chunk_size = static_cast<size_t>(std::distance(bytes.begin(), copy_result.out));
+                const auto chunk_size = static_cast<std::size_t>(std::distance(bytes.begin(), copy_result.out));
 
                 const auto combined = (std::to_integer<unsigned int>(bytes[0]) << 16U) | (std::to_integer<unsigned int>(bytes[1]) << 8U) | std::to_integer<unsigned int>(bytes[2]);
                 encoded.push_back(base64url_alphabet[(combined >> 18U) & 0x3FU]);
@@ -135,7 +135,7 @@ namespace orangutan {
 
         [[nodiscard]]
         constexpr int decode_base64url_char(char ch) noexcept {
-            const auto value = base64url_decode_table.at(static_cast<size_t>(to_unsigned_char(ch)));
+            const auto value = base64url_decode_table.at(static_cast<std::size_t>(to_unsigned_char(ch)));
             if (value != invalid_base64url_char) {
                 return value;
             }

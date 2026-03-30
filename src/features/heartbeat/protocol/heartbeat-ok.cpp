@@ -33,7 +33,7 @@ namespace orangutan {
             return false;
         }
 
-        if (ack_max_chars >= 0 && remainder.size() <= static_cast<size_t>(ack_max_chars)) {
+        if (ack_max_chars >= 0 && remainder.size() <= static_cast<std::size_t>(ack_max_chars)) {
             if (out_stripped != nullptr) {
                 *out_stripped = std::string(remainder);
             }

@@ -159,7 +159,7 @@ namespace orangutan {
 
             strip_utf8_bom(lines.front());
 
-            size_t open_index = 0;
+            std::size_t open_index = 0;
             while (open_index < lines.size() && is_blank_line(lines[open_index])) {
                 ++open_index;
             }
@@ -183,11 +183,11 @@ namespace orangutan {
             // Extract frontmatter content and body
             std::string fm_buf;
             bool found_closing = false;
-            size_t body_start_index = lines.size();
+            std::size_t body_start_index = lines.size();
 
             if (format == FrontmatterFormat::toml) {
                 // TOML: try parsing at each delimiter to handle embedded +++ in strings
-                for (size_t index = open_index + 1; index < lines.size(); ++index) {
+                for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
                     if (is_toml_delimiter(lines[index])) {
                         try {
                             auto parsed = toml::parse(fm_buf);
@@ -206,7 +206,7 @@ namespace orangutan {
                 }
             } else {
                 // YAML: simple close on first ---
-                for (size_t index = open_index + 1; index < lines.size(); ++index) {
+                for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
                     if (is_yaml_delimiter(lines[index])) {
                         found_closing = true;
                         body_start_index = index + 1;
@@ -224,7 +224,7 @@ namespace orangutan {
 
             // Build body
             std::string body;
-            for (size_t index = body_start_index; index < lines.size(); ++index) {
+            for (std::size_t index = body_start_index; index < lines.size(); ++index) {
                 if (index != body_start_index) {
                     body.push_back('\n');
                 }

@@ -142,7 +142,7 @@ namespace orangutan {
                                     output += "[exit code: " + std::to_string(result.exit_code) + "]";
                                 }
 
-                                constexpr size_t max_output = 8192;
+                                constexpr std::size_t max_output = 8192;
                                 if (output.size() > max_output) {
                                     output = output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
                                 }

@@ -57,7 +57,7 @@ namespace orangutan::app {
             std::string memory_scope;
             std::string session_scope_key;
             std::string current_session_id;
-            size_t persisted_message_count = 0;
+            std::size_t persisted_message_count = 0;
 
             [[nodiscard]]
             Provider *provider() const {
@@ -828,12 +828,12 @@ namespace orangutan::app {
 
     } // namespace
 
-    size_t default_serve_worker_count() {
+    std::size_t default_serve_worker_count() {
         const auto hardware = std::thread::hardware_concurrency();
         if (hardware == 0) {
             return 4;
         }
-        return std::max<size_t>(2, hardware);
+        return std::max<std::size_t>(2, hardware);
     }
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
