@@ -10,16 +10,10 @@ namespace orangutan {
     namespace {
 
         std::string normalize_enum_token(std::string_view value) {
-            std::string normalized;
-            normalized.reserve(value.size());
-            for (const auto ch : value) {
-                if (ch == '-' || ch == '_') {
-                    normalized.push_back('_');
-                    continue;
-                }
-                normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
-            return normalized;
+            return value | std::views::transform([](unsigned char ch) {
+                       return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));
+                   }) |
+                   std::ranges::to<std::string>();
         }
 
         template <typename Enum>
