@@ -4,7 +4,6 @@
 #include "app/runtime/app-runtime.hpp"
 
 #include "app/runtime/identity.hpp"
-#include "features/skills/skill-loader.hpp"
 #include "features/memory/memory.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "features/web/web-server.hpp"
@@ -15,21 +14,15 @@
 
 #include <algorithm>
 #include <array>
-#include <cerrno>
-#include <cctype>
-#include <chrono>
-#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <future>
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <unistd.h>
@@ -382,9 +375,9 @@ namespace {
 
             std::string output;
             std::array<char, 256> buffer{};
-            sstd::size_t read_bytes = 0;
+            std::size_t read_bytes = 0;
             while ((read_bytes = ::read(output_pipe.read_end(), buffer.data(), buffer.size())) > 0) {
-                output.append(buffer.data(), static_cast<std::size_t>(read_bytes));
+                output.append(buffer.data(), read_bytes);
             }
             output_pipe.close_read();
 
