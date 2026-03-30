@@ -8,56 +8,50 @@
 namespace orangutan {
 
     namespace {
+        constexpr std::string_view redaction_marker = "[REDACTED]";
 
-        template <ctll::fixed_string Pattern>
-        bool scrub_redact1(std::string &text) {
-            std::string scrubbed;
-            scrubbed.reserve(text.size());
-            const auto input = std::string_view{text};
-            const char *pos = input.data();
-            const char *end = pos + input.size();
-            bool changed = false;
+        template <ctll::fixed_string Pattern, class Rewriter>
+        bool rewrite_matches(std::string &text, Rewriter rewriter) {
+            const std::string_view source{text};
+            auto matches = ctre::search_all<Pattern>(source);
+            auto it = matches.begin();
 
-            for (auto match : ctre::search_all<Pattern>(input)) {
-                const auto full = match.template get<0>().to_view();
-                scrubbed.append(pos, full.data() - pos);
-                scrubbed.append(match.template get<1>().to_view());
-                scrubbed += "[REDACTED]";
-                pos = full.data() + full.size();
-                changed = true;
-            }
-            if (!changed) {
+            if (it == matches.end()) {
                 return false;
             }
-            scrubbed.append(pos, static_cast<std::size_t>(end - pos));
-            text = std::move(scrubbed);
+
+            std::string result;
+            result.reserve(source.size());
+
+            std::string_view::const_iterator current = source.begin();
+
+            for (; it != matches.end(); ++it) {
+                const auto whole = (*it).template get<0>().to_view();
+                result.append(current, whole.begin());
+                rewriter(result, *it);
+                current = whole.end();
+            }
+
+            result.append(current, source.end());
+            text = std::move(result);
             return true;
         }
 
         template <ctll::fixed_string Pattern>
-        bool scrub_redact2(std::string &text) {
-            std::string scrubbed;
-            scrubbed.reserve(text.size());
-            const auto input = std::string_view{text};
-            const char *pos = input.data();
-            const char *end = pos + input.size();
-            bool changed = false;
+        bool redact_after_prefix(std::string &text) {
+            return rewrite_matches<Pattern>(text, [](std::string &out, const auto &match) {
+                out.append(match.template get<1>().to_view());
+                out.append(redaction_marker);
+            });
+        }
 
-            for (auto match : ctre::search_all<Pattern>(input)) {
-                const auto full = match.template get<0>().to_view();
-                scrubbed.append(pos, full.data() - pos);
-                scrubbed.append(match.template get<1>().to_view());
-                scrubbed += "[REDACTED]";
-                scrubbed.append(match.template get<2>().to_view());
-                pos = full.data() + full.size();
-                changed = true;
-            }
-            if (!changed) {
-                return false;
-            }
-            scrubbed.append(pos, static_cast<std::size_t>(end - pos));
-            text = std::move(scrubbed);
-            return true;
+        template <ctll::fixed_string Pattern>
+        bool redact_between_edges(std::string &text) {
+            return rewrite_matches<Pattern>(text, [](std::string &out, const auto &match) {
+                out.append(match.template get<1>().to_view());
+                out.append(redaction_marker);
+                out.append(match.template get<2>().to_view());
+            });
         }
 
     } // namespace
@@ -66,14 +60,14 @@ namespace orangutan {
         std::string result{text};
         bool redacted = false;
 
-        redacted |= scrub_redact1<R"((sk-ant-api\d{2}-)[A-Za-z0-9_\-]{20,})">(result);
-        redacted |= scrub_redact1<R"((sk-)[A-Za-z0-9_\-]{20,})">(result);
-        redacted |= scrub_redact1<R"((key-)[A-Za-z0-9_\-]{20,})">(result);
-        redacted |= scrub_redact1<R"((Bearer\s+)[A-Za-z0-9_.\-/+=]{20,})">(result);
-        redacted |= scrub_redact2<R"(([Aa]pi[_\-]?[Kk]ey\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
-        redacted |= scrub_redact2<R"(([Pp]assword\s*[:=]\s*["']?)[^\s"']{8,}(["']?))">(result);
-        redacted |= scrub_redact2<R"(([Tt]oken\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
-        redacted |= scrub_redact2<R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+        redacted |= redact_after_prefix<R"((sk-ant-api\d{2}-)[A-Za-z0-9_\-]{20,})">(result);
+        redacted |= redact_after_prefix<R"((sk-)[A-Za-z0-9_\-]{20,})">(result);
+        redacted |= redact_after_prefix<R"((key-)[A-Za-z0-9_\-]{20,})">(result);
+        redacted |= redact_after_prefix<R"((Bearer\s+)[A-Za-z0-9_.\-/+=]{20,})">(result);
+        redacted |= redact_between_edges<R"(([Aa]pi[_\-]?[Kk]ey\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+        redacted |= redact_between_edges<R"(([Pp]assword\s*[:=]\s*["']?)[^\s"']{8,}(["']?))">(result);
+        redacted |= redact_between_edges<R"(([Tt]oken\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
+        redacted |= redact_between_edges<R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
 
         if (redacted) {
             spdlog::warn("Credential scrubbing: redacted sensitive content in tool output");
@@ -115,15 +109,15 @@ namespace orangutan {
 
         auto it = tools_.find(call.name);
         if (it == tools_.end()) {
-            return {.tool_use_id = call.id, .content = "Error: unknown tool '" + call.name + "'", .is_error = true};
+            return {call.id, "Error: unknown tool '" + call.name + "'", true};
         }
 
         try {
             std::string result = it->second.execute(call.input);
             result = scrub_tool_output(result);
-            return {.tool_use_id = call.id, .content = result, .is_error = false};
+            return {call.id, result, false};
         } catch (const std::exception &e) {
-            return {.tool_use_id = call.id, .content = std::string("Error: ") + e.what(), .is_error = true};
+            return {call.id, std::string("Error: ") + e.what(), true};
         }
     }
 
