@@ -25,7 +25,7 @@ namespace orangutan::qq {
         static constexpr std::array delays{
             std::chrono::seconds(1), std::chrono::seconds(2), std::chrono::seconds(4), std::chrono::seconds(8), std::chrono::seconds(15),
         };
-        std::std::size_t index_ = 0;
+        std::size_t index_ = 0;
     };
 
 } // namespace orangutan::qq

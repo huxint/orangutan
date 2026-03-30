@@ -19,7 +19,7 @@ namespace orangutan {
             try {
                 fileio::File file(path, "rb");
 
-                constexpr std::std::size_t sample_size = 8192;
+                constexpr std::size_t sample_size = 8192;
                 std::vector<char> buf(sample_size);
                 const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
                 if (std::ferror(file.get()) != 0) {

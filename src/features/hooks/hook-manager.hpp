@@ -21,7 +21,7 @@ namespace orangutan {
     };
 
     struct HookEventHash {
-        std::std::size_t operator()(HookEvent e) const noexcept {
+        std::size_t operator()(HookEvent e) const noexcept {
             return std::hash<base::u8>{}(std::to_underlying(e));
         }
     };

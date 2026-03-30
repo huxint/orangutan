@@ -55,7 +55,7 @@ namespace orangutan {
 
             pos = full.data() + full.size();
         }
-        result.append(pos, static_cast<std::std::size_t>(end - pos));
+        result.append(pos, static_cast<std::size_t>(end - pos));
         return result;
     }
 

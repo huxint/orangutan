@@ -9,7 +9,7 @@
 namespace orangutan {
     namespace {
 
-        constexpr std::std::size_t heartbeat_md_size_warning = 10240;
+        constexpr std::size_t heartbeat_md_size_warning = 10240;
 
         bool is_empty_or_headers_only(const std::string &content) {
             std::istringstream stream(content);

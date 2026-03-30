@@ -123,9 +123,9 @@ namespace orangutan::qq {
             void send_text(std::string payload) override {
                 ensure_open();
 
-                std::std::size_t offset = 0;
+                std::size_t offset = 0;
                 while (offset < payload.size()) {
-                    std::std::size_t sent = 0;
+                    std::size_t sent = 0;
                     const auto code = curl_ws_send(handle_, payload.data() + offset, payload.size() - offset, &sent, 0, CURLWS_TEXT);
                     offset += sent;
                     if (code == CURLE_OK) {
@@ -155,7 +155,7 @@ namespace orangutan::qq {
 
                 while (true) {
                     char buffer[4096];
-                    std::std::size_t received = 0;
+                    std::size_t received = 0;
                     const curl_ws_frame *frame = nullptr;
                     const auto code = curl_ws_recv(handle_, buffer, sizeof(buffer), &received, &frame);
 
@@ -204,7 +204,7 @@ namespace orangutan::qq {
                 }
 
                 const uint16_t code = htons(static_cast<uint16_t>(1000));
-                std::std::size_t sent = 0;
+                std::size_t sent = 0;
                 const auto result = curl_ws_send(handle_, &code, sizeof(code), &sent, 0, CURLWS_CLOSE);
                 if (result != CURLE_OK && result != CURLE_GOT_NOTHING) {
                     spdlog::debug("QQ WebSocket close frame failed: {}", curl_easy_strerror(result));

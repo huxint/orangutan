@@ -81,13 +81,13 @@ namespace orangutan {
         // Loop detection: tracks (tool_name, input_hash) call counts per run
         struct ToolCallSignature {
             std::string name;
-            std::std::size_t input_hash;
+            std::size_t input_hash;
 
             bool operator==(const ToolCallSignature &other) const = default;
         };
 
         struct SignatureHash {
-            std::std::size_t operator()(const ToolCallSignature &sig) const {
+            std::size_t operator()(const ToolCallSignature &sig) const {
                 auto h1 = std::hash<std::string>{}(sig.name);
                 auto h2 = sig.input_hash;
                 return h1 ^ (h2 << 1);
