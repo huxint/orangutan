@@ -155,6 +155,11 @@ namespace {
             std::filesystem::remove_all(temp_root_);
         }
 
+        ChannelServeHarness(const ChannelServeHarness &) = delete;
+        ChannelServeHarness &operator=(const ChannelServeHarness &) = delete;
+        ChannelServeHarness(ChannelServeHarness &&) = delete;
+        ChannelServeHarness &operator=(ChannelServeHarness &&) = delete;
+
         static void write_skill(const std::filesystem::path &base_dir, const std::string &dir_name, const std::string &skill_name, const std::string &body) {
             const auto skill_dir = base_dir / dir_name;
             std::filesystem::create_directories(skill_dir);

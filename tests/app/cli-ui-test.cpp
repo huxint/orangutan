@@ -59,8 +59,8 @@ namespace {
         orangutan::AgentLoop agent(provider, tools);
         agent.set_history({
             orangutan::Message::user().text("hello"),
-            Message(base::role::assistant, {orangutan::ToolUse("call-1", "shell", nlohmann::json{{"command", "pwd"}})}),
-            Message(base::role::user, {orangutan::ToolResult("call-1", "permission denied", true)}),
+            orangutan::Message(orangutan::base::role::assistant, {orangutan::ToolUse("call-1", "shell", nlohmann::json{{"command", "pwd"}})}),
+            orangutan::Message(orangutan::base::role::user, {orangutan::ToolResult("call-1", "permission denied", true)}),
             orangutan::Message::assistant().text("done"),
         });
 
