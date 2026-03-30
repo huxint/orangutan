@@ -917,7 +917,7 @@ namespace {
         const auto persisted_history = session_store.load(session_id);
         CHECK(current_session_id == session_id);
         CHECK(persisted_message_count == persisted_history.size());
-        CHECK(persisted_history.size() >= 4ul);
+        CHECK(persisted_history.size() >= 4UL);
         CHECK(persisted_history.back().role() == base::role::assistant);
         const auto *reply_text = persisted_history.back().begin() == persisted_history.back().end() ? nullptr : std::get_if<Text>(&*persisted_history.back().begin());
         REQUIRE(reply_text != nullptr);

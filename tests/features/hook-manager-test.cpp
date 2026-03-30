@@ -75,7 +75,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({fixtures.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 4ul);
+        CHECK(manager.hook_count(HookEvent::before_tool_call) == 4UL);
         CHECK(manager.hook_count(HookEvent::after_tool_call) == 2UL);
         CHECK(manager.hook_count(HookEvent::session_start) == 1UL);
         CHECK(manager.hook_count(HookEvent::session_end) == 1UL);

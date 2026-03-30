@@ -105,7 +105,7 @@ namespace {
         store.remember("project.delta", "shared project memory delta", "project");
 
         const auto results = store.search("shared project memory", {}, 4);
-        REQUIRE(results.size() == 4ul);
+        REQUIRE(results.size() == 4UL);
 
         std::set<std::string> keys;
         for (const auto &record : results) {

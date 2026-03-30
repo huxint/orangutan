@@ -30,7 +30,7 @@ namespace {
         const auto expr = parse_cron("0 9 * * 1-5");
         REQUIRE(expr.has_value());
         CHECK_FALSE(expr->day_of_week.wildcard);
-        CHECK(expr->day_of_week.values.size() == 5ul);
+        CHECK(expr->day_of_week.values.size() == 5UL);
         CHECK(expr->day_of_week.values.contains(1));
         CHECK(expr->day_of_week.values.contains(5));
         CHECK_FALSE(expr->day_of_week.values.contains(0));
@@ -40,7 +40,7 @@ namespace {
     TEST_CASE("parses_step_expression") {
         const auto expr = parse_cron("*/15 * * * *");
         REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 4ul);
+        CHECK(expr->minute.values.size() == 4UL);
         CHECK(expr->minute.values.contains(0));
         CHECK(expr->minute.values.contains(15));
         CHECK(expr->minute.values.contains(30));

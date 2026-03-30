@@ -168,7 +168,7 @@ namespace {
             events.push_back(event);
         });
 
-        CHECK(events.size() == 5ul);
+        CHECK(events.size() == 5UL);
         CHECK(events[0]["type"] == "session_resumed");
         CHECK(events[1]["type"] == "session_history_started");
         CHECK(events[2]["type"] == "history_message");

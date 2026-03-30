@@ -155,7 +155,7 @@ TEST_CASE("validate_anchor_out_of_range") {
     const auto mismatch = validate_anchor(anchor, lines);
     REQUIRE(mismatch.has_value());
     if (mismatch) {
-        CHECK(mismatch->line == 5ul);
+        CHECK(mismatch->line == 5UL);
     }
 };
 
@@ -288,7 +288,7 @@ TEST_CASE("delete_and_insert_after_same_anchor_keeps_insertion_at_deleted_locati
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 4ul);
+    CHECK(result.lines.size() == 4UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "bbb");
     CHECK(result.lines[2] == "XXX");
@@ -303,7 +303,7 @@ TEST_CASE("replace_and_insert_after_same_anchor_uses_replacement_boundary") {
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 5ul);
+    CHECK(result.lines.size() == 5UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "BBB-1");
     CHECK(result.lines[2] == "BBB-2");
@@ -320,7 +320,7 @@ TEST_CASE("range_replace_accepts_boundary_inserts") {
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 5ul);
+    CHECK(result.lines.size() == 5UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "PRE");
     CHECK(result.lines[2] == "MID");

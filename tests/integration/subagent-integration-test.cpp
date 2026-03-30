@@ -233,7 +233,7 @@ namespace {
         CHECK(std::filesystem::exists(std::filesystem::path(expected_child_identity.workspace) / "child-notes.txt"));
 
         const auto child_history = session_store.load(wait_run_result.run->child_session_id);
-        CHECK(child_history.size() == 4ul);
+        CHECK(child_history.size() == 4UL);
         CHECK(child_history[0].role() == base::role::user);
         CHECK(std::get<Text>(*child_history[0].begin()).text == "Investigate parser regression");
         CHECK(std::get<Text>(*child_history[3].begin()).text == "child completed delegated work");

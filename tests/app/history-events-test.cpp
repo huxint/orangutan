@@ -27,7 +27,7 @@ namespace {
         };
 
         const auto events = app::build_session_history_events(history);
-        CHECK(events.size() >= 5ul);
+        CHECK(events.size() >= 5UL);
         CHECK(events.front()["type"] == "session_history_started");
         CHECK(events[1]["type"] == "history_message");
         CHECK(events[2]["type"] == "tool_started");
