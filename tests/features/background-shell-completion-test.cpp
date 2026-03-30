@@ -116,11 +116,7 @@ namespace {
 
         nlohmann::json start_background_shell(nlohmann::json input) {
             input["background"] = true;
-            const auto result = registry_.execute(ToolUse{
-                .id = "background-shell",
-                .name = "shell",
-                .input = std::move(input),
-            });
+            const auto result = registry_.execute(ToolUse("background-shell", "shell", std::move(input)));
             INFO(result.content);
             CHECK_FALSE(result.is_error);
             if (result.is_error) {

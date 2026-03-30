@@ -44,11 +44,7 @@ TEST_CASE("content_block_to_json_serializes_text_block") {
 };
 
 TEST_CASE("content_block_to_json_serializes_tool_use_block") {
-    const Content block = ToolUse{
-        .id = "call_123",
-        .name = "shell",
-        .input = {{"command", "ls"}},
-    };
+    const Content block = ToolUse("call_123", "shell", {{"command", "ls"}});
     const nlohmann::json j = content_block_to_json(block);
 
     CHECK(j["type"] == "tool_use");
@@ -86,14 +82,7 @@ TEST_CASE("message_to_json_serializes_user_text_message") {
 };
 
 TEST_CASE("message_to_json_serializes_multi_block_message") {
-    const auto msg = Message(base::role::assistant, {
-                                                        Text{"thinking..."},
-                                                        ToolUse{
-                                                            .id = "id_1",
-                                                            .name = "shell",
-                                                            .input = {{"command", "pwd"}},
-                                                        },
-                                                    });
+    const auto msg = Message(base::role::assistant, {Text{"thinking..."}, ToolUse("id_1", "shell", {{"command", "pwd"}})});
     const nlohmann::json j = message_to_json(msg);
 
     CHECK(j["role"] == "assistant");

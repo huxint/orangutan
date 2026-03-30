@@ -181,11 +181,7 @@ namespace {
         const auto run_id = spawn_payload.at("run_id").get<std::string>();
         REQUIRE(not run_id.empty());
 
-        const auto status_result = registry.execute(ToolUse{
-            .id = "status-ok",
-            .name = "subagent_status",
-            .input = {{"run_id", run_id}},
-        });
+        const auto status_result = registry.execute(ToolUse("status-ok", "subagent_status", {{"run_id", run_id}}));
         const auto status_payload = parse_tool_json(status_result);
         REQUIRE(status_payload.at("found").get<bool>());
         REQUIRE(not status_payload.at("run").is_null());
@@ -250,11 +246,7 @@ namespace {
         ToolRegistry other_registry;
         register_builtin_tools(other_registry, nullptr, {}, &other_context);
 
-        const auto status_result = other_registry.execute(ToolUse{
-            .id = "status-other",
-            .name = "subagent_status",
-            .input = {{"run_id", run_id}},
-        });
+        const auto status_result = other_registry.execute(ToolUse("status-other", "subagent_status", {{"run_id", run_id}}));
         const auto status_payload = parse_tool_json(status_result);
         CHECK_FALSE(status_payload.at("found").get<bool>());
         CHECK(status_payload.at("run").is_null());

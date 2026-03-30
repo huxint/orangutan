@@ -7,11 +7,7 @@ using namespace orangutan;
 namespace {
 
     TEST_CASE("build_edit_details_produces_unified_diff") {
-        ToolUse call{
-            .id = "edit-1",
-            .name = "edit",
-            .input = {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}},
-        };
+        ToolUse call("edit-1", "edit", {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}});
 
         const auto details = app::build_edit_details(call);
         INFO("expected edit details to be a JSON object");

@@ -331,11 +331,7 @@ namespace {
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
-        const auto shell_result = runtime.tools.execute(orangutan::ToolUse{
-            .id = "web-shell",
-            .name = "shell",
-            .input = {{"command", "echo hello"}},
-        });
+        const auto shell_result = runtime.tools.execute(orangutan::ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
         CHECK(shell_result.is_error);
         CHECK((shell_result.content.contains("requires approval") || shell_result.content.contains("rejected by user")));
     };

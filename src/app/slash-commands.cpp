@@ -244,11 +244,7 @@ namespace orangutan::app {
                 return {.handled = true, .text = "No tool registry available."};
             }
 
-            const auto result = tool_registry->execute(ToolUse{
-                .id = std::string(tool_use_id),
-                .name = std::string(tool_name),
-                .input = input,
-            });
+            const auto result = tool_registry->execute(ToolUse(std::string(tool_use_id), std::string(tool_name), input));
             return {.handled = true, .text = result.content};
         }
 

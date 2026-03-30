@@ -140,11 +140,7 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUse call{
-            .id = "id1",
-            .name = "echo-hello",
-            .input = nlohmann::json::object(),
-        };
+        ToolUse call("id1", "echo-hello", nlohmann::json::object());
         const auto result = registry.execute(call);
         CHECK_FALSE(result.is_error);
         CHECK(result.content.contains("hello"));
@@ -160,11 +156,7 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUse call{
-            .id = "id1",
-            .name = "echo-msg",
-            .input = {{"msg", "world"}},
-        };
+        ToolUse call("id1", "echo-msg", {{"msg", "world"}});
         const auto result = registry.execute(call);
         CHECK_FALSE(result.is_error);
         CHECK(result.content.contains("world"));
@@ -179,11 +171,7 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUse call{
-            .id = "id1",
-            .name = "fail-tool",
-            .input = nlohmann::json::object(),
-        };
+        ToolUse call("id1", "fail-tool", nlohmann::json::object());
         const auto result = registry.execute(call);
         CHECK(result.is_error);
         CHECK(result.content.contains("42"));
@@ -198,11 +186,7 @@ namespace {
         }};
         register_script_tools(registry, tools);
 
-        ToolUse call{
-            .id = "id1",
-            .name = "missing-cmd",
-            .input = nlohmann::json::object(),
-        };
+        ToolUse call("id1", "missing-cmd", nlohmann::json::object());
         const auto result = registry.execute(call);
         CHECK(result.is_error);
     };
@@ -223,11 +207,7 @@ namespace {
         }};
         register_script_tools(registry, tools, workspace.string());
 
-        ToolUse call{
-            .id = "id_ws_escape",
-            .name = "pwd-tool",
-            .input = nlohmann::json::object(),
-        };
+        ToolUse call("id_ws_escape", "pwd-tool", nlohmann::json::object());
         const auto result = registry.execute(call);
         CHECK(result.is_error);
         CHECK(result.content.contains("workspace sandbox"));

@@ -242,11 +242,7 @@ namespace {
             return moved;
         }();
 
-        const auto result = moved_runtime.tools.execute(ToolUse{
-            .id = "custom-echo",
-            .name = "custom_echo",
-            .input = nlohmann::json::object(),
-        });
+        const auto result = moved_runtime.tools.execute(ToolUse("custom-echo", "custom_echo", nlohmann::json::object()));
 
         CHECK(result.is_error);
         CHECK(result.content.contains("Shell tool blocked by approval policy."));

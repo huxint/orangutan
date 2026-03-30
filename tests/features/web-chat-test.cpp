@@ -411,11 +411,7 @@ namespace orangutan {
             CHECK(static_cast<bool>(runtime.tool_context.approval_callback));
             REQUIRE(runtime.agent != nullptr);
 
-            const auto shell_result = runtime.tools.execute(ToolUse{
-                .id = "web-shell",
-                .name = "shell",
-                .input = {{"command", "echo hello"}},
-            });
+            const auto shell_result = runtime.tools.execute(ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
             CHECK(shell_result.is_error);
             CHECK((shell_result.content.contains("requires approval") || shell_result.content.contains("rejected by user")));
         };

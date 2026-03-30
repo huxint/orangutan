@@ -99,11 +99,7 @@ TEST_CASE("save_and_load_tool_use_blocks") {
     auto store = harness.store();
 
     std::vector<Content> content;
-    content.emplace_back(ToolUse{
-        .id = "tool_123",
-        .name = "shell",
-        .input = nlohmann::json{{"command", "ls -la"}},
-    });
+    content.emplace_back(ToolUse("tool_123", "shell", nlohmann::json{{"command", "ls -la"}}));
 
     std::vector<Message> messages = {
         Message::user().text("list files"),
@@ -372,11 +368,7 @@ TEST_CASE("multiple_content_blocks_in_one_message") {
 
     std::vector<Content> content;
     content.emplace_back(Text{"I'll run that command"});
-    content.emplace_back(ToolUse{
-        .id = "call_1",
-        .name = "shell",
-        .input = nlohmann::json{{"command", "echo hi"}},
-    });
+    content.emplace_back(ToolUse("call_1", "shell", nlohmann::json{{"command", "echo hi"}}));
 
     std::vector<Message> messages = {Message(base::role::assistant, std::move(content))};
 

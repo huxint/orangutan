@@ -84,11 +84,7 @@ namespace {
         REQUIRE(it != defs.end());
         CHECK(it->description == "Echo a message back");
 
-        const auto result = registry.execute(ToolUse{
-            .id = "call-1",
-            .name = "mock:echo",
-            .input = {{"message", "via registry"}},
-        });
+        const auto result = registry.execute(ToolUse("call-1", "mock:echo", {{"message", "via registry"}}));
         CHECK_FALSE(result.is_error);
         CHECK(result.content == "via registry");
     };

@@ -1,6 +1,5 @@
 #include "infra/config/config-detail.hpp"
 
-#include <ranges>
 #include <utility>
 
 #include <spdlog/spdlog.h>

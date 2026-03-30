@@ -43,7 +43,10 @@ namespace orangutan {
         std::string text;
 
         Text() = default;
-        Text(std::string_view value)
+
+        template <typename Str>
+            requires std::convertible_to<Str, std::string_view>
+        Text(Str value)
         : text(value) {}
     };
 
@@ -51,7 +54,10 @@ namespace orangutan {
         std::string thinking;
 
         Thinking() = default;
-        Thinking(std::string_view value)
+
+        template <typename Str>
+            requires std::convertible_to<Str, std::string_view>
+        Thinking(Str value)
         : thinking(value) {}
     };
 

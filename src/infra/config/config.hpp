@@ -5,7 +5,6 @@
 #include "core/tools/permissions.hpp"
 
 #include <filesystem>
-#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>

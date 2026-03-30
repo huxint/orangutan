@@ -1,3 +1,4 @@
+#include "core/types.hpp"
 #include "infra/config/config.hpp"
 #include "features/tools/runtime/runtime-loader.hpp"
 #include "core/tools/tool.hpp"
@@ -13,7 +14,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -33,11 +33,7 @@ namespace {
             input["working_dir"] = working_dir;
         }
 
-        const auto result = registry.execute(ToolUse{
-            .id = "background-shell",
-            .name = "shell",
-            .input = std::move(input),
-        });
+        const auto result = registry.execute(ToolUse("background-shell", "shell", std::move(input)));
         CHECK_FALSE((result.is_error));
         if (result.is_error) {
             return {};
@@ -51,11 +47,7 @@ namespace {
         nlohmann::json last_snapshot;
 
         while (std::chrono::steady_clock::now() < deadline) {
-            const auto result = registry.execute(ToolUse{
-                .id = "poll-background",
-                .name = "process_poll",
-                .input = {{"process_id", process_id}},
-            });
+            const auto result = registry.execute(ToolUse("poll-background", "process_poll", {{"process_id", process_id}}));
             CHECK_FALSE((result.is_error));
             if (result.is_error) {
                 return {};
@@ -117,11 +109,7 @@ TEST_CASE("ExecutesRegisteredTool") {
                                 return "Hello, " + input.at("name").get<std::string>() + "!";
                             }});
 
-    const ToolUse call{
-        .id = "id_1",
-        .name = "greet",
-        .input = {{"name", "Alice"}},
-    };
+    const ToolUse call("id_1", "greet", {{"name", "Alice"}});
     const auto result = registry.execute(call);
 
     CHECK(result.tool_use_id == "id_1");
@@ -131,11 +119,7 @@ TEST_CASE("ExecutesRegisteredTool") {
 
 TEST_CASE("UnknownToolReturnsError") {
     const ToolRegistry registry;
-    const ToolUse call{
-        .id = "id_2",
-        .name = "nonexistent",
-        .input = {},
-    };
+    const ToolUse call("id_2", "nonexistent", {});
     const auto result = registry.execute(call);
 
     CHECK(result.tool_use_id == "id_2");
@@ -148,11 +132,7 @@ TEST_CASE("ToolExceptionBecomesError") {
                                 throw std::runtime_error("kaboom");
                             }});
 
-    const ToolUse call{
-        .id = "id_3",
-        .name = "boom",
-        .input = {},
-    };
+    const ToolUse call("id_3", "boom", {});
     const auto result = registry.execute(call);
 
     CHECK(result.is_error);
@@ -172,11 +152,7 @@ TEST_CASE("DuplicateRegistrationReplacesExistingExecutor") {
     REQUIRE((defs.size()) == (1));
     CHECK(defs[0].description == "Second");
 
-    const auto result = registry.execute(ToolUse{
-        .id = "id_dup",
-        .name = "echo",
-        .input = {},
-    });
+    const auto result = registry.execute(ToolUse("id_dup", "echo", {}));
     CHECK(not(result.is_error));
     CHECK(result.content == "second");
 };
@@ -311,11 +287,7 @@ TEST_CASE("DoesNotRegisterMemoryToolsWithoutMemoryStore") {
 
 TEST_CASE("ShellRunsSimpleCommand") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_sh",
-        .name = "shell",
-        .input = {{"command", "echo hello"}},
-    };
+    const ToolUse call("id_sh", "shell", {{"command", "echo hello"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -324,11 +296,7 @@ TEST_CASE("ShellRunsSimpleCommand") {
 
 TEST_CASE("ShellReportsNonZeroExitCode") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_sh2",
-        .name = "shell",
-        .input = {{"command", "false"}},
-    };
+    const ToolUse call("id_sh2", "shell", {{"command", "false"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -343,11 +311,7 @@ TEST_CASE("ReadFileReturnsLineNumberedContents") {
         ofs << "aaa\nbbb\nccc\n";
     }
 
-    const ToolUse call{
-        .id = "id_rf",
-        .name = "read",
-        .input = {{"path", tmp.string()}},
-    };
+    const ToolUse call("id_rf", "read", {{"path", tmp.string()}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -361,11 +325,7 @@ TEST_CASE("ReadFileReturnsLineNumberedContents") {
 
 TEST_CASE("ReadFileMissingReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_rf2",
-        .name = "read",
-        .input = {{"path", "/tmp/orangutan_nonexistent_file_xyz.txt"}},
-    };
+    const ToolUse call("id_rf2", "read", {{"path", "/tmp/orangutan_nonexistent_file_xyz.txt"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -379,11 +339,7 @@ TEST_CASE("WriteCreatesFile") {
     const auto tmp = test_tmp_root() / "orangutan_write_test.txt";
     std::filesystem::remove(tmp); // ensure clean state
 
-    const ToolUse call{
-        .id = "id_wf",
-        .name = "write",
-        .input = {{"path", tmp.string()}, {"content", "hello world"}},
-    };
+    const ToolUse call("id_wf", "write", {{"path", tmp.string()}, {"content", "hello world"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -402,11 +358,7 @@ TEST_CASE("WriteCreatesParentDirectories") {
     const auto tmp = test_tmp_root() / "orangutan_test_dir" / "sub" / "file.txt";
     std::filesystem::remove_all(test_tmp_root() / "orangutan_test_dir");
 
-    const ToolUse call{
-        .id = "id_wf2",
-        .name = "write",
-        .input = {{"path", tmp.string()}, {"content", "nested"}},
-    };
+    const ToolUse call("id_wf2", "write", {{"path", tmp.string()}, {"content", "nested"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -427,11 +379,7 @@ TEST_CASE("ReadFileWithOffset") {
         }
     }
 
-    const ToolUse call{
-        .id = "id_off",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"offset", 10}},
-    };
+    const ToolUse call("id_off", "read", {{"path", tmp.string()}, {"offset", 10}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -453,11 +401,7 @@ TEST_CASE("ReadFileWithLimit") {
         }
     }
 
-    const ToolUse call{
-        .id = "id_lim",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"limit", 5}},
-    };
+    const ToolUse call("id_lim", "read", {{"path", tmp.string()}, {"limit", 5}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -481,11 +425,7 @@ TEST_CASE("ReadFileWithOffsetAndLimit") {
         }
     }
 
-    const ToolUse call{
-        .id = "id_ol",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"offset", 100}, {"limit", 50}},
-    };
+    const ToolUse call("id_ol", "read", {{"path", tmp.string()}, {"offset", 100}, {"limit", 50}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -506,11 +446,7 @@ TEST_CASE("ReadFileOffsetBeyondEOF") {
         ofs << "only\nthree\nlines\n";
     }
 
-    const ToolUse call{
-        .id = "id_eof",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"offset", 100}},
-    };
+    const ToolUse call("id_eof", "read", {{"path", tmp.string()}, {"offset", 100}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -528,11 +464,7 @@ TEST_CASE("ReadRejectsNonPositiveOffset") {
         ofs << "line1\n";
     }
 
-    const ToolUse call{
-        .id = "id_invalid_offset",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"offset", 0}},
-    };
+    const ToolUse call("id_invalid_offset", "read", {{"path", tmp.string()}, {"offset", 0}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -549,11 +481,7 @@ TEST_CASE("ReadRejectsNonPositiveLimit") {
         ofs << "line1\n";
     }
 
-    const ToolUse call{
-        .id = "id_invalid_limit",
-        .name = "read",
-        .input = {{"path", tmp.string()}, {"limit", 0}},
-    };
+    const ToolUse call("id_invalid_limit", "read", {{"path", tmp.string()}, {"limit", 0}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -574,11 +502,7 @@ TEST_CASE("ReadBinaryFileReturnsMetadata") {
         ofs << "binary data here";
     }
 
-    const ToolUse call{
-        .id = "id_bin",
-        .name = "read",
-        .input = {{"path", tmp.string()}},
-    };
+    const ToolUse call("id_bin", "read", {{"path", tmp.string()}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -597,11 +521,7 @@ TEST_CASE("ReadTextFileReadsNormally") {
         ofs << "just text\nno nulls\n";
     }
 
-    const ToolUse call{
-        .id = "id_txt",
-        .name = "read",
-        .input = {{"path", tmp.string()}},
-    };
+    const ToolUse call("id_txt", "read", {{"path", tmp.string()}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -622,11 +542,7 @@ TEST_CASE("ReadMultipleFiles") {
         std::ofstream(tmp_b) << "content_b\n";
     }
 
-    const ToolUse call{
-        .id = "id_multi",
-        .name = "read",
-        .input = {{"paths", nlohmann::json::array({tmp_a.string(), tmp_b.string()})}},
-    };
+    const ToolUse call("id_multi", "read", {{"paths", nlohmann::json::array({tmp_a.string(), tmp_b.string()})}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -646,11 +562,7 @@ TEST_CASE("ReadMultiPathOneFailsContinuesOthers") {
         std::ofstream(tmp) << "good content\n";
     }
 
-    const ToolUse call{
-        .id = "id_mpf",
-        .name = "read",
-        .input = {{"paths", nlohmann::json::array({tmp.string(), "/tmp/orangutan_nonexistent_xyz.txt"})}},
-    };
+    const ToolUse call("id_mpf", "read", {{"paths", nlohmann::json::array({tmp.string(), "/tmp/orangutan_nonexistent_xyz.txt"})}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -662,11 +574,7 @@ TEST_CASE("ReadMultiPathOneFailsContinuesOthers") {
 
 TEST_CASE("ReadBothPathAndPathsReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_both",
-        .name = "read",
-        .input = {{"path", "/tmp/a.txt"}, {"paths", nlohmann::json::array({"/tmp/b.txt"})}},
-    };
+    const ToolUse call("id_both", "read", {{"path", "/tmp/a.txt"}, {"paths", nlohmann::json::array({"/tmp/b.txt"})}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -675,11 +583,7 @@ TEST_CASE("ReadBothPathAndPathsReturnsError") {
 
 TEST_CASE("ReadNeitherPathNorPathsReturnsError") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_neither",
-        .name = "read",
-        .input = nlohmann::json::object(),
-    };
+    const ToolUse call("id_neither", "read", nlohmann::json::object());
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -787,40 +691,25 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             CHECK(orangutan::testing::has_tool_named(defs, "memory_recall"));
             CHECK(orangutan::testing::has_tool_named(defs, "memory_stats"));
 
-            const auto remember = registry.execute(ToolUse{
-                .id = "remember-runtime",
-                .name = "remember",
-                .input = {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}},
-            });
+            const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}}));
             CHECK(not(remember.is_error));
 
-            const auto recall = registry.execute(ToolUse{
-                .id = "recall-runtime",
-                .name = "memory_recall",
-                .input = {{"query", "theme"}},
-            });
+            const auto recall = registry.execute(ToolUse("recall-runtime", "memory_recall", {{"query", "theme"}}));
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
 
-            const auto spawn = registry.execute(ToolUse{
-                .id = "spawn-runtime",
-                .name = "subagent_spawn",
-                .input = {{"child_agent_key", "reviewer"},
-                          {"child_scope_key", "scope:child"},
-                          {"child_session_id", child_session_id},
-                          {"task_summary", "Review the tool layout refactor"}},
-            });
+            const auto spawn = registry.execute(ToolUse("spawn-runtime", "subagent_spawn",
+                                                        {{"child_agent_key", "reviewer"},
+                                                         {"child_scope_key", "scope:child"},
+                                                         {"child_session_id", child_session_id},
+                                                         {"task_summary", "Review the tool layout refactor"}}));
             CHECK(not(spawn.is_error));
             const auto spawn_payload = nlohmann::json::parse(spawn.content);
             REQUIRE(spawn_payload.at("accepted").get<bool>());
             const auto run_id = spawn_payload.at("run_id").get<std::string>();
             CHECK(not(run_id.empty()));
 
-            const auto wait = registry.execute(ToolUse{
-                .id = "wait-runtime",
-                .name = "subagent_wait",
-                .input = {{"run_id", run_id}, {"timeout_ms", 1000}},
-            });
+            const auto wait = registry.execute(ToolUse("wait-runtime", "subagent_wait", {{"run_id", run_id}, {"timeout_ms", 1000}}));
             CHECK(not(wait.is_error));
             const auto wait_payload = nlohmann::json::parse(wait.content);
             CHECK(wait_payload.at("state").get<std::string>() == "completed");
@@ -844,11 +733,7 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
     CHECK(not(orangutan::testing::has_tool_named(defs, "shell")));
     CHECK(orangutan::testing::has_tool_named(defs, "read"));
 
-    const auto shell_result = registry.execute(ToolUse{
-        .id = "deny-shell",
-        .name = "shell",
-        .input = {{"command", "echo hello"}},
-    });
+    const auto shell_result = registry.execute(ToolUse("deny-shell", "shell", {{"command", "echo hello"}}));
     CHECK(shell_result.is_error);
     CHECK(shell_result.content.contains("permission policy"));
 };
@@ -861,11 +746,7 @@ TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
-    const auto shell_result = registry.execute(ToolUse{
-        .id = "ask-shell",
-        .name = "shell",
-        .input = {{"command", "echo hello"}},
-    });
+    const auto shell_result = registry.execute(ToolUse("ask-shell", "shell", {{"command", "echo hello"}}));
     CHECK(shell_result.is_error);
     CHECK(shell_result.content.contains("requires approval"));
 };
@@ -884,11 +765,7 @@ TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
         return true;
     }));
 
-    const auto shell_result = registry.execute(ToolUse{
-        .id = "allow-shell",
-        .name = "shell",
-        .input = {{"command", "echo hello"}},
-    });
+    const auto shell_result = registry.execute(ToolUse("allow-shell", "shell", {{"command", "echo hello"}}));
     CHECK(prompted);
     CHECK(not(shell_result.is_error));
     CHECK(shell_result.content.contains("hello"));
@@ -915,11 +792,7 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
         return true;
     };
 
-    const auto shell_result = registry.execute(ToolUse{
-        .id = "context-allow-shell",
-        .name = "shell",
-        .input = {{"command", "echo hello"}},
-    });
+    const auto shell_result = registry.execute(ToolUse("context-allow-shell", "shell", {{"command", "echo hello"}}));
     CHECK(prompted);
     CHECK(not(shell_result.is_error));
     CHECK(shell_result.content.contains("hello"));
@@ -934,11 +807,7 @@ TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
-    const auto shell_result = registry.execute(ToolUse{
-        .id = "blocked-shell",
-        .name = "shell",
-        .input = {{"command", "rm -rf build"}},
-    });
+    const auto shell_result = registry.execute(ToolUse("blocked-shell", "shell", {{"command", "rm -rf build"}}));
     CHECK(shell_result.is_error);
     CHECK(shell_result.content.contains("matched 'rm -rf'"));
 };
@@ -957,11 +826,7 @@ TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
-    const auto result = registry.execute(ToolUse{
-        .id = "deny-script-shell",
-        .name = "echo_custom",
-        .input = nlohmann::json::object(),
-    });
+    const auto result = registry.execute(ToolUse("deny-script-shell", "echo_custom", nlohmann::json::object()));
     CHECK(result.is_error);
     CHECK(result.content.contains("approval policy"));
 };
@@ -982,11 +847,7 @@ TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, custom_tools, {}, &permissions));
 
-    const auto result = registry.execute(ToolUse{
-        .id = "deny-script-command",
-        .name = "wipe",
-        .input = {{"path", "build"}},
-    });
+    const auto result = registry.execute(ToolUse("deny-script-command", "wipe", {{"path", "build"}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("matched 'rm -rf'"));
 };
@@ -1018,11 +879,7 @@ TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
         return true;
     };
 
-    const auto result = registry.execute(ToolUse{
-        .id = "allow-script-shell",
-        .name = "echo_custom",
-        .input = nlohmann::json::object(),
-    });
+    const auto result = registry.execute(ToolUse("allow-script-shell", "echo_custom", nlohmann::json::object()));
     CHECK(prompted);
     CHECK(not(result.is_error));
     CHECK(result.content.contains("custom"));
@@ -1037,11 +894,7 @@ TEST_CASE("LsListsDirectory") {
         std::ofstream(tmp_dir / "file.txt") << "hello";
     }
 
-    const ToolUse call{
-        .id = "id_ls",
-        .name = "ls",
-        .input = {{"path", tmp_dir.string()}},
-    };
+    const ToolUse call("id_ls", "ls", {{"path", tmp_dir.string()}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1053,11 +906,7 @@ TEST_CASE("LsListsDirectory") {
 
 TEST_CASE("LsMissingPathReturnsError") {
     ScriptToolsTest fixture;
-    const ToolUse call{
-        .id = "id_ls2",
-        .name = "ls",
-        .input = {{"path", "/tmp/orangutan_nonexistent_dir_xyz"}},
-    };
+    const ToolUse call("id_ls2", "ls", {{"path", "/tmp/orangutan_nonexistent_dir_xyz"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(result.is_error);
@@ -1076,11 +925,7 @@ TEST_CASE("GrepFindsPattern") {
         std::ofstream(tmp_dir / "b.txt") << "nothing here\n";
     }
 
-    const ToolUse call{
-        .id = "id_gr",
-        .name = "grep",
-        .input = {{"pattern", "hello"}, {"path", tmp_dir.string()}},
-    };
+    const ToolUse call("id_gr", "grep", {{"pattern", "hello"}, {"path", tmp_dir.string()}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1098,11 +943,7 @@ TEST_CASE("GrepNoMatchesReturnsError") {
         std::ofstream(tmp_dir / "a.txt") << "hello\n";
     }
 
-    const ToolUse call{
-        .id = "id_gr2",
-        .name = "grep",
-        .input = {{"pattern", "zzzznotfound"}, {"path", tmp_dir.string()}},
-    };
+    const ToolUse call("id_gr2", "grep", {{"pattern", "zzzznotfound"}, {"path", tmp_dir.string()}});
     const auto result = fixture.registry().execute(call);
 
     // rg returns exit code 1 for no matches, which becomes an error in script tool
@@ -1115,11 +956,7 @@ TEST_CASE("GrepNoMatchesReturnsError") {
 
 TEST_CASE("ScrubsApiKeyInShellOutput") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_scrub",
-        .name = "shell",
-        .input = {{"command", "echo 'api_key: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"}},
-    };
+    const ToolUse call("id_scrub", "shell", {{"command", "echo 'api_key: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1129,11 +966,7 @@ TEST_CASE("ScrubsApiKeyInShellOutput") {
 
 TEST_CASE("ScrubsBearerToken") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_scrub2",
-        .name = "shell",
-        .input = {{"command", "echo 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxxxxxxxxxxx'"}},
-    };
+    const ToolUse call("id_scrub2", "shell", {{"command", "echo 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxxxxxxxxxxx'"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1142,11 +975,7 @@ TEST_CASE("ScrubsBearerToken") {
 
 TEST_CASE("DoesNotScrubNormalOutput") {
     BuiltinToolsTest fixture;
-    const ToolUse call{
-        .id = "id_noscrub",
-        .name = "shell",
-        .input = {{"command", "echo 'hello world this is normal output'"}},
-    };
+    const ToolUse call("id_noscrub", "shell", {{"command", "echo 'hello world this is normal output'"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1156,21 +985,13 @@ TEST_CASE("DoesNotScrubNormalOutput") {
 
 TEST_CASE("RelativePathsResolveAgainstWorkspace") {
     BuiltinToolsWorkspaceTest fixture;
-    const ToolUse write_call{
-        .id = "id_ws_write",
-        .name = "write",
-        .input = {{"path", "notes/todo.txt"}, {"content", "ship it"}},
-    };
+    const ToolUse write_call("id_ws_write", "write", {{"path", "notes/todo.txt"}, {"content", "ship it"}});
     const auto write_result = fixture.registry().execute(write_call);
 
     CHECK(not(write_result.is_error));
     CHECK(std::filesystem::exists(fixture.workspace() / "notes" / "todo.txt"));
 
-    const ToolUse read_call{
-        .id = "id_ws_read",
-        .name = "read",
-        .input = {{"path", "notes/todo.txt"}},
-    };
+    const ToolUse read_call("id_ws_read", "read", {{"path", "notes/todo.txt"}});
     const auto read_result = fixture.registry().execute(read_call);
 
     CHECK(not(read_result.is_error));
@@ -1183,11 +1004,7 @@ TEST_CASE("AbsolutePathsInsideWorkspaceRemainAllowed") {
     std::filesystem::create_directories(file_path.parent_path());
     std::ofstream(file_path) << "inside sandbox\n";
 
-    const ToolUse read_call{
-        .id = "id_ws_abs_read",
-        .name = "read",
-        .input = {{"path", file_path.string()}},
-    };
+    const ToolUse read_call("id_ws_abs_read", "read", {{"path", file_path.string()}});
     const auto read_result = fixture.registry().execute(read_call);
 
     CHECK(not(read_result.is_error));
@@ -1199,11 +1016,7 @@ TEST_CASE("ReadRejectsAbsolutePathOutsideWorkspace") {
     const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_read.txt";
     std::ofstream(outside_path) << "outside sandbox\n";
 
-    const ToolUse read_call{
-        .id = "id_ws_escape_read",
-        .name = "read",
-        .input = {{"path", outside_path.string()}},
-    };
+    const ToolUse read_call("id_ws_escape_read", "read", {{"path", outside_path.string()}});
     const auto read_result = fixture.registry().execute(read_call);
 
     CHECK(read_result.is_error);
@@ -1217,11 +1030,7 @@ TEST_CASE("WriteRejectsTraversalOutsideWorkspace") {
     const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_write.txt";
     std::filesystem::remove(outside_path);
 
-    const ToolUse write_call{
-        .id = "id_ws_escape_write",
-        .name = "write",
-        .input = {{"path", "../orangutan_escape_write.txt"}, {"content", "escaped"}},
-    };
+    const ToolUse write_call("id_ws_escape_write", "write", {{"path", "../orangutan_escape_write.txt"}, {"content", "escaped"}});
     const auto write_result = fixture.registry().execute(write_call);
 
     CHECK(write_result.is_error);
@@ -1231,11 +1040,7 @@ TEST_CASE("WriteRejectsTraversalOutsideWorkspace") {
 
 TEST_CASE("ShellRunsInsideWorkspace") {
     BuiltinToolsWorkspaceTest fixture;
-    const ToolUse call{
-        .id = "id_ws_shell",
-        .name = "shell",
-        .input = {{"command", "pwd"}},
-    };
+    const ToolUse call("id_ws_shell", "shell", {{"command", "pwd"}});
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
@@ -1265,11 +1070,7 @@ TEST_CASE("ProcessListIncludesRunningBackgroundProcess") {
     const auto start_payload = start_background_process(fixture.registry(), "python3 -c \"import time; print('ready', flush=True); time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
-    const auto list_result = fixture.registry().execute(ToolUse{
-        .id = "list-background",
-        .name = "process_list",
-        .input = nlohmann::json::object(),
-    });
+    const auto list_result = fixture.registry().execute(ToolUse("list-background", "process_list", nlohmann::json::object()));
     REQUIRE(not(list_result.is_error));
 
     const auto list_payload = nlohmann::json::parse(list_result.content);
@@ -1281,11 +1082,7 @@ TEST_CASE("ProcessListIncludesRunningBackgroundProcess") {
     REQUIRE((it) != (processes.end()));
     CHECK(it->at("running").get<bool>());
 
-    const auto kill_result = fixture.registry().execute(ToolUse{
-        .id = "kill-after-list",
-        .name = "process_kill",
-        .input = {{"process_id", process_id}},
-    });
+    const auto kill_result = fixture.registry().execute(ToolUse("kill-after-list", "process_kill", {{"process_id", process_id}}));
     CHECK(not(kill_result.is_error));
 };
 
@@ -1294,11 +1091,7 @@ TEST_CASE("ProcessKillStopsBackgroundProcess") {
     const auto start_payload = start_background_process(fixture.registry(), "python3 -c \"import time; time.sleep(10)\"");
     const auto process_id = start_payload.at("process_id").get<std::string>();
 
-    const auto kill_result = fixture.registry().execute(ToolUse{
-        .id = "kill-background",
-        .name = "process_kill",
-        .input = {{"process_id", process_id}},
-    });
+    const auto kill_result = fixture.registry().execute(ToolUse("kill-background", "process_kill", {{"process_id", process_id}}));
     REQUIRE(not(kill_result.is_error));
 
     const auto kill_payload = nlohmann::json::parse(kill_result.content);
@@ -1320,7 +1113,7 @@ TEST_CASE("ApplyPatchRejectsPathsOutsideWorkspace") {
                               "still outside\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_escape", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_escape", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("workspace sandbox"));
 
@@ -1336,11 +1129,7 @@ TEST_CASE("ReadAllowsOrangutanConfigOutsideWorkspace") {
     const auto config_path = fixture.home() / ".orangutan" / "config.toml";
     std::ofstream(config_path) << "[agent]\nmodel = \"claude\"\n";
 
-    const auto result = fixture.registry().execute({
-        .id = "cfg_read",
-        .name = "read",
-        .input = {{"path", "~/.orangutan/config.toml"}},
-    });
+    const auto result = fixture.registry().execute(ToolUse("cfg_read", "read", {{"path", "~/.orangutan/config.toml"}}));
 
     CHECK(not(result.is_error));
     CHECK(result.content.contains("model = \"claude\""));
@@ -1350,11 +1139,7 @@ TEST_CASE("WriteAllowsOrangutanConfigOutsideWorkspace") {
     BuiltinToolsWorkspaceConfigAccessTest fixture;
     const auto config_path = fixture.home() / ".orangutan" / "config.toml";
 
-    const auto result = fixture.registry().execute({
-        .id = "cfg_write",
-        .name = "write",
-        .input = {{"path", "~/.orangutan/config.toml"}, {"content", "[agent]\nmodel = \"gpt\"\n"}},
-    });
+    const auto result = fixture.registry().execute(ToolUse("cfg_write", "write", {{"path", "~/.orangutan/config.toml"}, {"content", "[agent]\nmodel = \"gpt\"\n"}}));
 
     CHECK(not(result.is_error));
 
@@ -1375,11 +1160,7 @@ TEST_CASE("EditAllowsOrangutanConfigOutsideWorkspace") {
                               "model = \"gpt\"\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({
-        .id = "cfg_edit",
-        .name = "edit",
-        .input = {{"patch", patch}},
-    });
+    const auto result = fixture.registry().execute(ToolUse("cfg_edit", "edit", {{"patch", patch}}));
 
     CHECK(not(result.is_error));
 
@@ -1393,11 +1174,7 @@ TEST_CASE("HomeFilesOutsideOrangutanConfigRemainBlocked") {
     const auto other_home_file = fixture.home() / "notes.txt";
     std::ofstream(other_home_file) << "private\n";
 
-    const auto result = fixture.registry().execute({
-        .id = "cfg_block",
-        .name = "read",
-        .input = {{"path", "~/notes.txt"}},
-    });
+    const auto result = fixture.registry().execute(ToolUse("cfg_block", "read", {{"path", "~/notes.txt"}}));
 
     CHECK(result.is_error);
     CHECK(result.content.contains("workspace sandbox"));
@@ -1416,7 +1193,7 @@ TEST_CASE("ApplyPatchSingleFileOneHunk") {
                               "    return 42;\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap1", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap1", "edit", {{"patch", patch}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("1 hunk"));
 
@@ -1441,7 +1218,7 @@ TEST_CASE("ApplyPatchSingleFileMultiHunk") {
                               "ZZZ\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap2", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap2", "edit", {{"patch", patch}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("2 hunks"));
 
@@ -1468,7 +1245,7 @@ TEST_CASE("ApplyPatchMultiFile") {
                               "BETA\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap3", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap3", "edit", {{"patch", patch}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("2 files"));
 
@@ -1488,7 +1265,7 @@ TEST_CASE("ApplyPatchMultiFile") {
 
 TEST_CASE("ApplyPatchEmptyPatchReturnsError") {
     BuiltinToolsWorkspaceTest fixture;
-    const auto result = fixture.registry().execute({.id = "ap_e1", .name = "edit", .input = {{"patch", ""}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_e1", "edit", {{"patch", ""}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("empty"));
 };
@@ -1500,7 +1277,7 @@ TEST_CASE("ApplyPatchMissingSeparatorReturnsError") {
                               "hello\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_e2", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_e2", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("separator"));
 };
@@ -1513,7 +1290,7 @@ TEST_CASE("ApplyPatchNoFileHeaderReturnsError") {
                               "world\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_e3", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_e3", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("file header"));
 };
@@ -1526,7 +1303,7 @@ TEST_CASE("ApplyPatchUnclosedHunkReturnsError") {
                               "=======\n"
                               "world\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_e4", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_e4", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("unclosed"));
 };
@@ -1544,7 +1321,7 @@ TEST_CASE("ApplyPatchSearchNotFoundReturnsError") {
                               "replacement\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_v1", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_v1", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("not found"));
 };
@@ -1560,7 +1337,7 @@ TEST_CASE("ApplyPatchSearchMatchesMultipleReturnsError") {
                               "unique\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_v2", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_v2", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("multiple"));
 };
@@ -1574,7 +1351,7 @@ TEST_CASE("ApplyPatchFileNotFoundReturnsError") {
                               "other\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_v3", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_v3", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("not found"));
 };
@@ -1599,7 +1376,7 @@ TEST_CASE("ApplyPatchAtomicRollbackOnFailure") {
                               "something\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_atom", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_atom", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
 
     // Verify good.cpp was NOT modified (atomic: neither file touched)
@@ -1618,7 +1395,7 @@ TEST_CASE("ApplyPatchCreatesNewFile") {
                               "#include <iostream>\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_new", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_new", "edit", {{"patch", patch}}));
     CHECK(not(result.is_error));
     CHECK(std::filesystem::exists(fixture.workspace() / "newdir" / "newfile.cpp"));
 
@@ -1637,7 +1414,7 @@ TEST_CASE("ApplyPatchNewFileAlreadyExistsReturnsError") {
                               "new content\n"
                               ">>>>>>> REPLACE\n";
 
-    const auto result = fixture.registry().execute({.id = "ap_dup", .name = "edit", .input = {{"patch", patch}}});
+    const auto result = fixture.registry().execute(ToolUse("ap_dup", "edit", {{"patch", patch}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("already exists"));
 };
@@ -1696,7 +1473,7 @@ TEST_CASE("ReadOutputHasHashTags") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "test.txt") << "hello world\nfoo bar\n";
 
-    const auto result = fixture.registry().execute({.id = "r1", .name = "read", .input = {{"path", "test.txt"}}});
+    const auto result = fixture.registry().execute(ToolUse("r1", "read", {{"path", "test.txt"}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("1#"));
     CHECK(result.content.contains(":hello world"));
@@ -1708,7 +1485,7 @@ TEST_CASE("ReadWithOffsetUsesOriginalLineNumbers") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "offset.txt") << "line1\nline2\nline3\nline4\n";
 
-    const auto result = fixture.registry().execute({.id = "r2", .name = "read", .input = {{"path", "offset.txt"}, {"offset", 3}, {"limit", 1}}});
+    const auto result = fixture.registry().execute(ToolUse("r2", "read", {{"path", "offset.txt"}, {"offset", 3}, {"limit", 1}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("3#"));
     CHECK(result.content.contains(":line3"));
@@ -1719,7 +1496,7 @@ TEST_CASE("ReadMultiPathHasHashTags") {
     std::ofstream(fixture.workspace() / "a.txt") << "aaa\n";
     std::ofstream(fixture.workspace() / "b.txt") << "bbb\n";
 
-    const auto result = fixture.registry().execute({.id = "r3", .name = "read", .input = {{"paths", nlohmann::json::array({"a.txt", "b.txt"})}}});
+    const auto result = fixture.registry().execute(ToolUse("r3", "read", {{"paths", nlohmann::json::array({"a.txt", "b.txt"})}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("=== "));
     CHECK(result.content.contains("1#"));
@@ -1736,7 +1513,7 @@ TEST_CASE("EditReplaceSingleLine") {
 
     nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", anchor}, {"content", nlohmann::json::array({"    return 42;"})}}});
 
-    const auto result = fixture.registry().execute({.id = "e1", .name = "edit", .input = {{"path", "target.cpp"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e1", "edit", {{"path", "target.cpp"}, {"edits", edits}}));
     CHECK(not(result.is_error));
     CHECK(result.content.contains("Applied"));
 
@@ -1752,7 +1529,7 @@ TEST_CASE("EditPreservesMissingFinalNewline") {
     auto hash = orangutan::compute_line_hash("bbb", 2);
     nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", nlohmann::json::array({"ccc"})}}});
 
-    const auto result = fixture.registry().execute({.id = "e1b", .name = "edit", .input = {{"path", "noeol.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e1b", "edit", {{"path", "noeol.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
 
     std::ifstream ifs(fixture.workspace() / "noeol.txt");
@@ -1767,7 +1544,7 @@ TEST_CASE("EditDeleteLine") {
     auto hash = orangutan::compute_line_hash("bbb", 2);
     nlohmann::json edits = nlohmann::json::array({{{"op", "delete"}, {"anchor", "2#" + hash}}});
 
-    const auto result = fixture.registry().execute({.id = "e2", .name = "edit", .input = {{"path", "del.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e2", "edit", {{"path", "del.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
 
     std::ifstream ifs(fixture.workspace() / "del.txt");
@@ -1781,7 +1558,7 @@ TEST_CASE("EditInsertAfterEOF") {
 
     nlohmann::json edits = nlohmann::json::array({{{"op", "insert_after"}, {"content", nlohmann::json::array({"ccc"})}}});
 
-    const auto result = fixture.registry().execute({.id = "e3", .name = "edit", .input = {{"path", "ins.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e3", "edit", {{"path", "ins.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
 
     std::ifstream ifs(fixture.workspace() / "ins.txt");
@@ -1797,7 +1574,7 @@ TEST_CASE("EditHashMismatchReturnsErrorWithContext") {
     const std::string wrong_hash = actual_hash == "ZZ" ? "ZY" : "ZZ";
     nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + wrong_hash}, {"content", nlohmann::json::array({"XXX"})}}});
 
-    const auto result = fixture.registry().execute({.id = "e4", .name = "edit", .input = {{"path", "stale.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e4", "edit", {{"path", "stale.txt"}, {"edits", edits}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("mismatch"));
     CHECK(result.content.contains(actual_hash));
@@ -1810,7 +1587,7 @@ TEST_CASE("EditContentAsStringIsSplitOnNewlines") {
     auto hash = orangutan::compute_line_hash("bbb", 2);
     nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
 
-    const auto result = fixture.registry().execute({.id = "e5", .name = "edit", .input = {{"path", "str.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e5", "edit", {{"path", "str.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
 
     std::ifstream ifs(fixture.workspace() / "str.txt");
@@ -1824,7 +1601,7 @@ TEST_CASE("EditMissingAnchorForReplaceReturnsError") {
 
     nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"content", nlohmann::json::array({"XXX"})}}});
 
-    const auto result = fixture.registry().execute({.id = "e6", .name = "edit", .input = {{"path", "missing.txt"}, {"edits", edits}}});
+    const auto result = fixture.registry().execute(ToolUse("e6", "edit", {{"path", "missing.txt"}, {"edits", edits}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("requires"));
 };
