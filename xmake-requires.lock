@@ -120,7 +120,7 @@
             },
             version = "v1.17.0"
         },
-        ["sqlite3 3.52.0#f56260b5"] = {
+        ["sqlite3 3.52.0#fef9db0f"] = {
             repo = {
                 branch = "master",
                 commit = "75c3fcffb897a8aeb37863c495b9f58266216b26",
