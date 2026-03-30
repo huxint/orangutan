@@ -77,8 +77,8 @@ namespace {
 
         CHECK(manager.hook_count(HookEvent::before_tool_call) == 4ul);
         CHECK(manager.hook_count(HookEvent::after_tool_call) == 2ul);
-        CHECK(manager.hook_count(HookEvent::session_start) == 1ul);
-        CHECK(manager.hook_count(HookEvent::session_end) == 1ul);
+        CHECK(manager.hook_count(HookEvent::session_start) == 1UL);
+        CHECK(manager.hook_count(HookEvent::session_end) == 1UL);
         CHECK(manager.total_hooks() >= 8ul);
     };
 
@@ -180,7 +180,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({global_dir.string(), workspace_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 1ul);
+        CHECK(manager.hook_count(HookEvent::before_tool_call) == 1UL);
 
         const auto ctx = build_before_tool_call_context("shell", {{"command", "ls"}});
         const auto result = manager.dispatch(HookEvent::before_tool_call, ctx);

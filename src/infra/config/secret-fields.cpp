@@ -1,7 +1,7 @@
 #include "infra/config/secret-fields.hpp"
 
+#include <algorithm>
 #include <array>
-#include <ranges>
 #include <utility>
 
 namespace orangutan {

@@ -305,8 +305,8 @@ TEST_CASE("transport_connect_failure_emits_error_and_reconnects") {
     auto connection = connector.wait_for_connection(1, std::chrono::seconds(5));
     REQUIRE(recorder.wait_for_opens(1, std::chrono::seconds(5)));
     REQUIRE(connection != nullptr);
-    CHECK(connector.connection_count() == 1ul);
-    CHECK(recorder.errors.size() == 1ul);
+    CHECK(connector.connection_count() == 1UL);
+    CHECK(recorder.errors.size() == 1UL);
 
     transport.stop();
 };

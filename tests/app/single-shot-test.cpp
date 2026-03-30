@@ -112,7 +112,7 @@ namespace {
         CHECK(events[2]["type"] == "done");
 
         const auto sessions = store.list_sessions("scope:test");
-        CHECK(sessions.size() == 1ul);
+        CHECK(sessions.size() == 1UL);
         CHECK(sessions[0].model == "test-model");
         CHECK(sessions[0].agent_key == "default");
         CHECK(sessions[0].origin_kind == "cli");
@@ -158,8 +158,8 @@ namespace {
             }
         }
 
-        CHECK(tool_call_started_count == 1ul);
-        CHECK(tool_started_count == 1ul);
+        CHECK(tool_call_started_count == 1UL);
+        CHECK(tool_started_count == 1UL);
     };
 
     TEST_CASE("emit_session_history_dump_wraps_history_with_lifecycle_events") {

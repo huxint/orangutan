@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <set>
 #include <catch2/catch_test_macros.hpp>
+#include <utility>
 #include <sqlite3.h>
 
 namespace {
@@ -51,8 +52,8 @@ namespace {
 
     orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key = {}) {
         return orangutan::SessionMetadata{
-            .model = model,
-            .scope_key = scope_key,
+            .model = std::move(model),
+            .scope_key = std::move(scope_key),
             .agent_key = "",
             .origin_kind = "cli",
             .origin_ref = "",

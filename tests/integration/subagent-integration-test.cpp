@@ -133,7 +133,7 @@ namespace {
                                        CHECK(system_prompt.contains("delegated worker"));
                                        CHECK(system_prompt.contains("cannot spawn subagents"));
                                        CHECK_FALSE(orangutan::testing::has_tool_named(tools, "subagent_spawn"));
-                                       CHECK(messages.size() == 1ul);
+                                       CHECK(messages.size() == 1UL);
                                        const auto *text = std::get_if<Text>(&*messages.front().begin());
                                        REQUIRE(text != nullptr);
                                        CHECK(text->text == "Investigate parser regression");
@@ -203,8 +203,8 @@ namespace {
 
         session_store.update(parent_session_id, parent_loop.history());
 
-        CHECK(parent_prompts.size() == 1ul);
-        CHECK(child_prompts.size() == 1ul);
+        CHECK(parent_prompts.size() == 1UL);
+        CHECK(child_prompts.size() == 1UL);
 
         const auto *parent_wait_result = last_tool_result(parent_loop.history());
         REQUIRE(parent_wait_result != nullptr);

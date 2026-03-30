@@ -102,7 +102,7 @@ TEST_CASE("parse_anchor_valid_format") {
 
 TEST_CASE("parse_anchor_single_digit_line") {
     const auto anchor = parse_anchor("1#ZZ");
-    CHECK(anchor.line == 1ul);
+    CHECK(anchor.line == 1UL);
     CHECK(anchor.hash == "ZZ");
 };
 

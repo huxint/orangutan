@@ -40,7 +40,7 @@ TEST_CASE("store_roundtrips_enum_backed_fields") {
     REQUIRE(loaded_task.has_value());
     CHECK(loaded_task->schedule.kind == TaskScheduleKind::at);
     CHECK(loaded_task->delivery.mode == DeliveryMode::notify);
-    CHECK(loaded_task->delivery.targets.size() == 1ul);
+    CHECK(loaded_task->delivery.targets.size() == 1UL);
     CHECK(loaded_task->delivery.targets[0] == "ops");
 
     static_cast<void>(store.insert_run(RunRecord{
@@ -55,7 +55,7 @@ TEST_CASE("store_roundtrips_enum_backed_fields") {
     }));
 
     const auto runs = store.list_runs("default");
-    CHECK(runs.size() == 1ul);
+    CHECK(runs.size() == 1UL);
     CHECK(runs.front().kind == Kind::heartbeat);
 };
 

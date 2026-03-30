@@ -82,7 +82,7 @@ namespace {
         CHECK(current_session_id.empty());
 
         const auto sessions = session_store.list_sessions("scope:test");
-        CHECK(sessions.size() == 1ul);
+        CHECK(sessions.size() == 1UL);
         CHECK(result.previous_session_id == sessions.front().id);
         CHECK(sessions.front().agent_key == "coder");
         CHECK(sessions.front().origin_kind == "cli");

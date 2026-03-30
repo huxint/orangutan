@@ -46,9 +46,9 @@ namespace orangutan::app {
             INFO("expected read_repl_input to return a value");
             REQUIRE(line.has_value());
             CHECK(*line == "hello");
-            CHECK(editor.prompts.size() == 1ul);
+            CHECK(editor.prompts.size() == 1UL);
             CHECK(editor.prompts[0] == "you> ");
-            CHECK(editor.history.size() == 1ul);
+            CHECK(editor.history.size() == 1UL);
             CHECK(editor.history[0] == "hello");
         };
 
@@ -83,7 +83,7 @@ namespace orangutan::app {
             const auto line = read_repl_input(editor);
 
             CHECK_FALSE(line.has_value());
-            CHECK(editor.prompts.size() == 1ul);
+            CHECK(editor.prompts.size() == 1UL);
             CHECK(editor.prompts[0] == "you> ");
             CHECK(editor.history.empty());
         };

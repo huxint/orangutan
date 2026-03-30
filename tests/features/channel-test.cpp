@@ -171,11 +171,11 @@ namespace {
         manager.send("cli:local", "reply to cli");
         manager.send("qqbot:c2c:456", "reply to qq");
 
-        CHECK(cli->sent_messages().size() == 1ul);
+        CHECK(cli->sent_messages().size() == 1UL);
         CHECK(cli->sent_messages()[0].first == "cli:local");
         CHECK(cli->sent_messages()[0].second == "reply to cli");
 
-        CHECK(qq->sent_messages().size() == 1ul);
+        CHECK(qq->sent_messages().size() == 1UL);
         CHECK(qq->sent_messages()[0].first == "qqbot:c2c:456");
         CHECK(qq->sent_messages()[0].second == "reply to qq");
 

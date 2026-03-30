@@ -122,13 +122,13 @@ denied = ["shell"]
         CHECK(cfg.allowed_tools[0] == "read");
         CHECK(cfg.allowed_tools[1] == "write");
         CHECK(cfg.allowed_tools[2] == "ls");
-        CHECK(cfg.denied_tools.size() == 1ul);
+        CHECK(cfg.denied_tools.size() == 1UL);
         CHECK(cfg.denied_tools[0] == "shell");
         CHECK(cfg.permissions.allowed_tools.size() == 3ul);
         CHECK(cfg.permissions.allowed_tools[0] == "read");
         CHECK(cfg.permissions.allowed_tools[1] == "write");
         CHECK(cfg.permissions.allowed_tools[2] == "ls");
-        CHECK(cfg.permissions.denied_tools.size() == 1ul);
+        CHECK(cfg.permissions.denied_tools.size() == 1UL);
         CHECK(cfg.permissions.denied_tools[0] == "shell");
     };
 
@@ -149,7 +149,7 @@ denied_shell_commands = ["rm -rf", "shutdown"]
         CHECK(cfg.permissions.allowed_tools.size() == 2ul);
         CHECK(cfg.permissions.allowed_tools[0] == "read");
         CHECK(cfg.permissions.allowed_tools[1] == "write");
-        CHECK(cfg.permissions.denied_tools.size() == 1ul);
+        CHECK(cfg.permissions.denied_tools.size() == 1UL);
         CHECK(cfg.permissions.denied_tools[0] == "shell");
         CHECK(cfg.permissions.denied_shell_commands.size() == 2ul);
         CHECK(cfg.permissions.denied_shell_commands[0] == "rm -rf");
@@ -280,7 +280,7 @@ client_secret = "secret-456"
         const auto cfg = Config::load_from(path);
         CHECK(cfg.qq_app_id == "app-123");
         CHECK(cfg.qq_client_secret == "secret-456");
-        CHECK(cfg.qq_bots.size() == 1ul);
+        CHECK(cfg.qq_bots.size() == 1UL);
         CHECK(cfg.qq_bots[0].name.empty());
         CHECK(cfg.qq_bots[0].app_id == "app-123");
         CHECK(cfg.qq_bots[0].client_secret == "secret-456");
@@ -366,9 +366,9 @@ denied_shell_commands = ["curl"]
         const auto &default_agent = cfg.agents.at("default");
         CHECK(default_agent.permissions.sandbox_mode == ToolSandboxMode::isolated);
         CHECK(default_agent.permissions.shell_approval == ToolApprovalPolicy::allow);
-        CHECK(default_agent.permissions.allowed_tools.size() == 1ul);
+        CHECK(default_agent.permissions.allowed_tools.size() == 1UL);
         CHECK(default_agent.permissions.allowed_tools[0] == "read");
-        CHECK(default_agent.permissions.denied_shell_commands.size() == 1ul);
+        CHECK(default_agent.permissions.denied_shell_commands.size() == 1UL);
         CHECK(default_agent.permissions.denied_shell_commands[0] == "rm -rf");
 
         const auto &coder_agent = cfg.agents.at("coder");
@@ -377,9 +377,9 @@ denied_shell_commands = ["curl"]
         CHECK(coder_agent.permissions.allowed_tools.size() == 2ul);
         CHECK(coder_agent.permissions.allowed_tools[0] == "read");
         CHECK(coder_agent.permissions.allowed_tools[1] == "write");
-        CHECK(coder_agent.permissions.denied_tools.size() == 1ul);
+        CHECK(coder_agent.permissions.denied_tools.size() == 1UL);
         CHECK(coder_agent.permissions.denied_tools[0] == "shell");
-        CHECK(coder_agent.permissions.denied_shell_commands.size() == 1ul);
+        CHECK(coder_agent.permissions.denied_shell_commands.size() == 1UL);
         CHECK(coder_agent.permissions.denied_shell_commands[0] == "curl");
     };
 
@@ -395,7 +395,7 @@ deny = ["qqbot:c2c:blocked"]
         CHECK(cfg.allow.size() == 2ul);
         CHECK(cfg.allow[0] == "cli:*");
         CHECK(cfg.allow[1] == "qqbot:c2c:*");
-        CHECK(cfg.deny.size() == 1ul);
+        CHECK(cfg.deny.size() == 1UL);
         CHECK(cfg.deny[0] == "qqbot:c2c:blocked");
     };
 
@@ -416,7 +416,7 @@ ROOT = "${HOME}/workspace"
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.mcp_servers.size() == 1ul);
+        CHECK(cfg.mcp_servers.size() == 1UL);
         const auto &server = cfg.mcp_servers[0];
         CHECK(server.name == "github");
         CHECK(server.command == std::string(home) + "/bin/mock-mcp");
@@ -457,7 +457,7 @@ timeout = 9
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.mcp_servers.size() == 1ul);
+        CHECK(cfg.mcp_servers.size() == 1UL);
         CHECK(cfg.mcp_servers[0].name == "github");
         CHECK(cfg.mcp_servers[0].command == "new-command");
         CHECK(cfg.mcp_servers[0].timeout == 9);
@@ -597,7 +597,7 @@ app_id = "qq-app"
         const auto cfg = Config::load_from(path, ConfigSecretOptions{
                                                      .password_override = "qq-password",
                                                  });
-        CHECK(cfg.qq_bots.size() == 1ul);
+        CHECK(cfg.qq_bots.size() == 1UL);
         CHECK(cfg.qq_bots[0].client_secret == "qq-secret-value");
     };
 

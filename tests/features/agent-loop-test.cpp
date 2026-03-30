@@ -269,7 +269,7 @@ namespace {
         CHECK(result.distilled);
         CHECK(result.memories_stored == 3ul);
         CHECK(result.journal_stored);
-        CHECK(provider.last_messages_size_ == 1ul);
+        CHECK(provider.last_messages_size_ == 1UL);
         CHECK(provider.last_tool_count_ == 0ul);
         CHECK(provider.last_system_prompt_.contains("distilling long-term memory"));
 
@@ -281,7 +281,7 @@ namespace {
         CHECK(project.contains("orangutan memory refactor"));
         CHECK(decision.contains("fixed to one agent"));
         CHECK(learning.contains("jid plus agent key"));
-        REQUIRE(journals.size() == 1ul);
+        REQUIRE(journals.size() == 1UL);
         CHECK(journals.front().source == "session:journal");
         CHECK(journals.front().content.contains("markdown mirror behavior"));
 
@@ -329,7 +329,7 @@ namespace {
         const auto result = loop.distill_session_memory();
 
         CHECK(result.distilled);
-        CHECK(result.memories_stored == 1ul);
+        CHECK(result.memories_stored == 1UL);
         CHECK_FALSE(result.journal_stored);
         CHECK(result.status.contains("journaling was skipped"));
         CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));

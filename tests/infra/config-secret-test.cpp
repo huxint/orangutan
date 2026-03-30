@@ -140,7 +140,7 @@ api_key = "nested-agent-key"
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
         INFO("expected protect_config_file_secrets to modify the config");
         REQUIRE(result.modified);
-        CHECK(result.protected_count == 1ul);
+        CHECK(result.protected_count == 1UL);
 
         const auto updated = ConfigSecretFileHarness::read_config(harness.config_path());
         CHECK(updated.contains("[agents.coder]\napi_key = \"enc:v1:"));

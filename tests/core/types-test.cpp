@@ -76,7 +76,7 @@ TEST_CASE("message_to_json_serializes_user_text_message") {
     const nlohmann::json j = message_to_json(msg);
 
     CHECK(j["role"] == "user");
-    CHECK(j["content"].size() == 1ul);
+    CHECK(j["content"].size() == 1UL);
     CHECK(j["content"][0]["type"] == "text");
     CHECK(j["content"][0]["text"] == "test input");
 };

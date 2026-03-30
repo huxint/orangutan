@@ -51,7 +51,7 @@ namespace {
         REQUIRE(updated.has_value());
         CHECK(updated->prompt == "after");
         CHECK(updated->delivery.mode == orangutan::automation::DeliveryMode::notify);
-        CHECK(updated->delivery.targets.size() == 1ul);
+        CHECK(updated->delivery.targets.size() == 1UL);
         CHECK(updated->delivery.targets.front() == "qqbot:primary:c2c:123456");
 
         std::filesystem::remove_all(db_path.parent_path());

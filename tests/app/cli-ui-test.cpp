@@ -67,9 +67,9 @@ namespace {
         const auto status = orangutan::app::collect_runtime_status(agent, provider, &tools, "session-1", "coder", "gpt-primary", {"gpt-fallback"}, "scope:coder");
         CHECK(status.current_model == "gpt-fallback");
         CHECK(status.configured_model == "gpt-primary");
-        CHECK(status.tool_call_count == 1ul);
-        CHECK(status.tool_error_count == 1ul);
-        CHECK(status.registered_tool_count == 1ul);
+        CHECK(status.tool_call_count == 1UL);
+        CHECK(status.tool_error_count == 1UL);
+        CHECK(status.registered_tool_count == 1UL);
 
         const auto text = orangutan::app::format_runtime_status(status);
         CHECK(text.contains("## Status"));

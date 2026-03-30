@@ -278,7 +278,7 @@ namespace {
         CHECK(completes_without_throw([&] {
             app::deliver_reply(message, "sent", manager);
         }));
-        CHECK(qq->sent_messages().size() == 1ul);
+        CHECK(qq->sent_messages().size() == 1UL);
         CHECK(qq->sent_messages()[0].first == "qqbot:c2c:42");
         CHECK(qq->sent_messages()[0].second == "sent");
     };
@@ -349,7 +349,7 @@ namespace {
         CHECK(inspection.has_hook_manager);
         CHECK(inspection.session_scope_key == derive_channel_runtime_key("qqbot:c2c:alice", "default"));
         CHECK(inspection.configured_model == "gpt-test");
-        CHECK(inspection.fallback_models.size() == 1ul);
+        CHECK(inspection.fallback_models.size() == 1UL);
         CHECK(inspection.fallback_models.front() == "gpt-fallback");
     };
 
@@ -555,7 +555,7 @@ namespace {
         CHECK_FALSE(approval_result.load());
 
         const auto sent_messages = qq->sent_messages();
-        CHECK(sent_messages.size() == 1ul);
+        CHECK(sent_messages.size() == 1UL);
         CHECK(sent_messages.front().second.contains("Request: shell-approval-"));
 
         runner.shutdown(true);
@@ -639,7 +639,7 @@ namespace {
         CHECK(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
 
         const auto sessions = session_store.list_sessions_for_agent("default");
-        CHECK(sessions.size() == 1ul);
+        CHECK(sessions.size() == 1UL);
         CHECK(sessions[0].id == session_id);
         CHECK(sessions[0].scope_key == identity.runtime_key);
         CHECK(sessions[0].agent_key == "default");
@@ -909,7 +909,7 @@ namespace {
         });
 
         const auto inbox_items = automation_runtime.list_inbox("default");
-        CHECK(inbox_items.size() == 1ul);
+        CHECK(inbox_items.size() == 1UL);
         REQUIRE(not qq->sent_messages().empty());
         CHECK(qq->sent_messages().front().first == jid);
         CHECK(qq->sent_messages().front().second == "Background reply");

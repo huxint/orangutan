@@ -17,7 +17,7 @@ TEST_CASE("reassembles_fragmented_events_across_chunks") {
     parser.feed(second_chunk);
 
     INFO("expected one parsed event");
-    CHECK(events.size() == 1ul);
+    CHECK(events.size() == 1UL);
     CHECK(events[0].first == "message");
     CHECK(events[0].second == "{\"partial\":1}");
 };
@@ -31,7 +31,7 @@ TEST_CASE("concatenates_multiple_data_lines_into_single_event") {
     parser.feed("event: chunk\ndata: first line\ndata: second line\n\n");
 
     INFO("expected one parsed event");
-    CHECK(events.size() == 1ul);
+    CHECK(events.size() == 1UL);
     CHECK(events[0].first == "chunk");
     CHECK(events[0].second == "first line\nsecond line");
 };

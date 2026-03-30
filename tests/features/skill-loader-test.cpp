@@ -158,7 +158,7 @@ Body with embedded delimiter in frontmatter string.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "embedded-delimiter");
         CHECK(loader.active_skills()[0].body.contains("Body with embedded delimiter"));
 
@@ -182,7 +182,7 @@ Body after multiline string frontmatter.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "multiline-delimiter");
         CHECK(loader.active_skills()[0].body.contains("Body after multiline string frontmatter."));
 
@@ -201,7 +201,7 @@ Body after BOM.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "bom-skill");
 
         std::filesystem::remove_all(temp_dir);
@@ -220,7 +220,7 @@ Body after leading blank line.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "blank-line-skill");
 
         std::filesystem::remove_all(temp_dir);
@@ -289,7 +289,7 @@ YAML body content here.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "my-yaml-skill");
         CHECK(loader.active_skills()[0].description == "Skill with YAML frontmatter");
         CHECK(loader.active_skills()[0].tools.size() == 2ul);
@@ -313,7 +313,7 @@ Quoted values body.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1ul);
+        CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "quoted-skill");
         CHECK(loader.active_skills()[0].description == "Single-quoted description");
         CHECK(loader.active_skills()[0].tools.size() == 2ul);

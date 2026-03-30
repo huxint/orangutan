@@ -1,7 +1,6 @@
 #include "app/slash-commands.hpp"
 
 #include <array>
-#include <cstdint>
 #include "infra/format.hpp"
 
 namespace orangutan::app {

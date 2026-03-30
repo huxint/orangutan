@@ -528,8 +528,8 @@ namespace {
         const auto agents = app::detail::build_effective_agents(cfg);
         const auto expected = (harness.home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
 
-        CHECK(agents.count("default") == 1ul);
-        CHECK(agents.count("coder") == 1ul);
+        CHECK(agents.count("default") == 1UL);
+        CHECK(agents.count("coder") == 1UL);
         CHECK(agents.at("default").workspace == expected);
         CHECK(agents.at("coder").workspace == expected);
     };
@@ -597,7 +597,7 @@ namespace {
         REQUIRE(runtime_configs.has_value());
         auto default_it = runtime_configs->find("default");
         REQUIRE(default_it != runtime_configs->end());
-        CHECK(default_it->second.allowed_child_agents.size() == 1ul);
+        CHECK(default_it->second.allowed_child_agents.size() == 1UL);
         CHECK(default_it->second.allowed_child_agents.front() == "coder");
     };
 

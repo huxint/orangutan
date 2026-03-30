@@ -289,9 +289,9 @@ namespace {
         });
 
         const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
-        CHECK(inbox_items.size() == 1ul);
+        CHECK(inbox_items.size() == 1UL);
         CHECK(nlohmann::json::parse(inbox_items.front().body).at("process_id") == "proc-shared");
-        CHECK(resume_callback_count == 1ul);
+        CHECK(resume_callback_count == 1UL);
     };
 
 } // namespace

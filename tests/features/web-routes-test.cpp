@@ -418,7 +418,7 @@ namespace {
         REQUIRE(static_cast<bool>(tasks_res));
         CHECK(tasks_res->status == 200);
         const auto tasks = nlohmann::json::parse(tasks_res->body);
-        CHECK(tasks.size() == 1ul);
+        CHECK(tasks.size() == 1UL);
         CHECK(tasks[0]["name"] == "repo-check");
         CHECK(tasks[0]["schedule_kind"] == "cron");
 
@@ -426,14 +426,14 @@ namespace {
         REQUIRE(static_cast<bool>(heartbeats_res));
         CHECK(heartbeats_res->status == 200);
         const auto heartbeats = nlohmann::json::parse(heartbeats_res->body);
-        CHECK(heartbeats.size() == 1ul);
+        CHECK(heartbeats.size() == 1UL);
         CHECK(heartbeats[0]["name"] == "self-check");
 
         const auto inbox_res = cli.Get("/api/inbox?agent_key=default");
         REQUIRE(static_cast<bool>(inbox_res));
         CHECK(inbox_res->status == 200);
         const auto inbox = nlohmann::json::parse(inbox_res->body);
-        CHECK(inbox.size() == 1ul);
+        CHECK(inbox.size() == 1UL);
         const auto inbox_id = inbox[0]["id"].get<std::string>();
         CHECK(inbox[0]["title"] == "Task notification");
 

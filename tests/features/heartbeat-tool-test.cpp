@@ -60,9 +60,9 @@ namespace {
         REQUIRE(updated.has_value());
         CHECK(updated->prompt == "after");
         CHECK(updated->delivery.mode == orangutan::automation::DeliveryMode::notify);
-        CHECK(updated->delivery.targets.size() == 1ul);
+        CHECK(updated->delivery.targets.size() == 1UL);
         CHECK(updated->delivery.targets.front() == "qqbot:primary:c2c:123456");
-        CHECK(updated->active_hours.size() == 1ul);
+        CHECK(updated->active_hours.size() == 1UL);
         CHECK(updated->active_hours.front().start_minute == 9 * 60);
         CHECK(updated->active_hours.front().end_minute == 17 * 60);
         INFO("expected heartbeat update to preserve next due time");

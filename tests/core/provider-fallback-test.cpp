@@ -82,21 +82,21 @@ namespace {
 
         const auto response = provider->chat("", {}, {}, 1024);
 
-        CHECK(response.content.size() == 1ul);
+        CHECK(response.content.size() == 1UL);
         const auto *text = std::get_if<Text>(&response.content[0]);
         REQUIRE(text != nullptr);
         if (text != nullptr) {
             CHECK(text->text == "fallback response");
         }
-        CHECK(primary_attempts == 1ul);
-        CHECK(fallback_attempts == 1ul);
+        CHECK(primary_attempts == 1UL);
+        CHECK(fallback_attempts == 1UL);
         CHECK(provider->current_model() == "gpt-fallback");
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 1ul);
+        CHECK(usage.logical_requests == 1UL);
         CHECK(usage.attempt_count == 2ul);
-        CHECK(usage.failed_attempts == 1ul);
-        CHECK(usage.fallback_switches == 1ul);
+        CHECK(usage.failed_attempts == 1UL);
+        CHECK(usage.fallback_switches == 1UL);
     };
 
     TEST_CASE("rejects_missing_api_key_before_instantiating_providers") {
@@ -117,9 +117,9 @@ namespace {
         CHECK_FALSE(factory_called);
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 1ul);
-        CHECK(usage.attempt_count == 1ul);
-        CHECK(usage.failed_attempts == 1ul);
+        CHECK(usage.logical_requests == 1UL);
+        CHECK(usage.attempt_count == 1UL);
+        CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 0ul);
     };
 
@@ -168,16 +168,16 @@ namespace {
         } catch (const std::runtime_error &) {
         }
 
-        CHECK(observed_chunks.size() == 1ul);
+        CHECK(observed_chunks.size() == 1UL);
         CHECK(observed_chunks[0] == "partial");
-        CHECK(primary_stream_attempts == 1ul);
+        CHECK(primary_stream_attempts == 1UL);
         CHECK(fallback_stream_attempts == 0ul);
         CHECK(provider->current_model() == "gpt-primary");
 
         const auto usage = provider->usage();
-        CHECK(usage.logical_requests == 1ul);
-        CHECK(usage.attempt_count == 1ul);
-        CHECK(usage.failed_attempts == 1ul);
+        CHECK(usage.logical_requests == 1UL);
+        CHECK(usage.attempt_count == 1UL);
+        CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 0ul);
     };
 
@@ -276,7 +276,7 @@ namespace {
 
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto fallback_response = second_result.get();
-        CHECK(fallback_response.content.size() == 1ul);
+        CHECK(fallback_response.content.size() == 1UL);
         CHECK(std::get<Text>(fallback_response.content[0]).text == "fallback response");
 
         CHECK_FALSE(primary_state->destroyed.load());
@@ -284,7 +284,7 @@ namespace {
         primary_state->allow_first_call_to_finish.set_value();
         CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto primary_response = first_result.get();
-        CHECK(primary_response.content.size() == 1ul);
+        CHECK(primary_response.content.size() == 1UL);
         CHECK(std::get<Text>(primary_response.content[0]).text == "primary response");
 
         CHECK(primary_state->destroyed_promise.get_future().wait_for(std::chrono::seconds(1)) == std::future_status::ready);
@@ -293,8 +293,8 @@ namespace {
         const auto usage = provider->usage();
         CHECK(usage.logical_requests == 2ul);
         CHECK(usage.attempt_count == 3ul);
-        CHECK(usage.failed_attempts == 1ul);
-        CHECK(usage.fallback_switches == 1ul);
+        CHECK(usage.failed_attempts == 1UL);
+        CHECK(usage.fallback_switches == 1UL);
     };
 
     TEST_CASE("late_primary_failure_still_falls_back_after_another_request_switches_models") {
@@ -370,13 +370,13 @@ namespace {
         });
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto second_response = second_result.get();
-        CHECK(second_response.content.size() == 1ul);
+        CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback response");
 
         primary_state->release_first_failure.set_value();
         CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto first_response = first_result.get();
-        CHECK(first_response.content.size() == 1ul);
+        CHECK(first_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback response");
         CHECK(fallback_attempts.load() == 2ul);
 
@@ -384,7 +384,7 @@ namespace {
         CHECK(usage.logical_requests == 2ul);
         CHECK(usage.attempt_count == 4ul);
         CHECK(usage.failed_attempts == 2ul);
-        CHECK(usage.fallback_switches == 1ul);
+        CHECK(usage.fallback_switches == 1UL);
     };
 
     TEST_CASE("concurrent_primary_failures_do_not_skip_fallback_models") {
@@ -482,8 +482,8 @@ namespace {
 
         const auto first_response = first_result.get();
         const auto second_response = second_result.get();
-        CHECK(first_response.content.size() == 1ul);
-        CHECK(second_response.content.size() == 1ul);
+        CHECK(first_response.content.size() == 1UL);
+        CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback-a");
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
         CHECK(first_fallback_attempts.load() == 2ul);
@@ -494,7 +494,7 @@ namespace {
         CHECK(usage.logical_requests == 2ul);
         CHECK(usage.attempt_count == 4ul);
         CHECK(usage.failed_attempts == 2ul);
-        CHECK(usage.fallback_switches == 1ul);
+        CHECK(usage.fallback_switches == 1UL);
     };
 
     TEST_CASE("late_primary_failure_keeps_its_own_fallback_order") {
@@ -588,17 +588,17 @@ namespace {
         CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
 
         const auto first_response = first_result.get();
-        CHECK(first_response.content.size() == 1ul);
+        CHECK(first_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback-b");
 
         primary_state->release_second_failure.set_value();
         CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         const auto second_response = second_result.get();
-        CHECK(second_response.content.size() == 1ul);
+        CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
 
         CHECK(fallback_a_attempts.load() == 2ul);
-        CHECK(fallback_b_attempts.load() == 1ul);
+        CHECK(fallback_b_attempts.load() == 1UL);
         CHECK(provider->current_model() == "gpt-fallback-b");
 
         const auto usage = provider->usage();

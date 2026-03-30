@@ -159,7 +159,7 @@ namespace {
         store.update("profile.name", "Alice Example");
 
         const auto entries = store.list({}, "profile", 10);
-        REQUIRE(entries.size() == 1ul);
+        REQUIRE(entries.size() == 1UL);
         CHECK(entries[0].content == "Alice Example");
         CHECK(entries[0].category == "profile");
         CHECK(entries[0].source == "auto:session");
@@ -533,7 +533,7 @@ namespace {
         CHECK(result.mirrored);
 
         const auto journal_entries = runtime.list("journal", 10);
-        REQUIRE(journal_entries.size() == 1ul);
+        REQUIRE(journal_entries.size() == 1UL);
         CHECK(journal_entries[0].source == "session:journal");
         CHECK(journal_entries[0].content.contains("Reviewed ranking and mirror behavior."));
 
