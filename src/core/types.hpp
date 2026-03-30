@@ -229,9 +229,7 @@ namespace orangutan {
         static void emplace_one(Message &msg, T &&value) {
             using U = std::remove_cvref_t<T>;
 
-            if constexpr (std::convertible_to<T, std::string_view>) {
-                msg.text(std::forward<T>(value));
-            } else if constexpr (std::same_as<U, Text>) {
+            if constexpr (std::convertible_to<U, Text>) {
                 msg.text(std::forward<T>(value));
             } else if constexpr (std::same_as<U, Thinking>) {
                 msg.thinking(std::forward<T>(value));
