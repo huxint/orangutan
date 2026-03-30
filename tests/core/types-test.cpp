@@ -58,11 +58,7 @@ TEST_CASE("content_block_to_json_serializes_tool_use_block") {
 };
 
 TEST_CASE("content_block_to_json_serializes_tool_result_success") {
-    const Content block = ToolResult{
-        .tool_use_id = "call_123",
-        .content = "file.txt",
-        .is_error = false,
-    };
+    const Content block = ToolResult{"call_123", "file.txt", false};
     const nlohmann::json j = content_block_to_json(block);
 
     CHECK(j["type"] == "tool_result");
@@ -72,11 +68,7 @@ TEST_CASE("content_block_to_json_serializes_tool_result_success") {
 };
 
 TEST_CASE("content_block_to_json_serializes_tool_result_error") {
-    const Content block = ToolResult{
-        .tool_use_id = "call_456",
-        .content = "not found",
-        .is_error = true,
-    };
+    const Content block = ToolResult{"call_456", "not found", true};
     const nlohmann::json j = content_block_to_json(block);
 
     CHECK(j["type"] == "tool_result");

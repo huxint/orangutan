@@ -129,11 +129,7 @@ TEST_CASE("save_and_load_tool_result_blocks") {
     auto store = harness.store();
 
     std::vector<Content> result_content;
-    result_content.emplace_back(ToolResult{
-        .tool_use_id = "tool_123",
-        .content = "file1.txt\nfile2.cpp",
-        .is_error = false,
-    });
+    result_content.emplace_back(ToolResult{"tool_123", "file1.txt\nfile2.cpp", false});
 
     std::vector<Message> messages = {
         Message(base::role::user, std::move(result_content)),
@@ -158,11 +154,7 @@ TEST_CASE("tool_result_preserves_error_flag") {
     auto store = harness.store();
 
     std::vector<Content> content;
-    content.emplace_back(ToolResult{
-        .tool_use_id = "err_1",
-        .content = "command not found",
-        .is_error = true,
-    });
+    content.emplace_back(ToolResult{"err_1", "command not found", true});
 
     std::vector<Message> messages = {Message(base::role::user, std::move(content))};
 

@@ -47,11 +47,7 @@ namespace orangutan {
         }
 
         ToolResult blocked_result(const ToolUse &call, std::string message) {
-            return ToolResult{
-                .tool_use_id = call.id,
-                .content = std::move(message),
-                .is_error = true,
-            };
+            return ToolResult(call.id, std::move(message), true);
         }
 
     } // namespace

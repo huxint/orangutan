@@ -291,11 +291,7 @@ namespace orangutan {
                                     if (!hook_result.block_reason.empty()) {
                                         block_msg += ": " + hook_result.block_reason;
                                     }
-                                    state.result = ToolResult{
-                                        .tool_use_id = state.call.id,
-                                        .content = std::move(block_msg),
-                                        .is_error = true,
-                                    };
+                                    state.result = ToolResult{state.call.id, std::move(block_msg), true};
                                 }
                                 return state;
                             }) |

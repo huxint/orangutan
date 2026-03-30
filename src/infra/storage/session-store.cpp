@@ -46,11 +46,7 @@ namespace orangutan {
                     continue;
                 }
                 if (type == "tool_result") {
-                    blocks.emplace_back(ToolResult{
-                        .tool_use_id = item.at("tool_use_id").get<std::string>(),
-                        .content = item.at("content").get<std::string>(),
-                        .is_error = item.value("is_error", false),
-                    });
+                    blocks.emplace_back(ToolResult{item.at("tool_use_id").get<std::string>(), item.at("content").get<std::string>(), item.value("is_error", false)});
                     continue;
                 }
                 if (type == "thinking") {
