@@ -292,7 +292,7 @@ namespace {
 
         const auto usage = provider->usage();
         CHECK(usage.logical_requests == 2UL);
-        CHECK(usage.attempt_count == 3ul);
+        CHECK(usage.attempt_count == 3UL);
         CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 1UL);
     };
@@ -604,7 +604,7 @@ namespace {
         const auto usage = provider->usage();
         CHECK(usage.logical_requests == 2UL);
         CHECK(usage.attempt_count == 5ul);
-        CHECK(usage.failed_attempts == 3ul);
+        CHECK(usage.failed_attempts == 3UL);
         CHECK(usage.fallback_switches == 2UL);
     };
 

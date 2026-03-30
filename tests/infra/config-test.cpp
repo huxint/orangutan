@@ -118,13 +118,13 @@ denied = ["shell"]
 )toml");
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.allowed_tools.size() == 3ul);
+        CHECK(cfg.allowed_tools.size() == 3UL);
         CHECK(cfg.allowed_tools[0] == "read");
         CHECK(cfg.allowed_tools[1] == "write");
         CHECK(cfg.allowed_tools[2] == "ls");
         CHECK(cfg.denied_tools.size() == 1UL);
         CHECK(cfg.denied_tools[0] == "shell");
-        CHECK(cfg.permissions.allowed_tools.size() == 3ul);
+        CHECK(cfg.permissions.allowed_tools.size() == 3UL);
         CHECK(cfg.permissions.allowed_tools[0] == "read");
         CHECK(cfg.permissions.allowed_tools[1] == "write");
         CHECK(cfg.permissions.allowed_tools[2] == "ls");

@@ -267,7 +267,7 @@ namespace {
         const auto result = loop.distill_session_memory();
 
         CHECK(result.distilled);
-        CHECK(result.memories_stored == 3ul);
+        CHECK(result.memories_stored == 3UL);
         CHECK(result.journal_stored);
         CHECK(provider.last_messages_size_ == 1UL);
         CHECK(provider.last_tool_count_ == 0UL);

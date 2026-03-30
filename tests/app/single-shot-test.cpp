@@ -106,7 +106,7 @@ namespace {
 
         CHECK(status == 0);
         CHECK_FALSE(current_session_id.empty());
-        CHECK(events.size() >= 3ul);
+        CHECK(events.size() >= 3UL);
         CHECK(events[0]["type"] == "assistant_delta");
         CHECK(events[1]["type"] == "session_saved");
         CHECK(events[2]["type"] == "done");

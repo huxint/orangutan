@@ -196,7 +196,7 @@ namespace {
     TEST_CASE("parses_range_with_step") {
         const auto expr = parse_cron("1-30/10 * * * *");
         REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 3ul);
+        CHECK(expr->minute.values.size() == 3UL);
         CHECK(expr->minute.values.contains(1));
         CHECK(expr->minute.values.contains(11));
         CHECK(expr->minute.values.contains(21));

@@ -217,7 +217,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({global_dir.string(), workspace_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::after_tool_call) == 3ul);
+        CHECK(manager.hook_count(HookEvent::after_tool_call) == 3UL);
 
         const auto ctx = build_after_tool_call_context("shell", {{"command", "ls"}}, "ok", false);
         const auto result = manager.dispatch(HookEvent::after_tool_call, ctx);

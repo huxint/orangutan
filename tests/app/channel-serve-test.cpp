@@ -485,7 +485,7 @@ namespace {
 
         CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = "shell-approval-999 no"}, manager));
         sent_messages = qq->sent_messages();
-        CHECK(sent_messages.size() >= 3ul);
+        CHECK(sent_messages.size() >= 3UL);
         CHECK(sent_messages.back().second.contains("Shell approval is pending"));
 
         CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " no"}, manager));

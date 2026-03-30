@@ -96,7 +96,7 @@ namespace orangutan::app {
 
             CHECK(text == "first\nsecond");
             CHECK(output.str() == "Multi-line mode. Enter an empty line to finish.\n");
-            CHECK(editor.prompts.size() == 3ul);
+            CHECK(editor.prompts.size() == 3UL);
             CHECK(editor.prompts[0] == "... ");
             CHECK(editor.prompts[1] == "... ");
             CHECK(editor.prompts[2] == "... ");

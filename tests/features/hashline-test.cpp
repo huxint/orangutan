@@ -170,7 +170,7 @@ TEST_CASE("replace_single_line") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[1] == "XXX");
 };
 
@@ -184,7 +184,7 @@ TEST_CASE("replace_range") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[0] == "aaa");
     CHECK(result.lines[1] == "NEW");
     CHECK(result.lines[2] == "ddd");
@@ -199,7 +199,7 @@ TEST_CASE("insert_after_with_anchor") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[1] == "INSERTED");
 };
 
@@ -211,7 +211,7 @@ TEST_CASE("insert_after_without_anchor_appends_to_eof") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[2] == "APPENDED");
 };
 
@@ -224,7 +224,7 @@ TEST_CASE("insert_before_with_anchor") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[1] == "INSERTED");
     CHECK(result.lines[2] == "bbb");
 };
@@ -237,7 +237,7 @@ TEST_CASE("insert_before_without_anchor_prepends_to_bof") {
     }};
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
-    CHECK(result.lines.size() == 3ul);
+    CHECK(result.lines.size() == 3UL);
     CHECK(result.lines[0] == "PREPENDED");
 };
 
