@@ -25,12 +25,10 @@ namespace orangutan {
         }
 
         std::string lowercase_copy(std::string_view value) {
-            std::string lowered;
-            lowered.reserve(value.size());
-            for (const auto ch : value) {
-                lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
-            return lowered;
+            return value | std::views::transform([](unsigned char ch) {
+                       return static_cast<char>(std::tolower(ch));
+                   }) |
+                   std::ranges::to<std::string>();
         }
 
         std::optional<std::string> extract_shell_command(const ToolUse &call) {
