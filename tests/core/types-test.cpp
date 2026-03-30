@@ -9,7 +9,7 @@ TEST_CASE("message_user_text_creates_correct_role") {
     const auto msg = Message::user().text("hello");
 
     CHECK(msg.role() == base::role::user);
-    CHECK(std::distance(msg.begin(), msg.end()) == 1l);
+    CHECK(std::distance(msg.begin(), msg.end()) == 1L);
 
     const auto *text = std::get_if<Text>(&*msg.begin());
     REQUIRE(text != nullptr);
@@ -20,7 +20,7 @@ TEST_CASE("message_assistant_text_creates_correct_role") {
     const auto msg = Message::assistant().text("hi there");
 
     CHECK(msg.role() == base::role::assistant);
-    CHECK(std::distance(msg.begin(), msg.end()) == 1l);
+    CHECK(std::distance(msg.begin(), msg.end()) == 1L);
 
     const auto *text = std::get_if<Text>(&*msg.begin());
     REQUIRE(text != nullptr);
