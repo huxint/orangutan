@@ -426,7 +426,7 @@ export function ChatView() {
           flushQueuedMessageRef.current = true;
         }
         if (activeSessionId) {
-          void refreshAgentSessions(agentKey).catch(() => {});
+          void refreshAgentSessions(agentKey).catch(() => { });
         }
         if (
           (requestWasForNewSession || switchedToDifferentSession) &&
@@ -443,7 +443,7 @@ export function ChatView() {
             };
           }
           pendingSessionIdRef.current = null;
-          void loadSession(agentKey, activeSessionId).catch(() => {});
+          void loadSession(agentKey, activeSessionId).catch(() => { });
         }
       };
 
@@ -632,7 +632,7 @@ export function ChatView() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: activeSessionId }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     const activeAssistantMessageId = activeAssistantMessageIdRef.current;

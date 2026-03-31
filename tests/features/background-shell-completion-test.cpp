@@ -227,16 +227,12 @@ namespace {
         CHECK(shell->input_schema["properties"].contains("on_complete"));
         CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox"}));
 
-        const auto result = inbox_only_registry.execute(ToolUse{
-            .id = "inbox-only-resume",
-            .name = "shell",
-            .input =
-                {
-                    {"command", "printf 'ignored\\n'"},
-                    {"background", true},
-                    {"on_complete", {{"mode", "resume"}}},
-                },
-        });
+        const auto result = inbox_only_registry.execute(ToolUse("inbox-only-resume", "shell",
+                                                                {
+                                                                    {"command", "printf 'ignored\\n'"},
+                                                                    {"background", true},
+                                                                    {"on_complete", {{"mode", "resume"}}},
+                                                                }));
 
         CHECK(result.is_error);
         CHECK(result.content.contains("resume"));
@@ -347,16 +343,12 @@ namespace {
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
-        const auto result = unsupported_registry.execute(ToolUse{
-            .id = "unsupported-on-complete",
-            .name = "shell",
-            .input =
-                {
-                    {"command", "printf 'ignored\\n'"},
-                    {"background", true},
-                    {"on_complete", {{"mode", "resume"}}},
-                },
-        });
+        const auto result = unsupported_registry.execute(ToolUse("unsupported-on-complete", "shell",
+                                                                 {
+                                                                     {"command", "printf 'ignored\\n'"},
+                                                                     {"background", true},
+                                                                     {"on_complete", {{"mode", "resume"}}},
+                                                                 }));
 
         CHECK(result.is_error);
         CHECK(result.content.contains("on_complete"));

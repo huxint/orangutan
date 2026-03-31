@@ -106,11 +106,7 @@ namespace orangutan {
                 const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
 
                 if (permissions != nullptr) {
-                    const ToolUse synthetic_call{
-                        .id = config.name,
-                        .name = config.name,
-                        .input = input,
-                    };
+                    const ToolUse synthetic_call(config.name, config.name, input);
                     if (auto blocked = evaluate_shell_command_permission(synthetic_call, *permissions, command, active_callback); blocked.has_value()) {
                         throw std::runtime_error(blocked->content);
                     }

@@ -130,17 +130,13 @@ namespace {
         ToolRegistry registry;
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-        const auto result = registry.execute(ToolUse{
-            .id = "spawn-reject",
-            .name = "subagent_spawn",
-            .input =
-                {
-                    {"child_agent_key", "coder"},
-                    {"child_scope_key", "scope:child"},
-                    {"child_session_id", child_session_id},
-                    {"task_summary", "Investigate failing parser tests"},
-                },
-        });
+        const auto result = registry.execute(ToolUse("spawn-reject", "subagent_spawn",
+                                                     {
+                                                         {"child_agent_key", "coder"},
+                                                         {"child_scope_key", "scope:child"},
+                                                         {"child_session_id", child_session_id},
+                                                         {"task_summary", "Investigate failing parser tests"},
+                                                     }));
 
         const auto payload = parse_tool_json(result);
         CHECK_FALSE(payload.at("accepted").get<bool>());
@@ -165,17 +161,13 @@ namespace {
         ToolRegistry registry;
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
-        const auto spawn_result = registry.execute(ToolUse{
-            .id = "spawn-ok",
-            .name = "subagent_spawn",
-            .input =
-                {
-                    {"child_agent_key", "coder"},
-                    {"child_scope_key", "scope:child"},
-                    {"child_session_id", child_session_id},
-                    {"task_summary", "Investigate failing parser tests"},
-                },
-        });
+        const auto spawn_result = registry.execute(ToolUse("spawn-ok", "subagent_spawn",
+                                                           {
+                                                               {"child_agent_key", "coder"},
+                                                               {"child_scope_key", "scope:child"},
+                                                               {"child_session_id", child_session_id},
+                                                               {"task_summary", "Investigate failing parser tests"},
+                                                           }));
         const auto spawn_payload = parse_tool_json(spawn_result);
         REQUIRE(spawn_payload.at("accepted").get<bool>());
         const auto run_id = spawn_payload.at("run_id").get<std::string>();
@@ -189,15 +181,11 @@ namespace {
         CHECK(status_payload.at("run").at("child_agent_key").get<std::string>() == "coder");
         CHECK(status_payload.at("run").at("task_summary").get<std::string>() == "Investigate failing parser tests");
 
-        const auto wait_result = registry.execute(ToolUse{
-            .id = "wait-ok",
-            .name = "subagent_wait",
-            .input =
-                {
-                    {"run_id", run_id},
-                    {"timeout_ms", 1000},
-                },
-        });
+        const auto wait_result = registry.execute(ToolUse("wait-ok", "subagent_wait",
+                                                          {
+                                                              {"run_id", run_id},
+                                                              {"timeout_ms", 1000},
+                                                          }));
         const auto wait_payload = parse_tool_json(wait_result);
         CHECK(wait_payload.at("state").get<std::string>() == "completed");
         REQUIRE(not wait_payload.at("run").is_null());
@@ -224,17 +212,13 @@ namespace {
         ToolRegistry parent_registry;
         register_builtin_tools(parent_registry, nullptr, {}, &parent_context);
 
-        const auto spawn_result = parent_registry.execute(ToolUse{
-            .id = "spawn-owner",
-            .name = "subagent_spawn",
-            .input =
-                {
-                    {"child_agent_key", "coder"},
-                    {"child_scope_key", "scope:child"},
-                    {"child_session_id", child_session_id},
-                    {"task_summary", "Investigate failing parser tests"},
-                },
-        });
+        const auto spawn_result = parent_registry.execute(ToolUse("spawn-owner", "subagent_spawn",
+                                                                  {
+                                                                      {"child_agent_key", "coder"},
+                                                                      {"child_scope_key", "scope:child"},
+                                                                      {"child_session_id", child_session_id},
+                                                                      {"task_summary", "Investigate failing parser tests"},
+                                                                  }));
         const auto spawn_payload = parse_tool_json(spawn_result);
         REQUIRE(spawn_payload.at("accepted").get<bool>());
         const auto run_id = spawn_payload.at("run_id").get<std::string>();
@@ -251,15 +235,11 @@ namespace {
         CHECK_FALSE(status_payload.at("found").get<bool>());
         CHECK(status_payload.at("run").is_null());
 
-        const auto wait_result = other_registry.execute(ToolUse{
-            .id = "wait-other",
-            .name = "subagent_wait",
-            .input =
-                {
-                    {"run_id", run_id},
-                    {"timeout_ms", 10},
-                },
-        });
+        const auto wait_result = other_registry.execute(ToolUse("wait-other", "subagent_wait",
+                                                                {
+                                                                    {"run_id", run_id},
+                                                                    {"timeout_ms", 10},
+                                                                }));
         const auto wait_payload = parse_tool_json(wait_result);
         CHECK(wait_payload.at("state").get<std::string>() == "not_found");
         CHECK(wait_payload.at("run").is_null());

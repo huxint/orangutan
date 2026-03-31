@@ -33,16 +33,12 @@ namespace {
         orangutan::ToolRegistry registry;
         orangutan::register_task_tool(registry, &context);
 
-        const auto result = registry.execute(orangutan::ToolUse{
-            .id = "task-update",
-            .name = "task",
-            .input =
-                {
-                    {"op", "update"},
-                    {"id", "task-1"},
-                    {"prompt", "after"},
-                },
-        });
+        const auto result = registry.execute(orangutan::ToolUse("task-update", "task",
+                                                                {
+                                                                    {"op", "update"},
+                                                                    {"id", "task-1"},
+                                                                    {"prompt", "after"},
+                                                                }));
 
         INFO(result.content);
         CHECK_FALSE(result.is_error);
