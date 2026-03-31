@@ -1,18 +1,10 @@
 #include "app/slash-commands.hpp"
 
+#include "infra/string.hpp"
 #include <array>
 #include "infra/format.hpp"
 
 namespace orangutan::app {
-
-    std::string trim_copy(std::string_view input) {
-        const auto begin = input.find_first_not_of(" \t");
-        if (begin == std::string_view::npos) {
-            return {};
-        }
-        const auto end = input.find_last_not_of(" \t");
-        return std::string(input.substr(begin, end - begin + 1));
-    }
 
     namespace {
 
@@ -144,17 +136,17 @@ namespace orangutan::app {
                 return {};
             }
 
-            const auto trimmed = trim_copy(input);
+            const auto trimmed = utils::trim_copy(input);
             if (trimmed.empty()) {
                 return {};
             }
 
             const auto separator = trimmed.find_first_of(" \t");
             if (separator == std::string::npos) {
-                return {trimmed, {}, true};
+                return {static_cast<std::string>(trimmed), {}, true};
             }
 
-            return {trimmed.substr(0, separator), trim_copy(std::string_view(trimmed).substr(separator + 1)), true};
+            return {static_cast<std::string>(trimmed.substr(0, separator)), static_cast<std::string>(utils::trim_copy(trimmed.substr(separator + 1))), true};
         }
 
         ParsedSlashCommand parse_slash_command(const std::string &line) {
@@ -294,9 +286,9 @@ namespace orangutan::app {
                 return reply;
             }
 
-            const auto remainder = trim_copy(args);
+            const auto remainder = utils::trim_copy(args);
             if (remainder.starts_with("run ")) {
-                const auto id = trim_copy(std::string_view(remainder).substr(4));
+                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(4)));
                 if (id.empty()) {
                     return {.handled = true, .text = wrap_slash_reply("Tasks", "🗓️", "Usage: /tasks run <id>")};
                 }
@@ -307,7 +299,7 @@ namespace orangutan::app {
                 return reply;
             }
             if (remainder.starts_with("remove ")) {
-                const auto id = trim_copy(std::string_view(remainder).substr(7));
+                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(7)));
                 if (id.empty()) {
                     return {.handled = true, .text = wrap_slash_reply("Tasks", "🗓️", "Usage: /tasks remove <id>")};
                 }
@@ -330,12 +322,12 @@ namespace orangutan::app {
                 return reply;
             }
 
-            const auto remainder = trim_copy(args);
+            const auto remainder = utils::trim_copy(args);
             const auto run_action = [&](std::string_view action, std::string_view op, std::string_view tool_use_id) -> SlashCommandReply {
                 if (!remainder.starts_with(action)) {
                     return {};
                 }
-                const auto id = trim_copy(std::string_view(remainder).substr(action.size()));
+                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(action.size())));
                 if (id.empty()) {
                     return {.handled = true, .text = wrap_slash_reply("Heartbeats", "💓", "Usage: /heartbeats " + std::string(op) + " <id>")};
                 }
@@ -373,7 +365,7 @@ namespace orangutan::app {
                 return reply;
             }
 
-            const auto remainder = trim_copy(args);
+            const auto remainder = utils::trim_copy(args);
             if (remainder == "clear") {
                 auto reply = execute_registry_command(tool_registry, "inbox", {{"op", "clear"}}, "slash-inbox-clear");
                 if (reply.handled) {
@@ -383,7 +375,7 @@ namespace orangutan::app {
             }
 
             if (remainder.starts_with("ack ")) {
-                const auto id = trim_copy(std::string_view(remainder).substr(4));
+                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(4)));
                 if (id.empty()) {
                     return {.handled = true, .text = wrap_slash_reply("Inbox", "📥", "Usage: /inbox ack <id>")};
                 }

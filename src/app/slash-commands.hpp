@@ -5,7 +5,6 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <string_view>
 
 namespace orangutan::app {
 
@@ -38,9 +37,6 @@ namespace orangutan::app {
         slash_argument_reply_handler resume;
         const ToolRegistry *tool_registry = nullptr;
     };
-
-    [[nodiscard]]
-    std::string trim_copy(std::string_view input);
 
     [[nodiscard]]
     std::string render_slash_help_text(slash_command_surface surface);

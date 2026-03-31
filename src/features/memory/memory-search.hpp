@@ -15,9 +15,7 @@ namespace orangutan::memory_detail {
     inline constexpr std::size_t search_scan_limit = 200;
 
     [[nodiscard]]
-    std::string trim_copy(std::string value);
-    [[nodiscard]]
-    std::vector<std::string> split_memory_fragments(const std::string &value);
+    std::vector<std::string> split_memory_fragments(std::string_view value);
     [[nodiscard]]
     std::vector<std::string> tokenize_ascii_words(std::string_view value);
     [[nodiscard]]

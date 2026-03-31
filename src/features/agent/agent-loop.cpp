@@ -2,9 +2,9 @@
 
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/runtime-memory.hpp"
+#include "infra/string.hpp"
 #include "infra/execution/sender-utils.hpp"
 
-#include <cctype>
 #include <charconv>
 #include <cstdio>
 #include "infra/format.hpp"
@@ -84,15 +84,6 @@ namespace orangutan {
         bool journal_parse_failed = false;
     };
 
-    std::string_view trim_copy(std::string_view value) {
-        const auto p = [](unsigned char c) {
-            return std::isspace(c);
-        };
-        const auto *l = std::ranges::find_if_not(value, p);
-        const auto *r = std::ranges::find_if_not(value | std::views::reverse, p).base();
-        return l >= r ? std::string_view{} : std::string_view(l, r);
-    }
-
     std::string hash_key(std::string_view prefix, std::string_view value) {
         return std::string(prefix) + std::to_string(std::hash<std::string_view>{}(value));
     }
@@ -115,10 +106,10 @@ namespace orangutan {
             return std::nullopt;
         }
 
-        std::string category = trim_copy(line.substr(0, first)) | std::ranges::to<std::string>();
-        std::string key = trim_copy(line.substr(first + 1, second - first - 1)) | std::ranges::to<std::string>();
-        std::string_view importance_text = trim_copy(line.substr(second + 1, third - second - 1));
-        std::string content = trim_copy(line.substr(third + 1)) | std::ranges::to<std::string>();
+        std::string category = static_cast<std::string>(utils::trim_copy(line.substr(0, first)));
+        std::string key = static_cast<std::string>(utils::trim_copy(line.substr(first + 1, second - first - 1)));
+        std::string_view importance_text = utils::trim_copy(line.substr(second + 1, third - second - 1));
+        std::string content = static_cast<std::string>(utils::trim_copy(line.substr(third + 1)));
         if (content.empty()) {
             return std::nullopt;
         }
@@ -152,16 +143,16 @@ namespace orangutan {
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
-            line = trim_copy(line);
+            line = utils::trim_copy(line);
             if (line.empty()) {
                 continue;
             }
             if (line.starts_with("- ")) {
-                line = trim_copy(line.substr(2));
+                line = utils::trim_copy(line.substr(2));
             }
 
             if (line.starts_with("journal|")) {
-                auto summary = trim_copy(line.substr(std::string{"journal|"}.size()));
+                auto summary = utils::trim_copy(line.substr(std::string{"journal|"}.size()));
                 if (summary.empty()) {
                     parsed.journal_parse_failed = true;
                 } else {

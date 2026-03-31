@@ -9,6 +9,10 @@ set_policy("package.requires_lock", true)
 set_policy("build.sanitizer.address", true)
 set_policy("build.sanitizer.undefined", true)
 
+if is_plat("linux") then
+    add_cxxflags("-Wno-system-headers")
+end
+
 includes("xmake/options.lua")
 includes("xmake/packages.lua")
 includes("xmake/targets.lua")

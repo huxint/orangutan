@@ -1,9 +1,10 @@
 #include "features/memory/memory-search.hpp"
+#include "infra/format.hpp"
+#include "infra/string.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <set>
-#include "infra/format.hpp"
 #include <uni_algo/case.h>
 
 namespace orangutan::memory_detail {
@@ -28,28 +29,14 @@ namespace orangutan::memory_detail {
 
     } // namespace
 
-    std::string trim_copy(std::string value) {
-        const auto is_space = [](unsigned char ch) {
-            return std::isspace(ch) != 0;
-        };
-
-        while (!value.empty() && is_space(static_cast<unsigned char>(value.front()))) {
-            value.erase(value.begin());
-        }
-        while (!value.empty() && is_space(static_cast<unsigned char>(value.back()))) {
-            value.pop_back();
-        }
-        return value;
-    }
-
-    std::vector<std::string> split_memory_fragments(const std::string &value) {
+    std::vector<std::string> split_memory_fragments(std::string_view value) {
         std::vector<std::string> fragments;
         std::string current;
 
         const auto flush = [&] {
-            auto trimmed = trim_copy(current);
+            const auto trimmed = utils::trim_copy(current);
             if (!trimmed.empty()) {
-                fragments.push_back(std::move(trimmed));
+                fragments.emplace_back(static_cast<std::string>(trimmed));
             }
             current.clear();
         };
@@ -96,7 +83,7 @@ namespace orangutan::memory_detail {
     }
 
     base::f64 score_memory_match(const MemoryRecord &record, const std::string &query) {
-        const auto trimmed_query = trim_copy(query);
+        auto trimmed_query = utils::trim_copy(query);
         if (trimmed_query.empty()) {
             return 0.0;
         }
@@ -144,44 +131,29 @@ namespace orangutan::memory_detail {
     }
 
     std::string merge_memory_content(const std::string &existing, const std::string &incoming) {
-        auto trimmed_existing = trim_copy(existing);
-        auto trimmed_incoming = trim_copy(incoming);
-        if (trimmed_existing.empty()) {
-            return trimmed_incoming;
+        const auto trimmed_existing = utils::trim_copy(existing);
+        const auto trimmed_incoming = utils::trim_copy(incoming);
+        if (trimmed_existing.empty() || trimmed_incoming.contains(trimmed_existing)) {
+            return static_cast<std::string>(trimmed_incoming);
         }
-        if (trimmed_incoming.empty()) {
-            return trimmed_existing;
-        }
-        if (trimmed_existing == trimmed_incoming) {
-            return trimmed_existing;
-        }
-        if (trimmed_existing.contains(trimmed_incoming)) {
-            return trimmed_existing;
-        }
-        if (trimmed_incoming.contains(trimmed_existing)) {
-            return trimmed_incoming;
+        if (trimmed_incoming.empty() || trimmed_existing == trimmed_incoming || trimmed_existing.contains(trimmed_incoming)) {
+            return static_cast<std::string>(trimmed_existing);
         }
 
         auto fragments = split_memory_fragments(trimmed_existing);
         const auto incoming_fragments = split_memory_fragments(trimmed_incoming);
-        std::set<std::string> seen;
-        for (const auto &fragment : fragments) {
-            seen.insert(una::cases::to_lowercase_utf8(fragment));
-        }
+        auto seen = fragments | std::ranges::views::transform([](std::string_view fragment) {
+                        return una::cases::to_lowercase_utf8(fragment);
+                    }) |
+                    std::ranges::to<std::set<std::string>>();
+
         for (const auto &fragment : incoming_fragments) {
             if (seen.insert(una::cases::to_lowercase_utf8(fragment)).second) {
                 fragments.push_back(fragment);
             }
         }
 
-        std::string merged;
-        for (std::size_t index = 0; index < fragments.size(); ++index) {
-            if (index > 0) {
-                merged.push_back('\n');
-            }
-            merged.append(fragments[index]);
-        }
-        return merged;
+        return fragments | std::ranges::views::join_with(std::string_view{"\n"}) | std::ranges::to<std::string>();
     }
 
     std::optional<std::string> build_fts_query(const std::string &query) {

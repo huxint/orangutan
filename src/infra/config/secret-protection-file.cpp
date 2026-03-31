@@ -1,6 +1,7 @@
 #include "infra/config/secret-protection.hpp"
 #include "infra/config/secret-fields.hpp"
 #include "infra/files/file-io.hpp"
+#include "infra/string.hpp"
 
 #include <cctype>
 #include <filesystem>
@@ -23,24 +24,10 @@ namespace orangutan {
         };
 
         [[nodiscard]]
-        std::string trim_copy(std::string_view input) {
-            std::size_t begin = 0;
-            while (begin < input.size() && std::isspace(static_cast<unsigned char>(input[begin])) != 0) {
-                ++begin;
-            }
-
-            std::size_t end = input.size();
-            while (end > begin && std::isspace(static_cast<unsigned char>(input[end - 1])) != 0) {
-                --end;
-            }
-
-            return std::string(input.substr(begin, end - begin));
-        }
-
-        [[nodiscard]]
         std::string strip_line_comment(std::string_view line) {
             const auto comment_pos = line.find('#');
-            return comment_pos == std::string_view::npos ? trim_copy(line) : trim_copy(line.substr(0, comment_pos));
+            return comment_pos == std::string_view::npos ? static_cast<std::string>(utils::trim_copy(line))
+                                                         : static_cast<std::string>(utils::trim_copy(line.substr(0, comment_pos)));
         }
 
         [[nodiscard]]

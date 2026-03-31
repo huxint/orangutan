@@ -1,5 +1,5 @@
 #include "features/memory/memory-extract.hpp"
-#include "features/memory/memory-search.hpp"
+#include "infra/string.hpp"
 #include "infra/utf8.hpp"
 
 #include <algorithm>
@@ -270,7 +270,7 @@ namespace orangutan::memory_detail {
     } // namespace
 
     bool should_attempt_auto_capture(const std::string &text) {
-        const auto trimmed = trim_copy(text);
+        const auto trimmed = utils::trim_copy(text);
         if (trimmed.empty()) {
             return false;
         }
@@ -305,10 +305,6 @@ namespace orangutan::memory_detail {
         return !(looks_question &&
                  (normalized.contains("remember") || normalized.contains("memory") || trimmed.contains("记住") || trimmed.contains("记得") || trimmed.contains("记忆")));
     }
-    constexpr const ChineseAutoCaptureRule &chinese_name_rule = chinese_auto_capture_rules[0];
-    constexpr const ChineseAutoCaptureRule &chinese_project_rule = chinese_auto_capture_rules[1];
-    constexpr const ChineseAutoCaptureRule &chinese_prefer_rule = chinese_auto_capture_rules[2];
-    constexpr const ChineseAutoCaptureRule &chinese_remember_rule = chinese_auto_capture_rules[3];
 
     bool push_chinese_auto_candidate(std::vector<AutoCandidate> &candidates, std::string_view text, const ChineseAutoCaptureRule &rule) {
         auto pos = find_after_any(text, rule.prefixes);
@@ -316,14 +312,15 @@ namespace orangutan::memory_detail {
             return false;
         }
 
-        auto content = trim_copy(extract_chinese_candidate_content(text, rule, pos));
+        const auto extracted = extract_chinese_candidate_content(text, rule, pos);
+        const auto content = utils::trim_copy(extracted);
         if (content.empty()) {
             return false;
         }
 
         candidates.push_back({
             .key = make_chinese_candidate_key(rule, content),
-            .content = std::move(content),
+            .content = static_cast<std::string>(content),
             .category = std::string(rule.category),
             .importance = rule.importance,
         });
@@ -331,76 +328,76 @@ namespace orangutan::memory_detail {
     }
 
     std::vector<AutoCandidate> extract_auto_candidates(const std::string &text) {
-        std::vector<AutoCandidate> candidates;
-        const auto trimmed = trim_copy(text);
+        const auto trimmed = utils::trim_copy(text);
         if (trimmed.empty()) {
-            return candidates;
+            return {};
         }
 
-        // --- English patterns (compile-time via CTRE) ---
+        std::vector<AutoCandidate> candidates;
+        candidates.reserve(5);
 
-        const auto push_ctre_match = [&candidates](auto match_result, std::string key, std::string category, base::f64 importance) {
-            if (!match_result || !match_result.template get<1>()) {
-                return false;
-            }
-            auto content = utf8::sanitize(trim_copy(std::string(match_result.template get<1>().to_view())));
+        const auto push_candidate = [&candidates](std::string key, std::string content, std::string category, base::f64 importance) {
             if (content.empty()) {
                 return false;
             }
-            candidates.push_back({.key = std::move(key), .content = std::move(content), .category = std::move(category), .importance = importance});
+
+            candidates.push_back({
+                .key = std::move(key),
+                .content = std::move(content),
+                .category = std::move(category),
+                .importance = importance,
+            });
             return true;
         };
 
-        // --- Chinese patterns: literal prefix detection + code-point-aware extraction ---
-        // Keep these rule-driven so prefix lists, extraction mode, and keying stay in sync.
+        const auto push_ctre_capture = [&push_candidate](auto match_result, std::string key, std::string category, base::f64 importance) {
+            if (!match_result || !match_result.template get<1>()) {
+                return false;
+            }
 
-        // --- Name ---
-        if (!push_ctre_match(ctre::search<R"((?i)\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))">(trimmed), "profile.name", "profile", 0.95)) {
-            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_name_rule));
-        }
+            auto content = utf8::sanitize(utils::trim_copy(match_result.template get<1>().to_view()));
+            return push_candidate(std::move(key), std::move(content), std::move(category), importance);
+        };
 
-        // --- Project ---
-        if (!push_ctre_match(ctre::search<R"((?i)\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))">(trimmed), "project.current", "project",
-                             0.8)) {
-            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_project_rule));
-        }
+        const auto append_rule_candidate = [&](auto match_result, std::string key, std::string category, base::f64 importance, const ChineseAutoCaptureRule &fallback_rule) {
+            if (push_ctre_capture(std::move(match_result), std::move(key), std::move(category), importance)) {
+                return;
+            }
 
-        // --- Favorite ---
-        if (auto fm = ctre::search<R"((?i)\bmy favorite\s+([A-Za-z0-9 _\-]{1,32})\s+is\s+([^.!?\n]{1,120}))">(trimmed); fm) {
-            const auto aspect = utf8::sanitize(trim_copy(std::string(fm.get<1>().to_view())));
-            const auto value = utf8::sanitize(trim_copy(std::string(fm.get<2>().to_view())));
-            if (!aspect.empty() && !value.empty()) {
-                candidates.push_back({.key = "preference.favorite." + make_slug(aspect), .content = value, .category = "preference", .importance = 0.75});
+            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, fallback_rule));
+        };
+
+        append_rule_candidate(ctre::search<R"((?i)\b(?:my name is|i am)\s+([^\s.!?\n][^.!?\n]{0,63}))">(trimmed), "profile.name", "profile", 0.95, chinese_auto_capture_rules[0]);
+
+        append_rule_candidate(ctre::search<R"((?i)\b(?:we are working on|i(?:'m| am) working on|this project is about)\s+([^.!?\n]{1,120}))">(trimmed), "project.current",
+                              "project", 0.8, chinese_auto_capture_rules[1]);
+
+        if (auto match = ctre::search<R"((?i)\bmy favorite\s+([A-Za-z0-9 _\-]{1,32})\s+is\s+([^.!?\n]{1,120}))">(trimmed); match) {
+            const auto aspect = utf8::sanitize(utils::trim_copy(match.get<1>().to_view()));
+            const auto value = utf8::sanitize(utils::trim_copy(match.get<2>().to_view()));
+            if (!aspect.empty()) {
+                static_cast<void>(push_candidate("preference.favorite." + make_slug(aspect), value, "preference", 0.75));
             }
         }
 
-        // --- Preference ---
-        if (!push_ctre_match(ctre::search<R"((?i)\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))">(trimmed), "preference.general", "preference", 0.65)) {
-            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_prefer_rule));
-        }
+        append_rule_candidate(ctre::search<R"((?i)\b(?:i prefer|i like)\s+([^.!?\n]{1,120}))">(trimmed), "preference.general", "preference", 0.65, chinese_auto_capture_rules[2]);
 
-        // --- Remember ---
-        if (auto rm = ctre::search<R"((?i)\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))">(trimmed); rm) {
-            const auto value = utf8::sanitize(trim_copy(std::string(rm.get<1>().to_view())));
-            if (!value.empty()) {
-                candidates.push_back({.key = hash_key("fact.note.", value), .content = value, .category = "fact", .importance = 0.85});
-            }
+        if (auto match = ctre::search<R"((?i)\b(?:remember that|please remember)\s+([^.!?\n]{1,160}))">(trimmed); match) {
+            const auto value = utf8::sanitize(utils::trim_copy(match.get<1>().to_view()));
+            static_cast<void>(push_candidate(hash_key("fact.note.", value), value, "fact", 0.85));
         } else {
-            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_remember_rule));
+            static_cast<void>(push_chinese_auto_candidate(candidates, trimmed, chinese_auto_capture_rules[3]));
         }
 
-        candidates.erase(std::ranges::remove_if(candidates,
-                                                [](const AutoCandidate &candidate) {
-                                                    return candidate.key.empty() || candidate.content.empty();
-                                                })
-                             .begin(),
-                         candidates.end());
+        std::erase_if(candidates, [](const AutoCandidate &candidate) {
+            return candidate.key.empty() || candidate.content.empty();
+        });
 
         std::set<std::string> seen_keys;
         std::vector<AutoCandidate> deduped;
         deduped.reserve(candidates.size());
         for (auto &candidate : candidates) {
-            if (seen_keys.insert(candidate.key).second) {
+            if (seen_keys.emplace(candidate.key).second) {
                 deduped.push_back(std::move(candidate));
             }
         }

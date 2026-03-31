@@ -3,6 +3,7 @@
 #include "features/memory/memory-extract.hpp"
 #include "features/memory/memory-schema.hpp"
 #include "features/memory/memory-search.hpp"
+#include "infra/string.hpp"
 
 #include <algorithm>
 #include <mutex>
@@ -78,7 +79,7 @@ namespace orangutan {
 
     std::vector<MemoryRecord> MemoryStore::search(const std::string &query, const std::string &scope, std::size_t limit) {
         std::scoped_lock lock(mutex_);
-        const auto trimmed_query = memory_detail::trim_copy(query);
+        const auto trimmed_query = static_cast<std::string>(utils::trim_copy(query));
         if (trimmed_query.empty()) {
             return {};
         }

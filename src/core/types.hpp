@@ -248,7 +248,7 @@ namespace orangutan {
     };
 
     // Serialize content to JSON for API request
-    nlohmann::json content_block_to_json(const Content &block) {
+    inline nlohmann::json content_block_to_json(const Content &block) {
         return std::visit(
             [](auto &&blk) -> nlohmann::json {
                 using T = std::decay_t<decltype(blk)>;
@@ -270,7 +270,7 @@ namespace orangutan {
     }
 
     // Serialize a Message to JSON
-    nlohmann::json message_to_json(const Message &msg) {
+    inline nlohmann::json message_to_json(const Message &msg) {
         nlohmann::json json;
         json["role"] = magic_enum::enum_name(msg.role());
         json["content"] = nlohmann::json::array();

@@ -1,6 +1,6 @@
 #include "features/memory/runtime-memory.hpp"
 
-#include "features/memory/memory-search.hpp"
+#include "infra/string.hpp"
 
 #include <uni_algo/case.h>
 #include <algorithm>
@@ -9,8 +9,8 @@
 namespace orangutan {
     namespace {
 
-        std::string make_journal_key(const std::string &summary) {
-            return "journal." + std::to_string(std::hash<std::string>{}(summary));
+        std::string make_journal_key(std::string_view summary) {
+            return "journal." + std::to_string(std::hash<std::string_view>{}(summary));
         }
 
     } // namespace
@@ -89,7 +89,7 @@ namespace orangutan {
     }
 
     JournalStoreResult RuntimeMemory::store_journal_summary(const std::string &summary, const std::string &source) {
-        const auto trimmed_summary = memory_detail::trim_copy(summary);
+        auto trimmed_summary = static_cast<std::string>(utils::trim_copy(summary));
         if (trimmed_summary.empty()) {
             return {.stored = false, .mirrored = false, .status = "Journal summary is empty.", .key = {}};
         }
@@ -119,15 +119,14 @@ namespace orangutan {
             "会话",
         });
 
-        const auto trimmed_query = memory_detail::trim_copy(std::string(query));
+        const auto trimmed_query = utils::trim_copy(query);
         const auto normalized = una::cases::to_lowercase_utf8(trimmed_query);
-        const auto trimmed_view = std::string_view(trimmed_query);
         return std::ranges::any_of(normalized_keywords,
                                    [&normalized](std::string_view keyword) {
                                        return normalized.contains(keyword);
                                    }) ||
-               std::ranges::any_of(raw_keywords, [trimmed_view](std::string_view keyword) {
-                   return trimmed_view.contains(keyword);
+               std::ranges::any_of(raw_keywords, [trimmed_query](std::string_view keyword) {
+                   return trimmed_query.contains(keyword);
                });
     }
 

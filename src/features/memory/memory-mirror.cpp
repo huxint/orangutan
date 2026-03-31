@@ -1,13 +1,12 @@
 #include "features/memory/memory-mirror.hpp"
-#include "features/memory/memory-search.hpp"
 #include "infra/files/file-io.hpp"
 #include "infra/files/file.hpp"
+#include "infra/string.hpp"
 #include "infra/time/local-format.hpp"
+#include "infra/format.hpp"
 
 #include <filesystem>
-#include "infra/format.hpp"
 #include <spdlog/common.h>
-#include <stdexcept>
 
 namespace orangutan {
     namespace {
@@ -81,7 +80,7 @@ namespace orangutan {
             return result;
         }
 
-        const auto trimmed_summary = memory_detail::trim_copy(summary);
+        auto trimmed_summary = utils::trim_copy(summary);
         if (trimmed_summary.empty()) {
             result.status = "Journal summary is empty.";
             return result;
