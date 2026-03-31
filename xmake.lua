@@ -6,7 +6,7 @@ add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = ".", lsp = "clangd"})
 set_policy("package.requires_lock", true)
 
-add_cxxflags("-Wno-system-headers")
+add_cxxflags("-Wno-system-headers", {tools = {"gcc", "gxx"}})
 
 includes("xmake/options.lua")
 includes("xmake/packages.lua")
