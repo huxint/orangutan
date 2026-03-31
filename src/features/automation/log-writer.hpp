@@ -1,7 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
-
+#include <nlohmann/json.hpp>
 #include <string>
 
 namespace orangutan::automation {
