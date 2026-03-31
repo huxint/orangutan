@@ -79,10 +79,6 @@ namespace orangutan::app {
             SlashCommandDefinition definition;
         };
 
-        constexpr slash_command_surface_mask operator|(slash_command_surface_mask lhs, slash_command_surface_mask rhs) {
-            return static_cast<slash_command_surface_mask>(static_cast<base::u8>(lhs) | static_cast<base::u8>(rhs));
-        }
-
         constexpr bool supports_surface(slash_command_surface_mask mask, slash_command_surface surface) {
             const auto bit = [surface]() constexpr {
                 switch (surface) {
