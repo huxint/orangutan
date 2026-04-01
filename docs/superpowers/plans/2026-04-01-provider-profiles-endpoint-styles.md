@@ -32,13 +32,17 @@
 - Modify: `src/bootstrap/config-builder.hpp`
 - Modify: `src/bootstrap/config-bootstrap.cpp`
 - Modify: `src/bootstrap/agent-runtime.hpp`
+- Modify: `src/bootstrap/agent-runtime.cpp`
 - Modify: `src/bootstrap/channel-serve.hpp`
+- Modify: `src/bootstrap/channel-serve.cpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
 - Modify: `src/subagent/subagent-manager.hpp`
 - Modify: `src/subagent/subagent-manager.cpp`
 - Modify: `tests/bootstrap/bootstrap-test.cpp`
 - Modify: `tests/bootstrap/channel-serve-test.cpp`
 - Modify: `tests/bootstrap/runtime-agent-runtime-test.cpp`
+- Modify: `tests/subagent/subagent-manager-test.cpp`
+- Modify: `tests/integration/subagent-integration-test.cpp`
 - Modify: `tests/web/web-routes-test.cpp`
 - Modify: `tests/web/web-chat-test.cpp`
 
@@ -53,6 +57,8 @@
 - Create or modify targeted provider tests under `tests/providers/`
 
 **Skill / config surface cleanup**
+- Modify: `src/bootstrap/cli-options.cpp`
+- Modify: `src/web/web-routes.cpp`
 - Verify: `src/skills/skill-loader.cpp`
 - Verify: `tests/skills/skill-loader-test.cpp`
 - Verify: `xmake/packages.lua`
@@ -209,13 +215,17 @@ git commit -m "refactor(config): protect profile api keys in json config"
 - Modify: `src/bootstrap/config-builder.hpp`
 - Modify: `src/bootstrap/config-bootstrap.cpp`
 - Modify: `src/bootstrap/agent-runtime.hpp`
+- Modify: `src/bootstrap/agent-runtime.cpp`
 - Modify: `src/bootstrap/channel-serve.hpp`
+- Modify: `src/bootstrap/channel-serve.cpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
 - Modify: `src/subagent/subagent-manager.hpp`
 - Modify: `src/subagent/subagent-manager.cpp`
 - Modify: `tests/bootstrap/bootstrap-test.cpp`
 - Modify: `tests/bootstrap/channel-serve-test.cpp`
 - Modify: `tests/bootstrap/runtime-agent-runtime-test.cpp`
+- Modify: `tests/subagent/subagent-manager-test.cpp`
+- Modify: `tests/integration/subagent-integration-test.cpp`
 
 - [ ] **Step 1: Write failing runtime-resolution tests**
 
@@ -225,6 +235,7 @@ Add tests for:
 - failure on unknown model inside a known profile
 - propagation of profile headers and resolved endpoint style into runtime config
 - CLI-selected agent resolution through `resolve_selected_agent()` / startup config bootstrap paths
+- subagent child runtime resolution after `SubagentChildRuntimeConfig` drops the old `provider_name` field
 
 - [ ] **Step 2: Run bootstrap tests to verify failure**
 
@@ -256,6 +267,8 @@ Then make `build_agent_runtime_configs()`:
 
 Also update `src/bootstrap/config-bootstrap.cpp` so CLI overrides only touch fields that still exist after the schema change. The old `selected_agent.provider` / `selected_agent.base_url` writes must be removed or remapped to the new profile-based runtime selection flow.
 
+Update `src/bootstrap/agent-runtime.cpp` and `src/bootstrap/channel-serve.cpp` in the same task so runtime assembly consumes the resolved endpoint config directly. Both files currently sit on the compile path that still expects `provider_name` and direct base URL fields.
+
 - [ ] **Step 4: Propagate resolved endpoint config to child/subagent runtimes**
 
 Update `SubagentChildRuntimeConfig`, `AgentRuntimeBuildInput`, and `AgentRuntimeConfig` so child workers inherit resolved endpoint settings instead of the removed provider string.
@@ -268,7 +281,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/channel-serve.hpp src/bootstrap/bootstrap.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp
+git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/agent-runtime.cpp src/bootstrap/channel-serve.hpp src/bootstrap/channel-serve.cpp src/bootstrap/bootstrap.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp tests/subagent/subagent-manager-test.cpp tests/integration/subagent-integration-test.cpp
 git commit -m "refactor(runtime): resolve agents through profiles and model catalogs"
 ```
 
@@ -386,8 +399,9 @@ git commit -m "feat(providers): support responses chat-completions and anthropic
 - Modify: `tests/tools/registry/tool-registry-test.cpp`
 - Modify: `tests/web/web-routes-test.cpp`
 - Modify: `tests/web/web-chat-test.cpp`
-- Verify: `src/web/admin-routes.cpp`
-- Verify: `src/bootstrap/cli-options.cpp`
+- Modify: `src/web/admin-routes.cpp`
+- Modify: `src/web/web-routes.cpp`
+- Modify: `src/bootstrap/cli-options.cpp`
 
 - [ ] **Step 1: Add failing tests for config API round-trips with profiles**
 
@@ -411,6 +425,12 @@ Update admin/web serialization and any remaining config editing helpers so they 
 - `agents.*.profile`
 - model metadata fields without dropping unknown-but-supported keys
 
+In the same step, remove obsolete CLI flags that no longer make sense without compatibility:
+- remove or reject `--provider`
+- remove or reject `--base-url`
+
+The plan should treat this as a schema cleanup, not a remap, because the change explicitly does not preserve the old configuration contract.
+
 - [ ] **Step 4: Re-run affected targets**
 
 Run:
@@ -424,7 +444,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/tools/registry/tool-registry-test.cpp tests/web/web-routes-test.cpp tests/web/web-chat-test.cpp src/web/admin-routes.cpp
+git add tests/tools/registry/tool-registry-test.cpp tests/web/web-routes-test.cpp tests/web/web-chat-test.cpp src/web/admin-routes.cpp src/web/web-routes.cpp src/bootstrap/cli-options.cpp
 git commit -m "test(web): cover profile-based model endpoint config"
 ```
 
@@ -438,6 +458,10 @@ git commit -m "test(web): cover profile-based model endpoint config"
   - `xmake run test-providers`
   - `xmake build -j 1 test-bootstrap`
   - `xmake run test-bootstrap`
+  - `xmake build -j 1 test-subagent`
+  - `xmake run test-subagent`
+  - `xmake build -j 1 test-integration`
+  - `xmake run test-integration`
   - `xmake build -j 1 test-tools`
   - `xmake run test-tools`
   - `xmake build -j 1 test-web`
