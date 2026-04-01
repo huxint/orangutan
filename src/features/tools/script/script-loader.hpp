@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/tools/permissions.hpp"
+#include "tools/registry/permissions.hpp"
 #include "infra/config/config.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <string>
 #include <unordered_map>

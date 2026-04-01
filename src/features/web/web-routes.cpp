@@ -8,8 +8,8 @@
 #include "app/bootstrap.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
-#include "core/providers/provider.hpp"
-#include "core/tools/permissions.hpp"
+#include "providers/provider.hpp"
+#include "tools/registry/permissions.hpp"
 #include "features/agent/agent-loop.hpp"
 #include "features/web/web-types.hpp"
 #include "features/memory/memory.hpp"
@@ -17,7 +17,7 @@
 #include "features/subagent/subagent-manager.hpp"
 #include "infra/config/config.hpp"
 #include "infra/storage/session-store.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>

@@ -1,6 +1,6 @@
 #include "features/tools/builtin/task.hpp"
 
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "features/automation/runtime.hpp"
 #include "test-helpers.hpp"
 

@@ -1,7 +1,9 @@
-#include "core/tools/permissions.hpp"
+#include "permissions.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <ranges>
+
 #include "infra/format.hpp"
 
 #include <magic_enum/magic_enum.hpp>

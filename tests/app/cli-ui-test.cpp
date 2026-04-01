@@ -1,6 +1,6 @@
 #include "app/cli-ui.hpp"
 
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 namespace {

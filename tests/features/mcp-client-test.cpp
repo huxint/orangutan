@@ -1,6 +1,6 @@
 #include "features/tools/mcp/client.hpp"
 #include "features/tools/mcp/manager.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <filesystem>
 #include <catch2/catch_test_macros.hpp>

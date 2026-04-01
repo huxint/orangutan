@@ -2,7 +2,7 @@
 
 #include "features/memory/memory.hpp"
 #include "features/memory/runtime-memory.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

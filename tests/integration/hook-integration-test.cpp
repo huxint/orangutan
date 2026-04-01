@@ -1,6 +1,6 @@
 #include "features/agent/agent-loop.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

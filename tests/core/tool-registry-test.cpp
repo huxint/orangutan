@@ -1,7 +1,7 @@
 #include "types/types.hpp"
 #include "infra/config/config.hpp"
 #include "features/tools/runtime/runtime-loader.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "features/tools/script/script-loader.hpp"
 #include "features/tools/core/hashline.hpp"
 #include "features/memory/memory.hpp"

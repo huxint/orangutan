@@ -4,7 +4,7 @@
 #include "app/line-editor.hpp"
 #include "app/session-workflow.hpp"
 #include "app/slash-commands.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"

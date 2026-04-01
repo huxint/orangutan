@@ -1,5 +1,5 @@
 #include "app/single-shot.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
 #include "features/tools/core/background-completion.hpp"

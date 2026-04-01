@@ -1,6 +1,6 @@
-#include "core/providers/anthropic-provider.hpp"
-#include "core/providers/sse-parser.hpp"
-#include "core/providers/http.hpp"
+#include "providers/anthropic-provider.hpp"
+#include "providers/sse-parser.hpp"
+#include "providers/http-client.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>

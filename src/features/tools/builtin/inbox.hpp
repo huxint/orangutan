@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 namespace orangutan {
 

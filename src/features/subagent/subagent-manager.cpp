@@ -3,11 +3,11 @@
 #include "features/agent/agent-loop.hpp"
 #include "features/memory/runtime-memory.hpp"
 #include "features/tools/runtime/runtime-loader.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "app/runtime/memory-context.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <chrono>
 #include <exception>

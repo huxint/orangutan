@@ -1,4 +1,4 @@
-#include "core/providers/sse-parser.hpp"
+#include "providers/sse-parser.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <utility>
 #include <vector>

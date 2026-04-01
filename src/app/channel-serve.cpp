@@ -10,7 +10,7 @@
 #include "features/channel/qq/channel.hpp"
 #include "features/heartbeat/protocol/heartbeat-ok.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "app/runtime/identity.hpp"
 #include "features/skills/skill-loader.hpp"

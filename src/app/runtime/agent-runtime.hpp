@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/runtime/identity.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "infra/config/config.hpp"
 
 #include <memory>

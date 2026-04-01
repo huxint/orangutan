@@ -1,17 +1,15 @@
 #pragma once
 
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
+
 #include <string>
 #include <vector>
 
 namespace orangutan {
 
-    // SseParser is defined in anthropic-provider.hpp and shared across providers
-    class SseParser;
-
-    class OpenAiProvider : public Provider {
+    class AnthropicProvider : public Provider {
     public:
-        OpenAiProvider(std::string api_key, std::string model, std::string base_url = "https://api.openai.com");
+        AnthropicProvider(std::string api_key, std::string model, std::string base_url = "https://api.anthropic.com");
 
         LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096,
                          int thinking_budget = 0) override;
@@ -21,7 +19,7 @@ namespace orangutan {
 
         [[nodiscard]]
         std::string name() const override {
-            return "openai";
+            return "anthropic";
         }
 
         [[nodiscard]]
@@ -35,14 +33,9 @@ namespace orangutan {
         std::string base_url_;
 
         [[nodiscard]]
-        nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
-                                          bool stream) const;
+        nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
+                                          int thinking_budget = 0) const;
 
-        // Convert orangutan Message to OpenAI message format
-        [[nodiscard]]
-        static nlohmann::json message_to_openai(const Message &msg);
-
-        // Parse OpenAI response into LLMResponse
         [[nodiscard]]
         static LLMResponse parse_response(const nlohmann::json &response_json);
     };

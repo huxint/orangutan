@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/providers/provider.hpp"
-#include "core/tools/tool.hpp"
+#include "providers/provider.hpp"
+#include "tools/registry/tool.hpp"
 #include <functional>
 #include <string>
 #include <unordered_map>

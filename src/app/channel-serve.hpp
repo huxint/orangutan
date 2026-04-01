@@ -2,7 +2,7 @@
 
 #include "types/types.hpp"
 #include "features/channel/core/channel.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "infra/config/config.hpp"
 #include "features/channel/core/jid-task-runner.hpp"
 #include "features/memory/memory.hpp"

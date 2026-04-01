@@ -1,7 +1,7 @@
 #include "app/runtime/agent-runtime.hpp"
 
 #include "app/runtime/memory-context.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "features/agent/agent-loop.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/runtime-memory.hpp"

@@ -1,10 +1,10 @@
 #pragma once
 
 #include "features/agent/agent-loop.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "infra/config/config.hpp"
 #include "features/skills/skill-loader.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <string>
 #include <vector>

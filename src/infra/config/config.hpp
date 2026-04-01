@@ -2,7 +2,7 @@
 
 #include "types/types.hpp"
 #include "infra/config/secret-protection.hpp"
-#include "core/tools/permissions.hpp"
+#include "tools/registry/permissions.hpp"
 
 #include <filesystem>
 #include <optional>

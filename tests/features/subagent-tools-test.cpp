@@ -1,7 +1,7 @@
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"
 #include "features/subagent/subagent-manager.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

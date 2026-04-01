@@ -1,6 +1,6 @@
 #include "features/channel/qq/channel.hpp"
 
-#include "core/providers/http.hpp"
+#include "providers/http-client.hpp"
 #include "features/channel/qq/transport.hpp"
 
 #include <algorithm>

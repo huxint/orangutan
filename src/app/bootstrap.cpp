@@ -7,7 +7,7 @@
 #include "app/runtime/app-runtime.hpp"
 #include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "features/web/web-server.hpp"
 #include "features/channel/core/message-queue.hpp"
 #include "features/hooks/hook-manager.hpp"

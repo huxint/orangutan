@@ -1,7 +1,7 @@
 #include "app/single-shot.hpp"
 
 #include "infra/storage/session-store.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

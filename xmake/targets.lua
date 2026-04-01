@@ -13,7 +13,8 @@ target("orangutan-lib")
     set_kind("static")
     add_orangutan_common()
     add_files(
-        path.join(root, "src/core/**/*.cpp"),
+        path.join(root, "src/providers/*.cpp"),
+        path.join(root, "src/tools/**/*.cpp"),
         path.join(root, "src/infra/*.cpp"),
         path.join(root, "src/infra/**/*.cpp"),
         path.join(root, "src/features/**/*.cpp"),

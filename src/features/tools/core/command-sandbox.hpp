@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/tools/permissions.hpp"
+#include "tools/registry/permissions.hpp"
 
 #include <string>
 

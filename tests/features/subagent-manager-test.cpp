@@ -1,6 +1,6 @@
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "test-helpers.hpp"
 

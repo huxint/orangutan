@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/tools/permissions.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/permissions.hpp"
+#include "tools/registry/tool.hpp"
 #include "infra/subprocess/subprocess.hpp"
 
 #include <cstdlib>

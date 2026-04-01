@@ -1,6 +1,6 @@
-#include "core/providers/openai-provider.hpp"
-#include "core/providers/http.hpp"
-#include "core/providers/sse-parser.hpp"
+#include "providers/openai-provider.hpp"
+#include "providers/http-client.hpp"
+#include "providers/sse-parser.hpp"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>

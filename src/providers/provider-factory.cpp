@@ -1,7 +1,7 @@
-#include "core/providers/provider.hpp"
+#include "providers/provider.hpp"
 
-#include "core/providers/anthropic-provider.hpp"
-#include "core/providers/openai-provider.hpp"
+#include "providers/anthropic-provider.hpp"
+#include "providers/openai-provider.hpp"
 #include "infra/execution/sender-utils.hpp"
 
 #include <exec/any_sender_of.hpp>

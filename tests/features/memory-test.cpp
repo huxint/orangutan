@@ -2,7 +2,7 @@
 #include "features/memory/memory-extract.hpp"
 #include "features/memory/runtime-memory.hpp"
 #include "app/runtime/memory-context.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 #include "infra/utf8.hpp"
 #include "test-helpers.hpp"
 

@@ -2,7 +2,7 @@
 
 #include "infra/config/config.hpp"
 #include "features/tools/mcp/manager.hpp"
-#include "core/tools/tool.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <memory>
 #include <string>
