@@ -1,4 +1,5 @@
 #include "skills/skill-loader.hpp"
+#include "bootstrap/identity.hpp"
 #include "utils/file-io.hpp"
 
 #include <algorithm>
@@ -218,7 +219,7 @@ namespace orangutan::skills {
             directories.emplace_back(std::string(home) + "/.orangutan/skills");
         }
         if (!workspace_root.empty()) {
-            directories.emplace_back(workspace_root + "/.orangutan/skills");
+            directories.emplace_back(bootstrap::workspace_skills_root(workspace_root).string());
         }
         return directories;
     }

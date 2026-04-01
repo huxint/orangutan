@@ -47,8 +47,8 @@ namespace {
         CHECK(cfg.edit_mode == "hashline");
         CHECK(cfg.auto_save);
         CHECK_FALSE(cfg.memory.mirror_enabled);
-        CHECK(cfg.memory.mirror_file == "MEMORY.md");
-        CHECK(cfg.memory.journal_dir == "memory");
+        CHECK(cfg.memory.mirror_file == ".orangutan/memory/MEMORY.md");
+        CHECK(cfg.memory.journal_dir == ".orangutan/memory/journal");
     };
 
     TEST_CASE("parses_profiles_and_agent_references") {

@@ -1,4 +1,5 @@
 #include "cli/session-workflow.hpp"
+#include "bootstrap/identity.hpp"
 #include "utils/file.hpp"
 
 #include <filesystem>
@@ -149,7 +150,7 @@ namespace orangutan::cli {
             return {.status = "No session history to export."};
         }
 
-        const auto export_dir = std::filesystem::path(workspace_root) / ".exports";
+        const auto export_dir = bootstrap::workspace_exports_root(workspace_root);
         const auto export_path = export_dir / (session_id + ".md");
 
         std::error_code ec;

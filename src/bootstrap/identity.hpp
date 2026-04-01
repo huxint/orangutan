@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,16 @@ namespace orangutan::bootstrap {
     };
 
     std::string resolve_workspace_root(const std::string &workspace);
+    std::filesystem::path workspace_state_root(const std::string &workspace_root);
+    std::filesystem::path workspace_skills_root(const std::string &workspace_root);
+    std::filesystem::path workspace_hooks_root(const std::string &workspace_root);
+    std::filesystem::path workspace_memory_root(const std::string &workspace_root);
+    std::filesystem::path workspace_identity_root(const std::string &workspace_root, const std::string &runtime_key);
+    std::filesystem::path workspace_exports_root(const std::string &workspace_root);
+    std::filesystem::path workspace_session_store_path(const std::string &workspace_root);
+    std::filesystem::path workspace_memory_store_path(const std::string &workspace_root);
+    std::filesystem::path workspace_subagent_run_store_path(const std::string &workspace_root);
+    std::filesystem::path workspace_automation_store_path(const std::string &workspace_root);
 
     std::string derive_cli_runtime_key(const std::string &agent_key);
 

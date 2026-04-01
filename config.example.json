@@ -13,8 +13,8 @@
   },
   "memory": {
     "mirror_enabled": false,
-    "mirror_file": "MEMORY.md",
-    "journal_dir": "memory"
+    "mirror_file": ".orangutan/memory/MEMORY.md",
+    "journal_dir": ".orangutan/memory/journal"
   },
   "security": {
     "allow": [
@@ -45,7 +45,7 @@
     "default": {
       "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
-      "workspace": "~/.orangutan/workspace/default",
+      "workspace": "~/workspace",
       "system_prompt": "You are the default general assistant.",
       "subagents": [
         "coder",
@@ -55,7 +55,7 @@
     "coder": {
       "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
-      "workspace": "~/.orangutan/workspace/coder",
+      "workspace": "~/workspace",
       "system_prompt": "You focus on code changes, debugging, and implementation details.",
       "subagents": [
         "research"
@@ -72,7 +72,7 @@
     "research": {
       "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
-      "workspace": "~/.orangutan/workspace/research",
+      "workspace": "~/workspace",
       "system_prompt": "You focus on analysis, investigation, and planning.",
       "subagents": []
     }

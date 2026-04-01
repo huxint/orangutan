@@ -33,14 +33,14 @@ namespace {
         CHECK(resolved == std::filesystem::weakly_canonical(missing).string());
     };
 
-    TEST_CASE("resolve_workspace_root_defaults_to_main_workspace_when_unset") {
+    TEST_CASE("resolve_workspace_root_defaults_to_home_workspace_when_unset") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-default-workspace");
         const auto home_root = workspace_root / "home";
         std::filesystem::create_directories(home_root);
         orangutan::testing::ScopedEnvVar home_env("HOME", home_root.string());
 
         const auto resolved = bootstrap::resolve_workspace_root("");
-        const auto expected = std::filesystem::weakly_canonical(home_root / ".orangutan" / "workspace" / "main").string();
+        const auto expected = std::filesystem::weakly_canonical(home_root / "workspace").string();
 
         CHECK(resolved == expected);
         CHECK(std::filesystem::exists(expected));
@@ -85,7 +85,7 @@ namespace {
         CHECK(identity.workspace == std::filesystem::weakly_canonical(workspace_root).string());
     };
 
-    TEST_CASE("derive_channel_identity_creates_stable_scoped_workspace") {
+    TEST_CASE("derive_channel_identity_keeps_workspace_root_and_scoped_memory") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-channel");
         const auto first = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "default");
         const auto second = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "default");
@@ -93,28 +93,26 @@ namespace {
         CHECK(first.runtime_key == "agent:default|jid:qqbot:c2c:alice");
         CHECK(first.memory_scope == first.runtime_key);
         CHECK(first.workspace == second.workspace);
-        CHECK(std::filesystem::exists(first.workspace));
-        CHECK(std::filesystem::is_directory(first.workspace));
-        CHECK(std::filesystem::path(first.workspace).parent_path() == std::filesystem::weakly_canonical(workspace_root));
+        CHECK(first.workspace == std::filesystem::weakly_canonical(workspace_root).string());
     };
 
-    TEST_CASE("different_jids_use_different_workspaces") {
+    TEST_CASE("different_jids_use_different_memory_scopes") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-different-jids");
         const auto alice = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "default");
         const auto bob = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:bob", "default");
 
-        CHECK(alice.workspace != bob.workspace);
+        CHECK(alice.workspace == bob.workspace);
         CHECK(alice.memory_scope != bob.memory_scope);
     };
 
-    TEST_CASE("same_jid_different_agents_use_different_scopes_and_workspaces") {
+    TEST_CASE("same_jid_different_agents_use_different_scopes_and_shared_workspace_root") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-different-agents");
         const auto general = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "default");
         const auto coder = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "coder");
 
         CHECK(general.runtime_key != coder.runtime_key);
         CHECK(general.memory_scope != coder.memory_scope);
-        CHECK(general.workspace != coder.workspace);
+        CHECK(general.workspace == coder.workspace);
     };
 
     TEST_CASE("parent_prompt_guidance_mentions_status_polling_tool") {

@@ -272,7 +272,7 @@ namespace {
 
         [[nodiscard]]
         std::filesystem::path session_db_path() const {
-            return home_root_ / ".orangutan" / "sessions.db";
+            return workspace_root_ / ".orangutan" / "sessions.db";
         }
 
         void write_config() const {
@@ -520,7 +520,7 @@ namespace {
                                     });
 
         const auto agents = bootstrap::detail::build_effective_agents(cfg);
-        const auto expected = (harness.home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
+        const auto expected = (harness.home_root() / "workspace").lexically_normal().string();
 
         CHECK(agents.count("default") == 0UL);
         CHECK(agents.count("coder") == 1UL);
@@ -556,7 +556,7 @@ namespace {
         auto it = runtime_configs->find("default");
         REQUIRE(it != runtime_configs->end());
 
-        const auto expected = std::filesystem::weakly_canonical(harness.home_root() / ".orangutan" / "workspace" / "main").string();
+        const auto expected = std::filesystem::weakly_canonical(harness.home_root() / "workspace").string();
         CHECK(it->second.workspace_root == expected);
         CHECK(std::filesystem::exists(expected));
         CHECK(std::filesystem::is_directory(expected));
@@ -650,9 +650,9 @@ namespace {
         const auto runtime_it = runtime_configs->find("default");
         REQUIRE(runtime_it != runtime_configs->end());
 
-        MemoryStore memory_store((harness.home_root() / ".orangutan" / "memory.db"));
+        MemoryStore memory_store((harness.workspace_root() / ".orangutan" / "memory.db"));
         const auto identity = bootstrap::derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
-        bootstrap::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db"));
+        bootstrap::AppRuntime app_runtime((harness.workspace_root() / ".orangutan" / "automation.db"));
         auto runtime = bootstrap::build_agent_runtime(bootstrap::AgentRuntimeBuildInput{
             .primary_endpoint = runtime_it->second.primary_endpoint,
             .fallback_endpoints = runtime_it->second.fallback_endpoints,

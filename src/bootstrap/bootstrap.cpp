@@ -70,6 +70,26 @@ namespace {
         }
     }
 
+    std::optional<std::string> resolve_app_workspace_root(const std::optional<orangutan::bootstrap::AgentRuntimeConfig> &maybe_primary_runtime_cfg,
+                                                          const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs) {
+        if (maybe_primary_runtime_cfg.has_value()) {
+            return maybe_primary_runtime_cfg->workspace_root;
+        }
+        if (agent_runtime_configs.empty()) {
+            return std::nullopt;
+        }
+
+        const auto &workspace_root = agent_runtime_configs.begin()->second.workspace_root;
+        for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
+            if (runtime_cfg.workspace_root != workspace_root) {
+                spdlog::fmt_lib::println(stderr, "Error: agent '{}' uses workspace '{}', which does not match the shared workspace '{}'.", agent_key, runtime_cfg.workspace_root,
+                                         workspace_root);
+                return std::nullopt;
+            }
+        }
+        return workspace_root;
+    }
+
 } // namespace
 
 namespace {
@@ -188,17 +208,28 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         return 1;
     }
 
-    auto memory_store = create_store<orangutan::MemoryStore>("memory store");
-    auto session_store = create_store<orangutan::SessionStore>("session store");
-    auto subagent_run_store = create_store<orangutan::SubagentRunStore>("subagent run store");
-    if (memory_store == nullptr || session_store == nullptr || subagent_run_store == nullptr) {
-        return 1;
-    }
-
     const auto maybe_agent_runtime_configs = detail::build_agent_runtime_configs(cfg, options.api_key);
     if (!maybe_agent_runtime_configs.has_value()) {
         return 1;
     }
+    const auto maybe_app_workspace_root = resolve_app_workspace_root(maybe_primary_runtime_cfg, *maybe_agent_runtime_configs);
+    if (!maybe_app_workspace_root.has_value()) {
+        spdlog::fmt_lib::println(stderr, "Error: unable to resolve a shared workspace root for runtime state.");
+        return 1;
+    }
+
+    std::unique_ptr<orangutan::MemoryStore> memory_store;
+    std::unique_ptr<orangutan::SessionStore> session_store;
+    std::unique_ptr<orangutan::SubagentRunStore> subagent_run_store;
+    try {
+        memory_store = std::make_unique<orangutan::MemoryStore>(orangutan::bootstrap::workspace_memory_store_path(*maybe_app_workspace_root));
+        session_store = std::make_unique<orangutan::SessionStore>(orangutan::bootstrap::workspace_session_store_path(*maybe_app_workspace_root));
+        subagent_run_store = std::make_unique<orangutan::SubagentRunStore>(orangutan::bootstrap::workspace_subagent_run_store_path(*maybe_app_workspace_root));
+    } catch (const std::exception &e) {
+        spdlog::fmt_lib::println(stderr, "Error: failed to initialize runtime stores: {}", e.what());
+        return 1;
+    }
+
     const auto qq_bot_agents = build_qq_bot_agents(cfg);
     const auto subagent_child_runtime_configs = detail::build_subagent_child_runtime_configs(*maybe_agent_runtime_configs);
     orangutan::SubagentManager subagent_manager(*subagent_run_store, orangutan::SubagentExecutionEnvironment{
@@ -206,7 +237,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                                                                          .session_store = session_store.get(),
                                                                          .memory_store = memory_store.get(),
                                                                      });
-    orangutan::bootstrap::AppRuntime app_runtime;
+    orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
 
     app_runtime.automation_runtime().set_executor(
         [&cfg, &subagent_manager, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get()](const orangutan::automation::Trigger &trigger) {

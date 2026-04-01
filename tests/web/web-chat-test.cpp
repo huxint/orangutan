@@ -3,6 +3,7 @@
 #include "agent/agent-loop.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
+#include "bootstrap/identity.hpp"
 #include "tools/background/background-completion.hpp"
 #include "config/config.hpp"
 #include "hooks/hook-manager.hpp"
@@ -336,7 +337,7 @@ namespace orangutan {
 
             const auto session_id = store_harness.store().save({Message::user().text("hello"), Message::assistant().text("copied reply")},
                                                                make_session_metadata("test", "agent:default|jid:qqbot:c2c:42", "default", "channel", "qqbot:c2c:42"));
-            const auto export_path = workspace / ".exports" / (session_id + ".md");
+            const auto export_path = orangutan::bootstrap::workspace_exports_root(workspace.string()) / (session_id + ".md");
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =

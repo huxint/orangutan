@@ -13,7 +13,7 @@ namespace {
         if (home == nullptr || std::string_view{home}.empty()) {
             return {};
         }
-        return (std::filesystem::path(home) / ".orangutan" / "workspace" / "main").lexically_normal().string();
+        return (std::filesystem::path(home) / "workspace").lexically_normal().string();
     }
 
     std::string fallback_display_label(const orangutan::config::FallbackModelRef &fallback) {

@@ -32,7 +32,7 @@ namespace orangutan::bootstrap {
             hook_dirs.push_back(std::string(home) + "/.orangutan/hooks");
         }
         if (!workspace_root.empty()) {
-            hook_dirs.push_back(workspace_root + "/.orangutan/hooks");
+            hook_dirs.push_back(workspace_hooks_root(workspace_root).string());
         }
         return hook_dirs;
     }

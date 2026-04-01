@@ -78,9 +78,9 @@ namespace orangutan::bootstrap {
         std::string default_workspace_root_path() {
             const char *home = std::getenv("HOME");
             if (home == nullptr || std::string_view{home}.empty()) {
-                throw std::runtime_error("HOME is not set; unable to resolve default workspace '~/.orangutan/workspace/main'");
+                throw std::runtime_error("HOME is not set; unable to resolve default workspace '~/workspace'");
             }
-            return normalize_path(std::filesystem::path(home) / ".orangutan" / "workspace" / "main");
+            return normalize_path(std::filesystem::path(home) / "workspace");
         }
 
     } // namespace
@@ -108,6 +108,52 @@ namespace orangutan::bootstrap {
         }
 
         return normalize_path(path);
+    }
+
+    std::filesystem::path workspace_state_root(const std::string &workspace_root) {
+        if (workspace_root.empty()) {
+            return {};
+        }
+        return std::filesystem::path(workspace_root) / ".orangutan";
+    }
+
+    std::filesystem::path workspace_skills_root(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "skills";
+    }
+
+    std::filesystem::path workspace_hooks_root(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "hooks";
+    }
+
+    std::filesystem::path workspace_memory_root(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "memory";
+    }
+
+    std::filesystem::path workspace_identity_root(const std::string &workspace_root, const std::string &runtime_key) {
+        if (workspace_root.empty() || runtime_key.empty()) {
+            return {};
+        }
+        return workspace_state_root(workspace_root) / "identities" / make_identity_slug(runtime_key);
+    }
+
+    std::filesystem::path workspace_exports_root(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "exports";
+    }
+
+    std::filesystem::path workspace_session_store_path(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "sessions.db";
+    }
+
+    std::filesystem::path workspace_memory_store_path(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "memory.db";
+    }
+
+    std::filesystem::path workspace_subagent_run_store_path(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "subagent-runs.db";
+    }
+
+    std::filesystem::path workspace_automation_store_path(const std::string &workspace_root) {
+        return workspace_state_root(workspace_root) / "automation.db";
     }
 
     std::string derive_cli_runtime_key(const std::string &agent_key) {
@@ -152,22 +198,10 @@ namespace orangutan::bootstrap {
     RuntimeIdentity derive_channel_identity(const std::string &workspace_root, const std::string &jid, const std::string &agent_key) {
         const auto runtime_key = derive_channel_runtime_key(jid, agent_key);
         RuntimeIdentity identity{
-            .workspace = {},
+            .workspace = workspace_root,
             .runtime_key = runtime_key,
             .memory_scope = runtime_key,
         };
-
-        if (workspace_root.empty()) {
-            return identity;
-        }
-
-        auto identity_path = std::filesystem::path(workspace_root) / make_identity_slug(runtime_key);
-        std::error_code ec;
-        if (!std::filesystem::create_directories(identity_path, ec) && ec) {
-            throw std::runtime_error("failed to create identity workspace: " + identity_path.string() + ": " + ec.message());
-        }
-
-        identity.workspace = normalize_path(identity_path);
         return identity;
     }
 

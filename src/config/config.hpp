@@ -95,8 +95,8 @@ namespace orangutan::config {
 
         struct MemoryConfig {
             bool mirror_enabled = false;
-            std::string mirror_file = "MEMORY.md";
-            std::string journal_dir = "memory";
+            std::string mirror_file = ".orangutan/memory/MEMORY.md";
+            std::string journal_dir = ".orangutan/memory/journal";
         };
         MemoryConfig memory;
 

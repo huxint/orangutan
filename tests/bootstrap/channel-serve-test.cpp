@@ -695,7 +695,7 @@ namespace {
             session_store.save({Message::user().text("hello"), Message(base::role::assistant, {ToolUse("1", "read", nlohmann::json::object())})},
                                orangutan::SessionMetadata{.model = "gpt-test", .scope_key = identity.runtime_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
         session_store.bind_jid(jid, session_id, "default");
-        const auto export_path = std::filesystem::path(identity.workspace) / ".exports" / (session_id + ".md");
+        const auto export_path = bootstrap::workspace_exports_root(identity.workspace) / (session_id + ".md");
 
         auto loop = std::async(std::launch::async, [&] {
             bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
