@@ -1,4 +1,5 @@
 #include "web/web-routes.hpp"
+#include "bootstrap/config-builder.hpp"
 #include "web/web-route-internal.hpp"
 
 #include "cli/cli-ui.hpp"
@@ -6,7 +7,6 @@
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "automation/scheduler.hpp"
-#include "bootstrap/bootstrap.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
 #include "providers/provider.hpp"
@@ -14,11 +14,9 @@
 #include "agent/agent-loop.hpp"
 #include "web/web-types.hpp"
 #include "memory/memory-store.hpp"
-#include "skills/skill-loader.hpp"
 #include "subagent/subagent-manager.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
-#include "tools/registry/tool.hpp"
 
 #include <cstdlib>
 #include <nlohmann/json.hpp>
@@ -220,7 +218,7 @@ namespace orangutan::web {
         }
 
         std::string make_approval_request_id() {
-            static std::atomic<uint64_t> next_request_id{1};
+            static std::atomic<base::u64> next_request_id{1};
             return "approval-" + std::to_string(next_request_id.fetch_add(1, std::memory_order_relaxed));
         }
 

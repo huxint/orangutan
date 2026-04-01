@@ -1,4 +1,5 @@
 #include "storage/session-store.hpp"
+#include "types/base.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -239,7 +240,7 @@ namespace orangutan::storage {
     std::string SessionStore::generate_uuid() {
         static std::random_device rd;
         static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<uint32_t> dist;
+        static std::uniform_int_distribution<base::u32> dist;
 
         return spdlog::fmt_lib::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
                                        dist(gen) & 0xFFFF);

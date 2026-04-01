@@ -1,4 +1,5 @@
 #include "process/subprocess.hpp"
+#include "types/base.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/file.hpp"
 
@@ -128,7 +129,7 @@ namespace orangutan::process {
 
         [[nodiscard]]
         std::string make_process_token() {
-            static std::atomic<uint64_t> counter{0};
+            static std::atomic<base::u64> counter{0};
             const auto now = std::chrono::steady_clock::now().time_since_epoch();
             const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
             return spdlog::fmt_lib::format("{}-{}", ticks, ++counter);
@@ -521,7 +522,7 @@ namespace orangutan::process {
         std::condition_variable shutdown_cv;
         std::vector<std::shared_ptr<ProcessEntry>> entries;
         std::unordered_map<std::string, std::shared_ptr<ProcessEntry>> entries_by_id;
-        uint64_t next_id = 0;
+        base::u64 next_id = 0;
         std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
         BackgroundProcessManager::CompletionCallback completion_callback;
         bool shutting_down = false;

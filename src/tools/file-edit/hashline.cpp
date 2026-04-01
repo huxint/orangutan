@@ -1,4 +1,6 @@
 #include "tools/file-edit/hashline.hpp"
+#include "types/base.hpp"
+#include "utils/format.hpp"
 
 #include <spdlog/common.h>
 #include <rapidhash.h>
@@ -9,7 +11,6 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include "utils/format.hpp"
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -54,18 +55,18 @@ namespace orangutan::tools {
         }
 
         // Keep the rapidhash call isolated so hashline semantics live in compute_line_hash().
-        uint8_t hash_index_for_line(std::string_view normalized_line, uint64_t seed) {
+        base::u8 hash_index_for_line(std::string_view normalized_line, base::u64 seed) {
             static constexpr char empty_line_sentinel = '\0';
             const void *data = normalized_line.empty() ? static_cast<const void *>(&empty_line_sentinel) : static_cast<const void *>(normalized_line.data());
             const auto hash = rapidhash_withSeed(data, normalized_line.size(), seed);
-            return static_cast<uint8_t>(hash & 0xFFu);
+            return static_cast<base::u8>(hash & 0xFFU);
         }
 
     } // namespace
 
     std::string compute_line_hash(std::string_view line, std::size_t line_number) {
         const auto processed = preprocess_line(line);
-        const auto seed = is_symbol_only(processed) ? static_cast<uint64_t>(line_number) : 0;
+        const auto seed = is_symbol_only(processed) ? static_cast<base::u64>(line_number) : 0;
         const auto hash = hash_index_for_line(processed, seed);
         const auto &entry = hash_dict.entries.at(hash);
         return {entry.at(0), entry.at(1)};

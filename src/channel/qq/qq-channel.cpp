@@ -2,6 +2,7 @@
 
 #include "providers/http-client.hpp"
 #include "channel/qq/qq-transport.hpp"
+#include "types/base.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -28,9 +29,9 @@ namespace orangutan::channel::qq {
         constexpr int gateway_op_invalid_session = 9;
         constexpr int gateway_op_hello = 10;
         constexpr int gateway_op_heartbeat_ack = 11;
-        constexpr uint32_t intent_group_messages = 1U << 25;
-        constexpr uint32_t intent_guild_at_message = 1U << 30;
-        constexpr uint32_t intent_direct_messages = 1U << 12;
+        constexpr base::u32 intent_group_messages = 1U << 25;
+        constexpr base::u32 intent_guild_at_message = 1U << 30;
+        constexpr base::u32 intent_direct_messages = 1U << 12;
         constexpr std::chrono::seconds connect_timeout{10};
 
         std::string qq_jid_prefix(std::string_view bot_name, std::string_view kind) {
@@ -89,7 +90,7 @@ namespace orangutan::channel::qq {
         bool hello_received = false;
         bool close_requested = false;
         std::string last_error;
-        uint32_t last_seq = 0;
+        base::u32 last_seq = 0;
         std::string session_id;
         std::chrono::milliseconds heartbeat_interval{0};
         std::atomic<bool> heartbeat_stop{false};
@@ -387,7 +388,7 @@ namespace orangutan::channel::qq {
 
         if (payload.contains("s") && !payload.at("s").is_null()) {
             std::scoped_lock lock(runtime_->mutex);
-            runtime_->last_seq = payload.at("s").get<uint32_t>();
+            runtime_->last_seq = payload.at("s").get<base::u32>();
         }
 
         const auto op = payload.value("op", -1);

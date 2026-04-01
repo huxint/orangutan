@@ -1,8 +1,8 @@
 #include "bootstrap/identity.hpp"
+#include "types/base.hpp"
 
 #include <cstdlib>
 #include <cctype>
-#include <cstdint>
 #include <filesystem>
 #include <spdlog/common.h>
 #include <stdexcept>
@@ -15,12 +15,12 @@ namespace orangutan::bootstrap {
 
     namespace {
 
-        constexpr uint64_t fnv_offset_basis = 14695981039346656037ULL;
-        constexpr uint64_t fnv_prime = 1099511628211ULL;
+        constexpr base::u64 fnv_offset_basis = 14695981039346656037ULL;
+        constexpr base::u64 fnv_prime = 1099511628211ULL;
         constexpr std::size_t max_identity_label_length = 48;
 
-        uint64_t fnv1a_64(std::string_view input) {
-            uint64_t hash = fnv_offset_basis;
+        base::u64 fnv1a_64(std::string_view input) {
+            base::u64 hash = fnv_offset_basis;
             for (const unsigned char ch : input) {
                 hash ^= ch;
                 hash *= fnv_prime;
