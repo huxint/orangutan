@@ -1,4 +1,4 @@
-#include "app/session-workflow.hpp"
+#include "cli/session-workflow.hpp"
 
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
@@ -74,7 +74,7 @@ namespace {
         });
 
         std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto result = cli::start_new_session(loop, session_store, current_session_id, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
         CHECK(result.had_history);
         CHECK(result.distillation.distilled);
@@ -98,9 +98,9 @@ namespace {
         SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools);
 
-        const auto session_id = session_store.save({Message::user().text("hello")}, app::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
+        const auto session_id = session_store.save({Message::user().text("hello")}, cli::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
         std::string current_session_id;
-        const auto result = app::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
+        const auto result = cli::load_session_into_agent(session_id, loop, session_store, current_session_id, "scope:two", "scope-one");
 
         CHECK_FALSE(result.loaded);
         CHECK(result.status.contains("does not belong"));
@@ -110,10 +110,10 @@ namespace {
     TEST_CASE("resolve_requested_session_supports_latest") {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        const auto first_id = session_store.save({Message::user().text("first")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
-        const auto second_id = session_store.save({Message::user().text("second")}, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto first_id = session_store.save({Message::user().text("first")}, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto second_id = session_store.save({Message::user().text("second")}, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
-        const auto latest = app::resolve_requested_session(session_store, "latest", "scope:test", "coder");
+        const auto latest = cli::resolve_requested_session(session_store, "latest", "scope:test", "coder");
         REQUIRE(latest.has_value());
         if (latest.has_value()) {
             CHECK(*latest != first_id);
@@ -124,11 +124,11 @@ namespace {
     TEST_CASE("resolve_requested_session_uses_agent_ownership_when_scope_is_empty") {
         SessionWorkflowHarness harness;
         SessionStore session_store(harness.session_db_path());
-        session_store.save({Message::user().text("coder")}, app::make_cli_session_metadata("test-model", "agent:coder", "coder"));
-        const auto first_default = session_store.save({Message::user().text("first default")}, app::make_cli_session_metadata("test-model", "", "default"));
-        const auto second_default = session_store.save({Message::user().text("second default")}, app::make_cli_session_metadata("test-model", "", "default"));
+        session_store.save({Message::user().text("coder")}, cli::make_cli_session_metadata("test-model", "agent:coder", "coder"));
+        const auto first_default = session_store.save({Message::user().text("first default")}, cli::make_cli_session_metadata("test-model", "", "default"));
+        const auto second_default = session_store.save({Message::user().text("second default")}, cli::make_cli_session_metadata("test-model", "", "default"));
 
-        const auto latest = app::resolve_requested_session(session_store, "latest", "", "default");
+        const auto latest = cli::resolve_requested_session(session_store, "latest", "", "default");
         REQUIRE(latest.has_value());
         if (latest.has_value()) {
             CHECK(*latest != first_default);
@@ -156,7 +156,7 @@ namespace {
         });
 
         std::string current_session_id;
-        const auto result = app::start_new_session(loop, session_store, current_session_id, app::make_cli_session_metadata("test-model", "scope:test", "coder"));
+        const auto result = cli::start_new_session(loop, session_store, current_session_id, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
         CHECK(result.distillation.distilled);
 
         const auto snapshot = workspace / "MEMORY.md";
@@ -172,8 +172,8 @@ namespace {
     };
 
     TEST_CASE("describe_new_session_result_uses_markdown_slash_reply_format") {
-        const auto text = app::describe_new_session_result(
-            app::NewSessionResult{
+        const auto text = cli::describe_new_session_result(
+            cli::NewSessionResult{
                 .had_history = true,
                 .distillation =
                     {
@@ -189,7 +189,7 @@ namespace {
     TEST_CASE("export_session_markdown_writes_complete_transcript_to_workspace_exports") {
         const auto workspace = orangutan::testing::unique_test_root("session-export");
 
-        const auto result = app::export_session_markdown(
+        const auto result = cli::export_session_markdown(
             {
                 Message::user().text("hello"),
                 Message(base::role::assistant, {ToolUse("call-1", "read", nlohmann::json{{"path", "README.md"}})}),
@@ -210,7 +210,7 @@ namespace {
         CHECK(content.contains("\"path\": \"README.md\""));
         CHECK(content.contains("### Tool Result"));
         CHECK(content.contains("file contents"));
-        CHECK(app::describe_export_result(result) == "## Export\n- Saved current session to `" + result.path + '`');
+        CHECK(cli::describe_export_result(result) == "## Export\n- Saved current session to `" + result.path + '`');
 
         std::filesystem::remove_all(workspace);
     };

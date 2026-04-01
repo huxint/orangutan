@@ -1,10 +1,10 @@
-#include "app/line-editor.hpp"
+#include "cli/line-editor.hpp"
 
 #include <replxx.hxx>
 
 #include <memory>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     class ReplxxLineEditor::Impl {
     public:
@@ -82,4 +82,4 @@ namespace orangutan::app {
         return result;
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

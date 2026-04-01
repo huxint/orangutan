@@ -3,7 +3,7 @@
 #include "types/types.hpp"
 #include "memory/memory-mirror.hpp"
 #include "memory/memory-store.hpp"
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 
 #include <string>
 #include <string_view>
@@ -21,10 +21,10 @@ namespace orangutan {
 
     class RuntimeMemory {
     public:
-        RuntimeMemory(MemoryStore &store, RuntimeMemoryContext context = {}, MemoryMirror mirror = {});
+        RuntimeMemory(MemoryStore &store, bootstrap::RuntimeMemoryContext context = {}, MemoryMirror mirror = {});
 
         [[nodiscard]]
-        const RuntimeMemoryContext &context() const {
+        const bootstrap::RuntimeMemoryContext &context() const {
             return context_;
         }
 
@@ -68,7 +68,7 @@ namespace orangutan {
 
     private:
         MemoryStore &store_;
-        RuntimeMemoryContext context_;
+        bootstrap::RuntimeMemoryContext context_;
         MemoryMirror mirror_;
 
         [[nodiscard]]

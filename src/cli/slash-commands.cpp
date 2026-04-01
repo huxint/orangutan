@@ -1,10 +1,10 @@
-#include "app/slash-commands.hpp"
+#include "cli/slash-commands.hpp"
 
 #include "utils/string.hpp"
 #include <array>
 #include "utils/format.hpp"
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     namespace {
 
@@ -457,4 +457,4 @@ namespace orangutan::app {
         return dispatch_command_table(command, k_registry_slash_commands, tool_registry);
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

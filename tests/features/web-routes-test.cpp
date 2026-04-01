@@ -1,6 +1,6 @@
 #include "web/web-server.hpp"
 #include "web/web-routes.hpp"
-#include "app/runtime/app-runtime.hpp"
+#include "bootstrap/app-runtime.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
@@ -296,7 +296,7 @@ namespace {
         std::filesystem::create_directories(workspace);
 
         auto cfg = make_runtime_config(workspace);
-        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
+        orangutan::bootstrap::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
         orangutan::MemoryStore memory_store((harness.temp_root() / "memory.db"));
         orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
         orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
@@ -381,7 +381,7 @@ namespace {
 
     TEST_CASE("automation_endpoints_expose_shared_state") {
         WebRoutesHarness harness;
-        orangutan::app::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
+        orangutan::bootstrap::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
         auto &automation_runtime = app_runtime.automation_runtime();
         orangutan::automation::TaskSpec task_spec;
         task_spec.agent_key = "default";

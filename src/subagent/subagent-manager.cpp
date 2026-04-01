@@ -6,7 +6,7 @@
 #include "providers/provider.hpp"
 #include "storage/session-store.hpp"
 #include "utils/sender-utils.hpp"
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <chrono>
@@ -115,7 +115,7 @@ namespace orangutan {
 
         auto child_session_id = request.child_session_id;
         auto child_scope_key = request.child_scope_key;
-        auto child_identity = RuntimeIdentity{};
+        auto child_identity = bootstrap::RuntimeIdentity{};
         if (uses_real_execution()) {
             const auto maybe_child_config = resolve_child_config(request.child_agent_key);
             if (!maybe_child_config.has_value()) {
@@ -125,7 +125,7 @@ namespace orangutan {
                 };
             }
 
-            child_identity = derive_child_identity(maybe_child_config->workspace_root, request.caller.raw_caller_id, request.child_agent_key);
+            child_identity = bootstrap::derive_child_identity(maybe_child_config->workspace_root, request.caller.raw_caller_id, request.child_agent_key);
             child_scope_key = child_identity.memory_scope;
             child_session_id = session_store_->create_empty(
                 SessionMetadata{.model = maybe_child_config->model, .scope_key = child_scope_key, .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
@@ -351,7 +351,7 @@ namespace orangutan {
                             context.tool_context.current_session_id = context.current_session_id.get();
                             if (memory_store_ != nullptr) {
                                 context.child_memory =
-                                    std::make_unique<RuntimeMemory>(*memory_store_, make_runtime_memory_context(request.child_identity, context.child_config.memory));
+                                    std::make_unique<RuntimeMemory>(*memory_store_, bootstrap::make_runtime_memory_context(request.child_identity, context.child_config.memory));
                                 context.child_runtime_memory = context.child_memory.get();
                             }
                             return context;
@@ -360,7 +360,7 @@ namespace orangutan {
                             static_cast<void>(register_runtime_tools(context.child_tools, context.child_runtime_memory, request.child_identity.workspace, &context.tool_context, {},
                                                                      {}, &context.child_config.permissions, request.caller.approval_callback, context.child_config.edit_mode));
 
-                            auto child_prompt = append_subagent_prompt_guidance(context.child_config.system_prompt, context.child_config.allowed_child_agents, true);
+                            auto child_prompt = bootstrap::append_subagent_prompt_guidance(context.child_config.system_prompt, context.child_config.allowed_child_agents, true);
                             AgentLoop child_agent(*context.provider, context.child_tools, child_prompt, context.child_runtime_memory);
                             child_agent.set_thinking_budget(context.child_config.thinking_budget);
                             const auto persist_history = [this, &request, &context](const std::vector<Message> &history) {

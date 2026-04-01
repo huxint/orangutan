@@ -1,9 +1,9 @@
-#include "app/slash-commands.hpp"
+#include "cli/slash-commands.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
-using namespace orangutan::app;
+using namespace orangutan::cli;
 
 namespace {
 

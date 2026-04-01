@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/runtime/agent-runtime.hpp"
+#include "bootstrap/agent-runtime.hpp"
 #include <httplib.h>
 
 namespace orangutan {
@@ -62,9 +62,10 @@ namespace orangutan::web {
         using web_approval_event_emitter = std::function<bool(std::string_view event_name, const nlohmann::json &payload)>;
 
         [[nodiscard]]
-        AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                    SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr,
-                                                    ToolApprovalCallback approval_callback = {}, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
+        bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
+                                                               SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr,
+                                                               ToolApprovalCallback approval_callback = {},
+                                                               const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 
         [[nodiscard]]
         BackgroundCompletionResumeCallback make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &state);

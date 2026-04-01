@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::bootstrap {
 
     struct RuntimeIdentity {
         std::string workspace;
@@ -27,4 +27,4 @@ namespace orangutan {
 
     std::string append_subagent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &allowed_child_agents, bool is_child_run);
 
-} // namespace orangutan
+} // namespace orangutan::bootstrap

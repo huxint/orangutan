@@ -1,4 +1,4 @@
-#include "app/single-shot.hpp"
+#include "cli/single-shot.hpp"
 
 #include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
@@ -97,7 +97,7 @@ namespace {
 
         std::vector<nlohmann::json> events;
         std::string current_session_id;
-        const auto status = app::run_single_message(
+        const auto status = cli::run_single_message(
             agent, provider, store, cfg, "hello", true, current_session_id, "test-model", "scope:test", "default",
             [&events](const nlohmann::json &event) {
                 events.push_back(event);
@@ -137,7 +137,7 @@ namespace {
 
         std::vector<nlohmann::json> events;
         std::string current_session_id;
-        const auto status = app::run_single_message(
+        const auto status = cli::run_single_message(
             agent, provider, store, cfg, "run tool", true, current_session_id, "test-model", "scope:test", "default",
             [&events](const nlohmann::json &event) {
                 events.push_back(event);
@@ -164,7 +164,7 @@ namespace {
 
     TEST_CASE("emit_session_history_dump_wraps_history_with_lifecycle_events") {
         std::vector<nlohmann::json> events;
-        app::emit_session_history_dump({Message::user().text("hello")}, "session-1", [&events](const nlohmann::json &event) {
+        cli::emit_session_history_dump({Message::user().text("hello")}, "session-1", [&events](const nlohmann::json &event) {
             events.push_back(event);
         });
 

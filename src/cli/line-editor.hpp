@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     class LineEditor {
     public:
@@ -45,4 +45,4 @@ namespace orangutan::app {
     [[nodiscard]]
     std::string read_repl_multiline(LineEditor &editor, std::ostream &output);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

@@ -15,7 +15,7 @@ namespace orangutan {
 
     } // namespace
 
-    RuntimeMemory::RuntimeMemory(MemoryStore &store, RuntimeMemoryContext context, MemoryMirror mirror)
+    RuntimeMemory::RuntimeMemory(MemoryStore &store, bootstrap::RuntimeMemoryContext context, MemoryMirror mirror)
     : store_(store),
       context_(std::move(context)),
       mirror_(mirror) {}

@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     [[nodiscard]]
     nlohmann::json make_session_event_json(const char *type, const std::string &session_id, const std::string &action);
@@ -13,4 +13,4 @@ namespace orangutan::app {
     [[nodiscard]]
     std::vector<nlohmann::json> build_session_history_events(const std::vector<Message> &history);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

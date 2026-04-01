@@ -1,9 +1,9 @@
-#include "app/bootstrap.hpp"
-#include "app/channel-serve.hpp"
-#include "app/runtime/agent-runtime.hpp"
-#include "app/runtime/app-runtime.hpp"
+#include "bootstrap/bootstrap.hpp"
+#include "bootstrap/channel-serve.hpp"
+#include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/app-runtime.hpp"
 
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
 #include "web/web-server.hpp"
@@ -31,7 +31,7 @@
 using namespace orangutan;
 using orangutan::testing::ScopedEnvVar;
 
-namespace orangutan::app::detail {
+namespace orangutan::bootstrap::detail {
 
     struct WebStartupInspection {
         bool has_session_store = false;
@@ -55,11 +55,12 @@ namespace orangutan::app::detail {
     void set_channel_mode_callback_for_tests(std::function<int()> callback);
     void clear_channel_mode_callback_for_tests();
 
-} // namespace orangutan::app::detail
+} // namespace orangutan::bootstrap::detail
 
 namespace {
 
-    namespace bootstrap_detail = orangutan::app::detail;
+    namespace bootstrap = orangutan::bootstrap;
+    namespace bootstrap_detail = orangutan::bootstrap::detail;
     class ScopedWebStartupInspectionCapture {
     public:
         ScopedWebStartupInspectionCapture() {
@@ -308,7 +309,7 @@ namespace {
 
         void create_sessions() const {
             SessionStore session_store(session_db_path());
-            const auto cli_identity = derive_cli_identity(workspace_root_.string(), "default");
+            const auto cli_identity = bootstrap::derive_cli_identity(workspace_root_.string(), "default");
             const std::vector<Message> history_a{
                 Message(base::role::user, {Text{"first"}}),
                 Message(base::role::assistant, {Text{"reply"}}),
@@ -370,7 +371,7 @@ namespace {
                 }
                 argv.push_back(nullptr);
 
-                exit_code = app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data());
+                exit_code = bootstrap::run(static_cast<int>(argv.size() - 1), argv.data());
             }
 
             std::string output;
@@ -423,7 +424,7 @@ namespace {
             }
             argv.push_back(nullptr);
 
-            CHECK(app::run_bootstrap(static_cast<int>(argv.size() - 1), argv.data()) == 0);
+            CHECK(bootstrap::run(static_cast<int>(argv.size() - 1), argv.data()) == 0);
         }
 
         output_pipe.close_read();
@@ -476,7 +477,7 @@ namespace {
                                         .edit_mode = "search_replace",
                                     });
 
-        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
         auto default_it = runtime_configs->find("default");
         REQUIRE(default_it != runtime_configs->end());
@@ -495,7 +496,7 @@ namespace {
         cfg.api_key = "test-key";
         cfg.workspace = harness.workspace_root().string();
 
-        const auto agents = app::detail::build_effective_agents(cfg);
+        const auto agents = bootstrap::detail::build_effective_agents(cfg);
         auto it = agents.find("default");
         REQUIRE(it != agents.end());
         CHECK(it->second.model == "gpt-test");
@@ -518,7 +519,7 @@ namespace {
                                         .api_key = "coder-key",
                                     });
 
-        const auto agents = app::detail::build_effective_agents(cfg);
+        const auto agents = bootstrap::detail::build_effective_agents(cfg);
         const auto expected = (harness.home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
 
         CHECK(agents.count("default") == 1UL);
@@ -536,7 +537,7 @@ namespace {
         cfg.api_key = "test-key";
         cfg.workspace = harness.workspace_root().string();
 
-        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
         auto it = runtime_configs->find("default");
         REQUIRE(it != runtime_configs->end());
@@ -556,7 +557,7 @@ namespace {
                                           .api_key = "test-key",
                                       });
 
-        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
         auto it = runtime_configs->find("default");
         REQUIRE(it != runtime_configs->end());
@@ -586,7 +587,7 @@ namespace {
                                         .workspace = harness.workspace_root().string(),
                                     });
 
-        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
         auto default_it = runtime_configs->find("default");
         REQUIRE(default_it != runtime_configs->end());
@@ -596,8 +597,8 @@ namespace {
 
     TEST_CASE("build_subagent_child_runtime_configs_propagates_edit_mode") {
         BootstrapHarness harness;
-        std::unordered_map<std::string, app::AgentRuntimeConfig> runtime_configs;
-        runtime_configs.emplace("default", app::AgentRuntimeConfig{
+        std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> runtime_configs;
+        runtime_configs.emplace("default", bootstrap::AgentRuntimeConfig{
                                                .agent_key = "default",
                                                .provider_name = "openai",
                                                .api_key = "test-key",
@@ -608,7 +609,7 @@ namespace {
                                                .edit_mode = "search_replace",
                                            });
 
-        const auto child_configs = app::detail::build_subagent_child_runtime_configs(runtime_configs);
+        const auto child_configs = bootstrap::detail::build_subagent_child_runtime_configs(runtime_configs);
         auto it = child_configs.find("default");
         REQUIRE(it != child_configs.end());
         CHECK(it->second.edit_mode == "search_replace");
@@ -621,16 +622,16 @@ namespace {
         ScopedEnvVar home_env("HOME", harness.home_root().string());
 
         const auto cfg = Config::load_from(harness.config_path());
-        const auto runtime_configs = app::detail::build_agent_runtime_configs(cfg, "");
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
 
         const auto runtime_it = runtime_configs->find("default");
         REQUIRE(runtime_it != runtime_configs->end());
 
         MemoryStore memory_store((harness.home_root() / ".orangutan" / "memory.db"));
-        const auto identity = derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
-        app::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db"));
-        auto runtime = build_agent_runtime(AgentRuntimeBuildInput{
+        const auto identity = bootstrap::derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
+        bootstrap::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db"));
+        auto runtime = bootstrap::build_agent_runtime(bootstrap::AgentRuntimeBuildInput{
             .provider_name = runtime_it->second.provider_name,
             .api_key = runtime_it->second.api_key,
             .model = runtime_it->second.model,

@@ -1,9 +1,9 @@
-#include "app/repl.hpp"
+#include "cli/repl.hpp"
 
-#include "app/cli-ui.hpp"
-#include "app/line-editor.hpp"
-#include "app/session-workflow.hpp"
-#include "app/slash-commands.hpp"
+#include "cli/cli-ui.hpp"
+#include "cli/line-editor.hpp"
+#include "cli/session-workflow.hpp"
+#include "cli/slash-commands.hpp"
 #include "providers/provider.hpp"
 #include "automation/scheduler.hpp"
 #include "hooks/hook-manager.hpp"
@@ -15,7 +15,7 @@
 #include <spdlog/common.h>
 #include <ranges>
 #include <string_view>
-namespace orangutan::app {
+namespace orangutan::cli {
 
     namespace {
 
@@ -260,4 +260,4 @@ namespace orangutan::app {
         spdlog::fmt_lib::println("\nBye!");
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

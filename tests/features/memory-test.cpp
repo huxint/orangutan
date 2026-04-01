@@ -1,7 +1,7 @@
 #include "memory/memory-store.hpp"
 #include "memory/memory-extract.hpp"
 #include "memory/runtime-memory.hpp"
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 #include "tools/registry/tool.hpp"
 #include "utils/utf8.hpp"
 #include "test-helpers.hpp"

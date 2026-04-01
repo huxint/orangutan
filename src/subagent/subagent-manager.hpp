@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 #include "types/types.hpp"
 #include "config/config.hpp"
 #include "storage/subagent-run-store.hpp"
@@ -57,7 +57,7 @@ namespace orangutan {
         std::string child_scope_key;
         std::string child_session_id;
         std::string task_summary;
-        RuntimeIdentity child_identity;
+        bootstrap::RuntimeIdentity child_identity;
         std::stop_token stop_token;
     };
 

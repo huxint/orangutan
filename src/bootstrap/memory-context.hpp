@@ -1,12 +1,12 @@
 #pragma once
 
 #include "config/config.hpp"
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 
 #include <filesystem>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::bootstrap {
 
     struct MemoryMirrorSettings {
         bool enabled = false;
@@ -39,4 +39,4 @@ namespace orangutan {
     [[nodiscard]]
     RuntimeMemoryContext make_runtime_memory_context(const RuntimeIdentity &identity, const Config::MemoryConfig &memory_cfg);
 
-} // namespace orangutan
+} // namespace orangutan::bootstrap

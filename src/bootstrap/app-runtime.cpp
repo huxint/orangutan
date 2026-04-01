@@ -1,6 +1,6 @@
-#include "app/runtime/app-runtime.hpp"
+#include "bootstrap/app-runtime.hpp"
 
-namespace orangutan::app {
+namespace orangutan::bootstrap {
 
     AppRuntime::AppRuntime()
     : automation_store_(std::make_unique<orangutan::automation::Store>()),
@@ -26,4 +26,4 @@ namespace orangutan::app {
         return *automation_runtime_;
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::bootstrap

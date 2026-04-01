@@ -1,4 +1,4 @@
-#include "app/history-events.hpp"
+#include "cli/history-events.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,7 +9,7 @@ namespace {
     TEST_CASE("build_edit_details_produces_unified_diff") {
         ToolUse call("edit-1", "edit", {{"path", "src/file.cpp"}, {"old_text", "line1\nold\nline3"}, {"new_text", "line1\nnew\nline3"}});
 
-        const auto details = app::build_edit_details(call);
+        const auto details = cli::build_edit_details(call);
         INFO("expected edit details to be a JSON object");
         REQUIRE(details.is_object());
         CHECK(details["type"] == "edit");
@@ -26,7 +26,7 @@ namespace {
             Message(base::role::user, {ToolResult("edit-1", "done", false)}),
         };
 
-        const auto events = app::build_session_history_events(history);
+        const auto events = cli::build_session_history_events(history);
         CHECK(events.size() >= 5UL);
         CHECK(events.front()["type"] == "session_history_started");
         CHECK(events[1]["type"] == "history_message");

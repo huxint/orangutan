@@ -1,13 +1,13 @@
 #include "web/web-routes.hpp"
 
-#include "app/cli-ui.hpp"
-#include "app/session-workflow.hpp"
-#include "app/single-shot.hpp"
-#include "app/slash-commands.hpp"
+#include "cli/cli-ui.hpp"
+#include "cli/session-workflow.hpp"
+#include "cli/single-shot.hpp"
+#include "cli/slash-commands.hpp"
 #include "automation/scheduler.hpp"
-#include "app/bootstrap.hpp"
-#include "app/runtime/agent-runtime.hpp"
-#include "app/runtime/identity.hpp"
+#include "bootstrap/bootstrap.hpp"
+#include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/identity.hpp"
 #include "providers/provider.hpp"
 #include "tools/registry/permissions.hpp"
 #include "agent/agent-loop.hpp"
@@ -26,6 +26,9 @@
 namespace orangutan::web {
 
     namespace {
+
+        namespace bootstrap = orangutan::bootstrap;
+        namespace cli = orangutan::cli;
 
         bool session_is_read_only(const SessionInfo &session) {
             return session.origin_kind == "channel";
@@ -46,7 +49,7 @@ namespace orangutan::web {
                 return std::nullopt;
             }
 
-            const auto effective_agents = app::detail::build_effective_agents(*config);
+            const auto effective_agents = bootstrap::detail::build_effective_agents(*config);
             if (const auto it = effective_agents.find(agent_key); it != effective_agents.end()) {
                 return it->second;
             }
@@ -56,19 +59,19 @@ namespace orangutan::web {
         std::string resolve_agent_api_key(const Config &config, const AgentConfig &agent) {
             Config agent_cfg_wrapper = config;
             agent_cfg_wrapper.api_key = agent.api_key;
-            return app::detail::resolve_api_key("", agent_cfg_wrapper);
+            return bootstrap::detail::resolve_api_key("", agent_cfg_wrapper);
         }
 
         std::string resolve_agent_workspace(const AgentConfig &agent, const std::string &agent_key) {
             try {
-                return orangutan::resolve_workspace_root(agent.workspace);
+                return bootstrap::resolve_workspace_root(agent.workspace);
             } catch (const std::exception &e) {
                 throw std::runtime_error("failed to resolve workspace for agent '" + agent_key + "': " + e.what());
             }
         }
 
-        RuntimeIdentity derive_web_identity(const std::string &workspace_root, const std::string &agent_key) {
-            RuntimeIdentity identity{
+        bootstrap::RuntimeIdentity derive_web_identity(const std::string &workspace_root, const std::string &agent_key) {
+            bootstrap::RuntimeIdentity identity{
                 .workspace = workspace_root,
                 .runtime_key = "agent:" + agent_key + "|web:local",
                 .memory_scope = "agent:" + agent_key + "|web",
@@ -84,9 +87,10 @@ namespace orangutan::web {
             };
         }
 
-        AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
-                                                         std::string *current_session_id, SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
-                                                         ToolApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+        bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
+                                                                    std::string *current_session_id, SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
+                                                                    ToolApprovalCallback approval_callback,
+                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
             const auto api_key = resolve_agent_api_key(config, agent);
             if (api_key.empty()) {
@@ -98,7 +102,7 @@ namespace orangutan::web {
                 effective_approval_callback = default_web_approval_callback();
             }
 
-            AgentRuntimeBuildInput input{
+            bootstrap::AgentRuntimeBuildInput input{
                 .provider_name = agent.provider,
                 .api_key = api_key,
                 .model = agent.model,
@@ -132,7 +136,7 @@ namespace orangutan::web {
                                                            detail::make_web_completion_resume_callback(completion_resume_state))
                                                      : nullptr,
             };
-            return build_agent_runtime(input);
+            return bootstrap::build_agent_runtime(input);
         }
 
         nlohmann::json session_to_json(const SessionInfo &session) {
@@ -265,7 +269,7 @@ namespace orangutan::web {
             sink.write(sse.c_str(), sse.size());
         }
 
-        void send_web_command_stream(httplib::Response &res, const app::SlashCommandReply &command_response) {
+        void send_web_command_stream(httplib::Response &res, const cli::SlashCommandReply &command_response) {
             res.set_chunked_content_provider("text/event-stream", [command_response](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
                 if (command_response.session_id.has_value()) {
                     write_sse_event(sink, "session", {{"session_id", *command_response.session_id}});
@@ -279,14 +283,14 @@ namespace orangutan::web {
             });
         }
 
-        app::SlashCommandReply handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const Config &config, SessionStore *store,
+        cli::SlashCommandReply handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const Config &config, SessionStore *store,
                                                                const std::optional<SessionInfo> & /*existing_session*/, const SessionMetadata &metadata,
                                                                const std::string &current_session_id) {
-            return app::dispatch_shared_slash_command(
-                message, {.surface = app::slash_command_surface::web,
+            return cli::dispatch_shared_slash_command(
+                message, {.surface = cli::slash_command_surface::web,
                           .help =
                               [] {
-                                  return app::SlashCommandReply{.handled = true, .text = app::web_help_text()};
+                                  return cli::SlashCommandReply{.handled = true, .text = cli::web_help_text()};
                               },
                           .new_session =
                               [&] {
@@ -296,81 +300,81 @@ namespace orangutan::web {
                                   } else {
                                       new_session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
                                   }
-                                  return app::SlashCommandReply{.handled = true, .text = {}, .session_id = new_session_id};
+                                  return cli::SlashCommandReply{.handled = true, .text = {}, .session_id = new_session_id};
                               },
                           .export_session =
                               [&] {
                                   const auto maybe_agent = find_effective_agent(&config, agent_key);
                                   const auto workspace_root = maybe_agent.has_value() ? resolve_agent_workspace(*maybe_agent, agent_key) : std::string{};
                                   if (store == nullptr || current_session_id.empty()) {
-                                      return app::SlashCommandReply{
+                                      return cli::SlashCommandReply{
                                           .handled = true,
-                                          .text = app::describe_export_result(app::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root)),
+                                          .text = cli::describe_export_result(cli::export_session_markdown(std::vector<Message>{}, current_session_id, workspace_root)),
                                       };
                                   }
-                                  return app::SlashCommandReply{
+                                  return cli::SlashCommandReply{
                                       .handled = true,
-                                      .text = app::describe_export_result(app::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root)),
+                                      .text = cli::describe_export_result(cli::export_session_markdown(store->load(current_session_id), current_session_id, workspace_root)),
                                   };
                               },
                           .session =
                               [&] {
-                                  return app::SlashCommandReply{.handled = true, .text = app::format_current_session(current_session_id, agent_key)};
+                                  return cli::SlashCommandReply{.handled = true, .text = cli::format_current_session(current_session_id, agent_key)};
                               },
                           .sessions =
                               [&] {
                                   if (store == nullptr) {
-                                      return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                                      return cli::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
                                   }
-                                  return app::SlashCommandReply{
+                                  return cli::SlashCommandReply{
                                       .handled = true,
-                                      .text = app::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id),
+                                      .text = cli::format_scoped_sessions(store->list_sessions_for_agent(agent_key), current_session_id),
                                   };
                               },
                           .agent =
                               [&] {
-                                  return app::SlashCommandReply{.handled = true, .text = app::format_current_agent(agent_key)};
+                                  return cli::SlashCommandReply{.handled = true, .text = cli::format_current_agent(agent_key)};
                               },
                           .agents =
                               [&] {
-                                  return app::SlashCommandReply{.handled = true, .text = app::format_agent_list(config, agent_key)};
+                                  return cli::SlashCommandReply{.handled = true, .text = cli::format_agent_list(config, agent_key)};
                               },
                           .resume =
                               [&](const std::string &requested_session_id) {
                                   if (store == nullptr) {
-                                      return app::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
+                                      return cli::SlashCommandReply{.handled = true, .text = "Session store is not available in this runtime."};
                                   }
-                                  const auto resolved_session_id = app::resolve_requested_session(*store, requested_session_id, {}, agent_key);
+                                  const auto resolved_session_id = cli::resolve_requested_session(*store, requested_session_id, {}, agent_key);
                                   if (!resolved_session_id.has_value()) {
-                                      return app::SlashCommandReply{.handled = true, .text = "No saved sessions available for this agent."};
+                                      return cli::SlashCommandReply{.handled = true, .text = "No saved sessions available for this agent."};
                                   }
                                   if (!store->session_belongs_to_agent(*resolved_session_id, agent_key)) {
-                                      return app::SlashCommandReply{.handled = true, .text = "That session does not belong to the current agent."};
+                                      return cli::SlashCommandReply{.handled = true, .text = "That session does not belong to the current agent."};
                                   }
-                                  return app::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + *resolved_session_id, .session_id = resolved_session_id};
+                                  return cli::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + *resolved_session_id, .session_id = resolved_session_id};
                               }});
         }
 
-        app::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
-                                                                const SessionMetadata &metadata, AgentRuntimeBundle &runtime, std::string &current_session_id) {
-            return app::dispatch_shared_slash_command(
+        cli::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
+                                                                const SessionMetadata &metadata, bootstrap::AgentRuntimeBundle &runtime, std::string &current_session_id) {
+            return cli::dispatch_shared_slash_command(
                 message, {
-                             .surface = app::slash_command_surface::web,
+                             .surface = cli::slash_command_surface::web,
                              .compress =
                                  [&] {
                                      const auto result = runtime.agent->compress_history();
                                      if (result.compacted && store != nullptr && !current_session_id.empty()) {
                                          store->update(current_session_id, runtime.agent->history(), metadata);
                                      }
-                                     return app::SlashCommandReply{.handled = true, .text = app::format_history_compaction_result(result)};
+                                     return cli::SlashCommandReply{.handled = true, .text = cli::format_history_compaction_result(result)};
                                  },
                              .status =
                                  [&] {
                                      const auto active_model =
                                          runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
-                                     return app::SlashCommandReply{
+                                     return cli::SlashCommandReply{
                                          .handled = true,
-                                         .text = app::format_runtime_status(app::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id,
+                                         .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id,
                                                                                                         agent_key, active_model, agent.fallback_models, metadata.scope_key)),
                                      };
                                  },
@@ -380,9 +384,10 @@ namespace orangutan::web {
 
     } // namespace
 
-    AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                        SubagentManager *subagent_manager, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
-                                                        const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+    bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
+                                                                   SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
+                                                                   ToolApprovalCallback approval_callback,
+                                                                   const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
         const auto maybe_agent = find_effective_agent(&config, agent_key);
         if (!maybe_agent.has_value()) {
             throw std::runtime_error("agent not found");
@@ -403,7 +408,7 @@ namespace orangutan::web {
                 return "web session is no longer live";
             }
 
-            return orangutan::app::run_completion_resume_message(*state->agent, message, state->agent_key, state->automation_runtime, {}, true);
+            return orangutan::cli::run_completion_resume_message(*state->agent, message, state->agent_key, state->automation_runtime, {}, true);
         };
     }
 
@@ -741,7 +746,7 @@ namespace orangutan::web {
             return;
         }
         auto arr = nlohmann::json::array();
-        for (const auto &[key, agent] : app::detail::build_effective_agents(*config)) {
+        for (const auto &[key, agent] : bootstrap::detail::build_effective_agents(*config)) {
             arr.push_back({
                 {"key", key},
                 {"provider", agent.provider},
@@ -973,7 +978,7 @@ namespace orangutan::web {
             auto approval_stream_open = std::make_shared<std::function<bool()>>();
             // Request-scoped web runtimes tear down their BackgroundProcessManager with the HTTP stream,
             // so they intentionally do not advertise background completion routing.
-            session->runtime = std::make_unique<AgentRuntimeBundle>(detail::build_web_runtime_bundle(
+            session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
                 *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
                 [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUse &call,
                                                                                                                                                    const std::string &prompt_text) {

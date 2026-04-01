@@ -1,5 +1,5 @@
 #include "agent/agent-loop.hpp"
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 #include "storage/session-store.hpp"
 #include "storage/subagent-run-store.hpp"
 #include "subagent/subagent-manager.hpp"

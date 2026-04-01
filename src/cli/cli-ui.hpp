@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     struct RuntimeStatusSnapshot {
         std::string agent_key;
@@ -53,4 +53,4 @@ namespace orangutan::app {
     [[nodiscard]]
     std::string format_runtime_status(const RuntimeStatusSnapshot &status);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

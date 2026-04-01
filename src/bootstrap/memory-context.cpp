@@ -1,6 +1,6 @@
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 
-namespace orangutan {
+namespace orangutan::bootstrap {
     namespace {
 
         std::filesystem::path resolve_workspace_path(const std::string &workspace, const std::string &configured) {
@@ -47,4 +47,4 @@ namespace orangutan {
         };
     }
 
-} // namespace orangutan
+} // namespace orangutan::bootstrap

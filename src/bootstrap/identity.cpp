@@ -1,4 +1,4 @@
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 
 #include <cstdlib>
 #include <cctype>
@@ -11,7 +11,7 @@
 #include <system_error>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::bootstrap {
 
     namespace {
 
@@ -217,4 +217,4 @@ namespace orangutan {
         return prompt;
     }
 
-} // namespace orangutan
+} // namespace orangutan::bootstrap

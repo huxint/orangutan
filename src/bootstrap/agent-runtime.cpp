@@ -1,6 +1,6 @@
-#include "app/runtime/agent-runtime.hpp"
+#include "bootstrap/agent-runtime.hpp"
 
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
 #include "hooks/hook-manager.hpp"
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::bootstrap {
     namespace {
 
         std::vector<std::string> resolve_hook_directories(const AgentRuntimeBuildInput &input) {
@@ -99,4 +99,4 @@ namespace orangutan {
         return runtime;
     }
 
-} // namespace orangutan
+} // namespace orangutan::bootstrap

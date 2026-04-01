@@ -1,5 +1,5 @@
-#include "app/bootstrap.hpp"
+#include "bootstrap/bootstrap.hpp"
 
 int main(int argc, char **argv) {
-    return orangutan::app::run_bootstrap(argc, argv);
+    return orangutan::bootstrap::run(argc, argv);
 }

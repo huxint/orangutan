@@ -1,13 +1,13 @@
-#include "app/single-shot.hpp"
+#include "cli/single-shot.hpp"
 
-#include "app/history-events.hpp"
-#include "app/session-workflow.hpp"
+#include "cli/history-events.hpp"
+#include "cli/session-workflow.hpp"
 #include "automation/scheduler.hpp"
 
 #include <optional>
 #include <ostream>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     namespace {
 
@@ -181,4 +181,4 @@ namespace orangutan::app {
         return 0;
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

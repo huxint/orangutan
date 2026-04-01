@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/runtime/agent-runtime.hpp"
+#include "bootstrap/agent-runtime.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -35,7 +35,7 @@ namespace orangutan {
 
     struct WebSessionState {
         std::string session_id;
-        std::unique_ptr<AgentRuntimeBundle> runtime;
+        std::unique_ptr<bootstrap::AgentRuntimeBundle> runtime;
         std::shared_ptr<WebPendingApproval> pending_approval;
         std::shared_ptr<WebCompletionResumeState> completion_resume_state;
         std::atomic<bool> abort_requested{false};

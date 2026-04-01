@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     struct NewSessionResult {
         bool had_history = false;
@@ -48,4 +48,4 @@ namespace orangutan::app {
     [[nodiscard]]
     std::string describe_export_result(const SessionExportResult &result);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

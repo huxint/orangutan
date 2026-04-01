@@ -14,7 +14,7 @@ namespace orangutan {
         constexpr std::string_view managed_begin_marker = "<!-- ORANGUTAN:MEMORY:BEGIN -->";
         constexpr std::string_view managed_end_marker = "<!-- ORANGUTAN:MEMORY:END -->";
 
-        std::string render_managed_block(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
+        std::string render_managed_block(const bootstrap::RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
             std::string out;
             out.append(managed_begin_marker);
             out.push_back('\n');
@@ -37,7 +37,7 @@ namespace orangutan {
 
     } // namespace
 
-    MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
+    MemoryMirrorRefreshResult MemoryMirror::refresh_snapshot(const bootstrap::RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
         MemoryMirrorRefreshResult result{.path = context.snapshot_path()};
         if (!context.mirror_enabled()) {
             result.skipped = true;
@@ -73,7 +73,7 @@ namespace orangutan {
         return result;
     }
 
-    JournalMirrorWriteResult MemoryMirror::append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary) {
+    JournalMirrorWriteResult MemoryMirror::append_daily_journal(const bootstrap::RuntimeMemoryContext &context, const std::string &summary) {
         JournalMirrorWriteResult result;
         if (!context.mirror_enabled()) {
             result.status = "Mirror disabled or workspace unavailable.";

@@ -1,11 +1,11 @@
-#include "app/history-events.hpp"
+#include "cli/history-events.hpp"
 
 #include <spdlog/common.h>
 #include <algorithm>
 #include "utils/format.hpp"
 #include <unordered_map>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     namespace {
 
@@ -194,4 +194,4 @@ namespace orangutan::app {
         return events;
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

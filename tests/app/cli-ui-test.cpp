@@ -1,4 +1,4 @@
-#include "app/cli-ui.hpp"
+#include "cli/cli-ui.hpp"
 
 #include "tools/registry/tool.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -10,7 +10,7 @@ namespace {
         cfg.agents.insert_or_assign("default", orangutan::AgentConfig{.model = "model-a", .workspace = "/tmp/default", .subagents = {"coder"}});
         cfg.agents.insert_or_assign("coder", orangutan::AgentConfig{.model = "model-b", .workspace = "/tmp/coder", .subagents = {}});
 
-        const auto text = orangutan::app::format_agent_list(cfg, "coder");
+        const auto text = orangutan::cli::format_agent_list(cfg, "coder");
         CHECK(text.contains("## Agents"));
         CHECK(text.contains("`default`"));
         CHECK(text.contains("`coder` **(current)**"));
@@ -64,14 +64,14 @@ namespace {
             orangutan::Message::assistant().text("done"),
         });
 
-        const auto status = orangutan::app::collect_runtime_status(agent, provider, &tools, "session-1", "coder", "gpt-primary", {"gpt-fallback"}, "scope:coder");
+        const auto status = orangutan::cli::collect_runtime_status(agent, provider, &tools, "session-1", "coder", "gpt-primary", {"gpt-fallback"}, "scope:coder");
         CHECK(status.current_model == "gpt-fallback");
         CHECK(status.configured_model == "gpt-primary");
         CHECK(status.tool_call_count == 1UL);
         CHECK(status.tool_error_count == 1UL);
         CHECK(status.registered_tool_count == 1UL);
 
-        const auto text = orangutan::app::format_runtime_status(status);
+        const auto text = orangutan::cli::format_runtime_status(status);
         CHECK(text.contains("## Status"));
         CHECK(text.contains("- 🔌 Provider: `openai`"));
         CHECK(text.contains("- 🧠 Model: `gpt-fallback`"));
@@ -79,31 +79,31 @@ namespace {
         CHECK(text.contains("- 🔁 Fallback Models: `gpt-fallback`"));
         CHECK(text.contains("- 📊 Usage: `llm_requests=4`, `attempts=5`, `fallbacks=1`, `failed_attempts=1`, `tool_calls=1`, `tool_errors=1`"));
         CHECK(text.contains("- 🛠️ Tools: `registered=1`"));
-        CHECK(orangutan::app::format_current_session("session-1", "coder").contains("## Session"));
-        CHECK(orangutan::app::format_current_session("session-1", "coder").contains("🧵 Current Session: `session-1`"));
-        CHECK(orangutan::app::format_current_session("", "coder").contains("💤 No active session"));
-        CHECK(orangutan::app::format_current_agent("coder").contains("## Agent"));
-        CHECK(orangutan::app::format_current_agent("coder").contains("🤖 Current Agent: `coder`"));
-        CHECK(orangutan::app::repl_help_text().contains("## Commands"));
-        CHECK(orangutan::app::repl_help_text().contains("`/status`"));
-        CHECK(orangutan::app::repl_help_text().contains("`/export`"));
-        CHECK_FALSE(orangutan::app::repl_help_text().contains("`/history`"));
-        CHECK_FALSE(orangutan::app::repl_help_text().contains("`/load`"));
-        CHECK(orangutan::app::channel_help_text().contains("## Commands"));
-        CHECK(orangutan::app::channel_help_text().contains("`/status`"));
-        CHECK(orangutan::app::channel_help_text().contains("`/export`"));
-        CHECK_FALSE(orangutan::app::channel_help_text().contains("`/history`"));
-        CHECK_FALSE(orangutan::app::channel_help_text().contains("`/load`"));
-        CHECK(orangutan::app::web_help_text().contains("## Commands"));
-        CHECK(orangutan::app::web_help_text().contains("`/status`"));
-        CHECK(orangutan::app::web_help_text().contains("`/export`"));
-        CHECK_FALSE(orangutan::app::web_help_text().contains("`/history`"));
-        CHECK_FALSE(orangutan::app::web_help_text().contains("`/load`"));
+        CHECK(orangutan::cli::format_current_session("session-1", "coder").contains("## Session"));
+        CHECK(orangutan::cli::format_current_session("session-1", "coder").contains("🧵 Current Session: `session-1`"));
+        CHECK(orangutan::cli::format_current_session("", "coder").contains("💤 No active session"));
+        CHECK(orangutan::cli::format_current_agent("coder").contains("## Agent"));
+        CHECK(orangutan::cli::format_current_agent("coder").contains("🤖 Current Agent: `coder`"));
+        CHECK(orangutan::cli::repl_help_text().contains("## Commands"));
+        CHECK(orangutan::cli::repl_help_text().contains("`/status`"));
+        CHECK(orangutan::cli::repl_help_text().contains("`/export`"));
+        CHECK_FALSE(orangutan::cli::repl_help_text().contains("`/history`"));
+        CHECK_FALSE(orangutan::cli::repl_help_text().contains("`/load`"));
+        CHECK(orangutan::cli::channel_help_text().contains("## Commands"));
+        CHECK(orangutan::cli::channel_help_text().contains("`/status`"));
+        CHECK(orangutan::cli::channel_help_text().contains("`/export`"));
+        CHECK_FALSE(orangutan::cli::channel_help_text().contains("`/history`"));
+        CHECK_FALSE(orangutan::cli::channel_help_text().contains("`/load`"));
+        CHECK(orangutan::cli::web_help_text().contains("## Commands"));
+        CHECK(orangutan::cli::web_help_text().contains("`/status`"));
+        CHECK(orangutan::cli::web_help_text().contains("`/export`"));
+        CHECK_FALSE(orangutan::cli::web_help_text().contains("`/history`"));
+        CHECK_FALSE(orangutan::cli::web_help_text().contains("`/load`"));
 
         const auto compacted =
-            orangutan::app::format_history_compaction_result(orangutan::AgentLoop::HistoryCompactionResult{.compacted = true, .messages_before = 20, .messages_after = 8});
+            orangutan::cli::format_history_compaction_result(orangutan::AgentLoop::HistoryCompactionResult{.compacted = true, .messages_before = 20, .messages_after = 8});
         CHECK(compacted == "## Compression\n- Messages: `20 -> 8`");
-        CHECK(orangutan::app::format_history_compaction_result(orangutan::AgentLoop::HistoryCompactionResult{
+        CHECK(orangutan::cli::format_history_compaction_result(orangutan::AgentLoop::HistoryCompactionResult{
                   .compacted = false, .status = "Not enough history to compress yet."}) == "## Compression\n- Not enough history to compress yet.");
     };
 

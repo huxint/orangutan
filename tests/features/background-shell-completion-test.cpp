@@ -1,4 +1,4 @@
-#include "app/single-shot.hpp"
+#include "cli/single-shot.hpp"
 #include "tools/registry/tool.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
@@ -498,12 +498,12 @@ namespace {
         {
             auto lease = harness.runtime_->acquire_agent_execution_lease(harness.tool_context_.agent_key);
             resume_result = std::async(std::launch::async, [&] {
-                return app::run_completion_resume_message(agent,
-                                                          R"({
+                return orangutan::cli::run_completion_resume_message(agent,
+                                                                     R"({
   "type": "background_process_completion",
   "process_id": "proc-lease"
 })",
-                                                          harness.tool_context_.agent_key, harness.runtime_.get(), {}, true);
+                                                                     harness.tool_context_.agent_key, harness.runtime_.get(), {}, true);
             });
 
             CHECK(provider_started.wait_for(std::chrono::milliseconds(150)) == std::future_status::timeout);

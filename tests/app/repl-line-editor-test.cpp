@@ -1,4 +1,4 @@
-#include "app/line-editor.hpp"
+#include "cli/line-editor.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan::app {
+namespace orangutan::cli {
     namespace {
 
         class ScriptedLineEditor final : public LineEditor {
@@ -104,4 +104,4 @@ namespace orangutan::app {
         };
 
     } // namespace
-} // namespace orangutan::app
+} // namespace orangutan::cli

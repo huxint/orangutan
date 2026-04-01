@@ -31,7 +31,7 @@ namespace orangutan {
 
 } // namespace orangutan
 
-namespace orangutan::app {
+namespace orangutan::bootstrap {
 
     struct AgentRuntimeConfig {
         std::string agent_key;
@@ -146,4 +146,4 @@ namespace orangutan::app {
                           MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg,
                           orangutan::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
 
-} // namespace orangutan::app
+} // namespace orangutan::bootstrap

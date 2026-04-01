@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     struct SlashCommandReply {
         bool handled = false;
@@ -47,4 +47,4 @@ namespace orangutan::app {
     [[nodiscard]]
     SlashCommandReply handle_registry_slash_command(const std::string &line, const ToolRegistry *tool_registry);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

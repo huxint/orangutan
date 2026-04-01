@@ -1,11 +1,11 @@
-#include "app/cli-ui.hpp"
-#include "app/slash-commands.hpp"
+#include "cli/cli-ui.hpp"
+#include "cli/slash-commands.hpp"
 
 #include <spdlog/common.h>
 #include <algorithm>
 #include "utils/format.hpp"
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     std::string repl_help_text() {
         return render_slash_help_text(slash_command_surface::cli);
@@ -171,4 +171,4 @@ namespace orangutan::app {
         return out;
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

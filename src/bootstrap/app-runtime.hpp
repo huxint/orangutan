@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 
-namespace orangutan::app {
+namespace orangutan::bootstrap {
 
     class AppRuntime {
     public:
@@ -29,4 +29,4 @@ namespace orangutan::app {
         std::unique_ptr<orangutan::automation::Runtime> automation_runtime_;
     };
 
-} // namespace orangutan::app
+} // namespace orangutan::bootstrap

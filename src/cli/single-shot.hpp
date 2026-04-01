@@ -14,7 +14,7 @@ namespace orangutan::automation {
     class Runtime;
 }
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     using JsonEmitter = std::function<void(const nlohmann::json &event)>;
     using CompletionResumePostRunCallback = std::function<std::optional<std::string>(const std::string &reply)>;
@@ -28,4 +28,4 @@ namespace orangutan::app {
                            std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key,
                            const JsonEmitter &emit, std::ostream &error_stream, automation::Runtime *automation_runtime = nullptr);
 
-} // namespace orangutan::app
+} // namespace orangutan::cli

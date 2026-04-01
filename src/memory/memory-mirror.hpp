@@ -1,7 +1,7 @@
 #pragma once
 
 #include "memory/memory-store.hpp"
-#include "app/runtime/memory-context.hpp"
+#include "bootstrap/memory-context.hpp"
 
 #include <filesystem>
 #include <string>
@@ -25,10 +25,10 @@ namespace orangutan {
     class MemoryMirror {
     public:
         [[nodiscard]]
-        static MemoryMirrorRefreshResult refresh_snapshot(const RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records);
+        static MemoryMirrorRefreshResult refresh_snapshot(const bootstrap::RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records);
 
         [[nodiscard]]
-        static JournalMirrorWriteResult append_daily_journal(const RuntimeMemoryContext &context, const std::string &summary);
+        static JournalMirrorWriteResult append_daily_journal(const bootstrap::RuntimeMemoryContext &context, const std::string &summary);
     };
 
 } // namespace orangutan

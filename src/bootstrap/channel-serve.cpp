@@ -1,18 +1,18 @@
-#include "app/channel-serve.hpp"
+#include "bootstrap/channel-serve.hpp"
 
-#include "app/single-shot.hpp"
-#include "app/slash-commands.hpp"
-#include "app/runtime/agent-runtime.hpp"
+#include "cli/single-shot.hpp"
+#include "cli/slash-commands.hpp"
+#include "bootstrap/agent-runtime.hpp"
 #include "automation/scheduler.hpp"
 #include "agent/agent-loop.hpp"
-#include "app/cli-ui.hpp"
-#include "app/session-workflow.hpp"
+#include "cli/cli-ui.hpp"
+#include "cli/session-workflow.hpp"
 #include "channel/qq/qq-channel.hpp"
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
 #include "utils/sender-utils.hpp"
-#include "app/runtime/identity.hpp"
+#include "bootstrap/identity.hpp"
 #include "skills/skill-loader.hpp"
 
 #include <algorithm>
@@ -28,9 +28,11 @@
 
 #include <spdlog/spdlog.h>
 
-namespace orangutan::app {
+namespace orangutan::bootstrap {
 
     namespace {
+
+        namespace cli = orangutan::cli;
 
         constexpr auto serve_poll_interval = std::chrono::milliseconds(50);
 
@@ -401,32 +403,32 @@ namespace orangutan::app {
 
         bool handle_channel_session_command(const InboundMessage &message, ConversationRuntime &runtime, SessionStore &session_store, ChannelManager &channel_manager,
                                             const Config &cfg) {
-            if (const auto reply = dispatch_shared_slash_command(
+            if (const auto reply = cli::dispatch_shared_slash_command(
                     message.content,
                     {
-                        .surface = slash_command_surface::channel,
+                        .surface = cli::slash_command_surface::channel,
                         .help =
                             [&] {
-                                return SlashCommandReply{.handled = true, .text = channel_help_text()};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::channel_help_text()};
                             },
                         .new_session =
                             [&] {
                                 const auto previous_message_count = runtime.agent().history().size();
                                 const auto active_model =
                                     runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
-                                const auto result = start_new_session(runtime.agent(), session_store, runtime.current_session_id,
-                                                                      make_channel_session_metadata(runtime, message.jid, active_model));
+                                const auto result = cli::start_new_session(runtime.agent(), session_store, runtime.current_session_id,
+                                                                           make_channel_session_metadata(runtime, message.jid, active_model));
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
                                 runtime.current_session_id.clear();
                                 session_store.clear_jid(message.jid, runtime.agent_key);
                                 runtime.persisted_message_count = 0;
-                                return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, true)};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::describe_new_session_result(result, true)};
                             },
                         .export_session =
                             [&] {
-                                return SlashCommandReply{
+                                return cli::SlashCommandReply{
                                     .handled = true,
-                                    .text = describe_export_result(export_session_markdown(runtime.agent().history(), runtime.current_session_id, runtime.workspace)),
+                                    .text = cli::describe_export_result(cli::export_session_markdown(runtime.agent().history(), runtime.current_session_id, runtime.workspace)),
                                 };
                             },
                         .compress =
@@ -435,52 +437,52 @@ namespace orangutan::app {
                                 if (result.compacted) {
                                     persist_channel_session(message.jid, runtime, session_store);
                                 }
-                                return SlashCommandReply{.handled = true, .text = format_history_compaction_result(result)};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::format_history_compaction_result(result)};
                             },
                         .session =
                             [&] {
-                                return SlashCommandReply{.handled = true, .text = format_current_session(runtime.current_session_id, runtime.agent_key)};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::format_current_session(runtime.current_session_id, runtime.agent_key)};
                             },
                         .sessions =
                             [&] {
-                                return SlashCommandReply{
+                                return cli::SlashCommandReply{
                                     .handled = true,
-                                    .text = format_scoped_sessions(session_store.list_sessions(runtime.session_scope_key), runtime.current_session_id),
+                                    .text = cli::format_scoped_sessions(session_store.list_sessions(runtime.session_scope_key), runtime.current_session_id),
                                 };
                             },
                         .agent =
                             [&] {
-                                return SlashCommandReply{.handled = true, .text = format_current_agent(runtime.agent_key)};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::format_current_agent(runtime.agent_key)};
                             },
                         .status =
                             [&] {
-                                return SlashCommandReply{
+                                return cli::SlashCommandReply{
                                     .handled = true,
-                                    .text = format_runtime_status(collect_runtime_status(runtime.agent(), *runtime.provider(), &runtime.tools(), runtime.current_session_id,
-                                                                                         runtime.agent_key, runtime.configured_model, runtime.fallback_models,
-                                                                                         runtime.session_scope_key)),
+                                    .text = cli::format_runtime_status(cli::collect_runtime_status(runtime.agent(), *runtime.provider(), &runtime.tools(),
+                                                                                                   runtime.current_session_id, runtime.agent_key, runtime.configured_model,
+                                                                                                   runtime.fallback_models, runtime.session_scope_key)),
                                 };
                             },
                         .agents =
                             [&] {
-                                return SlashCommandReply{.handled = true, .text = format_agent_list(cfg, runtime.agent_key)};
+                                return cli::SlashCommandReply{.handled = true, .text = cli::format_agent_list(cfg, runtime.agent_key)};
                             },
                         .resume =
                             [&](const std::string &session_id) {
                                 const auto previous_session_id = runtime.current_session_id;
                                 const auto previous_message_count = runtime.agent().history().size();
-                                const auto resolved_session_id = resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
+                                const auto resolved_session_id = cli::resolve_requested_session(session_store, session_id, runtime.session_scope_key, runtime.agent_key);
                                 if (!resolved_session_id.has_value()) {
-                                    return SlashCommandReply{.handled = true, .text = "No saved sessions available in this scope."};
+                                    return cli::SlashCommandReply{.handled = true, .text = "No saved sessions available in this scope."};
                                 }
                                 if (!session_store.session_belongs_to_scope(*resolved_session_id, runtime.session_scope_key)) {
-                                    return SlashCommandReply{.handled = true, .text = "That session does not belong to this conversation scope."};
+                                    return cli::SlashCommandReply{.handled = true, .text = "That session does not belong to this conversation scope."};
                                 }
 
-                                const auto load_result = load_session_into_agent(*resolved_session_id, runtime.agent(), session_store, runtime.current_session_id,
-                                                                                 runtime.session_scope_key, runtime.agent_key);
+                                const auto load_result = cli::load_session_into_agent(*resolved_session_id, runtime.agent(), session_store, runtime.current_session_id,
+                                                                                      runtime.session_scope_key, runtime.agent_key);
                                 if (!load_result.loaded) {
-                                    return SlashCommandReply{.handled = true, .text = load_result.status};
+                                    return cli::SlashCommandReply{.handled = true, .text = load_result.status};
                                 }
 
                                 if (previous_session_id != runtime.current_session_id) {
@@ -490,7 +492,7 @@ namespace orangutan::app {
 
                                 runtime.persisted_message_count = runtime.agent().history().size();
                                 session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
-                                return SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + runtime.current_session_id};
+                                return cli::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + runtime.current_session_id};
                             },
                         .tool_registry = &runtime.tools(),
                     });
@@ -758,7 +760,7 @@ namespace orangutan::app {
                     return "channel runtime is no longer available";
                 }
 
-                return run_completion_resume_message(
+                return cli::run_completion_resume_message(
                     *state->agent, message, state->agent_key, state->automation_runtime,
                     [state](const std::string &reply) -> std::optional<std::string> {
                         if (const auto error = persist_channel_session(*state); error.has_value()) {
@@ -899,4 +901,4 @@ namespace orangutan::app {
         }
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::bootstrap

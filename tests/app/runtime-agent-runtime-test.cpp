@@ -1,5 +1,5 @@
-#include "app/runtime/agent-runtime.hpp"
-#include "app/runtime/identity.hpp"
+#include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/identity.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
 #include "hooks/hook-manager.hpp"
@@ -17,6 +17,7 @@
 #include <vector>
 
 using namespace orangutan;
+using namespace orangutan::bootstrap;
 
 namespace {
 

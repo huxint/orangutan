@@ -1,10 +1,10 @@
-#include "app/session-workflow.hpp"
+#include "cli/session-workflow.hpp"
 #include "utils/file.hpp"
 
 #include <filesystem>
 #include <spdlog/common.h>
 
-namespace orangutan::app {
+namespace orangutan::cli {
 
     namespace {
 
@@ -190,4 +190,4 @@ namespace orangutan::app {
         return "## Export\n- Saved current session to `" + result.path + '`';
     }
 
-} // namespace orangutan::app
+} // namespace orangutan::cli
