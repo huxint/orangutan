@@ -1,8 +1,8 @@
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 
-#include "features/memory/memory-extract.hpp"
-#include "features/memory/memory-schema.hpp"
-#include "features/memory/memory-search.hpp"
+#include "memory/memory-extract.hpp"
+#include "memory/memory-schema.hpp"
+#include "memory/memory-search.hpp"
 #include "infra/string.hpp"
 
 #include <algorithm>

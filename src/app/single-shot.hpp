@@ -1,7 +1,7 @@
 #pragma once
 
 #include "providers/provider.hpp"
-#include "features/agent/agent-loop.hpp"
+#include "agent/agent-loop.hpp"
 #include "infra/config/config.hpp"
 #include "infra/storage/session-store.hpp"
 

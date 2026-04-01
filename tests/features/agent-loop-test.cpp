@@ -1,6 +1,6 @@
-#include "features/agent/agent-loop.hpp"
-#include "features/memory/memory.hpp"
-#include "features/memory/runtime-memory.hpp"
+#include "agent/agent-loop.hpp"
+#include "memory/memory-store.hpp"
+#include "memory/runtime-memory.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

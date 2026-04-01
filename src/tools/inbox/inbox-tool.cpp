@@ -1,6 +1,6 @@
 #include "tools/inbox/inbox-tool.hpp"
 
-#include "features/automation/runtime.hpp"
+#include "automation/scheduler.hpp"
 
 #include "infra/format.hpp"
 

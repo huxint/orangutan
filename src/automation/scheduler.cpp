@@ -1,6 +1,6 @@
-#include "features/automation/runtime.hpp"
+#include "automation/scheduler.hpp"
 
-#include "features/automation/planner.hpp"
+#include "automation/planner.hpp"
 #include "infra/execution/sender-utils.hpp"
 
 #include <chrono>

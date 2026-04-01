@@ -5,7 +5,7 @@
 #include "app/session-workflow.hpp"
 #include "app/slash-commands.hpp"
 #include "providers/provider.hpp"
-#include "features/automation/runtime.hpp"
+#include "automation/scheduler.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 

@@ -1,5 +1,5 @@
-#include "features/automation/planner.hpp"
-#include "features/automation/runtime.hpp"
+#include "automation/planner.hpp"
+#include "automation/scheduler.hpp"
 #include "infra/time/local-time.hpp"
 #include "test-helpers.hpp"
 

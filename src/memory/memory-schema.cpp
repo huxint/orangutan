@@ -1,4 +1,4 @@
-#include "features/memory/memory-schema.hpp"
+#include "memory/memory-schema.hpp"
 
 #include <cstdlib>
 #include <filesystem>

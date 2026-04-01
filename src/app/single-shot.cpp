@@ -2,7 +2,7 @@
 
 #include "app/history-events.hpp"
 #include "app/session-workflow.hpp"
-#include "features/automation/runtime.hpp"
+#include "automation/scheduler.hpp"
 
 #include <optional>
 #include <ostream>

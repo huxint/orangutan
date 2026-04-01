@@ -1,7 +1,7 @@
 #include "features/subagent/subagent-manager.hpp"
 
-#include "features/agent/agent-loop.hpp"
-#include "features/memory/runtime-memory.hpp"
+#include "agent/agent-loop.hpp"
+#include "memory/runtime-memory.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "providers/provider.hpp"
 #include "infra/storage/session-store.hpp"

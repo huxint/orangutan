@@ -1,7 +1,7 @@
-#include "features/agent/agent-loop.hpp"
+#include "agent/agent-loop.hpp"
 
 #include "features/hooks/hook-manager.hpp"
-#include "features/memory/runtime-memory.hpp"
+#include "memory/runtime-memory.hpp"
 #include "infra/string.hpp"
 #include "infra/execution/sender-utils.hpp"
 

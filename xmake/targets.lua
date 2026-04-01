@@ -13,6 +13,9 @@ target("orangutan-lib")
     set_kind("static")
     add_orangutan_common()
     add_files(
+        path.join(root, "src/agent/*.cpp"),
+        path.join(root, "src/memory/*.cpp"),
+        path.join(root, "src/automation/*.cpp"),
         path.join(root, "src/providers/*.cpp"),
         path.join(root, "src/tools/**/*.cpp"),
         path.join(root, "src/infra/*.cpp"),

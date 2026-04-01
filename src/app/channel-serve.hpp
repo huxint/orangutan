@@ -5,7 +5,7 @@
 #include "tools/registry/tool.hpp"
 #include "infra/config/config.hpp"
 #include "features/channel/core/jid-task-runner.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "features/channel/core/message-queue.hpp"
 #include "infra/storage/session-store.hpp"
 #include "features/subagent/subagent-manager.hpp"

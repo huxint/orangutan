@@ -1,8 +1,8 @@
 #pragma once
 
 #include "types/types.hpp"
-#include "features/automation/log-writer.hpp"
-#include "features/automation/store.hpp"
+#include "automation/log-writer.hpp"
+#include "automation/automation-store.hpp"
 
 #include <atomic>
 #include <condition_variable>

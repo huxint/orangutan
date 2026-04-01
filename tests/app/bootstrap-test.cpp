@@ -4,7 +4,7 @@
 #include "app/runtime/app-runtime.hpp"
 
 #include "app/runtime/identity.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "features/web/web-server.hpp"
 #include "infra/config/config.hpp"

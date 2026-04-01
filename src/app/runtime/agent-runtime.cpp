@@ -2,9 +2,9 @@
 
 #include "app/runtime/memory-context.hpp"
 #include "providers/provider.hpp"
-#include "features/agent/agent-loop.hpp"
+#include "agent/agent-loop.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "features/memory/runtime-memory.hpp"
+#include "memory/runtime-memory.hpp"
 #include "features/skills/skill-loader.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 

@@ -1,4 +1,4 @@
-#include "features/automation/types.hpp"
+#include "automation/automation-types.hpp"
 
 #include <algorithm>
 #include <array>

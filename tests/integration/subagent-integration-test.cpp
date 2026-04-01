@@ -1,4 +1,4 @@
-#include "features/agent/agent-loop.hpp"
+#include "agent/agent-loop.hpp"
 #include "app/runtime/identity.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"

@@ -1,4 +1,4 @@
-#include "features/memory/runtime-memory.hpp"
+#include "memory/runtime-memory.hpp"
 
 #include "infra/string.hpp"
 

@@ -1,9 +1,9 @@
 #include "app/runtime/agent-runtime.hpp"
 #include "app/runtime/identity.hpp"
-#include "features/automation/runtime.hpp"
-#include "features/automation/store.hpp"
+#include "automation/scheduler.hpp"
+#include "automation/automation-store.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 

@@ -1,4 +1,4 @@
-#include "features/automation/store.hpp"
+#include "automation/automation-store.hpp"
 #include "test-helpers.hpp"
 #include <catch2/catch_test_macros.hpp>
 

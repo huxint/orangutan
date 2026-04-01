@@ -1,6 +1,6 @@
 #include "tools/background/background-completion.hpp"
 
-#include "features/automation/types.hpp"
+#include "automation/automation-types.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "infra/utf8.hpp"
 

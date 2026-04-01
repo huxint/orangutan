@@ -1,8 +1,8 @@
 #include "tools/task/task-tool.hpp"
 
-#include "features/automation/planner.hpp"
-#include "features/automation/runtime.hpp"
-#include "features/cron/parser.hpp"
+#include "automation/planner.hpp"
+#include "automation/scheduler.hpp"
+#include "automation/cron-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 
 #include "infra/format.hpp"

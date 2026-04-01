@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types/types.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 
 #include <optional>
 #include <string>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/agent/agent-loop.hpp"
+#include "agent/agent-loop.hpp"
 #include "providers/provider.hpp"
 #include "tools/registry/tool.hpp"
 #include "infra/config/config.hpp"

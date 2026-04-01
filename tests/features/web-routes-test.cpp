@@ -2,7 +2,7 @@
 #include "features/web/web-routes.hpp"
 #include "app/runtime/app-runtime.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/storage/subagent-run-store.hpp"

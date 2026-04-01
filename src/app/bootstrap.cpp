@@ -11,7 +11,7 @@
 #include "features/web/web-server.hpp"
 #include "features/channel/core/message-queue.hpp"
 #include "features/hooks/hook-manager.hpp"
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "features/skills/skill-loader.hpp"
 #include "features/subagent/subagent-manager.hpp"
 #include "infra/config/config.hpp"

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "features/automation/runtime.hpp"
-#include "features/automation/store.hpp"
+#include "automation/scheduler.hpp"
+#include "automation/automation-store.hpp"
 
 #include <filesystem>
 #include <memory>

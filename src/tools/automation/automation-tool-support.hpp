@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/automation/types.hpp"
+#include "automation/automation-types.hpp"
 
 #include <expected>
 #include <optional>

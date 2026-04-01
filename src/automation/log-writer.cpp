@@ -1,4 +1,4 @@
-#include "features/automation/log-writer.hpp"
+#include "automation/log-writer.hpp"
 #include "infra/files/file.hpp"
 #include "infra/time/local-format.hpp"
 

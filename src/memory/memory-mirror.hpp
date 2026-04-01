@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/memory/memory.hpp"
+#include "memory/memory-store.hpp"
 #include "app/runtime/memory-context.hpp"
 
 #include <filesystem>

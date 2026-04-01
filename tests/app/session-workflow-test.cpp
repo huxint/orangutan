@@ -1,7 +1,7 @@
 #include "app/session-workflow.hpp"
 
-#include "features/memory/memory.hpp"
-#include "features/memory/runtime-memory.hpp"
+#include "memory/memory-store.hpp"
+#include "memory/runtime-memory.hpp"
 #include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 
