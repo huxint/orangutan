@@ -19,7 +19,7 @@ namespace orangutan::providers {
             if (thinking == "high") {
                 return 8192;
             }
-            if (thinking == "max") {
+            if (thinking == "xhigh") {
                 return 16384;
             }
             return 0;

@@ -16,6 +16,13 @@ namespace {
         return (std::filesystem::path(home) / ".orangutan" / "workspace" / "main").lexically_normal().string();
     }
 
+    std::string fallback_display_label(const orangutan::config::FallbackModelRef &fallback) {
+        if (fallback.profile.empty()) {
+            return fallback.model;
+        }
+        return fallback.profile + ":" + fallback.model;
+    }
+
 } // namespace
 
 namespace orangutan::bootstrap::detail {
@@ -106,21 +113,28 @@ namespace orangutan::bootstrap::detail {
         };
 
         for (const auto &fallback_model : agent_cfg.fallback_models) {
-            if (fallback_model.empty() || fallback_model == agent_cfg.model) {
+            const auto fallback_profile_name = fallback_model.profile.empty() ? agent_cfg.profile : fallback_model.profile;
+            if (fallback_model.model.empty() || (fallback_profile_name == agent_cfg.profile && fallback_model.model == agent_cfg.model)) {
                 continue;
             }
-            const auto fallback_it = profile_cfg.models.find(fallback_model);
-            if (fallback_it == profile_cfg.models.end()) {
-                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model, agent_cfg.profile);
+            const auto fallback_profile_it = cfg.profiles.find(fallback_profile_name);
+            if (fallback_profile_it == cfg.profiles.end()) {
+                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback profile '{}' is not defined.", agent_key, fallback_profile_name);
+                return std::nullopt;
+            }
+            const auto &fallback_profile_cfg = fallback_profile_it->second;
+            const auto fallback_it = fallback_profile_cfg.models.find(fallback_model.model);
+            if (fallback_it == fallback_profile_cfg.models.end()) {
+                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model.model, fallback_profile_name);
                 return std::nullopt;
             }
             resolved.fallback_endpoints.push_back(providers::ProviderEndpoint{
-                .profile_name = agent_cfg.profile,
+                .profile_name = fallback_profile_name,
                 .endpoint_style = fallback_it->second.endpoint_style,
-                .api_key = resolved.primary_endpoint.api_key,
-                .model = fallback_model,
-                .base_url = profile_cfg.base_url,
-                .headers = profile_cfg.headers,
+                .api_key = resolve_api_key(cli_api_key_override, fallback_profile_cfg),
+                .model = fallback_model.model,
+                .base_url = fallback_profile_cfg.base_url,
+                .headers = fallback_profile_cfg.headers,
                 .default_max_tokens = fallback_it->second.max_tokens,
                 .thinking = fallback_it->second.thinking,
             });
@@ -150,7 +164,15 @@ namespace orangutan::bootstrap::detail {
             result.emplace(agent_key, AgentRuntimeConfig{
                                           .agent_key = agent_key,
                                           .model = agent_cfg.model,
-                                          .fallback_models = agent_cfg.fallback_models,
+                                          .fallback_models =
+                                              [&] {
+                                                  std::vector<std::string> labels;
+                                                  labels.reserve(agent_cfg.fallback_models.size());
+                                                  for (const auto &fallback : agent_cfg.fallback_models) {
+                                                      labels.push_back(fallback_display_label(fallback));
+                                                  }
+                                                  return labels;
+                                              }(),
                                           .primary_endpoint = std::move(maybe_endpoints->primary_endpoint),
                                           .fallback_endpoints = std::move(maybe_endpoints->fallback_endpoints),
                                           .system_prompt = agent_cfg.system_prompt,

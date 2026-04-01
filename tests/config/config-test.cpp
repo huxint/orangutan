@@ -67,11 +67,19 @@ namespace {
                   "endpoint_style": "openai-responses",
                   "max_tokens": 32000,
                   "context_window": 128000,
-                  "thinking": "medium",
+                  "thinking": "xhigh",
                   "cost": {
                     "input": 2.0,
                     "output": 8.0
                   }
+                }
+              }
+            },
+            "gateway-b": {
+              "base_url": "https://anthropic.example.com",
+              "models": {
+                "claude-sonnet-4-20250514": {
+                  "endpoint_style": "anthropic-messages"
                 }
               }
             }
@@ -80,7 +88,10 @@ namespace {
             "default": {
               "profile": "gateway-a",
               "model": "gpt-4.1",
-              "fallback_models": ["gpt-4.1-mini"],
+              "fallback_models": [
+                "gpt-4.1-mini",
+                {"profile": "gateway-b", "model": "claude-sonnet-4-20250514"}
+              ],
               "workspace": "~/workspace/default",
               "system_prompt": "You are the default agent.",
               "subagents": ["coder"]
@@ -101,7 +112,7 @@ namespace {
         CHECK(*model.max_tokens == 32000);
         REQUIRE(model.context_window.has_value());
         CHECK(*model.context_window == 128000);
-        CHECK(model.thinking == "medium");
+        CHECK(model.thinking == "xhigh");
         REQUIRE(model.cost.has_value());
         CHECK(model.cost->input == 2.0);
         CHECK(model.cost->output == 8.0);
@@ -110,8 +121,11 @@ namespace {
         const auto &agent = cfg.agents.at("default");
         CHECK(agent.profile == "gateway-a");
         CHECK(agent.model == "gpt-4.1");
-        REQUIRE(agent.fallback_models.size() == 1UL);
-        CHECK(agent.fallback_models.front() == "gpt-4.1-mini");
+        REQUIRE(agent.fallback_models.size() == 2UL);
+        CHECK(agent.fallback_models[0].profile.empty());
+        CHECK(agent.fallback_models[0].model == "gpt-4.1-mini");
+        CHECK(agent.fallback_models[1].profile == "gateway-b");
+        CHECK(agent.fallback_models[1].model == "claude-sonnet-4-20250514");
         CHECK(agent.system_prompt == "You are the default agent.");
         CHECK(agent.subagents == std::vector<std::string>{"coder"});
         CHECK(agent.workspace.contains("/workspace/default"));
@@ -140,7 +154,9 @@ namespace {
         const auto &coder = cfg.agents.at("coder");
         CHECK(coder.profile == "shared-profile");
         CHECK(coder.model == "coder-model");
-        CHECK(coder.fallback_models == std::vector<std::string>{"global-fallback"});
+        REQUIRE(coder.fallback_models.size() == 1UL);
+        CHECK(coder.fallback_models[0].profile.empty());
+        CHECK(coder.fallback_models[0].model == "global-fallback");
         CHECK(coder.system_prompt == "Shared prompt");
         CHECK(coder.workspace.contains("/workspace/shared"));
     };

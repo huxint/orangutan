@@ -52,6 +52,34 @@ namespace orangutan::config::detail {
             }
         }
 
+        void assign_fallback_array(const nlohmann::json &array, std::vector<FallbackModelRef> &target) {
+            target.clear();
+            if (!array.is_array()) {
+                return;
+            }
+
+            for (const auto &item : array) {
+                if (item.is_string()) {
+                    target.emplace_back(item.get<std::string>());
+                    continue;
+                }
+                if (!item.is_object()) {
+                    continue;
+                }
+
+                FallbackModelRef ref;
+                if (const auto *value = find_member(item, "profile"); value != nullptr && value->is_string()) {
+                    ref.profile = value->get<std::string>();
+                }
+                if (const auto *value = find_member(item, "model"); value != nullptr && value->is_string()) {
+                    ref.model = value->get<std::string>();
+                }
+                if (!ref.model.empty()) {
+                    target.push_back(std::move(ref));
+                }
+            }
+        }
+
         std::optional<ModelCostConfig> parse_model_cost(const nlohmann::json &value) {
             if (!value.is_object()) {
                 return std::nullopt;
@@ -71,7 +99,7 @@ namespace orangutan::config::detail {
         }
 
         bool valid_thinking_mode(std::string_view thinking) {
-            return thinking == "none" || thinking == "low" || thinking == "medium" || thinking == "high" || thinking == "max";
+            return thinking == "none" || thinking == "low" || thinking == "medium" || thinking == "high" || thinking == "xhigh";
         }
 
         ModelConfig parse_model_config(const nlohmann::json &model) {
@@ -120,7 +148,8 @@ namespace orangutan::config::detail {
         cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
 
         for (auto &fallback_model : cfg.fallback_models) {
-            fallback_model = expand_env_vars(fallback_model);
+            fallback_model.profile = expand_env_vars(fallback_model.profile);
+            fallback_model.model = expand_env_vars(fallback_model.model);
         }
 
         for (auto &subagent : cfg.subagents) {
@@ -155,7 +184,7 @@ namespace orangutan::config::detail {
             cfg.model = value->get<std::string>();
         }
         if (const auto *value = find_array_member(*agent, "fallback_models"); value != nullptr) {
-            assign_string_array(*value, cfg.fallback_models);
+            assign_fallback_array(*value, cfg.fallback_models);
         }
         if (const auto *value = find_member(*agent, "temperature"); value != nullptr && value->is_number()) {
             cfg.temperature = value->get<base::f64>();
@@ -366,7 +395,7 @@ namespace orangutan::config::detail {
                 agent_cfg.model = value->get<std::string>();
             }
             if (const auto *value = find_array_member(agent, "fallback_models"); value != nullptr) {
-                assign_string_array(*value, agent_cfg.fallback_models);
+                assign_fallback_array(*value, agent_cfg.fallback_models);
             }
             if (const auto *value = find_member(agent, "system_prompt"); value != nullptr && value->is_string()) {
                 agent_cfg.system_prompt = value->get<std::string>();

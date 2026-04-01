@@ -47,6 +47,19 @@ namespace {
 
     using orangutan::bootstrap::CliOptions;
 
+    std::vector<std::string> fallback_labels(const std::vector<orangutan::config::FallbackModelRef> &fallback_models) {
+        std::vector<std::string> labels;
+        labels.reserve(fallback_models.size());
+        for (const auto &fallback : fallback_models) {
+            if (fallback.profile.empty()) {
+                labels.push_back(fallback.model);
+            } else {
+                labels.push_back(fallback.profile + ":" + fallback.model);
+            }
+        }
+        return labels;
+    }
+
     template <typename Store>
     std::unique_ptr<Store> create_store(const char *name) {
         try {
@@ -154,7 +167,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         maybe_primary_runtime_cfg = orangutan::bootstrap::AgentRuntimeConfig{
             .agent_key = options.cli_agent_key,
             .model = maybe_selected_agent->model,
-            .fallback_models = maybe_selected_agent->fallback_models,
+            .fallback_models = fallback_labels(maybe_selected_agent->fallback_models),
             .primary_endpoint = maybe_endpoints->primary_endpoint,
             .fallback_endpoints = maybe_endpoints->fallback_endpoints,
             .system_prompt = maybe_selected_agent->system_prompt,

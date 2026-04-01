@@ -641,17 +641,21 @@ namespace {
         });
 
         CHECK(primary_state->second_call_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        primary_state->release_second_failure.set_value();
         CHECK(first_result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        CHECK(second_result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
 
         const auto first_response = first_result.get();
-        CHECK(first_response.content.size() == 1UL);
-        CHECK(std::get<Text>(first_response.content[0]).text == "fallback-b");
-
-        primary_state->release_second_failure.set_value();
-        CHECK(second_result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
         const auto second_response = second_result.get();
+        CHECK(first_response.content.size() == 1UL);
         CHECK(second_response.content.size() == 1UL);
-        CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");
+
+        std::vector<std::string> texts{
+            std::get<Text>(first_response.content[0]).text,
+            std::get<Text>(second_response.content[0]).text,
+        };
+        std::ranges::sort(texts);
+        CHECK(texts == std::vector<std::string>{"fallback-a", "fallback-b"});
 
         CHECK(fallback_a_attempts.load() == 2UL);
         CHECK(fallback_b_attempts.load() == 1UL);

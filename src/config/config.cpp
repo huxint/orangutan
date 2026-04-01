@@ -71,6 +71,25 @@ namespace orangutan::config {
 
     namespace detail {
 
+        namespace {
+
+            nlohmann::json serialize_fallback_models(const std::vector<FallbackModelRef> &fallback_models) {
+                auto array = nlohmann::json::array();
+                for (const auto &fallback : fallback_models) {
+                    if (fallback.profile.empty()) {
+                        array.push_back(fallback.model);
+                    } else {
+                        array.push_back({
+                            {"profile", fallback.profile},
+                            {"model", fallback.model},
+                        });
+                    }
+                }
+                return array;
+            }
+
+        } // namespace
+
         void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver) {
             if (value.empty()) {
                 return;
@@ -101,7 +120,8 @@ namespace orangutan::config {
             cfg.system_prompt = expand_env_vars(cfg.system_prompt);
             cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
             for (auto &fallback_model : cfg.fallback_models) {
-                fallback_model = expand_env_vars(fallback_model);
+                fallback_model.profile = expand_env_vars(fallback_model.profile);
+                fallback_model.model = expand_env_vars(fallback_model.model);
             }
             for (auto &[profile_name, profile_cfg] : cfg.profiles) {
                 const auto display_field = "profiles." + profile_name + ".api_key";
@@ -232,7 +252,7 @@ namespace orangutan::config {
             agent["workspace"] = workspace;
         }
         if (!fallback_models.empty()) {
-            agent["fallback_models"] = fallback_models;
+            agent["fallback_models"] = detail::serialize_fallback_models(fallback_models);
         }
         root["agent"] = std::move(agent);
 
@@ -321,7 +341,7 @@ namespace orangutan::config {
                     agent_json["profile"] = agent_cfg.profile;
                 }
                 if (!agent_cfg.fallback_models.empty()) {
-                    agent_json["fallback_models"] = agent_cfg.fallback_models;
+                    agent_json["fallback_models"] = detail::serialize_fallback_models(agent_cfg.fallback_models);
                 }
                 if (!agent_cfg.system_prompt.empty()) {
                     agent_json["system_prompt"] = agent_cfg.system_prompt;

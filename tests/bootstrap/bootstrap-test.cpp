@@ -587,6 +587,31 @@ namespace {
         CHECK(default_it->second.allowed_child_agents.front() == "coder");
     };
 
+    TEST_CASE("build_agent_runtime_configs_resolves_cross_profile_fallbacks") {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.profiles.emplace("openai", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-responses"}}}, "openai-key", "https://openai.example.test"));
+        cfg.profiles.emplace("anthropic", make_profile({{"claude-test", ModelConfig{.endpoint_style = "anthropic-messages"}}}, "anthropic-key", "https://anthropic.example.test"));
+        cfg.agents.emplace("default", AgentConfig{
+                                          .profile = "openai",
+                                          .model = "gpt-test",
+                                          .fallback_models = {FallbackModelRef{"anthropic", "claude-test"}},
+                                          .workspace = harness.workspace_root().string(),
+                                      });
+
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
+        REQUIRE(runtime_configs.has_value());
+        const auto it = runtime_configs->find("default");
+        REQUIRE(it != runtime_configs->end());
+        REQUIRE(it->second.fallback_endpoints.size() == 1UL);
+        CHECK(it->second.fallback_models == std::vector<std::string>{"anthropic:claude-test"});
+        CHECK(it->second.fallback_endpoints[0].profile_name == "anthropic");
+        CHECK(it->second.fallback_endpoints[0].endpoint_style == "anthropic-messages");
+        CHECK(it->second.fallback_endpoints[0].model == "claude-test");
+        CHECK(it->second.fallback_endpoints[0].base_url == "https://anthropic.example.test");
+        CHECK(it->second.fallback_endpoints[0].api_key == "anthropic-key");
+    };
+
     TEST_CASE("build_subagent_child_runtime_configs_propagates_edit_mode") {
         BootstrapHarness harness;
         std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> runtime_configs;

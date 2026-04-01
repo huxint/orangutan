@@ -12,6 +12,21 @@ namespace orangutan::web {
 
     namespace {
 
+        nlohmann::json fallback_models_to_json(const std::vector<config::FallbackModelRef> &fallback_models) {
+            auto array = nlohmann::json::array();
+            for (const auto &fallback : fallback_models) {
+                if (fallback.profile.empty()) {
+                    array.push_back(fallback.model);
+                } else {
+                    array.push_back({
+                        {"profile", fallback.profile},
+                        {"model", fallback.model},
+                    });
+                }
+            }
+            return array;
+        }
+
         nlohmann::json model_config_to_json(const config::ModelConfig &model_cfg) {
             nlohmann::json json = {
                 {"endpoint_style", model_cfg.endpoint_style},
@@ -55,7 +70,7 @@ namespace orangutan::web {
                 {"workspace", agent_cfg.workspace},
                 {"edit_mode", agent_cfg.edit_mode},
                 {"subagents", agent_cfg.subagents},
-                {"fallback_models", agent_cfg.fallback_models},
+                {"fallback_models", fallback_models_to_json(agent_cfg.fallback_models)},
                 {"thinking_budget", agent_cfg.thinking_budget},
             };
             if (!agent_cfg.profile.empty()) {
@@ -76,7 +91,7 @@ namespace orangutan::web {
                      {"workspace", cfg.workspace},
                      {"edit_mode", cfg.edit_mode},
                      {"system_prompt", cfg.system_prompt},
-                     {"fallback_models", cfg.fallback_models},
+                     {"fallback_models", fallback_models_to_json(cfg.fallback_models)},
                      {"thinking_budget", cfg.thinking_budget},
                  }},
                 {"session", {{"auto_save", cfg.auto_save}}},

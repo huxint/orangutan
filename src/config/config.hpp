@@ -32,10 +32,24 @@ namespace orangutan::config {
         std::unordered_map<std::string, ModelConfig> models;
     };
 
+    struct FallbackModelRef {
+        std::string profile;
+        std::string model;
+
+        FallbackModelRef() = default;
+        FallbackModelRef(const char *model_name)
+        : model(model_name != nullptr ? model_name : "") {}
+        FallbackModelRef(std::string model_name)
+        : model(std::move(model_name)) {}
+        FallbackModelRef(std::string profile_name, std::string model_name)
+        : profile(std::move(profile_name)),
+          model(std::move(model_name)) {}
+    };
+
     struct AgentConfig {
         std::string profile;
         std::string model = "claude-sonnet-4-20250514";
-        std::vector<std::string> fallback_models;
+        std::vector<FallbackModelRef> fallback_models;
         std::string system_prompt;
         std::string workspace;
         ToolPermissionSettings permissions{
@@ -58,7 +72,7 @@ namespace orangutan::config {
         // agent defaults object
         std::string profile;
         std::string model = "claude-sonnet-4-20250514";
-        std::vector<std::string> fallback_models;
+        std::vector<FallbackModelRef> fallback_models;
         base::f64 temperature = 1.0;
         int max_iterations = 20;
         int max_tokens = 4096;
@@ -179,6 +193,7 @@ namespace orangutan {
     using config::Config;
     using config::expand_env_vars;
     using config::expand_home_path;
+    using config::FallbackModelRef;
     using config::ModelConfig;
     using config::ModelCostConfig;
     using config::ProfileConfig;

@@ -112,6 +112,19 @@ namespace orangutan::web {
             };
         }
 
+        std::vector<std::string> fallback_labels(const std::vector<config::FallbackModelRef> &fallback_models) {
+            std::vector<std::string> labels;
+            labels.reserve(fallback_models.size());
+            for (const auto &fallback : fallback_models) {
+                if (fallback.profile.empty()) {
+                    labels.push_back(fallback.model);
+                } else {
+                    labels.push_back(fallback.profile + ":" + fallback.model);
+                }
+            }
+            return labels;
+        }
+
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, subagent::SubagentManager *subagent_manager,
                                                                     automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
@@ -386,6 +399,7 @@ namespace orangutan::web {
         cli::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const config::AgentConfig &agent,
                                                                 storage::SessionStore *store, const storage::SessionMetadata &metadata, bootstrap::AgentRuntimeBundle &runtime,
                                                                 std::string &current_session_id) {
+            const auto fallback_model_labels = fallback_labels(agent.fallback_models);
             return cli::dispatch_shared_slash_command(
                 message, {
                              .surface = cli::slash_command_surface::web,
@@ -404,7 +418,7 @@ namespace orangutan::web {
                                      return cli::SlashCommandReply{
                                          .handled = true,
                                          .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id,
-                                                                                                        agent_key, active_model, agent.fallback_models, metadata.scope_key)),
+                                                                                                        agent_key, active_model, fallback_model_labels, metadata.scope_key)),
                                      };
                                  },
                              .tool_registry = &runtime.tools,

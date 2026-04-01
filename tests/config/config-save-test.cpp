@@ -39,7 +39,11 @@ namespace {
         cfg.agents["default"] = orangutan::AgentConfig{
             .profile = "gateway-a",
             .model = "gpt-4.1",
-            .fallback_models = {"gpt-4.1-mini"},
+            .fallback_models =
+                {
+                    "gpt-4.1-mini",
+                    orangutan::FallbackModelRef{"gateway-b", "claude-sonnet-4-20250514"},
+                },
             .system_prompt = "Default prompt",
             .workspace = "~/workspace/default",
             .subagents = {"coder"},
@@ -56,6 +60,8 @@ namespace {
         CHECK(stored["agents"]["default"]["profile"] == "gateway-a");
         CHECK(stored["agents"]["default"]["model"] == "gpt-4.1");
         CHECK(stored["agents"]["default"]["fallback_models"][0] == "gpt-4.1-mini");
+        CHECK(stored["agents"]["default"]["fallback_models"][1]["profile"] == "gateway-b");
+        CHECK(stored["agents"]["default"]["fallback_models"][1]["model"] == "claude-sonnet-4-20250514");
 
         const auto loaded = orangutan::Config::load_from(path);
         CHECK(loaded.agents.at("default").profile == "gateway-a");
