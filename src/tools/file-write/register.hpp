@@ -1,0 +1,11 @@
+#pragma once
+
+#include "tools/registry/tool.hpp"
+
+#include <filesystem>
+
+namespace orangutan::tools::file_write {
+
+    void register_tools(ToolRegistry &registry, const std::filesystem::path &workspace_root);
+
+} // namespace orangutan::tools::file_write

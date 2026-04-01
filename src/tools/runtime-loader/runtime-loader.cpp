@@ -2,7 +2,7 @@
 
 #include "tools/registry/permissions.hpp"
 #include "tools/register.hpp"
-#include "tools/script/script-loader.hpp"
+#include "tools/script/register.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -38,7 +38,7 @@ namespace orangutan::tools {
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionSettings *permissions,
                                                       ToolApprovalCallback approval_callback, std::string_view edit_mode) {
         register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
-        register_script_tools(registry, custom_tools, workspace, permissions, tool_context, approval_callback);
+        script::register_tools(registry, custom_tools, workspace, permissions, tool_context, approval_callback);
 
         if (permissions != nullptr) {
             apply_permission_policy(registry, *permissions, tool_context, std::move(approval_callback));
