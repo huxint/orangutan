@@ -279,7 +279,7 @@ namespace orangutan::web {
             return;
         }
 
-        const auto agent_key = input.value("agent_key", std::string("default"));
+        const auto agent_key = input.value("agent_key", std::string{"default"});
         if (!automation_runtime->ack_inbox(agent_key, input["id"].get<std::string>())) {
             res.status = 404;
             res.set_content(R"({"error":"inbox item not found"})", "application/json");

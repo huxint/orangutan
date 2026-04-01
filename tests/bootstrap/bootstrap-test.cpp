@@ -705,7 +705,7 @@ namespace {
         CHECK(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
-        CHECK(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+        CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
     };
 
     TEST_CASE("web_mode_creates_web_assembly_dependencies_without_api_key") {
@@ -733,7 +733,7 @@ namespace {
         CHECK_FALSE(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
         CHECK(inspection.tool_definitions.empty());
-        CHECK(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+        CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
     };
 
     TEST_CASE("web_mode_starts_admin_ui_when_runtime_assembly_fails") {
@@ -762,7 +762,7 @@ namespace {
         CHECK_FALSE(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
         CHECK(inspection.tool_definitions.empty());
-        CHECK(std::ranges::find(inspection.active_skill_names, std::string("workspace-skill")) != inspection.active_skill_names.end());
+        CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
         CHECK(inspection.runtime_build_error.contains("injected web runtime failure"));
     };
 

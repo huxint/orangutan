@@ -47,7 +47,7 @@ namespace orangutan::providers {
             if (value.starts_with(' ')) {
                 value.remove_prefix(1);
             }
-            current_event_ = std::string(value);
+            current_event_ = static_cast<std::string>(value);
             return;
         }
 

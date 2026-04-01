@@ -25,8 +25,8 @@ namespace orangutan::providers {
 
         void append_header_if_missing(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key,
                                       std::string_view fallback_value) {
-            if (!custom_headers.contains(std::string(key))) {
-                headers.append(std::string(key) + ": " + std::string(fallback_value));
+            if (!custom_headers.contains(static_cast<std::string>(key))) {
+                headers.append(static_cast<std::string>(key) + ": " + static_cast<std::string>(fallback_value));
             }
         }
 
@@ -446,7 +446,7 @@ namespace orangutan::providers {
 
         CurlHeaders headers;
         append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string("Bearer ") + endpoint_.api_key);
+        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
         append_custom_headers(headers, endpoint_.headers);
 
         const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");
@@ -475,7 +475,7 @@ namespace orangutan::providers {
 
         CurlHeaders headers;
         append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string("Bearer ") + endpoint_.api_key);
+        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
         append_custom_headers(headers, endpoint_.headers);
 
         const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");

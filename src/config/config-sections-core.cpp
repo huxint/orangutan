@@ -12,7 +12,7 @@ namespace orangutan::config::detail {
             if (!object.is_object()) {
                 return nullptr;
             }
-            const auto it = object.find(std::string(key));
+            const auto it = object.find(static_cast<std::string>(key));
             return it == object.end() ? nullptr : &*it;
         }
 

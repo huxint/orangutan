@@ -66,7 +66,7 @@ namespace orangutan::config {
             return home;
         }
 
-        return std::string(home) + input.substr(1);
+        return std::string{home} + input.substr(1);
     }
 
     namespace detail {

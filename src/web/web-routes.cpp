@@ -306,7 +306,7 @@ namespace orangutan::web {
         }
 
         void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const nlohmann::json &payload) {
-            const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
+            const auto sse = "event: " + static_cast<std::string>(event_name) + "\ndata: " + payload.dump() + "\n\n";
             sink.write(sse.c_str(), sse.size());
         }
 

@@ -23,7 +23,7 @@ namespace orangutan::providers {
         };
 
         std::string resolved_endpoint_style(const ProviderEndpoint &endpoint) {
-            return endpoint.endpoint_style.empty() ? std::string("anthropic-messages") : endpoint.endpoint_style;
+            return endpoint.endpoint_style.empty() ? std::string{"anthropic-messages"} : endpoint.endpoint_style;
         }
 
         void ensure_api_key_present(const ProviderEndpoint &endpoint) {
@@ -35,12 +35,12 @@ namespace orangutan::providers {
 
         std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
             if (endpoint.endpoint_style == "anthropic-messages" || endpoint.endpoint_style.empty()) {
-                const auto url = endpoint.base_url.empty() ? std::string("https://api.anthropic.com") : endpoint.base_url;
+                const auto url = endpoint.base_url.empty() ? std::string{"https://api.anthropic.com"} : endpoint.base_url;
                 return std::make_unique<AnthropicProvider>(endpoint);
             }
 
             if (endpoint.endpoint_style == "openai-chat-completions" || endpoint.endpoint_style == "openai-responses") {
-                const auto url = endpoint.base_url.empty() ? std::string("https://api.openai.com") : endpoint.base_url;
+                const auto url = endpoint.base_url.empty() ? std::string{"https://api.openai.com"} : endpoint.base_url;
                 return std::make_unique<OpenAiProvider>(endpoint);
             }
 
@@ -92,7 +92,7 @@ namespace orangutan::providers {
             [[nodiscard]]
             std::string name() const override {
                 std::scoped_lock lock(mutex_);
-                return endpoints_[preferred_index_].endpoint_style.empty() ? std::string("anthropic-messages") : endpoints_[preferred_index_].endpoint_style;
+                return endpoints_[preferred_index_].endpoint_style.empty() ? std::string{"anthropic-messages"} : endpoints_[preferred_index_].endpoint_style;
             }
 
             [[nodiscard]]

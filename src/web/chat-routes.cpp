@@ -156,7 +156,7 @@ namespace orangutan::web {
                  agent_key, automation_runtime, &sessions_mutex, &sessions](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
                     if (approval_event_emitter != nullptr) {
                         *approval_event_emitter = [&sink](std::string_view event_name, const nlohmann::json &payload) {
-                            const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
+                            const auto sse = "event: " + static_cast<std::string>(event_name) + "\ndata: " + payload.dump() + "\n\n";
                             return sink.write(sse.c_str(), sse.size());
                         };
                     }
