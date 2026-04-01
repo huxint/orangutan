@@ -301,8 +301,8 @@ namespace {
         MemoryStore store(harness.db_path());
         ToolRegistry alice_registry;
         ToolRegistry bob_registry;
-        RuntimeMemory alice_memory(store, RuntimeMemoryContext{.scope = "jid:alice"});
-        RuntimeMemory bob_memory(store, RuntimeMemoryContext{.scope = "jid:bob"});
+        RuntimeMemory alice_memory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "jid:alice"});
+        RuntimeMemory bob_memory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "jid:bob"});
         register_builtin_tools(alice_registry, &alice_memory);
         register_builtin_tools(bob_registry, &bob_memory);
 
@@ -427,7 +427,7 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory runtime(store, RuntimeMemoryContext{
+        RuntimeMemory runtime(store, orangutan::bootstrap::RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
@@ -450,7 +450,7 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory runtime(store, RuntimeMemoryContext{
+        RuntimeMemory runtime(store, orangutan::bootstrap::RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = false, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
@@ -473,7 +473,7 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory runtime(store, RuntimeMemoryContext{
+        RuntimeMemory runtime(store, orangutan::bootstrap::RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
@@ -503,7 +503,7 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory runtime(store, RuntimeMemoryContext{
+        RuntimeMemory runtime(store, orangutan::bootstrap::RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
@@ -522,7 +522,7 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory runtime(store, RuntimeMemoryContext{
+        RuntimeMemory runtime(store, orangutan::bootstrap::RuntimeMemoryContext{
                                          .scope = "scope:test",
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
@@ -562,12 +562,12 @@ namespace {
 
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        RuntimeMemory alpha(store, RuntimeMemoryContext{
+        RuntimeMemory alpha(store, orangutan::bootstrap::RuntimeMemoryContext{
                                        .scope = "scope:alpha",
                                        .workspace = workspace.string(),
                                        .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                    });
-        RuntimeMemory beta(store, RuntimeMemoryContext{
+        RuntimeMemory beta(store, orangutan::bootstrap::RuntimeMemoryContext{
                                       .scope = "scope:beta",
                                       .workspace = workspace.string(),
                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},

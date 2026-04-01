@@ -749,7 +749,7 @@ namespace {
         const std::unordered_map<std::string, std::string> qq_bot_agents;
 
         const std::string jid = "qqbot:c2c:42";
-        const auto identity = derive_channel_identity(harness.workspace_root().string(), jid, "default");
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
         const auto session_id = session_store.save({Message::user().text("hello")}, SessionMetadata{
                                                                                         .model = "gpt-test",
                                                                                         .scope_key = identity.runtime_key,

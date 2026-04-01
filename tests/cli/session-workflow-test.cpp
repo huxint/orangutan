@@ -64,7 +64,7 @@ namespace {
         DistillingWorkflowProvider provider;
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
-        RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:test"});
+        RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "scope:test"});
         SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, tools, {}, &runtime_memory);
 
@@ -142,7 +142,7 @@ namespace {
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
         const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
-        RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{
+        RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{
                                                        .scope = "scope:test",
                                                        .workspace = workspace.string(),
                                                        .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},

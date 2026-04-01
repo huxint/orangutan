@@ -86,23 +86,6 @@ namespace orangutan::bootstrap::detail {
         return callback;
     }
 
-    std::string resolve_api_key(const std::string &cli_api_key_override, const Config &cfg) {
-        if (!cli_api_key_override.empty()) {
-            return cli_api_key_override;
-        }
-        const char *env_key = std::getenv("ANTHROPIC_API_KEY");
-        if (env_key == nullptr) {
-            env_key = std::getenv("LLM_API_KEY");
-        }
-        if (env_key != nullptr) {
-            return env_key;
-        }
-        if (!cfg.api_key.empty()) {
-            return cfg.api_key;
-        }
-        return {};
-    }
-
     void reset_signal_stop_requested_for_tests() {
         signal_stop_requested().store(false);
     }

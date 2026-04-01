@@ -79,9 +79,9 @@ namespace {
         [[nodiscard]]
         static ToolRuntimeContext make_parent_tool_context(SubagentManager &manager, std::string &current_session_id) {
             return ToolRuntimeContext{
-                .runtime_key = derive_cli_runtime_key("default"),
+                .runtime_key = orangutan::bootstrap::derive_cli_runtime_key("default"),
                 .agent_key = "default",
-                .scope_key = derive_cli_session_scope("default"),
+                .scope_key = orangutan::bootstrap::derive_cli_session_scope("default"),
                 .current_session_id = &current_session_id,
                 .allowed_child_agents = {"coder"},
                 .is_child_run = false,
@@ -100,8 +100,8 @@ namespace {
         SubagentIntegrationHarness harness;
         SessionStore session_store(harness.db_path());
         SubagentRunStore run_store(harness.db_path());
-        const auto parent_session_id = session_store.create_empty(
-            orangutan::SessionMetadata{.model = "parent-model", .scope_key = derive_cli_session_scope("default"), .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
+        const auto parent_session_id = session_store.create_empty(orangutan::SessionMetadata{
+            .model = "parent-model", .scope_key = orangutan::bootstrap::derive_cli_session_scope("default"), .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
 
         std::vector<std::string> parent_prompts;
         std::vector<std::string> child_prompts;
@@ -195,8 +195,8 @@ namespace {
         });
         ScriptedProvider parent_provider(std::move(parent_steps));
 
-        const auto parent_prompt = append_subagent_prompt_guidance("Parent base prompt.", {"coder"}, false);
-        AgentLoop parent_loop(parent_provider, parent_tools, parent_prompt, nullptr, derive_cli_session_scope("default"));
+        const auto parent_prompt = orangutan::bootstrap::append_subagent_prompt_guidance("Parent base prompt.", {"coder"}, false);
+        AgentLoop parent_loop(parent_provider, parent_tools, parent_prompt, nullptr, orangutan::bootstrap::derive_cli_session_scope("default"));
 
         const auto final_output = parent_loop.run("Handle the parser issue");
         CHECK(final_output == "parent finished after child run");
@@ -216,9 +216,9 @@ namespace {
             .caller =
                 SubagentCallerContext{
                     .runtime_origin = base::origin::cli,
-                    .runtime_key = derive_cli_runtime_key("default"),
+                    .runtime_key = orangutan::bootstrap::derive_cli_runtime_key("default"),
                     .agent_key = "default",
-                    .scope_key = derive_cli_session_scope("default"),
+                    .scope_key = orangutan::bootstrap::derive_cli_session_scope("default"),
                     .raw_caller_id = "cli:local",
                     .session_id = parent_session_id,
                     .allowed_child_agents = {"coder"},
@@ -228,7 +228,7 @@ namespace {
         CHECK(wait_run_result.state == SubagentWaitState::completed);
         REQUIRE(wait_run_result.run.has_value());
 
-        const auto expected_child_identity = derive_child_identity((harness.workspace_root() / "child-root").string(), "cli:local", "coder");
+        const auto expected_child_identity = orangutan::bootstrap::derive_child_identity((harness.workspace_root() / "child-root").string(), "cli:local", "coder");
         CHECK(wait_run_result.run->child_scope_key == expected_child_identity.memory_scope);
         CHECK(std::filesystem::exists(std::filesystem::path(expected_child_identity.workspace) / "child-notes.txt"));
 
@@ -324,7 +324,7 @@ namespace {
         CHECK(wait_result.state == SubagentWaitState::completed);
         REQUIRE(wait_result.run.has_value());
 
-        const auto expected_identity = derive_child_identity((harness.workspace_root() / "channel-child-root").string(), "qqbot:c2c:alice", "coder");
+        const auto expected_identity = orangutan::bootstrap::derive_child_identity((harness.workspace_root() / "channel-child-root").string(), "qqbot:c2c:alice", "coder");
         CHECK(wait_result.run->child_scope_key == expected_identity.memory_scope);
         CHECK(std::filesystem::exists(std::filesystem::path(expected_identity.workspace) / "channel-child.txt"));
     };

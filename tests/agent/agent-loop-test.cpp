@@ -255,7 +255,7 @@ namespace {
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
         MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
@@ -294,7 +294,7 @@ namespace {
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-pollution", "memory.db");
         MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
@@ -318,7 +318,7 @@ namespace {
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
         MemoryStore store(db_path);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         loop.set_history({
@@ -346,7 +346,7 @@ namespace {
         MemoryStore store(db_path);
         store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         static_cast<void>(loop.run("what project am I working on?"));
@@ -365,7 +365,7 @@ namespace {
         MemoryStore store(db_path);
         store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
-        auto runtime_memory = RuntimeMemory(store, RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
         static_cast<void>(loop.run("what happened in the previous session journal?"));

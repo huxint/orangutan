@@ -657,7 +657,7 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
 
     {
         MemoryStore memory_store(memory_db);
-        RuntimeMemory runtime_memory(memory_store, RuntimeMemoryContext{.scope = "scope:parent"});
+        RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "scope:parent"});
         SessionStore session_store(session_db);
         const auto parent_session_id =
             session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
