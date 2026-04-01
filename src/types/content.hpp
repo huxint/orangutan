@@ -17,7 +17,7 @@ namespace orangutan {
         template <typename Str>
             requires std::convertible_to<Str, std::string_view>
         Text(Str value)
-        : text(value) {}
+        : text(static_cast<std::string>(std::string_view{value})) {}
     };
 
     struct Thinking {
@@ -28,7 +28,7 @@ namespace orangutan {
         template <typename Str>
             requires std::convertible_to<Str, std::string_view>
         Thinking(Str value)
-        : thinking(value) {}
+        : thinking(static_cast<std::string>(std::string_view{value})) {}
     };
 
     struct ToolUse {

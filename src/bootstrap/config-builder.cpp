@@ -173,8 +173,8 @@ namespace orangutan::bootstrap::detail {
                                                   }
                                                   return labels;
                                               }(),
-                                          .primary_endpoint = std::move(maybe_endpoints->primary_endpoint),
-                                          .fallback_endpoints = std::move(maybe_endpoints->fallback_endpoints),
+                                          .primary_endpoint = maybe_endpoints->primary_endpoint,
+                                          .fallback_endpoints = maybe_endpoints->fallback_endpoints,
                                           .system_prompt = agent_cfg.system_prompt,
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,

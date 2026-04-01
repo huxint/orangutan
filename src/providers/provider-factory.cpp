@@ -35,12 +35,10 @@ namespace orangutan::providers {
 
         std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
             if (endpoint.endpoint_style == "anthropic-messages" || endpoint.endpoint_style.empty()) {
-                const auto url = endpoint.base_url.empty() ? std::string{"https://api.anthropic.com"} : endpoint.base_url;
                 return std::make_unique<AnthropicProvider>(endpoint);
             }
 
             if (endpoint.endpoint_style == "openai-chat-completions" || endpoint.endpoint_style == "openai-responses") {
-                const auto url = endpoint.base_url.empty() ? std::string{"https://api.openai.com"} : endpoint.base_url;
                 return std::make_unique<OpenAiProvider>(endpoint);
             }
 

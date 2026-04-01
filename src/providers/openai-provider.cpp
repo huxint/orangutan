@@ -32,7 +32,10 @@ namespace orangutan::providers {
 
         void append_custom_headers(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers) {
             for (const auto &[name, value] : custom_headers) {
-                headers.append(name + ": " + value);
+                auto header = name;
+                header += ": ";
+                header += value;
+                headers.append(header);
             }
         }
 
