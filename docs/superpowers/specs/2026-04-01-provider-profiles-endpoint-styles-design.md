@@ -66,6 +66,7 @@ The runtime will support exactly these protocol styles:
 - `anthropic-messages`
 
 The existing OpenAI-compatible implementation will be split so it can talk to both Chat Completions and Responses. Anthropic will be represented explicitly as `anthropic-messages`.
+Any other `endpoint_style` value is a configuration error and must fail fast during runtime/provider construction with a clear message that names the unknown style and the profile/model where it was found.
 
 ## Runtime Behavior
 
@@ -73,6 +74,10 @@ The existing OpenAI-compatible implementation will be split so it can talk to bo
 - Credential lookup order is: explicit CLI API key override, then `profiles.<name>.api_key`, then generic `LLM_API_KEY` if present. Old provider-specific environment fallbacks are removed with the old provider schema.
 - Resolved runtime state must keep enough data to survive bootstrap, web, and subagent handoff without re-deriving provider strings. At minimum the resolved endpoint shape carried through runtime layers includes `profile_name`, `endpoint_style`, `base_url`, `api_key`, shared `headers`, selected `model`, and model defaults such as `max_tokens` and `thinking`.
 - `endpoint_style` selects the request path, payload shape, streaming parser, and tool-call decoding logic.
+- The mapping is explicit, not heuristic:
+  - `openai-responses` uses `/v1/responses` plus Responses-style streaming/tool-call parsing
+  - `openai-chat-completions` uses `/v1/chat/completions` plus Chat Completions request/stream parsing
+  - `anthropic-messages` uses `/v1/messages` plus Anthropic Messages request/stream parsing
 - Shared request headers from the profile are attached to every request.
 - Model defaults are applied where the selected endpoint style supports them.
   - `max_tokens` should be used as the runtime default request limit.
@@ -80,6 +85,7 @@ The existing OpenAI-compatible implementation will be split so it can talk to bo
   - `context_window` and `cost` are metadata for now; they should be parsed and preserved but do not require budgeting or auto-selection logic in this change.
 - Fallback model names are resolved inside the same profile as the primary model. Each fallback model carries its own `endpoint_style`, defaults, and metadata when building the provider chain.
 - User-facing CLI help text, startup errors, and admin config editing surfaces must be updated to remove references to legacy per-agent `provider`, `base_url`, and provider-specific environment variables.
+- Runtime continuation/control paths must preserve the resolved endpoint state as well, so background completion and signal/resume flows do not rely on the removed provider schema.
 
 ## Non-Goals
 
@@ -97,3 +103,4 @@ The change is complete when:
 - OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages all have targeted provider tests.
 - Affected bootstrap, tool, and web tests pass against the new schema.
 - Admin config APIs and the React config pages preserve `profiles`, `agents.*.profile`, and model defaults without stripping them on save.
+- Startup paths and `/api/chat` fail clearly when `agents.default` is absent and the caller did not name another agent explicitly.

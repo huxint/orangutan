@@ -226,6 +226,8 @@ git commit -m "refactor(config): protect profile api keys in json config"
 - Modify: `src/bootstrap/channel-serve.hpp`
 - Modify: `src/bootstrap/channel-serve.cpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
+- Modify: `src/bootstrap/runtime-control.hpp`
+- Modify: `src/bootstrap/runtime-control.cpp`
 - Modify: `src/subagent/subagent-manager.hpp`
 - Modify: `src/subagent/subagent-manager.cpp`
 - Modify: `tests/bootstrap/bootstrap-test.cpp`
@@ -242,6 +244,7 @@ Add tests for:
 - failure on unknown model inside a known profile
 - propagation of profile headers and resolved endpoint style into runtime config
 - CLI-selected agent resolution through `resolve_selected_agent()` / startup config bootstrap paths
+- failure when startup or `/api/chat` requires `agents.default` and it is missing
 - subagent child runtime resolution after `SubagentChildRuntimeConfig` drops the old `provider_name` field
 
 - [ ] **Step 2: Run bootstrap tests to verify failure**
@@ -298,7 +301,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/agent-runtime.cpp src/bootstrap/channel-serve.hpp src/bootstrap/channel-serve.cpp src/bootstrap/bootstrap.cpp src/web/web-routes.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp tests/subagent/subagent-manager-test.cpp tests/integration/subagent-integration-test.cpp
+git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/agent-runtime.cpp src/bootstrap/channel-serve.hpp src/bootstrap/channel-serve.cpp src/bootstrap/bootstrap.cpp src/bootstrap/runtime-control.hpp src/bootstrap/runtime-control.cpp src/web/web-routes.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp tests/subagent/subagent-manager-test.cpp tests/integration/subagent-integration-test.cpp
 git commit -m "refactor(runtime): resolve agents through profiles and model catalogs"
 ```
 
@@ -316,6 +319,7 @@ Cover:
 - `openai-chat-completions`
 - `anthropic-messages`
 - rejection of unknown endpoint styles
+- invalid `endpoint_style` errors naming the offending profile/model
 
 - [ ] **Step 2: Run provider tests to verify failure**
 
@@ -374,6 +378,7 @@ Add focused tests for:
 - tool call accumulation for both OpenAI styles
 - profile header forwarding
 - reasoning/thinking parameter mapping where supported
+- unknown `endpoint_style` failing instead of silently falling back to another OpenAI behavior
 
 - [ ] **Step 2: Run provider tests to verify failure**
 
@@ -398,6 +403,7 @@ Apply shared headers and map model metadata:
 - use model-level `max_tokens` as the default request limit
 - map `thinking` enum only when the target protocol supports it
 - ignore unsupported options cleanly instead of inventing fake fields
+- keep request/stream/tool-call handling distinct for `openai-responses` versus `openai-chat-completions`; do not infer one from the other
 
 - [ ] **Step 4: Re-run provider tests**
 
@@ -431,6 +437,7 @@ Cover:
 - config file access tests still targeting `config.json`
 - web-side agent listings reflecting `profile + model` instead of removed provider names
 - React admin config editing preserving `profiles`, `agents.*.profile`, and model metadata such as `thinking`
+- `/api/chat` returning a clear error when no agent key is supplied and `agents.default` is not configured
 
 - [ ] **Step 2: Run affected targets to verify failure**
 
@@ -451,6 +458,7 @@ In the same step, remove obsolete CLI flags that no longer make sense without co
 - remove or reject `--provider`
 - remove or reject `--base-url`
 - update the frontend types in `web/src/api/client.ts` and config editor state in `web/src/components/admin/ConfigPage.tsx` so the UI no longer loads/saves `provider` and `base_url` as top-level agent fields
+- update `src/web/admin-routes.cpp` handlers (`handle_get_config`, `handle_put_config`, `handle_list_agents`) explicitly so `/api/config` and `/api/agents` stop serializing the removed schema
 
 The plan should treat this as a schema cleanup, not a remap, because the change explicitly does not preserve the old configuration contract.
 
