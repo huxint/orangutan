@@ -1,4 +1,5 @@
 #include "web/web-routes.hpp"
+#include "web/web-route-internal.hpp"
 
 #include "cli/cli-ui.hpp"
 #include "cli/session-workflow.hpp"
@@ -25,17 +26,17 @@
 
 namespace orangutan::web {
 
-    namespace {
+    namespace internal {
 
         namespace bootstrap = orangutan::bootstrap;
         namespace cli = orangutan::cli;
 
-        bool session_is_read_only(const SessionInfo &session) {
+        bool session_is_read_only(const storage::SessionInfo &session) {
             return session.origin_kind == "channel";
         }
 
-        SessionMetadata make_web_session_metadata(const std::string &agent_key, const AgentConfig &agent) {
-            return SessionMetadata{
+        storage::SessionMetadata make_web_session_metadata(const std::string &agent_key, const config::AgentConfig &agent) {
+            return storage::SessionMetadata{
                 .model = agent.model,
                 .scope_key = "agent:" + agent_key + "|web",
                 .agent_key = agent_key,
@@ -44,7 +45,7 @@ namespace orangutan::web {
             };
         }
 
-        std::optional<AgentConfig> find_effective_agent(const Config *config, const std::string &agent_key) {
+        std::optional<config::AgentConfig> find_effective_agent(const config::Config *config, const std::string &agent_key) {
             if (config == nullptr) {
                 return std::nullopt;
             }
@@ -56,13 +57,13 @@ namespace orangutan::web {
             return std::nullopt;
         }
 
-        std::string resolve_agent_api_key(const Config &config, const AgentConfig &agent) {
-            Config agent_cfg_wrapper = config;
+        std::string resolve_agent_api_key(const config::Config &config, const config::AgentConfig &agent) {
+            config::Config agent_cfg_wrapper = config;
             agent_cfg_wrapper.api_key = agent.api_key;
             return bootstrap::detail::resolve_api_key("", agent_cfg_wrapper);
         }
 
-        std::string resolve_agent_workspace(const AgentConfig &agent, const std::string &agent_key) {
+        std::string resolve_agent_workspace(const config::AgentConfig &agent, const std::string &agent_key) {
             try {
                 return bootstrap::resolve_workspace_root(agent.workspace);
             } catch (const std::exception &e) {
@@ -87,14 +88,14 @@ namespace orangutan::web {
             };
         }
 
-        bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const Config &config, const AgentConfig &agent, const std::string &agent_key, MemoryStore *memory_store,
-                                                                    std::string *current_session_id, SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
-                                                                    ToolApprovalCallback approval_callback,
+        bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
+                                                                    memory::MemoryStore *memory_store, std::string *current_session_id, subagent::SubagentManager *subagent_manager,
+                                                                    automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
             const auto api_key = resolve_agent_api_key(config, agent);
             if (api_key.empty()) {
-                throw MissingApiKeyError("missing API key for agent '" + agent_key + "'");
+                throw providers::MissingApiKeyError("missing API key for agent '" + agent_key + "'");
             }
 
             auto effective_approval_callback = std::move(approval_callback);
@@ -139,7 +140,7 @@ namespace orangutan::web {
             return bootstrap::build_agent_runtime(input);
         }
 
-        nlohmann::json session_to_json(const SessionInfo &session) {
+        nlohmann::json session_to_json(const storage::SessionInfo &session) {
             return {
                 {"id", session.id},
                 {"created_at", session.created_at},
@@ -153,7 +154,7 @@ namespace orangutan::web {
             };
         }
 
-        std::optional<SessionInfo> find_agent_session(SessionStore *store, const std::string &agent_key, const std::string &session_id) {
+        std::optional<storage::SessionInfo> find_agent_session(storage::SessionStore *store, const std::string &agent_key, const std::string &session_id) {
             if (store == nullptr) {
                 return std::nullopt;
             }
@@ -283,8 +284,8 @@ namespace orangutan::web {
             });
         }
 
-        cli::SlashCommandReply handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const Config &config, SessionStore *store,
-                                                               const std::optional<SessionInfo> & /*existing_session*/, const SessionMetadata &metadata,
+        cli::SlashCommandReply handle_web_static_slash_command(const std::string &message, const std::string &agent_key, const config::Config &config, storage::SessionStore *store,
+                                                               const std::optional<storage::SessionInfo> & /*existing_session*/, const storage::SessionMetadata &metadata,
                                                                const std::string &current_session_id) {
             return cli::dispatch_shared_slash_command(
                 message, {.surface = cli::slash_command_surface::web,
@@ -355,8 +356,9 @@ namespace orangutan::web {
                               }});
         }
 
-        cli::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const AgentConfig &agent, SessionStore *store,
-                                                                const SessionMetadata &metadata, bootstrap::AgentRuntimeBundle &runtime, std::string &current_session_id) {
+        cli::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const config::AgentConfig &agent,
+                                                                storage::SessionStore *store, const storage::SessionMetadata &metadata, bootstrap::AgentRuntimeBundle &runtime,
+                                                                std::string &current_session_id) {
             return cli::dispatch_shared_slash_command(
                 message, {
                              .surface = cli::slash_command_surface::web,
@@ -382,18 +384,18 @@ namespace orangutan::web {
                          });
         }
 
-    } // namespace
+    } // namespace internal
 
-    bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                                   SubagentManager *subagent_manager, automation::Runtime *automation_runtime,
-                                                                   ToolApprovalCallback approval_callback,
+    bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
+                                                                   std::string *current_session_id, subagent::SubagentManager *subagent_manager,
+                                                                   automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
-        const auto maybe_agent = find_effective_agent(&config, agent_key);
+        const auto maybe_agent = internal::find_effective_agent(&config, agent_key);
         if (!maybe_agent.has_value()) {
             throw std::runtime_error("agent not found");
         }
-        return build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime, std::move(approval_callback),
-                                             completion_resume_state);
+        return internal::build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime,
+                                                       std::move(approval_callback), completion_resume_state);
     }
 
     BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &weak_state) {
@@ -415,9 +417,9 @@ namespace orangutan::web {
     bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
                                     const web_approval_event_emitter &event_emitter, const std::function<bool()> &stream_open, std::chrono::milliseconds timeout) {
         auto approval = std::make_shared<WebPendingApproval>();
-        approval->request_id = make_approval_request_id();
+        approval->request_id = internal::make_approval_request_id();
         approval->tool = call.name;
-        approval->command = extract_approval_command(call);
+        approval->command = internal::extract_approval_command(call);
         approval->sandbox_mode = to_string(sandbox_mode);
         approval->prompt = prompt_text;
 
@@ -432,8 +434,8 @@ namespace orangutan::web {
             session.pending_approval = approval;
         }
 
-        if (event_emitter && !event_emitter("approval_request", approval_payload(*approval))) {
-            resolve_pending_approval(*approval, false, true);
+        if (event_emitter && !event_emitter("approval_request", internal::approval_payload(*approval))) {
+            internal::resolve_pending_approval(*approval, false, true);
         }
 
         auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -476,761 +478,6 @@ namespace orangutan::web {
         if (session.pending_approval == nullptr) {
             return;
         }
-        resolve_pending_approval(*session.pending_approval, false, true);
-    }
-
-    void handle_list_sessions(const httplib::Request & /*req*/, httplib::Response &res, SessionStore *store) {
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-        auto sessions = store->list_sessions();
-        auto arr = nlohmann::json::array();
-        for (const auto &s : sessions) {
-            arr.push_back({
-                {"id", s.id},
-                {"created_at", s.created_at},
-                {"model", s.model},
-                {"message_count", s.message_count},
-            });
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_get_session(const httplib::Request &req, httplib::Response &res, SessionStore *store) {
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-        auto session_id = std::string(req.matches[1]);
-        std::vector<Message> messages;
-        try {
-            messages = store->load(session_id);
-        } catch (const std::runtime_error &) {
-            res.status = 404;
-            res.set_content(R"({"error":"session not found"})", "application/json");
-            return;
-        }
-        auto arr = nlohmann::json::array();
-        for (const auto &msg : messages) {
-            arr.push_back(message_to_json(msg));
-        }
-        nlohmann::json body = {
-            {"id", session_id},
-            {"messages", arr},
-        };
-        res.set_content(body.dump(), "application/json");
-    }
-
-    void handle_delete_session(const httplib::Request &req, httplib::Response &res, SessionStore *store) {
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-        auto session_id = std::string(req.matches[1]);
-        store->remove(session_id);
-        res.set_content(R"({"status":"deleted"})", "application/json");
-    }
-
-    void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-
-        const auto agent_key = std::string(req.matches[1]);
-        if (!find_effective_agent(config, agent_key).has_value()) {
-            res.status = 404;
-            res.set_content(R"({"error":"agent not found"})", "application/json");
-            return;
-        }
-
-        auto arr = nlohmann::json::array();
-        for (const auto &session : store->list_sessions_for_agent(agent_key)) {
-            arr.push_back(session_to_json(session));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-
-        const auto agent_key = std::string(req.matches[1]);
-        const auto session_id = std::string(req.matches[2]);
-        if (!find_effective_agent(config, agent_key).has_value()) {
-            res.status = 404;
-            res.set_content(R"({"error":"agent not found"})", "application/json");
-            return;
-        }
-
-        const auto session = find_agent_session(store, agent_key, session_id);
-        if (!session.has_value()) {
-            res.status = 404;
-            res.set_content(R"({"error":"session not found"})", "application/json");
-            return;
-        }
-
-        try {
-            auto arr = nlohmann::json::array();
-            for (const auto &message : store->load(session_id)) {
-                arr.push_back(message_to_json(message));
-            }
-
-            auto body = session_to_json(*session);
-            body["messages"] = arr;
-            res.set_content(body.dump(), "application/json");
-        } catch (const std::runtime_error &) {
-            res.status = 404;
-            res.set_content(R"({"error":"session not found"})", "application/json");
-        }
-    }
-
-    void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        if (store == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"session store not available"})", "application/json");
-            return;
-        }
-
-        const auto agent_key = std::string(req.matches[1]);
-        const auto session_id = std::string(req.matches[2]);
-        if (!find_effective_agent(config, agent_key).has_value()) {
-            res.status = 404;
-            res.set_content(R"({"error":"agent not found"})", "application/json");
-            return;
-        }
-        if (!store->session_belongs_to_agent(session_id, agent_key)) {
-            res.status = 404;
-            res.set_content(R"({"error":"session not found"})", "application/json");
-            return;
-        }
-
-        store->remove(session_id);
-        res.set_content(R"({"status":"deleted"})", "application/json");
-    }
-
-    void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res, Config *config) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        nlohmann::json body = {
-            {"provider", config->provider},
-            {"model", config->model},
-            {"base_url", config->base_url},
-            {"temperature", config->temperature},
-            {"max_iterations", config->max_iterations},
-            {"max_tokens", config->max_tokens},
-            {"workspace", config->workspace},
-            {"edit_mode", config->edit_mode},
-            {"system_prompt", config->system_prompt},
-            {"auto_save", config->auto_save},
-            {"allowed_tools", config->allowed_tools},
-            {"denied_tools", config->denied_tools},
-            {"fallback_models", config->fallback_models},
-            {"memory",
-             {
-                 {"mirror_enabled", config->memory.mirror_enabled},
-                 {"mirror_file", config->memory.mirror_file},
-                 {"journal_dir", config->memory.journal_dir},
-             }},
-        };
-        // Intentionally omit api_key for security
-        res.set_content(body.dump(), "application/json");
-    }
-
-    void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::filesystem::path *config_save_path) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &e) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
-        }
-
-        // Update mutable fields if present
-        if (input.contains("model")) {
-            config->model = input["model"].get<std::string>();
-        }
-        if (input.contains("provider")) {
-            config->provider = input["provider"].get<std::string>();
-        }
-        if (input.contains("base_url")) {
-            config->base_url = input["base_url"].get<std::string>();
-        }
-        if (input.contains("temperature")) {
-            config->temperature = input["temperature"].get<base::f64>();
-        }
-        if (input.contains("max_iterations")) {
-            config->max_iterations = input["max_iterations"].get<int>();
-        }
-        if (input.contains("max_tokens")) {
-            config->max_tokens = input["max_tokens"].get<int>();
-        }
-        if (input.contains("workspace")) {
-            config->workspace = input["workspace"].get<std::string>();
-        }
-        if (input.contains("edit_mode")) {
-            config->edit_mode = input["edit_mode"].get<std::string>();
-        }
-        if (input.contains("system_prompt")) {
-            config->system_prompt = input["system_prompt"].get<std::string>();
-        }
-        if (input.contains("auto_save")) {
-            config->auto_save = input["auto_save"].get<bool>();
-        }
-
-        const auto config_path = (config_save_path != nullptr && !config_save_path->empty()) ? *config_save_path : default_orangutan_config_path();
-        if (config_path.empty()) {
-            res.status = 500;
-            res.set_content(R"({"error":"unable to resolve config save path"})", "application/json");
-            return;
-        }
-        config->save_to(config_path);
-
-        res.set_content(R"({"status":"saved"})", "application/json");
-    }
-
-    void handle_list_tools(const httplib::Request & /*req*/, httplib::Response &res, ToolRegistry *registry) {
-        if (registry == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"tool registry not available"})", "application/json");
-            return;
-        }
-        auto defs = registry->definitions();
-        auto arr = nlohmann::json::array();
-        for (const auto &d : defs) {
-            arr.push_back({
-                {"name", d.name},
-                {"description", d.description},
-                {"source", "builtin"},
-            });
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_agents(const httplib::Request & /*req*/, httplib::Response &res, Config *config) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-        auto arr = nlohmann::json::array();
-        for (const auto &[key, agent] : bootstrap::detail::build_effective_agents(*config)) {
-            arr.push_back({
-                {"key", key},
-                {"provider", agent.provider},
-                {"model", agent.model},
-                {"base_url", agent.base_url},
-                {"system_prompt", agent.system_prompt},
-                {"workspace", agent.workspace},
-                {"edit_mode", agent.edit_mode},
-                {"subagents", agent.subagents},
-            });
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_skills(const httplib::Request & /*req*/, httplib::Response &res, SkillLoader *loader) {
-        if (loader == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"skill loader not available"})", "application/json");
-            return;
-        }
-        auto arr = nlohmann::json::array();
-        for (const auto &s : loader->active_skills()) {
-            arr.push_back({
-                {"name", s.name},
-                {"description", s.description},
-                {"tools", s.tools},
-                {"source_path", s.source_path},
-            });
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
-            return;
-        }
-
-        auto arr = nlohmann::json::array();
-        for (const auto &task : automation_runtime->list_tasks(resolve_agent_key_param(req))) {
-            arr.push_back(task_to_json(task));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_heartbeats(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
-            return;
-        }
-
-        auto arr = nlohmann::json::array();
-        for (const auto &heartbeat : automation_runtime->list_heartbeats(resolve_agent_key_param(req))) {
-            arr.push_back(heartbeat_to_json(heartbeat));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
-            return;
-        }
-
-        auto arr = nlohmann::json::array();
-        for (const auto &item : automation_runtime->list_inbox(resolve_agent_key_param(req))) {
-            arr.push_back(inbox_item_to_json(item));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_ack_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
-            return;
-        }
-
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
-        }
-
-        if (!input.contains("id") || !input["id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'id' field"})", "application/json");
-            return;
-        }
-
-        const auto agent_key = input.value("agent_key", std::string("default"));
-        if (!automation_runtime->ack_inbox(agent_key, input["id"].get<std::string>())) {
-            res.status = 404;
-            res.set_content(R"({"error":"inbox item not found"})", "application/json");
-            return;
-        }
-        res.set_content(R"({"status":"acknowledged"})", "application/json");
-    }
-
-    void handle_clear_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
-            return;
-        }
-
-        automation_runtime->clear_inbox(resolve_agent_key_param(req));
-        res.set_content(R"({"status":"cleared"})", "application/json");
-    }
-
-    void handle_system_status(const httplib::Request & /*req*/, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime) {
-
-        auto now = std::chrono::steady_clock::now();
-        auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
-
-        std::size_t active_sessions = 0;
-        {
-            std::scoped_lock lock(sessions_mutex);
-            active_sessions = sessions.size();
-        }
-
-        nlohmann::json body = {
-            {"uptime_seconds", uptime},
-            {"active_web_sessions", active_sessions},
-            {"provider_health", nlohmann::json::object()},
-        };
-        if (automation_runtime == nullptr) {
-            body["automation"] = nullptr;
-        } else {
-            const auto all_tasks = automation_runtime->list_tasks({});
-            const auto all_heartbeats = automation_runtime->list_heartbeats({});
-            body["automation"] = {
-                {"task_count", all_tasks.size()},
-                {"heartbeat_count", all_heartbeats.size()},
-            };
-        }
-        res.set_content(body.dump(), "application/json");
-    }
-
-    void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, MemoryStore *memory_store, SubagentManager *subagent_manager,
-                     ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
-                     std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
-            return;
-        }
-
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
-        }
-
-        if (!input.contains("message") || !input["message"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'message' field"})", "application/json");
-            return;
-        }
-        if (!input.contains("agent_key") || !input["agent_key"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'agent_key' field"})", "application/json");
-            return;
-        }
-
-        auto message = input.at("message").get<std::string>();
-        const auto agent_key = input.at("agent_key").get<std::string>();
-        const auto maybe_agent = find_effective_agent(config, agent_key);
-        if (!maybe_agent.has_value()) {
-            res.status = 404;
-            res.set_content(R"({"error":"agent not found"})", "application/json");
-            return;
-        }
-        const auto metadata = make_web_session_metadata(agent_key, *maybe_agent);
-        std::string session_id;
-        if (input.contains("session_id") && !input["session_id"].is_null()) {
-            if (!input["session_id"].is_string()) {
-                res.status = 400;
-                res.set_content(R"({"error":"invalid 'session_id' field"})", "application/json");
-                return;
-            }
-            session_id = input.at("session_id").get<std::string>();
-        }
-
-        std::optional<SessionInfo> existing_session;
-        if (!session_id.empty()) {
-            if (store == nullptr) {
-                res.status = 503;
-                res.set_content(R"({"error":"session store not available"})", "application/json");
-                return;
-            }
-            existing_session = find_agent_session(store, agent_key, session_id);
-            if (!existing_session.has_value()) {
-                res.status = 404;
-                res.set_content(R"({"error":"session not found"})", "application/json");
-                return;
-            }
-        }
-
-        if (message.starts_with('/')) {
-            if (const auto command_response = handle_web_static_slash_command(message, agent_key, *config, store, existing_session, metadata, session_id);
-                command_response.handled) {
-                send_web_command_stream(res, command_response);
-                return;
-            }
-        }
-
-        if (existing_session.has_value() && session_is_read_only(*existing_session)) {
-            res.status = 409;
-            res.set_content(R"({"error":"channel sessions are read-only in web chat"})", "application/json");
-            return;
-        }
-
-        try {
-            auto session = std::make_unique<WebSessionState>();
-            session->session_id = session_id;
-            auto *session_ptr = session.get();
-            auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
-            auto approval_stream_open = std::make_shared<std::function<bool()>>();
-            // Request-scoped web runtimes tear down their BackgroundProcessManager with the HTTP stream,
-            // so they intentionally do not advertise background completion routing.
-            session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
-                *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
-                [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUse &call,
-                                                                                                                                                   const std::string &prompt_text) {
-                    return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
-                                                      approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
-                                                      approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-                }));
-            if (session->agent() == nullptr) {
-                throw std::runtime_error("failed to initialize web runtime agent");
-            }
-
-            if (!session->session_id.empty() && store != nullptr) {
-                session->agent()->set_history(store->load(session->session_id));
-            }
-
-            if (message.starts_with('/')) {
-                if (const auto command_response = handle_web_runtime_slash_command(message, agent_key, *maybe_agent, store, metadata, *session->runtime, session->session_id);
-                    command_response.handled) {
-                    send_web_command_stream(res, command_response);
-                    return;
-                }
-            }
-
-            if (session->session_id.empty() && store != nullptr) {
-                session->session_id = store->create_empty(metadata);
-            }
-            if (session->session_id.empty()) {
-                session->session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            }
-
-            auto *abort_flag = &session->abort_requested;
-            const auto permissions = maybe_agent->permissions;
-            auto *tool_context = &session->runtime->tool_context;
-            if (auto *tools = session->tools(); tools != nullptr) {
-                tools->set_execution_guard([abort_flag, permissions, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
-                    if (abort_flag->load()) {
-                        return ToolResult(call.id, "Operation aborted by user", true);
-                    }
-                    const auto &approval_callback = tool_context != nullptr ? tool_context->approval_callback : ToolApprovalCallback{};
-                    return evaluate_tool_permission(call, permissions, approval_callback);
-                });
-            }
-
-            auto *agent_ptr = session->agent();
-            auto active_session_id = session->session_id;
-
-            {
-                std::scoped_lock lock(sessions_mutex);
-                sessions[active_session_id] = std::move(session);
-            }
-
-            auto *store_ptr = store;
-
-            res.set_chunked_content_provider("text/event-stream",
-                                             [agent_ptr, session_ptr, store_ptr, captured_session_id = active_session_id, captured_metadata = metadata, message,
-                                              approval_event_emitter, approval_stream_open, agent_key, automation_runtime, &sessions_mutex,
-                                              &sessions](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
-                                                 if (approval_event_emitter != nullptr) {
-                                                     *approval_event_emitter = [&sink](std::string_view event_name, const nlohmann::json &payload) {
-                                                         const auto sse = "event: " + std::string(event_name) + "\ndata: " + payload.dump() + "\n\n";
-                                                         return sink.write(sse.c_str(), sse.size());
-                                                     };
-                                                 }
-                                                 if (approval_stream_open != nullptr) {
-                                                     *approval_stream_open = [&sink]() {
-                                                         return sink.is_writable == nullptr || sink.is_writable();
-                                                     };
-                                                 }
-
-                                                 // Send session event
-                                                 auto session_event = nlohmann::json({{"session_id", captured_session_id}}).dump();
-                                                 auto sse_session = "event: session\ndata: " + session_event + "\n\n";
-                                                 sink.write(sse_session.c_str(), sse_session.size());
-
-                                                 session_ptr->running = true;
-                                                 try {
-                                                     automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
-                                                         agent_ptr->run(
-                                                             message,
-                                                             // StreamCallback
-                                                             [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
-                                                                 if (session_ptr->abort_requested) {
-                                                                     return;
-                                                                 }
-                                                                 if (event_type == "text_delta") {
-                                                                     auto payload = nlohmann::json({{"text", data["text"]}}).dump();
-                                                                     auto sse = "event: text\ndata: " + payload + "\n\n";
-                                                                     sink.write(sse.c_str(), sse.size());
-                                                                 } else if (event_type == "thinking_delta") {
-                                                                     auto payload = nlohmann::json({{"thinking", data["thinking"]}}).dump();
-                                                                     auto sse = "event: thinking\ndata: " + payload + "\n\n";
-                                                                     sink.write(sse.c_str(), sse.size());
-                                                                 }
-                                                             },
-                                                             // ToolEventCallback
-                                                             [&sink, session_ptr](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
-                                                                 if (session_ptr->abort_requested) {
-                                                                     return;
-                                                                 }
-                                                                 nlohmann::json payload;
-                                                                 if (event_type == "tool_started" || event_type == "tool_start") {
-                                                                     payload = {{"id", call.id}, {"name", call.name}, {"input", call.input}};
-                                                                     auto sse = "event: tool_start\ndata: " + payload.dump() + "\n\n";
-                                                                     sink.write(sse.c_str(), sse.size());
-                                                                 } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
-                                                                     payload = {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}};
-                                                                     auto sse = "event: tool_end\ndata: " + payload.dump() + "\n\n";
-                                                                     sink.write(sse.c_str(), sse.size());
-                                                                 }
-                                                             });
-                                                     });
-
-                                                     auto done_sse = std::string("event: done\ndata: {}\n\n");
-                                                     sink.write(done_sse.c_str(), done_sse.size());
-                                                 } catch (const std::exception &e) {
-                                                     auto err = nlohmann::json({{"error", e.what()}}).dump();
-                                                     auto sse = "event: error\ndata: " + err + "\n\n";
-                                                     sink.write(sse.c_str(), sse.size());
-                                                 }
-
-                                                 session_ptr->running = false;
-                                                 detail::cancel_pending_approval(*session_ptr);
-                                                 if (approval_event_emitter != nullptr) {
-                                                     *approval_event_emitter = {};
-                                                 }
-                                                 if (approval_stream_open != nullptr) {
-                                                     *approval_stream_open = {};
-                                                 }
-
-                                                 // Save session to store
-                                                 if (store_ptr != nullptr) {
-                                                     try {
-                                                         store_ptr->update(captured_session_id, agent_ptr->history(), captured_metadata);
-                                                     } catch (const std::exception &e) {
-                                                         spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
-                                                     }
-                                                 }
-
-                                                 // Clean up session
-                                                 {
-                                                     std::scoped_lock lock(sessions_mutex);
-                                                     sessions.erase(captured_session_id);
-                                                 }
-
-                                                 sink.done();
-                                                 return false;
-                                             });
-        } catch (const MissingApiKeyError &e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        } catch (const std::exception &e) {
-            res.status = 500;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    }
-
-    void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
-                           std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
-        }
-
-        if (!input.contains("session_id") || !input["session_id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'session_id' field"})", "application/json");
-            return;
-        }
-
-        auto session_id = input.at("session_id").get<std::string>();
-        std::scoped_lock lock(sessions_mutex);
-        auto it = sessions.find(session_id);
-        if (it != sessions.end()) {
-            it->second->abort_requested = true;
-            detail::cancel_pending_approval(*it->second);
-            res.set_content(R"({"status":"abort_requested"})", "application/json");
-        } else {
-            res.status = 404;
-            res.set_content(R"({"error":"session not found"})", "application/json");
-        }
-    }
-
-    void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
-                              std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
-        }
-
-        if (!input.contains("session_id") || !input["session_id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'session_id' field"})", "application/json");
-            return;
-        }
-        if (!input.contains("request_id") || !input["request_id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'request_id' field"})", "application/json");
-            return;
-        }
-        if (!input.contains("approved") || !input["approved"].is_boolean()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'approved' field"})", "application/json");
-            return;
-        }
-
-        const auto session_id = input.at("session_id").get<std::string>();
-        const auto request_id = input.at("request_id").get<std::string>();
-        const bool approved = input.at("approved").get<bool>();
-
-        std::shared_ptr<WebPendingApproval> pending;
-        {
-            std::scoped_lock lock(sessions_mutex);
-            const auto it = sessions.find(session_id);
-            if (it == sessions.end()) {
-                res.status = 404;
-                res.set_content(R"({"error":"session not found"})", "application/json");
-                return;
-            }
-
-            pending = it->second->pending_approval;
-            if (pending == nullptr) {
-                res.status = 404;
-                res.set_content(R"({"error":"approval not found"})", "application/json");
-                return;
-            }
-        }
-
-        std::scoped_lock approval_lock(pending->mutex);
-        if (pending->request_id != request_id) {
-            res.status = 404;
-            res.set_content(R"({"error":"approval not found"})", "application/json");
-            return;
-        }
-        if (pending->resolved) {
-            res.status = 409;
-            res.set_content(R"({"error":"approval already resolved"})", "application/json");
-            return;
-        }
-
-        pending->resolved = true;
-        pending->approved = approved;
-        pending->cancelled = !approved;
-        pending->condition.notify_all();
-        res.status = 200;
-        res.set_content((approved ? R"({"status":"approved"})" : R"({"status":"denied"})"), "application/json");
+        internal::resolve_pending_approval(*session.pending_approval, false, true);
     }
 } // namespace orangutan::web
