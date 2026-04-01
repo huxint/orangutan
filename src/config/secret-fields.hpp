@@ -14,10 +14,7 @@ namespace orangutan::config {
     std::span<const ConfigSecretFieldSpec> config_secret_field_specs();
 
     [[nodiscard]]
-    const ConfigSecretFieldSpec &legacy_agent_api_key_field();
-
-    [[nodiscard]]
-    const ConfigSecretFieldSpec &named_agent_api_key_field();
+    const ConfigSecretFieldSpec &profile_api_key_field();
 
     [[nodiscard]]
     const ConfigSecretFieldSpec &qq_client_secret_field();
@@ -31,8 +28,7 @@ namespace orangutan {
 
     using config::config_secret_field_specs;
     using config::ConfigSecretFieldSpec;
-    using config::legacy_agent_api_key_field;
-    using config::named_agent_api_key_field;
+    using config::profile_api_key_field;
     using config::qq_bot_client_secret_field;
     using config::qq_client_secret_field;
 

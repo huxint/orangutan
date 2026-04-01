@@ -1,6 +1,7 @@
 #include "web/web-route-internal.hpp"
 
 #include "bootstrap/bootstrap.hpp"
+#include "config/config-detail.hpp"
 #include "config/secret-protection.hpp"
 #include "skills/skill-loader.hpp"
 #include "tools/registry/tool-registry.hpp"
@@ -9,33 +10,108 @@ namespace orangutan::web {
 
     namespace bootstrap = orangutan::bootstrap;
 
+    namespace {
+
+        nlohmann::json model_config_to_json(const config::ModelConfig &model_cfg) {
+            nlohmann::json json = {
+                {"endpoint_style", model_cfg.endpoint_style},
+            };
+            if (model_cfg.max_tokens.has_value()) {
+                json["max_tokens"] = *model_cfg.max_tokens;
+            }
+            if (model_cfg.context_window.has_value()) {
+                json["context_window"] = *model_cfg.context_window;
+            }
+            if (!model_cfg.thinking.empty()) {
+                json["thinking"] = model_cfg.thinking;
+            }
+            if (model_cfg.cost.has_value()) {
+                json["cost"] = {
+                    {"input", model_cfg.cost->input},
+                    {"output", model_cfg.cost->output},
+                };
+            }
+            return json;
+        }
+
+        nlohmann::json profile_config_to_json(const config::ProfileConfig &profile_cfg) {
+            nlohmann::json json = {
+                {"base_url", profile_cfg.base_url},
+                {"api_key", profile_cfg.api_key},
+                {"headers", profile_cfg.headers},
+            };
+            nlohmann::json models = nlohmann::json::object();
+            for (const auto &[model_name, model_cfg] : profile_cfg.models) {
+                models[model_name] = model_config_to_json(model_cfg);
+            }
+            json["models"] = std::move(models);
+            return json;
+        }
+
+        nlohmann::json agent_config_to_json(const config::AgentConfig &agent_cfg) {
+            nlohmann::json json = {
+                {"model", agent_cfg.model},
+                {"system_prompt", agent_cfg.system_prompt},
+                {"workspace", agent_cfg.workspace},
+                {"edit_mode", agent_cfg.edit_mode},
+                {"subagents", agent_cfg.subagents},
+                {"fallback_models", agent_cfg.fallback_models},
+                {"thinking_budget", agent_cfg.thinking_budget},
+            };
+            if (!agent_cfg.profile.empty()) {
+                json["profile"] = agent_cfg.profile;
+            }
+            return json;
+        }
+
+        nlohmann::json config_to_json(const config::Config &cfg) {
+            nlohmann::json body = {
+                {"agent",
+                 {
+                     {"profile", cfg.profile},
+                     {"model", cfg.model},
+                     {"temperature", cfg.temperature},
+                     {"max_iterations", cfg.max_iterations},
+                     {"max_tokens", cfg.max_tokens},
+                     {"workspace", cfg.workspace},
+                     {"edit_mode", cfg.edit_mode},
+                     {"system_prompt", cfg.system_prompt},
+                     {"fallback_models", cfg.fallback_models},
+                     {"thinking_budget", cfg.thinking_budget},
+                 }},
+                {"session", {{"auto_save", cfg.auto_save}}},
+                {"tools", {{"allowed", cfg.allowed_tools}, {"denied", cfg.denied_tools}, {"edit_mode", cfg.edit_mode}}},
+                {"memory",
+                 {
+                     {"mirror_enabled", cfg.memory.mirror_enabled},
+                     {"mirror_file", cfg.memory.mirror_file},
+                     {"journal_dir", cfg.memory.journal_dir},
+                 }},
+            };
+
+            nlohmann::json profiles = nlohmann::json::object();
+            for (const auto &[profile_name, profile_cfg] : cfg.profiles) {
+                profiles[profile_name] = profile_config_to_json(profile_cfg);
+            }
+            body["profiles"] = std::move(profiles);
+
+            nlohmann::json agents = nlohmann::json::object();
+            for (const auto &[agent_key, agent_cfg] : cfg.agents) {
+                agents[agent_key] = agent_config_to_json(agent_cfg);
+            }
+            body["agents"] = std::move(agents);
+            return body;
+        }
+
+    } // namespace
+
     void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res, config::Config *config) {
         if (config == nullptr) {
             res.status = 503;
             res.set_content(R"({"error":"config not available"})", "application/json");
             return;
         }
-        const nlohmann::json body = {
-            {"provider", config->provider},
-            {"model", config->model},
-            {"base_url", config->base_url},
-            {"temperature", config->temperature},
-            {"max_iterations", config->max_iterations},
-            {"max_tokens", config->max_tokens},
-            {"workspace", config->workspace},
-            {"edit_mode", config->edit_mode},
-            {"system_prompt", config->system_prompt},
-            {"auto_save", config->auto_save},
-            {"allowed_tools", config->allowed_tools},
-            {"denied_tools", config->denied_tools},
-            {"fallback_models", config->fallback_models},
-            {"memory",
-             {
-                 {"mirror_enabled", config->memory.mirror_enabled},
-                 {"mirror_file", config->memory.mirror_file},
-                 {"journal_dir", config->memory.journal_dir},
-             }},
-        };
+        const nlohmann::json body = config_to_json(*config);
         res.set_content(body.dump(), "application/json");
     }
 
@@ -54,36 +130,7 @@ namespace orangutan::web {
             return;
         }
 
-        if (input.contains("model")) {
-            config->model = input["model"].get<std::string>();
-        }
-        if (input.contains("provider")) {
-            config->provider = input["provider"].get<std::string>();
-        }
-        if (input.contains("base_url")) {
-            config->base_url = input["base_url"].get<std::string>();
-        }
-        if (input.contains("temperature")) {
-            config->temperature = input["temperature"].get<base::f64>();
-        }
-        if (input.contains("max_iterations")) {
-            config->max_iterations = input["max_iterations"].get<int>();
-        }
-        if (input.contains("max_tokens")) {
-            config->max_tokens = input["max_tokens"].get<int>();
-        }
-        if (input.contains("workspace")) {
-            config->workspace = input["workspace"].get<std::string>();
-        }
-        if (input.contains("edit_mode")) {
-            config->edit_mode = input["edit_mode"].get<std::string>();
-        }
-        if (input.contains("system_prompt")) {
-            config->system_prompt = input["system_prompt"].get<std::string>();
-        }
-        if (input.contains("auto_save")) {
-            config->auto_save = input["auto_save"].get<bool>();
-        }
+        *config = config_detail::parse_json(input, {});
 
         const auto config_path = (config_save_path != nullptr && !config_save_path->empty()) ? *config_save_path : config::default_orangutan_config_path();
         if (config_path.empty()) {
@@ -124,9 +171,8 @@ namespace orangutan::web {
         for (const auto &[key, agent] : bootstrap::detail::build_effective_agents(*config)) {
             arr.push_back({
                 {"key", key},
-                {"provider", agent.provider},
+                {"profile", agent.profile},
                 {"model", agent.model},
-                {"base_url", agent.base_url},
                 {"system_prompt", agent.system_prompt},
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},

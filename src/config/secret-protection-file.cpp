@@ -110,13 +110,10 @@ namespace orangutan::config {
 
         std::size_t protected_count = 0;
 
-        if (auto it = root.find("agent"); it != root.end() && it->is_object()) {
-            protected_count += protect_secret_value(*it, legacy_agent_api_key_field().key_name, legacy_agent_api_key_field().field_kind, password);
-        }
-        if (auto it = root.find("agents"); it != root.end() && it->is_object()) {
-            for (auto agent_it = it->begin(); agent_it != it->end(); ++agent_it) {
-                if (agent_it.value().is_object()) {
-                    protected_count += protect_secret_value(agent_it.value(), named_agent_api_key_field().key_name, named_agent_api_key_field().field_kind, password);
+        if (auto it = root.find("profiles"); it != root.end() && it->is_object()) {
+            for (auto profile_it = it->begin(); profile_it != it->end(); ++profile_it) {
+                if (profile_it.value().is_object()) {
+                    protected_count += protect_secret_value(profile_it.value(), profile_api_key_field().key_name, profile_api_key_field().field_kind, password);
                 }
             }
         }

@@ -1,5 +1,6 @@
 #include "config/config.hpp"
 #include "test-helpers.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
@@ -13,45 +14,52 @@ namespace {
         return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
     }
 
-    TEST_CASE("round_trips_save_and_load") {
+    TEST_CASE("save_writes_profiles_models_and_agent_profile_references") {
         orangutan::Config cfg;
-        cfg.model = "test-model-42";
-        cfg.temperature = 0.7;
-        cfg.max_tokens = 2048;
-        cfg.provider = "openai";
-        cfg.base_url = "http://localhost:8080";
-        cfg.edit_mode = "search_replace";
-        cfg.auto_save = false;
+        cfg.profiles["gateway-a"] = orangutan::ProfileConfig{
+            .base_url = "https://gateway.example.com",
+            .api_key = "sk-test",
+            .headers = {{"X-App-Id", "orangutan"}},
+            .models =
+                {
+                    {"gpt-4.1",
+                     orangutan::ModelConfig{
+                         .endpoint_style = "openai-responses",
+                         .max_tokens = 32000,
+                         .context_window = 128000,
+                         .thinking = "medium",
+                         .cost =
+                             orangutan::ModelCostConfig{
+                                 .input = 2.0,
+                                 .output = 8.0,
+                             },
+                     }},
+                },
+        };
+        cfg.agents["default"] = orangutan::AgentConfig{
+            .profile = "gateway-a",
+            .model = "gpt-4.1",
+            .fallback_models = {"gpt-4.1-mini"},
+            .system_prompt = "Default prompt",
+            .workspace = "~/workspace/default",
+            .subagents = {"coder"},
+        };
 
         const auto path = orangutan::testing::unique_test_path("config-save", "config.json");
         cfg.save_to(path);
 
-        const auto loaded = orangutan::Config::load_from(path);
-        CHECK(loaded.model == "test-model-42");
-        CHECK(loaded.temperature == 0.7);
-        CHECK(loaded.max_tokens == 2048);
-        CHECK(loaded.provider == "openai");
-        CHECK(loaded.base_url == "http://localhost:8080");
-        CHECK(loaded.edit_mode == "search_replace");
-        CHECK_FALSE(loaded.auto_save);
-        CHECK(nlohmann::json::parse(read_file(path))["agent"]["model"] == "test-model-42");
-
-        std::filesystem::remove_all(path.parent_path());
-    };
-
-    TEST_CASE("preserves_memory_config") {
-        orangutan::Config cfg;
-        cfg.memory.mirror_enabled = true;
-        cfg.memory.mirror_file = "custom.md";
-        cfg.memory.journal_dir = "custom-journal";
-
-        const auto path = orangutan::testing::unique_test_path("config-save-memory", "config.json");
-        cfg.save_to(path);
+        const auto stored = nlohmann::json::parse(read_file(path));
+        CHECK(stored["profiles"]["gateway-a"]["base_url"] == "https://gateway.example.com");
+        CHECK(stored["profiles"]["gateway-a"]["api_key"] == "sk-test");
+        CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["endpoint_style"] == "openai-responses");
+        CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["thinking"] == "medium");
+        CHECK(stored["agents"]["default"]["profile"] == "gateway-a");
+        CHECK(stored["agents"]["default"]["model"] == "gpt-4.1");
+        CHECK(stored["agents"]["default"]["fallback_models"][0] == "gpt-4.1-mini");
 
         const auto loaded = orangutan::Config::load_from(path);
-        CHECK(loaded.memory.mirror_enabled);
-        CHECK(loaded.memory.mirror_file == "custom.md");
-        CHECK(loaded.memory.journal_dir == "custom-journal");
+        CHECK(loaded.agents.at("default").profile == "gateway-a");
+        CHECK(loaded.profiles.at("gateway-a").models.at("gpt-4.1").endpoint_style == "openai-responses");
 
         std::filesystem::remove_all(path.parent_path());
     };

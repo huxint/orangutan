@@ -57,14 +57,8 @@ namespace orangutan::bootstrap {
         }
 
         auto selected_agent = agent_it->second;
-        if (!options.cli_provider.empty()) {
-            selected_agent.provider = options.cli_provider;
-        }
         if (!options.cli_model.empty()) {
             selected_agent.model = options.cli_model;
-        }
-        if (!options.cli_base_url.empty()) {
-            selected_agent.base_url = options.cli_base_url;
         }
         if (!options.cli_system_prompt.empty()) {
             selected_agent.system_prompt = options.cli_system_prompt;

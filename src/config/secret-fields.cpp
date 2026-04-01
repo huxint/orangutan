@@ -13,8 +13,7 @@ namespace orangutan::config {
         }
 
         constexpr auto config_secret_fields = std::to_array<ConfigSecretFieldSpec>({
-            secret("agent.api_key", "api_key"),
-            secret("agents.api_key", "api_key"),
+            secret("profiles.api_key", "api_key"),
             secret("qq.client_secret", "client_secret"),
             secret("qq_bots.client_secret", "client_secret"),
         });
@@ -25,20 +24,16 @@ namespace orangutan::config {
         return config_secret_fields;
     }
 
-    const ConfigSecretFieldSpec &legacy_agent_api_key_field() {
+    const ConfigSecretFieldSpec &profile_api_key_field() {
         return config_secret_fields[0];
     }
 
-    const ConfigSecretFieldSpec &named_agent_api_key_field() {
+    const ConfigSecretFieldSpec &qq_client_secret_field() {
         return config_secret_fields[1];
     }
 
-    const ConfigSecretFieldSpec &qq_client_secret_field() {
-        return config_secret_fields[2];
-    }
-
     const ConfigSecretFieldSpec &qq_bot_client_secret_field() {
-        return config_secret_fields[3];
+        return config_secret_fields[2];
     }
 
 } // namespace orangutan::config

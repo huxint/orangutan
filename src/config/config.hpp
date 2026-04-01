@@ -12,12 +12,30 @@
 
 namespace orangutan::config {
 
+    struct ModelCostConfig {
+        base::f64 input = 0.0;
+        base::f64 output = 0.0;
+    };
+
+    struct ModelConfig {
+        std::string endpoint_style;
+        std::optional<int> max_tokens;
+        std::optional<int> context_window;
+        std::string thinking = "none";
+        std::optional<ModelCostConfig> cost;
+    };
+
+    struct ProfileConfig {
+        std::string base_url;
+        std::string api_key;
+        std::unordered_map<std::string, std::string> headers;
+        std::unordered_map<std::string, ModelConfig> models;
+    };
+
     struct AgentConfig {
-        std::string provider = "anthropic";
+        std::string profile;
         std::string model = "claude-sonnet-4-20250514";
         std::vector<std::string> fallback_models;
-        std::string base_url = "https://api.anthropic.com";
-        std::string api_key;
         std::string system_prompt;
         std::string workspace;
         ToolPermissionSettings permissions{
@@ -37,12 +55,10 @@ namespace orangutan::config {
     };
 
     struct Config {
-        // agent object
-        std::string provider = "anthropic";
+        // agent defaults object
+        std::string profile;
         std::string model = "claude-sonnet-4-20250514";
         std::vector<std::string> fallback_models;
-        std::string base_url = "https://api.anthropic.com";
-        std::string api_key;
         base::f64 temperature = 1.0;
         int max_iterations = 20;
         int max_tokens = 4096;
@@ -76,6 +92,9 @@ namespace orangutan::config {
         std::string qq_app_id;
         std::string qq_client_secret;
         std::vector<QqBotConfig> qq_bots;
+
+        // profiles object
+        std::unordered_map<std::string, ProfileConfig> profiles;
 
         // agents object
         std::unordered_map<std::string, AgentConfig> agents;
@@ -160,6 +179,9 @@ namespace orangutan {
     using config::Config;
     using config::expand_env_vars;
     using config::expand_home_path;
+    using config::ModelConfig;
+    using config::ModelCostConfig;
+    using config::ProfileConfig;
     using config::QqBotConfig;
 
 } // namespace orangutan

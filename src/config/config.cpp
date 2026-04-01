@@ -87,6 +87,7 @@ namespace orangutan::config {
         Config parse_json(const nlohmann::json &root, const ConfigSecretOptions &secret_options) {
             Config cfg;
             cfg = parse_agent_section(root, std::move(cfg));
+            cfg = parse_profiles_section(root, std::move(cfg));
             cfg = parse_tools_section(root, std::move(cfg));
             cfg = parse_permissions_section(root, std::move(cfg));
             cfg = parse_session_section(root, std::move(cfg));
@@ -95,14 +96,17 @@ namespace orangutan::config {
 
             ConfigPasswordResolver password_resolver(secret_options);
 
-            resolve_secret_field(cfg.api_key, legacy_agent_api_key_field().field_kind, "agent.api_key", password_resolver);
-            cfg.base_url = expand_env_vars(cfg.base_url);
+            cfg.profile = expand_env_vars(cfg.profile);
             cfg.model = expand_env_vars(cfg.model);
-            cfg.provider = expand_env_vars(cfg.provider);
             cfg.system_prompt = expand_env_vars(cfg.system_prompt);
             cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
             for (auto &fallback_model : cfg.fallback_models) {
                 fallback_model = expand_env_vars(fallback_model);
+            }
+            for (auto &[profile_name, profile_cfg] : cfg.profiles) {
+                const auto display_field = "profiles." + profile_name + ".api_key";
+                resolve_secret_field(profile_cfg.api_key, profile_api_key_field().field_kind, display_field, password_resolver);
+                expand_profile_config(profile_cfg);
             }
             cfg.memory.mirror_file = expand_home_path(expand_env_vars(cfg.memory.mirror_file));
             cfg.memory.journal_dir = expand_home_path(expand_env_vars(cfg.memory.journal_dir));
@@ -118,13 +122,7 @@ namespace orangutan::config {
             cfg = parse_hooks_section(root, std::move(cfg));
             cfg = parse_heartbeat_section(root, std::move(cfg));
 
-            if (cfg.agents.empty() || !cfg.agents.contains("default")) {
-                cfg.agents.insert_or_assign("default", make_agent_config_from_legacy(cfg));
-            }
-
             for (auto &[key, agent_cfg] : cfg.agents) {
-                const auto display_field = "agents." + key + ".api_key";
-                resolve_secret_field(agent_cfg.api_key, named_agent_api_key_field().field_kind, display_field, password_resolver);
                 expand_agent_config(agent_cfg);
             }
 
@@ -216,8 +214,14 @@ namespace orangutan::config {
         nlohmann::json root = nlohmann::json::object();
 
         nlohmann::json agent = {
-            {"provider", provider}, {"model", model}, {"base_url", base_url}, {"temperature", temperature}, {"max_iterations", max_iterations}, {"max_tokens", max_tokens},
+            {"model", model},
+            {"temperature", temperature},
+            {"max_iterations", max_iterations},
+            {"max_tokens", max_tokens},
         };
+        if (!profile.empty()) {
+            agent["profile"] = profile;
+        }
         if (thinking_budget != 0) {
             agent["thinking_budget"] = thinking_budget;
         }
@@ -231,6 +235,48 @@ namespace orangutan::config {
             agent["fallback_models"] = fallback_models;
         }
         root["agent"] = std::move(agent);
+
+        if (!profiles.empty()) {
+            nlohmann::json profiles_json = nlohmann::json::object();
+            for (const auto &[profile_name, profile_cfg] : profiles) {
+                nlohmann::json profile_json = nlohmann::json::object();
+                if (!profile_cfg.base_url.empty()) {
+                    profile_json["base_url"] = profile_cfg.base_url;
+                }
+                if (!profile_cfg.api_key.empty()) {
+                    profile_json["api_key"] = profile_cfg.api_key;
+                }
+                if (!profile_cfg.headers.empty()) {
+                    profile_json["headers"] = profile_cfg.headers;
+                }
+                nlohmann::json models_json = nlohmann::json::object();
+                for (const auto &[model_name, model_cfg] : profile_cfg.models) {
+                    nlohmann::json model_json = nlohmann::json::object();
+                    model_json["endpoint_style"] = model_cfg.endpoint_style;
+                    if (model_cfg.max_tokens.has_value()) {
+                        model_json["max_tokens"] = *model_cfg.max_tokens;
+                    }
+                    if (model_cfg.context_window.has_value()) {
+                        model_json["context_window"] = *model_cfg.context_window;
+                    }
+                    if (!model_cfg.thinking.empty() && model_cfg.thinking != "none") {
+                        model_json["thinking"] = model_cfg.thinking;
+                    }
+                    if (model_cfg.cost.has_value()) {
+                        model_json["cost"] = {
+                            {"input", model_cfg.cost->input},
+                            {"output", model_cfg.cost->output},
+                        };
+                    }
+                    models_json[model_name] = std::move(model_json);
+                }
+                if (!models_json.empty()) {
+                    profile_json["models"] = std::move(models_json);
+                }
+                profiles_json[profile_name] = std::move(profile_json);
+            }
+            root["profiles"] = std::move(profiles_json);
+        }
 
         nlohmann::json tools = {
             {"edit_mode", edit_mode},
@@ -263,6 +309,54 @@ namespace orangutan::config {
 
         if (!skill_paths.empty()) {
             root["skills"] = nlohmann::json{{"paths", skill_paths}};
+        }
+
+        if (!agents.empty()) {
+            nlohmann::json agents_json = nlohmann::json::object();
+            for (const auto &[agent_key, agent_cfg] : agents) {
+                nlohmann::json agent_json = {
+                    {"model", agent_cfg.model},
+                };
+                if (!agent_cfg.profile.empty()) {
+                    agent_json["profile"] = agent_cfg.profile;
+                }
+                if (!agent_cfg.fallback_models.empty()) {
+                    agent_json["fallback_models"] = agent_cfg.fallback_models;
+                }
+                if (!agent_cfg.system_prompt.empty()) {
+                    agent_json["system_prompt"] = agent_cfg.system_prompt;
+                }
+                if (!agent_cfg.workspace.empty()) {
+                    agent_json["workspace"] = agent_cfg.workspace;
+                }
+                if (!agent_cfg.subagents.empty()) {
+                    agent_json["subagents"] = agent_cfg.subagents;
+                }
+                if (!agent_cfg.edit_mode.empty() && agent_cfg.edit_mode != "hashline") {
+                    agent_json["edit_mode"] = agent_cfg.edit_mode;
+                }
+                if (agent_cfg.thinking_budget != 0) {
+                    agent_json["thinking_budget"] = agent_cfg.thinking_budget;
+                }
+                if (agent_cfg.permissions.sandbox_mode != ToolSandboxMode::isolated || agent_cfg.permissions.shell_approval != ToolApprovalPolicy::ask ||
+                    !agent_cfg.permissions.allowed_tools.empty() || !agent_cfg.permissions.denied_tools.empty() || !agent_cfg.permissions.denied_shell_commands.empty()) {
+                    nlohmann::json permissions_json = nlohmann::json::object();
+                    permissions_json["sandbox_mode"] = to_string(agent_cfg.permissions.sandbox_mode);
+                    permissions_json["shell_approval_policy"] = to_string(agent_cfg.permissions.shell_approval);
+                    if (!agent_cfg.permissions.allowed_tools.empty()) {
+                        permissions_json["allowed_tools"] = agent_cfg.permissions.allowed_tools;
+                    }
+                    if (!agent_cfg.permissions.denied_tools.empty()) {
+                        permissions_json["denied_tools"] = agent_cfg.permissions.denied_tools;
+                    }
+                    if (!agent_cfg.permissions.denied_shell_commands.empty()) {
+                        permissions_json["denied_shell_commands"] = agent_cfg.permissions.denied_shell_commands;
+                    }
+                    agent_json["permissions"] = std::move(permissions_json);
+                }
+                agents_json[agent_key] = std::move(agent_json);
+            }
+            root["agents"] = std::move(agents_json);
         }
 
         if (permissions.sandbox_mode != ToolSandboxMode::isolated || permissions.shell_approval != ToolApprovalPolicy::ask || !permissions.allowed_tools.empty() ||

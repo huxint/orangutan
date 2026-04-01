@@ -28,14 +28,18 @@ namespace orangutan::config::detail {
     void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver);
 
     [[nodiscard]]
-    AgentConfig make_agent_config_from_legacy(const Config &cfg);
+    AgentConfig make_agent_defaults(const Config &cfg);
 
     void expand_agent_config(AgentConfig &cfg);
+    void expand_profile_config(ProfileConfig &cfg);
 
     void apply_permissions_object(const nlohmann::json &permissions, ToolPermissionSettings &settings);
 
     [[nodiscard]]
     Config parse_agent_section(const nlohmann::json &root, Config cfg);
+
+    [[nodiscard]]
+    Config parse_profiles_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
     Config parse_tools_section(const nlohmann::json &root, Config cfg);

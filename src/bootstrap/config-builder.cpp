@@ -20,39 +20,63 @@ namespace {
 
 namespace orangutan::bootstrap::detail {
 
-    std::string resolve_api_key(const std::string &cli_api_key_override, const Config &cfg) {
+    namespace {
+
+        std::string provider_name_from_endpoint_style(std::string_view endpoint_style) {
+            if (endpoint_style.starts_with("openai-")) {
+                return "openai";
+            }
+            if (endpoint_style == "anthropic-messages") {
+                return "anthropic";
+            }
+            return {};
+        }
+
+    } // namespace
+
+    std::string resolve_api_key(const std::string &cli_api_key_override, const ProfileConfig &profile) {
         if (!cli_api_key_override.empty()) {
             return cli_api_key_override;
         }
-        const char *env_key = std::getenv("ANTHROPIC_API_KEY");
-        if (env_key == nullptr) {
-            env_key = std::getenv("LLM_API_KEY");
+        if (!profile.api_key.empty()) {
+            return profile.api_key;
         }
+        const char *env_key = std::getenv("LLM_API_KEY");
         if (env_key != nullptr) {
             return env_key;
-        }
-        if (!cfg.api_key.empty()) {
-            return cfg.api_key;
         }
         return {};
     }
 
     std::unordered_map<std::string, AgentConfig> build_effective_agents(const Config &cfg) {
         auto effective_agents = cfg.agents;
-        if (!effective_agents.contains("default")) {
-            effective_agents.insert_or_assign("default", AgentConfig{
-                                                             .provider = cfg.provider,
-                                                             .model = cfg.model,
-                                                             .fallback_models = cfg.fallback_models,
-                                                             .base_url = cfg.base_url,
-                                                             .api_key = cfg.api_key,
-                                                             .system_prompt = cfg.system_prompt,
-                                                             .workspace = cfg.workspace,
-                                                             .permissions = cfg.permissions,
-                                                             .subagents = {},
-                                                             .edit_mode = cfg.edit_mode,
-                                                             .thinking_budget = cfg.thinking_budget,
-                                                         });
+        for (auto &[agent_key, agent_cfg] : effective_agents) {
+            if (agent_cfg.profile.empty()) {
+                agent_cfg.profile = cfg.profile;
+            }
+            if (agent_cfg.model.empty()) {
+                agent_cfg.model = cfg.model;
+            }
+            if (agent_cfg.fallback_models.empty()) {
+                agent_cfg.fallback_models = cfg.fallback_models;
+            }
+            if (agent_cfg.system_prompt.empty()) {
+                agent_cfg.system_prompt = cfg.system_prompt;
+            }
+            if (agent_cfg.workspace.empty()) {
+                agent_cfg.workspace = cfg.workspace;
+            }
+            if (agent_cfg.edit_mode.empty()) {
+                agent_cfg.edit_mode = cfg.edit_mode;
+            }
+            if (agent_cfg.thinking_budget == 0) {
+                agent_cfg.thinking_budget = cfg.thinking_budget;
+            }
+            if (agent_cfg.permissions.allowed_tools.empty() && agent_cfg.permissions.denied_tools.empty() && agent_cfg.permissions.denied_shell_commands.empty() &&
+                agent_cfg.permissions.sandbox_mode == ToolSandboxMode::isolated && agent_cfg.permissions.shell_approval == ToolApprovalPolicy::ask) {
+                agent_cfg.permissions = cfg.permissions;
+            }
+            static_cast<void>(agent_key);
         }
         for (auto &[agent_key, agent_cfg] : effective_agents) {
             if (agent_cfg.workspace.empty()) {
@@ -63,12 +87,43 @@ namespace orangutan::bootstrap::detail {
         return effective_agents;
     }
 
+    std::optional<ResolvedAgentEndpointLegacy> resolve_agent_endpoint(const Config &cfg, const AgentConfig &agent_cfg, const std::string &agent_key,
+                                                                      const std::string &cli_api_key_override) {
+        if (agent_cfg.profile.empty()) {
+            spdlog::fmt_lib::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
+            return std::nullopt;
+        }
+        const auto profile_it = cfg.profiles.find(agent_cfg.profile);
+        if (profile_it == cfg.profiles.end()) {
+            spdlog::fmt_lib::println(stderr, "Error: agent '{}' references unknown profile '{}'.", agent_key, agent_cfg.profile);
+            return std::nullopt;
+        }
+        const auto &profile_cfg = profile_it->second;
+        const auto model_it = profile_cfg.models.find(agent_cfg.model);
+        if (model_it == profile_cfg.models.end()) {
+            spdlog::fmt_lib::println(stderr, "Error: agent '{}' references unknown model '{}' in profile '{}'.", agent_key, agent_cfg.model, agent_cfg.profile);
+            return std::nullopt;
+        }
+        const auto provider_name = provider_name_from_endpoint_style(model_it->second.endpoint_style);
+        if (provider_name.empty()) {
+            spdlog::fmt_lib::println(stderr, "Error: agent '{}' uses unsupported endpoint_style '{}'.", agent_key, model_it->second.endpoint_style);
+            return std::nullopt;
+        }
+        return ResolvedAgentEndpointLegacy{
+            .profile_name = agent_cfg.profile,
+            .provider_name = provider_name,
+            .api_key = resolve_api_key(cli_api_key_override, profile_cfg),
+            .base_url = profile_cfg.base_url,
+        };
+    }
+
     std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
-            Config agent_cfg_wrapper = cfg;
-            agent_cfg_wrapper.api_key = agent_cfg.api_key;
-            const auto resolved_agent_api_key = resolve_api_key(cli_api_key_override, agent_cfg_wrapper);
+            const auto maybe_endpoint = resolve_agent_endpoint(cfg, agent_cfg, agent_key, cli_api_key_override);
+            if (!maybe_endpoint.has_value()) {
+                return std::nullopt;
+            }
 
             std::string resolved_workspace_root;
             try {
@@ -82,11 +137,11 @@ namespace orangutan::bootstrap::detail {
 
             result.emplace(agent_key, AgentRuntimeConfig{
                                           .agent_key = agent_key,
-                                          .provider_name = agent_cfg.provider,
-                                          .api_key = resolved_agent_api_key,
+                                          .provider_name = maybe_endpoint->provider_name,
+                                          .api_key = maybe_endpoint->api_key,
                                           .model = agent_cfg.model,
                                           .fallback_models = agent_cfg.fallback_models,
-                                          .base_url = agent_cfg.base_url,
+                                          .base_url = maybe_endpoint->base_url,
                                           .system_prompt = agent_cfg.system_prompt,
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,

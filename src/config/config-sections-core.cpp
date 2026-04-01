@@ -52,15 +52,51 @@ namespace orangutan::config::detail {
             }
         }
 
+        std::optional<ModelCostConfig> parse_model_cost(const nlohmann::json &value) {
+            if (!value.is_object()) {
+                return std::nullopt;
+            }
+
+            ModelCostConfig cost;
+            bool has_value = false;
+            if (const auto *input = find_member(value, "input"); input != nullptr && input->is_number()) {
+                cost.input = input->get<base::f64>();
+                has_value = true;
+            }
+            if (const auto *output = find_member(value, "output"); output != nullptr && output->is_number()) {
+                cost.output = output->get<base::f64>();
+                has_value = true;
+            }
+            return has_value ? std::optional<ModelCostConfig>(cost) : std::nullopt;
+        }
+
+        ModelConfig parse_model_config(const nlohmann::json &model) {
+            ModelConfig cfg;
+            if (const auto *value = find_member(model, "endpoint_style"); value != nullptr && value->is_string()) {
+                cfg.endpoint_style = value->get<std::string>();
+            }
+            if (const auto *value = find_member(model, "max_tokens"); value != nullptr && value->is_number_integer()) {
+                cfg.max_tokens = value->get<int>();
+            }
+            if (const auto *value = find_member(model, "context_window"); value != nullptr && value->is_number_integer()) {
+                cfg.context_window = value->get<int>();
+            }
+            if (const auto *value = find_member(model, "thinking"); value != nullptr && value->is_string()) {
+                cfg.thinking = value->get<std::string>();
+            }
+            if (const auto *value = find_member(model, "cost"); value != nullptr) {
+                cfg.cost = parse_model_cost(*value);
+            }
+            return cfg;
+        }
+
     } // namespace
 
-    AgentConfig make_agent_config_from_legacy(const Config &cfg) {
+    AgentConfig make_agent_defaults(const Config &cfg) {
         return {
-            .provider = cfg.provider,
+            .profile = cfg.profile,
             .model = cfg.model,
             .fallback_models = cfg.fallback_models,
-            .base_url = cfg.base_url,
-            .api_key = cfg.api_key,
             .system_prompt = cfg.system_prompt,
             .workspace = cfg.workspace,
             .permissions = cfg.permissions,
@@ -71,9 +107,8 @@ namespace orangutan::config::detail {
     }
 
     void expand_agent_config(AgentConfig &cfg) {
-        cfg.base_url = expand_env_vars(cfg.base_url);
+        cfg.profile = expand_env_vars(cfg.profile);
         cfg.model = expand_env_vars(cfg.model);
-        cfg.provider = expand_env_vars(cfg.provider);
         cfg.system_prompt = expand_env_vars(cfg.system_prompt);
         cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
 
@@ -86,23 +121,34 @@ namespace orangutan::config::detail {
         }
     }
 
+    void expand_profile_config(ProfileConfig &cfg) {
+        cfg.base_url = expand_env_vars(cfg.base_url);
+        cfg.api_key = expand_env_vars(cfg.api_key);
+        for (auto &[header_name, header_value] : cfg.headers) {
+            static_cast<void>(header_name);
+            header_value = expand_env_vars(header_value);
+        }
+        for (auto &[model_name, model_cfg] : cfg.models) {
+            static_cast<void>(model_name);
+            model_cfg.endpoint_style = expand_env_vars(model_cfg.endpoint_style);
+            model_cfg.thinking = expand_env_vars(model_cfg.thinking);
+        }
+    }
+
     Config parse_agent_section(const nlohmann::json &root, Config cfg) {
         const auto *agent = find_object_member(root, "agent");
         if (agent == nullptr) {
             return cfg;
         }
 
-        if (const auto *value = find_member(*agent, "provider"); value != nullptr && value->is_string()) {
-            cfg.provider = value->get<std::string>();
+        if (const auto *value = find_member(*agent, "profile"); value != nullptr && value->is_string()) {
+            cfg.profile = value->get<std::string>();
         }
         if (const auto *value = find_member(*agent, "model"); value != nullptr && value->is_string()) {
             cfg.model = value->get<std::string>();
         }
         if (const auto *value = find_array_member(*agent, "fallback_models"); value != nullptr) {
             assign_string_array(*value, cfg.fallback_models);
-        }
-        if (const auto *value = find_member(*agent, "base_url"); value != nullptr && value->is_string()) {
-            cfg.base_url = value->get<std::string>();
         }
         if (const auto *value = find_member(*agent, "temperature"); value != nullptr && value->is_number()) {
             cfg.temperature = value->get<base::f64>();
@@ -122,8 +168,46 @@ namespace orangutan::config::detail {
         if (const auto *value = find_member(*agent, "system_prompt"); value != nullptr && value->is_string()) {
             cfg.system_prompt = value->get<std::string>();
         }
-        if (const auto *value = find_member(*agent, "api_key"); value != nullptr && value->is_string()) {
-            cfg.api_key = value->get<std::string>();
+
+        return cfg;
+    }
+
+    Config parse_profiles_section(const nlohmann::json &root, Config cfg) {
+        const auto *profiles = find_object_member(root, "profiles");
+        if (profiles == nullptr) {
+            return cfg;
+        }
+
+        for (auto it = profiles->begin(); it != profiles->end(); ++it) {
+            if (!it.value().is_object()) {
+                continue;
+            }
+
+            ProfileConfig profile_cfg;
+            const auto &profile = it.value();
+
+            if (const auto *value = find_member(profile, "base_url"); value != nullptr && value->is_string()) {
+                profile_cfg.base_url = value->get<std::string>();
+            }
+            if (const auto *value = find_member(profile, "api_key"); value != nullptr && value->is_string()) {
+                profile_cfg.api_key = value->get<std::string>();
+            }
+            if (const auto *headers = find_object_member(profile, "headers"); headers != nullptr) {
+                for (auto header_it = headers->begin(); header_it != headers->end(); ++header_it) {
+                    if (header_it.value().is_string()) {
+                        profile_cfg.headers.emplace(header_it.key(), header_it.value().get<std::string>());
+                    }
+                }
+            }
+            if (const auto *models = find_object_member(profile, "models"); models != nullptr) {
+                for (auto model_it = models->begin(); model_it != models->end(); ++model_it) {
+                    if (model_it.value().is_object()) {
+                        profile_cfg.models.insert_or_assign(model_it.key(), parse_model_config(model_it.value()));
+                    }
+                }
+            }
+
+            cfg.profiles.insert_or_assign(it.key(), std::move(profile_cfg));
         }
 
         return cfg;
@@ -259,29 +343,23 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        const auto legacy_defaults = make_agent_config_from_legacy(cfg);
+        const auto agent_defaults = make_agent_defaults(cfg);
         for (auto it = agents->begin(); it != agents->end(); ++it) {
             if (!it.value().is_object()) {
                 continue;
             }
 
-            auto agent_cfg = legacy_defaults;
+            auto agent_cfg = agent_defaults;
             const auto &agent = it.value();
 
-            if (const auto *value = find_member(agent, "provider"); value != nullptr && value->is_string()) {
-                agent_cfg.provider = value->get<std::string>();
+            if (const auto *value = find_member(agent, "profile"); value != nullptr && value->is_string()) {
+                agent_cfg.profile = value->get<std::string>();
             }
             if (const auto *value = find_member(agent, "model"); value != nullptr && value->is_string()) {
                 agent_cfg.model = value->get<std::string>();
             }
             if (const auto *value = find_array_member(agent, "fallback_models"); value != nullptr) {
                 assign_string_array(*value, agent_cfg.fallback_models);
-            }
-            if (const auto *value = find_member(agent, "base_url"); value != nullptr && value->is_string()) {
-                agent_cfg.base_url = value->get<std::string>();
-            }
-            if (const auto *value = find_member(agent, "api_key"); value != nullptr && value->is_string()) {
-                agent_cfg.api_key = value->get<std::string>();
             }
             if (const auto *value = find_member(agent, "system_prompt"); value != nullptr && value->is_string()) {
                 agent_cfg.system_prompt = value->get<std::string>();

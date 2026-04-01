@@ -145,17 +145,19 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return 1;
         }
 
-        orangutan::Config selected_agent_cfg = cfg;
-        selected_agent_cfg.api_key = maybe_selected_agent->api_key;
-        primary_api_key = orangutan::bootstrap::detail::resolve_api_key(options.api_key, selected_agent_cfg);
+        const auto maybe_endpoint = orangutan::bootstrap::detail::resolve_agent_endpoint(cfg, *maybe_selected_agent, options.cli_agent_key, options.api_key);
+        if (!maybe_endpoint.has_value()) {
+            return 1;
+        }
+        primary_api_key = maybe_endpoint->api_key;
         maybe_primary_identity = orangutan::bootstrap::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
         maybe_primary_runtime_cfg = orangutan::bootstrap::AgentRuntimeConfig{
             .agent_key = options.cli_agent_key,
-            .provider_name = maybe_selected_agent->provider,
+            .provider_name = maybe_endpoint->provider_name,
             .api_key = primary_api_key,
             .model = maybe_selected_agent->model,
             .fallback_models = maybe_selected_agent->fallback_models,
-            .base_url = maybe_selected_agent->base_url,
+            .base_url = maybe_endpoint->base_url,
             .system_prompt = maybe_selected_agent->system_prompt,
             .workspace_root = *maybe_workspace,
             .edit_mode = maybe_selected_agent->edit_mode,
@@ -170,7 +172,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
 
     if (options.cli_mode && primary_api_key.empty()) {
         spdlog::fmt_lib::println(stderr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
-        spdlog::fmt_lib::println(stderr, "Set agent.api_key, ANTHROPIC_API_KEY, LLM_API_KEY, or use --api-key");
+        spdlog::fmt_lib::println(stderr, "Set profiles.<name>.api_key, LLM_API_KEY, or use --api-key");
         return 1;
     }
 

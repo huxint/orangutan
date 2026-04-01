@@ -20,6 +20,7 @@
 #include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
 
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <magic_enum/magic_enum.hpp>
@@ -57,10 +58,43 @@ namespace orangutan::web {
             return std::nullopt;
         }
 
-        std::string resolve_agent_api_key(const config::Config &config, const config::AgentConfig &agent) {
-            config::Config agent_cfg_wrapper = config;
-            agent_cfg_wrapper.api_key = agent.api_key;
-            return bootstrap::detail::resolve_api_key("", agent_cfg_wrapper);
+        const config::ProfileConfig &resolve_agent_profile(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key) {
+            if (agent.profile.empty()) {
+                throw std::runtime_error("agent '" + agent_key + "' is missing a profile");
+            }
+            const auto it = config.profiles.find(agent.profile);
+            if (it == config.profiles.end()) {
+                throw std::runtime_error("agent '" + agent_key + "' references unknown profile '" + agent.profile + "'");
+            }
+            return it->second;
+        }
+
+        const config::ModelConfig &resolve_agent_model(const config::ProfileConfig &profile, const config::AgentConfig &agent, const std::string &agent_key) {
+            const auto it = profile.models.find(agent.model);
+            if (it == profile.models.end()) {
+                throw std::runtime_error("agent '" + agent_key + "' references unknown model '" + agent.model + "'");
+            }
+            return it->second;
+        }
+
+        std::string provider_name_from_endpoint_style(std::string_view endpoint_style) {
+            if (endpoint_style.starts_with("openai-")) {
+                return "openai";
+            }
+            if (endpoint_style == "anthropic-messages") {
+                return "anthropic";
+            }
+            throw std::runtime_error("unsupported endpoint_style '" + std::string(endpoint_style) + "'");
+        }
+
+        std::string resolve_agent_api_key(const config::ProfileConfig &profile) {
+            if (!profile.api_key.empty()) {
+                return profile.api_key;
+            }
+            if (const char *env_key = std::getenv("LLM_API_KEY"); env_key != nullptr) {
+                return env_key;
+            }
+            return {};
         }
 
         std::string resolve_agent_workspace(const config::AgentConfig &agent, const std::string &agent_key) {
@@ -92,8 +126,10 @@ namespace orangutan::web {
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, subagent::SubagentManager *subagent_manager,
                                                                     automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+            const auto &profile = resolve_agent_profile(config, agent, agent_key);
+            const auto &model_cfg = resolve_agent_model(profile, agent, agent_key);
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
-            const auto api_key = resolve_agent_api_key(config, agent);
+            const auto api_key = resolve_agent_api_key(profile);
             if (api_key.empty()) {
                 throw providers::MissingApiKeyError("missing API key for agent '" + agent_key + "'");
             }
@@ -104,11 +140,11 @@ namespace orangutan::web {
             }
 
             bootstrap::AgentRuntimeBuildInput input{
-                .provider_name = agent.provider,
+                .provider_name = provider_name_from_endpoint_style(model_cfg.endpoint_style),
                 .api_key = api_key,
                 .model = agent.model,
                 .fallback_models = agent.fallback_models,
-                .base_url = agent.base_url,
+                .base_url = profile.base_url,
                 .agent_key = agent_key,
                 .system_prompt = agent.system_prompt,
                 .workspace_root = workspace_root,

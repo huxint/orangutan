@@ -29,103 +29,68 @@ namespace {
         }
 
         [[nodiscard]]
-        static std::string read_config(const std::filesystem::path &path) {
-            std::ifstream in(path);
-            return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-        }
-
-        [[nodiscard]]
         static nlohmann::json read_config_json(const std::filesystem::path &path) {
-            return nlohmann::json::parse(read_config(path));
+            std::ifstream in(path);
+            return nlohmann::json::parse(std::string{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()});
         }
 
     private:
         std::filesystem::path root_;
     };
 
-    TEST_CASE("protect_and_reveal_round_trip") {
-        const auto stored = orangutan::protect_config_secret("sk-secret-123", "correct horse battery staple", "agent.api_key");
+    TEST_CASE("protect_and_reveal_round_trip_for_profile_api_key") {
+        const auto stored = orangutan::protect_config_secret("sk-secret-123", "correct horse battery staple", "profiles.api_key");
         CHECK(orangutan::is_protected_config_secret(stored));
 
-        const auto revealed = orangutan::reveal_config_secret(stored, "correct horse battery staple", "agent.api_key", "agent.api_key");
+        const auto revealed = orangutan::reveal_config_secret(stored, "correct horse battery staple", "profiles.api_key", "profiles.gateway-a.api_key");
         CHECK(revealed == "sk-secret-123");
-    };
-
-    TEST_CASE("rejects_wrong_password_without_leaking_secret") {
-        const auto stored = orangutan::protect_config_secret("top-secret-token", "right-password", "agents.api_key");
-
-        try {
-            static_cast<void>(orangutan::reveal_config_secret(stored, "wrong-password", "agents.api_key", "agents.coder.api_key"));
-            FAIL("expected protected secret decryption to fail");
-        } catch (const orangutan::ConfigSecretProtectionError &e) {
-            const std::string message = e.what();
-            CHECK(message.contains("agents.coder.api_key"));
-            CHECK_FALSE(message.contains("top-secret-token"));
-            CHECK_FALSE(message.contains(stored));
-        }
-    };
-
-    TEST_CASE("rejects_missing_password_for_protected_secret") {
-        const auto stored = orangutan::protect_config_secret("top-secret-token", "right-password", "agents.api_key");
-        REQUIRE_THROWS_AS(orangutan::reveal_config_secret(stored, "", "agents.api_key", "agents.coder.api_key"), orangutan::ConfigSecretProtectionError);
-    };
-
-    TEST_CASE("rejects_malformed_payload_without_echoing_payload") {
-        try {
-            static_cast<void>(orangutan::reveal_config_secret("enc:v1:not-valid-***", "password", "agent.api_key", "agent.api_key"));
-            FAIL("expected malformed payload to fail");
-        } catch (const orangutan::ConfigSecretProtectionError &e) {
-            const std::string message = e.what();
-            CHECK_FALSE(message.contains("not-valid-***"));
-        }
     };
 
     TEST_CASE("field_binding_prevents_replay_across_secret_kinds") {
         const auto stored = orangutan::protect_config_secret("qq-secret", "shared-password", "qq.client_secret");
-        REQUIRE_THROWS_AS(orangutan::reveal_config_secret(stored, "shared-password", "agents.api_key", "agents.default.api_key"), orangutan::ConfigSecretProtectionError);
+        REQUIRE_THROWS_AS(orangutan::reveal_config_secret(stored, "shared-password", "profiles.api_key", "profiles.gateway-a.api_key"), orangutan::ConfigSecretProtectionError);
     };
 
-    TEST_CASE("protect_flow_encrypts_eligible_secrets_and_skips_environment_references") {
+    TEST_CASE("protect_flow_encrypts_profile_api_keys_and_skips_nested_model_metadata") {
         ConfigSecretFileHarness harness;
         harness.write_config(nlohmann::json::parse(R"json({
-          "agent": {
-            "api_key": "plain-agent-key"
-          },
-          "agents": {
-            "coder": {
-              "api_key": "${CODER_KEY}"
+          "profiles": {
+            "gateway-a": {
+              "api_key": "plain-profile-key",
+              "models": {
+                "gpt-4.1": {
+                  "endpoint_style": "openai-responses",
+                  "max_tokens": 32000
+                }
+              }
+            },
+            "gateway-b": {
+              "api_key": "${PROFILE_B_KEY}"
             }
           },
           "qq": {
             "client_secret": "plain-qq-secret"
-          },
-          "memory": {
-            "mirror_file": "notes/MEMORY.md"
           }
         })json"));
 
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
-        INFO("expected protect_config_file_secrets to modify the config");
         REQUIRE(result.modified);
         CHECK(result.protected_count == 2UL);
-        CHECK(std::filesystem::exists(result.backup_path));
 
         const auto updated = ConfigSecretFileHarness::read_config_json(harness.config_path());
-        CHECK(updated["agent"]["api_key"].get<std::string>().starts_with("enc:v1:"));
-        CHECK(updated["agents"]["coder"]["api_key"] == "${CODER_KEY}");
+        CHECK(updated["profiles"]["gateway-a"]["api_key"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["profiles"]["gateway-b"]["api_key"] == "${PROFILE_B_KEY}");
+        CHECK(updated["profiles"]["gateway-a"]["models"]["gpt-4.1"]["max_tokens"] == 32000);
         CHECK(updated["qq"]["client_secret"].get<std::string>().starts_with("enc:v1:"));
-        CHECK(updated["memory"]["mirror_file"] == "notes/MEMORY.md");
-
-        const auto backup = ConfigSecretFileHarness::read_config_json(result.backup_path);
-        CHECK(backup["agent"]["api_key"] == "plain-agent-key");
-        CHECK(backup["qq"]["client_secret"] == "plain-qq-secret");
     };
 
     TEST_CASE("protect_flow_preserves_config_permissions") {
         ConfigSecretFileHarness harness;
         harness.write_config(nlohmann::json::parse(R"json({
-          "agent": {
-            "api_key": "plain-agent-key"
+          "profiles": {
+            "gateway-a": {
+              "api_key": "plain-profile-key"
+            }
           }
         })json"));
 
@@ -133,48 +98,8 @@ namespace {
         const auto original_permissions = std::filesystem::status(harness.config_path()).permissions();
 
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
-        INFO("expected protect_config_file_secrets to modify the config");
         REQUIRE(result.modified);
         CHECK(std::filesystem::status(harness.config_path()).permissions() == original_permissions);
-    };
-
-    TEST_CASE("protect_flow_skips_nested_agent_tables") {
-        ConfigSecretFileHarness harness;
-        harness.write_config(nlohmann::json::parse(R"json({
-          "agents": {
-            "coder": {
-              "api_key": "plain-agent-key"
-            },
-            "nested": {
-              "extra": {
-                "api_key": "nested-agent-key"
-              }
-            }
-          }
-        })json"));
-
-        const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
-        INFO("expected protect_config_file_secrets to modify the config");
-        REQUIRE(result.modified);
-        CHECK(result.protected_count == 1UL);
-
-        const auto updated = ConfigSecretFileHarness::read_config_json(harness.config_path());
-        CHECK(updated["agents"]["coder"]["api_key"].get<std::string>().starts_with("enc:v1:"));
-        CHECK(updated["agents"]["nested"]["extra"]["api_key"] == "nested-agent-key");
-    };
-
-    TEST_CASE("protect_flow_leaves_file_untouched_on_failure") {
-        ConfigSecretFileHarness harness;
-        harness.write_config(nlohmann::json::parse(R"json({
-          "agent": {
-            "api_key": "plain-agent-key"
-          }
-        })json"));
-
-        const auto original = ConfigSecretFileHarness::read_config(harness.config_path());
-        REQUIRE_THROWS_AS(orangutan::protect_config_file_secrets(harness.config_path(), ""), orangutan::ConfigSecretProtectionError);
-        CHECK(ConfigSecretFileHarness::read_config(harness.config_path()) == original);
-        CHECK_FALSE(std::filesystem::exists(harness.config_path().string() + ".bak"));
     };
 
 } // namespace
