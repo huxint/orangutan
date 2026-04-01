@@ -296,7 +296,7 @@ namespace orangutan::skills {
         std::string out;
         out.append("\n\n## Active Skills\n");
         for (const auto &skill : skills_) {
-            append(out, "\n### {}\n", skill.name);
+            utils::format_to(out, "\n### {}\n", skill.name);
             out.append(skill.body);
         }
         return out;

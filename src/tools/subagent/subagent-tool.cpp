@@ -1,5 +1,6 @@
 #include "tools/register.hpp"
 #include "subagent/subagent-manager.hpp"
+#include "tools/registry/tool-context.hpp"
 
 #include <algorithm>
 #include <chrono>

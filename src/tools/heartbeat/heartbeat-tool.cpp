@@ -12,12 +12,12 @@ namespace orangutan::tools {
 
         std::string format_heartbeat(const automation::HeartbeatSpec &heartbeat) {
             std::string out;
-            append(out, "- {} every={}s", heartbeat.name, heartbeat.every_seconds);
+            utils::format_to(out, "- {} every={}s", heartbeat.name, heartbeat.every_seconds);
             if (heartbeat.jitter_seconds > 0) {
-                append(out, " jitter={}s", heartbeat.jitter_seconds);
+                utils::format_to(out, " jitter={}s", heartbeat.jitter_seconds);
             }
             if (heartbeat.next_due_at.has_value()) {
-                append(out, " next_due={}", *heartbeat.next_due_at);
+                utils::format_to(out, " next_due={}", *heartbeat.next_due_at);
             }
             if (heartbeat.paused) {
                 out.append(" paused");

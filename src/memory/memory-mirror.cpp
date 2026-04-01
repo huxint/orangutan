@@ -18,14 +18,14 @@ namespace orangutan::memory {
             std::string out;
             out.append(managed_begin_marker);
             out.push_back('\n');
-            append(out, "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
+            utils::format_to(out, "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
             if (durable_records.empty()) {
                 out.append("- No durable memories captured yet.\n");
             } else {
                 for (const auto &record : durable_records) {
-                    append(out, "- [{}:{}] {}", record.category, record.key, record.content);
+                    utils::format_to(out, "- [{}:{}] {}", record.category, record.key, record.content);
                     if (!record.source.empty()) {
-                        append(out, " {{source={}}}", record.source);
+                        utils::format_to(out, " {{source={}}}", record.source);
                     }
                     out.push_back('\n');
                 }

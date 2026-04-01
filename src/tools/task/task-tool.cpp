@@ -4,6 +4,7 @@
 #include "automation/scheduler.hpp"
 #include "automation/cron-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
+#include "tools/registry/tool-context.hpp"
 
 #include "utils/format.hpp"
 #include <magic_enum/magic_enum.hpp>
@@ -15,12 +16,12 @@ namespace orangutan::tools {
 
         std::string format_task(const automation::TaskSpec &task) {
             std::string out;
-            append(out, "- {} [{}={}]", task.name, magic_enum::enum_name(task.schedule.kind), task.schedule.value);
+            utils::format_to(out, "- {} [{}={}]", task.name, magic_enum::enum_name(task.schedule.kind), task.schedule.value);
             if (task.last_run_at.has_value()) {
-                append(out, " last_run={}", *task.last_run_at);
+                utils::format_to(out, " last_run={}", *task.last_run_at);
             }
             if (!task.last_status.empty()) {
-                append(out, " status={}", task.last_status);
+                utils::format_to(out, " status={}", task.last_status);
             }
             return out;
         }

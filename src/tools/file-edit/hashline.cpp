@@ -322,7 +322,7 @@ namespace orangutan::tools {
         if (!mismatches.empty()) {
             std::string error;
             for (const auto &mm : mismatches) {
-                append(error, "Hash mismatch at line {}: expected {}, got {}\n", mm.line, mm.expected, mm.actual.empty() ? "out-of-range" : mm.actual);
+                utils::format_to(error, "Hash mismatch at line {}: expected {}, got {}\n", mm.line, mm.expected, mm.actual.empty() ? "out-of-range" : mm.actual);
                 if (!mm.actual.empty()) {
                     error += format_mismatch_context(lines, mm);
                 }

@@ -200,20 +200,20 @@ namespace orangutan::cli {
 
         std::string wrap_slash_reply(std::string_view title, std::string_view emoji, const std::string &text) {
             std::string out;
-            append(out, "## {}\n", title);
+            utils::format_to(out, "## {}\n", title);
 
             if (text.empty()) {
-                append(out, "- {} No output.", emoji);
+                utils::format_to(out, "- {} No output.", emoji);
                 return out;
             }
 
             if (text.starts_with("Error: ")) {
-                append(out, "- ⚠️ {}", text.substr(7));
+                utils::format_to(out, "- ⚠️ {}", text.substr(7));
                 return out;
             }
 
             if (text.starts_with("Usage: ")) {
-                append(out, "- ℹ️ `{}`", text);
+                utils::format_to(out, "- ℹ️ `{}`", text);
                 return out;
             }
 
@@ -222,7 +222,7 @@ namespace orangutan::cli {
                 return out;
             }
 
-            append(out, "- {} {}", emoji, text);
+            utils::format_to(out, "- {} {}", emoji, text);
             return out;
         }
 
@@ -422,7 +422,7 @@ namespace orangutan::cli {
                 if (description.empty()) {
                     continue;
                 }
-                append(out, "- `{}` - {}\n", spec.definition.usage, description);
+                utils::format_to(out, "- `{}` - {}\n", spec.definition.usage, description);
             }
         }
 

@@ -26,13 +26,13 @@ namespace orangutan::cli {
 
         std::string out = "## Agents\n";
         for (const auto &[agent_key, agent_cfg] : cfg.agents) {
-            append(out, "- 🤖 `{}`", agent_key);
+            utils::format_to(out, "- 🤖 `{}`", agent_key);
             if (agent_key == current_agent_key) {
                 out += " **(current)**";
             }
-            append(out, " — model: `{}`", agent_cfg.model);
+            utils::format_to(out, " — model: `{}`", agent_cfg.model);
             if (!agent_cfg.workspace.empty()) {
-                append(out, ", workspace: `{}`", agent_cfg.workspace);
+                utils::format_to(out, ", workspace: `{}`", agent_cfg.workspace);
             }
             if (!agent_cfg.subagents.empty()) {
                 out += ", subagents: ";
@@ -40,7 +40,7 @@ namespace orangutan::cli {
                     if (index > 0) {
                         out.push_back(',');
                     }
-                    append(out, "`{}`", agent_cfg.subagents[index]);
+                    utils::format_to(out, "`{}`", agent_cfg.subagents[index]);
                 }
             }
             out.push_back('\n');
@@ -69,14 +69,14 @@ namespace orangutan::cli {
         const auto count = std::min(max_sessions_to_show, sessions.size());
         for (std::size_t index = 0; index < count; ++index) {
             const auto &session = sessions[index];
-            append(out, "- 🧵 `{}`", session.id);
+            utils::format_to(out, "- 🧵 `{}`", session.id);
             if (session.id == current_session_id) {
                 out += " **(current)**";
             }
-            append(out, " — {}, model: `{}`, messages: `{}`\n", session.created_at, session.model, session.message_count);
+            utils::format_to(out, " — {}, model: `{}`, messages: `{}`\n", session.created_at, session.model, session.message_count);
         }
         if (sessions.size() > count) {
-            append(out, "- ➕ And `{}` more", sessions.size() - count);
+            utils::format_to(out, "- ➕ And `{}` more", sessions.size() - count);
         }
         return out;
     }
@@ -97,7 +97,7 @@ namespace orangutan::cli {
 
         std::string out = "🗂️ Saved sessions:\n";
         for (const auto &session : sessions) {
-            append(out, "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
+            utils::format_to(out, "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
         }
         out.push_back('\n');
         return out;
@@ -143,11 +143,11 @@ namespace orangutan::cli {
 
     std::string format_runtime_status(const RuntimeStatusSnapshot &status) {
         std::string out = "## Status\n";
-        append(out, "- 🤖 Agent: `{}`\n", status.agent_key);
-        append(out, "- 🔌 Provider: `{}`\n", status.provider_name);
-        append(out, "- 🧠 Model: `{}`\n", status.current_model);
+        utils::format_to(out, "- 🤖 Agent: `{}`\n", status.agent_key);
+        utils::format_to(out, "- 🔌 Provider: `{}`\n", status.provider_name);
+        utils::format_to(out, "- 🧠 Model: `{}`\n", status.current_model);
         if (!status.configured_model.empty() && status.configured_model != status.current_model) {
-            append(out, "- 🎯 Configured Model: `{}`\n", status.configured_model);
+            utils::format_to(out, "- 🎯 Configured Model: `{}`\n", status.configured_model);
         }
         if (!status.fallback_models.empty()) {
             out += "- 🔁 Fallback Models: ";
@@ -155,19 +155,19 @@ namespace orangutan::cli {
                 if (index > 0) {
                     out += ", ";
                 }
-                append(out, "`{}`", status.fallback_models[index]);
+                utils::format_to(out, "`{}`", status.fallback_models[index]);
             }
             out.push_back('\n');
         }
-        append(out, "- 🧵 Session: `{}`\n", status.current_session_id.empty() ? "none" : status.current_session_id);
+        utils::format_to(out, "- 🧵 Session: `{}`\n", status.current_session_id.empty() ? "none" : status.current_session_id);
         if (!status.scope_key.empty()) {
-            append(out, "- 🗂️ Scope: `{}`\n", status.scope_key);
+            utils::format_to(out, "- 🗂️ Scope: `{}`\n", status.scope_key);
         }
-        append(out, "- 📊 Usage: `llm_requests={}`, `attempts={}`, `fallbacks={}`, `failed_attempts={}`, `tool_calls={}`, `tool_errors={}`\n",
-               status.provider_usage.logical_requests, status.provider_usage.attempt_count, status.provider_usage.fallback_switches, status.provider_usage.failed_attempts,
-               status.tool_call_count, status.tool_error_count);
-        append(out, "- 💬 History: `messages={}`, `user={}`, `assistant={}`\n", status.history_messages, status.user_messages, status.assistant_messages);
-        append(out, "- 🛠️ Tools: `registered={}`", status.registered_tool_count);
+        utils::format_to(out, "- 📊 Usage: `llm_requests={}`, `attempts={}`, `fallbacks={}`, `failed_attempts={}`, `tool_calls={}`, `tool_errors={}`\n",
+                         status.provider_usage.logical_requests, status.provider_usage.attempt_count, status.provider_usage.fallback_switches,
+                         status.provider_usage.failed_attempts, status.tool_call_count, status.tool_error_count);
+        utils::format_to(out, "- 💬 History: `messages={}`, `user={}`, `assistant={}`\n", status.history_messages, status.user_messages, status.assistant_messages);
+        utils::format_to(out, "- 🛠️ Tools: `registered={}`", status.registered_tool_count);
         return out;
     }
 

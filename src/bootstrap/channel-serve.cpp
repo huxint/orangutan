@@ -178,7 +178,7 @@ namespace orangutan::bootstrap {
 
             std::string prompt = "Multiple shell approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
             for (const auto &request_id : request_ids) {
-                append(prompt, " {}", request_id);
+                utils::format_to(prompt, " {}", request_id);
             }
             return prompt;
         }

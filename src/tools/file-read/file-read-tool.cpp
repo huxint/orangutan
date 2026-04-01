@@ -74,12 +74,12 @@ namespace orangutan::tools {
                     out += format_hashline(lines[static_cast<std::size_t>(i - 1)], static_cast<std::size_t>(i));
                     out.push_back('\n');
                 } else {
-                    append(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<std::size_t>(i - 1)]);
+                    utils::format_to(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<std::size_t>(i - 1)]);
                 }
             }
 
             if (end < total_lines) {
-                append(out, "... (showing {} of {} lines, use offset to read more)\n", output_count, total_lines);
+                utils::format_to(out, "... (showing {} of {} lines, use offset to read more)\n", output_count, total_lines);
             }
 
             return out;
@@ -117,12 +117,12 @@ namespace orangutan::tools {
                 if (i > 0) {
                     out.push_back('\n');
                 }
-                append(out, "=== {} ===\n", path.string());
+                utils::format_to(out, "=== {} ===\n", path.string());
 
                 try {
                     out += read_single_file(path, offset, limit, edit_mode);
                 } catch (const std::exception &e) {
-                    append(out, "Error: {}\n", e.what());
+                    utils::format_to(out, "Error: {}\n", e.what());
                 }
             }
 

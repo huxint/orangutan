@@ -105,7 +105,7 @@ namespace orangutan::cli {
         unified.append("+++ b/");
         unified.append(path.empty() ? "after" : path);
         unified.push_back('\n');
-        append(unified, "{}", header);
+        utils::format_to(unified, "{}", header);
 
         for (std::size_t index = prefix_context_start; index < prefix; ++index) {
             unified.push_back('\n');

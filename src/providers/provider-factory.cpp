@@ -167,7 +167,7 @@ namespace orangutan::providers {
                     summary.append(" (");
                     summary.append(errors.front());
                     for (std::size_t index = 1; index < errors.size(); ++index) {
-                        append(summary, "; {}", errors[index]);
+                        utils::format_to(summary, "; {}", errors[index]);
                     }
                     summary.push_back(')');
                 }
@@ -185,7 +185,7 @@ namespace orangutan::providers {
                     ++usage_.failed_attempts;
 
                     std::string message;
-                    append(message, "{}: {}", failed_model, error_message);
+                    utils::format_to(message, "{}: {}", failed_model, error_message);
                     state.errors.push_back(std::move(message));
 
                     if (state.attempt_index + 1 < endpoints_.size()) {

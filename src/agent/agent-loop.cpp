@@ -469,7 +469,7 @@ namespace orangutan::agent {
         std::string transcript;
 
         for (const auto &message : history_) {
-            append(transcript, "{}:\n", magic_enum::enum_name(message.role()));
+            utils::format_to(transcript, "{}:\n", magic_enum::enum_name(message.role()));
             for (const auto &block : message) {
                 if (const auto *text = std::get_if<Text>(&block)) {
                     if (!text->text.empty()) {
@@ -480,7 +480,7 @@ namespace orangutan::agent {
                 }
 
                 if (const auto *tool = std::get_if<ToolUse>(&block)) {
-                    append(transcript, "[tool_use] {}\n", tool->name);
+                    utils::format_to(transcript, "[tool_use] {}\n", tool->name);
                     continue;
                 }
 
@@ -615,7 +615,7 @@ namespace orangutan::agent {
 
         for (const auto &record : records) {
             std::string candidate;
-            append(candidate, "- [{}:{}] {}", record.category, record.key, record.content);
+            utils::format_to(candidate, "- [{}:{}] {}", record.category, record.key, record.content);
             if (used + candidate.size() + 1 > max_memory_prompt_bytes) {
                 if (wrote_any) {
                     break;

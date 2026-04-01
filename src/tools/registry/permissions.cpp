@@ -121,9 +121,9 @@ namespace orangutan::tools {
 
         std::string prompt;
         prompt += "Shell command approval required.\n";
-        append(prompt, "Tool: {}\n", call.name);
-        append(prompt, "Sandbox mode: {}\n", to_string(settings.sandbox_mode));
-        append(prompt, "Command: {}", command);
+        utils::format_to(prompt, "Tool: {}\n", call.name);
+        utils::format_to(prompt, "Sandbox mode: {}\n", to_string(settings.sandbox_mode));
+        utils::format_to(prompt, "Command: {}", command);
         if (!approval_callback(call, prompt)) {
             return blocked_result(call, "Shell command rejected by user.");
         }

@@ -1,6 +1,7 @@
 #include "tools/inbox/inbox-tool.hpp"
 
 #include "automation/scheduler.hpp"
+#include "tools/registry/tool-context.hpp"
 
 #include "utils/format.hpp"
 
@@ -23,7 +24,7 @@ namespace orangutan::tools {
                 }
                 std::string out;
                 for (const auto &item : items) {
-                    append(out, "- {} [{}] {}\n", item.id, item.status, item.title);
+                    utils::format_to(out, "- {} [{}] {}\n", item.id, item.status, item.title);
                     out.append("  ");
                     out.append(item.body);
                     out.push_back('\n');

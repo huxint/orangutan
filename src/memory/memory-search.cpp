@@ -121,9 +121,9 @@ namespace orangutan::memory::detail {
     std::string format_records(const std::vector<MemoryRecord> &records) {
         std::string out;
         for (const auto &record : records) {
-            append(out, "[{}:{}] {}", record.category, record.key, record.content);
+            utils::format_to(out, "[{}:{}] {}", record.category, record.key, record.content);
             if (!record.source.empty()) {
-                append(out, " {{source={}}}", record.source);
+                utils::format_to(out, " {{source={}}}", record.source);
             }
             out.push_back('\n');
         }

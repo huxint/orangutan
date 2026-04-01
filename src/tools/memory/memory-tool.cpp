@@ -26,7 +26,7 @@ namespace orangutan::tools {
                 const auto entries = runtime_memory.recall_by_category(category, limit);
                 std::string result;
                 for (const auto &[key, content] : entries) {
-                    append(result, "[{}] {}\n", key, content);
+                    utils::format_to(result, "[{}] {}\n", key, content);
                 }
                 return result.empty() ? "(no memories found)" : result;
             }
@@ -55,9 +55,9 @@ namespace orangutan::tools {
         std::string format_memory_list(const std::vector<MemoryRecord> &entries) {
             std::string out;
             for (const auto &entry : entries) {
-                append(out, "[{}:{}] {}", entry.category, entry.key, entry.content);
+                utils::format_to(out, "[{}:{}] {}", entry.category, entry.key, entry.content);
                 if (!entry.source.empty()) {
-                    append(out, " {{source={}}}", entry.source);
+                    utils::format_to(out, " {{source={}}}", entry.source);
                 }
                 out.push_back('\n');
             }
