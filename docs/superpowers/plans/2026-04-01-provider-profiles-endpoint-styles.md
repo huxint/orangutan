@@ -30,6 +30,7 @@
 **Runtime resolution**
 - Modify: `src/bootstrap/config-builder.cpp`
 - Modify: `src/bootstrap/config-builder.hpp`
+- Modify: `src/bootstrap/config-bootstrap.cpp`
 - Modify: `src/bootstrap/agent-runtime.hpp`
 - Modify: `src/bootstrap/channel-serve.hpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
@@ -206,6 +207,7 @@ git commit -m "refactor(config): protect profile api keys in json config"
 **Files:**
 - Modify: `src/bootstrap/config-builder.cpp`
 - Modify: `src/bootstrap/config-builder.hpp`
+- Modify: `src/bootstrap/config-bootstrap.cpp`
 - Modify: `src/bootstrap/agent-runtime.hpp`
 - Modify: `src/bootstrap/channel-serve.hpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
@@ -222,6 +224,7 @@ Add tests for:
 - failure on unknown profile
 - failure on unknown model inside a known profile
 - propagation of profile headers and resolved endpoint style into runtime config
+- CLI-selected agent resolution through `resolve_selected_agent()` / startup config bootstrap paths
 
 - [ ] **Step 2: Run bootstrap tests to verify failure**
 
@@ -251,6 +254,8 @@ Then make `build_agent_runtime_configs()`:
 - merge profile connectivity plus model metadata
 - fail fast with actionable errors
 
+Also update `src/bootstrap/config-bootstrap.cpp` so CLI overrides only touch fields that still exist after the schema change. The old `selected_agent.provider` / `selected_agent.base_url` writes must be removed or remapped to the new profile-based runtime selection flow.
+
 - [ ] **Step 4: Propagate resolved endpoint config to child/subagent runtimes**
 
 Update `SubagentChildRuntimeConfig`, `AgentRuntimeBuildInput`, and `AgentRuntimeConfig` so child workers inherit resolved endpoint settings instead of the removed provider string.
@@ -263,7 +268,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/agent-runtime.hpp src/bootstrap/channel-serve.hpp src/bootstrap/bootstrap.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp
+git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/channel-serve.hpp src/bootstrap/bootstrap.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp
 git commit -m "refactor(runtime): resolve agents through profiles and model catalogs"
 ```
 
