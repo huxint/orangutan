@@ -53,6 +53,7 @@ The new top-level config will use `profiles` instead of provider strings embedde
 - The old agent-level `provider`, `base_url`, and `api_key` fields will be removed.
 - Compatibility with the removed schema is intentionally not required.
 - Agents resolve runtime connectivity through `profile` plus `model`.
+- `agents.default` is no longer synthesized. If a code path needs the `default` agent, it must exist explicitly in config; otherwise startup should fail with a clear error.
 - Profile-level `base_url`, `api_key`, and `headers` are shared by all models under that profile.
 - Model-level configuration may declare endpoint style and model metadata/defaults, but must not override profile-level connection identity such as `base_url` or `api_key`.
 
@@ -69,12 +70,14 @@ The existing OpenAI-compatible implementation will be split so it can talk to bo
 ## Runtime Behavior
 
 - Runtime construction resolves an agent to its selected profile and model definition.
+- Credential lookup order is: explicit CLI API key override, then `profiles.<name>.api_key`, then generic `LLM_API_KEY` if present. Old provider-specific environment fallbacks are removed with the old provider schema.
 - `endpoint_style` selects the request path, payload shape, streaming parser, and tool-call decoding logic.
 - Shared request headers from the profile are attached to every request.
 - Model defaults are applied where the selected endpoint style supports them.
   - `max_tokens` should be used as the runtime default request limit.
   - `thinking` is an enum with values `none`, `low`, `medium`, `high`, `max` and should be mapped only for endpoint styles that support reasoning controls.
   - `context_window` and `cost` are metadata for now; they should be parsed and preserved but do not require budgeting or auto-selection logic in this change.
+- Fallback model names are resolved inside the same profile as the primary model. Each fallback model carries its own `endpoint_style`, defaults, and metadata when building the provider chain.
 
 ## Non-Goals
 

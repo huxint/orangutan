@@ -87,7 +87,7 @@ Add coverage for:
 - `profiles.<name>.models.<model>.context_window`
 - `profiles.<name>.models.<model>.cost`
 - `agents.<name>.profile`
-- default-agent behavior when `agents.default` is omitted but other profile-backed agents exist
+- explicit failure behavior when a runtime path requests `agents.default` and it is not configured
 - rejection of missing profile/model references during runtime-building tests later
 
 Example fixture:
@@ -148,6 +148,7 @@ Then:
 - add `profile` to agents
 - parse/save `profiles`
 - parse/save `context_window` and `cost` metadata without dropping them on round-trip
+- remove legacy default-agent synthesis; code paths that require `agents.default` must fail fast unless it is explicitly configured
 - keep `config.json` round-trippable
 
 - [ ] **Step 4: Update shipped examples and admin UI copy**
@@ -274,6 +275,12 @@ Also update `src/bootstrap/config-bootstrap.cpp` so CLI overrides only touch fie
 
 Update `src/bootstrap/agent-runtime.cpp`, `src/bootstrap/channel-serve.cpp`, and `src/web/web-routes.cpp` in the same task so runtime assembly consumes the resolved endpoint config directly. All three files currently sit on the compile path that still expects `provider_name` and direct base URL fields.
 
+Make the API-key resolution path explicit in this task:
+- `--api-key` CLI override wins
+- otherwise use `profiles.<selected>.api_key`
+- otherwise fall back to `LLM_API_KEY`
+- do not keep the old provider-specific environment lookup path
+
 - [ ] **Step 4: Propagate resolved endpoint config to child/subagent runtimes**
 
 Update `SubagentChildRuntimeConfig`, `AgentRuntimeBuildInput`, and `AgentRuntimeConfig` so child workers inherit resolved endpoint settings instead of the removed provider string.
@@ -327,6 +334,7 @@ struct ProviderEndpoint {
 ```
 
 Update factory entry points and fallback chain construction to carry `endpoint_style` instead of `provider_name`.
+When resolving `fallback_models`, look each fallback model up inside the same profile catalog as the primary model so every fallback endpoint gets its own `endpoint_style`, `max_tokens`, and `thinking` defaults.
 
 - [ ] **Step 4: Re-run provider tests**
 
