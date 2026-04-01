@@ -71,6 +71,7 @@ The existing OpenAI-compatible implementation will be split so it can talk to bo
 
 - Runtime construction resolves an agent to its selected profile and model definition.
 - Credential lookup order is: explicit CLI API key override, then `profiles.<name>.api_key`, then generic `LLM_API_KEY` if present. Old provider-specific environment fallbacks are removed with the old provider schema.
+- Resolved runtime state must keep enough data to survive bootstrap, web, and subagent handoff without re-deriving provider strings. At minimum the resolved endpoint shape carried through runtime layers includes `profile_name`, `endpoint_style`, `base_url`, `api_key`, shared `headers`, selected `model`, and model defaults such as `max_tokens` and `thinking`.
 - `endpoint_style` selects the request path, payload shape, streaming parser, and tool-call decoding logic.
 - Shared request headers from the profile are attached to every request.
 - Model defaults are applied where the selected endpoint style supports them.
@@ -78,6 +79,7 @@ The existing OpenAI-compatible implementation will be split so it can talk to bo
   - `thinking` is an enum with values `none`, `low`, `medium`, `high`, `max` and should be mapped only for endpoint styles that support reasoning controls.
   - `context_window` and `cost` are metadata for now; they should be parsed and preserved but do not require budgeting or auto-selection logic in this change.
 - Fallback model names are resolved inside the same profile as the primary model. Each fallback model carries its own `endpoint_style`, defaults, and metadata when building the provider chain.
+- User-facing CLI help text, startup errors, and admin config editing surfaces must be updated to remove references to legacy per-agent `provider`, `base_url`, and provider-specific environment variables.
 
 ## Non-Goals
 
@@ -94,3 +96,4 @@ The change is complete when:
 - Agent runtime creation resolves `profile` plus `model` and fails clearly on missing references.
 - OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages all have targeted provider tests.
 - Affected bootstrap, tool, and web tests pass against the new schema.
+- Admin config APIs and the React config pages preserve `profiles`, `agents.*.profile`, and model defaults without stripping them on save.

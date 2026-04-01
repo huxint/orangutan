@@ -84,6 +84,7 @@ Add coverage for:
 - `profiles.<name>.api_key`
 - `profiles.<name>.headers`
 - `profiles.<name>.models.<model>.endpoint_style`
+- `profiles.<name>.models.<model>.thinking`
 - `profiles.<name>.models.<model>.context_window`
 - `profiles.<name>.models.<model>.cost`
 - `agents.<name>.profile`
@@ -147,14 +148,14 @@ Then:
 - remove legacy `provider` / `base_url` / `api_key` fields from `Config` and `AgentConfig`
 - add `profile` to agents
 - parse/save `profiles`
-- parse/save `context_window` and `cost` metadata without dropping them on round-trip
+- parse/save `thinking`, `context_window`, and `cost` metadata without dropping them on round-trip
 - remove legacy default-agent synthesis; code paths that require `agents.default` must fail fast unless it is explicitly configured
 - keep `config.json` round-trippable
 
 - [ ] **Step 4: Update shipped examples and admin UI copy**
 
 Update `config.example.json` to use `profiles` and `agents.*.profile`.  
-Update `web/src/components/admin/AgentsPage.tsx` to stop suggesting obsolete per-agent provider settings.
+Update `web/src/components/admin/AgentsPage.tsx` and `web/src/components/admin/ConfigPage.tsx` to stop suggesting obsolete per-agent provider settings and to preserve the new profile-based schema when editing/saving config.
 
 - [ ] **Step 5: Re-run config tests**
 
@@ -164,7 +165,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/config/config.hpp src/config/config.cpp src/config/config-detail.hpp src/config/config-sections-core.cpp src/config/config-sections-integrations.cpp tests/config/config-test.cpp tests/config/config-save-test.cpp config.example.json web/src/components/admin/AgentsPage.tsx
+git add src/config/config.hpp src/config/config.cpp src/config/config-detail.hpp src/config/config-sections-core.cpp src/config/config-sections-integrations.cpp tests/config/config-test.cpp tests/config/config-save-test.cpp config.example.json web/src/components/admin/AgentsPage.tsx web/src/components/admin/ConfigPage.tsx
 git commit -m "refactor(config): add profiles and model endpoint catalogs"
 ```
 
@@ -269,7 +270,10 @@ Then make `build_agent_runtime_configs()`:
 - look up the agent profile
 - look up the chosen model inside that profile
 - merge profile connectivity plus model metadata
+- resolve fallback models into full `ResolvedModelEndpoint` entries inside the same profile instead of carrying raw fallback model strings alone
 - fail fast with actionable errors
+
+Propagate the resolved endpoint shape through `AgentRuntimeConfig`, `AgentRuntimeBuildInput`, and `SubagentChildRuntimeConfig` rather than reintroducing lossy `provider_name` / `base_url` / `api_key` triples later. The runtime structs should preserve `profile_name`, `endpoint_style`, shared `headers`, and model defaults for both the primary model and any resolved fallbacks.
 
 Also update `src/bootstrap/config-bootstrap.cpp` so CLI overrides only touch fields that still exist after the schema change. The old `selected_agent.provider` / `selected_agent.base_url` writes must be removed or remapped to the new profile-based runtime selection flow.
 
@@ -280,10 +284,11 @@ Make the API-key resolution path explicit in this task:
 - otherwise use `profiles.<selected>.api_key`
 - otherwise fall back to `LLM_API_KEY`
 - do not keep the old provider-specific environment lookup path
+- update the help text in `src/bootstrap/cli-options.cpp`, runtime error text in `src/bootstrap/bootstrap.cpp`, and tests around `resolve_api_key()` so they no longer mention `ANTHROPIC_API_KEY`, `agent.api_key`, or other removed schema fields
 
 - [ ] **Step 4: Propagate resolved endpoint config to child/subagent runtimes**
 
-Update `SubagentChildRuntimeConfig`, `AgentRuntimeBuildInput`, and `AgentRuntimeConfig` so child workers inherit resolved endpoint settings instead of the removed provider string.
+Update `SubagentChildRuntimeConfig`, `AgentRuntimeBuildInput`, and `AgentRuntimeConfig` so child workers inherit resolved endpoint settings instead of the removed provider string. This includes forwarding shared headers and already-resolved fallback endpoints so web/server/subagent code paths do not need to perform a second profile lookup.
 
 - [ ] **Step 5: Re-run bootstrap tests**
 
@@ -334,7 +339,7 @@ struct ProviderEndpoint {
 ```
 
 Update factory entry points and fallback chain construction to carry `endpoint_style` instead of `provider_name`.
-When resolving `fallback_models`, look each fallback model up inside the same profile catalog as the primary model so every fallback endpoint gets its own `endpoint_style`, `max_tokens`, and `thinking` defaults.
+The factory boundary should receive fully resolved primary/fallback endpoint descriptors, including shared `headers`, so provider creation no longer depends on config objects or profile lookups.
 
 - [ ] **Step 4: Re-run provider tests**
 
@@ -415,6 +420,9 @@ git commit -m "feat(providers): support responses chat-completions and anthropic
 - Modify: `src/web/admin-routes.cpp`
 - Modify: `src/web/web-routes.cpp`
 - Modify: `src/bootstrap/cli-options.cpp`
+- Modify: `web/src/api/client.ts`
+- Modify: `web/src/components/admin/ConfigPage.tsx`
+- Modify: `web/src/components/admin/AgentsPage.tsx`
 
 - [ ] **Step 1: Add failing tests for config API round-trips with profiles**
 
@@ -422,6 +430,7 @@ Cover:
 - admin config endpoints returning/saving the new profile schema
 - config file access tests still targeting `config.json`
 - web-side agent listings reflecting `profile + model` instead of removed provider names
+- React admin config editing preserving `profiles`, `agents.*.profile`, and model metadata such as `thinking`
 
 - [ ] **Step 2: Run affected targets to verify failure**
 
@@ -441,6 +450,7 @@ Update admin/web serialization and any remaining config editing helpers so they 
 In the same step, remove obsolete CLI flags that no longer make sense without compatibility:
 - remove or reject `--provider`
 - remove or reject `--base-url`
+- update the frontend types in `web/src/api/client.ts` and config editor state in `web/src/components/admin/ConfigPage.tsx` so the UI no longer loads/saves `provider` and `base_url` as top-level agent fields
 
 The plan should treat this as a schema cleanup, not a remap, because the change explicitly does not preserve the old configuration contract.
 
@@ -457,7 +467,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/tools/registry/tool-registry-test.cpp tests/web/web-routes-test.cpp tests/web/web-chat-test.cpp src/web/admin-routes.cpp src/web/web-routes.cpp src/bootstrap/cli-options.cpp
+git add tests/tools/registry/tool-registry-test.cpp tests/web/web-routes-test.cpp tests/web/web-chat-test.cpp src/web/admin-routes.cpp src/web/web-routes.cpp src/bootstrap/cli-options.cpp web/src/api/client.ts web/src/components/admin/ConfigPage.tsx web/src/components/admin/AgentsPage.tsx
 git commit -m "test(web): cover profile-based model endpoint config"
 ```
 
