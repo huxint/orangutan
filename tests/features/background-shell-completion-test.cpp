@@ -3,7 +3,7 @@
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
 #include "tools/background/background-completion.hpp"
-#include "infra/utf8.hpp"
+#include "utils/utf8.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

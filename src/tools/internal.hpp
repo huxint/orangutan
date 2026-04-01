@@ -2,7 +2,7 @@
 
 #include "tools/registry/permissions.hpp"
 #include "tools/registry/tool.hpp"
-#include "infra/subprocess/subprocess.hpp"
+#include "process/subprocess.hpp"
 
 #include <cstdlib>
 #include <filesystem>

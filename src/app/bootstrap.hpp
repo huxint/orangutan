@@ -2,7 +2,7 @@
 
 #include "app/channel-serve.hpp"
 #include "subagent/subagent-manager.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 
 #include <optional>
 #include <string>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "infra/storage/sqlite.hpp"
+#include "storage/sqlite.hpp"
 
 #include <filesystem>
 #include <mutex>

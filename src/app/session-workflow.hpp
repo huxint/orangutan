@@ -1,7 +1,7 @@
 #pragma once
 
 #include "agent/agent-loop.hpp"
-#include "infra/storage/session-store.hpp"
+#include "storage/session-store.hpp"
 
 #include <optional>
 #include <string>

@@ -2,8 +2,8 @@
 
 #include "tools/shell/command-sandbox.hpp"
 #include "tools/internal.hpp"
-#include "infra/execution/sender-utils.hpp"
-#include "infra/subprocess/subprocess.hpp"
+#include "utils/sender-utils.hpp"
+#include "process/subprocess.hpp"
 
 #include <ctre.hpp>
 #include <filesystem>

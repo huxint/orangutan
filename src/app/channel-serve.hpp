@@ -3,11 +3,11 @@
 #include "types/types.hpp"
 #include "channel/channel.hpp"
 #include "tools/registry/tool.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "channel/jid-task-runner.hpp"
 #include "memory/memory-store.hpp"
 #include "channel/message-queue.hpp"
-#include "infra/storage/session-store.hpp"
+#include "storage/session-store.hpp"
 #include "subagent/subagent-manager.hpp"
 
 #include <atomic>

@@ -1,6 +1,6 @@
 #include "memory/runtime-memory.hpp"
 
-#include "infra/string.hpp"
+#include "utils/string.hpp"
 
 #include <uni_algo/case.h>
 #include <algorithm>

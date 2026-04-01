@@ -1,4 +1,4 @@
-#include "infra/config/secret-protection.hpp"
+#include "config/secret-protection.hpp"
 
 #include <algorithm>
 #include <array>

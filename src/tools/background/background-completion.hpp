@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/registry/tool.hpp"
-#include "infra/subprocess/subprocess.hpp"
+#include "process/subprocess.hpp"
 
 #include <cstddef>
 #include <string_view>

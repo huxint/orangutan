@@ -3,7 +3,7 @@
 
 #include <spdlog/common.h>
 #include <algorithm>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <vector>
 
 namespace orangutan {

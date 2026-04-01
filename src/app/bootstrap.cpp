@@ -14,10 +14,10 @@
 #include "memory/memory-store.hpp"
 #include "skills/skill-loader.hpp"
 #include "subagent/subagent-manager.hpp"
-#include "infra/config/config.hpp"
-#include "infra/config/secret-protection.hpp"
-#include "infra/storage/session-store.hpp"
-#include "infra/storage/subagent-run-store.hpp"
+#include "config/config.hpp"
+#include "config/secret-protection.hpp"
+#include "storage/session-store.hpp"
+#include "storage/subagent-run-store.hpp"
 
 #include <CLI/CLI.hpp>
 #include <array>

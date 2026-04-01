@@ -1,4 +1,4 @@
-#include "infra/storage/subagent-run-store.hpp"
+#include "storage/subagent-run-store.hpp"
 
 #include <cstdlib>
 #include <filesystem>

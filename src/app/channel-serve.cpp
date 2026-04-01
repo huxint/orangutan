@@ -11,7 +11,7 @@
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
-#include "infra/execution/sender-utils.hpp"
+#include "utils/sender-utils.hpp"
 #include "app/runtime/identity.hpp"
 #include "skills/skill-loader.hpp"
 
@@ -21,7 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>

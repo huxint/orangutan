@@ -2,9 +2,9 @@
 
 #include <exec/any_sender_of.hpp>
 
-#include "infra/execution/sender-utils.hpp"
-#include "infra/subprocess/subprocess.hpp"
-#include "infra/time/local-format.hpp"
+#include "utils/sender-utils.hpp"
+#include "process/subprocess.hpp"
+#include "utils/time-format.hpp"
 
 #include <exception>
 #include <filesystem>

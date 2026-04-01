@@ -4,9 +4,9 @@
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
-#include "infra/storage/session-store.hpp"
-#include "infra/storage/subagent-run-store.hpp"
-#include "infra/config/config.hpp"
+#include "storage/session-store.hpp"
+#include "storage/subagent-run-store.hpp"
+#include "config/config.hpp"
 #include "test-helpers.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <httplib.h>

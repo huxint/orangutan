@@ -1,6 +1,6 @@
 #pragma once
 
-#include "infra/time/local-time.hpp"
+#include "utils/local-time.hpp"
 
 #include <spdlog/common.h>
 #include <spdlog/fmt/chrono.h>

@@ -4,12 +4,12 @@
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
 #include "tools/background/background-completion.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
-#include "infra/storage/session-store.hpp"
-#include "infra/storage/subagent-run-store.hpp"
+#include "storage/session-store.hpp"
+#include "storage/subagent-run-store.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

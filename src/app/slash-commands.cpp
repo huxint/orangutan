@@ -1,8 +1,8 @@
 #include "app/slash-commands.hpp"
 
-#include "infra/string.hpp"
+#include "utils/string.hpp"
 #include <array>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 
 namespace orangutan::app {
 

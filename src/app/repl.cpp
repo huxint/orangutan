@@ -7,7 +7,7 @@
 #include "providers/provider.hpp"
 #include "automation/scheduler.hpp"
 #include "hooks/hook-manager.hpp"
-#include "infra/storage/session-store.hpp"
+#include "storage/session-store.hpp"
 
 #include <cstdio>
 #include <iostream>

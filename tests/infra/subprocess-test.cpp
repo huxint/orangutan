@@ -1,5 +1,5 @@
-#include "infra/subprocess/subprocess.hpp"
-#include "infra/execution/sender-utils.hpp"
+#include "process/subprocess.hpp"
+#include "utils/sender-utils.hpp"
 #include "test-helpers.hpp"
 
 #include <atomic>

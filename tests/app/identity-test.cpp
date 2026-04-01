@@ -1,6 +1,6 @@
 #include "app/runtime/identity.hpp"
 #include "app/runtime/memory-context.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

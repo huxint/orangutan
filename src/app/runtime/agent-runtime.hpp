@@ -2,7 +2,7 @@
 
 #include "app/runtime/identity.hpp"
 #include "tools/registry/tool.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 
 #include <memory>
 #include <string>

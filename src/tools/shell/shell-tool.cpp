@@ -1,9 +1,9 @@
 #include "tools/internal.hpp"
 #include "tools/background/background-completion.hpp"
 #include "tools/shell/command-sandbox.hpp"
-#include "infra/execution/sender-utils.hpp"
-#include "infra/subprocess/subprocess.hpp"
-#include "infra/utf8.hpp"
+#include "utils/sender-utils.hpp"
+#include "process/subprocess.hpp"
+#include "utils/utf8.hpp"
 
 #include <chrono>
 #include <filesystem>

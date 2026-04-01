@@ -25,8 +25,10 @@ target("orangutan-lib")
         path.join(root, "src/web/*.cpp"),
         path.join(root, "src/providers/*.cpp"),
         path.join(root, "src/tools/**/*.cpp"),
-        path.join(root, "src/infra/*.cpp"),
-        path.join(root, "src/infra/**/*.cpp"),
+        path.join(root, "src/config/*.cpp"),
+        path.join(root, "src/storage/*.cpp"),
+        path.join(root, "src/process/*.cpp"),
+        path.join(root, "src/utils/*.cpp"),
         path.join(root, "src/app/*.cpp"),
         path.join(root, "src/app/runtime/*.cpp")
     )

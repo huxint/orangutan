@@ -7,9 +7,9 @@
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
 #include "web/web-server.hpp"
-#include "infra/config/config.hpp"
-#include "infra/config/secret-protection.hpp"
-#include "infra/storage/session-store.hpp"
+#include "config/config.hpp"
+#include "config/secret-protection.hpp"
+#include "storage/session-store.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

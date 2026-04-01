@@ -1,5 +1,5 @@
-#include "infra/config/config-detail.hpp"
-#include "infra/config/secret-fields.hpp"
+#include "config/config-detail.hpp"
+#include "config/secret-fields.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>

@@ -9,7 +9,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <iterator>
 #include <optional>
 #include <stdexcept>

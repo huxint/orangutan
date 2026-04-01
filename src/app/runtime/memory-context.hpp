@@ -1,6 +1,6 @@
 #pragma once
 
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "app/runtime/identity.hpp"
 
 #include <filesystem>

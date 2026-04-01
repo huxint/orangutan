@@ -15,8 +15,8 @@
 #include "memory/memory-store.hpp"
 #include "skills/skill-loader.hpp"
 #include "subagent/subagent-manager.hpp"
-#include "infra/config/config.hpp"
-#include "infra/storage/session-store.hpp"
+#include "config/config.hpp"
+#include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <nlohmann/json.hpp>

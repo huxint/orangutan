@@ -2,8 +2,8 @@
 
 #include "app/runtime/identity.hpp"
 #include "types/types.hpp"
-#include "infra/config/config.hpp"
-#include "infra/storage/subagent-run-store.hpp"
+#include "config/config.hpp"
+#include "storage/subagent-run-store.hpp"
 
 #include <chrono>
 #include <condition_variable>

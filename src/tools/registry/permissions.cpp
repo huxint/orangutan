@@ -4,7 +4,7 @@
 #include <cctype>
 #include <ranges>
 
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 
 #include <magic_enum/magic_enum.hpp>
 

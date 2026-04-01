@@ -1,7 +1,7 @@
 #pragma once
 
 #include "automation/automation-types.hpp"
-#include "infra/storage/sqlite.hpp"
+#include "storage/sqlite.hpp"
 
 #include <filesystem>
 #include <mutex>

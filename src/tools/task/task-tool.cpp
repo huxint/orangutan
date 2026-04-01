@@ -5,7 +5,7 @@
 #include "automation/cron-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan {

@@ -1,6 +1,6 @@
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
-#include "infra/time/local-time.hpp"
+#include "utils/local-time.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>

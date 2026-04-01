@@ -1,6 +1,6 @@
 #include "memory/memory-search.hpp"
-#include "infra/format.hpp"
-#include "infra/string.hpp"
+#include "utils/format.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
 #include <cctype>

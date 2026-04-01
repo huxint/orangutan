@@ -1,4 +1,4 @@
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "test-helpers.hpp"
 #include <catch2/catch_test_macros.hpp>
 

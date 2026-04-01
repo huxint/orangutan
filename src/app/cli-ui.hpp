@@ -3,8 +3,8 @@
 #include "agent/agent-loop.hpp"
 #include "providers/provider.hpp"
 #include "tools/registry/tool.hpp"
-#include "infra/config/config.hpp"
-#include "infra/storage/session-store.hpp"
+#include "config/config.hpp"
+#include "storage/session-store.hpp"
 
 #include <string>
 #include <vector>

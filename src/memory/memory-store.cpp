@@ -3,7 +3,7 @@
 #include "memory/memory-extract.hpp"
 #include "memory/memory-schema.hpp"
 #include "memory/memory-search.hpp"
-#include "infra/string.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
 #include <mutex>

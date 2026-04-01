@@ -1,7 +1,7 @@
-#include "infra/config/secret-protection.hpp"
-#include "infra/config/secret-fields.hpp"
-#include "infra/files/file-io.hpp"
-#include "infra/string.hpp"
+#include "config/secret-protection.hpp"
+#include "config/secret-fields.hpp"
+#include "utils/file-io.hpp"
+#include "utils/string.hpp"
 
 #include <cctype>
 #include <filesystem>

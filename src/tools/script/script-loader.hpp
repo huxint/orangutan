@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/registry/permissions.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <string>

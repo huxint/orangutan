@@ -1,4 +1,4 @@
-#include "infra/storage/sqlite.hpp"
+#include "storage/sqlite.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

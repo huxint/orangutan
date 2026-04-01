@@ -1,5 +1,5 @@
-#include "infra/storage/session-store.hpp"
-#include "infra/storage/subagent-run-store.hpp"
+#include "storage/session-store.hpp"
+#include "storage/subagent-run-store.hpp"
 #include "subagent/subagent-manager.hpp"
 #include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"

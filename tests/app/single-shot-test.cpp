@@ -1,6 +1,6 @@
 #include "app/single-shot.hpp"
 
-#include "infra/storage/session-store.hpp"
+#include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 

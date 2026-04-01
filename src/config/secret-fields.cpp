@@ -1,4 +1,4 @@
-#include "infra/config/secret-fields.hpp"
+#include "config/secret-fields.hpp"
 
 #include <algorithm>
 #include <array>

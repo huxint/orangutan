@@ -4,8 +4,8 @@
 #include "memory/runtime-memory.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "providers/provider.hpp"
-#include "infra/storage/session-store.hpp"
-#include "infra/execution/sender-utils.hpp"
+#include "storage/session-store.hpp"
+#include "utils/sender-utils.hpp"
 #include "app/runtime/memory-context.hpp"
 #include "tools/registry/tool.hpp"
 

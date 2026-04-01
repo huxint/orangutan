@@ -4,7 +4,7 @@
 #include "automation/scheduler.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 
 namespace orangutan {
     namespace {

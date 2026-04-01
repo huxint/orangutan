@@ -1,6 +1,6 @@
-#include "infra/subprocess/subprocess.hpp"
-#include "infra/execution/sender-utils.hpp"
-#include "infra/files/file.hpp"
+#include "process/subprocess.hpp"
+#include "utils/sender-utils.hpp"
+#include "utils/file.hpp"
 
 #include <algorithm>
 #include <array>

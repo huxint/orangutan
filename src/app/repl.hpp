@@ -2,7 +2,7 @@
 
 #include "agent/agent-loop.hpp"
 #include "providers/provider.hpp"
-#include "infra/config/config.hpp"
+#include "config/config.hpp"
 #include "skills/skill-loader.hpp"
 #include "tools/registry/tool.hpp"
 

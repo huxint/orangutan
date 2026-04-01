@@ -1,4 +1,4 @@
-#include "infra/config/config-detail.hpp"
+#include "config/config-detail.hpp"
 
 #include <utility>
 

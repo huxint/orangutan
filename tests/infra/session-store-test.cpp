@@ -1,4 +1,4 @@
-#include "infra/storage/session-store.hpp"
+#include "storage/session-store.hpp"
 #include "types/types.hpp"
 #include "test-helpers.hpp"
 

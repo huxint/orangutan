@@ -2,12 +2,12 @@
 
 #include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
-#include "infra/string.hpp"
-#include "infra/execution/sender-utils.hpp"
+#include "utils/string.hpp"
+#include "utils/sender-utils.hpp"
 
 #include <charconv>
 #include <cstdio>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <functional>
 #include <optional>
 #include <spdlog/fmt/bundled/color.h>

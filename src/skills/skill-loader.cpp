@@ -1,12 +1,12 @@
 #include "skills/skill-loader.hpp"
-#include "infra/files/file-io.hpp"
+#include "utils/file-io.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <spdlog/spdlog.h>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <toml++/toml.hpp>
 #include <unordered_map>
 

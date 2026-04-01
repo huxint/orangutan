@@ -2,14 +2,14 @@
 
 #include "providers/anthropic-provider.hpp"
 #include "providers/openai-provider.hpp"
-#include "infra/execution/sender-utils.hpp"
+#include "utils/sender-utils.hpp"
 
 #include <exec/any_sender_of.hpp>
 #include <algorithm>
 #include <exception>
 #include <mutex>
 #include <optional>
-#include "infra/format.hpp"
+#include "utils/format.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>

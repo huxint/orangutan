@@ -1,6 +1,6 @@
 #include "memory/memory-extract.hpp"
-#include "infra/string.hpp"
-#include "infra/utf8.hpp"
+#include "utils/string.hpp"
+#include "utils/utf8.hpp"
 
 #include <algorithm>
 #include <array>

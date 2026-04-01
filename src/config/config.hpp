@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types/types.hpp"
-#include "infra/config/secret-protection.hpp"
+#include "config/secret-protection.hpp"
 #include "tools/registry/permissions.hpp"
 
 #include <filesystem>
