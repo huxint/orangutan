@@ -1,4 +1,4 @@
-#include "features/tools/core/hashline.hpp"
+#include "tools/file-edit/hashline.hpp"
 
 #include <spdlog/common.h>
 #include <rapidhash.h>

@@ -1,4 +1,4 @@
-#include "features/tools/core/internal.hpp"
+#include "tools/internal.hpp"
 #include "infra/files/file-io.hpp"
 
 #include <filesystem>

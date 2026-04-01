@@ -1,4 +1,4 @@
-#include "features/tools/core/background-completion.hpp"
+#include "tools/background/background-completion.hpp"
 
 #include "features/automation/types.hpp"
 #include "infra/execution/sender-utils.hpp"

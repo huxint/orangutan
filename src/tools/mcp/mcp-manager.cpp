@@ -1,4 +1,4 @@
-#include "features/tools/mcp/manager.hpp"
+#include "tools/mcp/mcp-manager.hpp"
 
 #include <algorithm>
 #include <ranges>

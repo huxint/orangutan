@@ -1,5 +1,5 @@
-#include "features/tools/mcp/client.hpp"
-#include "features/tools/mcp/manager.hpp"
+#include "tools/mcp/mcp-client.hpp"
+#include "tools/mcp/mcp-manager.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <filesystem>

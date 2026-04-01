@@ -1,4 +1,4 @@
-#include "features/tools/builtin/inbox.hpp"
+#include "tools/inbox/inbox-tool.hpp"
 
 #include "features/automation/runtime.hpp"
 

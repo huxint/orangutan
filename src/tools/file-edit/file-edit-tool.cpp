@@ -1,5 +1,5 @@
-#include "features/tools/core/internal.hpp"
-#include "features/tools/core/hashline.hpp"
+#include "tools/internal.hpp"
+#include "tools/file-edit/hashline.hpp"
 #include "infra/files/file-io.hpp"
 
 #include <algorithm>

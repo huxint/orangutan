@@ -4,7 +4,7 @@
 #include "features/automation/store.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"
-#include "features/tools/core/background-completion.hpp"
+#include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

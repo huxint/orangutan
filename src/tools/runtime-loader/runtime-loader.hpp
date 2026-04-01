@@ -1,7 +1,7 @@
 #pragma once
 
 #include "infra/config/config.hpp"
-#include "features/tools/mcp/manager.hpp"
+#include "tools/mcp/mcp-manager.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <memory>

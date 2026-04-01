@@ -1,4 +1,4 @@
-#include "features/tools/builtin/inbox.hpp"
+#include "tools/inbox/inbox-tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

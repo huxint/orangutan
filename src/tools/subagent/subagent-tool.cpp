@@ -1,4 +1,4 @@
-#include "features/tools/builtin/register-builtin.hpp"
+#include "tools/register.hpp"
 #include "features/subagent/subagent-manager.hpp"
 
 #include <algorithm>

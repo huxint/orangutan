@@ -1,8 +1,8 @@
-#include "features/tools/builtin/heartbeat.hpp"
+#include "tools/heartbeat/heartbeat-tool.hpp"
 
 #include "features/automation/planner.hpp"
 #include "features/automation/runtime.hpp"
-#include "features/tools/builtin/automation-tool-support.hpp"
+#include "tools/automation/automation-tool-support.hpp"
 
 #include "infra/format.hpp"
 

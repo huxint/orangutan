@@ -3,7 +3,7 @@
 #include "features/agent/agent-loop.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
-#include "features/tools/core/background-completion.hpp"
+#include "tools/background/background-completion.hpp"
 #include "infra/config/config.hpp"
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/memory.hpp"

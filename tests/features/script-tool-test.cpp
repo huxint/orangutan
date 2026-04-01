@@ -1,4 +1,4 @@
-#include "features/tools/script/script-loader.hpp"
+#include "tools/script/script-loader.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

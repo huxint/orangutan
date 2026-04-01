@@ -2,7 +2,7 @@
 #include "tools/registry/tool.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
-#include "features/tools/core/background-completion.hpp"
+#include "tools/background/background-completion.hpp"
 #include "infra/utf8.hpp"
 #include "test-helpers.hpp"
 

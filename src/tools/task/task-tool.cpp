@@ -1,9 +1,9 @@
-#include "features/tools/builtin/task.hpp"
+#include "tools/task/task-tool.hpp"
 
 #include "features/automation/planner.hpp"
 #include "features/automation/runtime.hpp"
 #include "features/cron/parser.hpp"
-#include "features/tools/builtin/automation-tool-support.hpp"
+#include "tools/automation/automation-tool-support.hpp"
 
 #include "infra/format.hpp"
 #include <magic_enum/magic_enum.hpp>

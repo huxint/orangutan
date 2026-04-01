@@ -6,7 +6,7 @@
 #include "features/hooks/hook-manager.hpp"
 #include "features/memory/runtime-memory.hpp"
 #include "features/skills/skill-loader.hpp"
-#include "features/tools/runtime/runtime-loader.hpp"
+#include "tools/runtime-loader/runtime-loader.hpp"
 
 #include <cstdlib>
 #include <utility>

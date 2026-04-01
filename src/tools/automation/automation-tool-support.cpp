@@ -1,4 +1,4 @@
-#include "features/tools/builtin/automation-tool-support.hpp"
+#include "tools/automation/automation-tool-support.hpp"
 
 #include <magic_enum/magic_enum.hpp>
 

@@ -1,4 +1,4 @@
-#include "features/tools/mcp/client.hpp"
+#include "tools/mcp/mcp-client.hpp"
 
 #include <array>
 #include <cerrno>

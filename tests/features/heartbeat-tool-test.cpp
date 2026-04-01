@@ -1,4 +1,4 @@
-#include "features/tools/builtin/heartbeat.hpp"
+#include "tools/heartbeat/heartbeat-tool.hpp"
 
 #include "tools/registry/tool.hpp"
 #include "features/automation/runtime.hpp"

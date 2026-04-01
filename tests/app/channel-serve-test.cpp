@@ -4,7 +4,7 @@
 #include "features/automation/runtime.hpp"
 #include "features/automation/store.hpp"
 #include "features/channel/core/channel.hpp"
-#include "features/tools/core/background-completion.hpp"
+#include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>

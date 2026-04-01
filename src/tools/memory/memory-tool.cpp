@@ -1,5 +1,5 @@
 #include "features/memory/runtime-memory.hpp"
-#include "features/tools/builtin/register-builtin.hpp"
+#include "tools/register.hpp"
 
 #include <spdlog/common.h>
 #include <algorithm>

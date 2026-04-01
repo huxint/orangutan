@@ -1,7 +1,7 @@
-#include "features/tools/script/script-loader.hpp"
+#include "tools/script/script-loader.hpp"
 
-#include "features/tools/core/command-sandbox.hpp"
-#include "features/tools/core/internal.hpp"
+#include "tools/shell/command-sandbox.hpp"
+#include "tools/internal.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "infra/subprocess/subprocess.hpp"
 

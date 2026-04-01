@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/tools/mcp/client.hpp"
+#include "tools/mcp/mcp-client.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <memory>

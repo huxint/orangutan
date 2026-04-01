@@ -1,4 +1,4 @@
-#include "features/tools/core/hashline.hpp"
+#include "tools/file-edit/hashline.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <stdexcept>

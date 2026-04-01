@@ -1,7 +1,8 @@
-#include "features/tools/runtime/runtime-loader.hpp"
+#include "tools/runtime-loader/runtime-loader.hpp"
 
 #include "tools/registry/permissions.hpp"
-#include "features/tools/script/script-loader.hpp"
+#include "tools/register.hpp"
+#include "tools/script/script-loader.hpp"
 
 #include <spdlog/spdlog.h>
 

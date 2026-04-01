@@ -1,6 +1,6 @@
-#include "features/tools/core/command-sandbox.hpp"
+#include "tools/shell/command-sandbox.hpp"
 
-#include "features/tools/core/internal.hpp"
+#include "tools/internal.hpp"
 
 #include <cstdlib>
 #include <filesystem>

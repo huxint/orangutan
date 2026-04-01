@@ -2,7 +2,7 @@
 
 #include "features/agent/agent-loop.hpp"
 #include "features/memory/runtime-memory.hpp"
-#include "features/tools/runtime/runtime-loader.hpp"
+#include "tools/runtime-loader/runtime-loader.hpp"
 #include "providers/provider.hpp"
 #include "infra/storage/session-store.hpp"
 #include "infra/execution/sender-utils.hpp"
