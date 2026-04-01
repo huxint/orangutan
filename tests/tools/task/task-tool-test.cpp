@@ -31,7 +31,7 @@ namespace {
             .automation_runtime = &runtime,
         };
         orangutan::ToolRegistry registry;
-        orangutan::register_task_tool(registry, &context);
+        orangutan::tools::register_task_tool(registry, &context);
 
         const auto result = registry.execute(orangutan::ToolUse("task-update", "task",
                                                                 {

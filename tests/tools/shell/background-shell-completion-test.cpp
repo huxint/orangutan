@@ -19,6 +19,7 @@
 #include <vector>
 
 using namespace orangutan;
+using namespace orangutan::tools;
 
 namespace {
 
@@ -295,7 +296,7 @@ namespace {
 
         const std::string prompt_unit = "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
         std::string prompt;
-        for (std::size_t i = 0; i < background_completion_prompt_max_chars; ++i) {
+        for (std::size_t i = 0; i < orangutan::tools::background_completion_prompt_max_chars; ++i) {
             prompt += prompt_unit;
         }
         const auto start_payload = harness.start_background_shell({
@@ -319,11 +320,11 @@ namespace {
         CHECK(inbox_completion.at("process_id") == start_payload.at("process_id"));
         CHECK(inbox_prompt == resume_prompt);
         CHECK(inbox_prompt.size() < prompt.size());
-        CHECK(inbox_prompt.size() <= background_completion_prompt_max_chars);
+        CHECK(inbox_prompt.size() <= orangutan::tools::background_completion_prompt_max_chars);
         CHECK(inbox_prompt.ends_with("..."));
         CHECK(inbox_prompt.contains(prompt_unit));
-        CHECK(items.front().body.size() <= background_completion_payload_max_bytes);
-        CHECK(resume_messages.front().size() <= background_completion_payload_max_bytes);
+        CHECK(items.front().body.size() <= orangutan::tools::background_completion_payload_max_bytes);
+        CHECK(resume_messages.front().size() <= orangutan::tools::background_completion_payload_max_bytes);
     };
 
     TEST_CASE("unsupported_completion_routing_does_not_advertise_or_accept_on_complete") {
@@ -359,7 +360,7 @@ namespace {
         BackgroundShellCompletionHarness harness;
 
         const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
-        BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
+        orangutan::tools::BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
         dispatcher.dispatch(BackgroundProcessCompletionEvent{
             .process_id = "proc-secret",
             .command = "printf 'secret'",
@@ -369,7 +370,7 @@ namespace {
             .exit_code = 0,
             .stdout = {.tail = "stdout " + secret, .total_bytes = secret.size() + 7, .truncated = false},
             .stderr = {.tail = "stderr " + secret, .total_bytes = secret.size() + 7, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
         });
 
         const auto items = harness.wait_for_inbox_size(1);
@@ -397,7 +398,7 @@ namespace {
         BackgroundShellCompletionHarness harness;
 
         const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
-        BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
+        orangutan::tools::BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
         dispatcher.dispatch(BackgroundProcessCompletionEvent{
             .process_id = "proc-title",
             .command = "echo " + secret,
@@ -406,7 +407,7 @@ namespace {
             .terminal_status = BackgroundProcessTerminalStatus::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "inbox"}},
+            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "inbox"}},
         });
 
         const auto items = harness.wait_for_inbox_size(1);
@@ -425,7 +426,7 @@ namespace {
         const std::string prompt = std::string("Prompt ") + "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80\xFF";
         const std::string stdout_tail = std::string("ok") + "\xFF\xFE\xE4\xB8\xAD";
         const std::string stderr_tail = std::string("err") + "\xFF";
-        BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
+        orangutan::tools::BackgroundCompletionDispatcher dispatcher(&harness.tool_context_);
         dispatcher.dispatch(BackgroundProcessCompletionEvent{
             .process_id = "proc-invalid-utf8",
             .command = std::string("printf '") + "\xE4\xBD\xA0" + "'",
@@ -437,8 +438,8 @@ namespace {
             .stderr = {.tail = stderr_tail, .total_bytes = stderr_tail.size(), .truncated = false},
             .metadata =
                 {
-                    {std::string(background_completion_mode_metadata_key), "resume"},
-                    {std::string(background_completion_prompt_metadata_key), prompt},
+                    {std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"},
+                    {std::string(orangutan::tools::background_completion_prompt_metadata_key), prompt},
                 },
         });
 
@@ -524,7 +525,7 @@ namespace {
             return std::optional<std::string>{"resume callback failed"};
         });
 
-        BackgroundCompletionDispatcher dispatcher(&failing_context);
+        orangutan::tools::BackgroundCompletionDispatcher dispatcher(&failing_context);
         dispatcher.dispatch(BackgroundProcessCompletionEvent{
             .process_id = "proc-test",
             .command = "echo " + secret,
@@ -533,7 +534,7 @@ namespace {
             .terminal_status = BackgroundProcessTerminalStatus::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
         });
 
         const auto items = harness.wait_for_inbox_size(2);

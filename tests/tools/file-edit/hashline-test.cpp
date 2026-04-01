@@ -7,6 +7,7 @@
 #include <vector>
 
 using namespace orangutan;
+using namespace orangutan::tools;
 
 static std::string valid_hash_different_from(std::string_view actual) {
     constexpr std::string_view alphabet = "ZPMQVRWSNKTXJBYH";

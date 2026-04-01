@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
+using namespace orangutan::tools;
 
 namespace {
 

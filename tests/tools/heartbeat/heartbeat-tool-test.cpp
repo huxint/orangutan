@@ -40,7 +40,7 @@ namespace {
             .automation_runtime = &runtime,
         };
         orangutan::ToolRegistry registry;
-        orangutan::register_heartbeat_tool(registry, &context);
+        orangutan::tools::register_heartbeat_tool(registry, &context);
 
         const auto result = registry.execute(orangutan::ToolUse("heartbeat-update", "heartbeat",
                                                                 {
