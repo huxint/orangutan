@@ -1,5 +1,4 @@
 #include "tools/memory/register.hpp"
-
 #include "tools/register.hpp"
 
 namespace orangutan::tools::memory {

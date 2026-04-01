@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/mcp/mcp-client.hpp"
-#include "tools/registry/tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 #include <memory>
 #include <vector>

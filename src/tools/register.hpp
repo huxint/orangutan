@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/registry/permissions.hpp"
-#include "tools/registry/tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 #include <string>
 #include <string_view>

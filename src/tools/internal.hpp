@@ -1,8 +1,8 @@
 #pragma once
 
 #include "tools/registry/permissions.hpp"
-#include "tools/registry/tool.hpp"
 #include "process/subprocess.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 #include <cstdlib>
 #include <filesystem>
