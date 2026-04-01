@@ -247,7 +247,7 @@ namespace {
 
         [[nodiscard]]
         std::filesystem::path config_path() const {
-            return home_root_ / ".orangutan" / "config.toml";
+            return home_root_ / ".orangutan" / "config.json";
         }
 
         [[nodiscard]]
@@ -261,23 +261,28 @@ namespace {
 
         void write_config_with_api_key(const std::string &api_key) const {
             std::ofstream out(config_path());
-            out << "[agents.default]\n";
-            out << "provider = \"openai\"\n";
-            out << "model = \"gpt-test\"\n";
-            out << "base_url = \"https://example.test\"\n";
-            out << "api_key = \"" << api_key << "\"\n";
-            out << "workspace = \"" << workspace_root_.string() << "\"\n";
-            out << "system_prompt = \"You are a test agent.\"\n";
+            out << "{\n";
+            out << "  \"agents\": {\n";
+            out << "    \"default\": {\n";
+            out << "      \"provider\": \"openai\",\n";
+            out << "      \"model\": \"gpt-test\",\n";
+            out << "      \"base_url\": \"https://example.test\",\n";
+            out << "      \"api_key\": \"" << api_key << "\",\n";
+            out << "      \"workspace\": \"" << workspace_root_.string() << "\",\n";
+            out << "      \"system_prompt\": \"You are a test agent.\"\n";
+            out << "    }\n";
+            out << "  }\n";
+            out << "}\n";
         }
 
         static void write_skill(const std::filesystem::path &base_dir, const std::string &dir_name, const std::string &skill_name, const std::string &body) {
             const auto skill_dir = base_dir / dir_name;
             std::filesystem::create_directories(skill_dir);
             std::ofstream out(skill_dir / "SKILL.md");
-            out << "+++\n";
-            out << "name = \"" << skill_name << "\"\n";
-            out << "description = \"bootstrap test skill\"\n";
-            out << "+++\n\n";
+            out << "---\n";
+            out << "name: " << skill_name << "\n";
+            out << "description: bootstrap test skill\n";
+            out << "---\n\n";
             out << body << "\n";
         }
 

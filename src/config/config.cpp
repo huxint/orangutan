@@ -1,13 +1,14 @@
 #include "config/config-detail.hpp"
 #include "config/secret-fields.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 
 #include <spdlog/spdlog.h>
-#include <toml++/toml.hpp>
 
 namespace orangutan::config {
 
@@ -83,14 +84,14 @@ namespace orangutan::config {
             value = expand_env_vars(value);
         }
 
-        Config parse_toml(const toml::table &tbl, const ConfigSecretOptions &secret_options) {
+        Config parse_json(const nlohmann::json &root, const ConfigSecretOptions &secret_options) {
             Config cfg;
-            cfg = parse_agent_section(tbl, std::move(cfg));
-            cfg = parse_tools_section(tbl, std::move(cfg));
-            cfg = parse_permissions_section(tbl, std::move(cfg));
-            cfg = parse_session_section(tbl, std::move(cfg));
-            cfg = parse_memory_section(tbl, std::move(cfg));
-            cfg = parse_qq_section(tbl, std::move(cfg));
+            cfg = parse_agent_section(root, std::move(cfg));
+            cfg = parse_tools_section(root, std::move(cfg));
+            cfg = parse_permissions_section(root, std::move(cfg));
+            cfg = parse_session_section(root, std::move(cfg));
+            cfg = parse_memory_section(root, std::move(cfg));
+            cfg = parse_qq_section(root, std::move(cfg));
 
             ConfigPasswordResolver password_resolver(secret_options);
 
@@ -108,14 +109,14 @@ namespace orangutan::config {
             cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);
             resolve_secret_field(cfg.qq_client_secret, qq_client_secret_field().field_kind, "qq.client_secret", password_resolver);
 
-            cfg = parse_agents_section(tbl, std::move(cfg));
-            cfg = parse_qq_bots_section(tbl, std::move(cfg));
-            cfg = parse_security_section(tbl, std::move(cfg));
-            cfg = parse_skills_section(tbl, std::move(cfg));
-            cfg = parse_custom_tools_section(tbl, std::move(cfg));
-            cfg = parse_mcp_section(tbl, std::move(cfg));
-            cfg = parse_hooks_section(tbl, std::move(cfg));
-            cfg = parse_heartbeat_section(tbl, std::move(cfg));
+            cfg = parse_agents_section(root, std::move(cfg));
+            cfg = parse_qq_bots_section(root, std::move(cfg));
+            cfg = parse_security_section(root, std::move(cfg));
+            cfg = parse_skills_section(root, std::move(cfg));
+            cfg = parse_custom_tools_section(root, std::move(cfg));
+            cfg = parse_mcp_section(root, std::move(cfg));
+            cfg = parse_hooks_section(root, std::move(cfg));
+            cfg = parse_heartbeat_section(root, std::move(cfg));
 
             if (cfg.agents.empty() || !cfg.agents.contains("default")) {
                 cfg.agents.insert_or_assign("default", make_agent_config_from_legacy(cfg));
@@ -167,12 +168,21 @@ namespace orangutan::config {
 
     Config Config::load_from(const std::filesystem::path &path, const ConfigSecretOptions &secret_options) {
         try {
-            auto tbl = toml::parse_file(path.string());
-            return config_detail::parse_toml(tbl, secret_options);
+            std::ifstream file(path);
+            if (!file.is_open()) {
+                return {};
+            }
+
+            nlohmann::json root;
+            file >> root;
+            return config_detail::parse_json(root, secret_options);
         } catch (const ConfigSecretProtectionError &) {
             throw;
-        } catch (const toml::parse_error &e) {
+        } catch (const nlohmann::json::parse_error &e) {
             spdlog::warn("Failed to parse config file {}: {}", path.string(), e.what());
+            return {};
+        } catch (const nlohmann::json::type_error &e) {
+            spdlog::warn("Invalid config file {}: {}", path.string(), e.what());
             return {};
         } catch (const std::runtime_error &e) {
             spdlog::warn("Invalid config file {}: {}", path.string(), e.what());
@@ -203,102 +213,85 @@ namespace orangutan::config {
     }
 
     void Config::save_to(const std::filesystem::path &path) const {
-        toml::table tbl;
+        nlohmann::json root = nlohmann::json::object();
 
-        // [agent] section
-        toml::table agent_tbl;
-        agent_tbl.insert("provider", provider);
-        agent_tbl.insert("model", model);
-        agent_tbl.insert("base_url", base_url);
-        agent_tbl.insert("temperature", temperature);
-        agent_tbl.insert("max_iterations", static_cast<int64_t>(max_iterations));
-        agent_tbl.insert("max_tokens", static_cast<int64_t>(max_tokens));
+        nlohmann::json agent = {
+            {"provider", provider}, {"model", model}, {"base_url", base_url}, {"temperature", temperature}, {"max_iterations", max_iterations}, {"max_tokens", max_tokens},
+        };
+        if (thinking_budget != 0) {
+            agent["thinking_budget"] = thinking_budget;
+        }
         if (!system_prompt.empty()) {
-            agent_tbl.insert("system_prompt", system_prompt);
+            agent["system_prompt"] = system_prompt;
         }
         if (!workspace.empty()) {
-            agent_tbl.insert("workspace", workspace);
+            agent["workspace"] = workspace;
         }
         if (!fallback_models.empty()) {
-            toml::array arr;
-            for (const auto &m : fallback_models) {
-                arr.push_back(m);
-            }
-            agent_tbl.insert("fallback_models", std::move(arr));
+            agent["fallback_models"] = fallback_models;
         }
-        // Note: api_key intentionally omitted from save_to for security
-        tbl.insert("agent", std::move(agent_tbl));
+        root["agent"] = std::move(agent);
 
-        // [tools] section
-        toml::table tools_tbl;
-        tools_tbl.insert("edit_mode", edit_mode);
+        nlohmann::json tools = {
+            {"edit_mode", edit_mode},
+        };
         if (!allowed_tools.empty()) {
-            toml::array arr;
-            for (const auto &t : allowed_tools) {
-                arr.push_back(t);
-            }
-            tools_tbl.insert("allowed", std::move(arr));
+            tools["allowed"] = allowed_tools;
         }
         if (!denied_tools.empty()) {
-            toml::array arr;
-            for (const auto &t : denied_tools) {
-                arr.push_back(t);
-            }
-            tools_tbl.insert("denied", std::move(arr));
+            tools["denied"] = denied_tools;
         }
-        tbl.insert("tools", std::move(tools_tbl));
+        root["tools"] = std::move(tools);
 
-        // [session] section
-        toml::table session_tbl;
-        session_tbl.insert("auto_save", auto_save);
-        tbl.insert("session", std::move(session_tbl));
+        root["session"] = nlohmann::json{{"auto_save", auto_save}};
+        root["memory"] = nlohmann::json{
+            {"mirror_enabled", memory.mirror_enabled},
+            {"mirror_file", memory.mirror_file},
+            {"journal_dir", memory.journal_dir},
+        };
 
-        // [memory] section
-        toml::table memory_tbl;
-        memory_tbl.insert("mirror_enabled", memory.mirror_enabled);
-        memory_tbl.insert("mirror_file", memory.mirror_file);
-        memory_tbl.insert("journal_dir", memory.journal_dir);
-        tbl.insert("memory", std::move(memory_tbl));
-
-        // [security] section
         if (!allow.empty() || !deny.empty()) {
-            toml::table security_tbl;
+            nlohmann::json security = nlohmann::json::object();
             if (!allow.empty()) {
-                toml::array arr;
-                for (const auto &a : allow) {
-                    arr.push_back(a);
-                }
-                security_tbl.insert("allow", std::move(arr));
+                security["allow"] = allow;
             }
             if (!deny.empty()) {
-                toml::array arr;
-                for (const auto &d : deny) {
-                    arr.push_back(d);
-                }
-                security_tbl.insert("deny", std::move(arr));
+                security["deny"] = deny;
             }
-            tbl.insert("security", std::move(security_tbl));
+            root["security"] = std::move(security);
         }
 
-        // [skills] section
         if (!skill_paths.empty()) {
-            toml::table skills_tbl;
-            toml::array arr;
-            for (const auto &p : skill_paths) {
-                arr.push_back(p);
-            }
-            skills_tbl.insert("paths", std::move(arr));
-            tbl.insert("skills", std::move(skills_tbl));
+            root["skills"] = nlohmann::json{{"paths", skill_paths}};
         }
 
-        // Write to file
+        if (permissions.sandbox_mode != ToolSandboxMode::isolated || permissions.shell_approval != ToolApprovalPolicy::ask || !permissions.allowed_tools.empty() ||
+            !permissions.denied_tools.empty() || !permissions.denied_shell_commands.empty()) {
+            nlohmann::json permissions_json = nlohmann::json::object();
+            permissions_json["sandbox_mode"] = to_string(permissions.sandbox_mode);
+            permissions_json["shell_approval_policy"] = to_string(permissions.shell_approval);
+            if (!permissions.allowed_tools.empty()) {
+                permissions_json["allowed_tools"] = permissions.allowed_tools;
+            }
+            if (!permissions.denied_tools.empty()) {
+                permissions_json["denied_tools"] = permissions.denied_tools;
+            }
+            if (!permissions.denied_shell_commands.empty()) {
+                permissions_json["denied_shell_commands"] = permissions.denied_shell_commands;
+            }
+            root["permissions"] = std::move(permissions_json);
+        }
+
         try {
+            if (const auto parent = path.parent_path(); !parent.empty()) {
+                std::filesystem::create_directories(parent);
+            }
             std::ofstream file(path);
             if (!file.is_open()) {
                 throw std::runtime_error("open failed");
             }
             file.exceptions(std::ios::badbit | std::ios::failbit);
-            file << tbl;
+            file << root.dump(2) << '\n';
             file.close();
         } catch (const std::exception &) {
             throw std::runtime_error("Failed to write config file: " + path.string());

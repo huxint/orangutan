@@ -1,87 +1,16 @@
 #include "config/secret-protection.hpp"
 #include "config/secret-fields.hpp"
 #include "utils/file-io.hpp"
-#include "utils/string.hpp"
 
-#include <cctype>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <spdlog/common.h>
-#include <optional>
 #include <random>
-#include <sstream>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace orangutan::config {
     namespace {
-
-        struct ParsedSecretAssignment {
-            std::string prefix;
-            std::string suffix;
-            std::string literal_value;
-            char quote = '"';
-        };
-
-        [[nodiscard]]
-        std::string strip_line_comment(std::string_view line) {
-            const auto comment_pos = line.find('#');
-            return comment_pos == std::string_view::npos ? static_cast<std::string>(utils::trim_copy(line))
-                                                         : static_cast<std::string>(utils::trim_copy(line.substr(0, comment_pos)));
-        }
-
-        [[nodiscard]]
-        std::optional<ParsedSecretAssignment> parse_secret_assignment_line(const std::string &line, std::string_view key_name) {
-            std::size_t pos = 0;
-            while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) {
-                ++pos;
-            }
-
-            if (!line.substr(pos).starts_with(key_name)) {
-                return std::nullopt;
-            }
-            pos += key_name.size();
-            while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) {
-                ++pos;
-            }
-            if (pos >= line.size() || line[pos] != '=') {
-                return std::nullopt;
-            }
-            ++pos;
-            while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) {
-                ++pos;
-            }
-            if (pos >= line.size() || (line[pos] != '"' && line[pos] != '\'')) {
-                return std::nullopt;
-            }
-
-            const auto quote = line[pos];
-            const auto literal_start = pos;
-            ++pos;
-            const auto value_start = pos;
-
-            while (pos < line.size()) {
-                if (quote == '"' && line[pos] == '\\') {
-                    pos += 2;
-                    continue;
-                }
-                if (line[pos] == quote) {
-                    break;
-                }
-                ++pos;
-            }
-
-            if (pos >= line.size()) {
-                return std::nullopt;
-            }
-
-            return ParsedSecretAssignment{
-                .prefix = line.substr(0, literal_start),
-                .suffix = line.substr(pos + 1),
-                .literal_value = line.substr(value_start, pos - value_start),
-                .quote = quote,
-            };
-        }
 
         [[nodiscard]]
         bool is_env_reference(std::string_view value) {
@@ -142,6 +71,25 @@ namespace orangutan::config {
             }
         }
 
+        std::size_t protect_secret_value(nlohmann::json &parent, std::string_view key_name, std::string_view field_kind, std::string_view password) {
+            if (!parent.is_object()) {
+                return 0;
+            }
+
+            const auto it = parent.find(std::string(key_name));
+            if (it == parent.end() || !it->is_string()) {
+                return 0;
+            }
+
+            const auto plaintext = it->get<std::string>();
+            if (plaintext.empty() || is_env_reference(plaintext) || is_protected_config_secret(plaintext)) {
+                return 0;
+            }
+
+            *it = protect_config_secret(plaintext, password, field_kind);
+            return 1;
+        }
+
     } // namespace
 
     ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::path &path, std::string_view password) {
@@ -153,48 +101,43 @@ namespace orangutan::config {
         const auto original_permissions = read_file_permissions(path);
         const bool had_trailing_newline = !original.empty() && original.back() == '\n';
 
-        std::istringstream input(original);
-        std::vector<std::string> lines;
-        for (std::string line; std::getline(input, line);) {
-            lines.push_back(std::move(line));
-        }
-        if (original.empty()) {
-            lines.emplace_back();
+        nlohmann::json root;
+        try {
+            root = nlohmann::json::parse(original);
+        } catch (const nlohmann::json::parse_error &e) {
+            throw ConfigSecretProtectionError("Failed to parse JSON config file: " + std::string(e.what()));
         }
 
-        const ConfigSecretFieldSpec *active_field = nullptr;
         std::size_t protected_count = 0;
 
-        for (auto &current_line : lines) {
-            const auto cleaned = strip_line_comment(current_line);
-            if (!cleaned.empty() && cleaned.front() == '[' && cleaned.back() == ']') {
-                active_field = find_config_secret_field_for_section(cleaned);
-                continue;
+        if (auto it = root.find("agent"); it != root.end() && it->is_object()) {
+            protected_count += protect_secret_value(*it, legacy_agent_api_key_field().key_name, legacy_agent_api_key_field().field_kind, password);
+        }
+        if (auto it = root.find("agents"); it != root.end() && it->is_object()) {
+            for (auto agent_it = it->begin(); agent_it != it->end(); ++agent_it) {
+                if (agent_it.value().is_object()) {
+                    protected_count += protect_secret_value(agent_it.value(), named_agent_api_key_field().key_name, named_agent_api_key_field().field_kind, password);
+                }
             }
-            if (active_field == nullptr) {
-                continue;
+        }
+        if (auto it = root.find("qq"); it != root.end() && it->is_object()) {
+            protected_count += protect_secret_value(*it, qq_client_secret_field().key_name, qq_client_secret_field().field_kind, password);
+        }
+        if (auto it = root.find("qq_bots"); it != root.end() && it->is_array()) {
+            for (auto &bot : *it) {
+                if (bot.is_object()) {
+                    protected_count += protect_secret_value(bot, qq_bot_client_secret_field().key_name, qq_bot_client_secret_field().field_kind, password);
+                }
             }
-
-            auto parsed = parse_secret_assignment_line(current_line, active_field->key_name);
-            if (!parsed.has_value() || parsed->literal_value.empty() || is_env_reference(parsed->literal_value) || is_protected_config_secret(parsed->literal_value)) {
-                continue;
-            }
-
-            const auto protected_value = protect_config_secret(parsed->literal_value, password, active_field->field_kind);
-            current_line = parsed->prefix + parsed->quote + protected_value + parsed->quote + parsed->suffix;
-            ++protected_count;
         }
 
         if (protected_count == 0) {
             return {};
         }
 
-        std::string rebuilt;
-        for (std::size_t index = 0; index < lines.size(); ++index) {
-            rebuilt += lines[index];
-            if (index + 1 < lines.size() || had_trailing_newline) {
-                rebuilt.push_back('\n');
-            }
+        auto rebuilt = root.dump(2);
+        if (had_trailing_newline) {
+            rebuilt.push_back('\n');
         }
 
         auto backup_path = path;
@@ -218,14 +161,14 @@ namespace orangutan::config {
                 throw ConfigSecretProtectionError("Failed to replace config file atomically: " + ec.message());
             }
         } catch (...) {
-            std::filesystem::remove(temp_path, ec);
+            std::filesystem::remove(temp_path);
             throw;
         }
 
         return {
             .modified = true,
             .protected_count = protected_count,
-            .backup_path = backup_path,
+            .backup_path = std::move(backup_path),
         };
     }
 

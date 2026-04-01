@@ -132,7 +132,7 @@ export function AgentsPage() {
           <p className="text-[11px] mt-1">
             Add agents in{" "}
             <code className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono">
-              config.toml
+              config.json
             </code>
           </p>
         </div>

@@ -2,9 +2,8 @@
 
 #include "config/config.hpp"
 
+#include <nlohmann/json.hpp>
 #include <optional>
-
-#include <toml++/toml.hpp>
 
 namespace orangutan::config::detail {
 
@@ -33,52 +32,52 @@ namespace orangutan::config::detail {
 
     void expand_agent_config(AgentConfig &cfg);
 
-    void apply_permissions_table(const toml::table &permissions, ToolPermissionSettings &settings);
+    void apply_permissions_object(const nlohmann::json &permissions, ToolPermissionSettings &settings);
 
     [[nodiscard]]
-    Config parse_agent_section(const toml::table &tbl, Config cfg);
+    Config parse_agent_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_tools_section(const toml::table &tbl, Config cfg);
+    Config parse_tools_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_permissions_section(const toml::table &tbl, Config cfg);
+    Config parse_permissions_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_session_section(const toml::table &tbl, Config cfg);
+    Config parse_session_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_memory_section(const toml::table &tbl, Config cfg);
+    Config parse_memory_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_qq_section(const toml::table &tbl, Config cfg);
+    Config parse_qq_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_agents_section(const toml::table &tbl, Config cfg);
+    Config parse_agents_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_qq_bots_section(const toml::table &tbl, Config cfg);
+    Config parse_qq_bots_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_security_section(const toml::table &tbl, Config cfg);
+    Config parse_security_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_skills_section(const toml::table &tbl, Config cfg);
+    Config parse_skills_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_custom_tools_section(const toml::table &tbl, Config cfg);
+    Config parse_custom_tools_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_mcp_section(const toml::table &tbl, Config cfg);
+    Config parse_mcp_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_hooks_section(const toml::table &tbl, Config cfg);
+    Config parse_hooks_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_heartbeat_section(const toml::table &tbl, Config cfg);
+    Config parse_heartbeat_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_toml(const toml::table &tbl, const ConfigSecretOptions &secret_options);
+    Config parse_json(const nlohmann::json &root, const ConfigSecretOptions &secret_options);
 
 } // namespace orangutan::config::detail
 

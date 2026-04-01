@@ -3,8 +3,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace {
+
+    std::string read_file(const std::filesystem::path &path) {
+        std::ifstream in(path);
+        return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    }
 
     TEST_CASE("round_trips_save_and_load") {
         orangutan::Config cfg;
@@ -16,7 +23,7 @@ namespace {
         cfg.edit_mode = "search_replace";
         cfg.auto_save = false;
 
-        const auto path = orangutan::testing::unique_test_path("config-save", "config.toml");
+        const auto path = orangutan::testing::unique_test_path("config-save", "config.json");
         cfg.save_to(path);
 
         const auto loaded = orangutan::Config::load_from(path);
@@ -27,6 +34,7 @@ namespace {
         CHECK(loaded.base_url == "http://localhost:8080");
         CHECK(loaded.edit_mode == "search_replace");
         CHECK_FALSE(loaded.auto_save);
+        CHECK(nlohmann::json::parse(read_file(path))["agent"]["model"] == "test-model-42");
 
         std::filesystem::remove_all(path.parent_path());
     };
@@ -37,7 +45,7 @@ namespace {
         cfg.memory.mirror_file = "custom.md";
         cfg.memory.journal_dir = "custom-journal";
 
-        const auto path = orangutan::testing::unique_test_path("config-save-memory", "config.toml");
+        const auto path = orangutan::testing::unique_test_path("config-save-memory", "config.json");
         cfg.save_to(path);
 
         const auto loaded = orangutan::Config::load_from(path);

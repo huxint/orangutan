@@ -38,7 +38,7 @@ namespace {
 
         [[nodiscard]]
         std::filesystem::path config_path() const {
-            return home_root_ / ".orangutan" / "config.toml";
+            return home_root_ / ".orangutan" / "config.json";
         }
 
         [[nodiscard]]
@@ -346,10 +346,10 @@ namespace {
 
         {
             std::ofstream out(skill_root / "web-runtime-skill" / "SKILL.md");
-            out << "+++\n";
-            out << "name = \"web-runtime-skill\"\n";
-            out << "description = \"web runtime skill\"\n";
-            out << "+++\n\n";
+            out << "---\n";
+            out << "name: web-runtime-skill\n";
+            out << "description: web runtime skill\n";
+            out << "---\n\n";
             out << "Use this skill for web runtime checks.\n";
         }
         {
@@ -459,7 +459,7 @@ namespace {
 
     TEST_CASE("chat_approval_endpoint_rejects_invalid_approval_payload") {
         std::mutex sessions_mutex;
-        std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
+        std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
 
         httplib::Request req;
         req.body = R"({"session_id":"web-session","approved":true})";
@@ -473,8 +473,8 @@ namespace {
 
     TEST_CASE("chat_approval_endpoint_approves_pending_request") {
         std::mutex sessions_mutex;
-        std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
-        auto session = std::make_unique<orangutan::WebSessionState>();
+        std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+        auto session = std::make_unique<orangutan::web::WebSessionState>();
         session->session_id = "web-session";
         auto *session_ptr = session.get();
         sessions.emplace(session->session_id, std::move(session));
@@ -534,8 +534,8 @@ namespace {
 
     TEST_CASE("chat_approval_endpoint_rejects_mismatched_request_id") {
         std::mutex sessions_mutex;
-        std::unordered_map<std::string, std::unique_ptr<orangutan::WebSessionState>> sessions;
-        auto session = std::make_unique<orangutan::WebSessionState>();
+        std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+        auto session = std::make_unique<orangutan::web::WebSessionState>();
         session->session_id = "web-session";
         auto *session_ptr = session.get();
         sessions.emplace(session->session_id, std::move(session));

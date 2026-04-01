@@ -20,6 +20,7 @@
 #include <thread>
 
 using namespace orangutan;
+using namespace orangutan::tools;
 using orangutan::testing::test_tmp_root;
 
 namespace {
@@ -1126,38 +1127,39 @@ TEST_CASE("ApplyPatchRejectsPathsOutsideWorkspace") {
 
 TEST_CASE("ReadAllowsOrangutanConfigOutsideWorkspace") {
     BuiltinToolsWorkspaceConfigAccessTest fixture;
-    const auto config_path = fixture.home() / ".orangutan" / "config.toml";
-    std::ofstream(config_path) << "[agent]\nmodel = \"claude\"\n";
+    const auto config_path = fixture.home() / ".orangutan" / "config.json";
+    std::ofstream(config_path) << "{\n  \"agent\": {\n    \"model\": \"claude\"\n  }\n}\n";
 
-    const auto result = fixture.registry().execute(ToolUse("cfg_read", "read", {{"path", "~/.orangutan/config.toml"}}));
+    const auto result = fixture.registry().execute(ToolUse("cfg_read", "read", {{"path", "~/.orangutan/config.json"}}));
 
     CHECK(not(result.is_error));
-    CHECK(result.content.contains("model = \"claude\""));
+    CHECK(result.content.contains("\"model\": \"claude\""));
 };
 
 TEST_CASE("WriteAllowsOrangutanConfigOutsideWorkspace") {
     BuiltinToolsWorkspaceConfigAccessTest fixture;
-    const auto config_path = fixture.home() / ".orangutan" / "config.toml";
+    const auto config_path = fixture.home() / ".orangutan" / "config.json";
 
-    const auto result = fixture.registry().execute(ToolUse("cfg_write", "write", {{"path", "~/.orangutan/config.toml"}, {"content", "[agent]\nmodel = \"gpt\"\n"}}));
+    const auto result =
+        fixture.registry().execute(ToolUse("cfg_write", "write", {{"path", "~/.orangutan/config.json"}, {"content", "{\n  \"agent\": {\n    \"model\": \"gpt\"\n  }\n}\n"}}));
 
     CHECK(not(result.is_error));
 
     std::ifstream ifs(config_path);
     std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "[agent]\nmodel = \"gpt\"\n");
+    CHECK(content == "{\n  \"agent\": {\n    \"model\": \"gpt\"\n  }\n}\n");
 };
 
 TEST_CASE("EditAllowsOrangutanConfigOutsideWorkspace") {
     BuiltinToolsWorkspaceConfigAccessTest fixture;
-    const auto config_path = fixture.home() / ".orangutan" / "config.toml";
-    std::ofstream(config_path) << "[agent]\nmodel = \"claude\"\n";
+    const auto config_path = fixture.home() / ".orangutan" / "config.json";
+    std::ofstream(config_path) << "{\n  \"agent\": {\n    \"model\": \"claude\"\n  }\n}\n";
 
-    const std::string patch = "*** ~/.orangutan/config.toml\n"
+    const std::string patch = "*** ~/.orangutan/config.json\n"
                               "<<<<<<< SEARCH\n"
-                              "model = \"claude\"\n"
+                              "\"model\": \"claude\"\n"
                               "=======\n"
-                              "model = \"gpt\"\n"
+                              "\"model\": \"gpt\"\n"
                               ">>>>>>> REPLACE\n";
 
     const auto result = fixture.registry().execute(ToolUse("cfg_edit", "edit", {{"patch", patch}}));
@@ -1166,7 +1168,7 @@ TEST_CASE("EditAllowsOrangutanConfigOutsideWorkspace") {
 
     std::ifstream ifs(config_path);
     std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "[agent]\nmodel = \"gpt\"\n");
+    CHECK(content == "{\n  \"agent\": {\n    \"model\": \"gpt\"\n  }\n}\n");
 };
 
 TEST_CASE("HomeFilesOutsideOrangutanConfigRemainBlocked") {
@@ -1508,10 +1510,10 @@ TEST_CASE("EditReplaceSingleLine") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "target.cpp") << "int main() {\n    return 0;\n}\n";
 
-    auto hash = orangutan::compute_line_hash("    return 0;", 2);
+    auto hash = orangutan::tools::compute_line_hash("    return 0;", 2);
     std::string anchor = "2#" + hash;
 
-    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", anchor}, {"content", nlohmann::json::array({"    return 42;"})}}});
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"anchor", anchor}, {"content", nlohmann::json::array({"    return 42;"})}}});
 
     const auto result = fixture.registry().execute(ToolUse("e1", "edit", {{"path", "target.cpp"}, {"edits", edits}}));
     CHECK(not(result.is_error));
@@ -1526,8 +1528,8 @@ TEST_CASE("EditPreservesMissingFinalNewline") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "noeol.txt") << "aaa\nbbb";
 
-    auto hash = orangutan::compute_line_hash("bbb", 2);
-    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", nlohmann::json::array({"ccc"})}}});
+    auto hash = orangutan::tools::compute_line_hash("bbb", 2);
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", nlohmann::json::array({"ccc"})}}});
 
     const auto result = fixture.registry().execute(ToolUse("e1b", "edit", {{"path", "noeol.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
@@ -1541,8 +1543,8 @@ TEST_CASE("EditDeleteLine") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "del.txt") << "aaa\nbbb\nccc\n";
 
-    auto hash = orangutan::compute_line_hash("bbb", 2);
-    nlohmann::json edits = nlohmann::json::array({{{"op", "delete"}, {"anchor", "2#" + hash}}});
+    auto hash = orangutan::tools::compute_line_hash("bbb", 2);
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "delete"}, {"anchor", "2#" + hash}}});
 
     const auto result = fixture.registry().execute(ToolUse("e2", "edit", {{"path", "del.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
@@ -1556,7 +1558,7 @@ TEST_CASE("EditInsertAfterEOF") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "ins.txt") << "aaa\nbbb\n";
 
-    nlohmann::json edits = nlohmann::json::array({{{"op", "insert_after"}, {"content", nlohmann::json::array({"ccc"})}}});
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "insert_after"}, {"content", nlohmann::json::array({"ccc"})}}});
 
     const auto result = fixture.registry().execute(ToolUse("e3", "edit", {{"path", "ins.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
@@ -1570,9 +1572,9 @@ TEST_CASE("EditHashMismatchReturnsErrorWithContext") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "stale.txt") << "aaa\nbbb\nccc\n";
 
-    auto actual_hash = orangutan::compute_line_hash("bbb", 2);
+    auto actual_hash = orangutan::tools::compute_line_hash("bbb", 2);
     const std::string wrong_hash = actual_hash == "ZZ" ? "ZY" : "ZZ";
-    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + wrong_hash}, {"content", nlohmann::json::array({"XXX"})}}});
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"anchor", "2#" + wrong_hash}, {"content", nlohmann::json::array({"XXX"})}}});
 
     const auto result = fixture.registry().execute(ToolUse("e4", "edit", {{"path", "stale.txt"}, {"edits", edits}}));
     CHECK(result.is_error);
@@ -1584,8 +1586,8 @@ TEST_CASE("EditContentAsStringIsSplitOnNewlines") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "str.txt") << "aaa\nbbb\n";
 
-    auto hash = orangutan::compute_line_hash("bbb", 2);
-    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
+    auto hash = orangutan::tools::compute_line_hash("bbb", 2);
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"anchor", "2#" + hash}, {"content", "line1\nline2"}}});
 
     const auto result = fixture.registry().execute(ToolUse("e5", "edit", {{"path", "str.txt"}, {"edits", edits}}));
     CHECK(not(result.is_error));
@@ -1599,7 +1601,7 @@ TEST_CASE("EditMissingAnchorForReplaceReturnsError") {
     HashlineToolsTest fixture;
     std::ofstream(fixture.workspace() / "missing.txt") << "aaa\n";
 
-    nlohmann::json edits = nlohmann::json::array({{{"op", "replace"}, {"content", nlohmann::json::array({"XXX"})}}});
+    nlohmann::json edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"content", nlohmann::json::array({"XXX"})}}});
 
     const auto result = fixture.registry().execute(ToolUse("e6", "edit", {{"path", "missing.txt"}, {"edits", edits}}));
     CHECK(result.is_error);

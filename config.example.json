@@ -1,0 +1,90 @@
+{
+  "session": {
+    "auto_save": true
+  },
+  "permissions": {
+    "sandbox_mode": "isolated",
+    "shell_approval_policy": "ask",
+    "denied_shell_commands": [
+      "rm -rf /",
+      "shutdown",
+      "reboot"
+    ]
+  },
+  "memory": {
+    "mirror_enabled": false,
+    "mirror_file": "MEMORY.md",
+    "journal_dir": "memory"
+  },
+  "security": {
+    "allow": [
+      "cli:*",
+      "qqbot:primary:*",
+      "qqbot:coder-bot:*",
+      "qqbot:research-bot:*"
+    ],
+    "deny": []
+  },
+  "agents": {
+    "default": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "workspace": "~/.orangutan/workspace/default",
+      "system_prompt": "You are the default general assistant.",
+      "subagents": [
+        "coder",
+        "research"
+      ]
+    },
+    "coder": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "workspace": "~/.orangutan/workspace/coder",
+      "system_prompt": "You focus on code changes, debugging, and implementation details.",
+      "subagents": [
+        "research"
+      ],
+      "permissions": {
+        "sandbox_mode": "isolated",
+        "shell_approval_policy": "ask",
+        "denied_shell_commands": [
+          "git push",
+          "rm -rf /"
+        ]
+      }
+    },
+    "research": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "workspace": "~/.orangutan/workspace/research",
+      "system_prompt": "You focus on analysis, investigation, and planning.",
+      "subagents": []
+    }
+  },
+  "qq_bots": [
+    {
+      "name": "primary",
+      "app_id": "QQ_APP_ID_PRIMARY",
+      "client_secret": "QQ_CLIENT_SECRET_PRIMARY",
+      "agent": "default"
+    },
+    {
+      "name": "coder-bot",
+      "app_id": "QQ_APP_ID_CODER",
+      "client_secret": "QQ_CLIENT_SECRET_CODER",
+      "agent": "coder"
+    },
+    {
+      "name": "research-bot",
+      "app_id": "QQ_APP_ID_RESEARCH",
+      "client_secret": "QQ_CLIENT_SECRET_RESEARCH",
+      "agent": "research"
+    }
+  ]
+}

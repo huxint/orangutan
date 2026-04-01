@@ -1,10 +1,58 @@
 #include "config/config-detail.hpp"
 
+#include <nlohmann/json.hpp>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
 namespace orangutan::config::detail {
+    namespace {
+
+        const nlohmann::json *find_member(const nlohmann::json &object, std::string_view key) {
+            if (!object.is_object()) {
+                return nullptr;
+            }
+            const auto it = object.find(std::string(key));
+            return it == object.end() ? nullptr : &*it;
+        }
+
+        const nlohmann::json *find_object_member(const nlohmann::json &object, std::string_view key) {
+            const auto *value = find_member(object, key);
+            return value != nullptr && value->is_object() ? value : nullptr;
+        }
+
+        const nlohmann::json *find_array_member(const nlohmann::json &object, std::string_view key) {
+            const auto *value = find_member(object, key);
+            return value != nullptr && value->is_array() ? value : nullptr;
+        }
+
+        void assign_string_array(const nlohmann::json &array, std::vector<std::string> &target) {
+            target.clear();
+            if (!array.is_array()) {
+                return;
+            }
+
+            for (const auto &item : array) {
+                if (item.is_string()) {
+                    target.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        void assign_expanded_string_array(const nlohmann::json &array, std::vector<std::string> &target) {
+            target.clear();
+            if (!array.is_array()) {
+                return;
+            }
+
+            for (const auto &item : array) {
+                if (item.is_string()) {
+                    target.push_back(expand_env_vars(item.get<std::string>()));
+                }
+            }
+        }
+
+    } // namespace
 
     AgentConfig make_agent_config_from_legacy(const Config &cfg) {
         return {
@@ -38,87 +86,88 @@ namespace orangutan::config::detail {
         }
     }
 
-    Config parse_agent_section(const toml::table &tbl, Config cfg) {
-        const auto *agent = tbl["agent"].as_table();
+    Config parse_agent_section(const nlohmann::json &root, Config cfg) {
+        const auto *agent = find_object_member(root, "agent");
         if (agent == nullptr) {
             return cfg;
         }
 
-        if (auto v = (*agent)["provider"].value<std::string>()) {
-            cfg.provider = *v;
+        if (const auto *value = find_member(*agent, "provider"); value != nullptr && value->is_string()) {
+            cfg.provider = value->get<std::string>();
         }
-        if (auto v = (*agent)["model"].value<std::string>()) {
-            cfg.model = *v;
+        if (const auto *value = find_member(*agent, "model"); value != nullptr && value->is_string()) {
+            cfg.model = value->get<std::string>();
         }
-        if (const auto *arr = (*agent)["fallback_models"].as_array()) {
-            cfg.fallback_models.clear();
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.fallback_models.push_back(*s);
-                }
-            }
+        if (const auto *value = find_array_member(*agent, "fallback_models"); value != nullptr) {
+            assign_string_array(*value, cfg.fallback_models);
         }
-        if (auto v = (*agent)["base_url"].value<std::string>()) {
-            cfg.base_url = *v;
+        if (const auto *value = find_member(*agent, "base_url"); value != nullptr && value->is_string()) {
+            cfg.base_url = value->get<std::string>();
         }
-        if (auto v = (*agent)["temperature"].value<base::f64>()) {
-            cfg.temperature = *v;
+        if (const auto *value = find_member(*agent, "temperature"); value != nullptr && value->is_number()) {
+            cfg.temperature = value->get<base::f64>();
         }
-        if (auto v = (*agent)["max_iterations"].value<int64_t>()) {
-            cfg.max_iterations = static_cast<int>(*v);
+        if (const auto *value = find_member(*agent, "max_iterations"); value != nullptr && value->is_number_integer()) {
+            cfg.max_iterations = value->get<int>();
         }
-        if (auto v = (*agent)["max_tokens"].value<int64_t>()) {
-            cfg.max_tokens = static_cast<int>(*v);
+        if (const auto *value = find_member(*agent, "max_tokens"); value != nullptr && value->is_number_integer()) {
+            cfg.max_tokens = value->get<int>();
         }
-        if (auto v = (*agent)["thinking_budget"].value<int64_t>()) {
-            cfg.thinking_budget = static_cast<int>(*v);
+        if (const auto *value = find_member(*agent, "thinking_budget"); value != nullptr && value->is_number_integer()) {
+            cfg.thinking_budget = value->get<int>();
         }
-        if (auto v = (*agent)["workspace"].value<std::string>()) {
-            cfg.workspace = *v;
+        if (const auto *value = find_member(*agent, "workspace"); value != nullptr && value->is_string()) {
+            cfg.workspace = value->get<std::string>();
         }
-        if (auto v = (*agent)["system_prompt"].value<std::string>()) {
-            cfg.system_prompt = *v;
+        if (const auto *value = find_member(*agent, "system_prompt"); value != nullptr && value->is_string()) {
+            cfg.system_prompt = value->get<std::string>();
         }
-        if (auto v = (*agent)["api_key"].value<std::string>()) {
-            cfg.api_key = *v;
+        if (const auto *value = find_member(*agent, "api_key"); value != nullptr && value->is_string()) {
+            cfg.api_key = value->get<std::string>();
         }
 
         return cfg;
     }
 
-    Config parse_tools_section(const toml::table &tbl, Config cfg) {
-        const auto *tools = tbl["tools"].as_table();
+    Config parse_tools_section(const nlohmann::json &root, Config cfg) {
+        const auto *tools = find_object_member(root, "tools");
         if (tools == nullptr) {
             return cfg;
         }
 
-        if (const auto *arr = (*tools)["allowed"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.allowed_tools.push_back(*s);
-                    cfg.permissions.allowed_tools.push_back(*s);
+        if (const auto *array = find_array_member(*tools, "allowed"); array != nullptr) {
+            cfg.allowed_tools.clear();
+            cfg.permissions.allowed_tools.clear();
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    auto value = item.get<std::string>();
+                    cfg.allowed_tools.push_back(value);
+                    cfg.permissions.allowed_tools.push_back(std::move(value));
                 }
             }
         }
-        if (const auto *arr = (*tools)["denied"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.denied_tools.push_back(*s);
-                    cfg.permissions.denied_tools.push_back(*s);
+        if (const auto *array = find_array_member(*tools, "denied"); array != nullptr) {
+            cfg.denied_tools.clear();
+            cfg.permissions.denied_tools.clear();
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    auto value = item.get<std::string>();
+                    cfg.denied_tools.push_back(value);
+                    cfg.permissions.denied_tools.push_back(std::move(value));
                 }
             }
         }
 
-        if (auto mode = (*tools)["edit_mode"].value<std::string>()) {
-            cfg.edit_mode = *mode;
+        if (const auto *value = find_member(*tools, "edit_mode"); value != nullptr && value->is_string()) {
+            cfg.edit_mode = value->get<std::string>();
         }
 
         return cfg;
     }
 
-    void apply_permissions_table(const toml::table &permissions, ToolPermissionSettings &settings) {
-        if (auto v = permissions["sandbox_mode"].value<std::string>()) {
-            const auto expanded = expand_env_vars(*v);
+    void apply_permissions_object(const nlohmann::json &permissions, ToolPermissionSettings &settings) {
+        if (const auto *value = find_member(permissions, "sandbox_mode"); value != nullptr && value->is_string()) {
+            const auto expanded = expand_env_vars(value->get<std::string>());
             if (const auto parsed = parse_tool_sandbox_mode(expanded); parsed.has_value()) {
                 settings.sandbox_mode = *parsed;
             } else {
@@ -126,8 +175,8 @@ namespace orangutan::config::detail {
             }
         }
 
-        if (auto v = permissions["shell_approval_policy"].value<std::string>()) {
-            const auto expanded = expand_env_vars(*v);
+        if (const auto *value = find_member(permissions, "shell_approval_policy"); value != nullptr && value->is_string()) {
+            const auto expanded = expand_env_vars(value->get<std::string>());
             if (const auto parsed = parse_tool_approval_policy(expanded); parsed.has_value()) {
                 settings.shell_approval = *parsed;
             } else {
@@ -135,181 +184,153 @@ namespace orangutan::config::detail {
             }
         }
 
-        if (const auto *arr = permissions["allowed_tools"].as_array()) {
-            settings.allowed_tools.clear();
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    settings.allowed_tools.push_back(expand_env_vars(*s));
-                }
-            }
+        if (const auto *array = find_array_member(permissions, "allowed_tools"); array != nullptr) {
+            assign_expanded_string_array(*array, settings.allowed_tools);
         }
-
-        if (const auto *arr = permissions["denied_tools"].as_array()) {
-            settings.denied_tools.clear();
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    settings.denied_tools.push_back(expand_env_vars(*s));
-                }
-            }
+        if (const auto *array = find_array_member(permissions, "denied_tools"); array != nullptr) {
+            assign_expanded_string_array(*array, settings.denied_tools);
         }
-
-        if (const auto *arr = permissions["denied_shell_commands"].as_array()) {
-            settings.denied_shell_commands.clear();
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    settings.denied_shell_commands.push_back(expand_env_vars(*s));
-                }
-            }
+        if (const auto *array = find_array_member(permissions, "denied_shell_commands"); array != nullptr) {
+            assign_expanded_string_array(*array, settings.denied_shell_commands);
         }
     }
 
-    Config parse_permissions_section(const toml::table &tbl, Config cfg) {
-        const auto *permissions = tbl["permissions"].as_table();
+    Config parse_permissions_section(const nlohmann::json &root, Config cfg) {
+        const auto *permissions = find_object_member(root, "permissions");
         if (permissions == nullptr) {
             return cfg;
         }
 
-        apply_permissions_table(*permissions, cfg.permissions);
+        apply_permissions_object(*permissions, cfg.permissions);
         return cfg;
     }
 
-    Config parse_session_section(const toml::table &tbl, Config cfg) {
-        const auto *session = tbl["session"].as_table();
+    Config parse_session_section(const nlohmann::json &root, Config cfg) {
+        const auto *session = find_object_member(root, "session");
         if (session == nullptr) {
             return cfg;
         }
 
-        if (auto v = (*session)["auto_save"].value<bool>()) {
-            cfg.auto_save = *v;
+        if (const auto *value = find_member(*session, "auto_save"); value != nullptr && value->is_boolean()) {
+            cfg.auto_save = value->get<bool>();
         }
 
         return cfg;
     }
 
-    Config parse_memory_section(const toml::table &tbl, Config cfg) {
-        const auto *memory = tbl["memory"].as_table();
+    Config parse_memory_section(const nlohmann::json &root, Config cfg) {
+        const auto *memory = find_object_member(root, "memory");
         if (memory == nullptr) {
             return cfg;
         }
 
-        if (auto v = (*memory)["mirror_enabled"].value<bool>()) {
-            cfg.memory.mirror_enabled = *v;
+        if (const auto *value = find_member(*memory, "mirror_enabled"); value != nullptr && value->is_boolean()) {
+            cfg.memory.mirror_enabled = value->get<bool>();
         }
-        if (auto v = (*memory)["mirror_file"].value<std::string>()) {
-            cfg.memory.mirror_file = *v;
+        if (const auto *value = find_member(*memory, "mirror_file"); value != nullptr && value->is_string()) {
+            cfg.memory.mirror_file = value->get<std::string>();
         }
-        if (auto v = (*memory)["journal_dir"].value<std::string>()) {
-            cfg.memory.journal_dir = *v;
+        if (const auto *value = find_member(*memory, "journal_dir"); value != nullptr && value->is_string()) {
+            cfg.memory.journal_dir = value->get<std::string>();
         }
 
         return cfg;
     }
 
-    Config parse_qq_section(const toml::table &tbl, Config cfg) {
-        const auto *qq = tbl["qq"].as_table();
+    Config parse_qq_section(const nlohmann::json &root, Config cfg) {
+        const auto *qq = find_object_member(root, "qq");
         if (qq == nullptr) {
             return cfg;
         }
 
-        if (auto v = (*qq)["app_id"].value<std::string>()) {
-            cfg.qq_app_id = *v;
+        if (const auto *value = find_member(*qq, "app_id"); value != nullptr && value->is_string()) {
+            cfg.qq_app_id = value->get<std::string>();
         }
-        if (auto v = (*qq)["client_secret"].value<std::string>()) {
-            cfg.qq_client_secret = *v;
+        if (const auto *value = find_member(*qq, "client_secret"); value != nullptr && value->is_string()) {
+            cfg.qq_client_secret = value->get<std::string>();
         }
 
         return cfg;
     }
 
-    Config parse_agents_section(const toml::table &tbl, Config cfg) {
-        const auto *agents = tbl["agents"].as_table();
+    Config parse_agents_section(const nlohmann::json &root, Config cfg) {
+        const auto *agents = find_object_member(root, "agents");
         if (agents == nullptr) {
             return cfg;
         }
 
         const auto legacy_defaults = make_agent_config_from_legacy(cfg);
-        for (const auto &[key_node, value_node] : *agents) {
-            const auto key = std::string(key_node.str());
-            const auto *agent = value_node.as_table();
-            if (agent == nullptr) {
+        for (auto it = agents->begin(); it != agents->end(); ++it) {
+            if (!it.value().is_object()) {
                 continue;
             }
 
             auto agent_cfg = legacy_defaults;
-            if (auto v = (*agent)["provider"].value<std::string>()) {
-                agent_cfg.provider = *v;
+            const auto &agent = it.value();
+
+            if (const auto *value = find_member(agent, "provider"); value != nullptr && value->is_string()) {
+                agent_cfg.provider = value->get<std::string>();
             }
-            if (auto v = (*agent)["model"].value<std::string>()) {
-                agent_cfg.model = *v;
+            if (const auto *value = find_member(agent, "model"); value != nullptr && value->is_string()) {
+                agent_cfg.model = value->get<std::string>();
             }
-            if (const auto *arr = (*agent)["fallback_models"].as_array()) {
-                agent_cfg.fallback_models.clear();
-                for (const auto &item : *arr) {
-                    if (auto s = item.value<std::string>()) {
-                        agent_cfg.fallback_models.push_back(*s);
-                    }
-                }
+            if (const auto *value = find_array_member(agent, "fallback_models"); value != nullptr) {
+                assign_string_array(*value, agent_cfg.fallback_models);
             }
-            if (auto v = (*agent)["base_url"].value<std::string>()) {
-                agent_cfg.base_url = *v;
+            if (const auto *value = find_member(agent, "base_url"); value != nullptr && value->is_string()) {
+                agent_cfg.base_url = value->get<std::string>();
             }
-            if (auto v = (*agent)["api_key"].value<std::string>()) {
-                agent_cfg.api_key = *v;
+            if (const auto *value = find_member(agent, "api_key"); value != nullptr && value->is_string()) {
+                agent_cfg.api_key = value->get<std::string>();
             }
-            if (auto v = (*agent)["system_prompt"].value<std::string>()) {
-                agent_cfg.system_prompt = *v;
+            if (const auto *value = find_member(agent, "system_prompt"); value != nullptr && value->is_string()) {
+                agent_cfg.system_prompt = value->get<std::string>();
             }
-            if (auto v = (*agent)["workspace"].value<std::string>()) {
-                agent_cfg.workspace = *v;
+            if (const auto *value = find_member(agent, "workspace"); value != nullptr && value->is_string()) {
+                agent_cfg.workspace = value->get<std::string>();
             }
-            if (const auto *permissions = (*agent)["permissions"].as_table()) {
-                apply_permissions_table(*permissions, agent_cfg.permissions);
+            if (const auto *value = find_object_member(agent, "permissions"); value != nullptr) {
+                apply_permissions_object(*value, agent_cfg.permissions);
             }
-            agent_cfg.subagents.clear();
-            if (const auto *arr = (*agent)["subagents"].as_array()) {
-                for (const auto &item : *arr) {
-                    if (auto s = item.value<std::string>()) {
-                        agent_cfg.subagents.push_back(*s);
-                    }
-                }
+            if (const auto *value = find_array_member(agent, "subagents"); value != nullptr) {
+                assign_string_array(*value, agent_cfg.subagents);
             }
-            if (auto v = (*agent)["edit_mode"].value<std::string>()) {
-                agent_cfg.edit_mode = *v;
+            if (const auto *value = find_member(agent, "edit_mode"); value != nullptr && value->is_string()) {
+                agent_cfg.edit_mode = value->get<std::string>();
             }
-            if (auto v = (*agent)["thinking_budget"].value<int64_t>()) {
-                agent_cfg.thinking_budget = static_cast<int>(*v);
+            if (const auto *value = find_member(agent, "thinking_budget"); value != nullptr && value->is_number_integer()) {
+                agent_cfg.thinking_budget = value->get<int>();
             }
 
-            cfg.agents.insert_or_assign(key, std::move(agent_cfg));
+            cfg.agents.insert_or_assign(it.key(), std::move(agent_cfg));
         }
 
         return cfg;
     }
 
-    Config parse_qq_bots_section(const toml::table &tbl, Config cfg) {
-        const auto *bots = tbl["qq_bots"].as_array();
+    Config parse_qq_bots_section(const nlohmann::json &root, Config cfg) {
+        const auto *bots = find_array_member(root, "qq_bots");
         if (bots == nullptr) {
             return cfg;
         }
 
         for (const auto &item : *bots) {
-            const auto *bot = item.as_table();
-            if (bot == nullptr) {
+            if (!item.is_object()) {
                 continue;
             }
 
             QqBotConfig bot_cfg;
-            if (auto v = (*bot)["name"].value<std::string>()) {
-                bot_cfg.name = *v;
+            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
+                bot_cfg.name = value->get<std::string>();
             }
-            if (auto v = (*bot)["app_id"].value<std::string>()) {
-                bot_cfg.app_id = *v;
+            if (const auto *value = find_member(item, "app_id"); value != nullptr && value->is_string()) {
+                bot_cfg.app_id = value->get<std::string>();
             }
-            if (auto v = (*bot)["client_secret"].value<std::string>()) {
-                bot_cfg.client_secret = *v;
+            if (const auto *value = find_member(item, "client_secret"); value != nullptr && value->is_string()) {
+                bot_cfg.client_secret = value->get<std::string>();
             }
-            if (auto v = (*bot)["agent"].value<std::string>()) {
-                bot_cfg.agent = *v;
+            if (const auto *value = find_member(item, "agent"); value != nullptr && value->is_string()) {
+                bot_cfg.agent = value->get<std::string>();
             }
 
             cfg.qq_bots.push_back(std::move(bot_cfg));

@@ -440,10 +440,10 @@ namespace orangutan {
 
             {
                 std::ofstream out(skill_root / "web-chat-runtime-skill" / "SKILL.md");
-                out << "+++\n";
-                out << "name = \"web-chat-runtime-skill\"\n";
-                out << "description = \"web chat runtime skill\"\n";
-                out << "+++\n\n";
+                out << "---\n";
+                out << "name: web-chat-runtime-skill\n";
+                out << "description: web chat runtime skill\n";
+                out << "---\n\n";
                 out << "Skill body for web runtime tests.\n";
             }
             {
@@ -492,7 +492,7 @@ namespace orangutan {
             });
             AgentLoop agent(provider, tools, "You are a test agent.");
 
-            auto resume_state = std::make_shared<WebCompletionResumeState>();
+            auto resume_state = std::make_shared<orangutan::web::WebCompletionResumeState>();
             resume_state->agent = &agent;
             resume_state->agent_key = "default";
             resume_state->automation_runtime = &automation_runtime;
@@ -512,7 +512,7 @@ namespace orangutan {
                     },
                     web::detail::make_web_completion_resume_callback(resume_state)),
             };
-            BackgroundCompletionDispatcher dispatcher(&tool_context);
+            orangutan::tools::BackgroundCompletionDispatcher dispatcher(&tool_context);
 
             dispatcher.dispatch(BackgroundProcessCompletionEvent{
                 .process_id = "proc-web",
@@ -522,7 +522,7 @@ namespace orangutan {
                 .terminal_status = BackgroundProcessTerminalStatus::exited,
                 .exit_code = 0,
                 .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-                .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+                .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
             });
 
             CHECK(provider_calls == 0UL);
@@ -539,8 +539,8 @@ namespace orangutan {
 
         TEST_CASE("pending_approval_denial_returns_false") {
             std::mutex sessions_mutex;
-            std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
-            auto session = std::make_unique<WebSessionState>();
+            std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+            auto session = std::make_unique<orangutan::web::WebSessionState>();
             session->session_id = "web-session";
             auto *session_ptr = session.get();
             sessions.emplace(session->session_id, std::move(session));
@@ -591,8 +591,8 @@ namespace orangutan {
 
         TEST_CASE("abort_endpoint_cancels_pending_approval") {
             std::mutex sessions_mutex;
-            std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
-            auto session = std::make_unique<WebSessionState>();
+            std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+            auto session = std::make_unique<orangutan::web::WebSessionState>();
             session->session_id = "web-session";
             auto *session_ptr = session.get();
             sessions.emplace(session->session_id, std::move(session));
@@ -636,8 +636,8 @@ namespace orangutan {
 
         TEST_CASE("pending_approval_timeout_behaves_as_denied") {
             std::mutex sessions_mutex;
-            std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
-            auto session = std::make_unique<WebSessionState>();
+            std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+            auto session = std::make_unique<orangutan::web::WebSessionState>();
             session->session_id = "web-session";
             auto *session_ptr = session.get();
             sessions.emplace(session->session_id, std::move(session));
@@ -657,8 +657,8 @@ namespace orangutan {
 
         TEST_CASE("pending_approval_cleanup_cancels_unresolved_request") {
             std::mutex sessions_mutex;
-            std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions;
-            auto session = std::make_unique<WebSessionState>();
+            std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+            auto session = std::make_unique<orangutan::web::WebSessionState>();
             session->session_id = "web-session";
             auto *session_ptr = session.get();
             sessions.emplace(session->session_id, std::move(session));

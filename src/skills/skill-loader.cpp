@@ -7,14 +7,12 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include "utils/format.hpp"
-#include <toml++/toml.hpp>
 #include <unordered_map>
 
 namespace orangutan::skills {
 
     namespace {
 
-        constexpr std::string_view toml_delimiter = "+++";
         constexpr std::string_view yaml_delimiter = "---";
 
         struct ParsedSkillFile {
@@ -27,10 +25,6 @@ namespace orangutan::skills {
                 line.remove_suffix(1);
             }
             return line;
-        }
-
-        bool is_toml_delimiter(std::string_view line) {
-            return strip_cr(line) == toml_delimiter;
         }
 
         bool is_yaml_delimiter(std::string_view line) {
@@ -145,11 +139,6 @@ namespace orangutan::skills {
             return skill;
         }
 
-        enum class FrontmatterFormat {
-            toml,
-            yaml
-        };
-
         ParsedSkillFile parse_skill_file(const std::string &content, const std::string &source_path) {
             auto lines = split_lines(content);
             if (lines.empty()) {
@@ -169,13 +158,7 @@ namespace orangutan::skills {
                 return {};
             }
 
-            // Detect format by opening delimiter
-            FrontmatterFormat format{};
-            if (is_toml_delimiter(lines[open_index])) {
-                format = FrontmatterFormat::toml;
-            } else if (is_yaml_delimiter(lines[open_index])) {
-                format = FrontmatterFormat::yaml;
-            } else {
+            if (!is_yaml_delimiter(lines[open_index])) {
                 spdlog::warn("Skill file has no frontmatter: {}", source_path);
                 return {};
             }
@@ -185,36 +168,15 @@ namespace orangutan::skills {
             bool found_closing = false;
             std::size_t body_start_index = lines.size();
 
-            if (format == FrontmatterFormat::toml) {
-                // TOML: try parsing at each delimiter to handle embedded +++ in strings
-                for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
-                    if (is_toml_delimiter(lines[index])) {
-                        try {
-                            auto parsed = toml::parse(fm_buf);
-                            static_cast<void>(parsed);
-                            found_closing = true;
-                            body_start_index = index + 1;
-                            break;
-                        } catch (const toml::parse_error &) {
-                            fm_buf.append(lines[index]);
-                            fm_buf.push_back('\n');
-                            continue;
-                        }
-                    }
-                    fm_buf.append(lines[index]);
-                    fm_buf.push_back('\n');
+            // YAML: simple close on first ---
+            for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
+                if (is_yaml_delimiter(lines[index])) {
+                    found_closing = true;
+                    body_start_index = index + 1;
+                    break;
                 }
-            } else {
-                // YAML: simple close on first ---
-                for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
-                    if (is_yaml_delimiter(lines[index])) {
-                        found_closing = true;
-                        body_start_index = index + 1;
-                        break;
-                    }
-                    fm_buf.append(lines[index]);
-                    fm_buf.push_back('\n');
-                }
+                fm_buf.append(lines[index]);
+                fm_buf.push_back('\n');
             }
 
             if (!found_closing) {
@@ -234,48 +196,11 @@ namespace orangutan::skills {
 
             SkillDef skill;
 
-            if (format == FrontmatterFormat::toml) {
-                toml::table tbl;
-                try {
-                    tbl = toml::parse(fm_text);
-                } catch (const toml::parse_error &e) {
-                    spdlog::warn("Invalid TOML frontmatter in {}: {}", source_path, e.what());
-                    return {};
-                }
-
-                auto name = tbl["name"].value<std::string>();
-                auto description = tbl["description"].value<std::string>();
-                if (!name.has_value() || !description.has_value()) {
-                    spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
-                    return {};
-                }
-
-                skill.name = *name;
-                skill.description = *description;
-                skill.body = body;
-                skill.source_path = source_path;
-
-                if (const auto *tools_arr = tbl["tools"].as_array()) {
-                    for (const auto &item : *tools_arr) {
-                        if (auto s = item.value<std::string>()) {
-                            skill.tools.push_back(*s);
-                        }
-                    }
-                }
-                if (const auto *env_arr = tbl["env"].as_array()) {
-                    for (const auto &item : *env_arr) {
-                        if (auto s = item.value<std::string>()) {
-                            skill.env.push_back(*s);
-                        }
-                    }
-                }
-            } else {
-                skill = parse_yaml_frontmatter(fm_text, source_path);
-                skill.body = body;
-                if (skill.name.empty() || skill.description.empty()) {
-                    spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
-                    return {};
-                }
+            skill = parse_yaml_frontmatter(fm_text, source_path);
+            skill.body = body;
+            if (skill.name.empty() || skill.description.empty()) {
+                spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
+                return {};
             }
 
             return {.valid = true, .skill = std::move(skill)};

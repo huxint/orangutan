@@ -55,7 +55,7 @@ namespace orangutan::bootstrap {
         app.add_option("--edit-mode", options.edit_mode, "Edit tool mode: hashline or search_replace");
         app.add_option("--config-password", options.config_password, "Password used to unlock or protect encrypted config secrets");
         app.add_option("--protect-config-secrets", options.protect_config_path,
-                       "Rewrite supported plaintext config secrets in place and exit. Optional argument: config path; defaults to ~/.orangutan/config.toml")
+                       "Rewrite supported plaintext config secrets in place and exit. Optional argument: config path; defaults to ~/.orangutan/config.json")
             ->expected(0, 1)
             ->default_str("");
         protect_flag = app.get_option("--protect-config-secrets");

@@ -80,10 +80,10 @@ namespace {
             const auto skill_dir = skill_root / dir_name;
             std::filesystem::create_directories(skill_dir);
             std::ofstream out(skill_dir / "SKILL.md");
-            out << "+++\n";
-            out << "name = \"" << skill_name << "\"\n";
-            out << "description = \"runtime test skill\"\n";
-            out << "+++\n\n";
+            out << "---\n";
+            out << "name: " << skill_name << "\n";
+            out << "description: runtime test skill\n";
+            out << "---\n\n";
             out << skill_body << "\n";
         }
 

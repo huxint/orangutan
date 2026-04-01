@@ -1,29 +1,51 @@
 #include "config/config-detail.hpp"
 
+#include <nlohmann/json.hpp>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
 namespace orangutan::config::detail {
+    namespace {
 
-    Config parse_security_section(const toml::table &tbl, Config cfg) {
-        const auto *security = tbl["security"].as_table();
+        const nlohmann::json *find_member(const nlohmann::json &object, std::string_view key) {
+            if (!object.is_object()) {
+                return nullptr;
+            }
+            const auto it = object.find(std::string(key));
+            return it == object.end() ? nullptr : &*it;
+        }
+
+        const nlohmann::json *find_object_member(const nlohmann::json &object, std::string_view key) {
+            const auto *value = find_member(object, key);
+            return value != nullptr && value->is_object() ? value : nullptr;
+        }
+
+        const nlohmann::json *find_array_member(const nlohmann::json &object, std::string_view key) {
+            const auto *value = find_member(object, key);
+            return value != nullptr && value->is_array() ? value : nullptr;
+        }
+
+    } // namespace
+
+    Config parse_security_section(const nlohmann::json &root, Config cfg) {
+        const auto *security = find_object_member(root, "security");
         if (security == nullptr) {
             return cfg;
         }
 
-        if (const auto *arr = (*security)["allow"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.allow.push_back(*s);
+        if (const auto *array = find_array_member(*security, "allow"); array != nullptr) {
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    cfg.allow.push_back(item.get<std::string>());
                 }
             }
         }
 
-        if (const auto *arr = (*security)["deny"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.deny.push_back(*s);
+        if (const auto *array = find_array_member(*security, "deny"); array != nullptr) {
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    cfg.deny.push_back(item.get<std::string>());
                 }
             }
         }
@@ -31,16 +53,16 @@ namespace orangutan::config::detail {
         return cfg;
     }
 
-    Config parse_skills_section(const toml::table &tbl, Config cfg) {
-        const auto *skills = tbl["skills"].as_table();
+    Config parse_skills_section(const nlohmann::json &root, Config cfg) {
+        const auto *skills = find_object_member(root, "skills");
         if (skills == nullptr) {
             return cfg;
         }
 
-        if (const auto *arr = (*skills)["paths"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.skill_paths.push_back(expand_home_path(expand_env_vars(*s)));
+        if (const auto *array = find_array_member(*skills, "paths"); array != nullptr) {
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    cfg.skill_paths.push_back(expand_home_path(expand_env_vars(item.get<std::string>())));
                 }
             }
         }
@@ -48,45 +70,43 @@ namespace orangutan::config::detail {
         return cfg;
     }
 
-    Config parse_custom_tools_section(const toml::table &tbl, Config cfg) {
-        const auto *tools = tbl["tools"].as_table();
+    Config parse_custom_tools_section(const nlohmann::json &root, Config cfg) {
+        const auto *tools = find_object_member(root, "tools");
         if (tools == nullptr) {
             return cfg;
         }
 
-        const auto *custom = (*tools)["custom"].as_array();
+        const auto *custom = find_array_member(*tools, "custom");
         if (custom == nullptr) {
             return cfg;
         }
 
         for (const auto &item : *custom) {
-            const auto *tool = item.as_table();
-            if (tool == nullptr) {
+            if (!item.is_object()) {
                 continue;
             }
 
             Config::ScriptToolConfig tool_cfg;
-            if (auto v = (*tool)["name"].value<std::string>()) {
-                tool_cfg.name = *v;
+            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
+                tool_cfg.name = value->get<std::string>();
             }
-            if (auto v = (*tool)["description"].value<std::string>()) {
-                tool_cfg.description = *v;
+            if (const auto *value = find_member(item, "description"); value != nullptr && value->is_string()) {
+                tool_cfg.description = value->get<std::string>();
             }
-            if (auto v = (*tool)["command"].value<std::string>()) {
-                // Keep ${param} placeholders intact for script-tool substitution at execution time.
-                tool_cfg.command = *v;
+            if (const auto *value = find_member(item, "command"); value != nullptr && value->is_string()) {
+                tool_cfg.command = value->get<std::string>();
             }
-            if (auto v = (*tool)["timeout"].value<int64_t>()) {
-                tool_cfg.timeout = static_cast<int>(*v);
+            if (const auto *value = find_member(item, "timeout"); value != nullptr && value->is_number_integer()) {
+                tool_cfg.timeout = value->get<int>();
             }
-            if (auto v = (*tool)["working_dir"].value<std::string>()) {
-                tool_cfg.working_dir = expand_home_path(expand_env_vars(*v));
+            if (const auto *value = find_member(item, "working_dir"); value != nullptr && value->is_string()) {
+                tool_cfg.working_dir = expand_home_path(expand_env_vars(value->get<std::string>()));
             }
 
-            if (const auto *schema = (*tool)["input_schema"].as_table()) {
-                for (const auto &[key_node, value_node] : *schema) {
-                    if (auto s = value_node.value<std::string>()) {
-                        tool_cfg.input_schema.emplace(std::string(key_node.str()), *s);
+            if (const auto *schema = find_object_member(item, "input_schema"); schema != nullptr) {
+                for (auto it = schema->begin(); it != schema->end(); ++it) {
+                    if (it.value().is_string()) {
+                        tool_cfg.input_schema.emplace(it.key(), it.value().get<std::string>());
                     }
                 }
             }
@@ -106,46 +126,45 @@ namespace orangutan::config::detail {
         return cfg;
     }
 
-    Config parse_mcp_section(const toml::table &tbl, Config cfg) {
-        const auto *mcp = tbl["mcp"].as_table();
+    Config parse_mcp_section(const nlohmann::json &root, Config cfg) {
+        const auto *mcp = find_object_member(root, "mcp");
         if (mcp == nullptr) {
             return cfg;
         }
 
-        const auto *servers = (*mcp)["servers"].as_array();
+        const auto *servers = find_array_member(*mcp, "servers");
         if (servers == nullptr) {
             return cfg;
         }
 
         for (const auto &item : *servers) {
-            const auto *server = item.as_table();
-            if (server == nullptr) {
+            if (!item.is_object()) {
                 continue;
             }
 
             Config::McpServerConfig server_cfg;
-            if (auto v = (*server)["name"].value<std::string>()) {
-                server_cfg.name = *v;
+            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
+                server_cfg.name = value->get<std::string>();
             }
-            if (auto v = (*server)["command"].value<std::string>()) {
-                server_cfg.command = expand_home_path(expand_env_vars(*v));
+            if (const auto *value = find_member(item, "command"); value != nullptr && value->is_string()) {
+                server_cfg.command = expand_home_path(expand_env_vars(value->get<std::string>()));
             }
-            if (const auto *arr = (*server)["args"].as_array()) {
-                for (const auto &arg_item : *arr) {
-                    if (auto s = arg_item.value<std::string>()) {
-                        server_cfg.args.push_back(expand_home_path(expand_env_vars(*s)));
+            if (const auto *array = find_array_member(item, "args"); array != nullptr) {
+                for (const auto &arg_item : *array) {
+                    if (arg_item.is_string()) {
+                        server_cfg.args.push_back(expand_home_path(expand_env_vars(arg_item.get<std::string>())));
                     }
                 }
             }
-            if (const auto *env = (*server)["env"].as_table()) {
-                for (const auto &[key_node, value_node] : *env) {
-                    if (auto s = value_node.value<std::string>()) {
-                        server_cfg.env.emplace(std::string(key_node.str()), expand_env_vars(*s));
+            if (const auto *env = find_object_member(item, "env"); env != nullptr) {
+                for (auto it = env->begin(); it != env->end(); ++it) {
+                    if (it.value().is_string()) {
+                        server_cfg.env.emplace(it.key(), expand_env_vars(it.value().get<std::string>()));
                     }
                 }
             }
-            if (auto v = (*server)["timeout"].value<int64_t>()) {
-                server_cfg.timeout = static_cast<int>(*v);
+            if (const auto *value = find_member(item, "timeout"); value != nullptr && value->is_number_integer()) {
+                server_cfg.timeout = value->get<int>();
             }
 
             if (server_cfg.name.empty()) {
@@ -174,16 +193,16 @@ namespace orangutan::config::detail {
         return cfg;
     }
 
-    Config parse_hooks_section(const toml::table &tbl, Config cfg) {
-        const auto *hooks = tbl["hooks"].as_table();
+    Config parse_hooks_section(const nlohmann::json &root, Config cfg) {
+        const auto *hooks = find_object_member(root, "hooks");
         if (hooks == nullptr) {
             return cfg;
         }
 
-        if (const auto *arr = (*hooks)["paths"].as_array()) {
-            for (const auto &item : *arr) {
-                if (auto s = item.value<std::string>()) {
-                    cfg.hook_paths.push_back(expand_home_path(expand_env_vars(*s)));
+        if (const auto *array = find_array_member(*hooks, "paths"); array != nullptr) {
+            for (const auto &item : *array) {
+                if (item.is_string()) {
+                    cfg.hook_paths.push_back(expand_home_path(expand_env_vars(item.get<std::string>())));
                 }
             }
         }
@@ -191,51 +210,50 @@ namespace orangutan::config::detail {
         return cfg;
     }
 
-    Config parse_heartbeat_section(const toml::table &tbl, Config cfg) {
-        const auto *heartbeat = tbl["heartbeat"].as_table();
+    Config parse_heartbeat_section(const nlohmann::json &root, Config cfg) {
+        const auto *heartbeat = find_object_member(root, "heartbeat");
         if (heartbeat == nullptr) {
             return cfg;
         }
 
-        if (auto v = (*heartbeat)["heartbeat_md_path"].value<std::string>()) {
-            cfg.heartbeat_md_path = expand_home_path(expand_env_vars(*v));
+        if (const auto *value = find_member(*heartbeat, "heartbeat_md_path"); value != nullptr && value->is_string()) {
+            cfg.heartbeat_md_path = expand_home_path(expand_env_vars(value->get<std::string>()));
         }
-        if (auto v = (*heartbeat)["ack_max_chars"].value<int64_t>()) {
-            cfg.ack_max_chars = static_cast<int>(*v);
+        if (const auto *value = find_member(*heartbeat, "ack_max_chars"); value != nullptr && value->is_number_integer()) {
+            cfg.ack_max_chars = value->get<int>();
         }
-        if (auto v = (*heartbeat)["isolated_session"].value<bool>()) {
-            cfg.isolated_session = *v;
+        if (const auto *value = find_member(*heartbeat, "isolated_session"); value != nullptr && value->is_boolean()) {
+            cfg.isolated_session = value->get<bool>();
         }
-        if (auto v = (*heartbeat)["light_context"].value<bool>()) {
-            cfg.light_context = *v;
+        if (const auto *value = find_member(*heartbeat, "light_context"); value != nullptr && value->is_boolean()) {
+            cfg.light_context = value->get<bool>();
         }
 
-        const auto *jobs = (*heartbeat)["jobs"].as_array();
+        const auto *jobs = find_array_member(*heartbeat, "jobs");
         if (jobs == nullptr) {
             return cfg;
         }
 
         for (const auto &item : *jobs) {
-            const auto *job = item.as_table();
-            if (job == nullptr) {
+            if (!item.is_object()) {
                 continue;
             }
 
             Config::HeartbeatJobConfig job_cfg;
-            if (auto v = (*job)["name"].value<std::string>()) {
-                job_cfg.name = *v;
+            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
+                job_cfg.name = value->get<std::string>();
             }
-            if (auto v = (*job)["cron"].value<std::string>()) {
-                job_cfg.cron = *v;
+            if (const auto *value = find_member(item, "cron"); value != nullptr && value->is_string()) {
+                job_cfg.cron = value->get<std::string>();
             }
-            if (auto v = (*job)["prompt"].value<std::string>()) {
-                job_cfg.prompt = *v;
+            if (const auto *value = find_member(item, "prompt"); value != nullptr && value->is_string()) {
+                job_cfg.prompt = value->get<std::string>();
             }
-            if (auto v = (*job)["agent"].value<std::string>()) {
-                job_cfg.agent = *v;
+            if (const auto *value = find_member(item, "agent"); value != nullptr && value->is_string()) {
+                job_cfg.agent = value->get<std::string>();
             }
-            if (auto v = (*job)["channel"].value<std::string>()) {
-                job_cfg.channel = *v;
+            if (const auto *value = find_member(item, "channel"); value != nullptr && value->is_string()) {
+                job_cfg.channel = value->get<std::string>();
             }
 
             if (job_cfg.name.empty() || job_cfg.cron.empty() || job_cfg.prompt.empty()) {

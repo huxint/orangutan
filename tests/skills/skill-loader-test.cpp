@@ -62,13 +62,13 @@ namespace {
         }
     };
 
-    TEST_CASE("skips_bad_toml") {
+    TEST_CASE("skips_non_yaml_frontmatter") {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
         for (const auto &skill : loader.active_skills()) {
-            INFO("skill with bad TOML should not be loaded");
-            CHECK(skill.name != "invalid toml here [[[");
+            INFO("skill with non-YAML frontmatter should not be loaded");
+            CHECK(skill.name != "ignored-non-yaml");
         }
     };
 
@@ -144,15 +144,16 @@ namespace {
         CHECK(section.contains("### test-skill"));
     };
 
-    TEST_CASE("loads_frontmatter_with_embedded_delimiter_in_toml_string") {
+    TEST_CASE("loads_yaml_frontmatter_with_embedded_body_delimiter") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_embedded_delimiter");
-        write_skill(temp_dir, "embedded-delimiter", R"md(+++
-name = "embedded-delimiter"
-description = "Contains +++ in a TOML string"
-tools = ["read"]
-example = "before +++ after"
-+++
-Body with embedded delimiter in frontmatter string.
+        write_skill(temp_dir, "embedded-delimiter", R"md(---
+name: embedded-delimiter
+description: Contains a delimiter-like line in the body
+tools: [read]
+---
+Body with delimiter-like content:
+---
+Body continues here.
 )md");
 
         SkillLoader loader;
@@ -160,41 +161,18 @@ Body with embedded delimiter in frontmatter string.
 
         CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "embedded-delimiter");
-        CHECK(loader.active_skills()[0].body.contains("Body with embedded delimiter"));
+        CHECK(loader.active_skills()[0].body.contains("Body with delimiter-like content"));
+        CHECK(loader.active_skills()[0].body.contains("Body continues here."));
 
         std::filesystem::remove_all(temp_dir);
     };
 
-    TEST_CASE("loads_frontmatter_with_delimiter_line_inside_toml_multiline_string") {
-        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_multiline_delimiter");
-        write_skill(temp_dir, "multiline-delimiter", R"md(+++
-name = "multiline-delimiter"
-description = "Contains a delimiter line inside a multiline string"
-example = """
-before
-+++
-after
-"""
-+++
-Body after multiline string frontmatter.
-)md");
-
-        SkillLoader loader;
-        loader.load_from_directories({temp_dir.string()});
-
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "multiline-delimiter");
-        CHECK(loader.active_skills()[0].body.contains("Body after multiline string frontmatter."));
-
-        std::filesystem::remove_all(temp_dir);
-    };
-
-    TEST_CASE("loads_frontmatter_with_utf8_bom_before_opening_delimiter") {
+    TEST_CASE("loads_yaml_frontmatter_with_utf8_bom_before_opening_delimiter") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_bom");
-        write_skill(temp_dir, "bom-skill", std::string("\xEF\xBB\xBF") + R"md(+++
-name = "bom-skill"
-description = "Frontmatter starts after a UTF-8 BOM"
-+++
+        write_skill(temp_dir, "bom-skill", std::string("\xEF\xBB\xBF") + R"md(---
+name: bom-skill
+description: Frontmatter starts after a UTF-8 BOM
+---
 Body after BOM.
 )md");
 
@@ -207,13 +185,13 @@ Body after BOM.
         std::filesystem::remove_all(temp_dir);
     };
 
-    TEST_CASE("loads_frontmatter_with_leading_blank_line_before_opening_delimiter") {
+    TEST_CASE("loads_yaml_frontmatter_with_leading_blank_line_before_opening_delimiter") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_leading_blank_line");
         write_skill(temp_dir, "blank-line-skill", R"md(
-+++
-name = "blank-line-skill"
-description = "Frontmatter starts after a leading blank line"
-+++
+---
+name: blank-line-skill
+description: Frontmatter starts after a leading blank line
+---
 Body after leading blank line.
 )md");
 
@@ -230,22 +208,22 @@ Body after leading blank line.
         const auto base_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_order_base");
         const auto override_root = orangutan::testing::unique_test_root("orangutan_skill_loader_order_override");
 
-        write_skill(base_dir, "zebra-dir", R"md(+++
-name = "zebra"
-description = "zebra base"
-+++
+        write_skill(base_dir, "zebra-dir", R"md(---
+name: zebra
+description: zebra base
+---
 zebra body
 )md");
-        write_skill(base_dir, "alpha-dir", R"md(+++
-name = "alpha"
-description = "alpha base"
-+++
+        write_skill(base_dir, "alpha-dir", R"md(---
+name: alpha
+description: alpha base
+---
 alpha body
 )md");
-        write_skill(override_root, "alpha-override", R"md(+++
-name = "alpha"
-description = "alpha override"
-+++
+        write_skill(override_root, "alpha-override", R"md(---
+name: alpha
+description: alpha override
+---
 alpha override body
 )md");
 
@@ -324,16 +302,16 @@ Quoted values body.
     TEST_CASE("build_prompt_section_uses_deterministic_skill_order") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_prompt_order");
 
-        write_skill(temp_dir, "zebra-dir", R"md(+++
-name = "zebra"
-description = "zebra"
-+++
+        write_skill(temp_dir, "zebra-dir", R"md(---
+name: zebra
+description: zebra
+---
 zebra prompt body
 )md");
-        write_skill(temp_dir, "alpha-dir", R"md(+++
-name = "alpha"
-description = "alpha"
-+++
+        write_skill(temp_dir, "alpha-dir", R"md(---
+name: alpha
+description: alpha
+---
 alpha prompt body
 )md");
 

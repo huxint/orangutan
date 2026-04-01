@@ -37,7 +37,7 @@ namespace orangutan::config {
     };
 
     struct Config {
-        // [agent] section
+        // agent object
         std::string provider = "anthropic";
         std::string model = "claude-sonnet-4-20250514";
         std::vector<std::string> fallback_models;
@@ -49,18 +49,18 @@ namespace orangutan::config {
         int thinking_budget = 0;
         std::string workspace;
 
-        // [tools] section
+        // tools object
         std::vector<std::string> allowed_tools;
         std::vector<std::string> denied_tools;
         std::string edit_mode = "hashline"; // "hashline" | "search_replace"
 
-        // [permissions] section
+        // permissions object
         ToolPermissionSettings permissions{
             .sandbox_mode = ToolSandboxMode::isolated,
             .shell_approval = ToolApprovalPolicy::ask,
         };
 
-        // [session] section
+        // session object
         bool auto_save = true;
 
         struct MemoryConfig {
@@ -70,24 +70,24 @@ namespace orangutan::config {
         };
         MemoryConfig memory;
 
-        // [agent] system_prompt
+        // agent.system_prompt
         std::string system_prompt;
-        // [qq] section
+        // qq object
         std::string qq_app_id;
         std::string qq_client_secret;
         std::vector<QqBotConfig> qq_bots;
 
-        // [agents.<key>] sections
+        // agents object
         std::unordered_map<std::string, AgentConfig> agents;
 
-        // [security] section
+        // security object
         std::vector<std::string> allow;
         std::vector<std::string> deny;
 
-        // [skills] section
+        // skills object
         std::vector<std::string> skill_paths;
 
-        // [[tools.custom]] section
+        // tools.custom array
         struct ScriptToolConfig {
             std::string name;
             std::string description;
@@ -98,7 +98,7 @@ namespace orangutan::config {
         };
         std::vector<ScriptToolConfig> custom_tools;
 
-        // [[mcp.servers]] section
+        // mcp.servers array
         struct McpServerConfig {
             std::string name;
             std::string command;
@@ -108,16 +108,16 @@ namespace orangutan::config {
         };
         std::vector<McpServerConfig> mcp_servers;
 
-        // [hooks] section
+        // hooks object
         std::vector<std::string> hook_paths;
 
-        // [heartbeat] section
+        // heartbeat object
         std::string heartbeat_md_path;
         int ack_max_chars = 300;
         bool isolated_session = false;
         bool light_context = false;
 
-        // [[heartbeat.jobs]] section
+        // heartbeat.jobs array
         struct HeartbeatJobConfig {
             std::string name;
             std::string cron;
@@ -127,7 +127,7 @@ namespace orangutan::config {
         };
         std::vector<HeartbeatJobConfig> heartbeat_jobs;
 
-        // Load config from ~/.orangutan/config.toml (if it exists)
+        // Load config from ~/.orangutan/config.json (if it exists)
         // Returns a Config with defaults if file is missing
         static Config load(const ConfigSecretOptions &secret_options = {});
 
@@ -141,7 +141,7 @@ namespace orangutan::config {
         [[nodiscard]]
         std::optional<AgentConfig> find_agent(const std::string &key) const;
 
-        // Serialize config to TOML and write to file
+        // Serialize config to JSON and write to file
         void save_to(const std::filesystem::path &path) const;
     };
 

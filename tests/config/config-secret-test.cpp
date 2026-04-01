@@ -3,6 +3,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace {
@@ -18,18 +20,23 @@ namespace {
 
         [[nodiscard]]
         std::filesystem::path config_path() const {
-            return root_ / "config.toml";
+            return root_ / "config.json";
         }
 
-        void write_config(const std::string &content) const {
+        void write_config(const nlohmann::json &content) const {
             std::ofstream out(config_path());
-            out << content;
+            out << content.dump(2) << '\n';
         }
 
         [[nodiscard]]
         static std::string read_config(const std::filesystem::path &path) {
             std::ifstream in(path);
             return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+        }
+
+        [[nodiscard]]
+        static nlohmann::json read_config_json(const std::filesystem::path &path) {
+            return nlohmann::json::parse(read_config(path));
         }
 
     private:
@@ -80,19 +87,22 @@ namespace {
 
     TEST_CASE("protect_flow_encrypts_eligible_secrets_and_skips_environment_references") {
         ConfigSecretFileHarness harness;
-        harness.write_config(R"toml(
-[agent]
-api_key = "plain-agent-key" # keep comment
-
-[agents.coder]
-api_key = "${CODER_KEY}"
-
-[qq]
-client_secret = "plain-qq-secret"
-
-[memory]
-mirror_file = "notes/MEMORY.md"
-)toml");
+        harness.write_config(nlohmann::json::parse(R"json({
+          "agent": {
+            "api_key": "plain-agent-key"
+          },
+          "agents": {
+            "coder": {
+              "api_key": "${CODER_KEY}"
+            }
+          },
+          "qq": {
+            "client_secret": "plain-qq-secret"
+          },
+          "memory": {
+            "mirror_file": "notes/MEMORY.md"
+          }
+        })json"));
 
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
         INFO("expected protect_config_file_secrets to modify the config");
@@ -100,23 +110,24 @@ mirror_file = "notes/MEMORY.md"
         CHECK(result.protected_count == 2UL);
         CHECK(std::filesystem::exists(result.backup_path));
 
-        const auto updated = ConfigSecretFileHarness::read_config(harness.config_path());
-        CHECK(updated.contains("enc:v1:"));
-        CHECK(updated.contains("api_key = \"${CODER_KEY}\""));
-        CHECK(updated.contains("# keep comment"));
-        CHECK(updated.contains("mirror_file = \"notes/MEMORY.md\""));
+        const auto updated = ConfigSecretFileHarness::read_config_json(harness.config_path());
+        CHECK(updated["agent"]["api_key"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["agents"]["coder"]["api_key"] == "${CODER_KEY}");
+        CHECK(updated["qq"]["client_secret"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["memory"]["mirror_file"] == "notes/MEMORY.md");
 
-        const auto backup = ConfigSecretFileHarness::read_config(result.backup_path);
-        CHECK(backup.contains("plain-agent-key"));
-        CHECK(backup.contains("plain-qq-secret"));
+        const auto backup = ConfigSecretFileHarness::read_config_json(result.backup_path);
+        CHECK(backup["agent"]["api_key"] == "plain-agent-key");
+        CHECK(backup["qq"]["client_secret"] == "plain-qq-secret");
     };
 
     TEST_CASE("protect_flow_preserves_config_permissions") {
         ConfigSecretFileHarness harness;
-        harness.write_config(R"toml(
-[agent]
-api_key = "plain-agent-key"
-)toml");
+        harness.write_config(nlohmann::json::parse(R"json({
+          "agent": {
+            "api_key": "plain-agent-key"
+          }
+        })json"));
 
         std::filesystem::permissions(harness.config_path(), std::filesystem::perms::owner_read | std::filesystem::perms::owner_write, std::filesystem::perm_options::replace);
         const auto original_permissions = std::filesystem::status(harness.config_path()).permissions();
@@ -129,30 +140,36 @@ api_key = "plain-agent-key"
 
     TEST_CASE("protect_flow_skips_nested_agent_tables") {
         ConfigSecretFileHarness harness;
-        harness.write_config(R"toml(
-[agents.coder]
-api_key = "plain-agent-key"
-
-[agents.coder.extra]
-api_key = "nested-agent-key"
-)toml");
+        harness.write_config(nlohmann::json::parse(R"json({
+          "agents": {
+            "coder": {
+              "api_key": "plain-agent-key"
+            },
+            "nested": {
+              "extra": {
+                "api_key": "nested-agent-key"
+              }
+            }
+          }
+        })json"));
 
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
         INFO("expected protect_config_file_secrets to modify the config");
         REQUIRE(result.modified);
         CHECK(result.protected_count == 1UL);
 
-        const auto updated = ConfigSecretFileHarness::read_config(harness.config_path());
-        CHECK(updated.contains("[agents.coder]\napi_key = \"enc:v1:"));
-        CHECK(updated.contains("[agents.coder.extra]\napi_key = \"nested-agent-key\""));
+        const auto updated = ConfigSecretFileHarness::read_config_json(harness.config_path());
+        CHECK(updated["agents"]["coder"]["api_key"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["agents"]["nested"]["extra"]["api_key"] == "nested-agent-key");
     };
 
     TEST_CASE("protect_flow_leaves_file_untouched_on_failure") {
         ConfigSecretFileHarness harness;
-        harness.write_config(R"toml(
-[agent]
-api_key = "plain-agent-key"
-)toml");
+        harness.write_config(nlohmann::json::parse(R"json({
+          "agent": {
+            "api_key": "plain-agent-key"
+          }
+        })json"));
 
         const auto original = ConfigSecretFileHarness::read_config(harness.config_path());
         REQUIRE_THROWS_AS(orangutan::protect_config_file_secrets(harness.config_path(), ""), orangutan::ConfigSecretProtectionError);
