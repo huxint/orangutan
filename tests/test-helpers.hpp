@@ -1,17 +1,15 @@
 #pragma once
 
-#include "tools/registry/tool.hpp"
+#include "types/base.hpp"
+#include "types/tool-def.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include <ranges>
 #include <string>
 #include <string_view>
-#include <vector>
-
 #include <spdlog/spdlog.h>
 
 namespace orangutan::testing {
@@ -25,8 +23,8 @@ namespace orangutan::testing {
 
     /// Returns a unique temporary root under <project>/tmp/tests/<prefix>-<token> and creates it.
     inline std::filesystem::path unique_test_root(std::string_view prefix) {
-        static std::atomic<unsigned long long> sequence{0};
-        const auto token = std::to_string(static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count())) + "-" +
+        static std::atomic<base::u64> sequence{0};
+        const auto token = std::to_string(static_cast<base::u64>(std::chrono::steady_clock::now().time_since_epoch().count())) + "-" +
                            std::to_string(sequence.fetch_add(1, std::memory_order_relaxed));
         auto root = test_tmp_root() / (std::string(prefix) + "-" + token);
         std::filesystem::create_directories(root);

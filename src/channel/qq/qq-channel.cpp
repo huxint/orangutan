@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <charconv>
-#include <cstdint>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -52,18 +51,18 @@ namespace orangutan::channel::qq {
             return std::string(jid.substr(prefix.size()));
         }
 
-        long long parse_integer_like(const nlohmann::json &payload, std::string_view key, long long default_value) {
+        base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
             if (!payload.contains(key)) {
                 return default_value;
             }
 
             const auto &value = payload.at(key);
             if (value.is_number_integer()) {
-                return value.get<long long>();
+                return value.get<base::i64>();
             }
             if (value.is_string()) {
                 const auto &str = value.get_ref<const std::string &>();
-                long long result = default_value;
+                base::i64 result = default_value;
                 std::from_chars(str.data(), str.data() + str.size(), result);
                 return result;
             }
@@ -221,7 +220,7 @@ namespace orangutan::channel::qq {
 
         access_token_ = payload.at("access_token").get<std::string>();
         const auto expires_in = parse_integer_like(payload, "expires_in", 7200);
-        token_expiry_ = now + std::chrono::seconds(std::max<long long>(60, expires_in - 60));
+        token_expiry_ = now + std::chrono::seconds(std::max<base::i64>(60, expires_in - 60));
     }
 
     std::string QqChannel::get_gateway_url() {
@@ -254,7 +253,7 @@ namespace orangutan::channel::qq {
                     }
                 },
             .on_close =
-                [this](uint16_t code, std::string reason) {
+                [this](base::u16 code, std::string reason) {
                     spdlog::warn("QQ WebSocket closed: {} {}", code, reason);
                     connected_ = false;
                     stop_heartbeat();

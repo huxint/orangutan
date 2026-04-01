@@ -64,7 +64,7 @@ namespace {
             cv_.notify_all();
         }
 
-        void push_close(uint16_t code, std::string reason) {
+        void push_close(base::u16 code, std::string reason) {
             {
                 std::scoped_lock lock(mutex_);
                 events_.push_back(Transport::Event::close(code, std::move(reason)));
@@ -179,7 +179,7 @@ namespace {
         std::condition_variable cv;
         std::size_t opens = 0;
         std::vector<std::string> texts;
-        std::vector<std::pair<uint16_t, std::string>> closes;
+        std::vector<std::pair<base::u16, std::string>> closes;
         std::vector<std::string> errors;
 
         [[nodiscard]]
@@ -223,7 +223,7 @@ namespace {
                                      recorder.cv.notify_all();
                                  },
                              .on_close =
-                                 [&](uint16_t code, std::string reason) {
+                                 [&](base::u16 code, std::string reason) {
                                      std::scoped_lock lock(recorder.mutex);
                                      recorder.closes.emplace_back(code, std::move(reason));
                                      recorder.cv.notify_all();

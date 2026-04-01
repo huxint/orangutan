@@ -1,6 +1,7 @@
 #include "automation/planner.hpp"
 
 #include "automation/cron-parser.hpp"
+#include "types/base.hpp"
 #include "utils/local-time.hpp"
 
 #include <algorithm>
@@ -13,7 +14,7 @@
 namespace orangutan::automation {
     namespace {
 
-        bool parse_integer(std::string_view value, long long &out) {
+        bool parse_integer(std::string_view value, base::i64 &out) {
             auto result = std::from_chars(value.begin(), value.end(), out);
             return result.ec == std::errc{} && result.ptr == value.end();
         }
@@ -118,7 +119,7 @@ namespace orangutan::automation {
             return std::nullopt;
         }
 
-        long long numeric = 0;
+        base::i64 numeric = 0;
         if (parse_integer(value, numeric)) {
             if (numeric <= 0) {
                 return std::nullopt;
@@ -147,7 +148,7 @@ namespace orangutan::automation {
     }
 
     std::optional<base::i64> parse_absolute_time(std::string_view value) {
-        long long numeric = 0;
+        base::i64 numeric = 0;
         if (parse_integer(value, numeric)) {
             return static_cast<base::i64>(numeric);
         }

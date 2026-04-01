@@ -1,7 +1,7 @@
 #pragma once
 
+#include "types/base.hpp"
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -14,7 +14,7 @@ namespace orangutan::channel::qq {
         struct Callbacks {
             std::function<void()> on_open;
             std::function<void(std::string)> on_text;
-            std::function<void(uint16_t, std::string)> on_close;
+            std::function<void(base::u16, std::string)> on_close;
             std::function<void(std::string)> on_error;
         };
 
@@ -27,7 +27,7 @@ namespace orangutan::channel::qq {
 
             Kind kind;
             std::string payload;
-            uint16_t close_code = 1000;
+            base::u16 close_code = 1000;
 
             [[nodiscard]]
             static Event text(std::string payload) {
@@ -35,7 +35,7 @@ namespace orangutan::channel::qq {
             }
 
             [[nodiscard]]
-            static Event close(uint16_t close_code, std::string reason) {
+            static Event close(base::u16 close_code, std::string reason) {
                 return Event{.kind = Kind::Close, .payload = std::move(reason), .close_code = close_code};
             }
 

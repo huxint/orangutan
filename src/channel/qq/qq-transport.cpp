@@ -1,6 +1,7 @@
 #include "channel/qq/qq-transport.hpp"
 
 #include "channel/qq/reconnect-backoff.hpp"
+#include "types/base.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -64,14 +65,14 @@ namespace orangutan::channel::qq {
 
         [[nodiscard]]
         Transport::Event parse_close_event(std::string payload) {
-            uint16_t code = 1000;
+            base::u16 code = 1000;
             std::string reason;
 
-            if (payload.size() >= sizeof(uint16_t)) {
-                uint16_t network_code = 0;
+            if (payload.size() >= sizeof(base::u16)) {
+                base::u16 network_code = 0;
                 std::memcpy(&network_code, payload.data(), sizeof(network_code));
                 code = ntohs(network_code);
-                reason = payload.substr(sizeof(uint16_t));
+                reason = payload.substr(sizeof(base::u16));
             } else {
                 reason = std::move(payload);
             }
@@ -203,7 +204,7 @@ namespace orangutan::channel::qq {
                     return;
                 }
 
-                const uint16_t code = htons(static_cast<uint16_t>(1000));
+                const base::u16 code = htons(static_cast<base::u16>(1000));
                 std::size_t sent = 0;
                 const auto result = curl_ws_send(handle_, &code, sizeof(code), &sent, 0, CURLWS_CLOSE);
                 if (result != CURLE_OK && result != CURLE_GOT_NOTHING) {
@@ -227,7 +228,7 @@ namespace orangutan::channel::qq {
 
                 pollfd descriptor{.fd = socket_, .events = events, .revents = 0};
                 const auto timeout_ms =
-                    timeout.count() > static_cast<long long>(std::numeric_limits<int>::max()) ? std::numeric_limits<int>::max() : static_cast<int>(timeout.count());
+                    timeout.count() > static_cast<base::i64>(std::numeric_limits<int>::max()) ? std::numeric_limits<int>::max() : static_cast<int>(timeout.count());
                 const auto rc = ::poll(&descriptor, 1, timeout_ms);
                 if (rc == 0) {
                     return false;
@@ -543,7 +544,7 @@ namespace orangutan::channel::qq {
             }
         }
 
-        void emit_close(uint16_t code, const std::string &reason) const {
+        void emit_close(base::u16 code, const std::string &reason) const {
             if (callbacks_.on_close == nullptr) {
                 return;
             }
