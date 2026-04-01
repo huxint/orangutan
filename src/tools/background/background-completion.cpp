@@ -1,6 +1,7 @@
 #include "tools/background/background-completion.hpp"
 
 #include "automation/automation-types.hpp"
+#include "tools/registry/tool-registry.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/utf8.hpp"
 

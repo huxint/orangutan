@@ -1,15 +1,12 @@
 #pragma once
 
 #include "permissions.hpp"
-#include "types/types.hpp"
 
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace orangutan::memory {

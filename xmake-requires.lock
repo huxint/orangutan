@@ -1,4 +1,7 @@
 {
+    __meta__ = {
+        version = "1.0"
+    },
     ["linux|x86_64"] = {
         ["catch2 3.7.1#f56260b5"] = {
             repo = {
@@ -136,14 +139,6 @@
             },
             version = "2024.12.08"
         },
-        ["toml++ 3.4.0#f56260b5"] = {
-            repo = {
-                branch = "master",
-                commit = "75c3fcffb897a8aeb37863c495b9f58266216b26",
-                url = "https://github.com/xmake-io/xmake-repo.git"
-            },
-            version = "v3.4.0"
-        },
         ["uni_algo 1.2.0#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -152,8 +147,5 @@
             },
             version = "v1.2.0"
         }
-    },
-    __meta__ = {
-        version = "1.0"
     }
 }

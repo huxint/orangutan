@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <spdlog/common.h>
 #include <spdlog/spdlog.h>
-#include <stdexcept>
 
 namespace orangutan::tools {
     namespace {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tools/registry/tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 #include <filesystem>
 

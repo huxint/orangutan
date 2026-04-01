@@ -1,6 +1,5 @@
-#include "tools/inbox/register.hpp"
-
 #include "tools/inbox/inbox-tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 namespace orangutan::tools::inbox {
 

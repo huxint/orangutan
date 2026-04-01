@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <filesystem>
 #include "utils/format.hpp"
-#include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>

@@ -3,6 +3,7 @@
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
 #include "tools/automation/automation-tool-support.hpp"
+#include "tools/registry/tool-context.hpp"
 
 #include "utils/format.hpp"
 
