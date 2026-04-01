@@ -150,7 +150,7 @@ namespace orangutan::automation {
     std::optional<base::i64> parse_absolute_time(std::string_view value) {
         base::i64 numeric = 0;
         if (parse_integer(value, numeric)) {
-            return static_cast<base::i64>(numeric);
+            return numeric;
         }
 
         const auto parsed = parse_local_date_time(value);
