@@ -15,57 +15,46 @@ local function add_test_target(name, files)
         add_tests("default")
 end
 
-add_test_target("test-app", rooted("tests/app/*.cpp"))
+add_test_target("test-types", rooted("tests/types/*.cpp"))
 
-add_test_target("test-core", rooted("tests/core/*.cpp"))
+add_test_target("test-providers", rooted("tests/providers/*.cpp"))
 
-add_test_target("test-infra-config", rooted("tests/infra/config-*.cpp"))
-
-add_test_target("test-infra-storage", {
-    rooted("tests/infra/session-store-test.cpp"),
-    rooted("tests/infra/sqlite-test.cpp"),
-    rooted("tests/infra/subagent-run-store-test.cpp"),
+add_test_target("test-tools", {
+    rooted("tests/tools/**/*.cpp"),
 })
 
-add_test_target("test-infra-subprocess", rooted("tests/infra/subprocess-test.cpp"))
+add_test_target("test-agent", rooted("tests/agent/*.cpp"))
 
-add_test_target("test-features-tools", {
-    rooted("tests/features/background-shell-completion-test.cpp"),
-    rooted("tests/features/hashline-test.cpp"),
-    rooted("tests/features/heartbeat-tool-test.cpp"),
-    rooted("tests/features/inbox-tool-test.cpp"),
-    rooted("tests/features/mcp-client-test.cpp"),
-    rooted("tests/features/script-tool-test.cpp"),
-    rooted("tests/features/task-tool-test.cpp"),
+add_test_target("test-memory", rooted("tests/memory/*.cpp"))
+
+add_test_target("test-automation", rooted("tests/automation/*.cpp"))
+
+add_test_target("test-subagent", rooted("tests/subagent/*.cpp"))
+
+add_test_target("test-heartbeat", rooted("tests/heartbeat/*.cpp"))
+
+add_test_target("test-channel", {
+    rooted("tests/channel/*.cpp"),
+    rooted("tests/channel/qq/*.cpp"),
 })
 
-add_test_target("test-features-memory", {
-    rooted("tests/features/memory-test.cpp"),
-    rooted("tests/features/automation-runtime-test.cpp"),
-    rooted("tests/features/automation-store-test.cpp"),
+add_test_target("test-misc-services", {
+    rooted("tests/hooks/*.cpp"),
+    rooted("tests/skills/*.cpp"),
 })
 
-add_test_target("test-features-web", {
-    rooted("tests/features/web-server-test.cpp"),
-    rooted("tests/features/web-routes-test.cpp"),
-    rooted("tests/features/web-chat-test.cpp"),
-})
+add_test_target("test-cli", rooted("tests/cli/*.cpp"))
 
-add_test_target("test-features-channel", {
-    rooted("tests/features/channel-test.cpp"),
-    rooted("tests/features/jid-task-runner-test.cpp"),
-    rooted("tests/features/channel/qq/reconnect-backoff-test.cpp"),
-})
+add_test_target("test-web", rooted("tests/web/*.cpp"))
 
-add_test_target("test-features-misc", {
-    rooted("tests/features/agent-loop-test.cpp"),
-    rooted("tests/features/cron-parser-test.cpp"),
-    rooted("tests/features/heartbeat-md-test.cpp"),
-    rooted("tests/features/heartbeat-ok-test.cpp"),
-    rooted("tests/features/hook-manager-test.cpp"),
-    rooted("tests/features/skill-loader-test.cpp"),
-    rooted("tests/features/subagent-manager-test.cpp"),
-    rooted("tests/features/subagent-tools-test.cpp"),
-})
+add_test_target("test-config", rooted("tests/config/*.cpp"))
+
+add_test_target("test-storage", rooted("tests/storage/*.cpp"))
+
+add_test_target("test-process", rooted("tests/process/*.cpp"))
+
+add_test_target("test-bootstrap", rooted("tests/bootstrap/*.cpp"))
+
+add_test_target("test-utils", rooted("tests/utils/*.cpp"))
 
 add_test_target("test-integration", rooted("tests/integration/*.cpp"))
