@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::memory {
 
     struct JournalStoreResult {
         bool stored = false;
@@ -76,5 +76,12 @@ namespace orangutan {
 
         void refresh_mirror_after_write() const;
     };
+
+} // namespace orangutan::memory
+
+namespace orangutan {
+
+    using memory::JournalStoreResult;
+    using memory::RuntimeMemory;
 
 } // namespace orangutan

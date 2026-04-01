@@ -23,7 +23,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace orangutan {
+namespace orangutan::process {
 
     namespace {
 
@@ -922,4 +922,4 @@ namespace orangutan {
         return Impl::terminate_entry(entry);
     }
 
-} // namespace orangutan
+} // namespace orangutan::process

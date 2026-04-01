@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         struct PatchHunk {
@@ -392,4 +392,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

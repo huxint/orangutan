@@ -5,7 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     namespace {
         constexpr std::string_view redaction_marker = "[REDACTED]";
@@ -121,4 +121,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

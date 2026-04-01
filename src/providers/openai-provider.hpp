@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     // SseParser is defined in anthropic-provider.hpp and shared across providers
     class SseParser;
@@ -47,4 +47,4 @@ namespace orangutan {
         static LLMResponse parse_response(const nlohmann::json &response_json);
     };
 
-} // namespace orangutan
+} // namespace orangutan::providers

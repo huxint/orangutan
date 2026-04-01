@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::providers {
     SseParser::SseParser(EventCallback callback)
     : callback_(std::move(callback)) {}
 
@@ -70,4 +70,4 @@ namespace orangutan {
         current_event_.clear();
     }
 
-} // namespace orangutan
+} // namespace orangutan::providers

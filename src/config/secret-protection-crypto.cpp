@@ -17,7 +17,7 @@
 #include <mbedtls/md.h>
 #include <mbedtls/pkcs5.h>
 
-namespace orangutan {
+namespace orangutan::config {
     namespace {
 
         constexpr std::string_view protected_prefix = "enc:v1:";
@@ -363,4 +363,4 @@ namespace orangutan {
         return string_from_bytes(plaintext);
     }
 
-} // namespace orangutan
+} // namespace orangutan::config

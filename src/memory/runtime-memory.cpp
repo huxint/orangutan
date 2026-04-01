@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <array>
 
-namespace orangutan {
+namespace orangutan::memory {
     namespace {
 
         std::string make_journal_key(std::string_view summary) {
@@ -142,4 +142,4 @@ namespace orangutan {
         static_cast<void>(refresh_mirror());
     }
 
-} // namespace orangutan
+} // namespace orangutan::memory

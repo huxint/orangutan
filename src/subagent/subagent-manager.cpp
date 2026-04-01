@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::subagent {
 
     namespace {
 
@@ -450,4 +450,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::subagent

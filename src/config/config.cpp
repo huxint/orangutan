@@ -9,7 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <toml++/toml.hpp>
 
-namespace orangutan {
+namespace orangutan::config {
 
     std::string expand_env_vars(const std::string &input) {
         std::string result;
@@ -68,7 +68,7 @@ namespace orangutan {
         return std::string(home) + input.substr(1);
     }
 
-    namespace config_detail {
+    namespace detail {
 
         void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver) {
             if (value.empty()) {
@@ -155,7 +155,7 @@ namespace orangutan {
             return cfg;
         }
 
-    } // namespace config_detail
+    } // namespace detail
 
     Config Config::load(const ConfigSecretOptions &secret_options) {
         auto path = default_orangutan_config_path();
@@ -305,4 +305,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::config

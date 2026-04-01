@@ -14,7 +14,7 @@
 #include <string_view>
 #include <magic_enum/magic_enum.hpp>
 
-namespace orangutan {
+namespace orangutan::hooks {
 
     // ── ISO 8601 timestamp ──────────────────────────
 
@@ -237,4 +237,4 @@ namespace orangutan {
         static_cast<void>(hook_manager->dispatch(HookEvent::session_end, build_session_context(HookEvent::session_end, session_id, message_count)));
     }
 
-} // namespace orangutan
+} // namespace orangutan::hooks

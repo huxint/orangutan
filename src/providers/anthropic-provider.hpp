@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     class AnthropicProvider : public Provider {
     public:
@@ -40,4 +40,4 @@ namespace orangutan {
         static LLMResponse parse_response(const nlohmann::json &response_json);
     };
 
-} // namespace orangutan
+} // namespace orangutan::providers

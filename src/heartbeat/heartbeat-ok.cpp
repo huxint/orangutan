@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::heartbeat {
     namespace {
 
         constexpr std::string_view heartbeat_ok_token = "HEARTBEAT_OK";
@@ -50,4 +50,4 @@ namespace orangutan {
         return jid.starts_with("heartbeat:") && detect_heartbeat_ok(response, ack_max_chars);
     }
 
-} // namespace orangutan
+} // namespace orangutan::heartbeat

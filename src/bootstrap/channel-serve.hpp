@@ -20,16 +20,21 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
-
+namespace orangutan::agent {
     class AgentLoop;
-    class HookManager;
-    class Provider;
-    namespace automation {
-        class Runtime;
-    }
+}
 
-} // namespace orangutan
+namespace orangutan::automation {
+    class Runtime;
+}
+
+namespace orangutan::hooks {
+    class HookManager;
+}
+
+namespace orangutan::providers {
+    class Provider;
+}
 
 namespace orangutan::bootstrap {
 
@@ -115,9 +120,9 @@ namespace orangutan::bootstrap {
 
         struct ChannelCompletionResumeState {
             std::mutex mutex;
-            AgentLoop *agent = nullptr;
-            Provider *provider = nullptr;
-            HookManager *hook_manager = nullptr;
+            agent::AgentLoop *agent = nullptr;
+            providers::Provider *provider = nullptr;
+            hooks::HookManager *hook_manager = nullptr;
             std::string *current_session_id = nullptr;
             std::size_t *persisted_message_count = nullptr;
             SessionStore *session_store = nullptr;
@@ -131,8 +136,8 @@ namespace orangutan::bootstrap {
 
         [[nodiscard]]
         ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
-                                                                   SubagentManager &subagent_manager, const std::string &raw_caller_id,
-                                                                   orangutan::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
+                                                                   SubagentManager &subagent_manager, const std::string &raw_caller_id, hooks::HookManager *hook_manager = nullptr,
+                                                                   automation::Runtime *automation_runtime = nullptr);
 
         [[nodiscard]]
         BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
@@ -143,7 +148,7 @@ namespace orangutan::bootstrap {
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                          MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg,
-                          orangutan::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
+                          MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg, hooks::HookManager *hook_manager = nullptr,
+                          automation::Runtime *automation_runtime = nullptr);
 
 } // namespace orangutan::bootstrap

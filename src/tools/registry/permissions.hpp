@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     enum class ToolSandboxMode {
         isolated,
@@ -56,5 +56,21 @@ namespace orangutan {
 
     [[nodiscard]]
     std::optional<ToolResult> evaluate_tool_permission(const ToolUse &call, const ToolPermissionSettings &settings, const ToolApprovalCallback &approval_callback = {});
+
+} // namespace orangutan::tools
+
+namespace orangutan {
+
+    using tools::blocked_shell_command_pattern;
+    using tools::evaluate_shell_command_permission;
+    using tools::evaluate_tool_permission;
+    using tools::is_tool_allowed;
+    using tools::parse_tool_approval_policy;
+    using tools::parse_tool_sandbox_mode;
+    using tools::to_string;
+    using tools::ToolApprovalCallback;
+    using tools::ToolApprovalPolicy;
+    using tools::ToolPermissionSettings;
+    using tools::ToolSandboxMode;
 
 } // namespace orangutan

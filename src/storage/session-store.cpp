@@ -10,7 +10,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace orangutan {
+namespace orangutan::storage {
 
     namespace {
 
@@ -494,4 +494,4 @@ namespace orangutan {
         return stmt.step();
     }
 
-} // namespace orangutan
+} // namespace orangutan::storage

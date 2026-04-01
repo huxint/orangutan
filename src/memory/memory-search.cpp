@@ -7,7 +7,7 @@
 #include <set>
 #include <uni_algo/case.h>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     namespace {
 
@@ -243,4 +243,4 @@ namespace orangutan::memory_detail {
         }
     }
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail

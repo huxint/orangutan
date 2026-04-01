@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::storage {
 
     struct SessionMetadata {
         std::string model;
@@ -93,5 +93,13 @@ namespace orangutan {
         void ensure_schema();
         static std::string generate_uuid();
     };
+
+} // namespace orangutan::storage
+
+namespace orangutan {
+
+    using storage::SessionInfo;
+    using storage::SessionMetadata;
+    using storage::SessionStore;
 
 } // namespace orangutan

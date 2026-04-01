@@ -14,7 +14,7 @@
 #include <thread>
 #include <unistd.h>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     namespace {
 
@@ -493,4 +493,4 @@ namespace orangutan {
             deadline);
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

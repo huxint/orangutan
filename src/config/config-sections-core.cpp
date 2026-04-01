@@ -4,7 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace orangutan::config_detail {
+namespace orangutan::config::detail {
 
     AgentConfig make_agent_config_from_legacy(const Config &cfg) {
         return {
@@ -318,4 +318,4 @@ namespace orangutan::config_detail {
         return cfg;
     }
 
-} // namespace orangutan::config_detail
+} // namespace orangutan::config::detail

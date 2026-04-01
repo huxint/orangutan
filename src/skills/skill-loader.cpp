@@ -10,7 +10,7 @@
 #include <toml++/toml.hpp>
 #include <unordered_map>
 
-namespace orangutan {
+namespace orangutan::skills {
 
     namespace {
 
@@ -376,4 +376,4 @@ namespace orangutan {
         return out;
     }
 
-} // namespace orangutan
+} // namespace orangutan::skills

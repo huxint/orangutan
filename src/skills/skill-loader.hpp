@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::skills {
 
     std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::string &workspace_root);
 
@@ -31,5 +31,13 @@ namespace orangutan {
     private:
         std::vector<SkillDef> skills_;
     };
+
+} // namespace orangutan::skills
+
+namespace orangutan {
+
+    using skills::resolve_skill_directories;
+    using skills::SkillDef;
+    using skills::SkillLoader;
 
 } // namespace orangutan

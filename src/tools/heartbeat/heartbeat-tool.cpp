@@ -6,7 +6,7 @@
 
 #include "utils/format.hpp"
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string format_heartbeat(const automation::HeartbeatSpec &heartbeat) {
@@ -168,4 +168,4 @@ namespace orangutan {
         });
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     // ── StreamAccumulator ───────────────────────────
 
@@ -237,4 +237,4 @@ namespace orangutan {
         return result;
     }
 
-} // namespace orangutan
+} // namespace orangutan::providers

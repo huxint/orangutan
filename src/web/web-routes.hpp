@@ -3,21 +3,33 @@
 #include "bootstrap/agent-runtime.hpp"
 #include <httplib.h>
 
-namespace orangutan {
+namespace orangutan::automation {
+    class Runtime;
+}
 
-    class MemoryStore;
-    class SessionStore;
-    class SubagentManager;
-    class ToolRegistry;
-    class SkillLoader;
+namespace orangutan::config {
     struct Config;
-    struct WebCompletionResumeState;
-    struct WebSessionState;
-    namespace automation {
-        class Runtime;
-    }
+}
 
-} // namespace orangutan
+namespace orangutan::memory {
+    class MemoryStore;
+}
+
+namespace orangutan::skills {
+    class SkillLoader;
+}
+
+namespace orangutan::storage {
+    class SessionStore;
+}
+
+namespace orangutan::subagent {
+    class SubagentManager;
+}
+
+namespace orangutan::tools {
+    class ToolRegistry;
+}
 
 #include <chrono>
 #include <filesystem>
@@ -27,19 +39,22 @@ namespace orangutan {
 
 namespace orangutan::web {
 
-    void handle_list_sessions(const httplib::Request &req, httplib::Response &res, SessionStore *store);
-    void handle_get_session(const httplib::Request &req, httplib::Response &res, SessionStore *store);
-    void handle_delete_session(const httplib::Request &req, httplib::Response &res, SessionStore *store);
-    void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
-    void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
-    void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store);
+    struct WebCompletionResumeState;
+    struct WebSessionState;
 
-    void handle_get_config(const httplib::Request &req, httplib::Response &res, Config *config);
-    void handle_put_config(const httplib::Request &req, httplib::Response &res, Config *config, const std::filesystem::path *config_save_path = nullptr);
+    void handle_list_sessions(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
+    void handle_get_session(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
+    void handle_delete_session(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
+    void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
+    void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
+    void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
 
-    void handle_list_tools(const httplib::Request &req, httplib::Response &res, ToolRegistry *registry);
-    void handle_list_agents(const httplib::Request &req, httplib::Response &res, Config *config);
-    void handle_list_skills(const httplib::Request &req, httplib::Response &res, SkillLoader *loader);
+    void handle_get_config(const httplib::Request &req, httplib::Response &res, config::Config *config);
+    void handle_put_config(const httplib::Request &req, httplib::Response &res, config::Config *config, const std::filesystem::path *config_save_path = nullptr);
+
+    void handle_list_tools(const httplib::Request &req, httplib::Response &res, tools::ToolRegistry *registry);
+    void handle_list_agents(const httplib::Request &req, httplib::Response &res, config::Config *config);
+    void handle_list_skills(const httplib::Request &req, httplib::Response &res, skills::SkillLoader *loader);
     void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
     void handle_list_heartbeats(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
     void handle_list_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
@@ -49,8 +64,8 @@ namespace orangutan::web {
     void handle_system_status(const httplib::Request &req, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
                               const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime);
 
-    void handle_chat(const httplib::Request &req, httplib::Response &res, Config *config, SessionStore *store, MemoryStore *memory_store, SubagentManager *subagent_manager,
-                     ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+    void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
+                     subagent::SubagentManager *subagent_manager, tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
     void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
                               std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
@@ -62,9 +77,9 @@ namespace orangutan::web {
         using web_approval_event_emitter = std::function<bool(std::string_view event_name, const nlohmann::json &payload)>;
 
         [[nodiscard]]
-        bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const Config &config, const std::string &agent_key, MemoryStore *memory_store, std::string *current_session_id,
-                                                               SubagentManager *subagent_manager, automation::Runtime *automation_runtime = nullptr,
-                                                               ToolApprovalCallback approval_callback = {},
+        bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
+                                                               std::string *current_session_id, subagent::SubagentManager *subagent_manager,
+                                                               automation::Runtime *automation_runtime = nullptr, ToolApprovalCallback approval_callback = {},
                                                                const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 
         [[nodiscard]]

@@ -21,7 +21,7 @@
 #include <spdlog/spdlog.h>
 #endif
 
-namespace orangutan::qq {
+namespace orangutan::channel::qq {
 
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
     namespace {
@@ -641,4 +641,4 @@ namespace orangutan::qq {
 #endif
     }
 
-} // namespace orangutan::qq
+} // namespace orangutan::channel::qq

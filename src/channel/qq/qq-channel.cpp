@@ -14,7 +14,7 @@
 #include <thread>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::channel::qq {
 
     namespace {
 
@@ -576,4 +576,4 @@ namespace orangutan {
         return chunks;
     }
 
-} // namespace orangutan
+} // namespace orangutan::channel::qq

@@ -5,7 +5,7 @@
 #include <set>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::automation {
 
     struct CronField {
         std::set<int> values;
@@ -32,5 +32,16 @@ namespace orangutan {
     bool cron_matches(const CronExpr &expr, const TimePoint &time);
 
     std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after);
+
+} // namespace orangutan::automation
+
+namespace orangutan {
+
+    using automation::cron_matches;
+    using automation::CronExpr;
+    using automation::CronField;
+    using automation::next_fire_time;
+    using automation::parse_cron;
+    using automation::TimePoint;
 
 } // namespace orangutan

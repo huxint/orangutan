@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::memory {
 
     struct MemoryRecord {
         int id = 0;
@@ -79,5 +79,16 @@ namespace orangutan {
 
         void ensure_schema();
     };
+
+} // namespace orangutan::memory
+
+namespace orangutan {
+
+    namespace memory::detail {}
+    namespace memory_detail = memory::detail;
+
+    using memory::MemoryRecord;
+    using memory::MemoryStats;
+    using memory::MemoryStore;
 
 } // namespace orangutan

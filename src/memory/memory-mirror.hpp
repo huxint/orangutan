@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::memory {
 
     struct MemoryMirrorRefreshResult {
         bool refreshed = false;
@@ -30,5 +30,13 @@ namespace orangutan {
         [[nodiscard]]
         static JournalMirrorWriteResult append_daily_journal(const bootstrap::RuntimeMemoryContext &context, const std::string &summary);
     };
+
+} // namespace orangutan::memory
+
+namespace orangutan {
+
+    using memory::JournalMirrorWriteResult;
+    using memory::MemoryMirror;
+    using memory::MemoryMirrorRefreshResult;
 
 } // namespace orangutan

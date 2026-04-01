@@ -7,7 +7,7 @@
 #include <optional>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::storage {
 
     enum class SubagentRunStatus {
         queued,
@@ -76,5 +76,14 @@ namespace orangutan {
         void ensure_schema();
         void require_updated_row(const std::string &run_id, const std::string &operation) const;
     };
+
+} // namespace orangutan::storage
+
+namespace orangutan {
+
+    using storage::SubagentRunCreateParams;
+    using storage::SubagentRunRecord;
+    using storage::SubagentRunStatus;
+    using storage::SubagentRunStore;
 
 } // namespace orangutan

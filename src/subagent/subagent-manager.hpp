@@ -18,11 +18,19 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
-
+namespace orangutan::memory {
     class MemoryStore;
+}
+
+namespace orangutan::providers {
     class Provider;
+}
+
+namespace orangutan::storage {
     class SessionStore;
+}
+
+namespace orangutan::subagent {
 
     struct SubagentCallerContext {
         base::origin runtime_origin = base::origin::cli;
@@ -79,9 +87,9 @@ namespace orangutan {
 
     struct SubagentExecutionEnvironment {
         const std::unordered_map<std::string, SubagentChildRuntimeConfig> *agent_configs = nullptr;
-        SessionStore *session_store = nullptr;
-        MemoryStore *memory_store = nullptr;
-        std::function<std::unique_ptr<Provider>(const SubagentChildRuntimeConfig &config)> provider_factory;
+        storage::SessionStore *session_store = nullptr;
+        memory::MemoryStore *memory_store = nullptr;
+        std::function<std::unique_ptr<providers::Provider>(const SubagentChildRuntimeConfig &config)> provider_factory;
     };
 
     struct SubagentWorkerResult {
@@ -157,9 +165,9 @@ namespace orangutan {
         SubagentRunStore &run_store_;
         Worker worker_;
         const std::unordered_map<std::string, SubagentChildRuntimeConfig> *agent_configs_ = nullptr;
-        SessionStore *session_store_ = nullptr;
-        MemoryStore *memory_store_ = nullptr;
-        std::function<std::unique_ptr<Provider>(const SubagentChildRuntimeConfig &config)> provider_factory_;
+        storage::SessionStore *session_store_ = nullptr;
+        memory::MemoryStore *memory_store_ = nullptr;
+        std::function<std::unique_ptr<providers::Provider>(const SubagentChildRuntimeConfig &config)> provider_factory_;
         std::mutex mutex_;
         std::unordered_map<std::string, std::shared_ptr<ActiveRunState>> active_runs_;
         bool shutting_down_ = false;
@@ -185,5 +193,23 @@ namespace orangutan {
         static bool is_finished(const std::shared_ptr<ActiveRunState> &state);
         void cleanup_finished_run(const std::string &run_id, const std::shared_ptr<ActiveRunState> &state);
     };
+
+} // namespace orangutan::subagent
+
+namespace orangutan {
+
+    using subagent::SubagentCallerContext;
+    using subagent::SubagentChildRuntimeConfig;
+    using subagent::SubagentExecutionEnvironment;
+    using subagent::SubagentManager;
+    using subagent::SubagentSpawnRequest;
+    using subagent::SubagentSpawnResult;
+    using subagent::SubagentStatusRequest;
+    using subagent::SubagentStatusResult;
+    using subagent::SubagentWaitRequest;
+    using subagent::SubagentWaitResult;
+    using subagent::SubagentWaitState;
+    using subagent::SubagentWorkerRequest;
+    using subagent::SubagentWorkerResult;
 
 } // namespace orangutan

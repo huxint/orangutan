@@ -4,7 +4,7 @@
 #include <ranges>
 #include <spdlog/spdlog.h>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     McpManager::McpManager(std::vector<Config::McpServerConfig> servers) {
         servers_.reserve(servers.size());
@@ -94,4 +94,4 @@ namespace orangutan {
         return total;
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

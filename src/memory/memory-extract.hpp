@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     struct AutoCandidate {
         std::string key;
@@ -22,4 +22,4 @@ namespace orangutan::memory_detail {
     [[nodiscard]]
     bool should_attempt_auto_capture(const std::string &text);
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail

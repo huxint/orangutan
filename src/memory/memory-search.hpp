@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     inline constexpr std::size_t default_search_limit = 8;
     inline constexpr std::size_t default_list_limit = 20;
@@ -38,4 +38,4 @@ namespace orangutan::memory_detail {
     std::vector<MemoryRecord> dedupe_records_by_key(std::vector<MemoryRecord> records);
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records);
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail

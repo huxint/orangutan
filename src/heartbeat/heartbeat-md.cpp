@@ -6,7 +6,7 @@
 #include <sstream>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::heartbeat {
     namespace {
 
         constexpr std::size_t heartbeat_md_size_warning = 10240;
@@ -73,4 +73,4 @@ namespace orangutan {
         return content;
     }
 
-} // namespace orangutan
+} // namespace orangutan::heartbeat

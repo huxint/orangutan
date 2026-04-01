@@ -6,7 +6,7 @@
 #include <spdlog/fmt/chrono.h>
 #include <string>
 
-namespace orangutan::time {
+namespace orangutan::utils {
 
     [[nodiscard]]
     inline std::string format_local_date(std::chrono::system_clock::time_point tp) {
@@ -60,4 +60,4 @@ namespace orangutan::time {
         return format_local_iso8601_timestamp(std::chrono::system_clock::now());
     }
 
-} // namespace orangutan::time
+} // namespace orangutan::utils

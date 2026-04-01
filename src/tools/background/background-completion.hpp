@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     inline constexpr std::string_view background_completion_mode_metadata_key = "on_complete.mode";
     inline constexpr std::string_view background_completion_prompt_metadata_key = "on_complete.prompt";
@@ -33,4 +33,4 @@ namespace orangutan {
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime_;
     };
 
-} // namespace orangutan
+} // namespace orangutan::tools

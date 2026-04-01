@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cstddef>
 
-namespace orangutan::qq {
+namespace orangutan::channel::qq {
 
     class ReconnectBackoff {
     public:
@@ -28,4 +28,10 @@ namespace orangutan::qq {
         std::size_t index_ = 0;
     };
 
-} // namespace orangutan::qq
+} // namespace orangutan::channel::qq
+
+namespace orangutan {
+
+    namespace qq = channel::qq;
+
+} // namespace orangutan

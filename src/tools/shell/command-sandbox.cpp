@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string shell_escape(std::string_view value) {
@@ -137,4 +137,4 @@ namespace orangutan {
         };
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

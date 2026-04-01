@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     class JidTaskRunner {
     public:
@@ -79,5 +79,11 @@ namespace orangutan {
         void release_blocking_lease();
         void worker_loop();
     };
+
+} // namespace orangutan::channel
+
+namespace orangutan {
+
+    using channel::JidTaskRunner;
 
 } // namespace orangutan

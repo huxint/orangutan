@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::channel::qq {
 
     class QqChannel : public Channel {
     public:
@@ -70,5 +70,11 @@ namespace orangutan {
         [[nodiscard]]
         static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);
     };
+
+} // namespace orangutan::channel::qq
+
+namespace orangutan {
+
+    using channel::qq::QqChannel;
 
 } // namespace orangutan

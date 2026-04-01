@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::config {
 
     class ConfigSecretProtectionError : public std::runtime_error {
     public:
@@ -43,5 +43,19 @@ namespace orangutan {
 
     [[nodiscard]]
     ProtectConfigSecretsResult protect_config_file_secrets(const std::filesystem::path &path, std::string_view password);
+
+} // namespace orangutan::config
+
+namespace orangutan {
+
+    using config::ConfigSecretOptions;
+    using config::ConfigSecretProtectionError;
+    using config::default_orangutan_config_path;
+    using config::is_protected_config_secret;
+    using config::protect_config_file_secrets;
+    using config::protect_config_secret;
+    using config::ProtectConfigSecretsResult;
+    using config::resolve_config_secret_password;
+    using config::reveal_config_secret;
 
 } // namespace orangutan

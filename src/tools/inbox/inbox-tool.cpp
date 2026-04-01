@@ -4,7 +4,7 @@
 
 #include "utils/format.hpp"
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string execute_inbox_tool(const nlohmann::json &input, const ToolRuntimeContext *ctx) {
@@ -78,4 +78,4 @@ namespace orangutan {
         });
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

@@ -6,7 +6,7 @@
 #include "utils/format.hpp"
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string remember_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
@@ -191,4 +191,4 @@ namespace orangutan {
                                 }});
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

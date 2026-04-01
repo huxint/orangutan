@@ -6,7 +6,7 @@
 
 #include <toml++/toml.hpp>
 
-namespace orangutan::config_detail {
+namespace orangutan::config::detail {
 
     class ConfigPasswordResolver {
     public:
@@ -80,4 +80,10 @@ namespace orangutan::config_detail {
     [[nodiscard]]
     Config parse_toml(const toml::table &tbl, const ConfigSecretOptions &secret_options);
 
-} // namespace orangutan::config_detail
+} // namespace orangutan::config::detail
+
+namespace orangutan {
+
+    namespace config_detail = config::detail;
+
+} // namespace orangutan

@@ -2,7 +2,7 @@
 #include "web/web-routes.hpp"
 #include <spdlog/spdlog.h>
 
-namespace orangutan {
+namespace orangutan::web {
 
     WebServer::WebServer() = default;
 
@@ -78,25 +78,25 @@ namespace orangutan {
         static_dir_ = path;
     }
 
-    void WebServer::set_session_store(SessionStore *store) {
+    void WebServer::set_session_store(storage::SessionStore *store) {
         session_store_ = store;
     }
-    void WebServer::set_memory_store(MemoryStore *store) {
+    void WebServer::set_memory_store(memory::MemoryStore *store) {
         memory_store_ = store;
     }
-    void WebServer::set_subagent_manager(SubagentManager *manager) {
+    void WebServer::set_subagent_manager(subagent::SubagentManager *manager) {
         subagent_manager_ = manager;
     }
-    void WebServer::set_config(Config *config) {
+    void WebServer::set_config(config::Config *config) {
         config_ = config;
     }
     void WebServer::set_config_save_path(const std::filesystem::path &path) {
         config_save_path_ = path;
     }
-    void WebServer::set_tool_registry(ToolRegistry *registry) {
+    void WebServer::set_tool_registry(tools::ToolRegistry *registry) {
         tool_registry_ = registry;
     }
-    void WebServer::set_skill_loader(SkillLoader *loader) {
+    void WebServer::set_skill_loader(skills::SkillLoader *loader) {
         skill_loader_ = loader;
     }
     void WebServer::set_automation_runtime(automation::Runtime *runtime) {
@@ -218,4 +218,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::web

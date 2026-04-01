@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     class McpManager {
     public:
@@ -38,5 +38,11 @@ namespace orangutan {
 
         std::vector<ServerState> servers_;
     };
+
+} // namespace orangutan::tools
+
+namespace orangutan {
+
+    using tools::McpManager;
 
 } // namespace orangutan

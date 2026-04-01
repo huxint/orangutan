@@ -8,20 +8,34 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
-
+namespace orangutan::agent {
     class AgentLoop;
-    class HookManager;
-    class McpManager;
-    class MemoryStore;
-    class Provider;
-    class RuntimeMemory;
-    class SubagentManager;
-    namespace automation {
-        class Runtime;
-    }
+}
 
-} // namespace orangutan
+namespace orangutan::automation {
+    class Runtime;
+}
+
+namespace orangutan::hooks {
+    class HookManager;
+}
+
+namespace orangutan::memory {
+    class MemoryStore;
+    class RuntimeMemory;
+}
+
+namespace orangutan::providers {
+    class Provider;
+}
+
+namespace orangutan::subagent {
+    class SubagentManager;
+}
+
+namespace orangutan::tools {
+    class McpManager;
+}
 
 namespace orangutan::bootstrap {
 
@@ -41,12 +55,12 @@ namespace orangutan::bootstrap {
         std::vector<std::string> allowed_child_agents;
         RuntimeIdentity identity;
 
-        orangutan::MemoryStore *memory_store = nullptr;
+        memory::MemoryStore *memory_store = nullptr;
         std::string *current_session_id = nullptr;
-        orangutan::SubagentManager *subagent_manager = nullptr;
+        subagent::SubagentManager *subagent_manager = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
-        orangutan::automation::Runtime *automation_runtime = nullptr;
+        automation::Runtime *automation_runtime = nullptr;
         bool is_child_run = false;
         ToolApprovalCallback approval_callback;
 
@@ -75,15 +89,15 @@ namespace orangutan::bootstrap {
 
         // This is a runtime bundle with intentionally exposed handles for assembly sites.
         // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
-        std::unique_ptr<orangutan::Provider> provider;
-        std::unique_ptr<orangutan::RuntimeMemory> memory;
+        std::unique_ptr<providers::Provider> provider;
+        std::unique_ptr<memory::RuntimeMemory> memory;
         ToolRegistry &tools;
         ToolRuntimeContext &tool_context;
-        std::unique_ptr<orangutan::McpManager> mcp_manager;
+        std::unique_ptr<tools::McpManager> mcp_manager;
         std::string system_prompt;
         std::string skills_prompt;
-        std::unique_ptr<orangutan::HookManager> hook_manager;
-        std::unique_ptr<orangutan::AgentLoop> agent;
+        std::unique_ptr<hooks::HookManager> hook_manager;
+        std::unique_ptr<agent::AgentLoop> agent;
         // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 
         friend AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input);

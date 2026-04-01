@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         constexpr std::string_view completion_message_type = "background_process_completion";
@@ -244,4 +244,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

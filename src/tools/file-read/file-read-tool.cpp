@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         bool is_binary_file(const std::filesystem::path &path) {
@@ -155,4 +155,4 @@ namespace orangutan {
              }});
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

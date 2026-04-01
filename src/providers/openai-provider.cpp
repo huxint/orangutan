@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     // ── OpenAI Stream Accumulator ──────────────────
 
@@ -381,4 +381,4 @@ namespace orangutan {
         return result;
     }
 
-} // namespace orangutan
+} // namespace orangutan::providers

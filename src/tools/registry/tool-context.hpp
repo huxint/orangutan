@@ -10,15 +10,16 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::automation {
+    class Runtime;
+    struct InboxItem;
+}
 
-    namespace automation {
-        class Runtime;
-        struct InboxItem;
-    } // namespace automation
-
-    class RuntimeMemory;
+namespace orangutan::subagent {
     class SubagentManager;
+}
+
+namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
     using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
 
@@ -70,12 +71,22 @@ namespace orangutan {
         std::string *current_session_id = nullptr;
         std::vector<std::string> allowed_child_agents;
         bool is_child_run = false;
-        SubagentManager *subagent_manager = nullptr;
+        subagent::SubagentManager *subagent_manager = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         automation::Runtime *automation_runtime = nullptr;
         ToolApprovalCallback approval_callback;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
     };
+
+} // namespace orangutan::tools
+
+namespace orangutan {
+
+    using tools::BackgroundCompletionInboxCallback;
+    using tools::BackgroundCompletionResumeCallback;
+    using tools::BackgroundCompletionRuntimeBindings;
+    using tools::make_background_completion_runtime_bindings;
+    using tools::ToolRuntimeContext;
 
 } // namespace orangutan

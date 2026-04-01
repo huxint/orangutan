@@ -4,7 +4,7 @@
 #include <array>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::config {
     namespace {
 
         using enum ConfigSecretSectionMatchKind;
@@ -134,4 +134,4 @@ namespace orangutan {
         return match == config_secret_fields.end() ? nullptr : &*match;
     }
 
-} // namespace orangutan
+} // namespace orangutan::config

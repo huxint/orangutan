@@ -7,7 +7,7 @@
 #include <mutex>
 #include <queue>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     class MessageQueue {
     public:
@@ -71,5 +71,11 @@ namespace orangutan {
         std::condition_variable cv_;
         bool shutdown_ = false;
     };
+
+} // namespace orangutan::channel
+
+namespace orangutan {
+
+    using channel::MessageQueue;
 
 } // namespace orangutan

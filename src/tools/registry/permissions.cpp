@@ -8,7 +8,7 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string normalize_enum_token(std::string_view value) {
@@ -131,4 +131,4 @@ namespace orangutan {
         return std::nullopt;
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

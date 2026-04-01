@@ -6,7 +6,7 @@
 #include <sstream>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::automation {
 
     namespace {
 
@@ -191,4 +191,4 @@ namespace orangutan {
         return std::nullopt;
     }
 
-} // namespace orangutan
+} // namespace orangutan::automation

@@ -3,7 +3,7 @@
 #include <span>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::config {
 
     enum class ConfigSecretSectionMatchKind {
         exact,
@@ -38,5 +38,19 @@ namespace orangutan {
 
     [[nodiscard]]
     const ConfigSecretFieldSpec *find_config_secret_field_for_section(std::string_view cleaned_section);
+
+} // namespace orangutan::config
+
+namespace orangutan {
+
+    using config::config_secret_field_specs;
+    using config::ConfigSecretFieldSpec;
+    using config::ConfigSecretSectionMatchKind;
+    using config::ConfigSecretSectionPattern;
+    using config::find_config_secret_field_for_section;
+    using config::legacy_agent_api_key_field;
+    using config::named_agent_api_key_field;
+    using config::qq_bot_client_secret_field;
+    using config::qq_client_secret_field;
 
 } // namespace orangutan

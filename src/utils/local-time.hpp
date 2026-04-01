@@ -4,7 +4,7 @@
 #include <ctime>
 #include <stdexcept>
 
-namespace orangutan::time {
+namespace orangutan::utils {
     namespace detail {
 
         [[nodiscard]]
@@ -62,4 +62,10 @@ namespace orangutan::time {
         }
     }
 
-} // namespace orangutan::time
+} // namespace orangutan::utils
+
+namespace orangutan {
+
+    namespace time = utils;
+
+} // namespace orangutan

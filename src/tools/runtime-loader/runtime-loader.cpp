@@ -6,7 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     namespace {
 
@@ -33,9 +33,10 @@ namespace orangutan {
 
     } // namespace
 
-    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
-                                                      const std::vector<Config::ScriptToolConfig> &custom_tools, const std::vector<Config::McpServerConfig> &mcp_servers,
-                                                      const ToolPermissionSettings *permissions, ToolApprovalCallback approval_callback, std::string_view edit_mode) {
+    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::string &workspace,
+                                                      const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
+                                                      const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionSettings *permissions,
+                                                      ToolApprovalCallback approval_callback, std::string_view edit_mode) {
         register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
         register_script_tools(registry, custom_tools, workspace, permissions, tool_context, approval_callback);
 
@@ -57,4 +58,4 @@ namespace orangutan {
         return result;
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

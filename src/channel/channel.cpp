@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     ChannelManager::ChannelManager(Allowlist allowlist)
     : allowlist_(std::move(allowlist)) {}
@@ -57,4 +57,4 @@ namespace orangutan {
         return !channels_.empty();
     }
 
-} // namespace orangutan
+} // namespace orangutan::channel

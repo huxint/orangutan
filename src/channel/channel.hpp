@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     struct InboundMessage {
         std::string jid;
@@ -62,5 +62,14 @@ namespace orangutan {
         std::vector<std::unique_ptr<Channel>> channels_;
         Allowlist allowlist_;
     };
+
+} // namespace orangutan::channel
+
+namespace orangutan {
+
+    using channel::Channel;
+    using channel::ChannelManager;
+    using channel::InboundMessage;
+    using channel::MessageCallback;
 
 } // namespace orangutan

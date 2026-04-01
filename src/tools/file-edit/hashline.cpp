@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     constexpr std::string_view hash_alphabet = "ZPMQVRWSNKTXJBYH";
 
@@ -652,4 +652,4 @@ namespace orangutan {
         return {.ok = true, .warnings = warnings, .lines = std::move(result_lines), .edits_applied = edits_applied};
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

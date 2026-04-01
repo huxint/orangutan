@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     struct McpToolInfo {
         std::string name;
@@ -60,4 +60,4 @@ namespace orangutan {
         void send_notification(const std::string &method, const nlohmann::json &params, std::chrono::seconds timeout);
     };
 
-} // namespace orangutan
+} // namespace orangutan::tools

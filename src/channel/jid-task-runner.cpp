@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     struct JidTaskRunner::QueuedTask {
         virtual ~QueuedTask() = default;
@@ -340,4 +340,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::channel

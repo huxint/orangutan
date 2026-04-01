@@ -12,7 +12,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     class BackgroundCompletionDispatcher;
 
@@ -122,4 +122,4 @@ namespace orangutan {
     void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
     void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
 
-} // namespace orangutan
+} // namespace orangutan::tools

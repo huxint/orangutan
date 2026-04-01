@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     // Callback for streaming events: (event_type, json_data)
     using StreamCallback = std::function<void(const std::string &event_type, const nlohmann::json &data)>;
@@ -75,5 +75,18 @@ namespace orangutan {
 
     std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
                                                              const std::vector<std::string> &fallback_models, ProviderFactory factory = {});
+
+} // namespace orangutan::providers
+
+namespace orangutan {
+
+    using providers::create_provider;
+    using providers::create_provider_with_fallbacks;
+    using providers::MissingApiKeyError;
+    using providers::Provider;
+    using providers::ProviderEndpoint;
+    using providers::ProviderFactory;
+    using providers::ProviderUsageStats;
+    using providers::StreamCallback;
 
 } // namespace orangutan

@@ -7,7 +7,7 @@
 #include <optional>
 #include <string>
 
-namespace orangutan::qq {
+namespace orangutan::channel::qq {
 
     class Transport {
     public:
@@ -76,4 +76,10 @@ namespace orangutan::qq {
         std::shared_ptr<Impl> impl_;
     };
 
-} // namespace orangutan::qq
+} // namespace orangutan::channel::qq
+
+namespace orangutan {
+
+    namespace qq = channel::qq;
+
+} // namespace orangutan

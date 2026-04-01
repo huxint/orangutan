@@ -10,11 +10,11 @@
 #include <optional>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::web {
 
     struct WebCompletionResumeState {
         std::mutex mutex;
-        AgentLoop *agent = nullptr;
+        agent::AgentLoop *agent = nullptr;
         std::string agent_key;
         automation::Runtime *automation_runtime = nullptr;
     };
@@ -42,12 +42,12 @@ namespace orangutan {
         std::atomic<bool> running{false};
 
         [[nodiscard]]
-        AgentLoop *agent() const noexcept {
+        agent::AgentLoop *agent() const noexcept {
             return runtime != nullptr ? runtime->agent.get() : nullptr;
         }
 
         [[nodiscard]]
-        ToolRegistry *tools() const noexcept {
+        tools::ToolRegistry *tools() const noexcept {
             return runtime != nullptr ? &runtime->tools : nullptr;
         }
 
@@ -59,4 +59,4 @@ namespace orangutan {
         WebSessionState &operator=(WebSessionState &&) = delete;
     };
 
-} // namespace orangutan
+} // namespace orangutan::web

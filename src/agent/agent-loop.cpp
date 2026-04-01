@@ -16,7 +16,7 @@
 #include <sstream>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::agent {
 
     namespace {
 
@@ -639,4 +639,4 @@ namespace orangutan {
         return base + "\n\n" + memory_block;
     }
 
-} // namespace orangutan
+} // namespace orangutan::agent

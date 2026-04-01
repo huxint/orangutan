@@ -14,7 +14,7 @@
 #include <termios.h>
 #endif
 
-namespace orangutan {
+namespace orangutan::config {
     namespace {
 
         constexpr const char *password_env_var = "ORANGUTAN_CONFIG_PASSWORD";
@@ -171,4 +171,4 @@ namespace orangutan {
         throw ConfigSecretProtectionError("Protected config secrets require a password. Use --config-password, set ORANGUTAN_CONFIG_PASSWORD, or run in an interactive terminal.");
     }
 
-} // namespace orangutan
+} // namespace orangutan::config

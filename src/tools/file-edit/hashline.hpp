@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     struct Anchor {
         std::size_t line;
@@ -62,4 +62,4 @@ namespace orangutan {
     // Returns a result with the modified lines or an error description.
     HashlineEditResult apply_hashline_edits(const std::vector<std::string> &lines, const std::vector<HashlineEdit> &edits);
 
-} // namespace orangutan
+} // namespace orangutan::tools

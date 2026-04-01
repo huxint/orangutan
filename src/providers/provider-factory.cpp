@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace orangutan {
+namespace orangutan::providers {
     namespace {
 
         class NonRetryableProviderError final : public std::runtime_error {
@@ -308,4 +308,4 @@ namespace orangutan {
         return std::make_unique<FallbackProvider>(build_provider_chain(provider_name, api_key, model, base_url, fallback_models), std::move(factory));
     }
 
-} // namespace orangutan
+} // namespace orangutan::providers

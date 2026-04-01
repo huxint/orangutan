@@ -11,7 +11,7 @@
 
 #include <stdexec/execution.hpp>
 
-namespace orangutan {
+namespace orangutan::process {
 
     struct SubprocessConfig {
         std::string command;
@@ -117,5 +117,21 @@ namespace orangutan {
         struct Impl;
         std::unique_ptr<Impl> impl_;
     };
+
+} // namespace orangutan::process
+
+namespace orangutan {
+
+    using process::BackgroundProcessCompletionEvent;
+    using process::BackgroundProcessCompletionPolicy;
+    using process::BackgroundProcessManager;
+    using process::BackgroundProcessOutputMetadata;
+    using process::BackgroundProcessSnapshot;
+    using process::BackgroundProcessSummary;
+    using process::BackgroundProcessTerminalStatus;
+    using process::run_subprocess;
+    using process::run_subprocess_sender;
+    using process::SubprocessConfig;
+    using process::SubprocessResult;
 
 } // namespace orangutan

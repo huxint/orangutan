@@ -12,9 +12,12 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
-
+namespace orangutan::memory {
     class RuntimeMemory;
+}
+
+namespace orangutan::tools {
+
     struct ToolRuntimeContext;
 
     struct Tool {
@@ -44,8 +47,17 @@ namespace orangutan {
     [[nodiscard]]
     std::string scrub_tool_output(std::string_view text);
 
-    void register_builtin_tools(ToolRegistry &registry, RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
+    void register_builtin_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
                                 const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr,
                                 std::string_view edit_mode = "search_replace");
+
+} // namespace orangutan::tools
+
+namespace orangutan {
+
+    using tools::register_builtin_tools;
+    using tools::scrub_tool_output;
+    using tools::Tool;
+    using tools::ToolRegistry;
 
 } // namespace orangutan

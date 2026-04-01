@@ -10,7 +10,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         nlohmann::json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
@@ -291,4 +291,4 @@ namespace orangutan {
              }});
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

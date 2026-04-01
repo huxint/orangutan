@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     class SseParser {
     public:
@@ -23,4 +23,4 @@ namespace orangutan {
         void emit_event();
     };
 
-} // namespace orangutan
+} // namespace orangutan::providers

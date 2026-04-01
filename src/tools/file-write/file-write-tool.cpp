@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
@@ -41,4 +41,4 @@ namespace orangutan {
              }});
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

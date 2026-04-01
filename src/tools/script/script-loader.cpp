@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     // ── Shell Escaping ──────────────────────────────
 
@@ -169,4 +169,4 @@ namespace orangutan {
         spdlog::info("Registered {} user script tool(s)", registered);
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::config {
 
     struct AgentConfig {
         std::string provider = "anthropic";
@@ -151,5 +151,15 @@ namespace orangutan {
 
     // Expand "~" or "~/" to the current user's home directory.
     std::string expand_home_path(const std::string &input);
+
+} // namespace orangutan::config
+
+namespace orangutan {
+
+    using config::AgentConfig;
+    using config::Config;
+    using config::expand_env_vars;
+    using config::expand_home_path;
+    using config::QqBotConfig;
 
 } // namespace orangutan

@@ -8,7 +8,7 @@
 #include "utils/format.hpp"
 #include <magic_enum/magic_enum.hpp>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         using automation::TaskScheduleKind;
@@ -149,4 +149,4 @@ namespace orangutan {
         });
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

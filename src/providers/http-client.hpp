@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace orangutan {
+namespace orangutan::providers {
 
     // RAII wrapper for libcurl easy handle
     class CurlHandle {
@@ -156,5 +156,15 @@ namespace orangutan {
 
         return http_code;
     }
+
+} // namespace orangutan::providers
+
+namespace orangutan {
+
+    using providers::CurlHandle;
+    using providers::CurlHeaders;
+    using providers::http_get;
+    using providers::http_post;
+    using providers::http_post_stream;
 
 } // namespace orangutan

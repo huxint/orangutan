@@ -7,7 +7,7 @@
 
 #include <stdexec/execution.hpp>
 
-namespace orangutan::execution {
+namespace orangutan::utils {
 
     template <stdexec::sender Sender>
     auto sync_wait_or_throw(Sender &&sender, std::string_view label) {
@@ -18,4 +18,10 @@ namespace orangutan::execution {
         return std::move(*result);
     }
 
-} // namespace orangutan::execution
+} // namespace orangutan::utils
+
+namespace orangutan {
+
+    namespace execution = utils;
+
+} // namespace orangutan

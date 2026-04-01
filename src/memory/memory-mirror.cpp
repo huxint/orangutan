@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <spdlog/common.h>
 
-namespace orangutan {
+namespace orangutan::memory {
     namespace {
 
         constexpr std::string_view managed_begin_marker = "<!-- ORANGUTAN:MEMORY:BEGIN -->";
@@ -111,4 +111,4 @@ namespace orangutan {
         return result;
     }
 
-} // namespace orangutan
+} // namespace orangutan::memory

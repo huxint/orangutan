@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::channel {
 
     class Allowlist {
     public:
@@ -50,5 +50,11 @@ namespace orangutan {
             return pattern == jid;
         }
     };
+
+} // namespace orangutan::channel
+
+namespace orangutan {
+
+    using channel::Allowlist;
 
 } // namespace orangutan

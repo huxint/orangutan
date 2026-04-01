@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     namespace {
 
@@ -145,4 +145,4 @@ namespace orangutan::memory_detail {
         db.exec("DROP TABLE memories_legacy;", "Failed to drop legacy memories table");
     }
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail

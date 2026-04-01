@@ -4,7 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace orangutan::config_detail {
+namespace orangutan::config::detail {
 
     Config parse_security_section(const toml::table &tbl, Config cfg) {
         const auto *security = tbl["security"].as_table();
@@ -249,4 +249,4 @@ namespace orangutan::config_detail {
         return cfg;
     }
 
-} // namespace orangutan::config_detail
+} // namespace orangutan::config::detail

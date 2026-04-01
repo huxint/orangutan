@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <magic_enum/magic_enum.hpp>
 
-namespace orangutan {
+namespace orangutan::storage {
 
     namespace {
 
@@ -225,4 +225,4 @@ namespace orangutan {
         }
     }
 
-} // namespace orangutan
+} // namespace orangutan::storage

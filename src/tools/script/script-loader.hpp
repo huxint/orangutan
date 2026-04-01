@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::tools {
 
     using ScriptToolConfig = Config::ScriptToolConfig;
 
@@ -27,4 +27,4 @@ namespace orangutan {
                                const ToolPermissionSettings *permissions = nullptr, const ToolRuntimeContext *tool_context = nullptr,
                                const ToolApprovalCallback &approval_callback = {});
 
-} // namespace orangutan
+} // namespace orangutan::tools

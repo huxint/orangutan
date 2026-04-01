@@ -7,10 +7,15 @@
 #include <unordered_map>
 #include <vector>
 
-namespace orangutan {
-
+namespace orangutan::hooks {
     class HookManager;
+}
+
+namespace orangutan::memory {
     class RuntimeMemory;
+}
+
+namespace orangutan::agent {
 
     class AgentLoop {
     public:
@@ -30,8 +35,8 @@ namespace orangutan {
             std::string status;
         };
 
-        AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt = "", RuntimeMemory *memory = nullptr, std::string skills_prompt = {},
-                  HookManager *hook_manager = nullptr);
+        AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt = "", memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {},
+                  hooks::HookManager *hook_manager = nullptr);
 
         // Process one user message: run the ReAct loop until final text response
         std::string run(const std::string &user_input, const StreamCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},
@@ -66,9 +71,9 @@ namespace orangutan {
         ToolRegistry &tools_;
         std::vector<Message> history_;
         std::string system_prompt_;
-        RuntimeMemory *memory_ = nullptr;
+        memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;
-        HookManager *hook_manager_ = nullptr;
+        hooks::HookManager *hook_manager_ = nullptr;
         int thinking_budget_ = 0;
 
         static constexpr int max_iterations = 20;
@@ -116,5 +121,11 @@ namespace orangutan {
         [[nodiscard]]
         std::string build_session_memory_transcript() const;
     };
+
+} // namespace orangutan::agent
+
+namespace orangutan {
+
+    using agent::AgentLoop;
 
 } // namespace orangutan

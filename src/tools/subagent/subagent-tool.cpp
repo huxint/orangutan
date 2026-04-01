@@ -6,7 +6,7 @@
 #include <optional>
 #include <magic_enum/magic_enum.hpp>
 
-namespace orangutan {
+namespace orangutan::tools {
     namespace {
 
         nlohmann::json subagent_run_record_to_json(const SubagentRunRecord &run) {
@@ -136,4 +136,4 @@ namespace orangutan {
                                 }});
     }
 
-} // namespace orangutan
+} // namespace orangutan::tools

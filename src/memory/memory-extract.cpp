@@ -14,7 +14,7 @@
 #include <set>
 #include <vector>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     namespace {
 
@@ -408,4 +408,4 @@ namespace orangutan::memory_detail {
         return key == "preference.general";
     }
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail

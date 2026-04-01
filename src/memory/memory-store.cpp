@@ -10,7 +10,7 @@
 #include <set>
 #include <unordered_map>
 
-namespace orangutan {
+namespace orangutan::memory {
 
     MemoryStore::MemoryStore()
     : MemoryStore(memory_detail::default_db_path()) {}
@@ -250,4 +250,4 @@ namespace orangutan {
         return stored;
     }
 
-} // namespace orangutan
+} // namespace orangutan::memory

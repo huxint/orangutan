@@ -16,4 +16,10 @@ namespace orangutan::utils {
         return left >= right ? std::string_view{} : std::string_view(left, right);
     }
 
+} // namespace orangutan::utils
+
+namespace orangutan {
+
+    using utils::trim_copy;
+
 } // namespace orangutan

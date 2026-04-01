@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::hooks {
 
     enum class HookEvent : base::u8 {
         before_tool_call,
@@ -75,5 +75,22 @@ namespace orangutan {
 
     void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
     void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
+
+} // namespace orangutan::hooks
+
+namespace orangutan {
+
+    using hooks::build_after_tool_call_context;
+    using hooks::build_before_tool_call_context;
+    using hooks::build_message_context;
+    using hooks::build_session_context;
+    using hooks::dispatch_session_end;
+    using hooks::dispatch_session_start;
+    using hooks::DispatchResult;
+    using hooks::HookDef;
+    using hooks::HookEvent;
+    using hooks::HookEventHash;
+    using hooks::HookManager;
+    using hooks::HookResult;
 
 } // namespace orangutan

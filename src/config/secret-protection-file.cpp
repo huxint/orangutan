@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan {
+namespace orangutan::config {
     namespace {
 
         struct ParsedSecretAssignment {
@@ -229,4 +229,4 @@ namespace orangutan {
         };
     }
 
-} // namespace orangutan
+} // namespace orangutan::config

@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan {
+namespace orangutan::heartbeat {
 
     /// Detect the HEARTBEAT_OK sentinel in a heartbeat response.
     /// Returns true if the message should be suppressed (dropped silently).
@@ -13,5 +13,12 @@ namespace orangutan {
     /// Returns true when a heartbeat reply should be dropped silently.
     [[nodiscard]]
     bool should_suppress_heartbeat_reply(std::string_view jid, const std::string &response, int ack_max_chars);
+
+} // namespace orangutan::heartbeat
+
+namespace orangutan {
+
+    using heartbeat::detect_heartbeat_ok;
+    using heartbeat::should_suppress_heartbeat_reply;
 
 } // namespace orangutan

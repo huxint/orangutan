@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace orangutan::memory_detail {
+namespace orangutan::memory::detail {
 
     struct MemorySchema {
         bool has_scope = false;
@@ -28,4 +28,4 @@ namespace orangutan::memory_detail {
     std::pair<std::string, std::string> parse_legacy_storage_key(std::string_view stored_key);
     void migrate_legacy_memories(sqlite::Database &db);
 
-} // namespace orangutan::memory_detail
+} // namespace orangutan::memory::detail
