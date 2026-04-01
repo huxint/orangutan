@@ -24,3 +24,9 @@ namespace orangutan::providers {
     };
 
 } // namespace orangutan::providers
+
+namespace orangutan {
+
+    using providers::SseParser;
+
+} // namespace orangutan

@@ -78,7 +78,7 @@ namespace orangutan::subagent {
       provider_factory_(std::move(environment.provider_factory)) {
         if (provider_factory_ == nullptr) {
             provider_factory_ = [](const SubagentChildRuntimeConfig &config) {
-                return create_provider_with_fallbacks(config.provider_name, config.api_key, config.model, config.base_url, config.fallback_models);
+                return create_provider_with_fallbacks(config.primary_endpoint, config.fallback_endpoints);
             };
         }
     }

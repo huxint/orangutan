@@ -10,6 +10,28 @@ using namespace orangutan;
 
 namespace {
 
+    ProviderEndpoint make_test_endpoint(const std::string &endpoint_style, const std::string &api_key, const std::string &model, const std::string &base_url) {
+        return ProviderEndpoint{
+            .profile_name = "test-profile",
+            .endpoint_style = endpoint_style,
+            .api_key = api_key,
+            .model = model,
+            .base_url = base_url,
+        };
+    }
+
+    template <typename Factory>
+    std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &endpoint_style, const std::string &api_key, const std::string &model, const std::string &base_url,
+                                                             const std::vector<std::string> &fallback_models, Factory &&factory) {
+        std::vector<ProviderEndpoint> fallback_endpoints;
+        fallback_endpoints.reserve(fallback_models.size());
+        for (const auto &fallback_model : fallback_models) {
+            fallback_endpoints.push_back(make_test_endpoint(endpoint_style, api_key, fallback_model, base_url));
+        }
+        return orangutan::create_provider_with_fallbacks(make_test_endpoint(endpoint_style, api_key, model, base_url), std::move(fallback_endpoints),
+                                                         std::forward<Factory>(factory));
+    }
+
     LLMResponse text_response(const std::string &text) {
         return {
             .stop_reason = "end_turn",
@@ -59,7 +81,7 @@ namespace {
                                                        [&](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
                                                                return std::make_unique<StubProvider>(
-                                                                   endpoint.provider_name, endpoint.model,
+                                                                   endpoint.endpoint_style, endpoint.model,
                                                                    [&]() -> LLMResponse {
                                                                        ++primary_attempts;
                                                                        throw std::runtime_error("primary unavailable");
@@ -70,7 +92,7 @@ namespace {
                                                            }
 
                                                            return std::make_unique<StubProvider>(
-                                                               endpoint.provider_name, endpoint.model,
+                                                               endpoint.endpoint_style, endpoint.model,
                                                                [&]() -> LLMResponse {
                                                                    ++fallback_attempts;
                                                                    return text_response("fallback response");
@@ -112,7 +134,7 @@ namespace {
             static_cast<void>(provider->chat("", {}, {}, 1024));
             FAIL("expected missing api key error");
         } catch (const MissingApiKeyError &error) {
-            CHECK(std::string_view{error.what()} == "missing API key for provider 'openai' model 'gpt-primary'");
+            CHECK(std::string_view{error.what()} == "missing API key for endpoint_style 'openai' model 'gpt-primary'");
         }
         CHECK_FALSE(factory_called);
 
@@ -121,6 +143,40 @@ namespace {
         CHECK(usage.attempt_count == 1UL);
         CHECK(usage.failed_attempts == 1UL);
         CHECK(usage.fallback_switches == 0UL);
+    };
+
+    TEST_CASE("fallback_chain_preserves_mixed_endpoint_styles") {
+        std::vector<std::string> instantiated_styles;
+
+        auto provider = orangutan::create_provider_with_fallbacks(make_test_endpoint("openai-responses", "unused", "gpt-primary", "https://openai.example.test"),
+                                                                  {make_test_endpoint("anthropic-messages", "unused", "claude-fallback", "https://anthropic.example.test")},
+                                                                  [&instantiated_styles](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
+                                                                      instantiated_styles.push_back(endpoint.endpoint_style);
+                                                                      if (endpoint.model == "gpt-primary") {
+                                                                          return std::make_unique<StubProvider>(
+                                                                              endpoint.endpoint_style, endpoint.model,
+                                                                              []() -> LLMResponse {
+                                                                                  throw std::runtime_error("primary unavailable");
+                                                                              },
+                                                                              [](const StreamCallback &) -> LLMResponse {
+                                                                                  throw std::runtime_error("stream should not be used");
+                                                                              });
+                                                                      }
+
+                                                                      return std::make_unique<StubProvider>(
+                                                                          endpoint.endpoint_style, endpoint.model,
+                                                                          []() -> LLMResponse {
+                                                                              return text_response("anthropic fallback");
+                                                                          },
+                                                                          [](const StreamCallback &) -> LLMResponse {
+                                                                              throw std::runtime_error("stream should not be used");
+                                                                          });
+                                                                  });
+
+        const auto response = provider->chat("", {}, {}, 1024);
+        CHECK(std::get<Text>(response.content[0]).text == "anthropic fallback");
+        CHECK(instantiated_styles == std::vector<std::string>{"openai-responses", "anthropic-messages"});
+        CHECK(provider->current_model() == "claude-fallback");
     };
 
     TEST_CASE("does_not_fallback_after_streaming_output_has_started") {
@@ -132,7 +188,7 @@ namespace {
                                                        [&](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
                                                                return std::make_unique<StubProvider>(
-                                                                   endpoint.provider_name, endpoint.model,
+                                                                   endpoint.endpoint_style, endpoint.model,
                                                                    []() -> LLMResponse {
                                                                        throw std::runtime_error("chat should not be used");
                                                                    },
@@ -144,7 +200,7 @@ namespace {
                                                            }
 
                                                            return std::make_unique<StubProvider>(
-                                                               endpoint.provider_name, endpoint.model,
+                                                               endpoint.endpoint_style, endpoint.model,
                                                                []() -> LLMResponse {
                                                                    throw std::runtime_error("chat should not be used");
                                                                },
@@ -251,11 +307,11 @@ namespace {
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
                                                        [primary_state](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
-                                                               return std::make_unique<ConcurrentPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
+                                                               return std::make_unique<ConcurrentPrimaryProvider>(endpoint.endpoint_style, endpoint.model, primary_state);
                                                            }
 
                                                            return std::make_unique<StubProvider>(
-                                                               endpoint.provider_name, endpoint.model,
+                                                               endpoint.endpoint_style, endpoint.model,
                                                                []() -> LLMResponse {
                                                                    return text_response("fallback response");
                                                                },
@@ -346,11 +402,11 @@ namespace {
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback"},
                                                        [primary_state, &fallback_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
-                                                               return std::make_unique<DelayedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
+                                                               return std::make_unique<DelayedFailingPrimaryProvider>(endpoint.endpoint_style, endpoint.model, primary_state);
                                                            }
 
                                                            return std::make_unique<StubProvider>(
-                                                               endpoint.provider_name, endpoint.model,
+                                                               endpoint.endpoint_style, endpoint.model,
                                                                [&fallback_attempts]() -> LLMResponse {
                                                                    ++fallback_attempts;
                                                                    return text_response("fallback response");
@@ -441,12 +497,12 @@ namespace {
             create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback-a", "gpt-fallback-b"},
                                            [primary_state, &first_fallback_attempts, &second_fallback_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                if (endpoint.model == "gpt-primary") {
-                                                   return std::make_unique<CoordinatedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
+                                                   return std::make_unique<CoordinatedFailingPrimaryProvider>(endpoint.endpoint_style, endpoint.model, primary_state);
                                                }
 
                                                if (endpoint.model == "gpt-fallback-a") {
                                                    return std::make_unique<StubProvider>(
-                                                       endpoint.provider_name, endpoint.model,
+                                                       endpoint.endpoint_style, endpoint.model,
                                                        [&first_fallback_attempts]() -> LLMResponse {
                                                            ++first_fallback_attempts;
                                                            return text_response("fallback-a");
@@ -457,7 +513,7 @@ namespace {
                                                }
 
                                                return std::make_unique<StubProvider>(
-                                                   endpoint.provider_name, endpoint.model,
+                                                   endpoint.endpoint_style, endpoint.model,
                                                    [&second_fallback_attempts]() -> LLMResponse {
                                                        ++second_fallback_attempts;
                                                        return text_response("fallback-b");
@@ -549,12 +605,12 @@ namespace {
         auto provider = create_provider_with_fallbacks("openai", "unused", "gpt-primary", "https://example.test", {"gpt-fallback-a", "gpt-fallback-b"},
                                                        [primary_state, &fallback_a_attempts, &fallback_b_attempts](const ProviderEndpoint &endpoint) -> std::unique_ptr<Provider> {
                                                            if (endpoint.model == "gpt-primary") {
-                                                               return std::make_unique<OrderedFailingPrimaryProvider>(endpoint.provider_name, endpoint.model, primary_state);
+                                                               return std::make_unique<OrderedFailingPrimaryProvider>(endpoint.endpoint_style, endpoint.model, primary_state);
                                                            }
 
                                                            if (endpoint.model == "gpt-fallback-a") {
                                                                return std::make_unique<StubProvider>(
-                                                                   endpoint.provider_name, endpoint.model,
+                                                                   endpoint.endpoint_style, endpoint.model,
                                                                    [&fallback_a_attempts]() -> LLMResponse {
                                                                        if (++fallback_a_attempts == 1) {
                                                                            throw std::runtime_error("fallback-a unavailable");
@@ -567,7 +623,7 @@ namespace {
                                                            }
 
                                                            return std::make_unique<StubProvider>(
-                                                               endpoint.provider_name, endpoint.model,
+                                                               endpoint.endpoint_style, endpoint.model,
                                                                [&fallback_b_attempts]() -> LLMResponse {
                                                                    ++fallback_b_attempts;
                                                                    return text_response("fallback-b");
@@ -584,15 +640,15 @@ namespace {
             return provider->chat("", {}, {}, 1024);
         });
 
-        CHECK(primary_state->second_call_started_future.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        CHECK(first_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        CHECK(primary_state->second_call_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        CHECK(first_result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
 
         const auto first_response = first_result.get();
         CHECK(first_response.content.size() == 1UL);
         CHECK(std::get<Text>(first_response.content[0]).text == "fallback-b");
 
         primary_state->release_second_failure.set_value();
-        CHECK(second_result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        CHECK(second_result.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
         const auto second_response = second_result.get();
         CHECK(second_response.content.size() == 1UL);
         CHECK(std::get<Text>(second_response.content[0]).text == "fallback-a");

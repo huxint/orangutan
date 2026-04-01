@@ -2,13 +2,14 @@
 
 #include "types/types.hpp"
 #include "channel/channel.hpp"
-#include "tools/registry/tool.hpp"
 #include "config/config.hpp"
+#include "providers/provider.hpp"
 #include "channel/jid-task-runner.hpp"
 #include "memory/memory-store.hpp"
 #include "channel/message-queue.hpp"
 #include "storage/session-store.hpp"
 #include "subagent/subagent-manager.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -40,11 +41,10 @@ namespace orangutan::bootstrap {
 
     struct AgentRuntimeConfig {
         std::string agent_key;
-        std::string provider_name;
-        std::string api_key;
         std::string model;
         std::vector<std::string> fallback_models;
-        std::string base_url;
+        providers::ProviderEndpoint primary_endpoint;
+        std::vector<providers::ProviderEndpoint> fallback_endpoints;
         std::string system_prompt;
         std::string workspace_root;
         std::string edit_mode = "hashline";

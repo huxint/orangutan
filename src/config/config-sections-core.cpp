@@ -70,6 +70,10 @@ namespace orangutan::config::detail {
             return has_value ? std::optional<ModelCostConfig>(cost) : std::nullopt;
         }
 
+        bool valid_thinking_mode(std::string_view thinking) {
+            return thinking == "none" || thinking == "low" || thinking == "medium" || thinking == "high" || thinking == "max";
+        }
+
         ModelConfig parse_model_config(const nlohmann::json &model) {
             ModelConfig cfg;
             if (const auto *value = find_member(model, "endpoint_style"); value != nullptr && value->is_string()) {
@@ -83,6 +87,9 @@ namespace orangutan::config::detail {
             }
             if (const auto *value = find_member(model, "thinking"); value != nullptr && value->is_string()) {
                 cfg.thinking = value->get<std::string>();
+                if (!valid_thinking_mode(cfg.thinking)) {
+                    throw std::runtime_error("invalid model thinking value: " + cfg.thinking);
+                }
             }
             if (const auto *value = find_member(model, "cost"); value != nullptr) {
                 cfg.cost = parse_model_cost(*value);

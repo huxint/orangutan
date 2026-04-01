@@ -145,19 +145,18 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return 1;
         }
 
-        const auto maybe_endpoint = orangutan::bootstrap::detail::resolve_agent_endpoint(cfg, *maybe_selected_agent, options.cli_agent_key, options.api_key);
-        if (!maybe_endpoint.has_value()) {
+        const auto maybe_endpoints = orangutan::bootstrap::detail::resolve_agent_endpoints(cfg, *maybe_selected_agent, options.cli_agent_key, options.api_key);
+        if (!maybe_endpoints.has_value()) {
             return 1;
         }
-        primary_api_key = maybe_endpoint->api_key;
+        primary_api_key = maybe_endpoints->primary_endpoint.api_key;
         maybe_primary_identity = orangutan::bootstrap::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
         maybe_primary_runtime_cfg = orangutan::bootstrap::AgentRuntimeConfig{
             .agent_key = options.cli_agent_key,
-            .provider_name = maybe_endpoint->provider_name,
-            .api_key = primary_api_key,
             .model = maybe_selected_agent->model,
             .fallback_models = maybe_selected_agent->fallback_models,
-            .base_url = maybe_endpoint->base_url,
+            .primary_endpoint = maybe_endpoints->primary_endpoint,
+            .fallback_endpoints = maybe_endpoints->fallback_endpoints,
             .system_prompt = maybe_selected_agent->system_prompt,
             .workspace_root = *maybe_workspace,
             .edit_mode = maybe_selected_agent->edit_mode,
@@ -221,11 +220,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
 
             try {
                 auto runtime = orangutan::bootstrap::build_agent_runtime(orangutan::bootstrap::AgentRuntimeBuildInput{
-                    .provider_name = runtime_cfg.provider_name,
-                    .api_key = runtime_cfg.api_key,
-                    .model = runtime_cfg.model,
-                    .fallback_models = runtime_cfg.fallback_models,
-                    .base_url = runtime_cfg.base_url,
+                    .primary_endpoint = runtime_cfg.primary_endpoint,
+                    .fallback_endpoints = runtime_cfg.fallback_endpoints,
                     .agent_key = runtime_cfg.agent_key,
                     .system_prompt = runtime_cfg.system_prompt,
                     .workspace_root = runtime_cfg.workspace_root,
@@ -296,11 +292,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             orangutan::bootstrap::detail::maybe_inject_web_runtime_build_failure_for_tests();
             const auto approval_callback = make_cli_approval_callback(!options.event_stream);
             primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_agent_runtime(orangutan::bootstrap::AgentRuntimeBuildInput{
-                .provider_name = maybe_primary_runtime_cfg->provider_name,
-                .api_key = maybe_primary_runtime_cfg->api_key,
-                .model = maybe_primary_runtime_cfg->model,
-                .fallback_models = maybe_primary_runtime_cfg->fallback_models,
-                .base_url = maybe_primary_runtime_cfg->base_url,
+                .primary_endpoint = maybe_primary_runtime_cfg->primary_endpoint,
+                .fallback_endpoints = maybe_primary_runtime_cfg->fallback_endpoints,
                 .agent_key = maybe_primary_runtime_cfg->agent_key,
                 .system_prompt = maybe_primary_runtime_cfg->system_prompt,
                 .workspace_root = maybe_primary_runtime_cfg->workspace_root,

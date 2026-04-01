@@ -3,6 +3,7 @@
 #include "bootstrap/identity.hpp"
 #include "types/types.hpp"
 #include "config/config.hpp"
+#include "providers/provider.hpp"
 #include "storage/subagent-run-store.hpp"
 
 #include <chrono>
@@ -71,11 +72,10 @@ namespace orangutan::subagent {
 
     struct SubagentChildRuntimeConfig {
         std::string agent_key;
-        std::string provider_name;
-        std::string api_key;
         std::string model;
         std::vector<std::string> fallback_models;
-        std::string base_url;
+        providers::ProviderEndpoint primary_endpoint;
+        std::vector<providers::ProviderEndpoint> fallback_endpoints;
         std::string system_prompt;
         std::string workspace_root;
         std::string edit_mode = "hashline";

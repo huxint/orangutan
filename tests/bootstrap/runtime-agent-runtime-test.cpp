@@ -58,10 +58,13 @@ namespace {
         [[nodiscard]]
         AgentRuntimeBuildInput make_input() {
             AgentRuntimeBuildInput input;
-            input.provider_name = "openai";
-            input.api_key = "test-key";
-            input.model = "gpt-test";
-            input.base_url = "https://example.test";
+            input.primary_endpoint = providers::ProviderEndpoint{
+                .profile_name = "test-profile",
+                .endpoint_style = "openai-chat-completions",
+                .api_key = "test-key",
+                .model = "gpt-test",
+                .base_url = "https://example.test",
+            };
             input.agent_key = "assistant";
             input.system_prompt = "You are a runtime bootstrap test agent.";
             input.workspace_root = workspace_root_.string();

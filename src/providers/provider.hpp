@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace orangutan::providers {
@@ -21,10 +23,14 @@ namespace orangutan::providers {
     };
 
     struct ProviderEndpoint {
-        std::string provider_name;
+        std::string profile_name;
+        std::string endpoint_style;
         std::string api_key;
         std::string model;
         std::string base_url;
+        std::unordered_map<std::string, std::string> headers;
+        std::optional<int> default_max_tokens;
+        std::string thinking = "none";
     };
 
     using ProviderFactory = std::function<std::unique_ptr<class Provider>(const ProviderEndpoint &)>;
@@ -70,11 +76,10 @@ namespace orangutan::providers {
         Provider() = default;
     };
 
-    // Factory: create a provider by name
-    std::unique_ptr<Provider> create_provider(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url);
+    std::unique_ptr<Provider> create_provider(const ProviderEndpoint &endpoint, ProviderFactory factory = {});
 
-    std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
-                                                             const std::vector<std::string> &fallback_models, ProviderFactory factory = {});
+    std::unique_ptr<Provider> create_provider_with_fallbacks(const ProviderEndpoint &primary_endpoint, std::vector<ProviderEndpoint> fallback_endpoints = {},
+                                                             ProviderFactory factory = {});
 
 } // namespace orangutan::providers
 

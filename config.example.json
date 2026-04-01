@@ -25,12 +25,26 @@
     ],
     "deny": []
   },
-  "agents": {
-    "default": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
+  "profiles": {
+    "anthropic-main": {
       "base_url": "https://api.anthropic.com",
       "api_key": "${ANTHROPIC_API_KEY}",
+      "headers": {
+        "anthropic-version": "2023-06-01"
+      },
+      "models": {
+        "claude-sonnet-4-20250514": {
+          "endpoint_style": "anthropic-messages",
+          "thinking": "medium",
+          "context_window": 200000
+        }
+      }
+    }
+  },
+  "agents": {
+    "default": {
+      "profile": "anthropic-main",
+      "model": "claude-sonnet-4-20250514",
       "workspace": "~/.orangutan/workspace/default",
       "system_prompt": "You are the default general assistant.",
       "subagents": [
@@ -39,10 +53,8 @@
       ]
     },
     "coder": {
-      "provider": "anthropic",
+      "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
-      "base_url": "https://api.anthropic.com",
-      "api_key": "${ANTHROPIC_API_KEY}",
       "workspace": "~/.orangutan/workspace/coder",
       "system_prompt": "You focus on code changes, debugging, and implementation details.",
       "subagents": [
@@ -58,10 +70,8 @@
       }
     },
     "research": {
-      "provider": "anthropic",
+      "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
-      "base_url": "https://api.anthropic.com",
-      "api_key": "${ANTHROPIC_API_KEY}",
       "workspace": "~/.orangutan/workspace/research",
       "system_prompt": "You focus on analysis, investigation, and planning.",
       "subagents": []

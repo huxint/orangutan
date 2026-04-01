@@ -9,9 +9,8 @@ const BASE = "";
 
 export interface AgentSummary {
   key: string;
-  provider: string;
+  profile: string;
   model: string;
-  base_url: string;
   system_prompt: string;
   workspace: string;
   edit_mode: string;

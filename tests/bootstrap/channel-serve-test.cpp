@@ -32,6 +32,17 @@ namespace {
 
     namespace bootstrap = orangutan::bootstrap;
 
+    providers::ProviderEndpoint make_runtime_endpoint(std::string endpoint_style, std::string model, std::string api_key = "test-key",
+                                                      std::string base_url = "https://example.test") {
+        return providers::ProviderEndpoint{
+            .profile_name = "test-profile",
+            .endpoint_style = std::move(endpoint_style),
+            .api_key = std::move(api_key),
+            .model = std::move(model),
+            .base_url = std::move(base_url),
+        };
+    }
+
     template <typename Fn>
     bool completes_without_throw(Fn &&fn) {
         try {
@@ -338,11 +349,10 @@ namespace {
         Config cfg;
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
             .model = "gpt-test",
             .fallback_models = {"gpt-fallback"},
-            .base_url = "https://example.test",
+            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
+            .fallback_endpoints = {make_runtime_endpoint("openai-chat-completions", "gpt-fallback")},
             .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
@@ -608,10 +618,8 @@ namespace {
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
             .model = "gpt-test",
-            .base_url = "https://example.test",
+            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
             .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
@@ -673,10 +681,8 @@ namespace {
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
             .model = "gpt-test",
-            .base_url = "https://example.test",
+            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
             .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
@@ -738,10 +744,8 @@ namespace {
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
             .model = "gpt-test",
-            .base_url = "https://example.test",
+            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
             .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
@@ -800,10 +804,8 @@ namespace {
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "openai",
-            .api_key = "test-key",
             .model = "gpt-test",
-            .base_url = "https://example.test",
+            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
             .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
@@ -952,9 +954,8 @@ namespace {
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
-            .provider_name = "unknown-provider",
-            .api_key = "test-key",
             .model = "broken-model",
+            .primary_endpoint = make_runtime_endpoint("unknown-style", "broken-model"),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -989,7 +990,7 @@ namespace {
         REQUIRE(not sent_messages.empty());
         CHECK(sent_messages.back().first == "qqbot:c2c:42");
         CHECK(sent_messages.back().second.contains("Error:"));
-        CHECK(sent_messages.back().second.contains("Unknown provider"));
+        CHECK(sent_messages.back().second.contains("Unknown endpoint_style"));
     };
 
 } // namespace

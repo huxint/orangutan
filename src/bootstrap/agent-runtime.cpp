@@ -58,7 +58,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
 
-        runtime.provider = create_provider_with_fallbacks(input.provider_name, input.api_key, input.model, input.base_url, input.fallback_models);
+        runtime.provider = create_provider_with_fallbacks(input.primary_endpoint, input.fallback_endpoints);
 
         if (input.memory_store != nullptr) {
             runtime.memory = std::make_unique<RuntimeMemory>(*input.memory_store, make_runtime_memory_context(input.identity, input.memory));

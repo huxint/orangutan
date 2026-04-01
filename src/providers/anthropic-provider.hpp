@@ -9,7 +9,7 @@ namespace orangutan::providers {
 
     class AnthropicProvider : public Provider {
     public:
-        AnthropicProvider(std::string api_key, std::string model, std::string base_url = "https://api.anthropic.com");
+        explicit AnthropicProvider(ProviderEndpoint endpoint);
 
         LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096,
                          int thinking_budget = 0) override;
@@ -24,13 +24,11 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         std::string current_model() const override {
-            return model_;
+            return endpoint_.model;
         }
 
     private:
-        std::string api_key_;
-        std::string model_;
-        std::string base_url_;
+        ProviderEndpoint endpoint_;
 
         [[nodiscard]]
         nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,

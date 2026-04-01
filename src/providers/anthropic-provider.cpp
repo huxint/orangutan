@@ -7,6 +7,39 @@
 
 namespace orangutan::providers {
 
+    namespace {
+
+        int anthropic_thinking_budget(std::string_view thinking) {
+            if (thinking == "low") {
+                return 1024;
+            }
+            if (thinking == "medium") {
+                return 4096;
+            }
+            if (thinking == "high") {
+                return 8192;
+            }
+            if (thinking == "max") {
+                return 16384;
+            }
+            return 0;
+        }
+
+        void append_header_if_missing(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key,
+                                      std::string_view fallback_value) {
+            if (!custom_headers.contains(std::string(key))) {
+                headers.append(std::string(key) + ": " + std::string(fallback_value));
+            }
+        }
+
+        void append_custom_headers(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers) {
+            for (const auto &[name, value] : custom_headers) {
+                headers.append(name + ": " + value);
+            }
+        }
+
+    } // namespace
+
     // ── StreamAccumulator ───────────────────────────
 
     class StreamAccumulator {
@@ -129,16 +162,15 @@ namespace orangutan::providers {
 
     // ── AnthropicProvider ───────────────────────────
 
-    AnthropicProvider::AnthropicProvider(std::string api_key, std::string model, std::string base_url)
-    : api_key_(std::move(api_key)),
-      model_(std::move(model)),
-      base_url_(std::move(base_url)) {}
+    AnthropicProvider::AnthropicProvider(ProviderEndpoint endpoint)
+    : endpoint_(std::move(endpoint)) {}
 
     nlohmann::json AnthropicProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
                                                          bool stream, int thinking_budget) const {
         nlohmann::json body;
-        body["model"] = model_;
-        body["max_tokens"] = max_tokens;
+        const auto resolved_max_tokens = endpoint_.default_max_tokens.value_or(max_tokens);
+        body["model"] = endpoint_.model;
+        body["max_tokens"] = resolved_max_tokens;
         body["system"] = system_prompt;
 
         if (stream) {
@@ -157,8 +189,9 @@ namespace orangutan::providers {
             }
         }
 
-        if (thinking_budget > 0) {
-            body["thinking"] = {{"type", "enabled"}, {"budget_tokens", thinking_budget}};
+        const auto resolved_thinking_budget = thinking_budget > 0 ? thinking_budget : anthropic_thinking_budget(endpoint_.thinking);
+        if (resolved_thinking_budget > 0) {
+            body["thinking"] = {{"type", "enabled"}, {"budget_tokens", resolved_thinking_budget}};
         }
 
         return body;
@@ -171,11 +204,12 @@ namespace orangutan::providers {
         spdlog::debug("Request body: {}", request_body);
 
         CurlHeaders headers;
-        headers.append("Content-Type: application/json");
-        headers.append("x-api-key: " + api_key_);
-        headers.append("anthropic-version: 2023-06-01");
+        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
+        append_header_if_missing(headers, endpoint_.headers, "x-api-key", endpoint_.api_key);
+        append_header_if_missing(headers, endpoint_.headers, "anthropic-version", "2023-06-01");
+        append_custom_headers(headers, endpoint_.headers);
 
-        std::string url = base_url_ + "/v1/messages";
+        std::string url = endpoint_.base_url + "/v1/messages";
         auto response_body = http_post(url, request_body, headers);
 
         nlohmann::json resp = nlohmann::json::parse(response_body);
@@ -204,11 +238,12 @@ namespace orangutan::providers {
         });
 
         CurlHeaders headers;
-        headers.append("Content-Type: application/json");
-        headers.append("x-api-key: " + api_key_);
-        headers.append("anthropic-version: 2023-06-01");
+        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
+        append_header_if_missing(headers, endpoint_.headers, "x-api-key", endpoint_.api_key);
+        append_header_if_missing(headers, endpoint_.headers, "anthropic-version", "2023-06-01");
+        append_custom_headers(headers, endpoint_.headers);
 
-        std::string url = base_url_ + "/v1/messages";
+        std::string url = endpoint_.base_url + "/v1/messages";
         long http_code = http_post_stream(url, request_body, headers, parser);
 
         if (http_code != 200) {

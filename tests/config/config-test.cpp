@@ -167,6 +167,26 @@ namespace {
         CHECK(cfg.profiles.at("gateway-a").api_key == "sk-protected-profile");
     };
 
+    TEST_CASE("invalid_thinking_value_rejects_config") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "profiles": {
+            "gateway-a": {
+              "base_url": "https://gateway.example.com",
+              "models": {
+                "gpt-4.1": {
+                  "endpoint_style": "openai-responses",
+                  "thinking": "turbo"
+                }
+              }
+            }
+          }
+        })json"));
+
+        const auto cfg = Config::load_from(path);
+        CHECK(cfg.profiles.empty());
+    };
+
     TEST_CASE("save_round_trips_profiles_and_agents") {
         Config cfg;
         cfg.profile = "shared-profile";

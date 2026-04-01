@@ -11,7 +11,7 @@ namespace orangutan::providers {
 
     class OpenAiProvider : public Provider {
     public:
-        OpenAiProvider(std::string api_key, std::string model, std::string base_url = "https://api.openai.com");
+        explicit OpenAiProvider(ProviderEndpoint endpoint);
 
         LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens = 4096,
                          int thinking_budget = 0) override;
@@ -26,17 +26,15 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         std::string current_model() const override {
-            return model_;
+            return endpoint_.model;
         }
 
     private:
-        std::string api_key_;
-        std::string model_;
-        std::string base_url_;
+        ProviderEndpoint endpoint_;
 
         [[nodiscard]]
-        nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
-                                          bool stream) const;
+        nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
+                                          int thinking_budget) const;
 
         // Convert orangutan Message to OpenAI message format
         [[nodiscard]]
@@ -44,7 +42,9 @@ namespace orangutan::providers {
 
         // Parse OpenAI response into LLMResponse
         [[nodiscard]]
-        static LLMResponse parse_response(const nlohmann::json &response_json);
+        static LLMResponse parse_chat_completions_response(const nlohmann::json &response_json);
+        [[nodiscard]]
+        static LLMResponse parse_responses_response(const nlohmann::json &response_json);
     };
 
 } // namespace orangutan::providers

@@ -35,6 +35,26 @@ namespace {
 
     namespace bootstrap = orangutan::bootstrap;
     namespace bootstrap_detail = orangutan::bootstrap::detail;
+
+    ProfileConfig make_profile(std::initializer_list<std::pair<const std::string, ModelConfig>> models, std::string api_key = "test-key",
+                               std::string base_url = "https://example.test") {
+        ProfileConfig profile{
+            .base_url = std::move(base_url),
+            .api_key = std::move(api_key),
+        };
+        for (const auto &[name, model] : models) {
+            profile.models.emplace(name, model);
+        }
+        return profile;
+    }
+
+    AgentConfig make_agent(std::string profile, std::string model, std::string workspace) {
+        return AgentConfig{
+            .profile = std::move(profile),
+            .model = std::move(model),
+            .workspace = std::move(workspace),
+        };
+    }
     class ScopedWebStartupInspectionCapture {
     public:
         ScopedWebStartupInspectionCapture() {
@@ -262,12 +282,21 @@ namespace {
         void write_config_with_api_key(const std::string &api_key) const {
             std::ofstream out(config_path());
             out << "{\n";
-            out << "  \"agents\": {\n";
-            out << "    \"default\": {\n";
-            out << "      \"provider\": \"openai\",\n";
-            out << "      \"model\": \"gpt-test\",\n";
+            out << "  \"profiles\": {\n";
+            out << "    \"test-profile\": {\n";
             out << "      \"base_url\": \"https://example.test\",\n";
             out << "      \"api_key\": \"" << api_key << "\",\n";
+            out << "      \"models\": {\n";
+            out << "        \"gpt-test\": {\n";
+            out << "          \"endpoint_style\": \"openai-chat-completions\"\n";
+            out << "        }\n";
+            out << "      }\n";
+            out << "    }\n";
+            out << "  },\n";
+            out << "  \"agents\": {\n";
+            out << "    \"default\": {\n";
+            out << "      \"profile\": \"test-profile\",\n";
+            out << "      \"model\": \"gpt-test\",\n";
             out << "      \"workspace\": \"" << workspace_root_.string() << "\",\n";
             out << "      \"system_prompt\": \"You are a test agent.\"\n";
             out << "    }\n";
@@ -437,20 +466,18 @@ namespace {
         BootstrapHarness harness;
         Config cfg;
         cfg.edit_mode = "hashline";
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                     {"gpt-coder", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
-                                          .provider = "openai",
+                                          .profile = "shared",
                                           .model = "gpt-test",
-                                          .base_url = "https://example.test",
-                                          .api_key = "test-key",
                                           .system_prompt = "You are a test agent.",
                                           .workspace = harness.workspace_root().string(),
                                           .edit_mode = "hashline",
                                       });
         cfg.agents.emplace("coder", AgentConfig{
-                                        .provider = "openai",
+                                        .profile = "shared",
                                         .model = "gpt-coder",
-                                        .base_url = "https://example.test",
-                                        .api_key = "coder-key",
                                         .system_prompt = "You are a coder agent.",
                                         .workspace = harness.workspace_root().string(),
                                         .edit_mode = "search_replace",
@@ -466,20 +493,18 @@ namespace {
         CHECK(coder_it->second.edit_mode == "search_replace");
     };
 
-    TEST_CASE("build_effective_agents_adds_legacy_default_when_missing") {
+    TEST_CASE("build_effective_agents_does_not_synthesize_default_when_missing") {
         BootstrapHarness harness;
         Config cfg;
-        cfg.provider = "openai";
+        cfg.profile = "shared";
         cfg.model = "gpt-test";
-        cfg.base_url = "https://example.test";
-        cfg.api_key = "test-key";
         cfg.workspace = harness.workspace_root().string();
+        cfg.agents.emplace("coder", make_agent("shared", "gpt-coder", harness.workspace_root().string()));
 
         const auto agents = bootstrap::detail::build_effective_agents(cfg);
-        auto it = agents.find("default");
-        REQUIRE(it != agents.end());
-        CHECK(it->second.model == "gpt-test");
-        CHECK(it->second.workspace == harness.workspace_root().string());
+        CHECK_FALSE(agents.contains("default"));
+        REQUIRE(agents.contains("coder"));
+        CHECK(agents.at("coder").workspace == harness.workspace_root().string());
     };
 
     TEST_CASE("build_effective_agents_assigns_default_workspace_when_missing") {
@@ -487,41 +512,32 @@ namespace {
         ScopedEnvVar home_env("HOME", harness.home_root().string());
 
         Config cfg;
-        cfg.provider = "openai";
+        cfg.profile = "shared";
         cfg.model = "gpt-test";
-        cfg.base_url = "https://example.test";
-        cfg.api_key = "test-key";
         cfg.agents.emplace("coder", AgentConfig{
-                                        .provider = "openai",
+                                        .profile = "shared",
                                         .model = "gpt-coder",
-                                        .base_url = "https://example.test",
-                                        .api_key = "coder-key",
                                     });
 
         const auto agents = bootstrap::detail::build_effective_agents(cfg);
         const auto expected = (harness.home_root() / ".orangutan" / "workspace" / "main").lexically_normal().string();
 
-        CHECK(agents.count("default") == 1UL);
+        CHECK(agents.count("default") == 0UL);
         CHECK(agents.count("coder") == 1UL);
-        CHECK(agents.at("default").workspace == expected);
         CHECK(agents.at("coder").workspace == expected);
     };
 
-    TEST_CASE("build_agent_runtime_configs_adds_legacy_default_when_missing") {
+    TEST_CASE("build_agent_runtime_configs_requires_explicit_default") {
         BootstrapHarness harness;
         Config cfg;
-        cfg.provider = "openai";
+        cfg.profile = "shared";
         cfg.model = "gpt-test";
-        cfg.base_url = "https://example.test";
-        cfg.api_key = "test-key";
         cfg.workspace = harness.workspace_root().string();
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
 
         const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
-        auto it = runtime_configs->find("default");
-        REQUIRE(it != runtime_configs->end());
-        CHECK(it->second.agent_key == "default");
-        CHECK(it->second.model == "gpt-test");
+        CHECK_FALSE(runtime_configs->contains("default"));
     };
 
     TEST_CASE("build_agent_runtime_configs_assigns_default_workspace_when_missing") {
@@ -529,11 +545,10 @@ namespace {
         ScopedEnvVar home_env("HOME", harness.home_root().string());
 
         Config cfg;
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
-                                          .provider = "openai",
+                                          .profile = "shared",
                                           .model = "gpt-test",
-                                          .base_url = "https://example.test",
-                                          .api_key = "test-key",
                                       });
 
         const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
@@ -550,19 +565,17 @@ namespace {
     TEST_CASE("build_agent_runtime_configs_preserves_default_subagents") {
         BootstrapHarness harness;
         Config cfg;
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                     {"gpt-coder", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
-                                          .provider = "openai",
+                                          .profile = "shared",
                                           .model = "gpt-test",
-                                          .base_url = "https://example.test",
-                                          .api_key = "test-key",
                                           .workspace = harness.workspace_root().string(),
                                           .subagents = {"coder"},
                                       });
         cfg.agents.emplace("coder", AgentConfig{
-                                        .provider = "openai",
+                                        .profile = "shared",
                                         .model = "gpt-coder",
-                                        .base_url = "https://example.test",
-                                        .api_key = "coder-key",
                                         .workspace = harness.workspace_root().string(),
                                     });
 
@@ -579,10 +592,15 @@ namespace {
         std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> runtime_configs;
         runtime_configs.emplace("default", bootstrap::AgentRuntimeConfig{
                                                .agent_key = "default",
-                                               .provider_name = "openai",
-                                               .api_key = "test-key",
                                                .model = "gpt-test",
-                                               .base_url = "https://example.test",
+                                               .primary_endpoint =
+                                                   providers::ProviderEndpoint{
+                                                       .profile_name = "shared",
+                                                       .endpoint_style = "openai-chat-completions",
+                                                       .api_key = "test-key",
+                                                       .model = "gpt-test",
+                                                       .base_url = "https://example.test",
+                                                   },
                                                .system_prompt = "You are a test agent.",
                                                .workspace_root = harness.workspace_root().string(),
                                                .edit_mode = "search_replace",
@@ -611,11 +629,8 @@ namespace {
         const auto identity = bootstrap::derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
         bootstrap::AppRuntime app_runtime((harness.home_root() / ".orangutan" / "automation.db"));
         auto runtime = bootstrap::build_agent_runtime(bootstrap::AgentRuntimeBuildInput{
-            .provider_name = runtime_it->second.provider_name,
-            .api_key = runtime_it->second.api_key,
-            .model = runtime_it->second.model,
-            .fallback_models = runtime_it->second.fallback_models,
-            .base_url = runtime_it->second.base_url,
+            .primary_endpoint = runtime_it->second.primary_endpoint,
+            .fallback_endpoints = runtime_it->second.fallback_endpoints,
             .agent_key = runtime_it->second.agent_key,
             .system_prompt = runtime_it->second.system_prompt,
             .workspace_root = runtime_it->second.workspace_root,
@@ -728,7 +743,7 @@ namespace {
 
     TEST_CASE("run_bootstrap_loads_protected_config_with_cli_password") {
         BootstrapHarness harness;
-        const auto protected_key = protect_config_secret("test-key", "cli-password", "agents.api_key");
+        const auto protected_key = protect_config_secret("test-key", "cli-password", "profiles.api_key");
         harness.write_config_with_api_key(protected_key);
         harness.create_sessions();
         ScopedEnvVar home_env("HOME", harness.home_root().string());
@@ -750,7 +765,7 @@ namespace {
 
     TEST_CASE("run_bootstrap_loads_protected_config_with_environment_password_headless") {
         BootstrapHarness harness;
-        const auto protected_key = protect_config_secret("test-key", "env-password", "agents.api_key");
+        const auto protected_key = protect_config_secret("test-key", "env-password", "profiles.api_key");
         harness.write_config_with_api_key(protected_key);
         harness.create_sessions();
         ScopedEnvVar home_env("HOME", harness.home_root().string());
@@ -771,7 +786,7 @@ namespace {
 
     TEST_CASE("run_bootstrap_fails_without_password_for_protected_config_headless") {
         BootstrapHarness harness;
-        const auto protected_key = protect_config_secret("test-key", "missing-password", "agents.api_key");
+        const auto protected_key = protect_config_secret("test-key", "missing-password", "profiles.api_key");
         harness.write_config_with_api_key(protected_key);
         harness.create_sessions();
         ScopedEnvVar home_env("HOME", harness.home_root().string());

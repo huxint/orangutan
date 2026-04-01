@@ -37,10 +37,8 @@ namespace orangutan::bootstrap {
     }
 
     void configure_cli_app(CLI::App &app, CliOptions &options, CLI::Option *&resume_flag, CLI::Option *&protect_flag) {
-        app.add_option("-k,--api-key", options.api_key, "API key (or configure agent.api_key, or set ANTHROPIC_API_KEY / LLM_API_KEY env)");
+        app.add_option("-k,--api-key", options.api_key, "API key (or configure profiles.<name>.api_key, or set LLM_API_KEY)");
         app.add_option("--model", options.cli_model, "Model to use");
-        app.add_option("-b,--base-url", options.cli_base_url, "API base URL");
-        app.add_option("-p,--provider", options.cli_provider, "LLM provider (anthropic, openai)");
         app.add_option("--agent", options.cli_agent_key, "Configured agent key to use in CLI mode");
         app.add_option("-m,--message", options.message, "Single message mode: send one message, print response, exit");
         app.add_option("-s,--system-prompt", options.cli_system_prompt, "Custom system prompt");

@@ -222,11 +222,8 @@ namespace orangutan::bootstrap {
             completion_resume_state->session_scope_key = runtime->session_scope_key;
             completion_resume_state->automation_runtime = automation_runtime;
             AgentRuntimeBuildInput input{
-                .provider_name = cfg.provider_name,
-                .api_key = cfg.api_key,
-                .model = cfg.model,
-                .fallback_models = cfg.fallback_models,
-                .base_url = cfg.base_url,
+                .primary_endpoint = cfg.primary_endpoint,
+                .fallback_endpoints = cfg.fallback_endpoints,
                 .agent_key = cfg.agent_key,
                 .system_prompt = cfg.system_prompt,
                 .workspace_root = cfg.workspace_root,

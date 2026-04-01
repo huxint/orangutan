@@ -22,29 +22,29 @@ namespace orangutan::providers {
             using std::runtime_error::runtime_error;
         };
 
-        std::string resolved_provider_name(const ProviderEndpoint &endpoint) {
-            return endpoint.provider_name.empty() ? std::string("anthropic") : endpoint.provider_name;
+        std::string resolved_endpoint_style(const ProviderEndpoint &endpoint) {
+            return endpoint.endpoint_style.empty() ? std::string("anthropic-messages") : endpoint.endpoint_style;
         }
 
         void ensure_api_key_present(const ProviderEndpoint &endpoint) {
             if (!endpoint.api_key.empty()) {
                 return;
             }
-            throw MissingApiKeyError("missing API key for provider '" + resolved_provider_name(endpoint) + "' model '" + endpoint.model + "'");
+            throw MissingApiKeyError("missing API key for endpoint_style '" + resolved_endpoint_style(endpoint) + "' model '" + endpoint.model + "'");
         }
 
         std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
-            if (endpoint.provider_name == "anthropic" || endpoint.provider_name.empty()) {
+            if (endpoint.endpoint_style == "anthropic-messages" || endpoint.endpoint_style.empty()) {
                 const auto url = endpoint.base_url.empty() ? std::string("https://api.anthropic.com") : endpoint.base_url;
-                return std::make_unique<AnthropicProvider>(endpoint.api_key, endpoint.model, url);
+                return std::make_unique<AnthropicProvider>(endpoint);
             }
 
-            if (endpoint.provider_name == "openai") {
+            if (endpoint.endpoint_style == "openai-chat-completions" || endpoint.endpoint_style == "openai-responses") {
                 const auto url = endpoint.base_url.empty() ? std::string("https://api.openai.com") : endpoint.base_url;
-                return std::make_unique<OpenAiProvider>(endpoint.api_key, endpoint.model, url);
+                return std::make_unique<OpenAiProvider>(endpoint);
             }
 
-            throw std::runtime_error("Unknown provider: " + endpoint.provider_name + ". Supported: anthropic, openai");
+            throw std::runtime_error("Unknown endpoint_style: " + endpoint.endpoint_style + ". Supported: anthropic-messages, openai-chat-completions, openai-responses");
         }
 
         class FallbackProvider final : public Provider {
@@ -92,7 +92,7 @@ namespace orangutan::providers {
             [[nodiscard]]
             std::string name() const override {
                 std::scoped_lock lock(mutex_);
-                return endpoints_[preferred_index_].provider_name.empty() ? std::string("anthropic") : endpoints_[preferred_index_].provider_name;
+                return endpoints_[preferred_index_].endpoint_style.empty() ? std::string("anthropic-messages") : endpoints_[preferred_index_].endpoint_style;
             }
 
             [[nodiscard]]
@@ -267,31 +267,20 @@ namespace orangutan::providers {
             }
         };
 
-        std::vector<ProviderEndpoint> build_provider_chain(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
-                                                           const std::vector<std::string> &fallback_models) {
+        std::vector<ProviderEndpoint> build_provider_chain(const ProviderEndpoint &primary_endpoint, std::vector<ProviderEndpoint> fallback_endpoints) {
             std::vector<ProviderEndpoint> endpoints;
-            endpoints.push_back({
-                .provider_name = provider_name,
-                .api_key = api_key,
-                .model = model,
-                .base_url = base_url,
-            });
+            endpoints.push_back(primary_endpoint);
 
-            for (const auto &fallback_model : fallback_models) {
-                if (fallback_model.empty() || fallback_model == model) {
+            for (auto &fallback_endpoint : fallback_endpoints) {
+                if (fallback_endpoint.model.empty() || fallback_endpoint.model == primary_endpoint.model) {
                     continue;
                 }
                 if (std::ranges::any_of(endpoints, [&](const ProviderEndpoint &endpoint) {
-                        return endpoint.model == fallback_model;
+                        return endpoint.model == fallback_endpoint.model;
                     })) {
                     continue;
                 }
-                endpoints.push_back({
-                    .provider_name = provider_name,
-                    .api_key = api_key,
-                    .model = fallback_model,
-                    .base_url = base_url,
-                });
+                endpoints.push_back(std::move(fallback_endpoint));
             }
 
             return endpoints;
@@ -299,13 +288,12 @@ namespace orangutan::providers {
 
     } // namespace
 
-    std::unique_ptr<Provider> create_provider(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url) {
-        return create_provider_with_fallbacks(provider_name, api_key, model, base_url, {});
+    std::unique_ptr<Provider> create_provider(const ProviderEndpoint &endpoint, ProviderFactory factory) {
+        return create_provider_with_fallbacks(endpoint, {}, std::move(factory));
     }
 
-    std::unique_ptr<Provider> create_provider_with_fallbacks(const std::string &provider_name, const std::string &api_key, const std::string &model, const std::string &base_url,
-                                                             const std::vector<std::string> &fallback_models, ProviderFactory factory) {
-        return std::make_unique<FallbackProvider>(build_provider_chain(provider_name, api_key, model, base_url, fallback_models), std::move(factory));
+    std::unique_ptr<Provider> create_provider_with_fallbacks(const ProviderEndpoint &primary_endpoint, std::vector<ProviderEndpoint> fallback_endpoints, ProviderFactory factory) {
+        return std::make_unique<FallbackProvider>(build_provider_chain(primary_endpoint, std::move(fallback_endpoints)), std::move(factory));
     }
 
 } // namespace orangutan::providers

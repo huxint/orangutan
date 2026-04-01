@@ -20,20 +20,6 @@ namespace {
 
 namespace orangutan::bootstrap::detail {
 
-    namespace {
-
-        std::string provider_name_from_endpoint_style(std::string_view endpoint_style) {
-            if (endpoint_style.starts_with("openai-")) {
-                return "openai";
-            }
-            if (endpoint_style == "anthropic-messages") {
-                return "anthropic";
-            }
-            return {};
-        }
-
-    } // namespace
-
     std::string resolve_api_key(const std::string &cli_api_key_override, const ProfileConfig &profile) {
         if (!cli_api_key_override.empty()) {
             return cli_api_key_override;
@@ -87,8 +73,8 @@ namespace orangutan::bootstrap::detail {
         return effective_agents;
     }
 
-    std::optional<ResolvedAgentEndpointLegacy> resolve_agent_endpoint(const Config &cfg, const AgentConfig &agent_cfg, const std::string &agent_key,
-                                                                      const std::string &cli_api_key_override) {
+    std::optional<ResolvedAgentEndpoints> resolve_agent_endpoints(const Config &cfg, const AgentConfig &agent_cfg, const std::string &agent_key,
+                                                                  const std::string &cli_api_key_override) {
         if (agent_cfg.profile.empty()) {
             spdlog::fmt_lib::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
             return std::nullopt;
@@ -104,24 +90,50 @@ namespace orangutan::bootstrap::detail {
             spdlog::fmt_lib::println(stderr, "Error: agent '{}' references unknown model '{}' in profile '{}'.", agent_key, agent_cfg.model, agent_cfg.profile);
             return std::nullopt;
         }
-        const auto provider_name = provider_name_from_endpoint_style(model_it->second.endpoint_style);
-        if (provider_name.empty()) {
-            spdlog::fmt_lib::println(stderr, "Error: agent '{}' uses unsupported endpoint_style '{}'.", agent_key, model_it->second.endpoint_style);
-            return std::nullopt;
-        }
-        return ResolvedAgentEndpointLegacy{
-            .profile_name = agent_cfg.profile,
-            .provider_name = provider_name,
-            .api_key = resolve_api_key(cli_api_key_override, profile_cfg),
-            .base_url = profile_cfg.base_url,
+
+        ResolvedAgentEndpoints resolved{
+            .primary_endpoint =
+                providers::ProviderEndpoint{
+                    .profile_name = agent_cfg.profile,
+                    .endpoint_style = model_it->second.endpoint_style,
+                    .api_key = resolve_api_key(cli_api_key_override, profile_cfg),
+                    .model = agent_cfg.model,
+                    .base_url = profile_cfg.base_url,
+                    .headers = profile_cfg.headers,
+                    .default_max_tokens = model_it->second.max_tokens,
+                    .thinking = model_it->second.thinking,
+                },
         };
+
+        for (const auto &fallback_model : agent_cfg.fallback_models) {
+            if (fallback_model.empty() || fallback_model == agent_cfg.model) {
+                continue;
+            }
+            const auto fallback_it = profile_cfg.models.find(fallback_model);
+            if (fallback_it == profile_cfg.models.end()) {
+                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model, agent_cfg.profile);
+                return std::nullopt;
+            }
+            resolved.fallback_endpoints.push_back(providers::ProviderEndpoint{
+                .profile_name = agent_cfg.profile,
+                .endpoint_style = fallback_it->second.endpoint_style,
+                .api_key = resolved.primary_endpoint.api_key,
+                .model = fallback_model,
+                .base_url = profile_cfg.base_url,
+                .headers = profile_cfg.headers,
+                .default_max_tokens = fallback_it->second.max_tokens,
+                .thinking = fallback_it->second.thinking,
+            });
+        }
+
+        return resolved;
     }
 
     std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
-            const auto maybe_endpoint = resolve_agent_endpoint(cfg, agent_cfg, agent_key, cli_api_key_override);
-            if (!maybe_endpoint.has_value()) {
+            const auto maybe_endpoints = resolve_agent_endpoints(cfg, agent_cfg, agent_key, cli_api_key_override);
+            if (!maybe_endpoints.has_value()) {
                 return std::nullopt;
             }
 
@@ -137,11 +149,10 @@ namespace orangutan::bootstrap::detail {
 
             result.emplace(agent_key, AgentRuntimeConfig{
                                           .agent_key = agent_key,
-                                          .provider_name = maybe_endpoint->provider_name,
-                                          .api_key = maybe_endpoint->api_key,
                                           .model = agent_cfg.model,
                                           .fallback_models = agent_cfg.fallback_models,
-                                          .base_url = maybe_endpoint->base_url,
+                                          .primary_endpoint = std::move(maybe_endpoints->primary_endpoint),
+                                          .fallback_endpoints = std::move(maybe_endpoints->fallback_endpoints),
                                           .system_prompt = agent_cfg.system_prompt,
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,
@@ -162,11 +173,10 @@ namespace orangutan::bootstrap::detail {
         for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
             result.emplace(agent_key, SubagentChildRuntimeConfig{
                                           .agent_key = runtime_cfg.agent_key,
-                                          .provider_name = runtime_cfg.provider_name,
-                                          .api_key = runtime_cfg.api_key,
                                           .model = runtime_cfg.model,
                                           .fallback_models = runtime_cfg.fallback_models,
-                                          .base_url = runtime_cfg.base_url,
+                                          .primary_endpoint = runtime_cfg.primary_endpoint,
+                                          .fallback_endpoints = runtime_cfg.fallback_endpoints,
                                           .system_prompt = runtime_cfg.system_prompt,
                                           .workspace_root = runtime_cfg.workspace_root,
                                           .edit_mode = runtime_cfg.edit_mode,

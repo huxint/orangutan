@@ -4,7 +4,6 @@ import {
   RotateCcw,
   Globe,
   Cpu,
-  Link2,
   FolderOpen,
   FileEdit,
   ChevronDown,
@@ -17,9 +16,8 @@ import { cn } from "../../lib/utils";
 
 interface Agent {
   key: string;
-  provider: string;
+  profile: string;
   model: string;
-  base_url: string;
   system_prompt: string;
   workspace: string;
   edit_mode: string;
@@ -39,9 +37,8 @@ const AGENT_COLORS: { color: string; bg: string }[] = [
 ];
 
 const FIELD_ICONS: Record<string, LucideIcon> = {
-  Provider: Globe,
+  Profile: Globe,
   Model: Cpu,
-  "Base URL": Link2,
   Workspace: FolderOpen,
   "Edit Mode": FileEdit,
 };
@@ -90,7 +87,7 @@ export function AgentsPage() {
     return agents.filter(
       (a) =>
         a.key.toLowerCase().includes(q) ||
-        a.provider.toLowerCase().includes(q) ||
+        a.profile.toLowerCase().includes(q) ||
         a.model.toLowerCase().includes(q),
     );
   }, [agents, filter]);
@@ -157,9 +154,8 @@ export function AgentsPage() {
               const palette = AGENT_COLORS[i % AGENT_COLORS.length];
               const isExpanded = expanded === a.key;
               const fields: [string, string][] = [
-                ["Provider", a.provider],
+                ["Profile", a.profile],
                 ["Model", a.model],
-                ["Base URL", a.base_url],
                 ...(a.edit_mode
                   ? [["Edit Mode", a.edit_mode] as [string, string]]
                   : []),
@@ -196,7 +192,7 @@ export function AgentsPage() {
                         {a.key}
                       </h2>
                       <p className="text-[11px] text-text-muted mt-0.5 truncate">
-                        {a.provider} · {a.model}
+                        {a.profile} · {a.model}
                       </p>
                     </div>
                     {(a.subagents?.length ?? 0) > 0 && (

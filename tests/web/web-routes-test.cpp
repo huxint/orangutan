@@ -25,6 +25,18 @@ using orangutan::testing::ScopedEnvVar;
 
 namespace {
 
+    ProfileConfig make_profile(std::initializer_list<std::pair<const std::string, ModelConfig>> models, std::string api_key = "test-key",
+                               std::string base_url = "https://example.test") {
+        ProfileConfig profile{
+            .base_url = std::move(base_url),
+            .api_key = std::move(api_key),
+        };
+        for (const auto &[name, model] : models) {
+            profile.models.emplace(name, model);
+        }
+        return profile;
+    }
+
     class WebRoutesHarness {
     public:
         WebRoutesHarness()
@@ -71,20 +83,18 @@ namespace {
 
     orangutan::Config make_runtime_config(const std::filesystem::path &workspace_root) {
         orangutan::Config cfg;
-        cfg.provider = "openai";
+        cfg.profile = "shared";
         cfg.model = "gpt-test";
-        cfg.base_url = "https://example.test";
-        cfg.api_key = "test-key";
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                     {"gpt-coder-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
         cfg.custom_tools.push_back(orangutan::Config::ScriptToolConfig{
             .name = "custom_echo",
             .description = "Custom echo tool",
             .command = "echo hello",
         });
         cfg.agents["default"] = orangutan::AgentConfig{
-            .provider = "openai",
+            .profile = "shared",
             .model = "gpt-test",
-            .base_url = "https://example.test",
-            .api_key = "test-key",
             .system_prompt = "You are a web runtime test agent.",
             .workspace = workspace_root.string(),
             .permissions =
@@ -95,10 +105,8 @@ namespace {
             .subagents = {"coder"},
         };
         cfg.agents["coder"] = orangutan::AgentConfig{
-            .provider = "openai",
+            .profile = "shared",
             .model = "gpt-coder-test",
-            .base_url = "https://example.test",
-            .api_key = "test-key",
             .system_prompt = "You are coder.",
             .workspace = workspace_root.string(),
         };
@@ -155,7 +163,7 @@ namespace {
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
-        CHECK(body["model"] == "test-model");
+        CHECK(body["agent"]["model"] == "test-model");
         CHECK_FALSE(body.contains("api_key"));
         server.stop();
     };
@@ -179,7 +187,7 @@ namespace {
         server.set_config_save_path(harness.config_path());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Put("/api/config", R"({"model":"new-model"})", "application/json");
+        const auto res = cli.Put("/api/config", R"({"agent":{"model":"new-model"}})", "application/json");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         CHECK(cfg.model == "new-model");
@@ -199,9 +207,12 @@ namespace {
 
     TEST_CASE("list_agents_returns_array") {
         orangutan::Config cfg;
+        cfg.profile = "shared";
         cfg.model = "default-model";
-        cfg.agents["default"] = orangutan::AgentConfig{.model = "default-model", .subagents = {"helper"}};
-        cfg.agents["helper"] = orangutan::AgentConfig{.model = "helper-model"};
+        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                     {"helper-model", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model", .subagents = {"helper"}};
+        cfg.agents["helper"] = orangutan::AgentConfig{.profile = "shared", .model = "helper-model"};
         orangutan::WebServer server;
         server.set_config(&cfg);
         server.start("127.0.0.1", 0);
@@ -231,8 +242,11 @@ namespace {
     TEST_CASE("list_agent_sessions_returns_only_matching_agent_sessions") {
         WebRoutesHarness harness;
         orangutan::Config cfg;
-        cfg.agents["default"] = orangutan::AgentConfig{.model = "default-model"};
-        cfg.agents["coder"] = orangutan::AgentConfig{.model = "coder-model"};
+        cfg.profile = "shared";
+        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                     {"coder-model", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model"};
+        cfg.agents["coder"] = orangutan::AgentConfig{.profile = "shared", .model = "coder-model"};
 
         harness.session_store()->save({orangutan::Message::user().text("default")}, make_session_metadata("default-model", "agent:default|web", "default", "web", "web:local"));
         harness.session_store()->save({orangutan::Message::user().text("coder")}, make_session_metadata("coder-model", "agent:coder|web", "coder", "web", "web:local"));

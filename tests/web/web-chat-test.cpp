@@ -27,6 +27,18 @@ namespace orangutan {
 
     namespace {
 
+        ProfileConfig make_profile(std::initializer_list<std::pair<const std::string, ModelConfig>> models, std::string api_key = "test-key",
+                                   std::string base_url = "https://example.test") {
+            ProfileConfig profile{
+                .base_url = std::move(base_url),
+                .api_key = std::move(api_key),
+            };
+            for (const auto &[name, model] : models) {
+                profile.models.emplace(name, model);
+            }
+            return profile;
+        }
+
         SessionMetadata make_session_metadata(std::string model, std::string scope_key, std::string agent_key, std::string origin_kind, std::string origin_ref) {
             return SessionMetadata{
                 .model = std::move(model),
@@ -39,22 +51,18 @@ namespace orangutan {
 
         Config make_config() {
             Config config;
-            config.provider = "openai";
+            config.profile = "shared";
             config.model = "test";
-            config.base_url = "https://example.test";
-            config.api_key = "test-key";
+            config.profiles.emplace("shared", make_profile({{"test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
+                                                            {"coder-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
             config.agents["default"] = AgentConfig{
-                .provider = "openai",
+                .profile = "shared",
                 .model = "test",
-                .base_url = "https://example.test",
-                .api_key = "test-key",
                 .system_prompt = "You are a test agent.",
             };
             config.agents["coder"] = AgentConfig{
-                .provider = "openai",
+                .profile = "shared",
                 .model = "coder-test",
-                .base_url = "https://example.test",
-                .api_key = "test-key",
                 .system_prompt = "You are a coder agent.",
             };
             return config;
@@ -202,8 +210,7 @@ namespace orangutan {
             orangutan::testing::ScopedEnvVar llm_api_key("LLM_API_KEY", "");
 
             Config config = make_config();
-            config.api_key.clear();
-            config.agents["default"].api_key.clear();
+            config.profiles.at("shared").api_key.clear();
             WebChatServerHarness harness(&config);
 
             const auto res = harness.client().Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
@@ -219,8 +226,7 @@ namespace orangutan {
             orangutan::testing::ScopedEnvVar llm_api_key("LLM_API_KEY", "");
 
             Config config = make_config();
-            config.api_key.clear();
-            config.agents["default"].api_key.clear();
+            config.profiles.at("shared").api_key.clear();
             WebChatServerHarness harness(&config);
 
             const auto res = harness.client().Post("/api/chat", R"({"message":"/help","agent_key":"default"})", "application/json");
@@ -285,8 +291,7 @@ namespace orangutan {
         TEST_CASE("resume_slash_command_streams_target_session_event") {
             WebChatStoreHarness store_harness;
             Config config = make_config();
-            config.api_key.clear();
-            config.agents["default"].api_key.clear();
+            config.profiles.at("shared").api_key.clear();
             const auto session_id = store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
             WebChatServerHarness harness(&config, &store_harness.store());
 
@@ -306,8 +311,7 @@ namespace orangutan {
         TEST_CASE("new_slash_command_streams_markdown_reply_and_session_event") {
             WebChatStoreHarness store_harness;
             Config config = make_config();
-            config.api_key.clear();
-            config.agents["default"].api_key.clear();
+            config.profiles.at("shared").api_key.clear();
             const auto existing_session_id =
                 store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
             WebChatServerHarness harness(&config, &store_harness.store());
@@ -326,8 +330,7 @@ namespace orangutan {
         TEST_CASE("export_slash_command_works_for_read_only_channel_session") {
             WebChatStoreHarness store_harness;
             Config config = make_config();
-            config.api_key.clear();
-            config.agents["default"].api_key.clear();
+            config.profiles.at("shared").api_key.clear();
             const auto workspace = orangutan::testing::unique_test_root("web-chat-export");
             config.agents["default"].workspace = workspace.string();
 

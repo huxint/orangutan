@@ -12,8 +12,6 @@ namespace orangutan::bootstrap {
     struct CliOptions {
         std::string api_key;
         std::string cli_model;
-        std::string cli_base_url;
-        std::string cli_provider;
         std::string cli_agent_key = "default";
         std::string message;
         std::string cli_system_prompt;

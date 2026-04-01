@@ -1,8 +1,9 @@
 #pragma once
 
 #include "bootstrap/identity.hpp"
-#include "tools/registry/tool.hpp"
 #include "config/config.hpp"
+#include "providers/provider.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <memory>
 #include <string>
@@ -40,11 +41,8 @@ namespace orangutan::tools {
 namespace orangutan::bootstrap {
 
     struct AgentRuntimeBuildInput {
-        std::string provider_name;
-        std::string api_key;
-        std::string model;
-        std::vector<std::string> fallback_models;
-        std::string base_url;
+        providers::ProviderEndpoint primary_endpoint;
+        std::vector<providers::ProviderEndpoint> fallback_endpoints;
         std::string agent_key;
         std::string system_prompt;
         std::string workspace_root;

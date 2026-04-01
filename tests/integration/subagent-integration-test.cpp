@@ -12,6 +12,16 @@ using namespace orangutan;
 
 namespace {
 
+    providers::ProviderEndpoint make_child_endpoint(std::string endpoint_style = "openai-chat-completions", std::string model = "child-model") {
+        return providers::ProviderEndpoint{
+            .profile_name = "child-profile",
+            .endpoint_style = std::move(endpoint_style),
+            .api_key = "unused",
+            .model = std::move(model),
+            .base_url = "https://example.test",
+        };
+    }
+
     class ScriptedProvider final : public Provider {
     public:
         using Step = std::function<LLMResponse(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &)>;
@@ -109,10 +119,8 @@ namespace {
         std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
         child_configs.emplace("coder", SubagentChildRuntimeConfig{
                                            .agent_key = "coder",
-                                           .provider_name = "child-provider",
-                                           .api_key = "unused",
                                            .model = "child-model",
-                                           .base_url = "https://example.test",
+                                           .primary_endpoint = make_child_endpoint(),
                                            .system_prompt = "Child base prompt.",
                                            .workspace_root = (harness.workspace_root() / "child-root").string(),
                                            .allowed_child_agents = {"reviewer"},
@@ -258,10 +266,8 @@ namespace {
         std::unordered_map<std::string, SubagentChildRuntimeConfig> child_configs;
         child_configs.emplace("coder", SubagentChildRuntimeConfig{
                                            .agent_key = "coder",
-                                           .provider_name = "child-provider",
-                                           .api_key = "unused",
                                            .model = "child-model",
-                                           .base_url = "https://example.test",
+                                           .primary_endpoint = make_child_endpoint(),
                                            .system_prompt = "Child base prompt.",
                                            .workspace_root = (harness.workspace_root() / "channel-child-root").string(),
                                        });

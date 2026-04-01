@@ -77,16 +77,6 @@ namespace orangutan::web {
             return it->second;
         }
 
-        std::string provider_name_from_endpoint_style(std::string_view endpoint_style) {
-            if (endpoint_style.starts_with("openai-")) {
-                return "openai";
-            }
-            if (endpoint_style == "anthropic-messages") {
-                return "anthropic";
-            }
-            throw std::runtime_error("unsupported endpoint_style '" + std::string(endpoint_style) + "'");
-        }
-
         std::string resolve_agent_api_key(const config::ProfileConfig &profile) {
             if (!profile.api_key.empty()) {
                 return profile.api_key;
@@ -127,7 +117,11 @@ namespace orangutan::web {
                                                                     automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto &profile = resolve_agent_profile(config, agent, agent_key);
-            const auto &model_cfg = resolve_agent_model(profile, agent, agent_key);
+            static_cast<void>(resolve_agent_model(profile, agent, agent_key));
+            const auto maybe_endpoints = bootstrap::detail::resolve_agent_endpoints(config, agent, agent_key, "");
+            if (!maybe_endpoints.has_value()) {
+                throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
+            }
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
             const auto api_key = resolve_agent_api_key(profile);
             if (api_key.empty()) {
@@ -140,11 +134,8 @@ namespace orangutan::web {
             }
 
             bootstrap::AgentRuntimeBuildInput input{
-                .provider_name = provider_name_from_endpoint_style(model_cfg.endpoint_style),
-                .api_key = api_key,
-                .model = agent.model,
-                .fallback_models = agent.fallback_models,
-                .base_url = profile.base_url,
+                .primary_endpoint = maybe_endpoints->primary_endpoint,
+                .fallback_endpoints = maybe_endpoints->fallback_endpoints,
                 .agent_key = agent_key,
                 .system_prompt = agent.system_prompt,
                 .workspace_root = workspace_root,
