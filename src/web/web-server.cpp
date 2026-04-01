@@ -1,5 +1,5 @@
-#include "features/web/web-server.hpp"
-#include "features/web/web-routes.hpp"
+#include "web/web-server.hpp"
+#include "web/web-routes.hpp"
 #include <spdlog/spdlog.h>
 
 namespace orangutan {

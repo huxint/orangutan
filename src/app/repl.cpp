@@ -6,7 +6,7 @@
 #include "app/slash-commands.hpp"
 #include "providers/provider.hpp"
 #include "automation/scheduler.hpp"
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "infra/storage/session-store.hpp"
 
 #include <cstdio>

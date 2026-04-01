@@ -1,5 +1,5 @@
 #include "agent/agent-loop.hpp"
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
 

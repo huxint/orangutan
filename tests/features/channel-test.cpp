@@ -1,6 +1,6 @@
-#include "features/channel/core/allowlist.hpp"
-#include "features/channel/core/channel.hpp"
-#include "features/channel/core/message-queue.hpp"
+#include "channel/allowlist.hpp"
+#include "channel/channel.hpp"
+#include "channel/message-queue.hpp"
 
 #include <chrono>
 #include <future>

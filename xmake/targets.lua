@@ -16,11 +16,17 @@ target("orangutan-lib")
         path.join(root, "src/agent/*.cpp"),
         path.join(root, "src/memory/*.cpp"),
         path.join(root, "src/automation/*.cpp"),
+        path.join(root, "src/subagent/*.cpp"),
+        path.join(root, "src/hooks/*.cpp"),
+        path.join(root, "src/skills/*.cpp"),
+        path.join(root, "src/heartbeat/*.cpp"),
+        path.join(root, "src/channel/*.cpp"),
+        path.join(root, "src/channel/qq/*.cpp"),
+        path.join(root, "src/web/*.cpp"),
         path.join(root, "src/providers/*.cpp"),
         path.join(root, "src/tools/**/*.cpp"),
         path.join(root, "src/infra/*.cpp"),
         path.join(root, "src/infra/**/*.cpp"),
-        path.join(root, "src/features/**/*.cpp"),
         path.join(root, "src/app/*.cpp"),
         path.join(root, "src/app/runtime/*.cpp")
     )

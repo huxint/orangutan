@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/channel/core/allowlist.hpp"
+#include "channel/allowlist.hpp"
 
 #include <functional>
 #include <memory>

@@ -1,4 +1,4 @@
-#include "features/channel/core/channel.hpp"
+#include "channel/channel.hpp"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>

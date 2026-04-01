@@ -1,4 +1,4 @@
-#include "features/heartbeat/protocol/heartbeat-ok.hpp"
+#include "heartbeat/heartbeat-ok.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <string>

@@ -1,4 +1,4 @@
-#include "features/web/web-server.hpp"
+#include "web/web-server.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>

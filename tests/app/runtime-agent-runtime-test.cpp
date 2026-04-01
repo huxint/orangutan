@@ -2,7 +2,7 @@
 #include "app/runtime/identity.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"

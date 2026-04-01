@@ -7,13 +7,13 @@
 #include "agent/agent-loop.hpp"
 #include "app/cli-ui.hpp"
 #include "app/session-workflow.hpp"
-#include "features/channel/qq/channel.hpp"
-#include "features/heartbeat/protocol/heartbeat-ok.hpp"
-#include "features/hooks/hook-manager.hpp"
+#include "channel/qq/qq-channel.hpp"
+#include "heartbeat/heartbeat-ok.hpp"
+#include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
 #include "infra/execution/sender-utils.hpp"
 #include "app/runtime/identity.hpp"
-#include "features/skills/skill-loader.hpp"
+#include "skills/skill-loader.hpp"
 
 #include <algorithm>
 #include <cctype>

@@ -1,4 +1,4 @@
-#include "features/channel/core/jid-task-runner.hpp"
+#include "channel/jid-task-runner.hpp"
 
 #include <stdexec/execution.hpp>
 

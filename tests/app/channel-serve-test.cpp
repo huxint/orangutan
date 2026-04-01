@@ -3,7 +3,7 @@
 #include "agent/agent-loop.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
-#include "features/channel/core/channel.hpp"
+#include "channel/channel.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 

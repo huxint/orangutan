@@ -1,7 +1,7 @@
-#include "features/channel/qq/channel.hpp"
+#include "channel/qq/qq-channel.hpp"
 
 #include "providers/http-client.hpp"
-#include "features/channel/qq/transport.hpp"
+#include "channel/qq/qq-transport.hpp"
 
 #include <algorithm>
 #include <charconv>

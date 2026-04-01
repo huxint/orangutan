@@ -1,4 +1,4 @@
-#include "features/heartbeat/protocol/heartbeat-md.hpp"
+#include "heartbeat/heartbeat-md.hpp"
 #include "infra/files/file-io.hpp"
 
 #include <filesystem>

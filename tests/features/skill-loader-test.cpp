@@ -1,4 +1,4 @@
-#include "features/skills/skill-loader.hpp"
+#include "skills/skill-loader.hpp"
 #include "test-helpers.hpp"
 
 #include <cstdlib>

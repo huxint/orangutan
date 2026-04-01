@@ -1,6 +1,6 @@
-#include "features/channel/qq/transport.hpp"
+#include "channel/qq/qq-transport.hpp"
 
-#include "features/channel/qq/reconnect-backoff.hpp"
+#include "channel/qq/reconnect-backoff.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>

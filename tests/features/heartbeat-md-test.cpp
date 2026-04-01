@@ -1,4 +1,4 @@
-#include "features/heartbeat/protocol/heartbeat-md.hpp"
+#include "heartbeat/heartbeat-md.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/channel/core/channel.hpp"
+#include "channel/channel.hpp"
 
 #include <chrono>
 #include <condition_variable>

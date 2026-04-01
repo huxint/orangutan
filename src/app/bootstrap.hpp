@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/channel-serve.hpp"
-#include "features/subagent/subagent-manager.hpp"
+#include "subagent/subagent-manager.hpp"
 #include "infra/config/config.hpp"
 
 #include <optional>

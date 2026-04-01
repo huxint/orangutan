@@ -1,4 +1,4 @@
-#include "features/skills/skill-loader.hpp"
+#include "skills/skill-loader.hpp"
 #include "infra/files/file-io.hpp"
 
 #include <algorithm>

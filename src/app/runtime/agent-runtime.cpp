@@ -3,9 +3,9 @@
 #include "app/runtime/memory-context.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
-#include "features/skills/skill-loader.hpp"
+#include "skills/skill-loader.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 
 #include <cstdlib>

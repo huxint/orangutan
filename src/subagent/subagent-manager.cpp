@@ -1,4 +1,4 @@
-#include "features/subagent/subagent-manager.hpp"
+#include "subagent/subagent-manager.hpp"
 
 #include "agent/agent-loop.hpp"
 #include "memory/runtime-memory.hpp"

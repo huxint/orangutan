@@ -1,6 +1,6 @@
 #include "agent/agent-loop.hpp"
 
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
 #include "infra/string.hpp"
 #include "infra/execution/sender-utils.hpp"

@@ -1,4 +1,4 @@
-#include "features/hooks/hook-manager.hpp"
+#include "hooks/hook-manager.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

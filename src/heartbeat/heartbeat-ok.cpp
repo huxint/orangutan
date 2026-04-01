@@ -1,4 +1,4 @@
-#include "features/heartbeat/protocol/heartbeat-ok.hpp"
+#include "heartbeat/heartbeat-ok.hpp"
 
 #include <string_view>
 
