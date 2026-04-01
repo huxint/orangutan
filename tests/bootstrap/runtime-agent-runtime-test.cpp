@@ -267,7 +267,7 @@ namespace {
 
         auto first_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(first_input));
         auto second_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(second_input));
-        BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
+        tools::BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
 
         first_runtime.reset();
 
@@ -286,7 +286,7 @@ namespace {
             .terminal_status = BackgroundProcessTerminalStatus::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(tools::background_completion_mode_metadata_key), "resume"}},
         });
 
         const auto inbox_items = automation_store->list_inbox(second_input.agent_key);

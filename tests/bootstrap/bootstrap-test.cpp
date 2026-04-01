@@ -2,7 +2,7 @@
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/app-runtime.hpp"
-
+#include "bootstrap/runtime-control.hpp"
 #include "bootstrap/identity.hpp"
 #include "memory/memory-store.hpp"
 #include "subagent/subagent-manager.hpp"
@@ -30,32 +30,6 @@
 
 using namespace orangutan;
 using orangutan::testing::ScopedEnvVar;
-
-namespace orangutan::bootstrap::detail {
-
-    struct WebStartupInspection {
-        bool has_session_store = false;
-        bool has_memory_store = false;
-        bool has_subagent_run_store = false;
-        bool has_subagent_manager = false;
-        bool has_runtime_bundle = false;
-        bool has_runtime_agent = false;
-        bool attached_session_store = false;
-        bool attached_tool_registry = false;
-        bool attached_skill_loader = false;
-        std::vector<ToolDef> tool_definitions;
-        std::vector<std::string> active_skill_names;
-        std::string runtime_build_error;
-    };
-
-    void set_web_startup_inspection_callback_for_tests(std::function<bool(const WebStartupInspection &)> callback);
-    void clear_web_startup_inspection_callback_for_tests();
-    void set_web_runtime_build_callback_for_tests(std::function<void()> callback);
-    void clear_web_runtime_build_callback_for_tests();
-    void set_channel_mode_callback_for_tests(std::function<int()> callback);
-    void clear_channel_mode_callback_for_tests();
-
-} // namespace orangutan::bootstrap::detail
 
 namespace {
 

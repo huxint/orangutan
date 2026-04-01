@@ -1,0 +1,110 @@
+#include "bootstrap/config-bootstrap.hpp"
+
+#include "bootstrap/bootstrap.hpp"
+#include "bootstrap/identity.hpp"
+#include "hooks/hook-manager.hpp"
+#include "skills/skill-loader.hpp"
+#include "config/config.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+
+#include <magic_enum/magic_enum.hpp>
+#include <spdlog/spdlog.h>
+
+namespace orangutan::bootstrap {
+
+    void load_display_skills(skills::SkillLoader &skill_loader, const config::Config &cfg, const std::string &workspace_root) {
+        auto skill_dirs = skills::resolve_skill_directories(cfg.skill_paths, workspace_root);
+        skill_loader.load_from_directories(skill_dirs);
+        if (!skill_loader.active_skills().empty()) {
+            spdlog::info("Loaded {} skill(s)", skill_loader.active_skills().size());
+        }
+    }
+
+    std::vector<std::string> resolve_runtime_hook_dirs(const config::Config &cfg, const std::string &workspace_root) {
+        std::vector<std::string> hook_dirs = cfg.hook_paths;
+        if (!hook_dirs.empty()) {
+            return hook_dirs;
+        }
+
+        if (const char *home = std::getenv("HOME"); home != nullptr) {
+            hook_dirs.push_back(std::string(home) + "/.orangutan/hooks");
+        }
+        if (!workspace_root.empty()) {
+            hook_dirs.push_back(workspace_root + "/.orangutan/hooks");
+        }
+        return hook_dirs;
+    }
+
+    void log_loaded_hooks(const std::vector<std::string> &hook_dirs, const hooks::HookManager &hook_manager) {
+        for (const auto &dir : hook_dirs) {
+            spdlog::info("Hook directory: {}", dir);
+        }
+        for (const auto event : {hooks::HookEvent::before_tool_call, hooks::HookEvent::after_tool_call, hooks::HookEvent::message_received, hooks::HookEvent::message_sending,
+                                 hooks::HookEvent::session_start, hooks::HookEvent::session_end}) {
+            spdlog::info("Hook count for '{}': {}", magic_enum::enum_name(event), hook_manager.hook_count(event));
+        }
+        spdlog::info("Loaded {} hook(s) total", hook_manager.total_hooks());
+    }
+
+    std::optional<config::AgentConfig> resolve_selected_agent(const config::Config &cfg, const CliOptions &options) {
+        const auto effective_agents = detail::build_effective_agents(cfg);
+        const auto agent_it = effective_agents.find(options.cli_agent_key);
+        if (agent_it == effective_agents.end()) {
+            spdlog::fmt_lib::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
+            return std::nullopt;
+        }
+
+        auto selected_agent = agent_it->second;
+        if (!options.cli_provider.empty()) {
+            selected_agent.provider = options.cli_provider;
+        }
+        if (!options.cli_model.empty()) {
+            selected_agent.model = options.cli_model;
+        }
+        if (!options.cli_base_url.empty()) {
+            selected_agent.base_url = options.cli_base_url;
+        }
+        if (!options.cli_system_prompt.empty()) {
+            selected_agent.system_prompt = options.cli_system_prompt;
+        }
+        return selected_agent;
+    }
+
+    std::optional<std::string> resolve_agent_workspace(const config::AgentConfig &selected_agent) {
+        try {
+            auto workspace = resolve_workspace_root(selected_agent.workspace);
+            if (!workspace.empty()) {
+                spdlog::info("Using workspace: {}", workspace);
+            }
+            return workspace;
+        } catch (const std::exception &e) {
+            spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+            return std::nullopt;
+        }
+    }
+
+    void apply_cli_edit_mode_override(config::Config &cfg, std::string_view edit_mode) {
+        if (edit_mode.empty()) {
+            return;
+        }
+
+        cfg.edit_mode = std::string(edit_mode);
+        for (auto &[agent_key, agent_cfg] : cfg.agents) {
+            agent_cfg.edit_mode = cfg.edit_mode;
+            static_cast<void>(agent_key);
+        }
+    }
+
+    std::unordered_map<std::string, std::string> build_qq_bot_agents(const config::Config &cfg) {
+        std::unordered_map<std::string, std::string> qq_bot_agents;
+        for (const auto &bot : cfg.qq_bots) {
+            if (!bot.name.empty()) {
+                qq_bot_agents.insert_or_assign(bot.name, bot.agent);
+            }
+        }
+        return qq_bot_agents;
+    }
+
+} // namespace orangutan::bootstrap

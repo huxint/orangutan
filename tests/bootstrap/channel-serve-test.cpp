@@ -902,7 +902,7 @@ namespace {
                 },
                 bootstrap::detail::make_channel_completion_resume_callback(resume_state)),
         };
-        BackgroundCompletionDispatcher dispatcher(&tool_context);
+        tools::BackgroundCompletionDispatcher dispatcher(&tool_context);
 
         dispatcher.dispatch(BackgroundProcessCompletionEvent{
             .process_id = "proc-channel",
@@ -912,7 +912,7 @@ namespace {
             .terminal_status = BackgroundProcessTerminalStatus::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(tools::background_completion_mode_metadata_key), "resume"}},
         });
 
         const auto inbox_items = automation_runtime.list_inbox("default");
