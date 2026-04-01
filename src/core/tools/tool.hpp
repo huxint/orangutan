@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/tools/permissions.hpp"
-#include "core/types.hpp"
+#include "types/types.hpp"
 
 #include <functional>
 #include <memory>

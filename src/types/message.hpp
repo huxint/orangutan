@@ -1,91 +1,13 @@
 #pragma once
 
-#include <spdlog/common.h>
+#include "types/base.hpp"
+#include "types/content.hpp"
+
 #include <concepts>
-#include <cstdint>
 #include <initializer_list>
-#include <nlohmann/json.hpp>
-#include <magic_enum/magic_enum.hpp>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <variant>
 #include <vector>
 
 namespace orangutan {
-    namespace base {
-        using f32 = float;
-        using f64 = double;
-
-        using i8 = std::int8_t;
-        using i16 = std::int16_t;
-        using i32 = std::int32_t;
-        using i64 = std::int64_t;
-
-        using u8 = std::uint8_t;
-        using u16 = std::uint16_t;
-        using u32 = std::uint32_t;
-        using u64 = std::uint64_t;
-
-        enum class role : base::u8 {
-            user,
-            assistant,
-        };
-
-        enum class origin : base::u8 {
-            cli,
-            channel,
-            web,
-        };
-    }
-
-    struct Text {
-        std::string text;
-
-        Text() = default;
-
-        template <typename Str>
-            requires std::convertible_to<Str, std::string_view>
-        Text(Str value)
-        : text(value) {}
-    };
-
-    struct Thinking {
-        std::string thinking;
-
-        Thinking() = default;
-
-        template <typename Str>
-            requires std::convertible_to<Str, std::string_view>
-        Thinking(Str value)
-        : thinking(value) {}
-    };
-
-    struct ToolUse {
-        std::string id;
-        std::string name;
-        nlohmann::json input;
-
-        ToolUse() = default;
-        ToolUse(std::string id, std::string name, nlohmann::json input)
-        : id(std::move(id)),
-          name(std::move(name)),
-          input(std::move(input)) {}
-    };
-
-    struct ToolResult {
-        std::string tool_use_id;
-        std::string content;
-        bool is_error = false;
-
-        ToolResult() = default;
-        ToolResult(std::string tool_use_id, std::string content, bool is_error = false)
-        : tool_use_id(std::move(tool_use_id)),
-          content(std::move(content)),
-          is_error(is_error) {}
-    };
-
-    using Content = std::variant<Text, Thinking, ToolUse, ToolResult>;
 
     class Message {
     public:
@@ -245,51 +167,5 @@ namespace orangutan {
                 msg.tool_result(std::forward<T>(value));
             }
         }
-    };
-
-    // Serialize content to JSON for API request
-    inline nlohmann::json content_block_to_json(const Content &block) {
-        return std::visit(
-            [](auto &&blk) -> nlohmann::json {
-                using T = std::decay_t<decltype(blk)>;
-                if constexpr (std::same_as<T, Text>) {
-                    return {{"type", "text"}, {"text", blk.text}};
-                } else if constexpr (std::same_as<T, Thinking>) {
-                    return {{"type", "thinking"}, {"thinking", blk.thinking}};
-                } else if constexpr (std::same_as<T, ToolUse>) {
-                    return {{"type", "tool_use"}, {"id", blk.id}, {"name", blk.name}, {"input", blk.input}};
-                } else if constexpr (std::same_as<T, ToolResult>) {
-                    nlohmann::json json = {{"type", "tool_result"}, {"tool_use_id", blk.tool_use_id}, {"content", blk.content}};
-                    if (blk.is_error) {
-                        json["is_error"] = true;
-                    }
-                    return json;
-                }
-            },
-            block);
-    }
-
-    // Serialize a Message to JSON
-    inline nlohmann::json message_to_json(const Message &msg) {
-        nlohmann::json json;
-        json["role"] = magic_enum::enum_name(msg.role());
-        json["content"] = nlohmann::json::array();
-        for (const auto &block : msg) {
-            json["content"].push_back(content_block_to_json(block));
-        }
-        return json;
-    }
-
-    // Tool definition sent to the API
-    struct ToolDef {
-        std::string name;
-        std::string description;
-        nlohmann::json input_schema; // JSON Schema
-    };
-
-    // API response metadata
-    struct LLMResponse {
-        std::string stop_reason; // "end_turn", "tool_use", etc.
-        std::vector<Content> content;
     };
 }

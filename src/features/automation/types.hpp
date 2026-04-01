@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
+#include "types/types.hpp"
 
 #include <chrono>
 #include <optional>

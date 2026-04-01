@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/runtime/identity.hpp"
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include "infra/config/config.hpp"
 #include "infra/storage/subagent-run-store.hpp"
 

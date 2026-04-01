@@ -1,7 +1,7 @@
 #pragma once
 
 #include "infra/storage/sqlite.hpp"
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <mutex>

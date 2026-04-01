@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include "features/automation/log-writer.hpp"
 #include "features/automation/store.hpp"
 

@@ -1,5 +1,5 @@
 #include "infra/storage/session-store.hpp"
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>

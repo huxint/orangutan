@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include "infra/config/secret-protection.hpp"
 #include "core/tools/permissions.hpp"
 

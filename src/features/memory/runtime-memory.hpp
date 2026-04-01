@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
+#include "types/types.hpp"
 #include "features/memory/memory-mirror.hpp"
 #include "features/memory/memory.hpp"
 #include "app/runtime/memory-context.hpp"
