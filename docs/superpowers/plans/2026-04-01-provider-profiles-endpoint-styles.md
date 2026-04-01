@@ -36,6 +36,7 @@
 - Modify: `src/bootstrap/channel-serve.hpp`
 - Modify: `src/bootstrap/channel-serve.cpp`
 - Modify: `src/bootstrap/bootstrap.cpp`
+- Modify: `src/web/web-routes.cpp`
 - Modify: `src/subagent/subagent-manager.hpp`
 - Modify: `src/subagent/subagent-manager.cpp`
 - Modify: `tests/bootstrap/bootstrap-test.cpp`
@@ -83,7 +84,10 @@ Add coverage for:
 - `profiles.<name>.api_key`
 - `profiles.<name>.headers`
 - `profiles.<name>.models.<model>.endpoint_style`
+- `profiles.<name>.models.<model>.context_window`
+- `profiles.<name>.models.<model>.cost`
 - `agents.<name>.profile`
+- default-agent behavior when `agents.default` is omitted but other profile-backed agents exist
 - rejection of missing profile/model references during runtime-building tests later
 
 Example fixture:
@@ -143,6 +147,7 @@ Then:
 - remove legacy `provider` / `base_url` / `api_key` fields from `Config` and `AgentConfig`
 - add `profile` to agents
 - parse/save `profiles`
+- parse/save `context_window` and `cost` metadata without dropping them on round-trip
 - keep `config.json` round-trippable
 
 - [ ] **Step 4: Update shipped examples and admin UI copy**
@@ -267,7 +272,7 @@ Then make `build_agent_runtime_configs()`:
 
 Also update `src/bootstrap/config-bootstrap.cpp` so CLI overrides only touch fields that still exist after the schema change. The old `selected_agent.provider` / `selected_agent.base_url` writes must be removed or remapped to the new profile-based runtime selection flow.
 
-Update `src/bootstrap/agent-runtime.cpp` and `src/bootstrap/channel-serve.cpp` in the same task so runtime assembly consumes the resolved endpoint config directly. Both files currently sit on the compile path that still expects `provider_name` and direct base URL fields.
+Update `src/bootstrap/agent-runtime.cpp`, `src/bootstrap/channel-serve.cpp`, and `src/web/web-routes.cpp` in the same task so runtime assembly consumes the resolved endpoint config directly. All three files currently sit on the compile path that still expects `provider_name` and direct base URL fields.
 
 - [ ] **Step 4: Propagate resolved endpoint config to child/subagent runtimes**
 
@@ -281,7 +286,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/agent-runtime.cpp src/bootstrap/channel-serve.hpp src/bootstrap/channel-serve.cpp src/bootstrap/bootstrap.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp tests/subagent/subagent-manager-test.cpp tests/integration/subagent-integration-test.cpp
+git add src/bootstrap/config-builder.cpp src/bootstrap/config-builder.hpp src/bootstrap/config-bootstrap.cpp src/bootstrap/agent-runtime.hpp src/bootstrap/agent-runtime.cpp src/bootstrap/channel-serve.hpp src/bootstrap/channel-serve.cpp src/bootstrap/bootstrap.cpp src/web/web-routes.cpp src/subagent/subagent-manager.hpp src/subagent/subagent-manager.cpp tests/bootstrap/bootstrap-test.cpp tests/bootstrap/channel-serve-test.cpp tests/bootstrap/runtime-agent-runtime-test.cpp tests/subagent/subagent-manager-test.cpp tests/integration/subagent-integration-test.cpp
 git commit -m "refactor(runtime): resolve agents through profiles and model catalogs"
 ```
 
