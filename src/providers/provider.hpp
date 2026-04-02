@@ -1,9 +1,11 @@
 #pragma once
 
-#include "types/types.hpp"
+#include "types/message.hpp"
+#include "types/tool-def.hpp"
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <stdexcept>
 #include <string>
