@@ -80,8 +80,18 @@ namespace orangutan::channel::qq {
         void connect_websocket(const std::string &gateway_url);
         void send_gateway_identity_or_resume();
         void send_gateway_payload(const nlohmann::json &payload);
+        void send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
         void restart_heartbeat(std::chrono::milliseconds interval);
         void stop_heartbeat();
+        void start_token_refresh_loop();
+        void stop_token_refresh_loop();
+        void start_debounce_loop();
+        void stop_debounce_loop();
+        void enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
+        void flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
+        void load_session_state();
+        void persist_session_state();
+        void clear_session_state();
         void handle_ws_message(const std::string &data);
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
         void handle_c2c_message(const nlohmann::json &data);

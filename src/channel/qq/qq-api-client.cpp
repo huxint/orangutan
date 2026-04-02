@@ -24,6 +24,7 @@ namespace orangutan::channel::qq {
         constexpr std::string_view qq_token_url = "https://bots.qq.com/app/getAppAccessToken";
         constexpr long default_timeout_seconds = 120L;
         constexpr auto token_refresh_ahead = std::chrono::minutes(5);
+        constexpr auto min_background_refresh_interval = std::chrono::seconds(60);
 
         [[nodiscard]]
         base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
@@ -95,6 +96,24 @@ namespace orangutan::channel::qq {
             return;
         }
 
+        refresh_access_token_locked(now);
+    }
+
+    void QqApiClient::refresh_access_token_if_due() {
+        std::scoped_lock lock(token_mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        if (!access_token_.empty() && now < token_background_refresh_at_) {
+            return;
+        }
+
+        refresh_access_token_locked(now);
+    }
+
+    void QqApiClient::refresh_access_token_locked(std::chrono::steady_clock::time_point now) {
+        const auto refresh_interval = [](std::chrono::seconds ttl) {
+            return std::max(min_background_refresh_interval, ttl / 3);
+        };
+
         const nlohmann::json request_body = {
             {"appId", app_id_},
             {"clientSecret", client_secret_},
@@ -115,8 +134,9 @@ namespace orangutan::channel::qq {
         }
 
         access_token_ = payload.at("access_token").get<std::string>();
-        const auto expires_in = parse_integer_like(payload, "expires_in", 7200);
-        token_expiry_ = now + std::chrono::seconds(std::max<base::i64>(60, expires_in));
+        const auto expires_in = std::chrono::seconds(std::max<base::i64>(60, parse_integer_like(payload, "expires_in", 7200)));
+        token_expiry_ = now + expires_in;
+        token_background_refresh_at_ = now + refresh_interval(expires_in);
 
         spdlog::debug("QQ access token refreshed successfully");
     }
@@ -125,6 +145,7 @@ namespace orangutan::channel::qq {
         std::scoped_lock lock(token_mutex_);
         access_token_.clear();
         token_expiry_ = std::chrono::steady_clock::time_point::min();
+        token_background_refresh_at_ = std::chrono::steady_clock::time_point::min();
     }
 
     std::string QqApiClient::access_token() const {

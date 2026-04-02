@@ -34,6 +34,7 @@ namespace orangutan::channel::qq {
         QqApiClient &operator=(QqApiClient &&) = delete;
 
         void ensure_access_token();
+        void refresh_access_token_if_due();
         void clear_access_token();
 
         [[nodiscard]]
@@ -80,12 +81,15 @@ namespace orangutan::channel::qq {
         [[nodiscard]]
         static std::string build_api_error_message(std::string_view method, const std::string &path, const QqApiResponse &response);
 
+        void refresh_access_token_locked(std::chrono::steady_clock::time_point now);
+
         std::string app_id_;
         std::string client_secret_;
 
         mutable std::mutex token_mutex_;
         std::string access_token_;
         std::chrono::steady_clock::time_point token_expiry_{std::chrono::steady_clock::time_point::min()};
+        std::chrono::steady_clock::time_point token_background_refresh_at_{std::chrono::steady_clock::time_point::min()};
     };
 
 } // namespace orangutan::channel::qq

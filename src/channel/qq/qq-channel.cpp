@@ -1,16 +1,22 @@
 #include "channel/qq/qq-channel.hpp"
 
 #include "channel/qq/qq-transport.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
+#include <ctre.hpp>
+#include <filesystem>
+#include <fstream>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <spdlog/spdlog.h>
-#include <regex>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 namespace orangutan::channel::qq {
@@ -77,9 +83,89 @@ namespace orangutan::channel::qq {
             return value;
         }
 
+        std::string sanitize_path_component(std::string input) {
+            for (auto &ch : input) {
+                if (std::isalnum(static_cast<unsigned char>(ch)) == 0 && ch != '-' && ch != '_') {
+                    ch = '_';
+                }
+            }
+            if (input.empty()) {
+                return "default";
+            }
+            return input;
+        }
+
+        std::filesystem::path qq_session_file_path(std::string_view bot_name) {
+            const auto home = getenv_or_default("HOME", ".");
+            const auto safe_name = sanitize_path_component(std::string(bot_name.empty() ? "default" : bot_name));
+            return std::filesystem::path(home) / ".orangutan" / "qq" / "sessions" / ("session-" + safe_name + ".json");
+        }
+
+        std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
+            if (offset + width > value.size()) {
+                return std::nullopt;
+            }
+
+            int result = 0;
+            const auto token = value.substr(offset, width);
+            auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
+            if (ec != std::errc{} || ptr != token.end()) {
+                return std::nullopt;
+            }
+            return result;
+        }
+
+        std::string format_iso_utc(std::chrono::system_clock::time_point tp) {
+            const auto truncated = std::chrono::floor<std::chrono::seconds>(tp);
+            const auto day = std::chrono::floor<std::chrono::days>(truncated);
+            const auto ymd = std::chrono::year_month_day{day};
+            if (!ymd.ok()) {
+                return {};
+            }
+
+            const auto tod = std::chrono::hh_mm_ss{truncated - day};
+            return spdlog::fmt_lib::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()),
+                                           static_cast<unsigned>(ymd.day()), static_cast<int>(tod.hours().count()), static_cast<int>(tod.minutes().count()),
+                                           static_cast<int>(tod.seconds().count()));
+        }
+
+        std::optional<std::chrono::system_clock::time_point> parse_iso_utc(std::string_view iso) {
+            if (iso.size() != 20 || iso[4] != '-' || iso[7] != '-' || iso[10] != 'T' || iso[13] != ':' || iso[16] != ':' || iso[19] != 'Z') {
+                return std::nullopt;
+            }
+
+            const auto year = parse_fixed_int(iso, 0, 4);
+            const auto month = parse_fixed_int(iso, 5, 2);
+            const auto day = parse_fixed_int(iso, 8, 2);
+            const auto hour = parse_fixed_int(iso, 11, 2);
+            const auto minute = parse_fixed_int(iso, 14, 2);
+            const auto second = parse_fixed_int(iso, 17, 2);
+            if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() || !minute.has_value() || !second.has_value()) {
+                return std::nullopt;
+            }
+            if (*hour > 23 || *minute > 59 || *second > 59) {
+                return std::nullopt;
+            }
+
+            const auto ymd = std::chrono::year{*year} / std::chrono::month{static_cast<unsigned>(*month)} / std::chrono::day{static_cast<unsigned>(*day)};
+            if (!ymd.ok()) {
+                return std::nullopt;
+            }
+
+            const auto utc_time = std::chrono::sys_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
+            return std::chrono::time_point_cast<std::chrono::system_clock::duration>(utc_time);
+        }
+
     } // namespace
 
     struct QqChannel::RuntimeState {
+        struct PendingDebouncedMessage {
+            std::string text;
+            std::string reply_to_message_id;
+            std::chrono::steady_clock::time_point first_enqueued_at;
+            std::chrono::steady_clock::time_point last_update_at;
+        };
+
         std::mutex mutex;
         std::condition_variable cv;
         std::mutex heartbeat_mutex;
@@ -93,6 +179,18 @@ namespace orangutan::channel::qq {
         std::chrono::milliseconds heartbeat_interval{0};
         std::atomic<bool> heartbeat_stop{false};
         std::thread heartbeat_thread;
+        std::mutex token_refresh_mutex;
+        std::condition_variable token_refresh_cv;
+        std::atomic<bool> token_refresh_stop{false};
+        std::thread token_refresh_thread;
+        std::mutex debounce_mutex;
+        std::condition_variable debounce_cv;
+        std::atomic<bool> debounce_stop{false};
+        std::thread debounce_thread;
+        std::unordered_map<std::string, PendingDebouncedMessage> pending_messages;
+        std::chrono::milliseconds debounce_window{1500};
+        std::chrono::milliseconds debounce_max_wait{8000};
+        std::string debounce_separator = "\n\n---\n\n";
 
         std::unique_ptr<qq::Transport> websocket;
     };
@@ -123,6 +221,9 @@ namespace orangutan::channel::qq {
 #else
         disconnect();
         clear_ready_state();
+        load_session_state();
+        start_token_refresh_loop();
+        start_debounce_loop();
 
         ensure_access_token();
         const auto gateway_url = get_gateway_url();
@@ -150,6 +251,10 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
+        enqueue_debounced_text(jid, text, reply_to_message_id);
+    }
+
+    void QqChannel::send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
         const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
@@ -256,6 +361,8 @@ namespace orangutan::channel::qq {
     void QqChannel::disconnect() {
         connected_ = false;
         stop_heartbeat();
+        stop_token_refresh_loop();
+        stop_debounce_loop();
 
         {
             std::scoped_lock lock(runtime_->mutex);
@@ -462,12 +569,229 @@ namespace orangutan::channel::qq {
         }
     }
 
+    void QqChannel::start_token_refresh_loop() {
+        stop_token_refresh_loop();
+
+        runtime_->token_refresh_stop = false;
+        runtime_->token_refresh_thread = std::thread([this] {
+            while (!runtime_->token_refresh_stop.load()) {
+                std::unique_lock lock(runtime_->token_refresh_mutex);
+                const bool should_stop = runtime_->token_refresh_cv.wait_for(lock, std::chrono::minutes(1), [this] {
+                    return runtime_->token_refresh_stop.load();
+                });
+                lock.unlock();
+
+                if (should_stop || runtime_->token_refresh_stop.load()) {
+                    break;
+                }
+
+                try {
+                    api_client_->refresh_access_token_if_due();
+                } catch (const std::exception &e) {
+                    spdlog::warn("QQ background token refresh failed: {}", e.what());
+                }
+            }
+        });
+    }
+
+    void QqChannel::stop_token_refresh_loop() {
+        runtime_->token_refresh_stop = true;
+        runtime_->token_refresh_cv.notify_all();
+        if (runtime_->token_refresh_thread.joinable()) {
+            runtime_->token_refresh_thread.join();
+        }
+    }
+
+    void QqChannel::start_debounce_loop() {
+        stop_debounce_loop();
+
+        runtime_->debounce_stop = false;
+        runtime_->debounce_thread = std::thread([this] {
+            while (!runtime_->debounce_stop.load()) {
+                std::vector<std::tuple<std::string, std::string, std::string>> ready_messages;
+                {
+                    std::unique_lock lock(runtime_->debounce_mutex);
+                    runtime_->debounce_cv.wait_for(lock, std::chrono::milliseconds(200), [this] {
+                        return runtime_->debounce_stop.load() || !runtime_->pending_messages.empty();
+                    });
+                    if (runtime_->debounce_stop.load()) {
+                        break;
+                    }
+
+                    const auto now = std::chrono::steady_clock::now();
+                    for (auto it = runtime_->pending_messages.begin(); it != runtime_->pending_messages.end();) {
+                        const auto elapsed_since_update = now - it->second.last_update_at;
+                        const auto elapsed_since_first = now - it->second.first_enqueued_at;
+                        if (elapsed_since_update >= runtime_->debounce_window || elapsed_since_first >= runtime_->debounce_max_wait) {
+                            ready_messages.emplace_back(it->first, it->second.text, it->second.reply_to_message_id);
+                            it = runtime_->pending_messages.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
+
+                for (const auto &[jid, text, reply_to] : ready_messages) {
+                    flush_debounced_text(jid, text, reply_to);
+                }
+            }
+        });
+    }
+
+    void QqChannel::stop_debounce_loop() {
+        runtime_->debounce_stop = true;
+        runtime_->debounce_cv.notify_all();
+        if (runtime_->debounce_thread.joinable()) {
+            runtime_->debounce_thread.join();
+        }
+
+        std::vector<std::tuple<std::string, std::string, std::string>> remaining_messages;
+        {
+            std::scoped_lock lock(runtime_->debounce_mutex);
+            for (const auto &[jid, pending] : runtime_->pending_messages) {
+                remaining_messages.emplace_back(jid, pending.text, pending.reply_to_message_id);
+            }
+            runtime_->pending_messages.clear();
+        }
+        if (!connected_.load()) {
+            return;
+        }
+        for (const auto &[jid, text, reply_to] : remaining_messages) {
+            flush_debounced_text(jid, text, reply_to);
+        }
+    }
+
+    void QqChannel::enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
+        if (text.empty()) {
+            return;
+        }
+
+        std::optional<std::tuple<std::string, std::string, std::string>> immediate_flush;
+        {
+            std::scoped_lock lock(runtime_->debounce_mutex);
+            const auto now = std::chrono::steady_clock::now();
+            auto it = runtime_->pending_messages.find(jid);
+            if (it != runtime_->pending_messages.end() && it->second.reply_to_message_id != reply_to_message_id) {
+                immediate_flush.emplace(jid, it->second.text, it->second.reply_to_message_id);
+                runtime_->pending_messages.erase(it);
+                it = runtime_->pending_messages.end();
+            }
+
+            if (it == runtime_->pending_messages.end()) {
+                runtime_->pending_messages[jid] = RuntimeState::PendingDebouncedMessage{
+                    .text = text,
+                    .reply_to_message_id = reply_to_message_id,
+                    .first_enqueued_at = now,
+                    .last_update_at = now,
+                };
+            } else {
+                it->second.text.append(runtime_->debounce_separator);
+                it->second.text.append(text);
+                it->second.last_update_at = now;
+            }
+        }
+
+        if (immediate_flush.has_value()) {
+            const auto &[flush_jid, flush_text, flush_reply_to] = *immediate_flush;
+            flush_debounced_text(flush_jid, flush_text, flush_reply_to);
+        }
+        runtime_->debounce_cv.notify_all();
+    }
+
+    void QqChannel::flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
+        try {
+            send_message_now(jid, text, reply_to_message_id);
+        } catch (const std::exception &e) {
+            spdlog::error("QQ debounced send failed for jid '{}': {}", jid, e.what());
+        }
+    }
+
+    void QqChannel::load_session_state() {
+        const auto file_path = qq_session_file_path(bot_name_);
+        std::ifstream input(file_path);
+        if (!input.is_open()) {
+            return;
+        }
+
+        try {
+            nlohmann::json payload;
+            input >> payload;
+
+            if (payload.value("app_id", std::string{}) != app_id_) {
+                return;
+            }
+            if (!payload.contains("session_id") || !payload.contains("last_seq")) {
+                return;
+            }
+            const auto saved_at_text = payload.value("saved_at", std::string{});
+            const auto saved_at = parse_iso_utc(saved_at_text);
+            if (!saved_at.has_value()) {
+                return;
+            }
+
+            const auto age = std::chrono::system_clock::now() - *saved_at;
+            if (age > std::chrono::minutes(5)) {
+                return;
+            }
+
+            std::scoped_lock lock(runtime_->mutex);
+            runtime_->session_id = payload.value("session_id", std::string{});
+            runtime_->last_seq = payload.value("last_seq", 0U);
+        } catch (const std::exception &e) {
+            spdlog::warn("Failed to load QQ session state: {}", e.what());
+        }
+    }
+
+    void QqChannel::persist_session_state() {
+        std::string session_id;
+        base::u32 last_seq = 0;
+        {
+            std::scoped_lock lock(runtime_->mutex);
+            if (runtime_->session_id.empty() || runtime_->last_seq == 0) {
+                return;
+            }
+            session_id = runtime_->session_id;
+            last_seq = runtime_->last_seq;
+        }
+
+        const auto file_path = qq_session_file_path(bot_name_);
+        try {
+            std::filesystem::create_directories(file_path.parent_path());
+            std::ofstream output(file_path, std::ios::trunc);
+            if (!output.is_open()) {
+                throw std::runtime_error("unable to open session file for write");
+            }
+
+            const nlohmann::json payload = {
+                {"session_id", session_id},
+                {"last_seq", last_seq},
+                {"app_id", app_id_},
+                {"saved_at", format_iso_utc(std::chrono::system_clock::now())},
+            };
+            output << payload.dump(2);
+        } catch (const std::exception &e) {
+            spdlog::warn("Failed to persist QQ session state: {}", e.what());
+        }
+    }
+
+    void QqChannel::clear_session_state() {
+        const auto file_path = qq_session_file_path(bot_name_);
+        std::error_code error;
+        std::filesystem::remove(file_path, error);
+        if (error) {
+            spdlog::warn("Failed to clear QQ session state '{}': {}", file_path.string(), error.message());
+        }
+    }
+
     void QqChannel::handle_ws_message(const std::string &data) {
         const auto payload = nlohmann::json::parse(data);
 
         if (payload.contains("s") && !payload.at("s").is_null()) {
-            std::scoped_lock lock(runtime_->mutex);
-            runtime_->last_seq = payload.at("s").get<base::u32>();
+            {
+                std::scoped_lock lock(runtime_->mutex);
+                runtime_->last_seq = payload.at("s").get<base::u32>();
+            }
+            persist_session_state();
         }
 
         const auto op = payload.value("op", -1);
@@ -487,21 +811,32 @@ namespace orangutan::channel::qq {
             case gateway_op_dispatch: {
                 const auto event_type = payload.value("t", std::string{});
                 const auto event_data = payload.value("d", nlohmann::json::object());
+                bool should_persist = false;
                 if (event_type == "READY") {
-                    std::scoped_lock lock(runtime_->mutex);
-                    runtime_->session_id = event_data.value("session_id", std::string{});
-                    runtime_->ready = true;
-                    runtime_->last_error.clear();
-                    connected_ = true;
-                    runtime_->cv.notify_all();
+                    {
+                        std::scoped_lock lock(runtime_->mutex);
+                        runtime_->session_id = event_data.value("session_id", std::string{});
+                        runtime_->ready = true;
+                        runtime_->last_error.clear();
+                        connected_ = true;
+                        runtime_->cv.notify_all();
+                    }
+                    should_persist = true;
                     spdlog::info("QQ gateway READY for bot '{}'", event_data.value("session_id", std::string{"unknown"}));
                 } else if (event_type == "RESUMED") {
-                    std::scoped_lock lock(runtime_->mutex);
-                    runtime_->ready = true;
-                    runtime_->last_error.clear();
-                    connected_ = true;
-                    runtime_->cv.notify_all();
+                    {
+                        std::scoped_lock lock(runtime_->mutex);
+                        runtime_->ready = true;
+                        runtime_->last_error.clear();
+                        connected_ = true;
+                        runtime_->cv.notify_all();
+                    }
+                    should_persist = true;
                     spdlog::info("QQ gateway session resumed");
+                }
+
+                if (should_persist) {
+                    persist_session_state();
                 }
 
                 handle_dispatch(event_type, event_data);
@@ -530,6 +865,7 @@ namespace orangutan::channel::qq {
                     runtime_->last_seq = 0;
                     runtime_->ready = false;
                 }
+                clear_session_state();
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
                 if (runtime_->websocket != nullptr) {
                     runtime_->websocket->request_reconnect();
@@ -891,16 +1227,19 @@ namespace orangutan::channel::qq {
     }
 
     std::string QqChannel::strip_mentions(const std::string &content) {
-        static const std::regex mention_pattern(R"(<@!?[^>]+>)");
-        auto stripped = std::regex_replace(content, mention_pattern, "");
+        std::string stripped;
+        stripped.reserve(content.size());
+        const auto content_view = std::string_view{content};
+        const char *cursor = content_view.data();
+        const char *const end = cursor + content_view.size();
 
-        while (!stripped.empty() && std::isspace(static_cast<unsigned char>(stripped.front())) != 0) {
-            stripped.erase(stripped.begin());
+        for (const auto match : ctre::search_all<R"(<@!?[^>]+>)">(content_view)) {
+            const auto full = match.get<0>().to_view();
+            stripped.append(cursor, full.data() - cursor);
+            cursor = full.data() + full.size();
         }
-        while (!stripped.empty() && std::isspace(static_cast<unsigned char>(stripped.back())) != 0) {
-            stripped.pop_back();
-        }
-        return stripped;
+        stripped.append(cursor, static_cast<std::size_t>(end - cursor));
+        return std::string(trim_copy(stripped));
     }
 
     std::vector<std::string> QqChannel::chunk_text(const std::string &text, std::size_t limit) {
