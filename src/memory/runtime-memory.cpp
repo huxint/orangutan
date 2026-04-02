@@ -20,13 +20,15 @@ namespace orangutan::memory {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &source, base::f64 importance) {
-        store_.remember(key, content, category, context_.scope, source, importance);
+    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &source,
+                                 base::f64 importance) {
+        store_.remember(key, content, category, type, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
 
-    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, bool merge, const std::string &source, base::f64 importance) {
-        store_.update(key, content, category, context_.scope, merge, source, importance);
+    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, MemoryType type, bool merge, const std::string &source,
+                               base::f64 importance) {
+        store_.update(key, content, category, type, context_.scope, merge, source, importance);
         refresh_mirror_after_write();
     }
 
@@ -95,7 +97,7 @@ namespace orangutan::memory {
         }
 
         const auto key = make_journal_key(trimmed_summary);
-        store_.remember(key, trimmed_summary, "journal", context_.scope, source.empty() ? std::string{"session:journal"} : source, 0.35);
+        store_.remember(key, trimmed_summary, "journal", MemoryType::project, context_.scope, source.empty() ? std::string{"session:journal"} : source, 0.35);
         const auto journal_result = MemoryMirror::append_daily_journal(context_, trimmed_summary);
         refresh_mirror_after_write();
         return {
@@ -140,6 +142,18 @@ namespace orangutan::memory {
 
     void RuntimeMemory::refresh_mirror_after_write() const {
         static_cast<void>(refresh_mirror());
+    }
+
+    std::size_t RuntimeMemory::consolidate(std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
+        const auto pruned = store_.consolidate(context_.scope, max_per_scope, stale_days, stale_importance_threshold);
+        if (pruned > 0) {
+            refresh_mirror_after_write();
+        }
+        return pruned;
+    }
+
+    std::string RuntimeMemory::manifest(std::size_t limit) {
+        return store_.manifest(context_.scope, limit);
     }
 
 } // namespace orangutan::memory

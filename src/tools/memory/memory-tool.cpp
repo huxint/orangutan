@@ -1,4 +1,5 @@
 #include "memory/runtime-memory.hpp"
+#include "memory/memory-type.hpp"
 #include "tools/register.hpp"
 
 #include <spdlog/common.h>
@@ -114,10 +115,12 @@ namespace orangutan::tools {
             const auto key = input.at("key").get<std::string>();
             const auto content = input.at("content").get<std::string>();
             const auto category = input.value("category", std::string{"general"});
+            const auto type_str = input.value("type", std::string{"user"});
+            const auto type = magic_enum::enum_cast<MemoryType>(type_str, magic_enum::case_insensitive).value_or(MemoryType::user);
             const auto source = input.value("source", std::string{"manual"});
             const auto importance = input.value("importance", 0.5);
-            runtime_memory.remember(key, content, category, source, importance);
-            return "Stored memory [" + key + "] in category '" + category + "'";
+            runtime_memory.remember(key, content, category, type, source, importance);
+            return "Stored memory [" + key + "] type=" + std::string(magic_enum::enum_name(type)) + " category='" + category + "'";
         }
 
         std::string recall_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
@@ -144,17 +147,19 @@ namespace orangutan::tools {
             const auto key = input.at("key").get<std::string>();
             const auto content = input.at("content").get<std::string>();
             const auto category = input.contains("category") ? input.at("category").get<std::string>() : std::string{};
+            const auto type_str = input.value("type", std::string{"user"});
+            const auto type = magic_enum::enum_cast<MemoryType>(type_str, magic_enum::case_insensitive).value_or(MemoryType::user);
             const auto merge = input.value("merge", true);
             const auto source = input.contains("source") ? input.at("source").get<std::string>() : std::string{};
             const auto importance = input.value("importance", 0.5);
-            runtime_memory.update(key, content, category, merge, source, importance);
+            runtime_memory.update(key, content, category, type, merge, source, importance);
             return merge ? "Updated memory [" + key + "] with merge" : "Updated memory [" + key + "]";
         }
 
         std::string format_memory_list(const std::vector<MemoryRecord> &entries) {
             std::string out;
             for (const auto &entry : entries) {
-                utils::format_to(out, "[{}:{}] {}", entry.category, entry.key, entry.content);
+                utils::format_to(out, "[{}:{}:{}] {}", magic_enum::enum_name(entry.type), entry.category, entry.key, entry.content);
                 if (!entry.source.empty()) {
                     utils::format_to(out, " {{source={}}}", entry.source);
                 }
@@ -180,20 +185,26 @@ namespace orangutan::tools {
     } // namespace
 
     void register_builtin_memory_tools(ToolRegistry &registry, RuntimeMemory &runtime_memory) {
-        registry.register_tool({.definition = {.name = "remember",
-                                               .description = "Store a durable fact, preference, or project context for future conversations. "
-                                                              "Use meaningful, stable keys like 'project.lang', 'preference.style', or 'decision.auth-method'.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
-                                                                  {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
-                                                                  {"category", {{"type", "string"}, {"description", "Optional category label"}}},
-                                                                  {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
-                                                                  {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
-                                                                {"required", nlohmann::json::array({"key", "content"})}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return remember_memory(input, runtime_memory);
-                                }});
+        registry.register_tool(
+            {.definition =
+                 {.name = "remember",
+                  .description = "Store a durable fact, preference, or project context for future conversations. "
+                                 "Use meaningful, stable keys like 'project.lang', 'preference.style', or 'decision.auth-method'. "
+                                 "Type must be one of: user (role/preferences/knowledge), feedback (corrections/approaches), "
+                                 "project (work/decisions/deadlines), reference (external pointers).",
+                  .input_schema = {{"type", "object"},
+                                   {"properties",
+                                    {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
+                                     {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
+                                     {"category", {{"type", "string"}, {"description", "Granular category label (e.g. profile, preference, project)"}}},
+                                     {"type",
+                                      {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
+                                     {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
+                                     {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
+                                   {"required", nlohmann::json::array({"key", "content"})}}},
+             .execute = [&runtime_memory](const nlohmann::json &input) {
+                 return remember_memory(input, runtime_memory);
+             }});
 
         registry.register_tool({.definition = {.name = "recall",
                                                .description = "Recall stored memories. Use mode='query' with value=<search text>, or mode='category' with value=<category name>.",
@@ -211,19 +222,24 @@ namespace orangutan::tools {
                                     return forget_memory(input, runtime_memory);
                                 }});
 
-        registry.register_tool({.definition = {.name = "memory_store",
-                                               .description = "Plugin-style alias for remember.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
-                                                                  {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
-                                                                  {"category", {{"type", "string"}, {"description", "Optional category label"}}},
-                                                                  {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
-                                                                  {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
-                                                                {"required", nlohmann::json::array({"key", "content"})}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return remember_memory(input, runtime_memory);
-                                }});
+        registry.register_tool(
+            {.definition =
+                 {.name = "memory_store",
+                  .description = "Plugin-style alias for remember. "
+                                 "Type must be one of: user, feedback, project, reference.",
+                  .input_schema = {{"type", "object"},
+                                   {"properties",
+                                    {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
+                                     {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
+                                     {"category", {{"type", "string"}, {"description", "Granular category label"}}},
+                                     {"type",
+                                      {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
+                                     {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
+                                     {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
+                                   {"required", nlohmann::json::array({"key", "content"})}}},
+             .execute = [&runtime_memory](const nlohmann::json &input) {
+                 return remember_memory(input, runtime_memory);
+             }});
 
         registry.register_tool({.definition = {.name = "memory_recall",
                                                .description = "Plugin-style alias for recall. Use mode='query' or mode='category' with value=<text>.",
@@ -241,20 +257,25 @@ namespace orangutan::tools {
                                     return forget_memory(input, runtime_memory);
                                 }});
 
-        registry.register_tool({.definition = {.name = "memory_update",
-                                               .description = "Update or merge a memory entry.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
-                                                                  {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
-                                                                  {"category", {{"type", "string"}, {"description", "Optional category label"}}},
-                                                                  {"merge", {{"type", "boolean"}, {"description", "Merge with existing content instead of replacing it"}}},
-                                                                  {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
-                                                                  {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
-                                                                {"required", nlohmann::json::array({"key", "content"})}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return update_memory(input, runtime_memory);
-                                }});
+        registry.register_tool(
+            {.definition =
+                 {.name = "memory_update",
+                  .description = "Update or merge a memory entry. "
+                                 "Type must be one of: user, feedback, project, reference.",
+                  .input_schema = {{"type", "object"},
+                                   {"properties",
+                                    {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
+                                     {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
+                                     {"category", {{"type", "string"}, {"description", "Granular category label"}}},
+                                     {"type",
+                                      {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
+                                     {"merge", {{"type", "boolean"}, {"description", "Merge with existing content instead of replacing it"}}},
+                                     {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
+                                     {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
+                                   {"required", nlohmann::json::array({"key", "content"})}}},
+             .execute = [&runtime_memory](const nlohmann::json &input) {
+                 return update_memory(input, runtime_memory);
+             }});
 
         registry.register_tool({.definition = {.name = "memory_list",
                                                .description = "List recent memories, optionally filtered by category.",

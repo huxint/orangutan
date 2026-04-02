@@ -88,7 +88,7 @@ namespace orangutan::agent {
         static constexpr int loop_abort_threshold = 5;
         static constexpr int compaction_threshold = 50;
         static constexpr int compaction_keep_recent = 10;
-        static constexpr std::size_t max_memory_prompt_bytes = 2048;
+        static constexpr std::size_t max_memory_prompt_bytes = 4096;
 
         // Loop detection: tracks (tool_name, input_hash) call counts per run
         struct ToolCallSignature {

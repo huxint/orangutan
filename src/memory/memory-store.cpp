@@ -3,6 +3,7 @@
 #include "memory/memory-extract.hpp"
 #include "memory/memory-schema.hpp"
 #include "memory/memory-search.hpp"
+#include "memory/memory-age.hpp"
 #include "utils/string.hpp"
 
 #include <algorithm>
@@ -35,22 +36,30 @@ namespace orangutan::memory {
         }
 
         memory_detail::create_current_schema(db_);
+
+        // Add type column if missing (v2 migration)
+        if (!memory_detail::inspect_memory_schema(db_).has_type) {
+            memory_detail::add_type_column(db_);
+        }
+
         fts_enabled_ = memory_detail::enable_fts_if_available(db_);
     }
 
-    void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, const std::string &scope, const std::string &source,
-                               base::f64 importance) {
+    void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &scope,
+                               const std::string &source, base::f64 importance) {
         std::scoped_lock lock(mutex_);
-        memory_detail::upsert_memory_record(db_, scope, key, content, category, source, importance);
+        const auto type_str = std::string(magic_enum::enum_name(type));
+        memory_detail::upsert_memory_record(db_, scope, key, content, category, type_str, source, importance);
     }
 
-    void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, const std::string &scope, bool merge, const std::string &source,
-                             base::f64 importance) {
+    void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &scope, bool merge,
+                             const std::string &source, base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto existing = memory_detail::fetch_memory_by_key(db_, scope, key);
 
         auto final_content = content;
         auto final_category = category;
+        auto final_type = std::string(magic_enum::enum_name(type));
         auto final_source = source;
         auto final_importance = importance;
 
@@ -60,6 +69,10 @@ namespace orangutan::memory {
             }
             if (category.empty()) {
                 final_category = existing->category;
+            }
+            if (type == MemoryType::user && !category.empty()) {
+                // If type wasn't explicitly set but category was, infer from category
+                final_type = std::string(magic_enum::enum_name(infer_memory_type(final_category)));
             }
             if (source.empty()) {
                 final_source = existing->source;
@@ -74,7 +87,7 @@ namespace orangutan::memory {
             final_source = "manual";
         }
 
-        memory_detail::upsert_memory_record(db_, scope, key, final_content, final_category, final_source, final_importance);
+        memory_detail::upsert_memory_record(db_, scope, key, final_content, final_category, final_type, final_source, final_importance);
     }
 
     std::vector<MemoryRecord> MemoryStore::search(const std::string &query, const std::string &scope, std::size_t limit) {
@@ -88,7 +101,7 @@ namespace orangutan::memory {
         std::unordered_map<int, base::f64> fts_bonus_by_id;
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
-                sqlite::Statement fts_stmt(db_, "SELECT m.id, m.memory_key, m.content, m.category, m.scope, m.source, m.updated_at, m.importance, m.access_count "
+                sqlite::Statement fts_stmt(db_, "SELECT m.id, m.memory_key, m.content, m.category, m.type, m.scope, m.source, m.updated_at, m.importance, m.access_count "
                                                 "FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid "
                                                 "WHERE memories_fts MATCH ? AND m.scope = ? ORDER BY rank LIMIT 64");
                 fts_stmt.bind_text(1, *fts_query);
@@ -100,7 +113,7 @@ namespace orangutan::memory {
             }
         }
 
-        sqlite::Statement stmt(db_, "SELECT id, memory_key, content, category, scope, source, updated_at, importance, access_count "
+        sqlite::Statement stmt(db_, "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                     "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
         stmt.bind_text(1, scope);
         stmt.bind_int(2, static_cast<int>(memory_detail::search_scan_limit));
@@ -188,9 +201,9 @@ namespace orangutan::memory {
         std::scoped_lock lock(mutex_);
         const auto capped_limit = static_cast<int>(limit == 0 ? memory_detail::default_list_limit : limit);
 
-        sqlite::Statement stmt(db_, category.empty() ? "SELECT id, memory_key, content, category, scope, source, updated_at, importance, access_count "
+        sqlite::Statement stmt(db_, category.empty() ? "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                                        "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?"
-                                                     : "SELECT id, memory_key, content, category, scope, source, updated_at, importance, access_count "
+                                                     : "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                                        "FROM memories WHERE scope = ? AND category = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
         stmt.bind_text(1, scope);
         if (category.empty()) {
@@ -244,10 +257,64 @@ namespace orangutan::memory {
         const auto candidates = memory_detail::extract_auto_candidates(text);
         std::size_t stored = 0;
         for (const auto &candidate : candidates) {
-            update(candidate.key, candidate.content, candidate.category, scope, memory_detail::should_merge_auto_candidate(candidate.key), source, candidate.importance);
+            update(candidate.key, candidate.content, candidate.category, candidate.type, scope, memory_detail::should_merge_auto_candidate(candidate.key), source,
+                   candidate.importance);
             ++stored;
         }
         return stored;
+    }
+
+    std::size_t MemoryStore::consolidate(const std::string &scope, std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
+        std::scoped_lock lock(mutex_);
+
+        // Phase 1: Prune stale, low-importance, non-journal memories.
+        std::size_t pruned = 0;
+        {
+            sqlite::Statement stmt(db_, "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                        "FROM memories WHERE scope = ? AND category != 'journal' "
+                                        "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT 500");
+            stmt.bind_text(1, scope);
+            auto records = memory_detail::collect_records(stmt);
+
+            for (const auto &record : records) {
+                const auto age = memory_age_days(record.updated_at);
+                if (age >= stale_days && record.importance <= stale_importance_threshold && record.access_count <= 1) {
+                    sqlite::Statement del(db_, "DELETE FROM memories WHERE id = ?");
+                    del.bind_int(1, record.id);
+                    static_cast<void>(del.step());
+                    ++pruned;
+                }
+            }
+        }
+
+        // Phase 2: Enforce per-scope limit (keep most important/recent, drop the rest).
+        {
+            sqlite::Statement count_stmt(db_, "SELECT COUNT(*) FROM memories WHERE scope = ? AND category != 'journal'");
+            count_stmt.bind_text(1, scope);
+            if (count_stmt.step()) {
+                const auto total = static_cast<std::size_t>(count_stmt.column_int(0));
+                if (total > max_per_scope) {
+                    const auto excess = static_cast<int>(total - max_per_scope);
+                    sqlite::Statement trim(db_, "DELETE FROM memories WHERE id IN ("
+                                                "SELECT id FROM memories WHERE scope = ? AND category != 'journal' "
+                                                "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT ?)");
+                    trim.bind_text(1, scope);
+                    trim.bind_int(2, excess);
+                    static_cast<void>(trim.step());
+                    pruned += static_cast<std::size_t>(db_.changes());
+                }
+            }
+        }
+
+        return pruned;
+    }
+
+    std::string MemoryStore::manifest(const std::string &scope, std::size_t limit) {
+        auto records = list(scope, {}, limit);
+        std::erase_if(records, [](const MemoryRecord &record) {
+            return record.category == "journal";
+        });
+        return memory_detail::format_memory_manifest(records);
     }
 
 } // namespace orangutan::memory

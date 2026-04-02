@@ -1,4 +1,5 @@
 #include "memory/memory-mirror.hpp"
+#include "memory/memory-type.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
 #include "utils/string.hpp"
@@ -23,7 +24,7 @@ namespace orangutan::memory {
                 out.append("- No durable memories captured yet.\n");
             } else {
                 for (const auto &record : durable_records) {
-                    utils::format_to(out, "- [{}:{}] {}", record.category, record.key, record.content);
+                    utils::format_to(out, "- [{}:{}:{}] {}", magic_enum::enum_name(record.type), record.category, record.key, record.content);
                     if (!record.source.empty()) {
                         utils::format_to(out, " {{source={}}}", record.source);
                     }

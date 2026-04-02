@@ -1,4 +1,6 @@
 #include "memory/memory-search.hpp"
+#include "memory/memory-age.hpp"
+#include "memory/memory-type.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 
@@ -121,11 +123,34 @@ namespace orangutan::memory::detail {
     std::string format_records(const std::vector<MemoryRecord> &records) {
         std::string out;
         for (const auto &record : records) {
-            utils::format_to(out, "[{}:{}] {}", record.category, record.key, record.content);
+            utils::format_to(out, "[{}:{}:{}] {}", magic_enum::enum_name(record.type), record.category, record.key, record.content);
             if (!record.source.empty()) {
                 utils::format_to(out, " {{source={}}}", record.source);
             }
             out.push_back('\n');
+        }
+        return out;
+    }
+
+    std::string format_records_with_age(const std::vector<MemoryRecord> &records) {
+        std::string out;
+        for (const auto &record : records) {
+            utils::format_to(out, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
+            const auto caveat = memory_freshness_caveat(record.updated_at);
+            if (!caveat.empty()) {
+                out.push_back(' ');
+                out.append(caveat);
+            }
+            out.push_back('\n');
+        }
+        return out;
+    }
+
+    std::string format_memory_manifest(const std::vector<MemoryRecord> &records) {
+        std::string out;
+        for (const auto &record : records) {
+            utils::format_to(out, "- [{}] {} ({}): {}\n", magic_enum::enum_name(record.type), record.key, memory_age_text(record.updated_at),
+                             record.content.substr(0, std::min<std::size_t>(record.content.size(), 80)));
         }
         return out;
     }
@@ -180,18 +205,19 @@ namespace orangutan::memory::detail {
                 .key = stmt.column_text(1),
                 .content = stmt.column_text(2),
                 .category = stmt.column_text(3),
-                .scope = stmt.column_text(4),
-                .source = stmt.column_text(5),
-                .updated_at = stmt.column_text(6),
-                .importance = stmt.column_double(7),
-                .access_count = stmt.column_int(8),
+                .type = magic_enum::enum_cast<MemoryType>(stmt.column_text(4), magic_enum::case_insensitive).value_or(MemoryType::user),
+                .scope = stmt.column_text(5),
+                .source = stmt.column_text(6),
+                .updated_at = stmt.column_text(7),
+                .importance = stmt.column_double(8),
+                .access_count = stmt.column_int(9),
             });
         }
         return records;
     }
 
     std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, const std::string &scope, const std::string &key) {
-        sqlite::Statement stmt(db, "SELECT id, memory_key, content, category, scope, source, updated_at, importance, access_count "
+        sqlite::Statement stmt(db, "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                    "FROM memories WHERE scope = ? AND memory_key = ? LIMIT 1");
         stmt.bind_text(1, scope);
         stmt.bind_text(2, key);
@@ -203,12 +229,13 @@ namespace orangutan::memory::detail {
     }
 
     void upsert_memory_record(sqlite::Database &db, const std::string &scope, const std::string &key, const std::string &content, const std::string &category,
-                              const std::string &source, base::f64 importance) {
-        sqlite::Statement stmt(db, "INSERT INTO memories (scope, memory_key, content, category, source, importance, created_at, updated_at, last_accessed_at) "
-                                   "VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "
+                              const std::string &type, const std::string &source, base::f64 importance) {
+        sqlite::Statement stmt(db, "INSERT INTO memories (scope, memory_key, content, category, type, source, importance, created_at, updated_at, last_accessed_at) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "
                                    "ON CONFLICT(scope, memory_key) DO UPDATE SET "
                                    "content = excluded.content, "
                                    "category = excluded.category, "
+                                   "type = excluded.type, "
                                    "source = excluded.source, "
                                    "importance = excluded.importance, "
                                    "updated_at = datetime('now')");
@@ -216,8 +243,9 @@ namespace orangutan::memory::detail {
         stmt.bind_text(2, key);
         stmt.bind_text(3, content);
         stmt.bind_text(4, category.empty() ? std::string{"general"} : category);
-        stmt.bind_text(5, source.empty() ? std::string{"manual"} : source);
-        stmt.bind_double(6, importance);
+        stmt.bind_text(5, type.empty() ? std::string{"user"} : type);
+        stmt.bind_text(6, source.empty() ? std::string{"manual"} : source);
+        stmt.bind_double(7, importance);
         static_cast<void>(stmt.step());
     }
 

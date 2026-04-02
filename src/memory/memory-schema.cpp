@@ -1,4 +1,5 @@
 #include "memory/memory-schema.hpp"
+#include "memory/memory-type.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -33,6 +34,7 @@ namespace orangutan::memory::detail {
             schema.has_importance = schema.has_importance || column_name == "importance";
             schema.has_access_count = schema.has_access_count || column_name == "access_count";
             schema.has_last_accessed_at = schema.has_last_accessed_at || column_name == "last_accessed_at";
+            schema.has_type = schema.has_type || column_name == "type";
         }
         return schema;
     }
@@ -46,6 +48,7 @@ namespace orangutan::memory::detail {
             memory_key TEXT NOT NULL,
             content TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'general',
+            type TEXT NOT NULL DEFAULT 'user',
             source TEXT NOT NULL DEFAULT 'manual',
             importance REAL NOT NULL DEFAULT 0.5,
             access_count INTEGER NOT NULL DEFAULT 0,
@@ -57,18 +60,20 @@ namespace orangutan::memory::detail {
         CREATE INDEX IF NOT EXISTS idx_memories_scope_updated ON memories(scope, updated_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_memories_scope_category ON memories(scope, category, updated_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_memories_scope_access ON memories(scope, access_count DESC, updated_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_memories_scope_type ON memories(scope, type, updated_at DESC, id DESC);
         )",
             "Failed to create memory schema");
     }
 
     bool enable_fts_if_available(sqlite::Database &db) {
-        if (!db.try_exec("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_key, content, category, scope UNINDEXED, tokenize='unicode61');")) {
+        if (!db.try_exec("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_key, content, category, type, scope UNINDEXED, tokenize='unicode61');")) {
             return false;
         }
 
-        if (!db.try_exec("CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN "
-                         "INSERT INTO memories_fts(rowid, memory_key, content, category, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.scope); "
-                         "END;")) {
+        if (!db.try_exec(
+                "CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN "
+                "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
+                "END;")) {
             return false;
         }
 
@@ -78,18 +83,19 @@ namespace orangutan::memory::detail {
             return false;
         }
 
-        if (!db.try_exec("CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN "
-                         "DELETE FROM memories_fts WHERE rowid = old.id; "
-                         "INSERT INTO memories_fts(rowid, memory_key, content, category, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.scope); "
-                         "END;")) {
+        if (!db.try_exec(
+                "CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN "
+                "DELETE FROM memories_fts WHERE rowid = old.id; "
+                "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
+                "END;")) {
             return false;
         }
 
         if (!db.try_exec("DELETE FROM memories_fts;")) {
             return false;
         }
-        if (!db.try_exec("INSERT INTO memories_fts(rowid, memory_key, content, category, scope) "
-                         "SELECT id, memory_key, content, category, scope FROM memories;")) {
+        if (!db.try_exec("INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) "
+                         "SELECT id, memory_key, content, category, type, scope FROM memories;")) {
             return false;
         }
 
@@ -143,6 +149,31 @@ namespace orangutan::memory::detail {
         }
 
         db.exec("DROP TABLE memories_legacy;", "Failed to drop legacy memories table");
+    }
+
+    void add_type_column(sqlite::Database &db) {
+        // Add the type column with default 'user'
+        db.exec("ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'user';", "Failed to add type column");
+
+        // Backfill type from existing category values
+        struct CategoryTypeMapping {
+            const char *category;
+            const char *type;
+        };
+        static constexpr CategoryTypeMapping mappings[] = {
+            {"profile", "user"}, {"preference", "user"}, {"general", "user"},      {"project", "project"}, {"decision", "project"},
+            {"task", "project"}, {"journal", "project"}, {"learning", "feedback"}, {"fact", "reference"},
+        };
+
+        for (const auto &[category, type] : mappings) {
+            sqlite::Statement stmt(db, "UPDATE memories SET type = ? WHERE category = ?");
+            stmt.bind_text(1, type);
+            stmt.bind_text(2, category);
+            static_cast<void>(stmt.step());
+        }
+
+        // Create index for type
+        db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope_type ON memories(scope, type, updated_at DESC, id DESC);", "Failed to create type index");
     }
 
 } // namespace orangutan::memory::detail

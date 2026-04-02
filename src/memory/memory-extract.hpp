@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types/types.hpp"
+#include "memory/memory-type.hpp"
 
 #include <string>
 #include <string_view>
@@ -12,6 +13,7 @@ namespace orangutan::memory::detail {
         std::string key;
         std::string content;
         std::string category;
+        MemoryType type = MemoryType::user;
         base::f64 importance = 0.5;
     };
 

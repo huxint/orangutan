@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types/types.hpp"
+#include "memory/memory-type.hpp"
 #include "storage/sqlite.hpp"
 
 #include <filesystem>
@@ -16,6 +17,7 @@ namespace orangutan::memory {
         std::string key;
         std::string content;
         std::string category;
+        MemoryType type = MemoryType::user;
         std::string scope;
         std::string source;
         std::string updated_at;
@@ -42,11 +44,11 @@ namespace orangutan::memory {
         MemoryStore(MemoryStore &&) = delete;
         MemoryStore &operator=(MemoryStore &&) = delete;
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", const std::string &scope = {},
-                      const std::string &source = "manual", base::f64 importance = 0.5);
+        void remember(const std::string &key, const std::string &content, const std::string &category = "general", MemoryType type = MemoryType::user,
+                      const std::string &scope = {}, const std::string &source = "manual", base::f64 importance = 0.5);
 
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, const std::string &scope = {}, bool merge = true,
-                    const std::string &source = {}, base::f64 importance = 0.5);
+        void update(const std::string &key, const std::string &content, const std::string &category = {}, MemoryType type = MemoryType::user, const std::string &scope = {},
+                    bool merge = true, const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
         std::vector<MemoryRecord> search(const std::string &query, const std::string &scope = {}, std::size_t limit = 8);
@@ -71,6 +73,15 @@ namespace orangutan::memory {
 
         [[nodiscard]]
         std::size_t auto_capture(const std::string &text, const std::string &scope = {}, const std::string &source = "auto:user");
+
+        /// Consolidate memories: prune stale low-importance entries, enforce per-scope limits.
+        /// Returns the number of records pruned.
+        [[nodiscard]]
+        std::size_t consolidate(const std::string &scope = {}, std::size_t max_per_scope = 200, int stale_days = 90, base::f64 stale_importance_threshold = 0.3);
+
+        /// Generate a concise manifest listing of all non-journal memories.
+        [[nodiscard]]
+        std::string manifest(const std::string &scope = {}, std::size_t limit = 200);
 
     private:
         sqlite::Database db_;

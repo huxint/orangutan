@@ -3,6 +3,7 @@
 #include "types/types.hpp"
 #include "memory/memory-mirror.hpp"
 #include "memory/memory-store.hpp"
+#include "memory/memory-type.hpp"
 #include "bootstrap/memory-context.hpp"
 
 #include <string>
@@ -28,10 +29,10 @@ namespace orangutan::memory {
             return context_;
         }
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", const std::string &source = "manual",
-                      base::f64 importance = 0.5);
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, bool merge = true, const std::string &source = {},
-                    base::f64 importance = 0.5);
+        void remember(const std::string &key, const std::string &content, const std::string &category = "general", MemoryType type = MemoryType::user,
+                      const std::string &source = "manual", base::f64 importance = 0.5);
+        void update(const std::string &key, const std::string &content, const std::string &category = {}, MemoryType type = MemoryType::user, bool merge = true,
+                    const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
         bool forget(const std::string &key);
@@ -65,6 +66,14 @@ namespace orangutan::memory {
 
         [[nodiscard]]
         static bool query_requests_journal(std::string_view query);
+
+        /// Consolidate memories: prune stale/low-importance, enforce limits.
+        [[nodiscard]]
+        std::size_t consolidate(std::size_t max_per_scope = 200, int stale_days = 90, base::f64 stale_importance_threshold = 0.3);
+
+        /// Generate a concise manifest of all stored memories (excluding journals).
+        [[nodiscard]]
+        std::string manifest(std::size_t limit = 200);
 
     private:
         MemoryStore &store_;

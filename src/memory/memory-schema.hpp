@@ -15,6 +15,7 @@ namespace orangutan::memory::detail {
         bool has_importance = false;
         bool has_access_count = false;
         bool has_last_accessed_at = false;
+        bool has_type = false;
     };
 
     [[nodiscard]]
@@ -27,5 +28,6 @@ namespace orangutan::memory::detail {
     [[nodiscard]]
     std::pair<std::string, std::string> parse_legacy_storage_key(std::string_view stored_key);
     void migrate_legacy_memories(sqlite::Database &db);
+    void add_type_column(sqlite::Database &db);
 
 } // namespace orangutan::memory::detail

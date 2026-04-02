@@ -1,5 +1,6 @@
 #include "memory/memory-store.hpp"
 #include "memory/memory-extract.hpp"
+#include "memory/memory-type.hpp"
 #include "memory/runtime-memory.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "tools/registry/tool.hpp"
@@ -162,7 +163,7 @@ namespace {
     TEST_CASE("update_preserves_existing_category_and_source_when_omitted") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("profile.name", "Alice", "profile", {}, "auto:session", 0.9);
+        store.remember("profile.name", "Alice", "profile", MemoryType::user, {}, "auto:session", 0.9);
 
         store.update("profile.name", "Alice Example");
 
@@ -193,7 +194,7 @@ namespace {
     TEST_CASE("stats_count_manual_and_auto_entries") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("user_name", "Alice", "profile", {}, "manual", 0.9);
+        store.remember("user_name", "Alice", "profile", MemoryType::user, {}, "manual", 0.9);
         static_cast<void>(store.auto_capture("my name is Bob and we are working on orangutan"));
 
         const auto stats = store.stats();
@@ -231,8 +232,8 @@ namespace {
     TEST_CASE("scoped_memories_do_not_leak_across_identities") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("preferred_name", "Alice", "profile", "jid:alice");
-        store.remember("preferred_name", "Bob", "profile", "jid:bob");
+        store.remember("preferred_name", "Alice", "profile", MemoryType::user, "jid:alice");
+        store.remember("preferred_name", "Bob", "profile", MemoryType::user, "jid:bob");
 
         const auto alice = store.recall("preferred_name", "jid:alice");
         const auto bob = store.recall("preferred_name", "jid:bob");
@@ -405,34 +406,22 @@ namespace {
         CHECK(recall.contains("Alice"));
     };
 
-    TEST_CASE("auto_capture_chinese_name_produces_valid_utf8") {
+    TEST_CASE("auto_capture_chinese_input_defers_to_llm_distillation") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("我是一个算法高手"));
 
-        const auto name = store.recall("profile.name");
-        CHECK(completes_without_throw([&] {
-            nlohmann::json j = name;
-            static_cast<void>(j.dump());
-        }));
-        if (!name.contains("(no memories found)")) {
-            CHECK(name.contains("\xe4\xb8\x80"));
-        }
+        const auto stats = store.stats();
+        CHECK(stats.auto_entries == 0);
     };
 
-    TEST_CASE("auto_capture_chinese_remember_produces_valid_utf8") {
+    TEST_CASE("auto_capture_chinese_remember_defers_to_llm_distillation") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
         static_cast<void>(store.auto_capture("记住我是一个算法高手"));
 
         const auto stats = store.stats();
-        CHECK(stats.auto_entries >= 1);
-
-        const auto dump = store.dump_all();
-        CHECK(completes_without_throw([&] {
-            nlohmann::json j = dump;
-            static_cast<void>(j.dump());
-        }));
+        CHECK(stats.auto_entries == 0);
     };
 
     TEST_CASE("auto_capture_accented_latin_produces_valid_utf8") {
@@ -466,8 +455,8 @@ namespace {
     TEST_CASE("stats_expose_journal_entries_separately") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("project.current", "orangutan memory refactor", "project", {}, "session:distilled", 0.9);
-        store.remember("journal.1", "Reviewed recall ranking and mirror design", "journal", {}, "session:journal", 0.4);
+        store.remember("project.current", "orangutan memory refactor", "project", MemoryType::project, {}, "session:distilled", 0.9);
+        store.remember("journal.1", "Reviewed recall ranking and mirror design", "journal", MemoryType::project, {}, "session:journal", 0.4);
 
         const auto stats = store.stats();
         CHECK(stats.total == 2);
@@ -485,7 +474,7 @@ namespace {
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
 
-        runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
 
         const auto snapshot = workspace / "MEMORY.md";
         REQUIRE(std::filesystem::exists(snapshot));
@@ -508,7 +497,7 @@ namespace {
                                          .mirror = {.enabled = false, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
 
-        runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
         CHECK_FALSE(std::filesystem::exists(workspace / "MEMORY.md"));
 
         std::filesystem::remove_all(workspace);
@@ -530,7 +519,7 @@ namespace {
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
-        runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
 
         const auto refresh = runtime.refresh_mirror();
         CHECK(refresh.skipped);
@@ -560,7 +549,7 @@ namespace {
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
-        runtime.remember("project.current", "orangutan memory enhancements", "project", "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
 
         const auto refresh = runtime.refresh_mirror();
         CHECK(refresh.skipped);
@@ -625,8 +614,8 @@ namespace {
                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                   });
 
-        alpha.remember("project.current", "alpha memory", "project", "session:distilled", 0.9);
-        beta.remember("project.current", "beta memory", "project", "session:distilled", 0.9);
+        alpha.remember("project.current", "alpha memory", "project", MemoryType::project, "session:distilled", 0.9);
+        beta.remember("project.current", "beta memory", "project", MemoryType::project, "session:distilled", 0.9);
 
         const auto alpha_refresh = alpha.refresh_mirror();
         CHECK(alpha_refresh.refreshed);
@@ -643,64 +632,9 @@ namespace {
         std::filesystem::remove_all(workspace);
     };
 
-    TEST_CASE("chinese_name_stops_at_cjk_comma") {
+    TEST_CASE("chinese_input_is_not_captured_by_regex_auto_capture") {
         const auto candidates = memory_detail::extract_auto_candidates("我叫阿明，做编译器");
-        bool found = false;
-        for (const auto &candidate : candidates) {
-            if (candidate.key == "profile.name" && candidate.content == "阿明") {
-                found = true;
-                break;
-            }
-        }
-        CHECK(found);
-    };
-
-    TEST_CASE("chinese_remember_skips_fullwidth_colon") {
-        const auto candidates = memory_detail::extract_auto_candidates("请记住：算法高手。");
-        bool found = false;
-        for (const auto &candidate : candidates) {
-            if (candidate.category == "fact" && candidate.content == "算法高手") {
-                found = true;
-                break;
-            }
-        }
-        CHECK(found);
-    };
-
-    TEST_CASE("chinese_project_matches_mid_utterance_with_fixed_key") {
-        const auto candidates = memory_detail::extract_auto_candidates("好的，我们在做编译器。");
-        bool found = false;
-        for (const auto &candidate : candidates) {
-            if (candidate.key == "project.current" && candidate.category == "project" && candidate.content == "编译器") {
-                found = true;
-                break;
-            }
-        }
-        CHECK(found);
-    };
-
-    TEST_CASE("chinese_remember_matches_mid_utterance_with_hashed_key") {
-        const auto candidates = memory_detail::extract_auto_candidates("好的，请记住：算法高手。");
-        bool found = false;
-        for (const auto &candidate : candidates) {
-            if (candidate.category == "fact" && candidate.content == "算法高手" && candidate.key.rfind("fact.note.", 0) == 0) {
-                found = true;
-                break;
-            }
-        }
-        CHECK(found);
-    };
-
-    TEST_CASE("chinese_name_stops_at_invalid_utf8") {
-        const auto candidates = memory_detail::extract_auto_candidates(std::string{"我叫阿"} + "\xff" + "明");
-        bool found = false;
-        for (const auto &candidate : candidates) {
-            if (candidate.key == "profile.name" && candidate.content == "阿") {
-                found = true;
-                break;
-            }
-        }
-        CHECK(found);
+        CHECK(candidates.empty());
     };
 
     TEST_CASE("ascii_passes_through") {
