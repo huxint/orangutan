@@ -25,14 +25,7 @@ namespace orangutan::fileio {
         }
 
         void close() {
-            if (fp_ == nullptr) {
-                return;
-            }
-
-            auto *raw = fp_.release();   // NOLINT(cppcoreguidelines-owning-memory)
-            if (std::fclose(raw) != 0) { // NOLINT(cppcoreguidelines-owning-memory)
-                throw std::runtime_error("failed to close file: " + path_.string());
-            }
+            fp_.reset();
         }
 
     private:

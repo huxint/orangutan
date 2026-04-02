@@ -32,10 +32,6 @@ namespace orangutan::automation {
             return result;
         }
 
-        bool matches_id_or_name(std::string_view candidate_id, std::string_view candidate_name, std::string_view id_or_name) {
-            return candidate_id == id_or_name || candidate_name == id_or_name;
-        }
-
         TaskSpec read_task(sqlite::Statement &stmt) {
             TaskSpec task;
             task.id = stmt.column_text(0);
@@ -89,7 +85,7 @@ namespace orangutan::automation {
             run.agent_key = stmt.column_text(3);
             run.automation_name = stmt.column_text(4);
             const auto started_text = stmt.column_text(5);
-            std::from_chars(started_text.data(), started_text.data() + started_text.size(), run.started_at);
+            static_cast<void>(std::from_chars(started_text.data(), started_text.data() + started_text.size(), run.started_at));
             run.finished_at = decode_optional_seconds(stmt.column_text(6));
             run.status = stmt.column_text(7);
             run.summary = stmt.column_text(8);
@@ -107,7 +103,7 @@ namespace orangutan::automation {
             item.title = stmt.column_text(4);
             item.body = stmt.column_text(5);
             const auto created_text = stmt.column_text(6);
-            std::from_chars(created_text.data(), created_text.data() + created_text.size(), item.created_at);
+            static_cast<void>(std::from_chars(created_text.data(), created_text.data() + created_text.size(), item.created_at));
             item.acked_at = decode_optional_seconds(stmt.column_text(7));
             item.status = stmt.column_text(8);
             return item;
@@ -141,10 +137,15 @@ namespace orangutan::automation {
     }
 
     std::optional<TaskSpec> Store::find_task(const std::string &agent_key, const std::string &id_or_name) const {
-        for (const auto &task : list_tasks(agent_key)) {
-            if (matches_id_or_name(task.id, task.name, id_or_name)) {
-                return task;
-            }
+        std::scoped_lock lock(mutex_);
+        sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, schedule_kind, schedule_value, prompt, notes, delivery_json, last_run_at, last_status "
+                                    "FROM tasks "
+                                    "WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2) "
+                                    "LIMIT 1");
+        stmt.bind_text(1, agent_key);
+        stmt.bind_text(2, id_or_name);
+        if (stmt.step()) {
+            return read_task(stmt);
         }
         return std::nullopt;
     }
@@ -185,14 +186,10 @@ namespace orangutan::automation {
     }
 
     bool Store::remove_task(const std::string &agent_key, const std::string &id_or_name) {
-        const auto existing = find_task(agent_key, id_or_name);
-        if (!existing.has_value()) {
-            return false;
-        }
-
         std::scoped_lock lock(mutex_);
-        sqlite::Statement stmt(db_, "DELETE FROM tasks WHERE id = ?1");
-        stmt.bind_text(1, existing->id);
+        sqlite::Statement stmt(db_, "DELETE FROM tasks WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2)");
+        stmt.bind_text(1, agent_key);
+        stmt.bind_text(2, id_or_name);
         static_cast<void>(stmt.step());
         return db_.changes() > 0;
     }
@@ -224,10 +221,16 @@ namespace orangutan::automation {
     }
 
     std::optional<HeartbeatSpec> Store::find_heartbeat(const std::string &agent_key, const std::string &id_or_name) const {
-        for (const auto &heartbeat : list_heartbeats(agent_key)) {
-            if (matches_id_or_name(heartbeat.id, heartbeat.name, id_or_name)) {
-                return heartbeat;
-            }
+        std::scoped_lock lock(mutex_);
+        sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, every_seconds, jitter_seconds, active_hours_json, prompt, notes, delivery_json, paused, next_due_at, "
+                                    "last_run_at, last_status "
+                                    "FROM heartbeats "
+                                    "WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2) "
+                                    "LIMIT 1");
+        stmt.bind_text(1, agent_key);
+        stmt.bind_text(2, id_or_name);
+        if (stmt.step()) {
+            return read_heartbeat(stmt);
         }
         return std::nullopt;
     }
@@ -276,14 +279,10 @@ namespace orangutan::automation {
     }
 
     bool Store::remove_heartbeat(const std::string &agent_key, const std::string &id_or_name) {
-        const auto existing = find_heartbeat(agent_key, id_or_name);
-        if (!existing.has_value()) {
-            return false;
-        }
-
         std::scoped_lock lock(mutex_);
-        sqlite::Statement stmt(db_, "DELETE FROM heartbeats WHERE id = ?1");
-        stmt.bind_text(1, existing->id);
+        sqlite::Statement stmt(db_, "DELETE FROM heartbeats WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2)");
+        stmt.bind_text(1, agent_key);
+        stmt.bind_text(2, id_or_name);
         static_cast<void>(stmt.step());
         return db_.changes() > 0;
     }

@@ -2,7 +2,6 @@
 #include "utils/file.hpp"
 
 #include <cstdio>
-#include <spdlog/common.h>
 #include <stdexcept>
 
 namespace orangutan::fileio {
@@ -36,12 +35,13 @@ namespace orangutan::fileio {
 
     void write_file(const std::filesystem::path &path, std::string_view content) {
         File file(path, "w");
-        try {
-            spdlog::fmt_lib::print(file.get(), "{}", content);
-            file.close();
-        } catch (const std::exception &) {
-            throw std::runtime_error("failed to write file: " + path.string());
+        if (!content.empty()) {
+            const auto written = std::fwrite(content.data(), sizeof(char), content.size(), file.get());
+            if (written != content.size()) {
+                throw std::runtime_error("failed to write file: " + path.string());
+            }
         }
+        file.close();
     }
 
     void write_file_binary(const std::filesystem::path &path, std::string_view content) {
