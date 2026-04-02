@@ -1,5 +1,7 @@
 #include "tool-registry.hpp"
 
+#include "utils/utf8.hpp"
+
 #include <ctre.hpp>
 #include <exception>
 #include <spdlog/spdlog.h>
@@ -57,7 +59,7 @@ namespace orangutan::tools {
     } // namespace
 
     std::string scrub_tool_output(std::string_view text) {
-        std::string result{text};
+        std::string result = utf8::sanitize(text);
         bool redacted = false;
 
         redacted |= redact_after_prefix<R"((sk-ant-api\d{2}-)[A-Za-z0-9_\-]{20,})">(result);
