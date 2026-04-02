@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -44,6 +45,8 @@ namespace orangutan::channel::qq {
 
         [[nodiscard]]
         bool is_connected() const override;
+        [[nodiscard]]
+        std::vector<std::string> known_user_jids() const;
 
     private:
         struct MessageReplyTracker {
@@ -92,6 +95,12 @@ namespace orangutan::channel::qq {
         void load_session_state();
         void persist_session_state();
         void clear_session_state();
+        void load_known_users();
+        void persist_known_users();
+        void remember_known_user(std::string_view kind, const std::string &openid);
+        void remember_group_history(const std::string &jid, const std::string &sender_name, const std::string &content);
+        [[nodiscard]]
+        std::string consume_group_history(const std::string &jid);
         void handle_ws_message(const std::string &data);
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
         void handle_c2c_message(const nlohmann::json &data);

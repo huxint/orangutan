@@ -7,6 +7,7 @@
 #include <cctype>
 #include <charconv>
 #include <ctre.hpp>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
@@ -101,6 +102,12 @@ namespace orangutan::channel::qq {
             return std::filesystem::path(home) / ".orangutan" / "qq" / "sessions" / ("session-" + safe_name + ".json");
         }
 
+        std::filesystem::path qq_known_users_file_path(std::string_view bot_name) {
+            const auto home = getenv_or_default("HOME", ".");
+            const auto safe_name = sanitize_path_component(std::string(bot_name.empty() ? "default" : bot_name));
+            return std::filesystem::path(home) / ".orangutan" / "qq" / "known-users" / ("known-users-" + safe_name + ".json");
+        }
+
         std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
             if (offset + width > value.size()) {
                 return std::nullopt;
@@ -166,6 +173,12 @@ namespace orangutan::channel::qq {
             std::chrono::steady_clock::time_point last_update_at;
         };
 
+        struct KnownUser {
+            std::string kind;
+            std::string openid;
+            std::chrono::system_clock::time_point last_seen_at;
+        };
+
         std::mutex mutex;
         std::condition_variable cv;
         std::mutex heartbeat_mutex;
@@ -191,6 +204,11 @@ namespace orangutan::channel::qq {
         std::chrono::milliseconds debounce_window{1500};
         std::chrono::milliseconds debounce_max_wait{8000};
         std::string debounce_separator = "\n\n---\n\n";
+        std::mutex known_users_mutex;
+        std::unordered_map<std::string, KnownUser> known_users;
+        std::mutex group_history_mutex;
+        std::unordered_map<std::string, std::deque<std::string>> group_history;
+        std::size_t group_history_limit = 50;
 
         std::unique_ptr<qq::Transport> websocket;
     };
@@ -222,6 +240,7 @@ namespace orangutan::channel::qq {
         disconnect();
         clear_ready_state();
         load_session_state();
+        load_known_users();
         start_token_refresh_loop();
         start_debounce_loop();
 
@@ -363,6 +382,7 @@ namespace orangutan::channel::qq {
         stop_heartbeat();
         stop_token_refresh_loop();
         stop_debounce_loop();
+        persist_known_users();
 
         {
             std::scoped_lock lock(runtime_->mutex);
@@ -390,6 +410,20 @@ namespace orangutan::channel::qq {
 
     bool QqChannel::is_connected() const {
         return connected_.load();
+    }
+
+    std::vector<std::string> QqChannel::known_user_jids() const {
+        std::vector<std::string> jids;
+        {
+            std::scoped_lock lock(runtime_->known_users_mutex);
+            jids.reserve(runtime_->known_users.size());
+            for (const auto &[key, user] : runtime_->known_users) {
+                static_cast<void>(key);
+                jids.push_back(make_qq_jid(bot_name_, user.kind, user.openid));
+            }
+        }
+        std::sort(jids.begin(), jids.end());
+        return jids;
     }
 
     void QqChannel::ensure_access_token() {
@@ -783,6 +817,144 @@ namespace orangutan::channel::qq {
         }
     }
 
+    void QqChannel::load_known_users() {
+        const auto file_path = qq_known_users_file_path(bot_name_);
+        std::ifstream input(file_path);
+        if (!input.is_open()) {
+            return;
+        }
+
+        try {
+            nlohmann::json payload;
+            input >> payload;
+            if (!payload.is_array()) {
+                return;
+            }
+
+            std::unordered_map<std::string, RuntimeState::KnownUser> loaded;
+            for (const auto &item : payload) {
+                const auto kind = item.value("kind", std::string{});
+                const auto openid = item.value("openid", std::string{});
+                if (kind.empty() || openid.empty()) {
+                    continue;
+                }
+
+                const auto last_seen_text = item.value("last_seen", std::string{});
+                const auto last_seen = parse_iso_utc(last_seen_text).value_or(std::chrono::system_clock::now());
+                loaded.emplace(kind + ":" + openid, RuntimeState::KnownUser{
+                                                        .kind = kind,
+                                                        .openid = openid,
+                                                        .last_seen_at = last_seen,
+                                                    });
+            }
+
+            std::scoped_lock lock(runtime_->known_users_mutex);
+            runtime_->known_users = std::move(loaded);
+        } catch (const std::exception &e) {
+            spdlog::warn("Failed to load QQ known users: {}", e.what());
+        }
+    }
+
+    void QqChannel::persist_known_users() {
+        std::vector<RuntimeState::KnownUser> users;
+        {
+            std::scoped_lock lock(runtime_->known_users_mutex);
+            users.reserve(runtime_->known_users.size());
+            for (const auto &[key, user] : runtime_->known_users) {
+                static_cast<void>(key);
+                users.push_back(user);
+            }
+        }
+
+        std::sort(users.begin(), users.end(), [](const auto &lhs, const auto &rhs) {
+            return std::tie(lhs.kind, lhs.openid) < std::tie(rhs.kind, rhs.openid);
+        });
+
+        const auto file_path = qq_known_users_file_path(bot_name_);
+        try {
+            nlohmann::json payload = nlohmann::json::array();
+            for (const auto &user : users) {
+                payload.push_back({
+                    {"kind", user.kind},
+                    {"openid", user.openid},
+                    {"last_seen", format_iso_utc(user.last_seen_at)},
+                });
+            }
+
+            std::filesystem::create_directories(file_path.parent_path());
+            std::ofstream output(file_path, std::ios::trunc);
+            if (!output.is_open()) {
+                throw std::runtime_error("unable to open known users file for write");
+            }
+            output << payload.dump(2);
+        } catch (const std::exception &e) {
+            spdlog::warn("Failed to persist QQ known users: {}", e.what());
+        }
+    }
+
+    void QqChannel::remember_known_user(std::string_view kind, const std::string &openid) {
+        if (openid.empty()) {
+            return;
+        }
+
+        const auto now = std::chrono::system_clock::now();
+        {
+            std::scoped_lock lock(runtime_->known_users_mutex);
+            auto &entry = runtime_->known_users[std::string(kind) + ":" + openid];
+            entry.kind = std::string(kind);
+            entry.openid = openid;
+            entry.last_seen_at = now;
+        }
+        persist_known_users();
+    }
+
+    void QqChannel::remember_group_history(const std::string &jid, const std::string &sender_name, const std::string &content) {
+        if (jid.empty()) {
+            return;
+        }
+
+        std::string line;
+        if (sender_name.empty()) {
+            line = content;
+        } else if (content.empty()) {
+            line = "[" + sender_name + "]";
+        } else {
+            line = "[" + sender_name + "] " + content;
+        }
+        if (line.empty()) {
+            return;
+        }
+
+        std::scoped_lock lock(runtime_->group_history_mutex);
+        auto &history = runtime_->group_history[jid];
+        history.push_back(std::move(line));
+        while (history.size() > runtime_->group_history_limit) {
+            history.pop_front();
+        }
+    }
+
+    std::string QqChannel::consume_group_history(const std::string &jid) {
+        std::deque<std::string> history;
+        {
+            std::scoped_lock lock(runtime_->group_history_mutex);
+            auto it = runtime_->group_history.find(jid);
+            if (it == runtime_->group_history.end() || it->second.empty()) {
+                return {};
+            }
+            history = std::move(it->second);
+            runtime_->group_history.erase(it);
+        }
+
+        std::string merged;
+        for (const auto &line : history) {
+            if (!merged.empty()) {
+                merged.push_back('\n');
+            }
+            merged.append(line);
+        }
+        return merged;
+    }
+
     void QqChannel::handle_ws_message(const std::string &data) {
         const auto payload = nlohmann::json::parse(data);
 
@@ -909,6 +1081,7 @@ namespace orangutan::channel::qq {
         const auto sender_id = author.value("id", std::string{});
         const auto message_id = data.value("id", std::string{});
         remember_inbound_message(message_id);
+        remember_known_user("c2c", openid);
         on_message_({
             .jid = make_qq_jid(bot_name_, "c2c", openid),
             .sender = sender_id,
@@ -930,16 +1103,33 @@ namespace orangutan::channel::qq {
         const auto group_openid = data.value("group_openid", std::string{});
         const auto message_id = data.value("id", std::string{});
         const auto mention_ids = parse_mention_ids(data);
+        const auto sender_openid = author.value("member_openid", author.value("user_openid", author.value("id", std::string{})));
+        const auto sender_name = author.value("member_openid", author.value("id", std::string{}));
+        const auto message_jid = make_qq_jid(bot_name_, "group", group_openid);
+        const auto content = strip_mentions(data.value("content", std::string{}));
+        const auto mentioned = is_bot_mentioned(data, mention_ids);
+
         remember_inbound_message(message_id);
+        remember_known_user("group", sender_openid);
+        remember_group_history(message_jid, sender_name, content);
+        if (!mentioned) {
+            return;
+        }
+
+        auto aggregated_content = consume_group_history(message_jid);
+        if (aggregated_content.empty()) {
+            aggregated_content = content;
+        }
+
         on_message_({
-            .jid = make_qq_jid(bot_name_, "group", group_openid),
+            .jid = message_jid,
             .sender = author.value("id", std::string{}),
-            .sender_name = author.value("member_openid", author.value("id", std::string{})),
-            .content = strip_mentions(data.value("content", std::string{})),
+            .sender_name = sender_name,
+            .content = aggregated_content,
             .timestamp = data.value("timestamp", std::string{}),
             .message_id = message_id,
             .attachments = parse_attachments(data),
-            .mentioned = is_bot_mentioned(data, mention_ids),
+            .mentioned = mentioned,
             .mention_ids = mention_ids,
             .is_group = true,
         });
@@ -954,11 +1144,12 @@ namespace orangutan::channel::qq {
         const auto channel_id = data.value("channel_id", std::string{});
         const auto message_id = data.value("id", std::string{});
         const auto mention_ids = parse_mention_ids(data);
+        const auto sender_id = author.value("id", std::string{});
         remember_inbound_message(message_id);
         on_message_({
             .jid = make_qq_jid(bot_name_, "guild", channel_id),
-            .sender = author.value("id", std::string{}),
-            .sender_name = author.value("username", author.value("id", std::string{})),
+            .sender = sender_id,
+            .sender_name = author.value("username", sender_id),
             .content = strip_mentions(data.value("content", std::string{})),
             .timestamp = data.value("timestamp", std::string{}),
             .message_id = message_id,
@@ -998,6 +1189,9 @@ namespace orangutan::channel::qq {
         const auto user_openid = data.value("user_openid", std::string{});
         const auto channel_id = data.value("channel_id", std::string{});
         const bool is_guild = !channel_id.empty();
+        if (!is_guild) {
+            remember_known_user("c2c", user_openid);
+        }
         on_message_({
             .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id) : make_qq_jid(bot_name_, "c2c", user_openid),
             .sender = user_openid,
