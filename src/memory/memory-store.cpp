@@ -1,6 +1,5 @@
 #include "memory/memory-store.hpp"
 
-#include "memory/memory-extract.hpp"
 #include "memory/memory-schema.hpp"
 #include "memory/memory-search.hpp"
 #include "memory/memory-age.hpp"
@@ -247,21 +246,6 @@ namespace orangutan::memory {
 
     std::string MemoryStore::dump_all(const std::string &scope, std::size_t limit) {
         return memory_detail::format_records(list(scope, {}, limit));
-    }
-
-    std::size_t MemoryStore::auto_capture(const std::string &text, const std::string &scope, const std::string &source) {
-        if (!memory_detail::should_attempt_auto_capture(text)) {
-            return 0;
-        }
-
-        const auto candidates = memory_detail::extract_auto_candidates(text);
-        std::size_t stored = 0;
-        for (const auto &candidate : candidates) {
-            update(candidate.key, candidate.content, candidate.category, candidate.type, scope, memory_detail::should_merge_auto_candidate(candidate.key), source,
-                   candidate.importance);
-            ++stored;
-        }
-        return stored;
     }
 
     std::size_t MemoryStore::consolidate(const std::string &scope, std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {

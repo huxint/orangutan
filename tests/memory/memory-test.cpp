@@ -1,5 +1,4 @@
 #include "memory/memory-store.hpp"
-#include "memory/memory-extract.hpp"
 #include "memory/memory-type.hpp"
 #include "memory/runtime-memory.hpp"
 #include "bootstrap/memory-context.hpp"
@@ -191,42 +190,16 @@ namespace {
         CHECK(dump.contains("Working on orangutan"));
     };
 
-    TEST_CASE("stats_count_manual_and_auto_entries") {
+    TEST_CASE("stats_count_manual_entries") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
         store.remember("user_name", "Alice", "profile", MemoryType::user, {}, "manual", 0.9);
-        static_cast<void>(store.auto_capture("my name is Bob and we are working on orangutan"));
+        store.remember("project_context", "orangutan", "project");
 
         const auto stats = store.stats();
-        CHECK(stats.total == 3);
+        CHECK(stats.total == 2);
         CHECK(stats.categories >= 2);
-        CHECK(stats.manual_entries == 1);
-        CHECK(stats.auto_entries == 2);
-    };
-
-    TEST_CASE("auto_capture_extracts_structured_memories") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("my name is Alice. We are working on orangutan. I prefer concise answers."));
-
-        const auto name = store.recall("profile.name");
-        const auto project = store.recall("project.current");
-        const auto preference = store.recall("preference.general");
-
-        CHECK(name.contains("Alice"));
-        CHECK(project.contains("orangutan"));
-        CHECK(preference.contains("concise answers"));
-    };
-
-    TEST_CASE("auto_capture_merges_repeated_general_preferences") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("I prefer concise answers."));
-        static_cast<void>(store.auto_capture("I prefer short commit messages."));
-
-        const auto preference = store.recall("preference.general");
-        CHECK(preference.contains("concise answers"));
-        CHECK(preference.contains("short commit messages"));
+        CHECK(stats.manual_entries == 2);
     };
 
     TEST_CASE("scoped_memories_do_not_leak_across_identities") {
@@ -404,52 +377,6 @@ namespace {
         MemoryStore store(harness.db_path());
         const auto recall = store.recall("preferred_name", "jid:alice");
         CHECK(recall.contains("Alice"));
-    };
-
-    TEST_CASE("auto_capture_chinese_input_defers_to_llm_distillation") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("我是一个算法高手"));
-
-        const auto stats = store.stats();
-        CHECK(stats.auto_entries == 0);
-    };
-
-    TEST_CASE("auto_capture_chinese_remember_defers_to_llm_distillation") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("记住我是一个算法高手"));
-
-        const auto stats = store.stats();
-        CHECK(stats.auto_entries == 0);
-    };
-
-    TEST_CASE("auto_capture_accented_latin_produces_valid_utf8") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("my name is Jos\xc3\xa9"));
-
-        const auto name = store.recall("profile.name");
-        CHECK(completes_without_throw([&] {
-            nlohmann::json j = name;
-            static_cast<void>(j.dump());
-        }));
-        CHECK(name.contains("Jos\xc3\xa9"));
-    };
-
-    TEST_CASE("auto_capture_emoji_produces_valid_utf8") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        static_cast<void>(store.auto_capture("remember that the deploy emoji is \xf0\x9f\x9a\x80"));
-
-        const auto stats = store.stats();
-        CHECK(stats.auto_entries >= 1);
-
-        const auto dump = store.dump_all();
-        CHECK(completes_without_throw([&] {
-            nlohmann::json j = dump;
-            static_cast<void>(j.dump());
-        }));
     };
 
     TEST_CASE("stats_expose_journal_entries_separately") {
@@ -630,11 +557,6 @@ namespace {
         CHECK_FALSE(snapshot.contains("alpha memory"));
 
         std::filesystem::remove_all(workspace);
-    };
-
-    TEST_CASE("chinese_input_is_not_captured_by_regex_auto_capture") {
-        const auto candidates = memory_detail::extract_auto_candidates("我叫阿明，做编译器");
-        CHECK(candidates.empty());
     };
 
     TEST_CASE("ascii_passes_through") {

@@ -422,13 +422,6 @@ namespace orangutan::agent {
             final_text.clear();
         }
 
-        if (memory_ != nullptr) {
-            static_cast<void>(memory_->auto_capture(user_input, "auto:user"));
-            if (!final_text.empty()) {
-                static_cast<void>(memory_->auto_capture(final_text, "auto:assistant"));
-            }
-        }
-
         // Dispatch message_sending hook
         if (hook_manager_ != nullptr && !final_text.empty()) {
             auto ctx = build_message_context(HookEvent::message_sending, "assistant", final_text);
@@ -569,19 +562,6 @@ namespace orangutan::agent {
         if (transcript.empty()) {
             result.status = "Session transcript is empty.";
             return result;
-        }
-
-        for (const auto &message : history_) {
-            if (message.role() != base::role::user) {
-                continue;
-            }
-            for (const auto &block : message) {
-                const auto *text = std::get_if<Text>(&block);
-                if (text == nullptr || text->text.empty()) {
-                    continue;
-                }
-                static_cast<void>(memory_->auto_capture(text->text, "auto:session"));
-            }
         }
 
         constexpr std::string_view distillation_prompt = "You are distilling long-term memory from a completed conversation. "

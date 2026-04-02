@@ -288,7 +288,7 @@ namespace {
         std::filesystem::remove_all(db_path.parent_path());
     };
 
-    TEST_CASE("distill_session_memory_auto_capture_ignores_assistant_and_tool_result_text") {
+    TEST_CASE("distill_session_memory_with_empty_provider_stores_nothing") {
         EmptyDistillingProvider provider;
         ToolRegistry tools;
 
@@ -344,8 +344,8 @@ namespace {
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-exclusion", "memory.db");
         MemoryStore store(db_path);
-        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+        store.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "agent:default|jid:test", "session:distilled", 0.9);
+        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", MemoryType::project, "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);
@@ -363,8 +363,8 @@ namespace {
 
         const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-prompt-journal-inclusion", "memory.db");
         MemoryStore store(db_path);
-        store.remember("project.current", "orangutan memory enhancements", "project", "agent:default|jid:test", "session:distilled", 0.9);
-        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", "agent:default|jid:test", "session:journal", 0.4);
+        store.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "agent:default|jid:test", "session:distilled", 0.9);
+        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", MemoryType::project, "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
         AgentLoop loop(provider, tools, {}, &runtime_memory);

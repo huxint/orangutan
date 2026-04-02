@@ -71,9 +71,6 @@ namespace orangutan::memory {
         [[nodiscard]]
         std::string dump_all(const std::string &scope = {}, std::size_t limit = 50);
 
-        [[nodiscard]]
-        std::size_t auto_capture(const std::string &text, const std::string &scope = {}, const std::string &source = "auto:user");
-
         /// Consolidate memories: prune stale low-importance entries, enforce per-scope limits.
         /// Returns the number of records pruned.
         [[nodiscard]]

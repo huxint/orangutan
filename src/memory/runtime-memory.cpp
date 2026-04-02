@@ -78,14 +78,6 @@ namespace orangutan::memory {
         return store_.stats(context_.scope);
     }
 
-    std::size_t RuntimeMemory::auto_capture(const std::string &text, const std::string &source) {
-        const auto stored = store_.auto_capture(text, context_.scope, source);
-        if (stored > 0) {
-            refresh_mirror_after_write();
-        }
-        return stored;
-    }
-
     MemoryMirrorRefreshResult RuntimeMemory::refresh_mirror() const {
         return MemoryMirror::refresh_snapshot(context_, durable_records());
     }

@@ -56,9 +56,6 @@ namespace orangutan::memory {
         MemoryStats stats();
 
         [[nodiscard]]
-        std::size_t auto_capture(const std::string &text, const std::string &source = "auto:user");
-
-        [[nodiscard]]
         MemoryMirrorRefreshResult refresh_mirror() const;
 
         [[nodiscard]]
