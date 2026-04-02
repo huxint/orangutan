@@ -10,8 +10,10 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace orangutan::channel::qq {
@@ -39,6 +41,19 @@ namespace orangutan::channel::qq {
         bool is_connected() const override;
 
     private:
+        struct MessageReplyTracker {
+            std::chrono::steady_clock::time_point received_at;
+            int reply_count = 0;
+
+            static constexpr int max_replies = 4;
+            static constexpr auto ttl = std::chrono::hours(1);
+
+            [[nodiscard]]
+            bool can_reply(std::chrono::steady_clock::time_point now) const {
+                return reply_count < max_replies && (now - received_at) < ttl;
+            }
+        };
+
         struct RuntimeState;
 
         std::string bot_name_;
@@ -46,6 +61,8 @@ namespace orangutan::channel::qq {
         std::string client_secret_;
         std::unique_ptr<QqApiClient> api_client_;
         std::atomic<base::u16> msg_seq_{0};
+        std::unordered_map<std::string, MessageReplyTracker> reply_trackers_;
+        mutable std::mutex reply_trackers_mutex_;
         MessageCallback on_message_;
         std::atomic<bool> connected_{false};
         std::unique_ptr<RuntimeState> runtime_;
@@ -69,6 +86,21 @@ namespace orangutan::channel::qq {
         void clear_ready_state();
         [[nodiscard]]
         base::u16 next_msg_seq();
+        void remember_inbound_message(const std::string &message_id);
+        [[nodiscard]]
+        bool consume_passive_reply_quota(const std::string &message_id);
+
+        [[nodiscard]]
+        static std::vector<Attachment> parse_attachments(const nlohmann::json &data);
+
+        [[nodiscard]]
+        static std::vector<std::string> parse_mention_ids(const nlohmann::json &data);
+
+        [[nodiscard]]
+        bool is_bot_mentioned(const nlohmann::json &data, const std::vector<std::string> &mention_ids) const;
+
+        [[nodiscard]]
+        static std::string strip_mentions(const std::string &content);
 
         [[nodiscard]]
         static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);

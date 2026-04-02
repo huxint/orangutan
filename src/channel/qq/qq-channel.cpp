@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <regex>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -472,13 +473,16 @@ namespace orangutan::channel::qq {
         const auto author = data.value("author", nlohmann::json::object());
         const auto openid = author.value("user_openid", author.value("id", std::string{}));
         const auto sender_id = author.value("id", std::string{});
+        const auto message_id = data.value("id", std::string{});
+        remember_inbound_message(message_id);
         on_message_({
             .jid = make_qq_jid(bot_name_, "c2c", openid),
             .sender = sender_id,
             .sender_name = openid,
             .content = data.value("content", std::string{}),
             .timestamp = data.value("timestamp", std::string{}),
-            .message_id = data.value("id", std::string{}),
+            .message_id = message_id,
+            .attachments = parse_attachments(data),
             .is_group = false,
         });
     }
@@ -490,40 +494,64 @@ namespace orangutan::channel::qq {
 
         const auto author = data.value("author", nlohmann::json::object());
         const auto group_openid = data.value("group_openid", std::string{});
+        const auto message_id = data.value("id", std::string{});
+        const auto mention_ids = parse_mention_ids(data);
+        remember_inbound_message(message_id);
         on_message_({
             .jid = make_qq_jid(bot_name_, "group", group_openid),
             .sender = author.value("id", std::string{}),
             .sender_name = author.value("member_openid", author.value("id", std::string{})),
-            .content = data.value("content", std::string{}),
+            .content = strip_mentions(data.value("content", std::string{})),
             .timestamp = data.value("timestamp", std::string{}),
-            .message_id = data.value("id", std::string{}),
+            .message_id = message_id,
+            .attachments = parse_attachments(data),
+            .mentioned = is_bot_mentioned(data, mention_ids),
+            .mention_ids = mention_ids,
             .is_group = true,
         });
     }
 
     void QqChannel::send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
+        std::string passive_reply_message_id;
+        if (!reply_to_message_id.empty()) {
+            if (consume_passive_reply_quota(reply_to_message_id)) {
+                passive_reply_message_id = reply_to_message_id;
+            } else {
+                spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
+            }
+        }
+
         for (const auto &chunk : chunk_text(content, 4000)) {
             nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
                 {"msg_seq", next_msg_seq()},
             };
-            if (!reply_to_message_id.empty()) {
-                payload["msg_id"] = reply_to_message_id;
+            if (!passive_reply_message_id.empty()) {
+                payload["msg_id"] = passive_reply_message_id;
             }
             static_cast<void>(api_client_->post("/v2/users/" + openid + "/messages", payload));
         }
     }
 
     void QqChannel::send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
+        std::string passive_reply_message_id;
+        if (!reply_to_message_id.empty()) {
+            if (consume_passive_reply_quota(reply_to_message_id)) {
+                passive_reply_message_id = reply_to_message_id;
+            } else {
+                spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
+            }
+        }
+
         for (const auto &chunk : chunk_text(content, 4000)) {
             nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
                 {"msg_seq", next_msg_seq()},
             };
-            if (!reply_to_message_id.empty()) {
-                payload["msg_id"] = reply_to_message_id;
+            if (!passive_reply_message_id.empty()) {
+                payload["msg_id"] = passive_reply_message_id;
             }
             static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
         }
@@ -540,6 +568,119 @@ namespace orangutan::channel::qq {
     base::u16 QqChannel::next_msg_seq() {
         const auto current = msg_seq_.fetch_add(1, std::memory_order_relaxed);
         return static_cast<base::u16>((current + 1U) & 0xFFFFU);
+    }
+
+    void QqChannel::remember_inbound_message(const std::string &message_id) {
+        if (message_id.empty()) {
+            return;
+        }
+
+        std::scoped_lock lock(reply_trackers_mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        std::erase_if(reply_trackers_, [now](const auto &entry) {
+            return !entry.second.can_reply(now);
+        });
+
+        reply_trackers_[message_id] = MessageReplyTracker{
+            .received_at = now,
+            .reply_count = 0,
+        };
+    }
+
+    bool QqChannel::consume_passive_reply_quota(const std::string &message_id) {
+        if (message_id.empty()) {
+            return false;
+        }
+
+        std::scoped_lock lock(reply_trackers_mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        std::erase_if(reply_trackers_, [now](const auto &entry) {
+            return !entry.second.can_reply(now);
+        });
+
+        auto [it, inserted] = reply_trackers_.try_emplace(message_id, MessageReplyTracker{
+                                                                          .received_at = now,
+                                                                          .reply_count = 0,
+                                                                      });
+        auto &tracker = it->second;
+        if (!inserted && !tracker.can_reply(now)) {
+            return false;
+        }
+        if (tracker.reply_count >= MessageReplyTracker::max_replies) {
+            return false;
+        }
+
+        ++tracker.reply_count;
+        return true;
+    }
+
+    std::vector<Attachment> QqChannel::parse_attachments(const nlohmann::json &data) {
+        std::vector<Attachment> attachments;
+        if (!data.contains("attachments") || !data.at("attachments").is_array()) {
+            return attachments;
+        }
+
+        for (const auto &item : data.at("attachments")) {
+            attachments.push_back(Attachment{
+                .content_type = item.value("content_type", std::string{}),
+                .url = item.value("url", std::string{}),
+                .filename = item.value("filename", std::string{}),
+                .width = static_cast<int>(parse_integer_like(item, "width", 0)),
+                .height = static_cast<int>(parse_integer_like(item, "height", 0)),
+                .size = static_cast<int>(parse_integer_like(item, "size", 0)),
+            });
+        }
+
+        return attachments;
+    }
+
+    std::vector<std::string> QqChannel::parse_mention_ids(const nlohmann::json &data) {
+        std::vector<std::string> ids;
+        if (!data.contains("mentions") || !data.at("mentions").is_array()) {
+            return ids;
+        }
+
+        for (const auto &mention : data.at("mentions")) {
+            const auto mention_id = mention.value("member_openid", mention.value("user_openid", mention.value("id", std::string{})));
+            if (!mention_id.empty()) {
+                ids.push_back(mention_id);
+            }
+        }
+
+        return ids;
+    }
+
+    bool QqChannel::is_bot_mentioned(const nlohmann::json &data, const std::vector<std::string> &mention_ids) const {
+        if (mention_ids.empty()) {
+            return false;
+        }
+
+        if (data.contains("mentions") && data.at("mentions").is_array()) {
+            for (const auto &mention : data.at("mentions")) {
+                if (mention.value("bot", false)) {
+                    return true;
+                }
+                const auto mention_id = mention.value("id", std::string{});
+                if (!mention_id.empty() && mention_id == app_id_) {
+                    return true;
+                }
+            }
+        }
+
+        return data.value("content", std::string{}).contains("<@");
+    }
+
+    std::string QqChannel::strip_mentions(const std::string &content) {
+        static const std::regex mention_pattern(R"(<@!?[^>]+>)");
+        auto stripped = std::regex_replace(content, mention_pattern, "");
+
+        while (!stripped.empty() && std::isspace(static_cast<unsigned char>(stripped.front())) != 0) {
+            stripped.erase(stripped.begin());
+        }
+        while (!stripped.empty() && std::isspace(static_cast<unsigned char>(stripped.back())) != 0) {
+            stripped.pop_back();
+        }
+        return stripped;
     }
 
     std::vector<std::string> QqChannel::chunk_text(const std::string &text, std::size_t limit) {

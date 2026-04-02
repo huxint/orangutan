@@ -9,6 +9,15 @@
 
 namespace orangutan::channel {
 
+    struct Attachment {
+        std::string content_type;
+        std::string url;
+        std::string filename;
+        int width = 0;
+        int height = 0;
+        int size = 0;
+    };
+
     struct InboundMessage {
         std::string jid;
         std::string sender;
@@ -16,6 +25,9 @@ namespace orangutan::channel {
         std::string content;
         std::string timestamp;
         std::string message_id;
+        std::vector<Attachment> attachments;
+        bool mentioned = false;
+        std::vector<std::string> mention_ids;
         bool is_group = false;
         std::string agent_override;
         std::string reply_target;
@@ -68,6 +80,7 @@ namespace orangutan::channel {
 
 namespace orangutan {
 
+    using channel::Attachment;
     using channel::Channel;
     using channel::ChannelManager;
     using channel::InboundMessage;
