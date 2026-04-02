@@ -101,6 +101,7 @@ namespace orangutan::bootstrap {
             .model_name = input.primary_endpoint.model,
             .agent_key = input.agent_key,
             .is_channel_mode = input.runtime_origin != base::origin::cli,
+            .is_sandboxed = input.permissions.sandbox_mode != ToolSandboxMode::disabled,
         });
         return runtime;
     }

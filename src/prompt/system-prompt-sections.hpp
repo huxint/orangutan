@@ -19,17 +19,13 @@ namespace orangutan::prompt {
     [[nodiscard]]
     std::string task_guidelines_section();
 
-    // Safety and reversibility: destructive actions, blast radius
+    // Safety: action reversibility, AI alignment constraints
     [[nodiscard]]
-    std::string safety_actions_section();
+    std::string safety_section();
 
     // Tool usage guidance: prefer dedicated tools over shell, parallel calls
     [[nodiscard]]
     std::string tool_usage_section();
-
-    // Tone, style, formatting
-    [[nodiscard]]
-    std::string tone_style_section();
 
     // Output efficiency: conciseness, lead with action
     [[nodiscard]]
@@ -46,9 +42,10 @@ namespace orangutan::prompt {
         std::string model_name;
         std::string agent_key;
         bool is_channel_mode = false;
+        bool is_sandboxed = false;
     };
 
-    // Environment: cwd, git, platform, OS, model info
+    // Environment: cwd, platform, OS, model, sandbox, heartbeat
     [[nodiscard]]
     std::string environment_section(const EnvironmentInfo &info);
 
