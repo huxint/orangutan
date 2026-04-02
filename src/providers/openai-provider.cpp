@@ -1,5 +1,6 @@
 #include "providers/openai-provider.hpp"
 #include "providers/http-client.hpp"
+#include "providers/openai-protocol.hpp"
 #include "providers/sse-parser.hpp"
 
 #include <spdlog/spdlog.h>
@@ -104,26 +105,15 @@ namespace orangutan::providers {
                     response.content.emplace_back(Text{text_content_});
                 }
                 for (const auto &tc : tool_calls_) {
-                    nlohmann::json input = nlohmann::json::object();
-                    if (!tc.arguments.empty()) {
-                        try {
-                            input = nlohmann::json::parse(tc.arguments);
-                        } catch (const nlohmann::json::parse_error &) {
-                            spdlog::warn("Failed to parse OpenAI tool call arguments");
-                        }
+                    if (auto tool_use = detail::finalize_openai_tool_call(tc, "OpenAI chat completions stream"); tool_use.has_value()) {
+                        response.content.emplace_back(std::move(*tool_use));
                     }
-                    response.content.emplace_back(ToolUse(tc.id, tc.name, std::move(input)));
                 }
                 return response;
             }
 
         private:
-            struct ToolCallState {
-                std::string id;
-                std::string name;
-                std::string arguments;
-                bool announced = false;
-            };
+            using ToolCallState = detail::OpenAiToolCallState;
 
             const StreamCallback &on_event_;
             std::string text_content_;
@@ -161,23 +151,16 @@ namespace orangutan::providers {
                 }
 
                 for (const auto &tc : delta["tool_calls"]) {
+                    if (!tc.contains("index") || !tc["index"].is_number_integer()) {
+                        continue;
+                    }
                     const auto index = tc["index"].get<std::size_t>();
                     while (tool_calls_.size() <= index) {
                         tool_calls_.push_back({});
                     }
 
                     auto &call = tool_calls_[index];
-                    if (tc.contains("id")) {
-                        call.id = tc["id"].get<std::string>();
-                    }
-                    if (tc.contains("function")) {
-                        if (tc["function"].contains("name")) {
-                            call.name = tc["function"]["name"].get<std::string>();
-                        }
-                        if (tc["function"].contains("arguments")) {
-                            call.arguments += tc["function"]["arguments"].get<std::string>();
-                        }
-                    }
+                    detail::merge_chat_completions_tool_call_delta(call, tc);
 
                     if (!call.announced && !call.id.empty() && !call.name.empty()) {
                         on_event_("tool_call_start", {{"id", call.id}, {"name", call.name}, {"input", nlohmann::json::object()}});
@@ -258,26 +241,15 @@ namespace orangutan::providers {
                 }
                 for (const auto &[id, call] : tool_calls_) {
                     static_cast<void>(id);
-                    nlohmann::json input = nlohmann::json::object();
-                    if (!call.arguments.empty()) {
-                        try {
-                            input = nlohmann::json::parse(call.arguments);
-                        } catch (const nlohmann::json::parse_error &) {
-                            spdlog::warn("Failed to parse Responses tool call arguments");
-                        }
+                    if (auto tool_use = detail::finalize_openai_tool_call(call, "OpenAI responses stream"); tool_use.has_value()) {
+                        response.content.emplace_back(std::move(*tool_use));
                     }
-                    response.content.emplace_back(ToolUse(call.id, call.name, std::move(input)));
                 }
                 return response;
             }
 
         private:
-            struct ToolCallState {
-                std::string id;
-                std::string name;
-                std::string arguments;
-                bool announced = false;
-            };
+            using ToolCallState = detail::OpenAiToolCallState;
 
             const StreamCallback &on_event_;
             std::string text_content_;
@@ -291,36 +263,19 @@ namespace orangutan::providers {
     OpenAiProvider::OpenAiProvider(ProviderEndpoint endpoint)
     : endpoint_(std::move(endpoint)) {}
 
-    nlohmann::json OpenAiProvider::message_to_openai(const Message &msg) {
+    std::optional<nlohmann::json> OpenAiProvider::message_to_openai(const Message &msg) {
         if (msg.role() == base::role::assistant) {
-            nlohmann::json j;
-            j["role"] = "assistant";
-
-            std::string text_content;
-            nlohmann::json tool_calls = nlohmann::json::array();
-
-            for (const auto &block : msg) {
-                if (std::get_if<Thinking>(&block) != nullptr) {
-                    continue;
-                }
-                if (const auto *text = std::get_if<Text>(&block)) {
-                    text_content += text->text;
-                } else if (const auto *tool = std::get_if<ToolUse>(&block)) {
-                    tool_calls.push_back({{"id", tool->id}, {"type", "function"}, {"function", {{"name", tool->name}, {"arguments", tool->input.dump()}}}});
-                }
-            }
-
-            j["content"] = text_content.empty() ? nlohmann::json(nullptr) : nlohmann::json(text_content);
-            if (!tool_calls.empty()) {
-                j["tool_calls"] = tool_calls;
-            }
-            return j;
+            return detail::serialize_openai_assistant_message(msg);
         }
 
         if (msg.role() == base::role::user) {
             for (const auto &block : msg) {
                 if (const auto *result = std::get_if<ToolResult>(&block)) {
-                    return {{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}};
+                    if (result->tool_use_id.empty()) {
+                        spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
+                        continue;
+                    }
+                    return nlohmann::json{{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}};
                 }
             }
 
@@ -330,10 +285,13 @@ namespace orangutan::providers {
                     text += tb->text;
                 }
             }
-            return {{"role", "user"}, {"content", text}};
+            if (text.empty()) {
+                return std::nullopt;
+            }
+            return nlohmann::json{{"role", "user"}, {"content", text}};
         }
 
-        return {{"role", magic_enum::enum_name(msg.role())}, {"content", ""}};
+        return nlohmann::json{{"role", magic_enum::enum_name(msg.role())}, {"content", ""}};
     }
 
     nlohmann::json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
@@ -357,24 +315,32 @@ namespace orangutan::providers {
             body["input"] = nlohmann::json::array();
             for (const auto &msg : messages) {
                 auto converted = message_to_openai(msg);
+                if (!converted.has_value()) {
+                    continue;
+                }
                 nlohmann::json response_msg = {
-                    {"role", converted.value("role", "user")},
+                    {"role", converted->value("role", "user")},
                     {"content", nlohmann::json::array()},
                 };
-                if (converted.contains("tool_call_id")) {
+                if (converted->contains("tool_call_id")) {
                     response_msg["content"].push_back({
                         {"type", "function_call_output"},
-                        {"call_id", converted["tool_call_id"]},
-                        {"output", converted.value("content", std::string{})},
+                        {"call_id", (*converted)["tool_call_id"]},
+                        {"output", converted->value("content", std::string{})},
                     });
                 } else {
-                    const auto content = converted.value("content", std::string{});
-                    response_msg["content"].push_back({
-                        {"type", response_msg["role"] == "assistant" ? "output_text" : "input_text"},
-                        {"text", content},
-                    });
-                    if (converted.contains("tool_calls")) {
-                        for (const auto &tool_call : converted["tool_calls"]) {
+                    std::string content;
+                    if (converted->contains("content") && (*converted)["content"].is_string()) {
+                        content = (*converted)["content"].get<std::string>();
+                    }
+                    if (!content.empty()) {
+                        response_msg["content"].push_back({
+                            {"type", response_msg["role"] == "assistant" ? "output_text" : "input_text"},
+                            {"text", content},
+                        });
+                    }
+                    if (converted->contains("tool_calls")) {
+                        for (const auto &tool_call : (*converted)["tool_calls"]) {
                             response_msg["content"].push_back({
                                 {"type", "function_call"},
                                 {"call_id", tool_call["id"]},
@@ -410,25 +376,37 @@ namespace orangutan::providers {
 
         for (const auto &msg : messages) {
             if (msg.role() == base::role::user) {
-                bool has_tool_results = false;
+                bool saw_tool_results = false;
+                bool appended_tool_results = false;
                 std::string user_text;
 
                 for (const auto &block : msg) {
                     if (const auto *result = std::get_if<ToolResult>(&block)) {
-                        has_tool_results = true;
+                        saw_tool_results = true;
+                        if (result->tool_use_id.empty()) {
+                            spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
+                            continue;
+                        }
+                        appended_tool_results = true;
                         body["messages"].push_back({{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}});
                     } else if (const auto *tb = std::get_if<Text>(&block)) {
                         user_text += tb->text;
                     }
                 }
 
-                if (!user_text.empty() && has_tool_results) {
+                if (!user_text.empty() && appended_tool_results) {
                     body["messages"].push_back({{"role", "user"}, {"content", user_text}});
-                } else if (!has_tool_results) {
-                    body["messages"].push_back(message_to_openai(msg));
+                } else if (saw_tool_results) {
+                    if (!user_text.empty()) {
+                        body["messages"].push_back({{"role", "user"}, {"content", user_text}});
+                    }
+                } else if (auto converted = message_to_openai(msg); converted.has_value()) {
+                    body["messages"].push_back(std::move(*converted));
                 }
             } else {
-                body["messages"].push_back(message_to_openai(msg));
+                if (auto converted = message_to_openai(msg); converted.has_value()) {
+                    body["messages"].push_back(std::move(*converted));
+                }
             }
         }
 
@@ -524,16 +502,11 @@ namespace orangutan::providers {
         }
         if (message.contains("tool_calls")) {
             for (const auto &tc : message["tool_calls"]) {
-                auto func = tc["function"];
-                nlohmann::json input = nlohmann::json::object();
-                if (func.contains("arguments") && !func["arguments"].is_null()) {
-                    try {
-                        input = nlohmann::json::parse(func["arguments"].get<std::string>());
-                    } catch (const nlohmann::json::parse_error &) {
-                        spdlog::warn("Failed to parse OpenAI tool call arguments");
-                    }
+                detail::OpenAiToolCallState state;
+                detail::merge_chat_completions_tool_call_delta(state, tc);
+                if (auto tool_use = detail::finalize_openai_tool_call(state, "OpenAI chat completions response"); tool_use.has_value()) {
+                    result.content.emplace_back(std::move(*tool_use));
                 }
-                result.content.emplace_back(ToolUse(tc["id"].get<std::string>(), func["name"].get<std::string>(), std::move(input)));
             }
         }
 
@@ -580,15 +553,14 @@ namespace orangutan::providers {
             }
 
             if (item_type == "function_call") {
-                nlohmann::json input = nlohmann::json::object();
-                if (item.contains("arguments") && item["arguments"].is_string()) {
-                    try {
-                        input = nlohmann::json::parse(item["arguments"].get<std::string>());
-                    } catch (const nlohmann::json::parse_error &) {
-                        spdlog::warn("Failed to parse Responses tool call arguments");
-                    }
+                detail::OpenAiToolCallState state{
+                    .id = item.value("call_id", item.value("id", std::string{})),
+                    .name = item.value("name", std::string{}),
+                    .arguments = item.value("arguments", std::string{}),
+                };
+                if (auto tool_use = detail::finalize_openai_tool_call(state, "OpenAI responses response"); tool_use.has_value()) {
+                    result.content.emplace_back(std::move(*tool_use));
                 }
-                result.content.emplace_back(ToolUse(item.value("call_id", item.value("id", std::string{})), item.value("name", std::string{}), std::move(input)));
             }
         }
 

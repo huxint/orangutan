@@ -1,6 +1,7 @@
 #pragma once
 
 #include "providers/provider.hpp"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,7 @@ namespace orangutan::providers {
 
         // Convert orangutan Message to OpenAI message format
         [[nodiscard]]
-        static nlohmann::json message_to_openai(const Message &msg);
+        static std::optional<nlohmann::json> message_to_openai(const Message &msg);
 
         // Parse OpenAI response into LLMResponse
         [[nodiscard]]
