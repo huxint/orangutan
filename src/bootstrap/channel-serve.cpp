@@ -920,8 +920,58 @@ namespace orangutan::bootstrap {
 
                     tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
                     channel_manager.start_typing(message.jid, message.message_id);
-                    const auto reply = runtime.agent().run(build_agent_input(effective_message));
+
+                    // Stream relay: sends thinking/tool blocks to QQ as they arrive
+                    const auto reply_target = resolve_reply_target(message);
+                    const bool is_qq = reply_target.starts_with("qqbot:");
+                    std::string thinking_buffer;
+                    bool first_block_sent = false;
+
+                    auto send_block = [&](const std::string &text) {
+                        if (text.empty() || reply_target == "cli") {
+                            return;
+                        }
+                        try {
+                            channel_manager.send(reply_target, OutboundMessage{
+                                                                   .payload = TextPayload{.text = text},
+                                                                   .reply_to_message_id = message.message_id,
+                                                                   .reference_message_id = first_block_sent ? std::string{} : message.message_id,
+                                                               });
+                            first_block_sent = true;
+                        } catch (const std::exception &e) {
+                            spdlog::debug("Stream relay send failed: {}", e.what());
+                        }
+                    };
+
+                    auto flush_thinking = [&] {
+                        if (thinking_buffer.empty()) {
+                            return;
+                        }
+                        send_block("💭 " + thinking_buffer);
+                        thinking_buffer.clear();
+                    };
+
+                    StreamCallback stream_cb;
+                    AgentLoop::ToolEventCallback tool_cb;
+                    if (is_qq) {
+                        stream_cb = [&](const std::string &event_type, const nlohmann::json &data) {
+                            if (event_type == "thinking_delta") {
+                                thinking_buffer += data["thinking"].get<std::string>();
+                            } else if (event_type == "text_delta" || event_type == "tool_call_start") {
+                                flush_thinking();
+                            }
+                        };
+                        tool_cb = [&](const std::string &event_type, const ToolUse &call, const ToolResult *) {
+                            if (event_type == "tool_started") {
+                                flush_thinking();
+                                send_block("🔧 " + call.name);
+                            }
+                        };
+                    }
+
+                    const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb);
                     channel_manager.stop_typing(message.jid);
+                    flush_thinking();
 
                     // Skip session persistence for isolated heartbeat runs
                     if (!message.isolated) {
@@ -934,7 +984,21 @@ namespace orangutan::bootstrap {
                         return;
                     }
 
-                    deliver_reply(message, reply, channel_manager);
+                    if (first_block_sent && is_qq) {
+                        // Blocks already streamed — send final text without reference (avoid repeated quote)
+                        if (!reply.empty()) {
+                            try {
+                                channel_manager.send(reply_target, OutboundMessage{
+                                                                       .payload = TextPayload{.text = reply},
+                                                                       .reply_to_message_id = message.message_id,
+                                                                   });
+                            } catch (const std::exception &e) {
+                                spdlog::error("Failed to deliver final reply for jid '{}': {}", message.jid, e.what());
+                            }
+                        }
+                    } else {
+                        deliver_reply(message, reply, channel_manager);
+                    }
                 });
             } catch (const std::exception &e) {
                 spdlog::error("Failed to process message for jid '{}': {}", message.jid, e.what());
