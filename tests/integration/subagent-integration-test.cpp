@@ -121,7 +121,6 @@ namespace {
                                            .agent_key = "coder",
                                            .model = "child-model",
                                            .primary_endpoint = make_child_endpoint(),
-                                           .system_prompt = "Child base prompt.",
                                            .workspace_root = (harness.workspace_root() / "child-root").string(),
                                            .allowed_child_agents = {"reviewer"},
                                        });
@@ -203,8 +202,7 @@ namespace {
         });
         ScriptedProvider parent_provider(std::move(parent_steps));
 
-        const auto parent_prompt = orangutan::bootstrap::append_subagent_prompt_guidance("Parent base prompt.", {"coder"}, false);
-        AgentLoop parent_loop(parent_provider, parent_tools, parent_prompt, nullptr, orangutan::bootstrap::derive_cli_session_scope("default"));
+        AgentLoop parent_loop(parent_provider, parent_tools, nullptr, orangutan::bootstrap::derive_cli_session_scope("default"));
 
         const auto final_output = parent_loop.run("Handle the parser issue");
         CHECK(final_output == "parent finished after child run");
@@ -268,7 +266,6 @@ namespace {
                                            .agent_key = "coder",
                                            .model = "child-model",
                                            .primary_endpoint = make_child_endpoint(),
-                                           .system_prompt = "Child base prompt.",
                                            .workspace_root = (harness.workspace_root() / "channel-child-root").string(),
                                        });
 

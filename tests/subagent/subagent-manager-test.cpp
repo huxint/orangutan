@@ -251,7 +251,6 @@ namespace {
                                            .agent_key = "coder",
                                            .model = "child-model",
                                            .primary_endpoint = make_child_endpoint(),
-                                           .system_prompt = "Child base prompt.",
                                            .workspace_root = orangutan::testing::unique_test_root("subagent-manager-child-approval").string(),
                                            .permissions = child_permissions,
                                        });
@@ -319,7 +318,6 @@ namespace {
                                            .agent_key = "coder",
                                            .model = "child-model",
                                            .primary_endpoint = make_child_endpoint(),
-                                           .system_prompt = "Child base prompt.",
                                            .workspace_root = orangutan::testing::unique_test_root("subagent-manager-child-hashline").string(),
                                            .edit_mode = "hashline",
                                        });

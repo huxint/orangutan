@@ -59,12 +59,10 @@ namespace orangutan {
             config.agents["default"] = AgentConfig{
                 .profile = "shared",
                 .model = "test",
-                .system_prompt = "You are a test agent.",
             };
             config.agents["coder"] = AgentConfig{
                 .profile = "shared",
                 .model = "coder-test",
-                .system_prompt = "You are a coder agent.",
             };
             return config;
         }
@@ -494,7 +492,7 @@ namespace orangutan {
                     return response;
                 },
             });
-            AgentLoop agent(provider, tools, "You are a test agent.");
+            AgentLoop agent(provider, tools);
 
             auto resume_state = std::make_shared<orangutan::web::WebCompletionResumeState>();
             resume_state->agent = &agent;

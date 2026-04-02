@@ -44,7 +44,6 @@ namespace {
                     "gpt-4.1-mini",
                     orangutan::FallbackModelRef{"gateway-b", "claude-sonnet-4-20250514"},
                 },
-            .system_prompt = "Default prompt",
             .workspace = "~/workspace/default",
             .subagents = {"coder"},
         };

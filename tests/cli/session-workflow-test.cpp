@@ -66,7 +66,7 @@ namespace {
         MemoryStore memory_store(harness.memory_db_path());
         RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "scope:test"});
         SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
 
         loop.set_history({
             Message::user().text("we are working on orangutan refactor"),
@@ -148,7 +148,7 @@ namespace {
                                                        .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                                    });
         SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
 
         loop.set_history({
             Message::user().text("we are working on orangutan refactor"),

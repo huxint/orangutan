@@ -257,7 +257,7 @@ namespace {
         MemoryStore store(db_path);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
         loop.set_history({
             Message::user().text("we are working on orangutan memory refactor"),
             Message::assistant().text("Got it, I will keep that in mind."),
@@ -296,7 +296,7 @@ namespace {
         MemoryStore store(db_path);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
         loop.set_history({
             Message::user().text("please help with this task"),
             Message::assistant().text("my name is Mallory"),
@@ -320,7 +320,7 @@ namespace {
         MemoryStore store(db_path);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
         loop.set_history({
             Message::user().text("we are working on orangutan memory refactor"),
             Message::assistant().text("Understood"),
@@ -348,7 +348,7 @@ namespace {
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", MemoryType::project, "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
         static_cast<void>(loop.run("what project am I working on?"));
 
         CHECK(provider.last_system_prompt_.contains("orangutan memory enhancements"));
@@ -367,7 +367,7 @@ namespace {
         store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", MemoryType::project, "agent:default|jid:test", "session:journal", 0.4);
         auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
 
-        AgentLoop loop(provider, tools, {}, &runtime_memory);
+        AgentLoop loop(provider, tools, &runtime_memory);
         static_cast<void>(loop.run("what happened in the previous session journal?"));
 
         CHECK(provider.last_system_prompt_.contains("Yesterday we debugged the failing mirror refresh."));

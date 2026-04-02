@@ -297,8 +297,7 @@ namespace {
             out << "    \"default\": {\n";
             out << "      \"profile\": \"test-profile\",\n";
             out << "      \"model\": \"gpt-test\",\n";
-            out << "      \"workspace\": \"" << workspace_root_.string() << "\",\n";
-            out << "      \"system_prompt\": \"You are a test agent.\"\n";
+            out << "      \"workspace\": \"" << workspace_root_.string() << "\"\n";
             out << "    }\n";
             out << "  }\n";
             out << "}\n";
@@ -471,14 +470,12 @@ namespace {
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "shared",
                                           .model = "gpt-test",
-                                          .system_prompt = "You are a test agent.",
                                           .workspace = harness.workspace_root().string(),
                                           .edit_mode = "hashline",
                                       });
         cfg.agents.emplace("coder", AgentConfig{
                                         .profile = "shared",
                                         .model = "gpt-coder",
-                                        .system_prompt = "You are a coder agent.",
                                         .workspace = harness.workspace_root().string(),
                                         .edit_mode = "search_replace",
                                     });
@@ -626,7 +623,6 @@ namespace {
                                                        .model = "gpt-test",
                                                        .base_url = "https://example.test",
                                                    },
-                                               .system_prompt = "You are a test agent.",
                                                .workspace_root = harness.workspace_root().string(),
                                                .edit_mode = "search_replace",
                                            });
@@ -657,7 +653,6 @@ namespace {
             .primary_endpoint = runtime_it->second.primary_endpoint,
             .fallback_endpoints = runtime_it->second.fallback_endpoints,
             .agent_key = runtime_it->second.agent_key,
-            .system_prompt = runtime_it->second.system_prompt,
             .workspace_root = runtime_it->second.workspace_root,
             .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,

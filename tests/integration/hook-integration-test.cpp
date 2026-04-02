@@ -142,7 +142,7 @@ namespace {
                     },
             });
 
-            AgentLoop loop(provider, tools, "test system prompt", nullptr, {}, &manager);
+            AgentLoop loop(provider, tools, nullptr, {}, &manager);
 
             std::optional<ToolResult> tool_result;
             const auto reply = loop.run("please run the demo tool", {}, [&tool_result](const std::string &event_type, const ToolUse &, const ToolResult *result) {

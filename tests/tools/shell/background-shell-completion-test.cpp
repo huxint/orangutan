@@ -493,7 +493,7 @@ namespace {
                 return response;
             },
         });
-        AgentLoop agent(provider, tools, "You are a test agent.");
+        AgentLoop agent(provider, tools);
 
         std::future<std::optional<std::string>> resume_result;
         {

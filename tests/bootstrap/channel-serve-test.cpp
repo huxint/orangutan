@@ -343,7 +343,6 @@ namespace {
         Config cfg;
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "assistant",
-            .system_prompt = "You are the assistant.",
             .workspace_root = harness.workspace_root().string(),
         };
 
@@ -368,7 +367,6 @@ namespace {
             .fallback_models = {"gpt-fallback"},
             .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
             .fallback_endpoints = {make_runtime_endpoint("openai-chat-completions", "gpt-fallback")},
-            .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
 
@@ -635,7 +633,6 @@ namespace {
             .agent_key = "default",
             .model = "gpt-test",
             .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
-            .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -698,7 +695,6 @@ namespace {
             .agent_key = "default",
             .model = "gpt-test",
             .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
-            .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -761,7 +757,6 @@ namespace {
             .agent_key = "default",
             .model = "gpt-test",
             .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
-            .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -821,7 +816,6 @@ namespace {
             .agent_key = "default",
             .model = "gpt-test",
             .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
-            .system_prompt = "You are a test agent.",
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -890,7 +884,7 @@ namespace {
                 return response;
             },
         });
-        AgentLoop agent(provider, tools, "You are a test agent.");
+        AgentLoop agent(provider, tools);
         agent.set_history(history);
 
         auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();

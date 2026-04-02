@@ -1,6 +1,7 @@
 #include "providers/anthropic-provider.hpp"
 #include "providers/sse-parser.hpp"
 #include "providers/http-client.hpp"
+#include "types/serialization.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <utility>

@@ -95,7 +95,6 @@ namespace {
         cfg.agents["default"] = orangutan::AgentConfig{
             .profile = "shared",
             .model = "gpt-test",
-            .system_prompt = "You are a web runtime test agent.",
             .workspace = workspace_root.string(),
             .permissions =
                 {
@@ -107,7 +106,6 @@ namespace {
         cfg.agents["coder"] = orangutan::AgentConfig{
             .profile = "shared",
             .model = "gpt-coder-test",
-            .system_prompt = "You are coder.",
             .workspace = workspace_root.string(),
         };
         return cfg;

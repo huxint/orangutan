@@ -66,7 +66,6 @@ namespace {
                 .base_url = "https://example.test",
             };
             input.agent_key = "assistant";
-            input.system_prompt = "You are a runtime bootstrap test agent.";
             input.workspace_root = workspace_root_.string();
             input.memory = {};
             input.permissions = {};
@@ -142,8 +141,6 @@ namespace {
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
-        CHECK(runtime.system_prompt.contains("subagent"));
-        CHECK(runtime.system_prompt.contains("subagent_spawn"));
     };
 
     TEST_CASE("runtime_without_explicit_completion_bindings_does_not_enable_completion_routing") {

@@ -93,7 +93,6 @@ namespace {
                 {"profile": "gateway-b", "model": "claude-sonnet-4-20250514"}
               ],
               "workspace": "~/workspace/default",
-              "system_prompt": "You are the default agent.",
               "subagents": ["coder"]
             }
           }
@@ -126,7 +125,6 @@ namespace {
         CHECK(agent.fallback_models[0].model == "gpt-4.1-mini");
         CHECK(agent.fallback_models[1].profile == "gateway-b");
         CHECK(agent.fallback_models[1].model == "claude-sonnet-4-20250514");
-        CHECK(agent.system_prompt == "You are the default agent.");
         CHECK(agent.subagents == std::vector<std::string>{"coder"});
         CHECK(agent.workspace.contains("/workspace/default"));
     };
@@ -138,8 +136,7 @@ namespace {
             "profile": "shared-profile",
             "model": "shared-model",
             "fallback_models": ["global-fallback"],
-            "workspace": "~/workspace/shared",
-            "system_prompt": "Shared prompt"
+            "workspace": "~/workspace/shared"
           },
           "agents": {
             "coder": {
@@ -157,7 +154,6 @@ namespace {
         REQUIRE(coder.fallback_models.size() == 1UL);
         CHECK(coder.fallback_models[0].profile.empty());
         CHECK(coder.fallback_models[0].model == "global-fallback");
-        CHECK(coder.system_prompt == "Shared prompt");
         CHECK(coder.workspace.contains("/workspace/shared"));
     };
 
@@ -208,7 +204,6 @@ namespace {
         cfg.profile = "shared-profile";
         cfg.model = "shared-model";
         cfg.fallback_models = {"global-fallback"};
-        cfg.system_prompt = "Shared prompt";
         cfg.workspace = "~/workspace/shared";
         cfg.profiles["gateway-a"] = ProfileConfig{
             .base_url = "https://gateway.example.com",
@@ -234,7 +229,6 @@ namespace {
             .profile = "gateway-a",
             .model = "gpt-4.1",
             .fallback_models = {"gpt-4.1-mini"},
-            .system_prompt = "Default prompt",
             .workspace = "~/workspace/default",
             .subagents = {"coder"},
         };
