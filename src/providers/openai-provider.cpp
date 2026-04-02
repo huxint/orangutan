@@ -351,7 +351,7 @@ namespace orangutan::providers {
                     });
                     // Inject images from the original message as a follow-up user input
                     for (const auto &block : msg) {
-                        if (const auto *result = std::get_if<ToolResult>(&block); result && !result->images.empty()) {
+                        if (const auto *result = std::get_if<ToolResult>(&block); (result != nullptr) && !result->images.empty()) {
                             body["input"].push_back(build_responses_image_input(*result));
                         }
                     }
