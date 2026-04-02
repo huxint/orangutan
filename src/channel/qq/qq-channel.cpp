@@ -1,8 +1,6 @@
 #include "channel/qq/qq-channel.hpp"
 
-#include "providers/http-client.hpp"
 #include "channel/qq/qq-transport.hpp"
-#include "types/base.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -102,6 +100,7 @@ namespace orangutan::channel::qq {
     : bot_name_(std::move(bot_name)),
       app_id_(std::move(app_id)),
       client_secret_(std::move(client_secret)),
+      api_client_(std::make_unique<QqApiClient>(app_id_, client_secret_)),
       runtime_(std::make_unique<RuntimeState>()) {}
 
     QqChannel::~QqChannel() {
@@ -149,17 +148,17 @@ namespace orangutan::channel::qq {
 #endif
     }
 
-    void QqChannel::send_message(const std::string &jid, const std::string &text) {
+    void QqChannel::send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
 
         if (jid.starts_with(c2c_prefix)) {
-            send_c2c(require_openid(jid, c2c_prefix), text);
+            send_c2c(require_openid(jid, c2c_prefix), text, reply_to_message_id);
             return;
         }
 
         if (jid.starts_with(group_prefix)) {
-            send_group(require_openid(jid, group_prefix), text);
+            send_group(require_openid(jid, group_prefix), text, reply_to_message_id);
             return;
         }
 
@@ -198,43 +197,11 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::ensure_access_token() {
-        std::scoped_lock lock(mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        if (!access_token_.empty() && now + std::chrono::minutes(5) < token_expiry_) {
-            return;
-        }
-
-        CurlHeaders headers;
-        headers.append("Content-Type: application/json");
-
-        const nlohmann::json request = {
-            {"appId", app_id_},
-            {"clientSecret", client_secret_},
-        };
-
-        const auto response = http_post("https://bots.qq.com/app/getAppAccessToken", request.dump(), headers);
-        const auto payload = nlohmann::json::parse(response);
-        if (payload.value("code", 0) != 0) {
-            throw std::runtime_error("QQ access token request failed: " + payload.value("message", std::string{"unknown error"}));
-        }
-
-        access_token_ = payload.at("access_token").get<std::string>();
-        const auto expires_in = parse_integer_like(payload, "expires_in", 7200);
-        token_expiry_ = now + std::chrono::seconds(std::max<base::i64>(60, expires_in - 60));
+        api_client_->ensure_access_token();
     }
 
     std::string QqChannel::get_gateway_url() {
-        ensure_access_token();
-
-        CurlHeaders headers;
-        headers.append("Authorization: QQBot " + access_token_);
-
-        const auto response = http_get("https://api.sgroup.qq.com/gateway", headers);
-        const auto payload = nlohmann::json::parse(response);
-        if (payload.contains("code") && payload.value("code", 0) != 0) {
-            throw std::runtime_error("QQ gateway request failed: " + payload.value("message", std::string{"unknown error"}));
-        }
-        return payload.at("url").get<std::string>();
+        return api_client_->get_gateway_url();
     }
 
     void QqChannel::connect_websocket(const std::string &gateway_url) {
@@ -258,25 +225,48 @@ namespace orangutan::channel::qq {
                     connected_ = false;
                     stop_heartbeat();
 
-                    std::scoped_lock lock(runtime_->mutex);
-                    runtime_->ready = false;
-                    if (!runtime_->close_requested && runtime_->last_error.empty()) {
-                        runtime_->last_error = "QQ WebSocket closed before READY: " + reason;
-                        runtime_->cv.notify_all();
+                    bool close_requested = false;
+                    bool was_ready = false;
+                    {
+                        std::scoped_lock lock(runtime_->mutex);
+                        close_requested = runtime_->close_requested;
+                        was_ready = runtime_->ready;
+                        runtime_->ready = false;
+                        if (!close_requested && !was_ready && runtime_->last_error.empty()) {
+                            runtime_->last_error = "QQ WebSocket closed before READY: " + reason;
+                        }
                     }
+                    runtime_->cv.notify_all();
+
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+                    if (!close_requested && runtime_->websocket != nullptr) {
+                        runtime_->websocket->request_reconnect();
+                    }
+#endif
                 },
             .on_error =
                 [this](std::string error) {
                     spdlog::error("QQ WebSocket error: {}", error);
                     connected_ = false;
 
+                    bool close_requested = false;
+                    bool was_ready = false;
                     {
                         std::scoped_lock lock(runtime_->mutex);
-                        if (runtime_->last_error.empty()) {
+                        close_requested = runtime_->close_requested;
+                        was_ready = runtime_->ready;
+                        runtime_->ready = false;
+                        if (!close_requested && !was_ready && runtime_->last_error.empty()) {
                             runtime_->last_error = std::move(error);
                         }
                     }
                     runtime_->cv.notify_all();
+
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+                    if (!close_requested && runtime_->websocket != nullptr) {
+                        runtime_->websocket->request_reconnect();
+                    }
+#endif
                 },
         });
 
@@ -285,8 +275,9 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::send_gateway_identity_or_resume() {
+        ensure_access_token();
         nlohmann::json payload;
-        const auto token = std::string("QQBot ") + access_token_;
+        const auto token = std::string("QQBot ") + api_client_->access_token();
 
         {
             std::scoped_lock lock(runtime_->mutex);
@@ -447,6 +438,7 @@ namespace orangutan::channel::qq {
                 {
                     std::scoped_lock lock(runtime_->mutex);
                     runtime_->session_id.clear();
+                    runtime_->last_seq = 0;
                     runtime_->ready = false;
                 }
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
@@ -486,6 +478,7 @@ namespace orangutan::channel::qq {
             .sender_name = openid,
             .content = data.value("content", std::string{}),
             .timestamp = data.value("timestamp", std::string{}),
+            .message_id = data.value("id", std::string{}),
             .is_group = false,
         });
     }
@@ -503,39 +496,36 @@ namespace orangutan::channel::qq {
             .sender_name = author.value("member_openid", author.value("id", std::string{})),
             .content = data.value("content", std::string{}),
             .timestamp = data.value("timestamp", std::string{}),
+            .message_id = data.value("id", std::string{}),
             .is_group = true,
         });
     }
 
-    void QqChannel::send_c2c(const std::string &openid, const std::string &content) {
-        ensure_access_token();
-
-        CurlHeaders headers;
-        headers.append("Authorization: QQBot " + access_token_);
-        headers.append("Content-Type: application/json");
-
+    void QqChannel::send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
         for (const auto &chunk : chunk_text(content, 4000)) {
-            const nlohmann::json payload = {
+            nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
+                {"msg_seq", next_msg_seq()},
             };
-            http_post("https://api.sgroup.qq.com/v2/users/" + openid + "/messages", payload.dump(), headers);
+            if (!reply_to_message_id.empty()) {
+                payload["msg_id"] = reply_to_message_id;
+            }
+            static_cast<void>(api_client_->post("/v2/users/" + openid + "/messages", payload));
         }
     }
 
-    void QqChannel::send_group(const std::string &openid, const std::string &content) {
-        ensure_access_token();
-
-        CurlHeaders headers;
-        headers.append("Authorization: QQBot " + access_token_);
-        headers.append("Content-Type: application/json");
-
+    void QqChannel::send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
         for (const auto &chunk : chunk_text(content, 4000)) {
-            const nlohmann::json payload = {
+            nlohmann::json payload = {
                 {"content", chunk},
                 {"msg_type", 0},
+                {"msg_seq", next_msg_seq()},
             };
-            http_post("https://api.sgroup.qq.com/v2/groups/" + openid + "/messages", payload.dump(), headers);
+            if (!reply_to_message_id.empty()) {
+                payload["msg_id"] = reply_to_message_id;
+            }
+            static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
         }
     }
 
@@ -545,6 +535,11 @@ namespace orangutan::channel::qq {
         runtime_->hello_received = false;
         runtime_->close_requested = false;
         runtime_->last_error.clear();
+    }
+
+    base::u16 QqChannel::next_msg_seq() {
+        const auto current = msg_seq_.fetch_add(1, std::memory_order_relaxed);
+        return static_cast<base::u16>((current + 1U) & 0xFFFFU);
     }
 
     std::vector<std::string> QqChannel::chunk_text(const std::string &text, std::size_t limit) {

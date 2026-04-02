@@ -709,7 +709,7 @@ namespace orangutan::bootstrap {
         }
 
         try {
-            channel_manager.send(target, reply);
+            channel_manager.send(target, reply, message.message_id);
         } catch (const std::exception &e) {
             spdlog::error("Failed to deliver reply for jid '{}' to target '{}': {}", message.jid, target, e.what());
         }

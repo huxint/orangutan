@@ -31,8 +31,9 @@ namespace {
             on_message_ = std::move(on_message);
         }
 
-        void send_message(const std::string &jid, const std::string &text) override {
+        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override {
             sent_messages_.emplace_back(jid, text);
+            sent_reply_to_ids_.push_back(reply_to_message_id);
         }
 
         void disconnect() override {
@@ -59,12 +60,18 @@ namespace {
             return sent_messages_;
         }
 
+        [[nodiscard]]
+        const std::vector<std::string> &sent_reply_to_ids() const {
+            return sent_reply_to_ids_;
+        }
+
     private:
         std::string name_;
         std::string jid_prefix_;
         MessageCallback on_message_;
         bool connected_ = false;
         std::vector<std::pair<std::string, std::string>> sent_messages_;
+        std::vector<std::string> sent_reply_to_ids_;
     };
 
     TEST_CASE("empty_allowlist_allows_any_jid") {
@@ -169,7 +176,7 @@ namespace {
         CHECK(received[1].jid == "qqbot:c2c:456");
 
         manager.send("cli:local", "reply to cli");
-        manager.send("qqbot:c2c:456", "reply to qq");
+        manager.send("qqbot:c2c:456", "reply to qq", "message-456");
 
         CHECK(cli->sent_messages().size() == 1UL);
         CHECK(cli->sent_messages()[0].first == "cli:local");
@@ -178,6 +185,8 @@ namespace {
         CHECK(qq->sent_messages().size() == 1UL);
         CHECK(qq->sent_messages()[0].first == "qqbot:c2c:456");
         CHECK(qq->sent_messages()[0].second == "reply to qq");
+        CHECK(qq->sent_reply_to_ids().size() == 1UL);
+        CHECK(qq->sent_reply_to_ids()[0] == "message-456");
 
         manager.disconnect_all();
         CHECK_FALSE(cli->is_connected());

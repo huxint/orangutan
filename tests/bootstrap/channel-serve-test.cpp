@@ -93,9 +93,10 @@ namespace {
             on_message_ = std::move(on_message);
         }
 
-        void send_message(const std::string &jid, const std::string &text) override {
+        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override {
             std::scoped_lock lock(mutex_);
             sent_messages_.emplace_back(jid, text);
+            sent_reply_to_ids_.push_back(reply_to_message_id);
         }
 
         void disconnect() override {
@@ -116,6 +117,12 @@ namespace {
             return sent_messages_;
         }
 
+        [[nodiscard]]
+        std::vector<std::string> sent_reply_to_ids() const {
+            std::scoped_lock lock(mutex_);
+            return sent_reply_to_ids_;
+        }
+
     private:
         std::string name_;
         std::string jid_prefix_;
@@ -123,6 +130,7 @@ namespace {
         bool connected_ = false;
         mutable std::mutex mutex_;
         std::vector<std::pair<std::string, std::string>> sent_messages_;
+        std::vector<std::string> sent_reply_to_ids_;
     };
 
     class ScriptedProvider final : public Provider {
@@ -289,6 +297,7 @@ namespace {
         const InboundMessage message{
             .jid = "heartbeat:daily",
             .content = "prompt",
+            .message_id = "inbound-message-42",
             .reply_target = "qqbot:c2c:42",
         };
 
@@ -299,6 +308,8 @@ namespace {
         CHECK(qq->sent_messages().size() == 1UL);
         CHECK(qq->sent_messages()[0].first == "qqbot:c2c:42");
         CHECK(qq->sent_messages()[0].second == "sent");
+        CHECK(qq->sent_reply_to_ids().size() == 1UL);
+        CHECK(qq->sent_reply_to_ids()[0] == "inbound-message-42");
     };
 
     TEST_CASE("logs_unowned_outbound_jid_without_throwing") {

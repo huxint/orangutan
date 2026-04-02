@@ -28,10 +28,10 @@ namespace orangutan::channel {
         }
     }
 
-    void ChannelManager::send(const std::string &jid, const std::string &text) {
+    void ChannelManager::send(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
         for (const auto &channel : channels_) {
             if (channel->owns_jid(jid)) {
-                channel->send_message(jid, text);
+                channel->send_message(jid, text, reply_to_message_id);
                 return;
             }
         }

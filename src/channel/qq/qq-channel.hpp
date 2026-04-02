@@ -1,6 +1,8 @@
 #pragma once
 
 #include "channel/channel.hpp"
+#include "channel/qq/qq-api-client.hpp"
+#include "types/base.hpp"
 
 #include <nlohmann/json.hpp>
 #include <atomic>
@@ -27,7 +29,7 @@ namespace orangutan::channel::qq {
         std::string name() const override;
 
         void connect(MessageCallback on_message) override;
-        void send_message(const std::string &jid, const std::string &text) override;
+        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override;
         void disconnect() override;
 
         [[nodiscard]]
@@ -42,12 +44,11 @@ namespace orangutan::channel::qq {
         std::string bot_name_;
         std::string app_id_;
         std::string client_secret_;
-        std::string access_token_;
-        std::chrono::steady_clock::time_point token_expiry_;
+        std::unique_ptr<QqApiClient> api_client_;
+        std::atomic<base::u16> msg_seq_{0};
         MessageCallback on_message_;
         std::atomic<bool> connected_{false};
         std::unique_ptr<RuntimeState> runtime_;
-        mutable std::mutex mutex_;
 
         void ensure_access_token();
 
@@ -63,9 +64,11 @@ namespace orangutan::channel::qq {
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
         void handle_c2c_message(const nlohmann::json &data);
         void handle_group_message(const nlohmann::json &data);
-        void send_c2c(const std::string &openid, const std::string &content);
-        void send_group(const std::string &openid, const std::string &content);
+        void send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id);
+        void send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id);
         void clear_ready_state();
+        [[nodiscard]]
+        base::u16 next_msg_seq();
 
         [[nodiscard]]
         static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);

@@ -15,6 +15,7 @@ namespace orangutan::channel {
         std::string sender_name;
         std::string content;
         std::string timestamp;
+        std::string message_id;
         bool is_group = false;
         std::string agent_override;
         std::string reply_target;
@@ -36,7 +37,7 @@ namespace orangutan::channel {
         [[nodiscard]]
         virtual std::string name() const = 0;
         virtual void connect(MessageCallback on_message) = 0;
-        virtual void send_message(const std::string &jid, const std::string &text) = 0;
+        virtual void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") = 0;
         virtual void disconnect() = 0;
 
         [[nodiscard]]
@@ -52,7 +53,7 @@ namespace orangutan::channel {
 
         void add_channel(std::unique_ptr<Channel> ch);
         void connect_all(const MessageCallback &on_message);
-        void send(const std::string &jid, const std::string &text);
+        void send(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "");
         void disconnect_all();
 
         [[nodiscard]]
