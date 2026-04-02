@@ -34,6 +34,47 @@ TEST_CASE("qq_message_builder_constructs_media_payload") {
     CHECK_FALSE(payload.contains("markdown"));
 }
 
+TEST_CASE("qq_message_builder_constructs_media_payload_with_caption") {
+    const auto payload = QqMessageBuilder{}.media("file-info-1", "caption").msg_seq(4).build();
+
+    CHECK(payload.at("msg_type").get<int>() == 7);
+    CHECK(payload.at("media").at("file_info").get<std::string>() == "file-info-1");
+    CHECK(payload.at("content").get<std::string>() == "caption");
+    CHECK(payload.at("msg_seq").get<int>() == 4);
+}
+
+TEST_CASE("qq_message_builder_constructs_ark_payload") {
+    const auto ark = nlohmann::json{
+        {"template_id", 23},
+        {"kv", nlohmann::json::array()},
+    };
+
+    const auto payload = QqMessageBuilder{}.ark(ark).msg_seq(5).build();
+
+    CHECK(payload.at("msg_type").get<int>() == 3);
+    CHECK(payload.at("ark") == ark);
+    CHECK(payload.at("msg_seq").get<int>() == 5);
+    CHECK_FALSE(payload.contains("content"));
+    CHECK_FALSE(payload.contains("markdown"));
+    CHECK_FALSE(payload.contains("media"));
+}
+
+TEST_CASE("qq_message_builder_constructs_embed_payload") {
+    const auto embed = nlohmann::json{
+        {"title", "hello"},
+        {"prompt", "world"},
+    };
+
+    const auto payload = QqMessageBuilder{}.embed(embed).msg_seq(6).build();
+
+    CHECK(payload.at("msg_type").get<int>() == 4);
+    CHECK(payload.at("embed") == embed);
+    CHECK(payload.at("msg_seq").get<int>() == 6);
+    CHECK_FALSE(payload.contains("content"));
+    CHECK_FALSE(payload.contains("markdown"));
+    CHECK_FALSE(payload.contains("media"));
+}
+
 TEST_CASE("qq_message_builder_attaches_keyboard_payload") {
     const auto keyboard = nlohmann::json{
         {"content", {{"rows", nlohmann::json::array()}}},
@@ -43,4 +84,12 @@ TEST_CASE("qq_message_builder_attaches_keyboard_payload") {
 
     CHECK(payload.at("msg_type").get<int>() == 2);
     CHECK(payload.at("keyboard") == keyboard);
+}
+
+TEST_CASE("qq_message_builder_clears_reply_and_reference_when_empty") {
+    auto builder = QqMessageBuilder{};
+    const auto payload = builder.text("hello").reply_to("msg-1").reference("msg-2").reply_to("").reference("").build();
+
+    CHECK_FALSE(payload.contains("msg_id"));
+    CHECK_FALSE(payload.contains("message_reference"));
 }

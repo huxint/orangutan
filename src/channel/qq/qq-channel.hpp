@@ -32,12 +32,11 @@ namespace orangutan::channel::qq {
         std::string name() const override;
 
         void connect(MessageCallback on_message) override;
-        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override;
-        void send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
-        void send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id = "");
-        void send_keyboard_message(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id = "");
-        void add_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id);
-        void remove_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id);
+        void send(const std::string &jid, const OutboundMessage &message) override;
+        [[nodiscard]]
+        Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) override;
+        void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
+        void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
         void disconnect() override;
 
         [[nodiscard]]
@@ -46,7 +45,7 @@ namespace orangutan::channel::qq {
         [[nodiscard]]
         bool is_connected() const override;
         [[nodiscard]]
-        std::vector<std::string> known_user_jids() const;
+        std::vector<std::string> known_user_jids() const override;
 
     private:
         struct MessageReplyTracker {
@@ -61,6 +60,8 @@ namespace orangutan::channel::qq {
                 return reply_count < max_replies && (now - received_at) < ttl;
             }
         };
+
+        friend struct QqChannelTestAccess;
 
         struct RuntimeState;
 
@@ -83,15 +84,16 @@ namespace orangutan::channel::qq {
         void connect_websocket(const std::string &gateway_url);
         void send_gateway_identity_or_resume();
         void send_gateway_payload(const nlohmann::json &payload);
-        void send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
+        void send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
+        void send_outbound_now(const std::string &jid, const OutboundMessage &message);
         void restart_heartbeat(std::chrono::milliseconds interval);
         void stop_heartbeat();
         void start_token_refresh_loop();
         void stop_token_refresh_loop();
         void start_debounce_loop();
         void stop_debounce_loop();
-        void enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
-        void flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id);
+        void enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
+        void flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
         void load_session_state();
         void persist_session_state();
         void clear_session_state();
@@ -107,29 +109,19 @@ namespace orangutan::channel::qq {
         void handle_group_message(const nlohmann::json &data);
         void handle_guild_message(const nlohmann::json &data);
         void handle_interaction(const nlohmann::json &data);
-        void send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        void send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        void send_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        void send_markdown_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        void send_markdown_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        void send_markdown_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
-        [[nodiscard]]
-        std::string upload_media_c2c(const std::string &openid, int file_type, const std::string &url);
-        [[nodiscard]]
-        std::string upload_media_group(const std::string &openid, int file_type, const std::string &url);
-        void send_media_c2c(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id = "");
-        void send_media_group(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id = "");
+        void handle_reaction_event(const std::string &event_type, const nlohmann::json &data) const;
+        void emit_inbound(InboundMessage message) const;
         void clear_ready_state();
         [[nodiscard]]
         base::u16 next_msg_seq();
         void remember_inbound_message(const std::string &message_id);
         [[nodiscard]]
-        bool consume_passive_reply_quota(const std::string &message_id);
+        bool consume_passive_reply_quota(const std::string &message_id, int reply_units = 1);
         [[nodiscard]]
-        std::string resolve_passive_reply_message_id(const std::string &reply_to_message_id);
+        std::string resolve_passive_reply_message_id(const std::string &reply_to_message_id, int reply_units = 1);
 
         [[nodiscard]]
-        static std::vector<Attachment> parse_attachments(const nlohmann::json &data);
+        std::vector<Attachment> parse_attachments(const nlohmann::json &data) const;
 
         [[nodiscard]]
         static std::vector<std::string> parse_mention_ids(const nlohmann::json &data);
@@ -139,6 +131,9 @@ namespace orangutan::channel::qq {
 
         [[nodiscard]]
         static std::string strip_mentions(const std::string &content);
+
+        [[nodiscard]]
+        static std::string parse_message_scene_ext_value(const nlohmann::json &data, std::string_view key);
 
         [[nodiscard]]
         static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);

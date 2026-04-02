@@ -1,5 +1,6 @@
 #pragma once
 
+#include "channel/channel.hpp"
 #include "permissions.hpp"
 #include "types/types.hpp"
 
@@ -22,6 +23,7 @@ namespace orangutan::subagent {
 namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
     using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
+    using AttachmentDownloadCallback = std::function<Attachment(const Attachment &attachment, const std::string &destination_path)>;
 
     class BackgroundCompletionRuntimeBindings {
     public:
@@ -77,12 +79,15 @@ namespace orangutan::tools {
         automation::Runtime *automation_runtime = nullptr;
         ToolApprovalCallback approval_callback;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
+        std::vector<Attachment> current_message_attachments;
+        AttachmentDownloadCallback attachment_download_callback;
     };
 
 } // namespace orangutan::tools
 
 namespace orangutan {
 
+    using tools::AttachmentDownloadCallback;
     using tools::BackgroundCompletionInboxCallback;
     using tools::BackgroundCompletionResumeCallback;
     using tools::BackgroundCompletionRuntimeBindings;

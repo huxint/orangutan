@@ -2,6 +2,7 @@
 #include "channel/channel.hpp"
 #include "channel/message-queue.hpp"
 
+#include <nlohmann/json.hpp>
 #include <chrono>
 #include <future>
 #include <catch2/catch_test_macros.hpp>
@@ -9,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -18,6 +20,35 @@ namespace {
 
     class MockChannel final : public Channel {
     public:
+        struct MediaMessage {
+            std::string jid;
+            int file_type = 0;
+            std::string url;
+            std::string reply_to_message_id;
+            std::string caption;
+        };
+
+        struct KeyboardMessage {
+            std::string jid;
+            std::string markdown;
+            nlohmann::json keyboard_payload;
+            std::string reply_to_message_id;
+        };
+
+        struct StructuredMessage {
+            std::string jid;
+            nlohmann::json payload;
+            std::string reply_to_message_id;
+            std::string reference_message_id;
+        };
+
+        struct Reaction {
+            std::string jid;
+            std::string message_id;
+            std::string type;
+            std::string id;
+        };
+
         MockChannel(std::string channel_name, std::string jid_prefix)
         : name_(std::move(channel_name)),
           jid_prefix_(std::move(jid_prefix)) {}
@@ -31,9 +62,36 @@ namespace {
             on_message_ = std::move(on_message);
         }
 
-        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override {
-            sent_messages_.emplace_back(jid, text);
-            sent_reply_to_ids_.push_back(reply_to_message_id);
+        void send(const std::string &jid, const OutboundMessage &message) override {
+            std::visit(
+                [&]<typename T>(const T &payload) {
+                    using Payload = std::decay_t<T>;
+                    if constexpr (std::is_same_v<Payload, TextPayload>) {
+                        sent_messages_.emplace_back(jid, payload.text);
+                    } else if constexpr (std::is_same_v<Payload, MarkdownPayload>) {
+                        sent_markdown_messages_.emplace_back(jid, payload.markdown);
+                    } else if constexpr (std::is_same_v<Payload, MediaPayload>) {
+                        sent_media_messages_.push_back({jid, payload.file_type, payload.url, message.reply_to_message_id, payload.caption});
+                    } else if constexpr (std::is_same_v<Payload, KeyboardPayload>) {
+                        sent_keyboard_messages_.push_back({jid, payload.markdown, payload.keyboard_payload, message.reply_to_message_id});
+                    } else if constexpr (std::is_same_v<Payload, ArkPayload>) {
+                        sent_ark_messages_.push_back({jid, payload.ark_payload, message.reply_to_message_id, message.reference_message_id});
+                    } else if constexpr (std::is_same_v<Payload, EmbedPayload>) {
+                        sent_embed_messages_.push_back({jid, payload.embed_payload, message.reply_to_message_id, message.reference_message_id});
+                    }
+                },
+                message.payload);
+
+            sent_reply_to_ids_.push_back(message.reply_to_message_id);
+            sent_reference_ids_.push_back(message.reference_message_id);
+        }
+
+        void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override {
+            added_reactions_.push_back({jid, message_id, type, id});
+        }
+
+        void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override {
+            removed_reactions_.push_back({jid, message_id, type, id});
         }
 
         void disconnect() override {
@@ -46,6 +104,11 @@ namespace {
 
         bool is_connected() const override {
             return connected_;
+        }
+
+        [[nodiscard]]
+        std::vector<std::string> known_user_jids() const override {
+            return known_user_jids_;
         }
 
         void emit(const InboundMessage &msg) const {
@@ -65,13 +128,63 @@ namespace {
             return sent_reply_to_ids_;
         }
 
+        [[nodiscard]]
+        const std::vector<std::string> &sent_reference_ids() const {
+            return sent_reference_ids_;
+        }
+
+        [[nodiscard]]
+        const std::vector<std::pair<std::string, std::string>> &sent_markdown_messages() const {
+            return sent_markdown_messages_;
+        }
+
+        [[nodiscard]]
+        const std::vector<MediaMessage> &sent_media_messages() const {
+            return sent_media_messages_;
+        }
+
+        [[nodiscard]]
+        const std::vector<KeyboardMessage> &sent_keyboard_messages() const {
+            return sent_keyboard_messages_;
+        }
+
+        [[nodiscard]]
+        const std::vector<StructuredMessage> &sent_ark_messages() const {
+            return sent_ark_messages_;
+        }
+
+        [[nodiscard]]
+        const std::vector<StructuredMessage> &sent_embed_messages() const {
+            return sent_embed_messages_;
+        }
+
+        [[nodiscard]]
+        const std::vector<Reaction> &added_reactions() const {
+            return added_reactions_;
+        }
+
+        [[nodiscard]]
+        const std::vector<Reaction> &removed_reactions() const {
+            return removed_reactions_;
+        }
+
+        std::vector<std::string> known_user_jids_;
+
     private:
         std::string name_;
         std::string jid_prefix_;
         MessageCallback on_message_;
         bool connected_ = false;
         std::vector<std::pair<std::string, std::string>> sent_messages_;
+        std::vector<std::pair<std::string, std::string>> sent_markdown_messages_;
+        std::vector<MediaMessage> sent_media_messages_;
+        std::vector<KeyboardMessage> sent_keyboard_messages_;
+        std::vector<StructuredMessage> sent_ark_messages_;
+        std::vector<StructuredMessage> sent_embed_messages_;
+        std::vector<Reaction> added_reactions_;
+        std::vector<Reaction> removed_reactions_;
         std::vector<std::string> sent_reply_to_ids_;
+        std::vector<std::string> sent_reference_ids_;
     };
 
     TEST_CASE("empty_allowlist_allows_any_jid") {
@@ -191,6 +304,63 @@ namespace {
         manager.disconnect_all();
         CHECK_FALSE(cli->is_connected());
         CHECK_FALSE(qq->is_connected());
+    };
+
+    TEST_CASE("channel_manager_routes_structured_messages_reactions_and_known_users") {
+        ChannelManager manager;
+
+        auto qq_channel = std::make_unique<MockChannel>("qqbot", "qqbot:");
+        auto *qq = qq_channel.get();
+        qq->known_user_jids_ = {"qqbot:guild:1", "qqbot:c2c:2"};
+        manager.add_channel(std::move(qq_channel));
+
+        const auto keyboard = nlohmann::json{
+            {"content", {{"rows", nlohmann::json::array()}}},
+        };
+        const auto ark = nlohmann::json{{"template_id", 23}};
+        const auto embed = nlohmann::json{{"title", "hello"}};
+
+        manager.send_markdown("qqbot:guild:1", "# title", "msg-1", "msg-ref-1");
+        manager.send_media("qqbot:guild:1", 1, "https://example.test/image.png", "msg-2", "cover", "msg-ref-2");
+        manager.send_keyboard("qqbot:guild:1", "pick", keyboard, "msg-3", "msg-ref-3");
+        manager.send_ark("qqbot:guild:1", ark, "msg-4", "msg-ref-4");
+        manager.send_embed("qqbot:guild:1", embed, "msg-5", "msg-ref-5");
+        manager.add_reaction("qqbot:guild:1", "message-1", "emoji", "128512");
+        manager.remove_reaction("qqbot:guild:1", "message-1", "emoji", "128512");
+
+        REQUIRE(qq->sent_markdown_messages().size() == 1UL);
+        CHECK(qq->sent_markdown_messages().front().second == "# title");
+
+        REQUIRE(qq->sent_media_messages().size() == 1UL);
+        CHECK(qq->sent_media_messages().front().file_type == 1);
+        CHECK(qq->sent_media_messages().front().url == "https://example.test/image.png");
+        CHECK(qq->sent_media_messages().front().caption == "cover");
+
+        REQUIRE(qq->sent_keyboard_messages().size() == 1UL);
+        CHECK(qq->sent_keyboard_messages().front().keyboard_payload == keyboard);
+
+        REQUIRE(qq->sent_ark_messages().size() == 1UL);
+        CHECK(qq->sent_ark_messages().front().payload == ark);
+
+        REQUIRE(qq->sent_embed_messages().size() == 1UL);
+        CHECK(qq->sent_embed_messages().front().payload == embed);
+
+        REQUIRE(qq->added_reactions().size() == 1UL);
+        CHECK(qq->added_reactions().front().message_id == "message-1");
+        REQUIRE(qq->removed_reactions().size() == 1UL);
+        CHECK(qq->removed_reactions().front().id == "128512");
+
+        REQUIRE(qq->sent_reference_ids().size() == 5UL);
+        CHECK(qq->sent_reference_ids()[0] == "msg-ref-1");
+        CHECK(qq->sent_reference_ids()[1] == "msg-ref-2");
+        CHECK(qq->sent_reference_ids()[2] == "msg-ref-3");
+        CHECK(qq->sent_reference_ids()[3] == "msg-ref-4");
+        CHECK(qq->sent_reference_ids()[4] == "msg-ref-5");
+
+        const auto known_users = manager.known_user_jids();
+        REQUIRE(known_users.size() == 2UL);
+        CHECK(known_users[0] == "qqbot:c2c:2");
+        CHECK(known_users[1] == "qqbot:guild:1");
     };
 
 } // namespace

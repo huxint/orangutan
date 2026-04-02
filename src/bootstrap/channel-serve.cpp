@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include <spdlog/spdlog.h>
 
@@ -35,6 +36,33 @@ namespace orangutan::bootstrap {
         namespace cli = orangutan::cli;
 
         constexpr auto serve_poll_interval = std::chrono::milliseconds(50);
+
+        template <typename Fn>
+        class ScopeExit {
+        public:
+            explicit ScopeExit(Fn fn)
+            : fn_(std::move(fn)) {}
+
+            ScopeExit(const ScopeExit &) = delete;
+            ScopeExit &operator=(const ScopeExit &) = delete;
+
+            ScopeExit(ScopeExit &&other) noexcept
+            : fn_(std::move(other.fn_)),
+              active_(std::exchange(other.active_, false)) {}
+
+            ~ScopeExit() {
+                if (active_) {
+                    fn_();
+                }
+            }
+
+        private:
+            Fn fn_;
+            bool active_ = true;
+        };
+
+        template <typename Fn>
+        ScopeExit(Fn) -> ScopeExit<Fn>;
 
         enum class channel_approval_decision {
             approve,
@@ -132,6 +160,44 @@ namespace orangutan::bootstrap {
                 }
             }
             return normalized;
+        }
+
+        std::string describe_attachment_for_agent(const Attachment &attachment, std::size_t index) {
+            std::string line = spdlog::fmt_lib::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
+            if (!attachment.content_type.empty()) {
+                line.append(" (");
+                line.append(attachment.content_type);
+                line.push_back(')');
+            }
+            if (attachment.width > 0 && attachment.height > 0) {
+                line.append(spdlog::fmt_lib::format(" {}x{}", attachment.width, attachment.height));
+            }
+            if (attachment.size > 0) {
+                line.append(spdlog::fmt_lib::format(" {} bytes", attachment.size));
+            }
+            if (!attachment.url.empty()) {
+                line.append(" downloadable");
+            }
+            return line;
+        }
+
+        std::string build_agent_input(const InboundMessage &message) {
+            if (message.attachments.empty()) {
+                return message.content;
+            }
+
+            std::string prompt = message.content;
+            if (!prompt.empty()) {
+                prompt.append("\n\n");
+            }
+            prompt.append("[Current message attachments]\n");
+            for (std::size_t index = 0; index < message.attachments.size(); ++index) {
+                prompt.append(describe_attachment_for_agent(message.attachments[index], index));
+                prompt.push_back('\n');
+            }
+            prompt.append("Attachments are not downloaded automatically. Use the `message_attachments` tool to inspect metadata or download one into the workspace only when you "
+                          "explicitly need a local file.");
+            return prompt;
         }
 
         channel_approval_decision parse_channel_approval_decision(std::string_view content) {
@@ -581,6 +647,10 @@ namespace orangutan::bootstrap {
     }
 
     bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager) {
+        if (!message.is_user_message()) {
+            return false;
+        }
+
         std::vector<std::string> pending_request_ids;
         {
             std::scoped_lock lock(mutex_);
@@ -795,13 +865,23 @@ namespace orangutan::bootstrap {
                         return;
                     }
 
+                    auto &tool_context = runtime.tool_context();
+                    tool_context.current_message_attachments = message.attachments;
+                    tool_context.attachment_download_callback = [&channel_manager, jid = message.jid](const Attachment &attachment, const std::string &destination_path) {
+                        return channel_manager.download_attachment(jid, attachment, destination_path);
+                    };
+                    const auto restore_tool_context = ScopeExit([&tool_context] {
+                        tool_context.current_message_attachments.clear();
+                        tool_context.attachment_download_callback = {};
+                    });
+
                     // Light context: clear history so agent runs with minimal context (system prompt + current message only)
                     if (message.light_context) {
                         runtime.agent().clear_history();
                     }
 
-                    runtime.tool_context().approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
-                    const auto reply = runtime.agent().run(message.content);
+                    tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
+                    const auto reply = runtime.agent().run(build_agent_input(message));
 
                     // Skip session persistence for isolated heartbeat runs
                     if (!message.isolated) {
@@ -853,6 +933,11 @@ namespace orangutan::bootstrap {
             }
 
             if (message.jid.empty()) {
+                continue;
+            }
+
+            if (!message.is_user_message()) {
+                spdlog::debug("Ignoring non-message inbound event for jid '{}'", message.jid);
                 continue;
             }
 

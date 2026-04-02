@@ -27,33 +27,34 @@ namespace orangutan::channel::qq {
     class QqApiClient {
     public:
         QqApiClient(std::string app_id, std::string client_secret);
+        virtual ~QqApiClient() = default;
 
         QqApiClient(const QqApiClient &) = delete;
         QqApiClient &operator=(const QqApiClient &) = delete;
         QqApiClient(QqApiClient &&) = delete;
         QqApiClient &operator=(QqApiClient &&) = delete;
 
-        void ensure_access_token();
-        void refresh_access_token_if_due();
-        void clear_access_token();
+        virtual void ensure_access_token();
+        virtual void refresh_access_token_if_due();
+        virtual void clear_access_token();
 
         [[nodiscard]]
-        std::string access_token() const;
+        virtual std::string access_token() const;
 
         [[nodiscard]]
-        std::string get_gateway_url();
+        virtual std::string get_gateway_url();
 
         [[nodiscard]]
-        QqApiResponse get(const std::string &path);
+        virtual QqApiResponse get(const std::string &path);
 
         [[nodiscard]]
-        QqApiResponse post(const std::string &path, const nlohmann::json &body);
+        virtual QqApiResponse post(const std::string &path, const nlohmann::json &body);
 
         [[nodiscard]]
-        QqApiResponse put(const std::string &path, const nlohmann::json &body);
+        virtual QqApiResponse put(const std::string &path, const nlohmann::json &body);
 
         [[nodiscard]]
-        QqApiResponse del(const std::string &path);
+        virtual QqApiResponse del(const std::string &path);
 
         [[nodiscard]]
         static bool is_retryable_gateway_status(int status_code);

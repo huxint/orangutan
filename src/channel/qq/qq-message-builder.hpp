@@ -12,6 +12,10 @@ namespace orangutan::channel::qq {
         QqMessageBuilder &text(const std::string &content) {
             payload_["content"] = content;
             payload_["msg_type"] = 0;
+            payload_.erase("markdown");
+            payload_.erase("media");
+            payload_.erase("ark");
+            payload_.erase("embed");
             return *this;
         }
 
@@ -21,16 +25,45 @@ namespace orangutan::channel::qq {
             };
             payload_["msg_type"] = 2;
             payload_.erase("content");
+            payload_.erase("media");
+            payload_.erase("ark");
+            payload_.erase("embed");
             return *this;
         }
 
-        QqMessageBuilder &media(const std::string &file_info) {
+        QqMessageBuilder &media(const std::string &file_info, const std::string &content = "") {
             payload_["media"] = nlohmann::json{
                 {"file_info", file_info},
             };
             payload_["msg_type"] = 7;
+            if (content.empty()) {
+                payload_.erase("content");
+            } else {
+                payload_["content"] = content;
+            }
+            payload_.erase("markdown");
+            payload_.erase("ark");
+            payload_.erase("embed");
+            return *this;
+        }
+
+        QqMessageBuilder &ark(const nlohmann::json &ark_payload) {
+            payload_["ark"] = ark_payload;
+            payload_["msg_type"] = 3;
             payload_.erase("content");
             payload_.erase("markdown");
+            payload_.erase("media");
+            payload_.erase("embed");
+            return *this;
+        }
+
+        QqMessageBuilder &embed(const nlohmann::json &embed_payload) {
+            payload_["embed"] = embed_payload;
+            payload_["msg_type"] = 4;
+            payload_.erase("content");
+            payload_.erase("markdown");
+            payload_.erase("media");
+            payload_.erase("ark");
             return *this;
         }
 
@@ -42,6 +75,8 @@ namespace orangutan::channel::qq {
         QqMessageBuilder &reply_to(const std::string &msg_id) {
             if (!msg_id.empty()) {
                 payload_["msg_id"] = msg_id;
+            } else {
+                payload_.erase("msg_id");
             }
             return *this;
         }
@@ -52,6 +87,8 @@ namespace orangutan::channel::qq {
                     {"message_id", message_id},
                     {"ignore_get_message_error", true},
                 };
+            } else {
+                payload_.erase("message_reference");
             }
             return *this;
         }

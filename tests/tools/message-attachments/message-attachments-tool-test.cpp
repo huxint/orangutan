@@ -1,0 +1,90 @@
+#include "tools/message-attachments/message-attachments-tool.hpp"
+
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool.hpp"
+#include "test-helpers.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <nlohmann/json.hpp>
+#include <string>
+#include <vector>
+
+using namespace orangutan;
+
+namespace {
+
+    TEST_CASE("message_attachments_list_returns_current_message_metadata_without_downloading") {
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .width = 10,
+                .height = 20,
+                .size = 42,
+                .download_pending = true,
+            },
+        };
+        bool download_called = false;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .raw_caller_id = "qqbot:bot:c2c:user-openid",
+            .current_message_attachments = attachments,
+            .attachment_download_callback =
+                [&download_called](const Attachment &attachment, const std::string &) {
+                    download_called = true;
+                    return attachment;
+                },
+        };
+
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        const auto result = registry.execute(ToolUse("list-attachments", "message_attachments", {{"op", "list"}}));
+
+        REQUIRE_FALSE(result.is_error);
+        const auto payload = nlohmann::json::parse(result.content);
+        REQUIRE(payload.is_array());
+        REQUIRE(payload.size() == 1UL);
+        CHECK(payload.at(0).at("filename").get<std::string>() == "image.png");
+        CHECK(payload.at(0).at("download_pending").get<bool>());
+        CHECK_FALSE(download_called);
+    }
+
+    TEST_CASE("message_attachments_download_uses_runtime_callback_and_workspace_relative_target") {
+        const auto workspace = testing::unique_test_root("message-attachments-tool");
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+        std::string captured_destination;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .raw_caller_id = "qqbot:bot:c2c:user-openid",
+            .current_message_attachments = attachments,
+            .attachment_download_callback =
+                [&captured_destination](const Attachment &attachment, const std::string &destination_path) {
+                    captured_destination = destination_path;
+                    auto downloaded = attachment;
+                    downloaded.download_pending = false;
+                    downloaded.local_path = destination_path;
+                    return downloaded;
+                },
+        };
+
+        tools::register_message_attachments_tool(registry, workspace.string(), &context);
+        const auto result = registry.execute(ToolUse("download-attachment", "message_attachments", {{"op", "download"}, {"index", 0}, {"target_path", "incoming/image.png"}}));
+
+        REQUIRE_FALSE(result.is_error);
+        const auto payload = nlohmann::json::parse(result.content);
+        CHECK(captured_destination == (workspace / "incoming" / "image.png").string());
+        CHECK(payload.at("saved_to").get<std::string>() == captured_destination);
+        CHECK(payload.at("attachment").at("download_pending").get<bool>() == false);
+    }
+
+} // namespace

@@ -5,6 +5,7 @@
 #include "tools/file-write/register.hpp"
 #include "tools/heartbeat/register.hpp"
 #include "tools/inbox/register.hpp"
+#include "tools/message-attachments/message-attachments-tool.hpp"
 #include "tools/memory/register.hpp"
 #include "tools/shell/register.hpp"
 #include "tools/subagent/register.hpp"
@@ -30,6 +31,7 @@ namespace orangutan::tools {
         task::register_tools(registry, tool_context);
         heartbeat::register_tools(registry, tool_context);
         inbox::register_tools(registry, tool_context);
+        register_message_attachments_tool(registry, workspace, tool_context);
         if (runtime_memory != nullptr) {
             memory::register_tools(registry, *runtime_memory);
         }

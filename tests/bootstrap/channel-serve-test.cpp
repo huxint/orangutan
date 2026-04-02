@@ -93,10 +93,14 @@ namespace {
             on_message_ = std::move(on_message);
         }
 
-        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override {
+        void send(const std::string &jid, const OutboundMessage &message) override {
             std::scoped_lock lock(mutex_);
-            sent_messages_.emplace_back(jid, text);
-            sent_reply_to_ids_.push_back(reply_to_message_id);
+            const auto *text = std::get_if<TextPayload>(&message.payload);
+            if (text == nullptr) {
+                throw std::runtime_error("FakeChannel only supports text payloads");
+            }
+            sent_messages_.emplace_back(jid, text->text);
+            sent_reply_to_ids_.push_back(message.reply_to_message_id);
         }
 
         void disconnect() override {
