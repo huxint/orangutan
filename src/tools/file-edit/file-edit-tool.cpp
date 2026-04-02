@@ -345,16 +345,18 @@ namespace orangutan::tools {
         if (edit_mode == "hashline") {
             registry.register_tool(
                 {.definition = {.name = "edit",
-                                .description = "Edit a file using hash-anchored line references. Lines are identified by LINE#HASH tags\n"
-                                               "from the read tool output (e.g., \"42#KQ\"). Provide a path and an array of edit operations.\n"
+                                .description = "Edit a file using hash-anchored line references.\n\n"
+                                               "Usage:\n"
+                                               " - You MUST use the `read` tool first before editing. This tool will error if you haven't read the file.\n"
+                                               " - ALWAYS prefer editing existing files. NEVER write new files unless explicitly required.\n"
+                                               " - Lines are identified by LINE#HASH tags from the read tool output (e.g., \"42#KQ\").\n"
+                                               " - If a hash doesn't match (file changed since read), the error shows the correct hashes.\n"
                                                "\n"
                                                "Operations:\n"
                                                "- replace: Replace line(s) at anchor (single) or anchor..end_anchor (range) with content\n"
                                                "- insert_after: Insert content after anchor line (omit anchor to append to EOF)\n"
                                                "- insert_before: Insert content before anchor line (omit anchor to prepend to BOF)\n"
-                                               "- delete: Delete line at anchor (single) or anchor..end_anchor (range)\n"
-                                               "\n"
-                                               "If a hash doesn't match (file changed since read), the error shows the correct hashes.",
+                                               "- delete: Delete line at anchor (single) or anchor..end_anchor (range)",
                                 .input_schema = {{"type", "object"},
                                                  {"properties",
                                                   {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
@@ -377,8 +379,12 @@ namespace orangutan::tools {
         } else {
             registry.register_tool(
                 {.definition = {.name = "edit",
-                                .description = "Apply a multi-file, multi-hunk search/replace patch atomically within the current workspace or ~/.orangutan "
-                                               "configuration area. All hunks are validated before any file is written.",
+                                .description = "Apply a multi-file, multi-hunk search/replace patch atomically.\n\n"
+                                               "Usage:\n"
+                                               " - You MUST use the `read` tool first before editing. This tool will error if you haven't read the file.\n"
+                                               " - ALWAYS prefer editing existing files. NEVER write new files unless explicitly required.\n"
+                                               " - All hunks are validated before any file is written.\n"
+                                               " - Paths must stay inside the workspace or ~/.orangutan configuration area.",
                                 .input_schema = {{"type", "object"},
                                                  {"properties",
                                                   {{"patch",

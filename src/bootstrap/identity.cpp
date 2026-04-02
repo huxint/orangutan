@@ -78,9 +78,9 @@ namespace orangutan::bootstrap {
         std::string default_workspace_root_path() {
             const char *home = std::getenv("HOME");
             if (home == nullptr || std::string_view{home}.empty()) {
-                throw std::runtime_error("HOME is not set; unable to resolve default workspace '~/workspace'");
+                throw std::runtime_error("HOME is not set; unable to resolve default workspace '~/.orangutan/workspace/main'");
             }
-            return normalize_path(std::filesystem::path(home) / "workspace");
+            return normalize_path(std::filesystem::path(home) / ".orangutan" / "workspace" / "main");
         }
 
     } // namespace
@@ -224,10 +224,12 @@ namespace orangutan::bootstrap {
 
         if (is_child_run) {
             append_separator();
-            prompt += "Delegated worker mode:\n";
-            prompt += "- You are a delegated worker handling a task from another Orangutan runtime.\n";
-            prompt += "- Complete the assigned task and return a concise result.\n";
-            prompt += "- You cannot spawn subagents.";
+            prompt += "# Delegated worker mode\n";
+            prompt += "You are a delegated worker handling a task from another Orangutan runtime.\n";
+            prompt += "- Complete the assigned task fully — don't gold-plate, but don't leave it half-done.\n";
+            prompt += "- When complete, respond with a concise report covering what was done and key findings.\n";
+            prompt += "- You cannot spawn subagents.\n";
+            prompt += "- Use absolute file paths in your final response so the caller can navigate to them.";
             return prompt;
         }
 
@@ -236,18 +238,21 @@ namespace orangutan::bootstrap {
         }
 
         append_separator();
-        prompt += "Subagent delegation is available for: ";
+        prompt += "# Subagent delegation\n";
+        prompt += "The following child agents are available for delegation: ";
         for (std::size_t index = 0; index < allowed_child_agents.size(); ++index) {
             if (index > 0) {
                 prompt += ", ";
             }
             prompt += allowed_child_agents[index];
         }
-        prompt += ".\n";
-        prompt += "- Use `subagent_spawn` when a self-contained task can be delegated to one of those child agents.\n";
-        prompt += "- Use `subagent_status` to check whether a child run has finished without blocking.\n";
-        prompt += "- Use `subagent_wait` when you need the child result before continuing.\n";
-        prompt += "- If you can continue making progress without the child result yet, keep working and poll later with `subagent_status`.";
+        prompt += ".\n\n";
+        prompt += "Use subagent delegation for self-contained, parallelizable tasks:\n";
+        prompt += "- `subagent_spawn`: Start a child agent run. Returns immediately with a run_id.\n";
+        prompt += "- `subagent_status`: Check whether a child run has finished without blocking.\n";
+        prompt += "- `subagent_wait`: Block until a child run completes (use when you need the result before continuing).\n\n";
+        prompt += "If you can continue making progress without the child result, keep working and poll later with `subagent_status`. "
+                  "Avoid spawning subagents for trivial tasks you can do faster yourself.";
         return prompt;
     }
 

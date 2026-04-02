@@ -212,7 +212,21 @@ namespace orangutan::tools {
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
         const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
         const bool resume_supported = supports_resume_mode(completion_dispatcher);
-        std::string description = "Execute a shell command. Set background=true for long-running commands to return immediately.";
+        std::string description =
+            "Execute a shell command and return its output.\n\n"
+            "IMPORTANT: Avoid using this tool to run cat, head, tail, sed, awk, find, or grep commands "
+            "when a dedicated tool can accomplish the task. Instead use:\n"
+            " - File reading: Use the `read` tool (NOT cat/head/tail)\n"
+            " - File editing: Use the `edit` tool (NOT sed/awk)\n"
+            " - File creation: Use the `write` tool (NOT echo/cat with heredoc)\n"
+            "Reserve this tool for system commands and terminal operations that require shell execution.\n\n"
+            "Instructions:\n"
+            " - Use absolute paths and avoid `cd` to maintain working directory consistency.\n"
+            " - Always quote file paths containing spaces with double quotes.\n"
+            " - When issuing multiple independent commands, make separate parallel tool calls.\n"
+            " - Chain dependent commands with `&&`; use `;` only when you don't care if earlier commands fail.\n"
+            " - For git: prefer new commits over amending; never skip hooks (--no-verify); avoid destructive ops (reset --hard, push --force) unless truly necessary.\n"
+            " - Set background=true for long-running commands to return immediately.";
         nlohmann::json properties = {
             {"command", {{"type", "string"}, {"description", "The shell command to execute"}}},
             {"background", {{"type", "boolean"}, {"description", "Run the command in the background and return a process id"}}},

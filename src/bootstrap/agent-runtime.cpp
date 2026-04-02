@@ -1,6 +1,7 @@
 #include "bootstrap/agent-runtime.hpp"
 
 #include "bootstrap/memory-context.hpp"
+#include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
 #include "hooks/hook-manager.hpp"
@@ -96,6 +97,12 @@ namespace orangutan::bootstrap {
         runtime.agent =
             std::make_unique<AgentLoop>(*runtime.provider, runtime.tools, runtime.system_prompt, runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
+        runtime.agent->set_environment_info(prompt::EnvironmentInfo{
+            .workspace_root = input.workspace_root,
+            .model_name = input.primary_endpoint.model,
+            .agent_key = input.agent_key,
+            .is_channel_mode = input.runtime_origin != base::origin::cli,
+        });
         return runtime;
     }
 

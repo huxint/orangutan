@@ -27,7 +27,14 @@ namespace orangutan::tools {
     void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
         registry.register_tool(
             {.definition = {.name = "write",
-                            .description = "Write content to a file inside the current workspace or ~/.orangutan configuration area, creating parent directories if needed.",
+                            .description =
+                                "Write content to a file, creating parent directories if needed.\n\n"
+                                "Usage:\n"
+                                " - This tool overwrites the existing file at the given path.\n"
+                                " - If modifying an existing file, you MUST use the `read` tool first. Prefer the `edit` tool for modifications — it only sends the diff.\n"
+                                " - Only use this tool to create new files or for complete rewrites.\n"
+                                " - NEVER create documentation files (*.md, README) unless explicitly requested.\n"
+                                " - Paths are confined to the workspace or ~/.orangutan configuration area.",
                             .input_schema = {{"type", "object"},
                                              {"properties",
                                               {{"path",

@@ -135,9 +135,15 @@ namespace orangutan::tools {
         registry.register_tool(
             {.definition =
                  {.name = "read",
-                  .description =
-                      "Read file contents within the current workspace or ~/.orangutan configuration area with line numbers. Supports offset/limit for pagination, binary "
-                      "detection, and multi-path reading.",
+                  .description = "Read file contents from the workspace with line numbers.\n\n"
+                                 "Usage:\n"
+                                 " - Paths are workspace-relative or absolute within the workspace / ~/.orangutan area.\n"
+                                 " - By default reads up to 2000 lines from the start of the file.\n"
+                                 " - Use offset and limit for pagination on large files.\n"
+                                 " - Results use cat -n format with line numbers starting at 1.\n"
+                                 " - Can read multiple files in one call using the `paths` array.\n"
+                                 " - Binary files are detected automatically.\n"
+                                 " - This tool can only read files, not directories. Use `shell` with `ls` for directories.",
                   .input_schema =
                       {{"type", "object"},
                        {"properties",

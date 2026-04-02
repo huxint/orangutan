@@ -181,7 +181,8 @@ namespace orangutan::tools {
 
     void register_builtin_memory_tools(ToolRegistry &registry, RuntimeMemory &runtime_memory) {
         registry.register_tool({.definition = {.name = "remember",
-                                               .description = "Store a fact or preference for future conversations.",
+                                               .description = "Store a durable fact, preference, or project context for future conversations. "
+                                                              "Use meaningful, stable keys like 'project.lang', 'preference.style', or 'decision.auth-method'.",
                                                .input_schema = {{"type", "object"},
                                                                 {"properties",
                                                                  {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},

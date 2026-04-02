@@ -40,7 +40,7 @@ namespace {
         orangutan::testing::ScopedEnvVar home_env("HOME", home_root.string());
 
         const auto resolved = bootstrap::resolve_workspace_root("");
-        const auto expected = std::filesystem::weakly_canonical(home_root / "workspace").string();
+        const auto expected = std::filesystem::weakly_canonical(home_root / ".orangutan" / "workspace" / "main").string();
 
         CHECK(resolved == expected);
         CHECK(std::filesystem::exists(expected));
@@ -118,7 +118,7 @@ namespace {
     TEST_CASE("parent_prompt_guidance_mentions_status_polling_tool") {
         const auto prompt = bootstrap::append_subagent_prompt_guidance("Parent base prompt.", {"coder"}, false);
 
-        CHECK(prompt.contains("Use `subagent_status`"));
+        CHECK(prompt.contains("`subagent_status`"));
         CHECK(prompt.contains("poll later with `subagent_status`"));
     };
 

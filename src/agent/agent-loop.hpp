@@ -1,5 +1,6 @@
 #pragma once
 
+#include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
 #include "tools/registry/tool.hpp"
 #include <functional>
@@ -49,6 +50,10 @@ namespace orangutan::agent {
             thinking_budget_ = budget;
         }
 
+        void set_environment_info(prompt::EnvironmentInfo info) {
+            env_info_ = std::move(info);
+        }
+
         // Replace conversation history (for session loading)
         void set_history(std::vector<Message> messages) {
             history_ = std::move(messages);
@@ -75,6 +80,7 @@ namespace orangutan::agent {
         std::string skills_prompt_;
         hooks::HookManager *hook_manager_ = nullptr;
         int thinking_budget_ = 0;
+        prompt::EnvironmentInfo env_info_;
 
         static constexpr int max_iterations = 20;
         static constexpr int max_continuations = 3;
