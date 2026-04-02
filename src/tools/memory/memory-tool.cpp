@@ -3,11 +3,112 @@
 
 #include <spdlog/common.h>
 #include <algorithm>
+#include <optional>
+#include <stdexcept>
+#include <string_view>
 #include "utils/format.hpp"
 #include <vector>
 
 namespace orangutan::tools {
     namespace {
+        enum class RecallMode {
+            query,
+            category,
+        };
+
+        struct RecallRequest {
+            RecallMode mode;
+            std::string value;
+            std::size_t limit = 8;
+        };
+
+        std::optional<std::string> optional_non_empty_string(const nlohmann::json &input, std::string_view key) {
+            const auto it = input.find(static_cast<std::string>(key));
+            if (it == input.end() || !it->is_string()) {
+                return std::nullopt;
+            }
+
+            auto value = it->get<std::string>();
+            if (value.empty()) {
+                return std::nullopt;
+            }
+            return value;
+        }
+
+        RecallRequest parse_recall_request(const nlohmann::json &input) {
+            RecallRequest request{
+                .limit = static_cast<std::size_t>(std::max(1, input.value("limit", 8))),
+            };
+
+            const auto mode = optional_non_empty_string(input, "mode");
+            const auto value = optional_non_empty_string(input, "value");
+            const auto query = optional_non_empty_string(input, "query");
+            const auto category = optional_non_empty_string(input, "category");
+
+            if (mode.has_value()) {
+                if (*mode == "query") {
+                    request.mode = RecallMode::query;
+                    if (value.has_value()) {
+                        request.value = *value;
+                        return request;
+                    }
+                    if (query.has_value()) {
+                        request.value = *query;
+                        return request;
+                    }
+                    throw std::runtime_error("recall with mode 'query' requires a non-empty 'value'");
+                }
+
+                if (*mode == "category") {
+                    request.mode = RecallMode::category;
+                    if (value.has_value()) {
+                        request.value = *value;
+                        return request;
+                    }
+                    if (category.has_value()) {
+                        request.value = *category;
+                        return request;
+                    }
+                    throw std::runtime_error("recall with mode 'category' requires a non-empty 'value'");
+                }
+
+                throw std::runtime_error("recall mode must be 'query' or 'category'");
+            }
+
+            // Preserve legacy behavior: if both legacy fields are present, prefer category lookup.
+            if (category.has_value()) {
+                request.mode = RecallMode::category;
+                request.value = *category;
+                return request;
+            }
+
+            if (query.has_value()) {
+                request.mode = RecallMode::query;
+                request.value = *query;
+                return request;
+            }
+
+            throw std::runtime_error("recall expects either 'mode' + 'value' or one of 'query'/'category'");
+        }
+
+        nlohmann::json portable_recall_schema() {
+            return {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"properties",
+                 {
+                     {"mode",
+                      {
+                          {"type", "string"},
+                          {"enum", nlohmann::json::array({"query", "category"})},
+                          {"description", "How to recall memories: 'query' searches keys/content, 'category' lists a category"},
+                      }},
+                     {"value", {{"type", "string"}, {"description", "Search text or category name, depending on mode"}}},
+                     {"limit", {{"type", "integer"}, {"description", "Maximum number of memories to return"}}},
+                 }},
+                {"required", nlohmann::json::array({"mode", "value"})},
+            };
+        }
 
         std::string remember_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
             const auto key = input.at("key").get<std::string>();
@@ -20,10 +121,9 @@ namespace orangutan::tools {
         }
 
         std::string recall_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
-            const auto limit = static_cast<std::size_t>(std::max(1, input.value("limit", 8)));
-            if (input.contains("category")) {
-                const auto category = input.at("category").get<std::string>();
-                const auto entries = runtime_memory.recall_by_category(category, limit);
+            const auto request = parse_recall_request(input);
+            if (request.mode == RecallMode::category) {
+                const auto entries = runtime_memory.recall_by_category(request.value, request.limit);
                 std::string result;
                 for (const auto &[key, content] : entries) {
                     utils::format_to(result, "[{}] {}\n", key, content);
@@ -31,8 +131,7 @@ namespace orangutan::tools {
                 return result.empty() ? "(no memories found)" : result;
             }
 
-            const auto query = input.at("query").get<std::string>();
-            const auto result = runtime_memory.recall(query, limit);
+            const auto result = runtime_memory.recall(request.value, request.limit);
             return result.empty() ? "(no memories found)" : result;
         }
 
@@ -96,16 +195,8 @@ namespace orangutan::tools {
                                 }});
 
         registry.register_tool({.definition = {.name = "recall",
-                                               .description = "Recall stored memories by free-text query or category.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"query", {{"type", "string"}, {"description", "Search text to match against memory keys or content"}}},
-                                                                  {"category", {{"type", "string"}, {"description", "Return all memories in a category"}}},
-                                                                  {"limit", {{"type", "integer"}, {"description", "Maximum number of memories to return"}}}}},
-                                                                {"anyOf", nlohmann::json::array({
-                                                                              nlohmann::json{{"required", nlohmann::json::array({"query"})}},
-                                                                              nlohmann::json{{"required", nlohmann::json::array({"category"})}},
-                                                                          })}}},
+                                               .description = "Recall stored memories. Use mode='query' with value=<search text>, or mode='category' with value=<category name>.",
+                                               .input_schema = portable_recall_schema()},
                                 .execute = [&runtime_memory](const nlohmann::json &input) {
                                     return recall_memory(input, runtime_memory);
                                 }});
@@ -134,16 +225,8 @@ namespace orangutan::tools {
                                 }});
 
         registry.register_tool({.definition = {.name = "memory_recall",
-                                               .description = "Plugin-style alias for recall.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"query", {{"type", "string"}, {"description", "Search text to match against memory keys or content"}}},
-                                                                  {"category", {{"type", "string"}, {"description", "Return all memories in a category"}}},
-                                                                  {"limit", {{"type", "integer"}, {"description", "Maximum number of memories to return"}}}}},
-                                                                {"anyOf", nlohmann::json::array({
-                                                                              nlohmann::json{{"required", nlohmann::json::array({"query"})}},
-                                                                              nlohmann::json{{"required", nlohmann::json::array({"category"})}},
-                                                                          })}}},
+                                               .description = "Plugin-style alias for recall. Use mode='query' or mode='category' with value=<text>.",
+                                               .input_schema = portable_recall_schema()},
                                 .execute = [&runtime_memory](const nlohmann::json &input) {
                                     return recall_memory(input, runtime_memory);
                                 }});

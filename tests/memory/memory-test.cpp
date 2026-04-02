@@ -6,6 +6,7 @@
 #include "utils/utf8.hpp"
 #include "test-helpers.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <catch2/catch_test_macros.hpp>
@@ -53,6 +54,13 @@ namespace {
         } catch (...) {
             return false;
         }
+    }
+
+    const ToolDef *find_tool(const std::vector<ToolDef> &definitions, std::string_view name) {
+        const auto it = std::ranges::find_if(definitions, [name](const ToolDef &definition) {
+            return definition.name == name;
+        });
+        return it == definitions.end() ? nullptr : &*it;
     }
 
     TEST_CASE("remember_and_recall_by_key_or_content") {
@@ -260,16 +268,60 @@ namespace {
         CHECK(tool_names.contains("memory_list"));
         CHECK(tool_names.contains("memory_stats"));
 
+        const auto *recall_definition = find_tool(definitions, "recall");
+        REQUIRE(recall_definition != nullptr);
+        CHECK(recall_definition->input_schema.value("type", "") == "object");
+        CHECK_FALSE(recall_definition->input_schema.contains("anyOf"));
+        CHECK(recall_definition->input_schema.value("additionalProperties", true) == false);
+        CHECK(recall_definition->input_schema["required"] == nlohmann::json::array({"mode", "value"}));
+        CHECK(recall_definition->input_schema["properties"]["mode"]["enum"] == nlohmann::json::array({"query", "category"}));
+        CHECK(recall_definition->input_schema["properties"].contains("value"));
+
+        const auto *memory_recall_definition = find_tool(definitions, "memory_recall");
+        REQUIRE(memory_recall_definition != nullptr);
+        CHECK_FALSE(memory_recall_definition->input_schema.contains("anyOf"));
+
         auto remember_result = registry.execute(ToolUse("remember-1", "remember", {{"key", "preferred_language"}, {"content", "C++"}, {"category", "preferences"}}));
         CHECK_FALSE(remember_result.is_error);
 
-        auto recall_result = registry.execute(ToolUse("recall-1", "recall", {{"query", "preferred_language"}}));
+        auto recall_result = registry.execute(ToolUse("recall-1", "recall", {{"mode", "query"}, {"value", "preferred_language"}}));
         CHECK_FALSE(recall_result.is_error);
         CHECK(recall_result.content.contains("C++"));
 
         auto forget_result = registry.execute(ToolUse("forget-1", "forget", {{"key", "preferred_language"}}));
         CHECK_FALSE(forget_result.is_error);
         CHECK(forget_result.content.contains("Forgot"));
+    };
+
+    TEST_CASE("recall_tools_accept_portable_and_legacy_inputs") {
+        MemoryStoreHarness harness;
+        MemoryStore store(harness.db_path());
+        ToolRegistry registry;
+        RuntimeMemory runtime_memory(store);
+        register_builtin_tools(registry, &runtime_memory);
+
+        auto remember_result = registry.execute(ToolUse("remember-1", "remember", {{"key", "profile.name"}, {"content", "Alice"}, {"category", "profile"}}));
+        CHECK_FALSE(remember_result.is_error);
+
+        const auto portable_query = registry.execute(ToolUse("recall-query", "recall", {{"mode", "query"}, {"value", "profile.name"}}));
+        const auto portable_category = registry.execute(ToolUse("recall-category", "memory_recall", {{"mode", "category"}, {"value", "profile"}}));
+        const auto legacy_query = registry.execute(ToolUse("legacy-query", "recall", {{"query", "profile.name"}}));
+        const auto legacy_category = registry.execute(ToolUse("legacy-category", "memory_recall", {{"category", "profile"}}));
+        const auto legacy_both = registry.execute(ToolUse("legacy-both", "recall", {{"query", "profile.name"}, {"category", "profile"}}));
+        const auto invalid = registry.execute(ToolUse("invalid", "recall", nlohmann::json::object()));
+
+        CHECK_FALSE(portable_query.is_error);
+        CHECK_FALSE(portable_category.is_error);
+        CHECK_FALSE(legacy_query.is_error);
+        CHECK_FALSE(legacy_category.is_error);
+        CHECK_FALSE(legacy_both.is_error);
+        CHECK(portable_query.content.contains("Alice"));
+        CHECK(portable_category.content.contains("Alice"));
+        CHECK(legacy_query.content.contains("Alice"));
+        CHECK(legacy_category.content.contains("Alice"));
+        CHECK(legacy_both.content.contains("Alice"));
+        CHECK(invalid.is_error);
+        CHECK(invalid.content.contains("recall expects either 'mode' + 'value' or one of 'query'/'category'"));
     };
 
     TEST_CASE("plugin_style_memory_aliases_work") {
