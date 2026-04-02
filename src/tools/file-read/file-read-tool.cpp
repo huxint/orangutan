@@ -1,5 +1,6 @@
 #include "tools/internal.hpp"
 #include "tools/file-edit/hashline.hpp"
+#include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
 
@@ -13,6 +14,81 @@
 
 namespace orangutan::tools {
     namespace {
+
+        constexpr std::size_t max_image_size = 5 * 1024 * 1024;
+
+        constexpr std::string_view base64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        std::string encode_base64(const std::vector<char> &data) {
+            std::string encoded;
+            encoded.reserve(((data.size() + 2) / 3) * 4);
+            for (std::size_t i = 0; i < data.size(); i += 3) {
+                const unsigned int b0 = static_cast<unsigned char>(data[i]);
+                const unsigned int b1 = (i + 1 < data.size()) ? static_cast<unsigned char>(data[i + 1]) : 0U;
+                const unsigned int b2 = (i + 2 < data.size()) ? static_cast<unsigned char>(data[i + 2]) : 0U;
+                const unsigned int combined = (b0 << 16U) | (b1 << 8U) | b2;
+                encoded.push_back(base64_alphabet[(combined >> 18U) & 0x3FU]);
+                encoded.push_back(base64_alphabet[(combined >> 12U) & 0x3FU]);
+                encoded.push_back((i + 1 < data.size()) ? base64_alphabet[(combined >> 6U) & 0x3FU] : '=');
+                encoded.push_back((i + 2 < data.size()) ? base64_alphabet[combined & 0x3FU] : '=');
+            }
+            return encoded;
+        }
+
+        bool is_image_extension(const std::filesystem::path &path) {
+            const auto ext = path.extension().string();
+            if (ext.size() < 2) {
+                return false;
+            }
+            std::string lower;
+            lower.reserve(ext.size());
+            for (char ch : ext) {
+                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+            }
+            return lower == ".png" || lower == ".jpg" || lower == ".jpeg" || lower == ".gif" || lower == ".webp" || lower == ".bmp";
+        }
+
+        std::string guess_media_type(const std::filesystem::path &path) {
+            const auto ext = path.extension().string();
+            std::string lower;
+            lower.reserve(ext.size());
+            for (char ch : ext) {
+                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+            }
+            if (lower == ".png") {
+                return "image/png";
+            }
+            if (lower == ".jpg" || lower == ".jpeg") {
+                return "image/jpeg";
+            }
+            if (lower == ".gif") {
+                return "image/gif";
+            }
+            if (lower == ".webp") {
+                return "image/webp";
+            }
+            if (lower == ".bmp") {
+                return "image/bmp";
+            }
+            return "application/octet-stream";
+        }
+
+        ToolOutput read_image_file(const std::filesystem::path &path) {
+            const auto size = std::filesystem::file_size(path);
+            if (size > max_image_size) {
+                return ToolOutput{spdlog::fmt_lib::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, max_image_size)};
+            }
+
+            fileio::File file(path, "rb");
+            std::vector<char> buf(size);
+            const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
+            buf.resize(bytes_read);
+
+            const auto media_type = guess_media_type(path);
+            const auto b64 = encode_base64(buf);
+            const auto description = spdlog::fmt_lib::format("Image: {} ({} bytes, {})", path.string(), size, media_type);
+            return ToolOutput{description, {{media_type, b64}}};
+        }
 
         bool is_binary_file(const std::filesystem::path &path) {
             try {
@@ -33,11 +109,15 @@ namespace orangutan::tools {
             }
         }
 
-        std::string read_single_file(const std::filesystem::path &path, int offset, int limit, std::string_view edit_mode) {
+        ToolOutput read_single_file(const std::filesystem::path &path, int offset, int limit, std::string_view edit_mode) {
             spdlog::info("  [tool] read: {}", path.string());
 
             if (!std::filesystem::exists(path)) {
                 throw std::runtime_error("File not found: " + path.string());
+            }
+
+            if (is_image_extension(path)) {
+                return read_image_file(path);
             }
 
             if (is_binary_file(path)) {
@@ -85,7 +165,7 @@ namespace orangutan::tools {
             return out;
         }
 
-        std::string read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
             const bool has_paths = input.contains("paths") && !input["paths"].is_null();
 
@@ -111,22 +191,24 @@ namespace orangutan::tools {
             }
 
             const auto &paths = input.at("paths");
-            std::string out;
+            ToolOutput combined;
             for (std::size_t i = 0; i < paths.size(); ++i) {
                 const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root);
                 if (i > 0) {
-                    out.push_back('\n');
+                    combined.text.push_back('\n');
                 }
-                utils::format_to(out, "=== {} ===\n", path.string());
+                utils::format_to(combined.text, "=== {} ===\n", path.string());
 
                 try {
-                    out += read_single_file(path, offset, limit, edit_mode);
+                    auto single = read_single_file(path, offset, limit, edit_mode);
+                    combined.text += single.text;
+                    combined.images.insert(combined.images.end(), std::make_move_iterator(single.images.begin()), std::make_move_iterator(single.images.end()));
                 } catch (const std::exception &e) {
-                    utils::format_to(out, "Error: {}\n", e.what());
+                    utils::format_to(combined.text, "Error: {}\n", e.what());
                 }
             }
 
-            return out;
+            return combined;
         }
 
     } // namespace
@@ -143,6 +225,7 @@ namespace orangutan::tools {
                                  " - Results use cat -n format with line numbers starting at 1.\n"
                                  " - Can read multiple files in one call using the `paths` array.\n"
                                  " - Binary files are detected automatically.\n"
+                                 " - Image files (png, jpg, gif, webp, bmp) are read and displayed visually.\n"
                                  " - This tool can only read files, not directories. Use `shell` with `ls` for directories.",
                   .input_schema =
                       {{"type", "object"},
@@ -155,7 +238,7 @@ namespace orangutan::tools {
                            {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
                          {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                          {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
-             .execute = [workspace_root, mode = std::string(edit_mode)](const nlohmann::json &input) {
+             .execute_rich = [workspace_root, mode = std::string(edit_mode)](const nlohmann::json &input) {
                  return read_file(input, workspace_root, mode);
              }});
     }

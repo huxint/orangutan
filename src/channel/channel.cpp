@@ -118,6 +118,22 @@ namespace orangutan::channel {
         require_channel_for_jid(channels_, jid).remove_reaction(jid, message_id, type, id);
     }
 
+    void ChannelManager::start_typing(const std::string &jid, const std::string &message_id) {
+        try {
+            require_channel_for_jid(channels_, jid).start_typing(jid, message_id);
+        } catch (const std::exception &e) {
+            spdlog::debug("start_typing failed for jid '{}': {}", jid, e.what());
+        }
+    }
+
+    void ChannelManager::stop_typing(const std::string &jid) {
+        try {
+            require_channel_for_jid(channels_, jid).stop_typing(jid);
+        } catch (const std::exception &e) {
+            spdlog::debug("stop_typing failed for jid '{}': {}", jid, e.what());
+        }
+    }
+
     void ChannelManager::disconnect_all() {
         for (const auto &channel : channels_) {
             if (!channel->is_connected()) {

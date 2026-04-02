@@ -175,28 +175,39 @@ namespace orangutan::bootstrap {
             if (attachment.size > 0) {
                 line.append(spdlog::fmt_lib::format(" {} bytes", attachment.size));
             }
-            if (!attachment.url.empty()) {
+            if (!attachment.local_path.empty()) {
+                line.append(" -> ");
+                line.append(attachment.local_path);
+            } else if (!attachment.url.empty()) {
                 line.append(" downloadable");
             }
             return line;
         }
 
         std::string build_agent_input(const InboundMessage &message) {
-            if (message.attachments.empty()) {
-                return message.content;
+            std::string prompt;
+
+            if (!message.referenced_content.empty()) {
+                prompt.append("[Quoted/referenced message]\n");
+                prompt.append(message.referenced_content);
+                prompt.append("\n\n[User's reply]\n");
             }
 
-            std::string prompt = message.content;
-            if (!prompt.empty()) {
-                prompt.append("\n\n");
+            prompt.append(message.content);
+
+            if (!message.attachments.empty()) {
+                if (!prompt.empty()) {
+                    prompt.append("\n\n");
+                }
+                prompt.append("[Current message attachments]\n");
+                for (std::size_t index = 0; index < message.attachments.size(); ++index) {
+                    prompt.append(describe_attachment_for_agent(message.attachments[index], index));
+                    prompt.push_back('\n');
+                }
+                prompt.append("Attachments have been auto-downloaded to the workspace. "
+                              "For images, use the file_read tool on the local path to view them immediately. "
+                              "For audio/voice files, note the path for reference.");
             }
-            prompt.append("[Current message attachments]\n");
-            for (std::size_t index = 0; index < message.attachments.size(); ++index) {
-                prompt.append(describe_attachment_for_agent(message.attachments[index], index));
-                prompt.push_back('\n');
-            }
-            prompt.append("Attachments are not downloaded automatically. Use the `message_attachments` tool to inspect metadata or download one into the workspace only when you "
-                          "explicitly need a local file.");
             return prompt;
         }
 
@@ -779,7 +790,15 @@ namespace orangutan::bootstrap {
         }
 
         try {
-            channel_manager.send(target, reply, message.message_id);
+            if (target.starts_with("qqbot:")) {
+                channel_manager.send(target, OutboundMessage{
+                                                 .payload = TextPayload{.text = reply},
+                                                 .reply_to_message_id = message.message_id,
+                                                 .reference_message_id = message.message_id,
+                                             });
+            } else {
+                channel_manager.send(target, reply, message.message_id);
+            }
         } catch (const std::exception &e) {
             spdlog::error("Failed to deliver reply for jid '{}' to target '{}': {}", message.jid, target, e.what());
         }
@@ -875,13 +894,34 @@ namespace orangutan::bootstrap {
                         tool_context.attachment_download_callback = {};
                     });
 
+                    // Auto-download attachments so the agent can process them immediately
+                    auto effective_message = message;
+                    if (!effective_message.attachments.empty() && tool_context.attachment_download_callback) {
+                        const auto ws = std::filesystem::path(runtime.workspace.empty() ? "." : runtime.workspace);
+                        for (std::size_t att_idx = 0; att_idx < effective_message.attachments.size(); ++att_idx) {
+                            auto &att = effective_message.attachments[att_idx];
+                            if (!att.download_pending || att.url.empty()) {
+                                continue;
+                            }
+                            try {
+                                const auto name = att.filename.empty() ? "attachment-" + std::to_string(att_idx) : att.filename;
+                                att = tool_context.attachment_download_callback(att, (ws / ".orangutan" / "attachments" / name).string());
+                                tool_context.current_message_attachments[att_idx] = att;
+                            } catch (const std::exception &e) {
+                                spdlog::warn("Auto-download attachment [{}] failed: {}", att_idx, e.what());
+                            }
+                        }
+                    }
+
                     // Light context: clear history so agent runs with minimal context (system prompt + current message only)
                     if (message.light_context) {
                         runtime.agent().clear_history();
                     }
 
                     tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
-                    const auto reply = runtime.agent().run(build_agent_input(message));
+                    channel_manager.start_typing(message.jid, message.message_id);
+                    const auto reply = runtime.agent().run(build_agent_input(effective_message));
+                    channel_manager.stop_typing(message.jid);
 
                     // Skip session persistence for isolated heartbeat runs
                     if (!message.isolated) {

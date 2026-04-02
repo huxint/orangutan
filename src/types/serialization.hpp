@@ -20,9 +20,24 @@ namespace orangutan {
                 } else if constexpr (std::same_as<T, ToolUse>) {
                     return {{"type", "tool_use"}, {"id", blk.id}, {"name", blk.name}, {"input", blk.input}};
                 } else if constexpr (std::same_as<T, ToolResult>) {
-                    nlohmann::json json = {{"type", "tool_result"}, {"tool_use_id", blk.tool_use_id}, {"content", blk.content}};
+                    nlohmann::json json = {{"type", "tool_result"}, {"tool_use_id", blk.tool_use_id}};
                     if (blk.is_error) {
                         json["is_error"] = true;
+                    }
+                    if (blk.images.empty()) {
+                        json["content"] = blk.content;
+                    } else {
+                        nlohmann::json content_array = nlohmann::json::array();
+                        if (!blk.content.empty()) {
+                            content_array.push_back({{"type", "text"}, {"text", blk.content}});
+                        }
+                        for (const auto &img : blk.images) {
+                            content_array.push_back({
+                                {"type", "image"},
+                                {"source", {{"type", "base64"}, {"media_type", img.media_type}, {"data", img.data}}},
+                            });
+                        }
+                        json["content"] = content_array;
                     }
                     return json;
                 }

@@ -48,6 +48,7 @@ namespace orangutan::channel {
         std::string timestamp;
         std::string message_id;
         std::string reference_message_index;
+        std::string referenced_content;
         std::vector<Attachment> attachments;
         std::optional<ReactionInfo> reaction;
         bool mentioned = false;
@@ -198,6 +199,15 @@ namespace orangutan::channel {
         }
         virtual void disconnect() = 0;
 
+        virtual void start_typing(const std::string &jid, const std::string &message_id) {
+            static_cast<void>(jid);
+            static_cast<void>(message_id);
+        }
+
+        virtual void stop_typing(const std::string &jid) {
+            static_cast<void>(jid);
+        }
+
         [[nodiscard]]
         virtual bool owns_jid(const std::string &jid) const = 0;
 
@@ -229,6 +239,8 @@ namespace orangutan::channel {
         Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path);
         void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id);
         void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id);
+        void start_typing(const std::string &jid, const std::string &message_id);
+        void stop_typing(const std::string &jid);
         void disconnect_all();
 
         [[nodiscard]]

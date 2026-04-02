@@ -160,11 +160,11 @@ namespace {
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
 
         qqtest::QqChannelTestAccess::remember_inbound_message(channel, "message-1");
-        const std::string long_text(16050, 'a');
+        const std::string long_text(25050, 'a');
 
         qqtest::QqChannelTestAccess::send_text_now(channel, "qqbot:bot:c2c:user-openid", long_text, "message-1", "message-1");
 
-        REQUIRE(api->requests.size() == 5UL);
+        REQUIRE(api->requests.size() == 6UL);
         for (const auto &request : api->requests) {
             CHECK(request.path == "/v2/users/user-openid/messages");
             CHECK_FALSE(request.body.contains("msg_id"));

@@ -44,9 +44,15 @@ namespace orangutan {
     };
 
     struct ToolResult {
+        struct ImageBlock {
+            std::string media_type;
+            std::string data;
+        };
+
         std::string tool_use_id;
         std::string content;
         bool is_error = false;
+        std::vector<ImageBlock> images;
 
         ToolResult() = default;
         ToolResult(std::string tool_use_id, std::string content, bool is_error = false)

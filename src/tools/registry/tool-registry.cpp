@@ -113,6 +113,15 @@ namespace orangutan::tools {
         }
 
         try {
+            if (it->second.execute_rich) {
+                auto output = it->second.execute_rich(call.input);
+                output.text = scrub_tool_output(output.text);
+                ToolResult result;
+                result.tool_use_id = call.id;
+                result.content = std::move(output.text);
+                result.images = std::move(output.images);
+                return result;
+            }
             std::string result = it->second.execute(call.input);
             result = scrub_tool_output(result);
             return {call.id, result, false};

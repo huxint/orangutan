@@ -37,6 +37,8 @@ namespace orangutan::channel::qq {
         Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) override;
         void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
         void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
+        void start_typing(const std::string &jid, const std::string &message_id) override;
+        void stop_typing(const std::string &jid) override;
         void disconnect() override;
 
         [[nodiscard]]
@@ -137,6 +139,18 @@ namespace orangutan::channel::qq {
 
         [[nodiscard]]
         static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);
+
+        void capture_outbound_ref_index(const QqApiResponse &response, const std::string &content);
+        [[nodiscard]]
+        std::string lookup_ref_index(const std::string &ref_idx) const;
+        void load_ref_index();
+        void append_ref_index_line(const std::string &ref_idx, const std::string &content);
+
+        void send_typing_now(const std::string &jid, const std::string &message_id);
+        void start_typing_keepalive();
+        void stop_typing_keepalive();
+
+        void send_media_segments(const std::string &jid, const OutboundMessage &message);
     };
 
 } // namespace orangutan::channel::qq

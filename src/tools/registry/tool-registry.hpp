@@ -17,9 +17,22 @@ namespace orangutan::tools {
 
     struct ToolRuntimeContext;
 
+    struct ToolOutput {
+        std::string text;
+        std::vector<ToolResult::ImageBlock> images;
+
+        ToolOutput() = default;
+        ToolOutput(std::string t)
+        : text(std::move(t)) {} // NOLINT(google-explicit-constructor)
+        ToolOutput(std::string t, std::vector<ToolResult::ImageBlock> imgs)
+        : text(std::move(t)),
+          images(std::move(imgs)) {}
+    };
+
     struct Tool {
         ToolDef definition;
         std::function<std::string(const nlohmann::json &input)> execute;
+        std::function<ToolOutput(const nlohmann::json &input)> execute_rich;
     };
 
     class ToolRegistry {
