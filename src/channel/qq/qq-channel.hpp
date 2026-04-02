@@ -34,6 +34,9 @@ namespace orangutan::channel::qq {
         void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override;
         void send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
         void send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id = "");
+        void send_keyboard_message(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id = "");
+        void add_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id);
+        void remove_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id);
         void disconnect() override;
 
         [[nodiscard]]
@@ -83,10 +86,14 @@ namespace orangutan::channel::qq {
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
         void handle_c2c_message(const nlohmann::json &data);
         void handle_group_message(const nlohmann::json &data);
+        void handle_guild_message(const nlohmann::json &data);
+        void handle_interaction(const nlohmann::json &data);
         void send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
         void send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        void send_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
         void send_markdown_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
         void send_markdown_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        void send_markdown_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
         [[nodiscard]]
         std::string upload_media_c2c(const std::string &openid, int file_type, const std::string &url);
         [[nodiscard]]

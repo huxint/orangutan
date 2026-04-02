@@ -52,6 +52,9 @@ namespace orangutan::channel::qq {
         QqApiResponse put(const std::string &path, const nlohmann::json &body);
 
         [[nodiscard]]
+        QqApiResponse del(const std::string &path);
+
+        [[nodiscard]]
         static bool is_retryable_gateway_status(int status_code);
 
     private:

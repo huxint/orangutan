@@ -153,6 +153,10 @@ namespace orangutan::channel::qq {
         return request_with_retry("PUT", path, body);
     }
 
+    QqApiResponse QqApiClient::del(const std::string &path) {
+        return request_with_retry("DELETE", path, std::nullopt);
+    }
+
     bool QqApiClient::is_retryable_gateway_status(int status_code) {
         return status_code == 502 || status_code == 503 || status_code == 504;
     }

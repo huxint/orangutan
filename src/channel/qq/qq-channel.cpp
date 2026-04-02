@@ -152,6 +152,7 @@ namespace orangutan::channel::qq {
     void QqChannel::send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+        const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
 
         if (jid.starts_with(c2c_prefix)) {
             send_c2c(require_openid(jid, c2c_prefix), text, reply_to_message_id, reply_to_message_id);
@@ -163,12 +164,18 @@ namespace orangutan::channel::qq {
             return;
         }
 
+        if (jid.starts_with(guild_prefix)) {
+            send_guild(require_openid(jid, guild_prefix), text, reply_to_message_id, reply_to_message_id);
+            return;
+        }
+
         throw std::runtime_error("Unsupported QQ jid: " + jid);
     }
 
     void QqChannel::send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id, const std::string &reference_message_id) {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+        const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
 
         if (jid.starts_with(c2c_prefix)) {
             send_markdown_c2c(require_openid(jid, c2c_prefix), markdown, reply_to_message_id, reference_message_id);
@@ -180,12 +187,18 @@ namespace orangutan::channel::qq {
             return;
         }
 
+        if (jid.starts_with(guild_prefix)) {
+            send_markdown_guild(require_openid(jid, guild_prefix), markdown, reply_to_message_id, reference_message_id);
+            return;
+        }
+
         throw std::runtime_error("Unsupported QQ jid: " + jid);
     }
 
     void QqChannel::send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id) {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+        const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
 
         if (jid.starts_with(c2c_prefix)) {
             const auto openid = require_openid(jid, c2c_prefix);
@@ -201,7 +214,43 @@ namespace orangutan::channel::qq {
             return;
         }
 
+        if (jid.starts_with(guild_prefix)) {
+            throw std::runtime_error("QQ guild currently does not support msg_type=7 media direct send");
+        }
+
         throw std::runtime_error("Unsupported QQ jid: " + jid);
+    }
+
+    void QqChannel::send_keyboard_message(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id) {
+        const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
+        const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+        const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+
+        auto payload = QqMessageBuilder{}.markdown(markdown).keyboard(keyboard_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).build();
+
+        if (jid.starts_with(c2c_prefix)) {
+            static_cast<void>(api_client_->post("/v2/users/" + require_openid(jid, c2c_prefix) + "/messages", payload));
+            return;
+        }
+        if (jid.starts_with(group_prefix)) {
+            static_cast<void>(api_client_->post("/v2/groups/" + require_openid(jid, group_prefix) + "/messages", payload));
+            return;
+        }
+        if (jid.starts_with(guild_prefix)) {
+            static_cast<void>(api_client_->post("/channels/" + require_openid(jid, guild_prefix) + "/messages", payload));
+            return;
+        }
+
+        throw std::runtime_error("Unsupported QQ jid: " + jid);
+    }
+
+    void QqChannel::add_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id) {
+        static_cast<void>(api_client_->put("/channels/" + channel_id + "/messages/" + message_id + "/reactions/" + type + "/" + id, nlohmann::json::object()));
+    }
+
+    void QqChannel::remove_reaction(const std::string &channel_id, const std::string &message_id, const std::string &type, const std::string &id) {
+        static_cast<void>(api_client_->del("/channels/" + channel_id + "/messages/" + message_id + "/reactions/" + type + "/" + id));
     }
 
     void QqChannel::disconnect() {
@@ -228,7 +277,8 @@ namespace orangutan::channel::qq {
     bool QqChannel::owns_jid(const std::string &jid) const {
         const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
-        return jid.starts_with(c2c_prefix) || jid.starts_with(group_prefix);
+        const auto guild_prefix = qq_jid_prefix(bot_name_, "guild");
+        return jid.starts_with(c2c_prefix) || jid.starts_with(group_prefix) || jid.starts_with(guild_prefix);
     }
 
     bool QqChannel::is_connected() const {
@@ -500,6 +550,16 @@ namespace orangutan::channel::qq {
 
         if (event_type == "GROUP_AT_MESSAGE_CREATE" || event_type == "GROUP_MESSAGE_CREATE") {
             handle_group_message(data);
+            return;
+        }
+
+        if (event_type == "AT_MESSAGE_CREATE" || event_type == "GUILD_MESSAGE_CREATE") {
+            handle_guild_message(data);
+            return;
+        }
+
+        if (event_type == "INTERACTION_CREATE") {
+            handle_interaction(data);
         }
     }
 
@@ -549,6 +609,70 @@ namespace orangutan::channel::qq {
         });
     }
 
+    void QqChannel::handle_guild_message(const nlohmann::json &data) {
+        if (on_message_ == nullptr) {
+            return;
+        }
+
+        const auto author = data.value("author", nlohmann::json::object());
+        const auto channel_id = data.value("channel_id", std::string{});
+        const auto message_id = data.value("id", std::string{});
+        const auto mention_ids = parse_mention_ids(data);
+        remember_inbound_message(message_id);
+        on_message_({
+            .jid = make_qq_jid(bot_name_, "guild", channel_id),
+            .sender = author.value("id", std::string{}),
+            .sender_name = author.value("username", author.value("id", std::string{})),
+            .content = strip_mentions(data.value("content", std::string{})),
+            .timestamp = data.value("timestamp", std::string{}),
+            .message_id = message_id,
+            .attachments = parse_attachments(data),
+            .mentioned = is_bot_mentioned(data, mention_ids),
+            .mention_ids = mention_ids,
+            .is_group = true,
+        });
+    }
+
+    void QqChannel::handle_interaction(const nlohmann::json &data) {
+        const auto interaction_id = data.value("id", std::string{});
+        if (!interaction_id.empty()) {
+            try {
+                static_cast<void>(api_client_->put("/interactions/" + interaction_id, nlohmann::json{
+                                                                                          {"code", 0},
+                                                                                      }));
+            } catch (const std::exception &e) {
+                spdlog::warn("QQ interaction ACK failed for '{}': {}", interaction_id, e.what());
+            }
+        }
+
+        if (on_message_ == nullptr) {
+            return;
+        }
+
+        std::string button_data;
+        if (data.contains("data")) {
+            const auto event_data = data.value("data", nlohmann::json::object());
+            const auto resolved = event_data.value("resolved", nlohmann::json::object());
+            button_data = resolved.value("button_data", std::string{});
+            if (button_data.empty()) {
+                button_data = event_data.value("button_data", std::string{});
+            }
+        }
+
+        const auto user_openid = data.value("user_openid", std::string{});
+        const auto channel_id = data.value("channel_id", std::string{});
+        const bool is_guild = !channel_id.empty();
+        on_message_({
+            .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id) : make_qq_jid(bot_name_, "c2c", user_openid),
+            .sender = user_openid,
+            .sender_name = user_openid,
+            .content = button_data,
+            .timestamp = data.value("timestamp", std::string{}),
+            .message_id = interaction_id,
+            .is_group = is_guild,
+        });
+    }
+
     void QqChannel::send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
         const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
         const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
@@ -567,6 +691,15 @@ namespace orangutan::channel::qq {
         }
     }
 
+    void QqChannel::send_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
+        for (const auto &chunk : chunk_text(content, 4000)) {
+            auto payload = QqMessageBuilder{}.text(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
+            static_cast<void>(api_client_->post("/channels/" + channel_id + "/messages", payload));
+        }
+    }
+
     void QqChannel::send_markdown_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
         const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
         const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
@@ -582,6 +715,16 @@ namespace orangutan::channel::qq {
         for (const auto &chunk : chunk_text(content, 5000)) {
             auto payload = QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
             static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
+        }
+    }
+
+    void QqChannel::send_markdown_guild(const std::string &channel_id, const std::string &content, const std::string &reply_to_message_id,
+                                        const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
+        for (const auto &chunk : chunk_text(content, 5000)) {
+            auto payload = QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
+            static_cast<void>(api_client_->post("/channels/" + channel_id + "/messages", payload));
         }
     }
 

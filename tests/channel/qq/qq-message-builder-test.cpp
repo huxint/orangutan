@@ -33,3 +33,14 @@ TEST_CASE("qq_message_builder_constructs_media_payload") {
     CHECK_FALSE(payload.contains("content"));
     CHECK_FALSE(payload.contains("markdown"));
 }
+
+TEST_CASE("qq_message_builder_attaches_keyboard_payload") {
+    const auto keyboard = nlohmann::json{
+        {"content", {{"rows", nlohmann::json::array()}}},
+    };
+
+    const auto payload = QqMessageBuilder{}.markdown("pick one").keyboard(keyboard).msg_seq(8).build();
+
+    CHECK(payload.at("msg_type").get<int>() == 2);
+    CHECK(payload.at("keyboard") == keyboard);
+}
