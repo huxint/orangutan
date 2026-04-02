@@ -202,9 +202,9 @@ namespace {
 
         auto runtime = build_agent_runtime(input);
 
-        CHECK(runtime.skills_prompt.contains("## Active Skills"));
-        CHECK(runtime.skills_prompt.contains("### delegation"));
-        CHECK(runtime.skills_prompt.contains("Always report concise delegation status."));
+        CHECK(runtime.skills_prompt.contains("## Available Skills"));
+        CHECK(runtime.skills_prompt.contains("**delegation**"));
+        CHECK_FALSE(runtime.skills_prompt.contains("Always report concise delegation status."));
     };
 
     TEST_CASE("loads_hooks_from_default_resolved_hook_directories") {

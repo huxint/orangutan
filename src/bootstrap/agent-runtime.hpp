@@ -3,6 +3,7 @@
 #include "bootstrap/identity.hpp"
 #include "config/config.hpp"
 #include "providers/provider.hpp"
+#include "skills/skill-loader.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <memory>
@@ -94,6 +95,7 @@ namespace orangutan::bootstrap {
         std::unique_ptr<tools::McpManager> mcp_manager;
         std::string system_prompt;
         std::string skills_prompt;
+        std::unique_ptr<skills::SkillLoader> skill_loader;
         std::unique_ptr<hooks::HookManager> hook_manager;
         std::unique_ptr<agent::AgentLoop> agent;
         // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)

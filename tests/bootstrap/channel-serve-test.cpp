@@ -348,9 +348,9 @@ namespace {
         };
 
         const auto prompt = bootstrap::build_skill_prompt_for_runtime(cfg, runtime_cfg);
-        CHECK(prompt.contains("## Active Skills"));
-        CHECK(prompt.contains("### home-skill"));
-        CHECK(prompt.contains("### workspace-skill"));
+        CHECK(prompt.contains("## Available Skills"));
+        CHECK(prompt.contains("**home-skill**"));
+        CHECK(prompt.contains("**workspace-skill**"));
     };
 
     TEST_CASE("conversation_runtime_preserves_channel_context_and_shared_capabilities") {

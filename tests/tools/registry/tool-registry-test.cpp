@@ -1643,3 +1643,132 @@ TEST_CASE("SearchReplaceEditToolDescriptionMentionsPatch") {
     std::filesystem::remove_all(sr_workspace);
     FAIL("edit tool not found in registry");
 };
+
+// ── Deferred tool loading ──────────────────────────
+
+TEST_CASE("DeferredToolsExcludedFromDefinitions") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "core", .description = "Always loaded"}, .execute = [](const nlohmann::json &) {
+                                return "ok";
+                            }});
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    const auto defs = registry.definitions();
+    CHECK(defs.size() == 1);
+    CHECK(defs[0].name == "core");
+};
+
+TEST_CASE("DiscoveredDeferredToolIncludedInDefinitions") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "core", .description = "Always loaded"}, .execute = [](const nlohmann::json &) {
+                                return "ok";
+                            }});
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    registry.discover_tool("mcp_foo");
+
+    const auto defs = registry.definitions();
+    CHECK(defs.size() == 2);
+    CHECK(orangutan::testing::has_tool_named(defs, "core"));
+    CHECK(orangutan::testing::has_tool_named(defs, "mcp_foo"));
+};
+
+TEST_CASE("DeferredToolStillExecutable") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "mcp result";
+                                },
+                            .deferred = true});
+
+    const auto result = registry.execute(ToolUse("id_mcp", "mcp_foo", {}));
+    CHECK_FALSE(result.is_error);
+    CHECK(result.content == "mcp result");
+};
+
+TEST_CASE("DeferredToolSummariesListsUndiscoveredOnly") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "mcp_a", .description = "Tool A"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+    registry.register_tool({.definition = {.name = "mcp_b", .description = "Tool B"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    registry.discover_tool("mcp_a");
+
+    const auto summaries = registry.deferred_tool_summaries();
+    CHECK(summaries.size() == 1);
+    CHECK(summaries[0].name == "mcp_b");
+};
+
+TEST_CASE("HasDeferredToolsReturnsFalseWhenNone") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "core", .description = "Always loaded"}, .execute = [](const nlohmann::json &) {
+                                return "ok";
+                            }});
+
+    CHECK_FALSE(registry.has_deferred_tools());
+};
+
+TEST_CASE("HasDeferredToolsReturnsTrueWhenPresent") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    CHECK(registry.has_deferred_tools());
+};
+
+TEST_CASE("ClearDiscoveredResetsDeferredTools") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    registry.discover_tool("mcp_foo");
+    CHECK(registry.definitions().size() == 1);
+
+    registry.clear_discovered();
+    CHECK(registry.definitions().empty());
+};
+
+TEST_CASE("FindDefinitionReturnsDeferredTool") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "mcp_foo", .description = "An MCP tool", .input_schema = {{"type", "object"}}},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+
+    const auto *def = registry.find_definition("mcp_foo");
+    REQUIRE(def != nullptr);
+    CHECK(def->name == "mcp_foo");
+    CHECK(def->description == "An MCP tool");
+
+    CHECK(registry.find_definition("nonexistent") == nullptr);
+};

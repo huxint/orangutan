@@ -97,9 +97,60 @@ namespace orangutan::tools {
             if (definition_filter_ && !definition_filter_(tool.definition)) {
                 continue;
             }
+            if (tool.deferred && !discovered_tools_.contains(tool.definition.name)) {
+                continue;
+            }
             defs.push_back(tool.definition);
         }
         return defs;
+    }
+
+    void ToolRegistry::discover_tool(const std::string &name) const {
+        discovered_tools_.insert(name);
+    }
+
+    void ToolRegistry::clear_discovered() const {
+        discovered_tools_.clear();
+    }
+
+    bool ToolRegistry::has_deferred_tools() const {
+        for (const auto &[_, tool] : tools_) {
+            if (tool.deferred) {
+                if (definition_filter_ && !definition_filter_(tool.definition)) {
+                    continue;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::vector<DeferredToolSummary> ToolRegistry::deferred_tool_summaries() const {
+        std::vector<DeferredToolSummary> summaries;
+        for (const auto &[_, tool] : tools_) {
+            if (!tool.deferred) {
+                continue;
+            }
+            if (definition_filter_ && !definition_filter_(tool.definition)) {
+                continue;
+            }
+            if (discovered_tools_.contains(tool.definition.name)) {
+                continue;
+            }
+            summaries.push_back({tool.definition.name, tool.definition.description});
+        }
+        return summaries;
+    }
+
+    const ToolDef *ToolRegistry::find_definition(const std::string &name) const {
+        auto it = tools_.find(name);
+        if (it == tools_.end()) {
+            return nullptr;
+        }
+        if (definition_filter_ && !definition_filter_(it->second.definition)) {
+            return nullptr;
+        }
+        return &it->second.definition;
     }
 
     ToolResult ToolRegistry::execute(const ToolUse &call) const {

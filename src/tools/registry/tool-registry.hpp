@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace orangutan::memory {
@@ -33,6 +34,12 @@ namespace orangutan::tools {
         ToolDef definition;
         std::function<std::string(const nlohmann::json &input)> execute;
         std::function<ToolOutput(const nlohmann::json &input)> execute_rich;
+        bool deferred = false;
+    };
+
+    struct DeferredToolSummary {
+        std::string name;
+        std::string description;
     };
 
     class ToolRegistry {
@@ -48,10 +55,21 @@ namespace orangutan::tools {
 
         ToolResult execute(const ToolUse &call) const;
 
+        // Deferred tool discovery
+        void discover_tool(const std::string &name) const;
+        void clear_discovered() const;
+        [[nodiscard]]
+        bool has_deferred_tools() const;
+        [[nodiscard]]
+        std::vector<DeferredToolSummary> deferred_tool_summaries() const;
+        [[nodiscard]]
+        const ToolDef *find_definition(const std::string &name) const;
+
     private:
         std::unordered_map<std::string, Tool> tools_;
         ExecutionGuard execution_guard_;
         DefinitionFilter definition_filter_;
+        mutable std::unordered_set<std::string> discovered_tools_;
     };
 
     [[nodiscard]]

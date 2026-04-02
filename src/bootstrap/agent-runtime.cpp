@@ -8,6 +8,7 @@
 #include "memory/runtime-memory.hpp"
 #include "skills/skill-loader.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
+#include "tools/skill/skill-tool.hpp"
 
 #include <cstdlib>
 #include <utility>
@@ -53,6 +54,7 @@ namespace orangutan::bootstrap {
       mcp_manager(std::move(other.mcp_manager)),
       system_prompt(std::move(other.system_prompt)),
       skills_prompt(std::move(other.skills_prompt)),
+      skill_loader(std::move(other.skill_loader)),
       hook_manager(std::move(other.hook_manager)),
       agent(std::move(other.agent)) {}
 
@@ -87,9 +89,10 @@ namespace orangutan::bootstrap {
 
         runtime.system_prompt = append_subagent_prompt_guidance(input.system_prompt, input.allowed_child_agents, input.is_child_run);
 
-        SkillLoader skill_loader;
-        skill_loader.load_from_directories(resolve_skill_directories(input.skill_paths, input.workspace_root));
-        runtime.skills_prompt = skill_loader.build_prompt_section();
+        runtime.skill_loader = std::make_unique<SkillLoader>();
+        runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, input.workspace_root));
+        runtime.skills_prompt = runtime.skill_loader->build_prompt_section();
+        tools::register_skill_tool(runtime.tools, *runtime.skill_loader);
 
         runtime.hook_manager = std::make_unique<HookManager>();
         runtime.hook_manager->load_from_directories(resolve_hook_directories(input));

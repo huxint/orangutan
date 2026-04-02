@@ -367,13 +367,15 @@ namespace orangutan::agent {
         history_.push_back(Message::user().text(user_input));
         emit_history_checkpoint(on_history_checkpoint, history_);
 
-        auto tool_defs = tools_.definitions();
         const auto effective_system_prompt = build_system_prompt(user_input);
         std::string final_text;
         const bool human_output = !on_stream_event && !on_tool_event;
 
         for (int iteration = 0; iteration < max_iterations; ++iteration) {
             spdlog::debug("Agent loop iteration {}", iteration + 1);
+
+            // Refresh tool definitions each iteration so newly discovered deferred tools are included
+            auto tool_defs = tools_.definitions();
 
             bool first_text = true;
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
@@ -632,6 +634,18 @@ namespace orangutan::agent {
         }
 
         base += skills_prompt_;
+
+        // Append deferred tool index so the LLM knows what tools are available via tool_search
+        const auto deferred = tools_.deferred_tool_summaries();
+        if (!deferred.empty()) {
+            base += "\n\n<available-deferred-tools>\n";
+            base += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";
+            for (const auto &tool : deferred) {
+                base += tool.name;
+                base += '\n';
+            }
+            base += "</available-deferred-tools>";
+        }
 
         if (memory_ == nullptr) {
             return base;

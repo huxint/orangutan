@@ -294,12 +294,21 @@ namespace orangutan::skills {
         }
 
         std::string out;
-        out.append("\n\n## Active Skills\n");
+        out.append("\n\n## Available Skills\n");
+        out.append("Use the `skill` tool with a skill name to load its full instructions before using it.\n");
         for (const auto &skill : skills_) {
-            utils::format_to(out, "\n### {}\n", skill.name);
-            out.append(skill.body);
+            utils::format_to(out, "\n- **{}**: {}", skill.name, skill.description);
         }
         return out;
+    }
+
+    const SkillDef *SkillLoader::find_skill(std::string_view name) const {
+        for (const auto &skill : skills_) {
+            if (skill.name == name) {
+                return &skill;
+            }
+        }
+        return nullptr;
     }
 
 } // namespace orangutan::skills

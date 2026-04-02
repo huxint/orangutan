@@ -26,6 +26,9 @@ namespace orangutan::skills {
         }
 
         [[nodiscard]]
+        const SkillDef *find_skill(std::string_view name) const;
+
+        [[nodiscard]]
         std::string build_prompt_section() const;
 
     private:

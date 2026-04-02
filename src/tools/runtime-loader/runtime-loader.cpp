@@ -3,6 +3,7 @@
 #include "tools/registry/permissions.hpp"
 #include "tools/register.hpp"
 #include "tools/script/register.hpp"
+#include "tools/tool-search/tool-search.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -55,6 +56,13 @@ namespace orangutan::tools {
         result.mcp_tool_count = result.mcp_manager->total_tool_count();
 
         spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
+
+        // Register tool_search if there are deferred tools (e.g. MCP tools)
+        if (registry.has_deferred_tools()) {
+            register_tool_search(registry);
+            spdlog::debug("Registered tool_search for {} deferred tool(s)", result.mcp_tool_count);
+        }
+
         return result;
     }
 

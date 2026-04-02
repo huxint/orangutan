@@ -30,13 +30,25 @@ namespace {
     }
 
     const SkillDef *find_skill(const SkillLoader &loader, std::string_view name) {
-        for (const auto &skill : loader.active_skills()) {
-            if (skill.name == name) {
-                return &skill;
-            }
-        }
-        return nullptr;
+        return loader.find_skill(name);
     }
+
+    TEST_CASE("find_skill_returns_matching_skill") {
+        SkillLoader loader;
+        loader.load_from_directories({fixtures_dir().string()});
+
+        const auto *skill = loader.find_skill("test-skill");
+        REQUIRE(skill != nullptr);
+        CHECK(skill->description == "A test skill for unit testing");
+        CHECK(skill->body.contains("test skill body"));
+    };
+
+    TEST_CASE("find_skill_returns_nullptr_for_unknown_name") {
+        SkillLoader loader;
+        loader.load_from_directories({fixtures_dir().string()});
+
+        CHECK(loader.find_skill("nonexistent-skill") == nullptr);
+    };
 
     TEST_CASE("loads_valid_skill") {
         SkillLoader loader;
@@ -140,8 +152,10 @@ namespace {
         loader.load_from_directories({fixtures_dir().string()});
 
         const auto section = loader.build_prompt_section();
-        CHECK(section.contains("## Active Skills"));
-        CHECK(section.contains("### test-skill"));
+        CHECK(section.contains("## Available Skills"));
+        CHECK(section.contains("**test-skill**"));
+        CHECK(section.contains("A test skill for unit testing"));
+        CHECK_FALSE(section.contains("test skill body"));
     };
 
     TEST_CASE("loads_yaml_frontmatter_with_embedded_body_delimiter") {
@@ -319,8 +333,8 @@ alpha prompt body
         loader.load_from_directories({temp_dir.string()});
 
         const auto section = loader.build_prompt_section();
-        const auto alpha_pos = section.find("### alpha");
-        const auto zebra_pos = section.find("### zebra");
+        const auto alpha_pos = section.find("**alpha**");
+        const auto zebra_pos = section.find("**zebra**");
         REQUIRE(alpha_pos != std::string::npos);
         REQUIRE(zebra_pos != std::string::npos);
         CHECK(alpha_pos < zebra_pos);

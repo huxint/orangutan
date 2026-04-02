@@ -65,6 +65,7 @@ namespace orangutan::tools {
                         spdlog::debug("  [mcp-tool] {}:{}", server_name, tool_name);
                         return client->call_tool(tool_name, input);
                     },
+                    .deferred = true,
                 });
             }
         }
