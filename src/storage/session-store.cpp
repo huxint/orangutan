@@ -47,7 +47,29 @@ namespace orangutan::storage {
                     continue;
                 }
                 if (type == "tool_result") {
-                    blocks.emplace_back(ToolResult{item.at("tool_use_id").get<std::string>(), item.at("content").get<std::string>(), item.value("is_error", false)});
+                    const auto &content_field = item.at("content");
+                    std::string content_text;
+                    ToolResult result;
+                    result.tool_use_id = item.at("tool_use_id").get<std::string>();
+                    result.is_error = item.value("is_error", false);
+                    if (content_field.is_string()) {
+                        result.content = content_field.get<std::string>();
+                    } else if (content_field.is_array()) {
+                        for (const auto &part : content_field) {
+                            const auto part_type = part.value("type", std::string{});
+                            if (part_type == "text") {
+                                result.content += part.value("text", std::string{});
+                            } else if (part_type == "image") {
+                                if (part.contains("source")) {
+                                    result.images.push_back({
+                                        part["source"].value("media_type", std::string{}),
+                                        part["source"].value("data", std::string{}),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    blocks.emplace_back(std::move(result));
                     continue;
                 }
                 if (type == "thinking") {

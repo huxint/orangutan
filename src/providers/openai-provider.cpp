@@ -61,6 +61,30 @@ namespace orangutan::providers {
             };
         }
 
+        // Build a user message with image_url parts for chat completions
+        nlohmann::json build_image_user_message(const ToolResult &result) {
+            nlohmann::json content = nlohmann::json::array();
+            for (const auto &img : result.images) {
+                content.push_back({
+                    {"type", "image_url"},
+                    {"image_url", {{"url", "data:" + img.media_type + ";base64," + img.data}}},
+                });
+            }
+            return {{"role", "user"}, {"content", content}};
+        }
+
+        // Build input_image items for the responses API
+        nlohmann::json build_responses_image_input(const ToolResult &result) {
+            nlohmann::json content = nlohmann::json::array();
+            for (const auto &img : result.images) {
+                content.push_back({
+                    {"type", "input_image"},
+                    {"image_url", "data:" + img.media_type + ";base64," + img.data},
+                });
+            }
+            return {{"role", "user"}, {"content", content}};
+        }
+
         class ChatCompletionsStreamAccumulator {
         public:
             explicit ChatCompletionsStreamAccumulator(const StreamCallback &on_event)
@@ -325,6 +349,12 @@ namespace orangutan::providers {
                         {"call_id", (*converted)["tool_call_id"]},
                         {"output", converted->value("content", std::string{})},
                     });
+                    // Inject images from the original message as a follow-up user input
+                    for (const auto &block : msg) {
+                        if (const auto *result = std::get_if<ToolResult>(&block); result && !result->images.empty()) {
+                            body["input"].push_back(build_responses_image_input(*result));
+                        }
+                    }
                     continue;
                 }
 
@@ -394,6 +424,9 @@ namespace orangutan::providers {
                         }
                         appended_tool_results = true;
                         body["messages"].push_back({{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}});
+                        if (!result->images.empty()) {
+                            body["messages"].push_back(build_image_user_message(*result));
+                        }
                     } else if (const auto *tb = std::get_if<Text>(&block)) {
                         user_text += tb->text;
                     }
