@@ -85,6 +85,7 @@ namespace orangutan::agent {
         static constexpr int max_iterations = 20;
         static constexpr int max_continuations = 3;
         static constexpr int loop_detection_threshold = 3;
+        static constexpr int loop_abort_threshold = 5;
         static constexpr int compaction_threshold = 50;
         static constexpr int compaction_keep_recent = 10;
         static constexpr std::size_t max_memory_prompt_bytes = 2048;
@@ -107,11 +108,17 @@ namespace orangutan::agent {
 
         std::unordered_map<ToolCallSignature, int, SignatureHash> call_counts_;
 
-        // Returns true if loop detected (and injects correction message)
-        bool check_loop_detection(const ToolUse &call);
+        enum class LoopStatus {
+            ok,
+            warning,
+            abort
+        };
 
-        // Execute tools, check for loops, return (result_blocks, loop_detected)
-        std::pair<std::vector<Content>, bool> execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event);
+        // Returns loop status for the given tool call
+        LoopStatus check_loop_detection(const ToolUse &call);
+
+        // Execute tools, check for loops, return (result_blocks, loop_status)
+        std::pair<std::vector<Content>, LoopStatus> execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event);
 
         // Handle max_tokens continuation (returns appended text)
         std::string handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,

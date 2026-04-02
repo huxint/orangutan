@@ -167,7 +167,7 @@ namespace orangutan::tools {
 
         ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
-            const bool has_paths = input.contains("paths") && !input["paths"].is_null();
+            const bool has_paths = input.contains("paths") && !input["paths"].is_null() && !(input["paths"].is_array() && input["paths"].empty());
 
             if (has_path && has_paths) {
                 throw std::runtime_error("Provide either 'path' or 'paths', not both");

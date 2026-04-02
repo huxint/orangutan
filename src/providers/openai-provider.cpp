@@ -295,7 +295,7 @@ namespace orangutan::providers {
     }
 
     nlohmann::json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
-                                                      bool stream, int /*thinking_budget*/) const {
+                                                      bool stream, int thinking_budget) const {
         const auto resolved_max_tokens = endpoint_.default_max_tokens.value_or(max_tokens);
 
         if (endpoint_.endpoint_style == "openai-responses") {
@@ -318,39 +318,41 @@ namespace orangutan::providers {
                 if (!converted.has_value()) {
                     continue;
                 }
-                nlohmann::json response_msg = {
-                    {"role", converted->value("role", "user")},
-                    {"content", nlohmann::json::array()},
-                };
+                // function_call_output is a top-level input item, not nested in a message
                 if (converted->contains("tool_call_id")) {
-                    response_msg["content"].push_back({
+                    body["input"].push_back({
                         {"type", "function_call_output"},
                         {"call_id", (*converted)["tool_call_id"]},
                         {"output", converted->value("content", std::string{})},
                     });
-                } else {
-                    std::string content;
-                    if (converted->contains("content") && (*converted)["content"].is_string()) {
-                        content = (*converted)["content"].get<std::string>();
-                    }
-                    if (!content.empty()) {
-                        response_msg["content"].push_back({
-                            {"type", response_msg["role"] == "assistant" ? "output_text" : "input_text"},
-                            {"text", content},
+                    continue;
+                }
+
+                const auto role = converted->value("role", "user");
+
+                // Emit text content as a simple message
+                std::string content;
+                if (converted->contains("content") && (*converted)["content"].is_string()) {
+                    content = (*converted)["content"].get<std::string>();
+                }
+                if (!content.empty()) {
+                    body["input"].push_back({
+                        {"role", role},
+                        {"content", content},
+                    });
+                }
+
+                // function_call items are top-level input items
+                if (converted->contains("tool_calls")) {
+                    for (const auto &tool_call : (*converted)["tool_calls"]) {
+                        body["input"].push_back({
+                            {"type", "function_call"},
+                            {"call_id", tool_call["id"]},
+                            {"name", tool_call["function"]["name"]},
+                            {"arguments", tool_call["function"]["arguments"]},
                         });
                     }
-                    if (converted->contains("tool_calls")) {
-                        for (const auto &tool_call : (*converted)["tool_calls"]) {
-                            response_msg["content"].push_back({
-                                {"type", "function_call"},
-                                {"call_id", tool_call["id"]},
-                                {"name", tool_call["function"]["name"]},
-                                {"arguments", tool_call["function"]["arguments"]},
-                            });
-                        }
-                    }
                 }
-                body["input"].push_back(std::move(response_msg));
             }
 
             if (!tools.empty()) {
@@ -367,6 +369,9 @@ namespace orangutan::providers {
         body["max_tokens"] = resolved_max_tokens;
         if (stream) {
             body["stream"] = true;
+        }
+        if (endpoint_.thinking != "none" && !endpoint_.thinking.empty()) {
+            body["reasoning_effort"] = endpoint_.thinking;
         }
 
         body["messages"] = nlohmann::json::array();

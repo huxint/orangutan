@@ -198,18 +198,22 @@ namespace orangutan::agent {
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
 
-    bool AgentLoop::check_loop_detection(const ToolUse &call) {
+    AgentLoop::LoopStatus AgentLoop::check_loop_detection(const ToolUse &call) {
         auto input_hash = std::hash<std::string>{}(call.input.dump());
         ToolCallSignature sig{.name = call.name, .input_hash = input_hash};
 
         auto &count = call_counts_[sig];
         ++count;
 
+        if (count >= loop_abort_threshold) {
+            spdlog::warn("Loop abort: tool '{}' called {} times with same input, forcing stop", call.name, count);
+            return LoopStatus::abort;
+        }
         if (count >= loop_detection_threshold) {
             spdlog::warn("Loop detected: tool '{}' called {} times with same input", call.name, count);
-            return true;
+            return LoopStatus::warning;
         }
-        return false;
+        return LoopStatus::ok;
     }
 
     std::string AgentLoop::handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,
@@ -239,25 +243,25 @@ namespace orangutan::agent {
         return continued_text;
     }
 
-    std::pair<std::vector<Content>, bool> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
+    std::pair<std::vector<Content>, AgentLoop::LoopStatus> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
         struct ToolExecutionState {
             ToolUse call;
-            bool loop_detected = false;
+            LoopStatus loop_status = LoopStatus::ok;
             std::optional<ToolResult> result;
         };
 
         struct ToolExecutionOutcome {
             ToolResult result;
-            bool loop_detected = false;
+            LoopStatus loop_status = LoopStatus::ok;
         };
 
         std::vector<Content> result_blocks;
-        bool loop_detected = false;
+        LoopStatus worst_status = LoopStatus::ok;
 
         for (const auto &call : calls) {
             auto pipeline = stdexec::just(ToolExecutionState{.call = call}) | stdexec::then([this, human_output, &on_tool_event](ToolExecutionState state) {
-                                if (check_loop_detection(state.call)) {
-                                    state.loop_detected = true;
+                                if (auto status = check_loop_detection(state.call); status != LoopStatus::ok) {
+                                    state.loop_status = status;
                                 }
                                 if (human_output) {
                                     spdlog::fmt_lib::println("  -> {}", spdlog::fmt_lib::styled(state.call.name, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::cyan)));
@@ -301,16 +305,18 @@ namespace orangutan::agent {
                                 }
                                 return ToolExecutionOutcome{
                                     .result = std::move(*state.result),
-                                    .loop_detected = state.loop_detected,
+                                    .loop_status = state.loop_status,
                                 };
                             });
 
             auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
-            loop_detected = loop_detected || outcome.loop_detected;
+            if (outcome.loop_status > worst_status) {
+                worst_status = outcome.loop_status;
+            }
             result_blocks.emplace_back(std::move(outcome.result));
         }
 
-        return {std::move(result_blocks), loop_detected};
+        return {std::move(result_blocks), worst_status};
     }
 
     std::string AgentLoop::run(const std::string &user_input, const StreamCallback &on_stream_event, const ToolEventCallback &on_tool_event,
@@ -361,11 +367,17 @@ namespace orangutan::agent {
             }
 
             // Execute tools and check for loops
-            auto [result_blocks, loop_detected] = execute_tools(parts.tool_calls, human_output, on_tool_event);
+            auto [result_blocks, loop_status] = execute_tools(parts.tool_calls, human_output, on_tool_event);
             history_.push_back(Message(base::role::user, std::move(result_blocks)));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
-            if (loop_detected) {
+            if (loop_status == LoopStatus::abort) {
+                final_text = "I got stuck in a loop repeating the same action. Please try rephrasing your request.";
+                history_.push_back(Message::assistant().text(final_text));
+                emit_history_checkpoint(on_history_checkpoint, history_);
+                break;
+            }
+            if (loop_status == LoopStatus::warning) {
                 history_.push_back(Message::user().text("You are repeating the same tool call with the same arguments. "
                                                         "This is not making progress. Try a different approach or "
                                                         "explain what you're trying to accomplish."));
