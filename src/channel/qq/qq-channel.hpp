@@ -2,6 +2,7 @@
 
 #include "channel/channel.hpp"
 #include "channel/qq/qq-api-client.hpp"
+#include "channel/qq/qq-message-builder.hpp"
 #include "types/base.hpp"
 
 #include <nlohmann/json.hpp>
@@ -10,7 +11,6 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <regex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -32,6 +32,8 @@ namespace orangutan::channel::qq {
 
         void connect(MessageCallback on_message) override;
         void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") override;
+        void send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
+        void send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id = "");
         void disconnect() override;
 
         [[nodiscard]]
@@ -81,14 +83,24 @@ namespace orangutan::channel::qq {
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
         void handle_c2c_message(const nlohmann::json &data);
         void handle_group_message(const nlohmann::json &data);
-        void send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id);
-        void send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id);
+        void send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        void send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        void send_markdown_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        void send_markdown_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id = "");
+        [[nodiscard]]
+        std::string upload_media_c2c(const std::string &openid, int file_type, const std::string &url);
+        [[nodiscard]]
+        std::string upload_media_group(const std::string &openid, int file_type, const std::string &url);
+        void send_media_c2c(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id = "");
+        void send_media_group(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id = "");
         void clear_ready_state();
         [[nodiscard]]
         base::u16 next_msg_seq();
         void remember_inbound_message(const std::string &message_id);
         [[nodiscard]]
         bool consume_passive_reply_quota(const std::string &message_id);
+        [[nodiscard]]
+        std::string resolve_passive_reply_message_id(const std::string &reply_to_message_id);
 
         [[nodiscard]]
         static std::vector<Attachment> parse_attachments(const nlohmann::json &data);

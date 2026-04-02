@@ -154,12 +154,50 @@ namespace orangutan::channel::qq {
         const auto group_prefix = qq_jid_prefix(bot_name_, "group");
 
         if (jid.starts_with(c2c_prefix)) {
-            send_c2c(require_openid(jid, c2c_prefix), text, reply_to_message_id);
+            send_c2c(require_openid(jid, c2c_prefix), text, reply_to_message_id, reply_to_message_id);
             return;
         }
 
         if (jid.starts_with(group_prefix)) {
-            send_group(require_openid(jid, group_prefix), text, reply_to_message_id);
+            send_group(require_openid(jid, group_prefix), text, reply_to_message_id, reply_to_message_id);
+            return;
+        }
+
+        throw std::runtime_error("Unsupported QQ jid: " + jid);
+    }
+
+    void QqChannel::send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
+        const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+
+        if (jid.starts_with(c2c_prefix)) {
+            send_markdown_c2c(require_openid(jid, c2c_prefix), markdown, reply_to_message_id, reference_message_id);
+            return;
+        }
+
+        if (jid.starts_with(group_prefix)) {
+            send_markdown_group(require_openid(jid, group_prefix), markdown, reply_to_message_id, reference_message_id);
+            return;
+        }
+
+        throw std::runtime_error("Unsupported QQ jid: " + jid);
+    }
+
+    void QqChannel::send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id) {
+        const auto c2c_prefix = qq_jid_prefix(bot_name_, "c2c");
+        const auto group_prefix = qq_jid_prefix(bot_name_, "group");
+
+        if (jid.starts_with(c2c_prefix)) {
+            const auto openid = require_openid(jid, c2c_prefix);
+            const auto file_info = upload_media_c2c(openid, file_type, url);
+            send_media_c2c(openid, file_info, reply_to_message_id);
+            return;
+        }
+
+        if (jid.starts_with(group_prefix)) {
+            const auto openid = require_openid(jid, group_prefix);
+            const auto file_info = upload_media_group(openid, file_type, url);
+            send_media_group(openid, file_info, reply_to_message_id);
             return;
         }
 
@@ -511,50 +549,78 @@ namespace orangutan::channel::qq {
         });
     }
 
-    void QqChannel::send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
-        std::string passive_reply_message_id;
-        if (!reply_to_message_id.empty()) {
-            if (consume_passive_reply_quota(reply_to_message_id)) {
-                passive_reply_message_id = reply_to_message_id;
-            } else {
-                spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
-            }
-        }
-
+    void QqChannel::send_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
         for (const auto &chunk : chunk_text(content, 4000)) {
-            nlohmann::json payload = {
-                {"content", chunk},
-                {"msg_type", 0},
-                {"msg_seq", next_msg_seq()},
-            };
-            if (!passive_reply_message_id.empty()) {
-                payload["msg_id"] = passive_reply_message_id;
-            }
+            auto payload = QqMessageBuilder{}.text(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
             static_cast<void>(api_client_->post("/v2/users/" + openid + "/messages", payload));
         }
     }
 
-    void QqChannel::send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id) {
-        std::string passive_reply_message_id;
-        if (!reply_to_message_id.empty()) {
-            if (consume_passive_reply_quota(reply_to_message_id)) {
-                passive_reply_message_id = reply_to_message_id;
-            } else {
-                spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
-            }
-        }
-
+    void QqChannel::send_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
         for (const auto &chunk : chunk_text(content, 4000)) {
-            nlohmann::json payload = {
-                {"content", chunk},
-                {"msg_type", 0},
-                {"msg_seq", next_msg_seq()},
-            };
-            if (!passive_reply_message_id.empty()) {
-                payload["msg_id"] = passive_reply_message_id;
-            }
+            auto payload = QqMessageBuilder{}.text(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
             static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
         }
+    }
+
+    void QqChannel::send_markdown_c2c(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
+        for (const auto &chunk : chunk_text(content, 5000)) {
+            auto payload = QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
+            static_cast<void>(api_client_->post("/v2/users/" + openid + "/messages", payload));
+        }
+    }
+
+    void QqChannel::send_markdown_group(const std::string &openid, const std::string &content, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : reference_message_id;
+        for (const auto &chunk : chunk_text(content, 5000)) {
+            auto payload = QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build();
+            static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
+        }
+    }
+
+    std::string QqChannel::upload_media_c2c(const std::string &openid, int file_type, const std::string &url) {
+        const auto response = api_client_->post("/v2/users/" + openid + "/files", nlohmann::json{
+                                                                                      {"file_type", file_type},
+                                                                                      {"url", url},
+                                                                                      {"srv_send_msg", false},
+                                                                                  });
+        const auto payload = response.parse_json_body();
+        if (!payload.contains("file_info") || !payload.at("file_info").is_string()) {
+            throw std::runtime_error("QQ upload media (c2c) missing file_info");
+        }
+        return payload.at("file_info").get<std::string>();
+    }
+
+    std::string QqChannel::upload_media_group(const std::string &openid, int file_type, const std::string &url) {
+        const auto response = api_client_->post("/v2/groups/" + openid + "/files", nlohmann::json{
+                                                                                       {"file_type", file_type},
+                                                                                       {"url", url},
+                                                                                       {"srv_send_msg", false},
+                                                                                   });
+        const auto payload = response.parse_json_body();
+        if (!payload.contains("file_info") || !payload.at("file_info").is_string()) {
+            throw std::runtime_error("QQ upload media (group) missing file_info");
+        }
+        return payload.at("file_info").get<std::string>();
+    }
+
+    void QqChannel::send_media_c2c(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        auto payload = QqMessageBuilder{}.media(file_info).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).build();
+        static_cast<void>(api_client_->post("/v2/users/" + openid + "/messages", payload));
+    }
+
+    void QqChannel::send_media_group(const std::string &openid, const std::string &file_info, const std::string &reply_to_message_id) {
+        const auto passive_reply_message_id = resolve_passive_reply_message_id(reply_to_message_id);
+        auto payload = QqMessageBuilder{}.media(file_info).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).build();
+        static_cast<void>(api_client_->post("/v2/groups/" + openid + "/messages", payload));
     }
 
     void QqChannel::clear_ready_state() {
@@ -612,6 +678,17 @@ namespace orangutan::channel::qq {
 
         ++tracker.reply_count;
         return true;
+    }
+
+    std::string QqChannel::resolve_passive_reply_message_id(const std::string &reply_to_message_id) {
+        if (reply_to_message_id.empty()) {
+            return {};
+        }
+        if (consume_passive_reply_quota(reply_to_message_id)) {
+            return reply_to_message_id;
+        }
+        spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
+        return {};
     }
 
     std::vector<Attachment> QqChannel::parse_attachments(const nlohmann::json &data) {
