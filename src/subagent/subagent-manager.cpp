@@ -360,8 +360,7 @@ namespace orangutan::subagent {
                             static_cast<void>(register_runtime_tools(context.child_tools, context.child_runtime_memory, request.child_identity.workspace, &context.tool_context, {},
                                                                      {}, &context.child_config.permissions, request.caller.approval_callback, context.child_config.edit_mode));
 
-                            auto child_prompt = bootstrap::append_subagent_prompt_guidance(context.child_config.system_prompt, context.child_config.allowed_child_agents, true);
-                            AgentLoop child_agent(*context.provider, context.child_tools, child_prompt, context.child_runtime_memory);
+                            AgentLoop child_agent(*context.provider, context.child_tools, context.child_runtime_memory);
                             child_agent.set_thinking_budget(context.child_config.thinking_budget);
                             const auto persist_history = [this, &request, &context](const std::vector<Message> &history) {
                                 session_store_->update(request.child_session_id, history, context.resolve_active_model());

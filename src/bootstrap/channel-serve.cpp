@@ -302,7 +302,6 @@ namespace orangutan::bootstrap {
                 .primary_endpoint = cfg.primary_endpoint,
                 .fallback_endpoints = cfg.fallback_endpoints,
                 .agent_key = cfg.agent_key,
-                .system_prompt = cfg.system_prompt,
                 .workspace_root = cfg.workspace_root,
                 .edit_mode = cfg.edit_mode,
                 .thinking_budget = cfg.thinking_budget,
@@ -329,8 +328,8 @@ namespace orangutan::bootstrap {
             };
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
-                runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools, runtime->runtime->system_prompt,
-                                                                      runtime->runtime->memory.get(), runtime->runtime->skills_prompt, hook_manager);
+                runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools, runtime->runtime->memory.get(),
+                                                                      runtime->runtime->skills_prompt, hook_manager);
                 runtime->hook_manager = hook_manager;
             } else {
                 runtime->hook_manager = runtime->runtime->hook_manager.get();

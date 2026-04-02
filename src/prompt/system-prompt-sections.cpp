@@ -3,9 +3,10 @@
 #include "utils/format.hpp"
 
 #include <array>
-#include <cstdio>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 
@@ -39,58 +40,6 @@ namespace orangutan::prompt {
                 return std::string(sv);
             }
             return "unknown";
-        }
-
-        // Run a short command and capture stdout (up to limit bytes).
-        std::string capture_command(const char *cmd, std::size_t limit = 2000) {
-            std::string output;
-            FILE *pipe = popen(cmd, "r"); // NOLINT(cert-env33-c)
-            if (pipe == nullptr) {
-                return {};
-            }
-            std::array<char, 256> buf{};
-            while (output.size() < limit) {
-                const auto n = std::fread(buf.data(), 1, buf.size(), pipe);
-                if (n == 0) {
-                    break;
-                }
-                output.append(buf.data(), n);
-            }
-            pclose(pipe); // NOLINT(cert-env33-c)
-            // Trim trailing whitespace
-            while (!output.empty() && (output.back() == '\n' || output.back() == '\r' || output.back() == ' ')) {
-                output.pop_back();
-            }
-            return output;
-        }
-
-        bool is_git_repo(const std::string &workspace) {
-            if (workspace.empty()) {
-                return false;
-            }
-            std::error_code ec;
-            return std::filesystem::exists(std::filesystem::path(workspace) / ".git", ec);
-        }
-
-        std::string get_git_status_block(const std::string &workspace) {
-            if (!is_git_repo(workspace)) {
-                return {};
-            }
-            const auto git_prefix = "git -C " + workspace + " ";
-            const auto branch = capture_command((git_prefix + "rev-parse --abbrev-ref HEAD 2>/dev/null").c_str(), 200);
-            const auto status = capture_command((git_prefix + "--no-optional-locks status --short 2>/dev/null").c_str(), 2000);
-            const auto log = capture_command((git_prefix + "--no-optional-locks log --oneline -5 2>/dev/null").c_str(), 1000);
-            const auto user = capture_command((git_prefix + "config user.name 2>/dev/null").c_str(), 200);
-
-            std::string block;
-            block += "Git status (snapshot at conversation start — may become stale):\n";
-            utils::format_to(block, "  Branch: {}\n", branch.empty() ? "(detached)" : branch);
-            if (!user.empty()) {
-                utils::format_to(block, "  User: {}\n", user);
-            }
-            utils::format_to(block, "  Status:\n{}\n", status.empty() ? "    (clean)" : status);
-            utils::format_to(block, "  Recent commits:\n{}", log);
-            return block;
         }
 
     } // namespace
@@ -197,7 +146,6 @@ If you can say it in one sentence, don't use three. This does not apply to code 
 
         if (!info.workspace_root.empty()) {
             utils::format_to(s, " - Working directory: {}\n", info.workspace_root);
-            utils::format_to(s, " - Is a git repository: {}\n", is_git_repo(info.workspace_root) ? "yes" : "no");
         }
 
 #ifdef __linux__
@@ -211,6 +159,13 @@ If you can say it in one sentence, don't use three. This does not apply to code 
         utils::format_to(s, " - Shell: {}\n", get_shell_name());
         utils::format_to(s, " - OS Version: {}\n", get_os_info());
 
+        // Current date
+        {
+            const auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+            const std::chrono::year_month_day ymd{now};
+            utils::format_to(s, " - Today: {:04d}-{:02d}-{:02d}\n", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()));
+        }
+
         if (!info.model_name.empty()) {
             utils::format_to(s, " - Current model: {}\n", info.model_name);
         }
@@ -223,16 +178,32 @@ If you can say it in one sentence, don't use three. This does not apply to code 
             s += " - Mode: channel (messages from external platform)\n";
         }
 
-        // Git status snapshot
-        if (!info.workspace_root.empty()) {
-            const auto git_block = get_git_status_block(info.workspace_root);
-            if (!git_block.empty()) {
-                s += "\n";
-                s += git_block;
-            }
-        }
-
         return s;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Workspace agent files
+    // ─────────────────────────────────────────────────────────────────────────
+
+    std::string read_workspace_agent_file(const std::string &workspace, const std::string &filename) {
+        if (workspace.empty()) {
+            return {};
+        }
+        const auto path = std::filesystem::path(workspace) / ".orangutan" / "agent" / filename;
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec) || ec) {
+            return {};
+        }
+        std::ifstream ifs(path);
+        if (!ifs) {
+            return {};
+        }
+        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        // Trim trailing whitespace
+        while (!content.empty() && (content.back() == '\n' || content.back() == '\r' || content.back() == ' ')) {
+            content.pop_back();
+        }
+        return content;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -243,8 +214,36 @@ If you can say it in one sentence, don't use three. This does not apply to code 
         std::string prompt;
         prompt.reserve(8192);
 
+        // ── Agent persona (identity, style, memory) ──
+
+        // Global identity (always present)
         prompt += identity_section();
         prompt += "\n\n";
+
+        // Custom identity: layered on top of global identity
+        const auto ws_identity = read_workspace_agent_file(env_info.workspace_root, "identity.md");
+        if (!ws_identity.empty()) {
+            prompt += ws_identity;
+            prompt += "\n\n";
+        }
+
+        // Style: from workspace file only
+        const auto ws_style = read_workspace_agent_file(env_info.workspace_root, "style.md");
+        if (!ws_style.empty()) {
+            prompt += ws_style;
+            prompt += "\n\n";
+        }
+
+        // Fixed memory: from workspace file only
+        const auto ws_memory = read_workspace_agent_file(env_info.workspace_root, "memory.md");
+        if (!ws_memory.empty()) {
+            prompt += "# Agent Memory\n";
+            prompt += ws_memory;
+            prompt += "\n\n";
+        }
+
+        // ── System sections ──
+
         prompt += system_behavior_section();
         prompt += "\n\n";
         prompt += task_guidelines_section();
@@ -252,8 +251,6 @@ If you can say it in one sentence, don't use three. This does not apply to code 
         prompt += safety_actions_section();
         prompt += "\n\n";
         prompt += tool_usage_section();
-        prompt += "\n\n";
-        prompt += tone_style_section();
         prompt += "\n\n";
         prompt += output_efficiency_section();
         prompt += "\n\n";

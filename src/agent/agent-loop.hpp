@@ -36,8 +36,7 @@ namespace orangutan::agent {
             std::string status;
         };
 
-        AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt = "", memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {},
-                  hooks::HookManager *hook_manager = nullptr);
+        AgentLoop(Provider &provider, ToolRegistry &tools, memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {}, hooks::HookManager *hook_manager = nullptr);
 
         // Process one user message: run the ReAct loop until final text response
         std::string run(const std::string &user_input, const StreamCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},
@@ -75,7 +74,6 @@ namespace orangutan::agent {
         Provider &provider_;
         ToolRegistry &tools_;
         std::vector<Message> history_;
-        std::string system_prompt_;
         memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;
         hooks::HookManager *hook_manager_ = nullptr;

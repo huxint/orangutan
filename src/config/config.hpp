@@ -50,7 +50,6 @@ namespace orangutan::config {
         std::string profile;
         std::string model = "claude-sonnet-4-20250514";
         std::vector<FallbackModelRef> fallback_models;
-        std::string system_prompt;
         std::string workspace;
         ToolPermissionSettings permissions{
             .sandbox_mode = ToolSandboxMode::isolated,
@@ -100,8 +99,6 @@ namespace orangutan::config {
         };
         MemoryConfig memory;
 
-        // agent.system_prompt
-        std::string system_prompt;
         // qq object
         std::string qq_app_id;
         std::string qq_client_secret;

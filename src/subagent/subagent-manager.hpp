@@ -76,7 +76,6 @@ namespace orangutan::subagent {
         std::vector<std::string> fallback_models;
         providers::ProviderEndpoint primary_endpoint;
         std::vector<providers::ProviderEndpoint> fallback_endpoints;
-        std::string system_prompt;
         std::string workspace_root;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;

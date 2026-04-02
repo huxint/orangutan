@@ -225,10 +225,9 @@ namespace orangutan::agent {
         return parts;
     }
 
-    AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, const std::string &system_prompt, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
+    AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
     : provider_(provider),
       tools_(tools),
-      system_prompt_(system_prompt),
       memory_(memory),
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
@@ -624,14 +623,7 @@ namespace orangutan::agent {
     }
 
     std::string AgentLoop::build_system_prompt(const std::string &user_input) const {
-        // If a custom system prompt was provided (from config), use it as-is with skills appended.
-        // Otherwise, generate the full default prompt from the structured sections.
-        std::string base;
-        if (system_prompt_.empty()) {
-            base = prompt::build_default_system_prompt(env_info_);
-        } else {
-            base = system_prompt_;
-        }
+        std::string base = prompt::build_default_system_prompt(env_info_);
 
         base += skills_prompt_;
 

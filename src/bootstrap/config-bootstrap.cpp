@@ -60,9 +60,6 @@ namespace orangutan::bootstrap {
         if (!options.cli_model.empty()) {
             selected_agent.model = options.cli_model;
         }
-        if (!options.cli_system_prompt.empty()) {
-            selected_agent.system_prompt = options.cli_system_prompt;
-        }
         return selected_agent;
     }
 

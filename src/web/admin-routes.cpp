@@ -66,7 +66,6 @@ namespace orangutan::web {
         nlohmann::json agent_config_to_json(const config::AgentConfig &agent_cfg) {
             nlohmann::json json = {
                 {"model", agent_cfg.model},
-                {"system_prompt", agent_cfg.system_prompt},
                 {"workspace", agent_cfg.workspace},
                 {"edit_mode", agent_cfg.edit_mode},
                 {"subagents", agent_cfg.subagents},
@@ -90,7 +89,6 @@ namespace orangutan::web {
                      {"max_tokens", cfg.max_tokens},
                      {"workspace", cfg.workspace},
                      {"edit_mode", cfg.edit_mode},
-                     {"system_prompt", cfg.system_prompt},
                      {"fallback_models", fallback_models_to_json(cfg.fallback_models)},
                      {"thinking_budget", cfg.thinking_budget},
                  }},
@@ -188,7 +186,6 @@ namespace orangutan::web {
                 {"key", key},
                 {"profile", agent.profile},
                 {"model", agent.model},
-                {"system_prompt", agent.system_prompt},
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},
                 {"subagents", agent.subagents},

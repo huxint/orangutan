@@ -52,7 +52,6 @@ namespace orangutan::bootstrap {
       tools(*tools_storage_),
       tool_context(*tool_context_storage_),
       mcp_manager(std::move(other.mcp_manager)),
-      system_prompt(std::move(other.system_prompt)),
       skills_prompt(std::move(other.skills_prompt)),
       skill_loader(std::move(other.skill_loader)),
       hook_manager(std::move(other.hook_manager)),
@@ -87,8 +86,6 @@ namespace orangutan::bootstrap {
                                                      input.mcp_servers, runtime.permissions_storage_.get(), input.approval_callback, input.edit_mode);
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
-        runtime.system_prompt = append_subagent_prompt_guidance(input.system_prompt, input.allowed_child_agents, input.is_child_run);
-
         runtime.skill_loader = std::make_unique<SkillLoader>();
         runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, input.workspace_root));
         runtime.skills_prompt = runtime.skill_loader->build_prompt_section();
@@ -97,8 +94,7 @@ namespace orangutan::bootstrap {
         runtime.hook_manager = std::make_unique<HookManager>();
         runtime.hook_manager->load_from_directories(resolve_hook_directories(input));
 
-        runtime.agent =
-            std::make_unique<AgentLoop>(*runtime.provider, runtime.tools, runtime.system_prompt, runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
+        runtime.agent = std::make_unique<AgentLoop>(*runtime.provider, runtime.tools, runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
         runtime.agent->set_environment_info(prompt::EnvironmentInfo{
             .workspace_root = input.workspace_root,

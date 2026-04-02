@@ -148,7 +148,6 @@ namespace orangutan::web {
                 .primary_endpoint = maybe_endpoints->primary_endpoint,
                 .fallback_endpoints = maybe_endpoints->fallback_endpoints,
                 .agent_key = agent_key,
-                .system_prompt = agent.system_prompt,
                 .workspace_root = workspace_root,
                 .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,

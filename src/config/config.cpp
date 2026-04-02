@@ -117,7 +117,6 @@ namespace orangutan::config {
 
             cfg.profile = expand_env_vars(cfg.profile);
             cfg.model = expand_env_vars(cfg.model);
-            cfg.system_prompt = expand_env_vars(cfg.system_prompt);
             cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
             for (auto &fallback_model : cfg.fallback_models) {
                 fallback_model.profile = expand_env_vars(fallback_model.profile);
@@ -245,9 +244,6 @@ namespace orangutan::config {
         if (thinking_budget != 0) {
             agent["thinking_budget"] = thinking_budget;
         }
-        if (!system_prompt.empty()) {
-            agent["system_prompt"] = system_prompt;
-        }
         if (!workspace.empty()) {
             agent["workspace"] = workspace;
         }
@@ -342,9 +338,6 @@ namespace orangutan::config {
                 }
                 if (!agent_cfg.fallback_models.empty()) {
                     agent_json["fallback_models"] = detail::serialize_fallback_models(agent_cfg.fallback_models);
-                }
-                if (!agent_cfg.system_prompt.empty()) {
-                    agent_json["system_prompt"] = agent_cfg.system_prompt;
                 }
                 if (!agent_cfg.workspace.empty()) {
                     agent_json["workspace"] = agent_cfg.workspace;

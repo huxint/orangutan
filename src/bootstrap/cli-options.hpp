@@ -14,7 +14,6 @@ namespace orangutan::bootstrap {
         std::string cli_model;
         std::string cli_agent_key = "default";
         std::string message;
-        std::string cli_system_prompt;
         std::string resume_session;
         bool dump_session = false;
         bool event_stream = false;

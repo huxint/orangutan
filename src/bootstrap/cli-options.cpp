@@ -41,7 +41,6 @@ namespace orangutan::bootstrap {
         app.add_option("--model", options.cli_model, "Model to use");
         app.add_option("--agent", options.cli_agent_key, "Configured agent key to use in CLI mode");
         app.add_option("-m,--message", options.message, "Single message mode: send one message, print response, exit");
-        app.add_option("-s,--system-prompt", options.cli_system_prompt, "Custom system prompt");
         app.add_flag("--cli", options.cli_mode, "Start the interactive CLI entry");
         app.add_flag("--web", options.web_mode, "Start the web management UI server");
         app.add_flag("--channel", options.channel_mode, "Start configured channel adapters");

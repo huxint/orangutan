@@ -52,6 +52,13 @@ namespace orangutan::prompt {
     [[nodiscard]]
     std::string environment_section(const EnvironmentInfo &info);
 
+    // ── Workspace agent files ──
+
+    // Read optional workspace file (.orangutan/agent/{identity,style,memory}.md).
+    // Returns empty string if the file does not exist.
+    [[nodiscard]]
+    std::string read_workspace_agent_file(const std::string &workspace, const std::string &filename);
+
     // ── Full assembly ──
 
     // Build the complete default system prompt from all sections

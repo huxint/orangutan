@@ -132,7 +132,6 @@ namespace orangutan::config::detail {
             .profile = cfg.profile,
             .model = cfg.model,
             .fallback_models = cfg.fallback_models,
-            .system_prompt = cfg.system_prompt,
             .workspace = cfg.workspace,
             .permissions = cfg.permissions,
             .subagents = {},
@@ -144,7 +143,6 @@ namespace orangutan::config::detail {
     void expand_agent_config(AgentConfig &cfg) {
         cfg.profile = expand_env_vars(cfg.profile);
         cfg.model = expand_env_vars(cfg.model);
-        cfg.system_prompt = expand_env_vars(cfg.system_prompt);
         cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
 
         for (auto &fallback_model : cfg.fallback_models) {
@@ -200,9 +198,6 @@ namespace orangutan::config::detail {
         }
         if (const auto *value = find_member(*agent, "workspace"); value != nullptr && value->is_string()) {
             cfg.workspace = value->get<std::string>();
-        }
-        if (const auto *value = find_member(*agent, "system_prompt"); value != nullptr && value->is_string()) {
-            cfg.system_prompt = value->get<std::string>();
         }
 
         return cfg;
@@ -396,9 +391,6 @@ namespace orangutan::config::detail {
             }
             if (const auto *value = find_array_member(agent, "fallback_models"); value != nullptr) {
                 assign_fallback_array(*value, agent_cfg.fallback_models);
-            }
-            if (const auto *value = find_member(agent, "system_prompt"); value != nullptr && value->is_string()) {
-                agent_cfg.system_prompt = value->get<std::string>();
             }
             if (const auto *value = find_member(agent, "workspace"); value != nullptr && value->is_string()) {
                 agent_cfg.workspace = value->get<std::string>();

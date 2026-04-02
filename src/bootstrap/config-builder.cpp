@@ -53,9 +53,6 @@ namespace orangutan::bootstrap::detail {
             if (agent_cfg.fallback_models.empty()) {
                 agent_cfg.fallback_models = cfg.fallback_models;
             }
-            if (agent_cfg.system_prompt.empty()) {
-                agent_cfg.system_prompt = cfg.system_prompt;
-            }
             if (agent_cfg.workspace.empty()) {
                 agent_cfg.workspace = cfg.workspace;
             }
@@ -175,7 +172,6 @@ namespace orangutan::bootstrap::detail {
                                               }(),
                                           .primary_endpoint = maybe_endpoints->primary_endpoint,
                                           .fallback_endpoints = maybe_endpoints->fallback_endpoints,
-                                          .system_prompt = agent_cfg.system_prompt,
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,
                                           .thinking_budget = agent_cfg.thinking_budget,
@@ -199,7 +195,6 @@ namespace orangutan::bootstrap::detail {
                                           .fallback_models = runtime_cfg.fallback_models,
                                           .primary_endpoint = runtime_cfg.primary_endpoint,
                                           .fallback_endpoints = runtime_cfg.fallback_endpoints,
-                                          .system_prompt = runtime_cfg.system_prompt,
                                           .workspace_root = runtime_cfg.workspace_root,
                                           .edit_mode = runtime_cfg.edit_mode,
                                           .thinking_budget = runtime_cfg.thinking_budget,

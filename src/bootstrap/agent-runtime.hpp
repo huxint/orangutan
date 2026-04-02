@@ -45,7 +45,6 @@ namespace orangutan::bootstrap {
         providers::ProviderEndpoint primary_endpoint;
         std::vector<providers::ProviderEndpoint> fallback_endpoints;
         std::string agent_key;
-        std::string system_prompt;
         std::string workspace_root;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
@@ -93,7 +92,6 @@ namespace orangutan::bootstrap {
         ToolRegistry &tools;
         ToolRuntimeContext &tool_context;
         std::unique_ptr<tools::McpManager> mcp_manager;
-        std::string system_prompt;
         std::string skills_prompt;
         std::unique_ptr<skills::SkillLoader> skill_loader;
         std::unique_ptr<hooks::HookManager> hook_manager;
