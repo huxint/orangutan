@@ -39,12 +39,9 @@ namespace orangutan::channel::qq {
                 return value.get<base::i64>();
             }
             if (value.is_string()) {
-                const auto &str = value.get_ref<const std::string &>();
-                base::i64 result = default_value;
-                std::from_chars(str.data(), str.data() + str.size(), result);
-                return result;
+                std::string_view sv = value.get<std::string_view>();
+                std::from_chars(sv.begin(), sv.end(), default_value);
             }
-
             return default_value;
         }
 

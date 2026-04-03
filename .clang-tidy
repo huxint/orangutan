@@ -25,7 +25,8 @@ Checks: >
   -readability-named-parameter,
   -readability-container-data-pointer,
   -modernize-use-nodiscard,
-  -bugprone-unchecked-optional-access
+  -bugprone-unchecked-optional-access,
+  -cppcoreguidelines-pro-type-vararg
 
 WarningsAsErrors: ''
 
