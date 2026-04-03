@@ -2,9 +2,9 @@
 
 #include "utils/file-io.hpp"
 #include "utils/format.hpp"
+#include "utils/time-format.hpp"
 
 #include <array>
-#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -186,13 +186,7 @@ namespace orangutan::prompt {
         utils::format_to(s, " - Platform: {}\n", platform_name);
         utils::format_to(s, " - Shell: {}\n", get_shell_name());
         utils::format_to(s, " - OS Version: {}\n", get_os_info());
-
-        // Current date
-        {
-            const auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
-            const std::chrono::year_month_day ymd{now};
-            utils::format_to(s, " - Today: {:04d}-{:02d}-{:02d}\n", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()));
-        }
+        utils::format_to(s, " - Today: {}\n", utils::current_local_date());
 
         if (!info.model_name.empty()) {
             utils::format_to(s, " - Current model: {}\n", info.model_name);
