@@ -1,7 +1,7 @@
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
 #include "bootstrap/memory-context.hpp"
-#include "tools/registry/tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 #include "utils/utf8.hpp"
 #include "test-helpers.hpp"
 
@@ -219,7 +219,7 @@ namespace {
     TEST_CASE("builtin_memory_tools_register_and_execute") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        ToolRegistry registry;
+        tools::ToolRegistry registry;
         RuntimeMemory runtime_memory(store);
         register_builtin_tools(registry, &runtime_memory);
 
