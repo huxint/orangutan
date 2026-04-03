@@ -161,25 +161,31 @@ namespace orangutan::tools {
                                      {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
                                      {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
                                    {"required", nlohmann::json::array({"key", "content"})}}},
-             .execute = [&runtime_memory](const nlohmann::json &input) {
-                 return remember_memory(input, runtime_memory);
-             }});
+             .execute =
+                 [&runtime_memory](const nlohmann::json &input) {
+                     return remember_memory(input, runtime_memory);
+                 },
+             .deferred = true});
 
         registry.register_tool({.definition = {.name = "recall",
                                                .description = "Recall stored memories. Use mode='query' with value=<search text>, or mode='category' with value=<category name>.",
                                                .input_schema = portable_recall_schema()},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return recall_memory(input, runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json &input) {
+                                        return recall_memory(input, runtime_memory);
+                                    },
+                                .deferred = true});
 
         registry.register_tool({.definition = {.name = "forget",
                                                .description = "Delete a stored memory by key.",
                                                .input_schema = {{"type", "object"},
                                                                 {"properties", {{"key", {{"type", "string"}, {"description", "The memory key to delete"}}}}},
                                                                 {"required", nlohmann::json::array({"key"})}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return forget_memory(input, runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json &input) {
+                                        return forget_memory(input, runtime_memory);
+                                    },
+                                .deferred = true});
 
         registry.register_tool(
             {.definition =
@@ -196,25 +202,31 @@ namespace orangutan::tools {
                                      {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
                                      {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
                                    {"required", nlohmann::json::array({"key", "content"})}}},
-             .execute = [&runtime_memory](const nlohmann::json &input) {
-                 return remember_memory(input, runtime_memory);
-             }});
+             .execute =
+                 [&runtime_memory](const nlohmann::json &input) {
+                     return remember_memory(input, runtime_memory);
+                 },
+             .deferred = true});
 
         registry.register_tool({.definition = {.name = "memory_recall",
                                                .description = "Plugin-style alias for recall. Use mode='query' or mode='category' with value=<text>.",
                                                .input_schema = portable_recall_schema()},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return recall_memory(input, runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json &input) {
+                                        return recall_memory(input, runtime_memory);
+                                    },
+                                .deferred = true});
 
         registry.register_tool({.definition = {.name = "memory_forget",
                                                .description = "Plugin-style alias for forget.",
                                                .input_schema = {{"type", "object"},
                                                                 {"properties", {{"key", {{"type", "string"}, {"description", "The memory key to delete"}}}}},
                                                                 {"required", nlohmann::json::array({"key"})}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return forget_memory(input, runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json &input) {
+                                        return forget_memory(input, runtime_memory);
+                                    },
+                                .deferred = true});
 
         registry.register_tool(
             {.definition =
@@ -232,9 +244,11 @@ namespace orangutan::tools {
                                      {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
                                      {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
                                    {"required", nlohmann::json::array({"key", "content"})}}},
-             .execute = [&runtime_memory](const nlohmann::json &input) {
-                 return update_memory(input, runtime_memory);
-             }});
+             .execute =
+                 [&runtime_memory](const nlohmann::json &input) {
+                     return update_memory(input, runtime_memory);
+                 },
+             .deferred = true});
 
         registry.register_tool({.definition = {.name = "memory_list",
                                                .description = "List recent memories, optionally filtered by category.",
@@ -243,16 +257,20 @@ namespace orangutan::tools {
                                                                  {{"category", {{"type", "string"}, {"description", "Optional category filter"}}},
                                                                   {"limit", {{"type", "integer"}, {"description", "Maximum number of memories to return"}}}}},
                                                                 {"required", nlohmann::json::array()}}},
-                                .execute = [&runtime_memory](const nlohmann::json &input) {
-                                    return list_memory(input, runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json &input) {
+                                        return list_memory(input, runtime_memory);
+                                    },
+                                .deferred = true});
 
         registry.register_tool({.definition = {.name = "memory_stats",
                                                .description = "Return summary statistics for the current memory scope.",
                                                .input_schema = {{"type", "object"}, {"properties", nlohmann::json::object()}, {"required", nlohmann::json::array()}}},
-                                .execute = [&runtime_memory](const nlohmann::json & /*input*/) {
-                                    return stats_memory(runtime_memory);
-                                }});
+                                .execute =
+                                    [&runtime_memory](const nlohmann::json & /*input*/) {
+                                        return stats_memory(runtime_memory);
+                                    },
+                                .deferred = true});
     }
 
 } // namespace orangutan::tools

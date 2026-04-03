@@ -131,7 +131,8 @@ namespace {
         REQUIRE(runtime.agent != nullptr);
         REQUIRE(runtime.provider != nullptr);
         REQUIRE(runtime.memory != nullptr);
-        CHECK(orangutan::testing::has_tool_named(definitions, "memory_list"));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
+        CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
         CHECK(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK(orangutan::testing::has_tool_named(definitions, "process_list"));
         CHECK(orangutan::testing::has_tool_named(definitions, "process_poll"));

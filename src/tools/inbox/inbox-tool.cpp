@@ -76,6 +76,7 @@ namespace orangutan::tools {
                 [tool_context](const nlohmann::json &input) {
                     return execute_inbox_tool(input, tool_context);
                 },
+            .deferred = true,
         });
     }
 

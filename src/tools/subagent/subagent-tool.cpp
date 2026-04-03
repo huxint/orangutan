@@ -112,18 +112,22 @@ namespace orangutan::tools {
                                                                  {{"child_agent_key", {{"type", "string"}, {"description", "Allowed child agent key to run"}}},
                                                                   {"task_summary", {{"type", "string"}, {"description", "Summary of the work for the child run"}}}}},
                                                                 {"required", nlohmann::json::array({"child_agent_key", "task_summary"})}}},
-                                .execute = [tool_context](const nlohmann::json &input) {
-                                    return spawn_subagent_tool(input, *tool_context);
-                                }});
+                                .execute =
+                                    [tool_context](const nlohmann::json &input) {
+                                        return spawn_subagent_tool(input, *tool_context);
+                                    },
+                                .deferred = true});
 
         registry.register_tool({.definition = {.name = "subagent_status",
                                                .description = "Inspect a subagent run and return structured status metadata.",
                                                .input_schema = {{"type", "object"},
                                                                 {"properties", {{"run_id", {{"type", "string"}, {"description", "Subagent run id"}}}}},
                                                                 {"required", nlohmann::json::array({"run_id"})}}},
-                                .execute = [tool_context](const nlohmann::json &input) {
-                                    return subagent_status_tool(input, *tool_context->subagent_manager, *tool_context);
-                                }});
+                                .execute =
+                                    [tool_context](const nlohmann::json &input) {
+                                        return subagent_status_tool(input, *tool_context->subagent_manager, *tool_context);
+                                    },
+                                .deferred = true});
 
         registry.register_tool({.definition = {.name = "subagent_wait",
                                                .description = "Wait for a subagent run and return structured status metadata.",
@@ -132,9 +136,11 @@ namespace orangutan::tools {
                                                                  {{"run_id", {{"type", "string"}, {"description", "Subagent run id"}}},
                                                                   {"timeout_ms", {{"type", "integer"}, {"description", "Maximum time to wait in milliseconds"}}}}},
                                                                 {"required", nlohmann::json::array({"run_id"})}}},
-                                .execute = [tool_context](const nlohmann::json &input) {
-                                    return subagent_wait_tool(input, *tool_context->subagent_manager, *tool_context);
-                                }});
+                                .execute =
+                                    [tool_context](const nlohmann::json &input) {
+                                        return subagent_wait_tool(input, *tool_context->subagent_manager, *tool_context);
+                                    },
+                                .deferred = true});
     }
 
 } // namespace orangutan::tools

@@ -685,12 +685,15 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             CHECK(orangutan::testing::has_tool_named(defs, "read"));
             CHECK(not(orangutan::testing::has_tool_named(defs, "ls")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "grep")));
-            CHECK(orangutan::testing::has_tool_named(defs, "subagent_spawn"));
-            CHECK(orangutan::testing::has_tool_named(defs, "subagent_status"));
-            CHECK(orangutan::testing::has_tool_named(defs, "subagent_wait"));
-            CHECK(orangutan::testing::has_tool_named(defs, "remember"));
-            CHECK(orangutan::testing::has_tool_named(defs, "memory_recall"));
-            CHECK(orangutan::testing::has_tool_named(defs, "memory_stats"));
+            // Subagent and memory tools are deferred — not in definitions() but still executable
+            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_spawn")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_status")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_wait")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "memory_recall")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
+            CHECK(orangutan::testing::has_tool_named(defs, "tool_search"));
+            CHECK(registry.has_deferred_tools());
 
             const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}}));
             CHECK(not(remember.is_error));

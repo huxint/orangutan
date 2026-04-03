@@ -73,9 +73,13 @@ namespace {
         register_builtin_tools(registry, nullptr, {}, &tool_context);
 
         const auto defs = registry.definitions();
-        CHECK(orangutan::testing::has_tool_named(defs, "subagent_spawn"));
-        CHECK(orangutan::testing::has_tool_named(defs, "subagent_status"));
-        CHECK(orangutan::testing::has_tool_named(defs, "subagent_wait"));
+        CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_spawn")));
+        CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_status")));
+        CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_wait")));
+        // Subagent tools are deferred but registered and executable
+        CHECK(registry.find_definition("subagent_spawn") != nullptr);
+        CHECK(registry.find_definition("subagent_status") != nullptr);
+        CHECK(registry.find_definition("subagent_wait") != nullptr);
     };
 
     TEST_CASE("child_runtime_does_not_register_subagent_tools") {

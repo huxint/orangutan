@@ -322,12 +322,13 @@ namespace {
                                                                         });
 
         const auto definitions = runtime.tools.definitions();
-        CHECK(orangutan::testing::has_tool_named(definitions, "memory_list"));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK(orangutan::testing::has_tool_named(definitions, "custom_echo"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "task"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "heartbeat"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "inbox"));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "task")));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "heartbeat")));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "inbox")));
+        CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
         CHECK(runtime.tool_context.runtime_origin == base::origin::web);
         CHECK(runtime.tool_context.raw_caller_id == "web:local");
         CHECK(runtime.tool_context.current_session_id == &session_id);

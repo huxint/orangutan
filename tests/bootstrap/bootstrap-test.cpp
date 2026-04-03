@@ -668,10 +668,11 @@ namespace {
         });
 
         const auto definitions = runtime.tools.definitions();
-        CHECK(orangutan::testing::has_tool_named(definitions, "memory_list"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "task"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "heartbeat"));
-        CHECK(orangutan::testing::has_tool_named(definitions, "inbox"));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "task")));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "heartbeat")));
+        CHECK(not(orangutan::testing::has_tool_named(definitions, "inbox")));
+        CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
         CHECK(runtime.skills_prompt.contains("workspace-skill"));
     };
 
@@ -699,7 +700,8 @@ namespace {
         CHECK(inspection.attached_session_store);
         CHECK(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
-        CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list"));
+        CHECK(not(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list")));
+        CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
         CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
     };
 

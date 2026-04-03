@@ -107,6 +107,7 @@ namespace orangutan::tools {
                 [workspace_root, tool_context](const nlohmann::json &input) {
                     return execute_message_attachments_tool(input, workspace_root, tool_context);
                 },
+            .deferred = true,
         });
     }
 

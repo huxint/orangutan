@@ -46,21 +46,19 @@ namespace orangutan::tools {
         }
 
         RuntimeToolBootstrapResult result;
-        if (mcp_servers.empty()) {
-            return result;
+        if (!mcp_servers.empty()) {
+            result.mcp_manager = std::make_unique<McpManager>(mcp_servers);
+            result.mcp_manager->connect_all();
+            result.mcp_manager->register_tools(registry);
+            result.mcp_tool_count = result.mcp_manager->total_tool_count();
+
+            spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
         }
 
-        result.mcp_manager = std::make_unique<McpManager>(mcp_servers);
-        result.mcp_manager->connect_all();
-        result.mcp_manager->register_tools(registry);
-        result.mcp_tool_count = result.mcp_manager->total_tool_count();
-
-        spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
-
-        // Register tool_search if there are deferred tools (e.g. MCP tools)
+        // Register tool_search if there are any deferred tools (builtin or MCP)
         if (registry.has_deferred_tools()) {
             register_tool_search(registry);
-            spdlog::debug("Registered tool_search for {} deferred tool(s)", result.mcp_tool_count);
+            spdlog::debug("Registered tool_search for deferred tools");
         }
 
         return result;

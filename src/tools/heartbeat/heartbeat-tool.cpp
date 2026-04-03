@@ -166,6 +166,7 @@ namespace orangutan::tools {
                 [tool_context](const nlohmann::json &input) {
                     return execute_heartbeat_tool(input, tool_context);
                 },
+            .deferred = true,
         });
     }
 

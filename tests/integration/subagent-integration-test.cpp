@@ -164,6 +164,10 @@ namespace {
 
         ToolRegistry parent_tools;
         register_builtin_tools(parent_tools, nullptr, harness.workspace_root().string(), &tool_context);
+        // Pre-discover deferred subagent tools so the mock LLM can use them directly
+        parent_tools.discover_tool("subagent_spawn");
+        parent_tools.discover_tool("subagent_status");
+        parent_tools.discover_tool("subagent_wait");
 
         std::vector<ScriptedProvider::Step> parent_steps;
         parent_steps.reserve(3);
