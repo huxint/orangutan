@@ -2,22 +2,21 @@
 
 #include "channel/channel.hpp"
 #include "channel/qq/qq-api-client.hpp"
-#include "channel/qq/qq-message-builder.hpp"
 #include "types/base.hpp"
 
 #include <nlohmann/json.hpp>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
 namespace orangutan::channel::qq {
+    [[nodiscard]]
+    base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value);
 
     class QqChannel : public Channel {
     public:
@@ -112,7 +111,7 @@ namespace orangutan::channel::qq {
         void handle_guild_message(const nlohmann::json &data);
         void handle_interaction(const nlohmann::json &data);
         void handle_reaction_event(const std::string &event_type, const nlohmann::json &data) const;
-        void emit_inbound(InboundMessage message) const;
+        void emit_inbound(const InboundMessage &message) const;
         void clear_ready_state();
         [[nodiscard]]
         base::u16 next_msg_seq();
@@ -123,7 +122,7 @@ namespace orangutan::channel::qq {
         std::string resolve_passive_reply_message_id(const std::string &reply_to_message_id, int reply_units = 1);
 
         [[nodiscard]]
-        std::vector<Attachment> parse_attachments(const nlohmann::json &data) const;
+        static std::vector<Attachment> parse_attachments(const nlohmann::json &data);
 
         [[nodiscard]]
         static std::vector<std::string> parse_mention_ids(const nlohmann::json &data);

@@ -1,6 +1,7 @@
 #include "channel/qq/qq-api-client.hpp"
 
 #include "providers/http-client.hpp"
+#include "types/base.hpp"
 #include "utils/string.hpp"
 
 #include <array>
@@ -20,53 +21,46 @@
 
 namespace orangutan::channel::qq {
 
-    namespace {
+    constexpr std::string_view qq_api_base = "https://api.sgroup.qq.com";
+    constexpr std::string_view qq_token_url = "https://bots.qq.com/app/getAppAccessToken";
+    constexpr long default_timeout_seconds = 120L;
+    constexpr auto token_refresh_ahead = std::chrono::minutes(5);
+    constexpr auto min_background_refresh_interval = std::chrono::seconds(60);
 
-        constexpr std::string_view qq_api_base = "https://api.sgroup.qq.com";
-        constexpr std::string_view qq_token_url = "https://bots.qq.com/app/getAppAccessToken";
-        constexpr long default_timeout_seconds = 120L;
-        constexpr auto token_refresh_ahead = std::chrono::minutes(5);
-        constexpr auto min_background_refresh_interval = std::chrono::seconds(60);
-
-        [[nodiscard]]
-        base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
-            if (!payload.contains(key)) {
-                return default_value;
-            }
-
-            const auto &value = payload.at(key);
-            if (value.is_number_integer()) {
-                return value.get<base::i64>();
-            }
-            if (value.is_string()) {
-                std::string_view sv = value.get<std::string_view>();
-                std::from_chars(sv.begin(), sv.end(), default_value);
-            }
+    [[nodiscard]]
+    base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
+        if (!payload.contains(key)) {
             return default_value;
         }
 
-        [[nodiscard]]
-        std::string to_lower_ascii(std::string_view input) {
-            std::string lowered;
-            lowered.reserve(input.size());
-            for (char ch : input) {
-                lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
-            return lowered;
+        const auto &value = payload.at(key);
+        if (value.is_number_integer()) {
+            return value.get<base::i64>();
         }
-
-        [[nodiscard]]
-        bool is_absolute_url(const std::string &path) {
-            return path.starts_with("https://") || path.starts_with("http://");
+        if (value.is_string()) {
+            std::string_view sv = value.get<std::string_view>();
+            std::from_chars(sv.begin(), sv.end(), default_value);
         }
+        return default_value;
+    }
 
-    } // namespace
+    [[nodiscard]]
+    std::string to_lower_ascii(std::string_view input) {
+        std::string lowered;
+        lowered.reserve(input.size());
+        for (char ch : input) {
+            lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        }
+        return lowered;
+    }
+
+    [[nodiscard]]
+    bool is_absolute_url(std::string_view path) {
+        return path.starts_with("https://") || path.starts_with("http://");
+    }
 
     nlohmann::json QqApiResponse::parse_json_body() const {
-        if (body.empty()) {
-            return nlohmann::json::object();
-        }
-        return nlohmann::json::parse(body);
+        return body.empty() ? nlohmann::json::object() : nlohmann::json::parse(body);
     }
 
     QqApiClient::QqApiClient(std::string app_id, std::string client_secret)

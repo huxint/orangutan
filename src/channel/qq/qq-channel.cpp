@@ -1,5 +1,6 @@
 #include "channel/qq/qq-channel.hpp"
 
+#include "channel/qq/qq-message-builder.hpp"
 #include "channel/qq/qq-transport.hpp"
 #include "utils/string.hpp"
 
@@ -10,10 +11,10 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <spdlog/fmt/bundled/format.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
@@ -24,9 +25,6 @@
 namespace orangutan::channel::qq {
 
     namespace {
-
-        constexpr std::string_view qq_c2c_prefix = "qqbot:c2c:";
-        constexpr std::string_view qq_group_prefix = "qqbot:group:";
         constexpr int gateway_op_dispatch = 0;
         constexpr int gateway_op_heartbeat = 1;
         constexpr int gateway_op_identify = 2;
@@ -59,25 +57,6 @@ namespace orangutan::channel::qq {
                 throw std::runtime_error("Unsupported QQ jid: " + std::string(jid));
             }
             return std::string(jid.substr(prefix.size()));
-        }
-
-        base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
-            if (!payload.contains(key)) {
-                return default_value;
-            }
-
-            const auto &value = payload.at(key);
-            if (value.is_number_integer()) {
-                return value.get<base::i64>();
-            }
-            if (value.is_string()) {
-                const auto &str = value.get_ref<const std::string &>();
-                base::i64 result = default_value;
-                std::from_chars(str.data(), str.data() + str.size(), result);
-                return result;
-            }
-
-            return default_value;
         }
 
         std::string getenv_or_default(const char *name, const char *fallback) {
@@ -358,7 +337,7 @@ namespace orangutan::channel::qq {
 
     void QqChannel::send(const std::string &jid, const OutboundMessage &message) {
         if (const auto *text = std::get_if<TextPayload>(&message.payload)) {
-            if (text->text.find("<qq") != std::string::npos || text->text.find("![") != std::string::npos) {
+            if (text->text.contains("<qq") || text->text.contains("![")) {
                 send_media_segments(jid, message);
                 return;
             }
@@ -568,7 +547,7 @@ namespace orangutan::channel::qq {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
         runtime_->websocket = std::make_unique<qq::Transport>(qq::Transport::Callbacks{
             .on_open =
-                [this] {
+                [] {
                     spdlog::info("QQ WebSocket connected");
                 },
             .on_text =
@@ -598,11 +577,9 @@ namespace orangutan::channel::qq {
                     }
                     runtime_->cv.notify_all();
 
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
                     if (!close_requested && runtime_->websocket != nullptr) {
                         runtime_->websocket->request_reconnect();
                     }
-#endif
                 },
             .on_error =
                 [this](std::string error) {
@@ -622,11 +599,9 @@ namespace orangutan::channel::qq {
                     }
                     runtime_->cv.notify_all();
 
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
                     if (!close_requested && runtime_->websocket != nullptr) {
                         runtime_->websocket->request_reconnect();
                     }
-#endif
                 },
         });
 
@@ -973,11 +948,11 @@ namespace orangutan::channel::qq {
 
                 const auto last_seen_text = item.value("last_seen", std::string{});
                 const auto last_seen = parse_iso_utc(last_seen_text).value_or(std::chrono::system_clock::now());
-                loaded.emplace(kind + ":" + openid, RuntimeState::KnownUser{
-                                                        .kind = kind,
-                                                        .openid = openid,
-                                                        .last_seen_at = last_seen,
-                                                    });
+                loaded.emplace(spdlog::fmt_lib::format("{}:{}", kind, openid), RuntimeState::KnownUser{
+                                                                                   .kind = kind,
+                                                                                   .openid = openid,
+                                                                                   .last_seen_at = last_seen,
+                                                                               });
             }
 
             std::scoped_lock lock(runtime_->known_users_mutex);
@@ -998,7 +973,7 @@ namespace orangutan::channel::qq {
             }
         }
 
-        std::sort(users.begin(), users.end(), [](const auto &lhs, const auto &rhs) {
+        std::ranges::sort(users, [](const auto &lhs, const auto &rhs) {
             return std::tie(lhs.kind, lhs.openid) < std::tie(rhs.kind, rhs.openid);
         });
 
@@ -1377,7 +1352,7 @@ namespace orangutan::channel::qq {
         });
     }
 
-    void QqChannel::emit_inbound(InboundMessage message) const {
+    void QqChannel::emit_inbound(const InboundMessage &message) const {
         if (on_message_ != nullptr) {
             on_message_(message);
         }
@@ -1453,7 +1428,7 @@ namespace orangutan::channel::qq {
         return {};
     }
 
-    std::vector<Attachment> QqChannel::parse_attachments(const nlohmann::json &data) const {
+    std::vector<Attachment> QqChannel::parse_attachments(const nlohmann::json &data) {
         std::vector<Attachment> attachments;
         if (!data.contains("attachments") || !data.at("attachments").is_array()) {
             return attachments;
@@ -1516,7 +1491,7 @@ namespace orangutan::channel::qq {
         stripped.reserve(content.size());
         const auto content_view = std::string_view{content};
         const char *cursor = content_view.data();
-        const char *const end = cursor + content_view.size();
+        const char *end = cursor + content_view.size();
 
         for (const auto match : ctre::search_all<R"(<@!?[^>]+>)">(content_view)) {
             const auto full = match.get<0>().to_view();

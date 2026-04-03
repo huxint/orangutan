@@ -26,7 +26,8 @@ Checks: >
   -readability-container-data-pointer,
   -modernize-use-nodiscard,
   -bugprone-unchecked-optional-access,
-  -cppcoreguidelines-pro-type-vararg
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic
 
 WarningsAsErrors: ''
 
