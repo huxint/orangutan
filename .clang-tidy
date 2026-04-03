@@ -27,7 +27,8 @@ Checks: >
   -modernize-use-nodiscard,
   -bugprone-unchecked-optional-access,
   -cppcoreguidelines-pro-type-vararg,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast
 
 WarningsAsErrors: ''
 

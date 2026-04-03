@@ -14,7 +14,6 @@
 #include "agent/agent-loop.hpp"
 #include "web/web-types.hpp"
 #include "memory/memory-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
 
@@ -124,8 +123,8 @@ namespace orangutan::web {
         }
 
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
-                                                                    memory::MemoryStore *memory_store, std::string *current_session_id, subagent::SubagentManager *subagent_manager,
-                                                                    automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
+                                                                    memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
+                                                                    ToolApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto &profile = resolve_agent_profile(config, agent, agent_key);
             static_cast<void>(resolve_agent_model(profile, agent, agent_key));
@@ -153,11 +152,11 @@ namespace orangutan::web {
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
                 .permissions = agent.permissions,
-                .allowed_child_agents = agent.subagents,
+                .team_agents = agent.team_agents,
                 .identity = derive_web_identity(workspace_root, agent_key),
                 .memory_store = memory_store,
                 .current_session_id = current_session_id,
-                .subagent_manager = subagent_manager,
+                .coordinator_manager = nullptr,
                 .runtime_origin = base::origin::web,
                 .raw_caller_id = "web:local",
                 .automation_runtime = automation_runtime,
@@ -425,15 +424,14 @@ namespace orangutan::web {
     } // namespace internal
 
     bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
-                                                                   std::string *current_session_id, subagent::SubagentManager *subagent_manager,
-                                                                   automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
+                                                                   std::string *current_session_id, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
         const auto maybe_agent = internal::find_effective_agent(&config, agent_key);
         if (!maybe_agent.has_value()) {
             throw std::runtime_error("agent not found");
         }
-        return internal::build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, subagent_manager, automation_runtime,
-                                                       std::move(approval_callback), completion_resume_state);
+        return internal::build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, automation_runtime, std::move(approval_callback),
+                                                       completion_resume_state);
     }
 
     BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &weak_state) {

@@ -179,28 +179,9 @@ namespace orangutan::bootstrap::detail {
                                           .cli_memory_scope = cli_identity.memory_scope,
                                           .memory = cfg.memory,
                                           .permissions = agent_cfg.permissions,
-                                          .allowed_child_agents = agent_cfg.subagents,
-                                      });
-        }
-        return result;
-    }
-
-    std::unordered_map<std::string, SubagentChildRuntimeConfig>
-    build_subagent_child_runtime_configs(const std::unordered_map<std::string, AgentRuntimeConfig> &agent_runtime_configs) {
-        std::unordered_map<std::string, SubagentChildRuntimeConfig> result;
-        for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
-            result.emplace(agent_key, SubagentChildRuntimeConfig{
-                                          .agent_key = runtime_cfg.agent_key,
-                                          .model = runtime_cfg.model,
-                                          .fallback_models = runtime_cfg.fallback_models,
-                                          .primary_endpoint = runtime_cfg.primary_endpoint,
-                                          .fallback_endpoints = runtime_cfg.fallback_endpoints,
-                                          .workspace_root = runtime_cfg.workspace_root,
-                                          .edit_mode = runtime_cfg.edit_mode,
-                                          .thinking_budget = runtime_cfg.thinking_budget,
-                                          .memory = runtime_cfg.memory,
-                                          .permissions = runtime_cfg.permissions,
-                                          .allowed_child_agents = runtime_cfg.allowed_child_agents,
+                                          .team_agents = agent_cfg.team_agents,
+                                          .coordinator_mode = agent_cfg.coordinator_mode,
+                                          .max_concurrent_agents = agent_cfg.max_concurrent_agents,
                                       });
         }
         return result;

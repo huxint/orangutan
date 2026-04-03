@@ -3,9 +3,7 @@
 #include "bootstrap/app-runtime.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "storage/session-store.hpp"
-#include "storage/subagent-run-store.hpp"
 #include "config/config.hpp"
 #include "test-helpers.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -101,7 +99,7 @@ namespace {
                     .sandbox_mode = orangutan::ToolSandboxMode::isolated,
                     .shell_approval = orangutan::ToolApprovalPolicy::ask,
                 },
-            .subagents = {"coder"},
+            .team_agents = {"coder"},
         };
         cfg.agents["coder"] = orangutan::AgentConfig{
             .profile = "shared",
@@ -209,7 +207,7 @@ namespace {
         cfg.model = "default-model";
         cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.endpoint_style = "openai-chat-completions"}},
                                                      {"helper-model", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
-        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model", .subagents = {"helper"}};
+        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model", .team_agents = {"helper"}};
         cfg.agents["helper"] = orangutan::AgentConfig{.profile = "shared", .model = "helper-model"};
         orangutan::WebServer server;
         server.set_config(&cfg);
@@ -226,7 +224,7 @@ namespace {
         for (const auto &agent : body) {
             if (agent["key"] == "default") {
                 saw_default = true;
-                CHECK(agent["subagents"][0] == "helper");
+                CHECK(agent["team_agents"][0] == "helper");
             }
             if (agent["key"] == "helper") {
                 saw_helper = true;
@@ -310,13 +308,9 @@ namespace {
         auto cfg = make_runtime_config(workspace);
         orangutan::bootstrap::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
         orangutan::MemoryStore memory_store((harness.temp_root() / "memory.db"));
-        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
-        orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
-            return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
-        });
         std::string session_id = "web-session";
 
-        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, &app_runtime.automation_runtime(),
+        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &app_runtime.automation_runtime(),
                                                                         [](const orangutan::ToolUse &, const std::string &) {
                                                                             return false;
                                                                         });
@@ -332,7 +326,7 @@ namespace {
         CHECK(runtime.tool_context.runtime_origin == base::origin::web);
         CHECK(runtime.tool_context.raw_caller_id == "web:local");
         CHECK(runtime.tool_context.current_session_id == &session_id);
-        CHECK(runtime.tool_context.allowed_child_agents == std::vector<std::string>({"coder"}));
+        CHECK(runtime.tool_context.team_agents == std::vector<std::string>({"coder"}));
         CHECK(runtime.tool_context.automation_runtime == &app_runtime.automation_runtime());
         CHECK(runtime.tool_context.approval_callback != nullptr);
         CHECK(runtime.agent != nullptr);
@@ -379,13 +373,9 @@ namespace {
         cfg.skill_paths = {skill_root.string()};
         cfg.hook_paths = {hook_root.string()};
         orangutan::MemoryStore memory_store((harness.temp_root() / "memory-skills.db"));
-        orangutan::SubagentRunStore run_store((harness.temp_root() / "subagent-runs-skills.db"));
-        orangutan::SubagentManager subagent_manager(run_store, [](const orangutan::SubagentWorkerRequest &) {
-            return orangutan::SubagentWorkerResult{.status = orangutan::SubagentRunStatus::succeeded};
-        });
         std::string session_id = "web-session-skills";
 
-        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &subagent_manager, nullptr);
+        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, nullptr);
 
         CHECK(runtime.skills_prompt.contains("web-runtime-skill"));
         REQUIRE(runtime.hook_manager != nullptr);

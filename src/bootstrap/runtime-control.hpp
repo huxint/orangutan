@@ -38,11 +38,6 @@ namespace orangutan::skills {
 
 namespace orangutan::storage {
     class SessionStore;
-    class SubagentRunStore;
-}
-
-namespace orangutan::subagent {
-    class SubagentManager;
 }
 
 namespace orangutan::tools {
@@ -58,8 +53,6 @@ namespace orangutan::bootstrap::detail {
     struct WebStartupInspection {
         bool has_session_store = false;
         bool has_memory_store = false;
-        bool has_subagent_run_store = false;
-        bool has_subagent_manager = false;
         bool has_runtime_bundle = false;
         bool has_runtime_agent = false;
         bool attached_session_store = false;
@@ -134,21 +127,18 @@ namespace orangutan::bootstrap {
     std::vector<std::string> collect_active_skill_names(const skills::SkillLoader *skill_loader);
 
     [[nodiscard]]
-    detail::WebStartupInspection build_web_startup_inspection(storage::SessionStore *session_store, memory::MemoryStore *memory_store,
-                                                              storage::SubagentRunStore *subagent_run_store, subagent::SubagentManager *subagent_manager,
-                                                              const AgentRuntimeBundle *runtime, skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments,
+    detail::WebStartupInspection build_web_startup_inspection(storage::SessionStore *session_store, memory::MemoryStore *memory_store, const AgentRuntimeBundle *runtime,
+                                                              skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments,
                                                               std::string_view runtime_build_error);
 
     [[nodiscard]]
-    bool maybe_skip_web_server_start_for_tests(storage::SessionStore *session_store, memory::MemoryStore *memory_store, storage::SubagentRunStore *subagent_run_store,
-                                               subagent::SubagentManager *subagent_manager, const AgentRuntimeBundle *runtime, skills::SkillLoader *skill_loader,
-                                               const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error = {});
+    bool maybe_skip_web_server_start_for_tests(storage::SessionStore *session_store, memory::MemoryStore *memory_store, const AgentRuntimeBundle *runtime,
+                                               skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error = {});
 
     [[nodiscard]]
     WebServerRuntimeAttachments configure_web_server_runtime(web::WebServer &web_server, const CliOptions &options, config::Config &cfg, storage::SessionStore *session_store,
-                                                             memory::MemoryStore *memory_store, subagent::SubagentManager *subagent_manager,
-                                                             automation::Runtime *automation_runtime = nullptr, tools::ToolRegistry *tool_registry = nullptr,
-                                                             skills::SkillLoader *skill_loader = nullptr);
+                                                             memory::MemoryStore *memory_store, automation::Runtime *automation_runtime = nullptr,
+                                                             tools::ToolRegistry *tool_registry = nullptr, skills::SkillLoader *skill_loader = nullptr);
 
     void warn_if_nonlocal_web_host(const std::string &web_host);
 

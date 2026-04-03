@@ -47,17 +47,19 @@
       "model": "claude-sonnet-4-20250514",
       "workspace": "~/workspace",
       "system_prompt": "You are the default general assistant.",
-      "subagents": [
+      "coordinator_mode": true,
+      "team_agents": [
         "coder",
         "research"
-      ]
+      ],
+      "max_concurrent_agents": 4
     },
     "coder": {
       "profile": "anthropic-main",
       "model": "claude-sonnet-4-20250514",
       "workspace": "~/workspace",
       "system_prompt": "You focus on code changes, debugging, and implementation details.",
-      "subagents": [
+      "team_agents": [
         "research"
       ],
       "permissions": {
@@ -74,7 +76,7 @@
       "model": "claude-sonnet-4-20250514",
       "workspace": "~/workspace",
       "system_prompt": "You focus on analysis, investigation, and planning.",
-      "subagents": []
+      "team_agents": []
     }
   },
   "qq_bots": [

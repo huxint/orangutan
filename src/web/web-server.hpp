@@ -30,10 +30,6 @@ namespace orangutan::storage {
     class SessionStore;
 }
 
-namespace orangutan::subagent {
-    class SubagentManager;
-}
-
 namespace orangutan::tools {
     class ToolRegistry;
 }
@@ -64,7 +60,6 @@ namespace orangutan::web {
 
         void set_session_store(storage::SessionStore *store);
         void set_memory_store(memory::MemoryStore *store);
-        void set_subagent_manager(subagent::SubagentManager *manager);
         void set_config(config::Config *config);
         void set_config_save_path(const std::filesystem::path &path);
         void set_tool_registry(tools::ToolRegistry *registry);
@@ -80,7 +75,6 @@ namespace orangutan::web {
 
         storage::SessionStore *session_store_ = nullptr;
         memory::MemoryStore *memory_store_ = nullptr;
-        subagent::SubagentManager *subagent_manager_ = nullptr;
         config::Config *config_ = nullptr;
         std::filesystem::path config_save_path_;
         tools::ToolRegistry *tool_registry_ = nullptr;

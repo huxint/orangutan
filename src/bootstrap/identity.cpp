@@ -148,10 +148,6 @@ namespace orangutan::bootstrap {
         return workspace_state_root(workspace_root) / "memory.db";
     }
 
-    std::filesystem::path workspace_subagent_run_store_path(const std::string &workspace_root) {
-        return workspace_state_root(workspace_root) / "subagent-runs.db";
-    }
-
     std::filesystem::path workspace_automation_store_path(const std::string &workspace_root) {
         return workspace_state_root(workspace_root) / "automation.db";
     }
@@ -213,7 +209,7 @@ namespace orangutan::bootstrap {
         return derive_channel_identity(workspace_root, raw_caller_id, agent_key);
     }
 
-    std::string append_subagent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &allowed_child_agents, bool is_child_run) {
+    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, bool is_child_run) {
         std::string prompt = system_prompt;
 
         const auto append_separator = [&prompt] {
@@ -224,35 +220,35 @@ namespace orangutan::bootstrap {
 
         if (is_child_run) {
             append_separator();
-            prompt += "# Delegated worker mode\n";
-            prompt += "You are a delegated worker handling a task from another Orangutan runtime.\n";
+            prompt += "# Worker agent mode\n";
+            prompt += "You are a worker agent handling a delegated task.\n";
             prompt += "- Complete the assigned task fully — don't gold-plate, but don't leave it half-done.\n";
             prompt += "- When complete, respond with a concise report covering what was done and key findings.\n";
-            prompt += "- You cannot spawn subagents.\n";
-            prompt += "- Use absolute file paths in your final response so the caller can navigate to them.";
+            prompt += "- You cannot spawn additional agents.\n";
+            prompt += "- Use absolute file paths in your final response so the coordinator can navigate to them.";
             return prompt;
         }
 
-        if (allowed_child_agents.empty()) {
+        if (team_agents.empty()) {
             return prompt;
         }
 
         append_separator();
-        prompt += "# Subagent delegation\n";
-        prompt += "The following child agents are available for delegation: ";
-        for (std::size_t index = 0; index < allowed_child_agents.size(); ++index) {
+        prompt += "# Agent coordination\n";
+        prompt += "The following agents are available for delegation: ";
+        for (std::size_t index = 0; index < team_agents.size(); ++index) {
             if (index > 0) {
                 prompt += ", ";
             }
-            prompt += allowed_child_agents[index];
+            prompt += team_agents[index];
         }
         prompt += ".\n\n";
-        prompt += "Use subagent delegation for self-contained, parallelizable tasks:\n";
-        prompt += "- `subagent_spawn`: Start a child agent run. Returns immediately with a run_id.\n";
-        prompt += "- `subagent_status`: Check whether a child run has finished without blocking.\n";
-        prompt += "- `subagent_wait`: Block until a child run completes (use when you need the result before continuing).\n\n";
-        prompt += "If you can continue making progress without the child result, keep working and poll later with `subagent_status`. "
-                  "Avoid spawning subagents for trivial tasks you can do faster yourself.";
+        prompt += "Use agent delegation for self-contained, parallelizable tasks:\n";
+        prompt += "- `agent_spawn`: Start a worker agent. Returns immediately with a run_id.\n";
+        prompt += "- `agent_send_message`: Send a message to a running agent.\n";
+        prompt += "- `agent_stop`: Stop a running agent.\n\n";
+        prompt += "Workers report results via <task-notification> messages. "
+                  "Avoid spawning agents for trivial tasks you can do faster yourself.";
         return prompt;
     }
 

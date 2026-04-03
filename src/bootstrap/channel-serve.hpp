@@ -8,7 +8,6 @@
 #include "memory/memory-store.hpp"
 #include "channel/message-queue.hpp"
 #include "storage/session-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <atomic>
@@ -33,6 +32,10 @@ namespace orangutan::hooks {
     class HookManager;
 }
 
+namespace orangutan::coordinator {
+    class CoordinatorManager;
+}
+
 namespace orangutan::providers {
     class Provider;
 }
@@ -52,7 +55,9 @@ namespace orangutan::bootstrap {
         std::string cli_memory_scope;
         Config::MemoryConfig memory;
         ToolPermissionSettings permissions;
-        std::vector<std::string> allowed_child_agents;
+        std::vector<std::string> team_agents;
+        bool coordinator_mode = false;
+        int max_concurrent_agents = 4;
     };
 
     struct ConversationRuntimeInspection {
@@ -135,8 +140,8 @@ namespace orangutan::bootstrap {
 
         [[nodiscard]]
         ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
-                                                                   SubagentManager &subagent_manager, const std::string &raw_caller_id, hooks::HookManager *hook_manager = nullptr,
-                                                                   automation::Runtime *automation_runtime = nullptr);
+                                                                   coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
+                                                                   hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
 
         [[nodiscard]]
         BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
@@ -147,7 +152,7 @@ namespace orangutan::bootstrap {
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                          MemoryStore *memory_store, SessionStore &session_store, SubagentManager &subagent_manager, const Config &cfg, hooks::HookManager *hook_manager = nullptr,
-                          automation::Runtime *automation_runtime = nullptr);
+                          MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
+                          hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
 
 } // namespace orangutan::bootstrap

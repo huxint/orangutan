@@ -69,7 +69,7 @@ namespace {
             input.workspace_root = workspace_root_.string();
             input.memory = {};
             input.permissions = {};
-            input.allowed_child_agents = {"coder"};
+            input.team_agents = {"coder"};
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
             input.current_session_id = &current_session_id_;

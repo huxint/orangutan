@@ -93,7 +93,7 @@ namespace {
                 {"profile": "gateway-b", "model": "claude-sonnet-4-20250514"}
               ],
               "workspace": "~/workspace/default",
-              "subagents": ["coder"]
+              "team_agents": ["coder"]
             }
           }
         })json"));
@@ -125,7 +125,7 @@ namespace {
         CHECK(agent.fallback_models[0].model == "gpt-4.1-mini");
         CHECK(agent.fallback_models[1].profile == "gateway-b");
         CHECK(agent.fallback_models[1].model == "claude-sonnet-4-20250514");
-        CHECK(agent.subagents == std::vector<std::string>{"coder"});
+        CHECK(agent.team_agents == std::vector<std::string>{"coder"});
         CHECK(agent.workspace.contains("/workspace/default"));
     };
 
@@ -230,7 +230,7 @@ namespace {
             .model = "gpt-4.1",
             .fallback_models = {"gpt-4.1-mini"},
             .workspace = "~/workspace/default",
-            .subagents = {"coder"},
+            .team_agents = {"coder"},
         };
 
         const auto path = orangutan::testing::unique_test_path("config-roundtrip", "config.json");

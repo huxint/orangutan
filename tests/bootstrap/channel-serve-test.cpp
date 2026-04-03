@@ -355,10 +355,6 @@ namespace {
     TEST_CASE("conversation_runtime_preserves_channel_context_and_shared_capabilities") {
         ChannelServeHarness harness;
         MemoryStore memory_store((harness.temp_root() / "memory.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
 
         Config cfg;
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -370,7 +366,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
 
-        const auto inspection = bootstrap::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, subagent_manager, "qqbot:c2c:alice");
+        const auto inspection = bootstrap::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, nullptr, "qqbot:c2c:alice");
 
         CHECK(not(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
@@ -416,17 +412,13 @@ namespace {
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "subagent-runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
 
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs;
         const std::unordered_map<std::string, std::string> qq_bot_agents;
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -624,10 +616,6 @@ namespace {
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
         Config cfg;
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -647,7 +635,7 @@ namespace {
         session_store.bind_jid(jid, session_id, "default");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -686,10 +674,6 @@ namespace {
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
         Config cfg;
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -710,7 +694,7 @@ namespace {
         const auto export_path = bootstrap::workspace_exports_root(identity.workspace) / (session_id + ".md");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -748,10 +732,6 @@ namespace {
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
         Config cfg;
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -774,7 +754,7 @@ namespace {
                                                                                     });
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -807,10 +787,6 @@ namespace {
         auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
         automation::Runtime automation_runtime(*automation_store);
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
         Config cfg;
 
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -823,7 +799,7 @@ namespace {
         const std::unordered_map<std::string, std::string> qq_bot_agents;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, subagent_manager, cfg, nullptr,
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr,
                                         &automation_runtime);
         });
 
@@ -973,14 +949,10 @@ namespace {
 
         MemoryStore memory_store((harness.temp_root() / "memory.db"));
         SessionStore session_store((harness.temp_root() / "sessions.db"));
-        SubagentRunStore run_store((harness.temp_root() / "runs.db"));
-        SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-            return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-        });
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, subagent_manager, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, cfg);
         });
 
         queue.push(InboundMessage{

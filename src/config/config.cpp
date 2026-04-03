@@ -342,8 +342,14 @@ namespace orangutan::config {
                 if (!agent_cfg.workspace.empty()) {
                     agent_json["workspace"] = agent_cfg.workspace;
                 }
-                if (!agent_cfg.subagents.empty()) {
-                    agent_json["subagents"] = agent_cfg.subagents;
+                if (!agent_cfg.team_agents.empty()) {
+                    agent_json["team_agents"] = agent_cfg.team_agents;
+                }
+                if (agent_cfg.coordinator_mode) {
+                    agent_json["coordinator_mode"] = agent_cfg.coordinator_mode;
+                }
+                if (agent_cfg.max_concurrent_agents != 4) {
+                    agent_json["max_concurrent_agents"] = agent_cfg.max_concurrent_agents;
                 }
                 if (!agent_cfg.edit_mode.empty() && agent_cfg.edit_mode != "hashline") {
                     agent_json["edit_mode"] = agent_cfg.edit_mode;

@@ -6,9 +6,7 @@
 #include "tools/file-edit/hashline.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
-#include "storage/subagent-run-store.hpp"
 #include "storage/session-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -67,15 +65,13 @@ namespace {
         return last_snapshot;
     }
 
-    ToolRuntimeContext make_runtime_tool_context(SubagentManager *manager, std::string *current_session_id = nullptr,
-                                                 std::vector<std::string> allowed_child_agents = {"reviewer"}) {
+    ToolRuntimeContext make_runtime_tool_context(std::string *current_session_id = nullptr, std::vector<std::string> team_agents = {"reviewer"}) {
         return ToolRuntimeContext{
             .runtime_key = "runtime:cli:default",
             .agent_key = "default",
             .scope_key = "scope:parent",
             .current_session_id = current_session_id,
-            .allowed_child_agents = std::move(allowed_child_agents),
-            .subagent_manager = manager,
+            .team_agents = std::move(team_agents),
             .runtime_origin = base::origin::cli,
             .raw_caller_id = "cli:local",
         };
@@ -260,14 +256,14 @@ TEST_CASE("RegistersExpectedCoreTools") {
     CHECK(orangutan::testing::has_tool_named(defs, "edit"));
 };
 
-TEST_CASE("DoesNotRegisterSubagentToolsWithoutRuntimeContext") {
+TEST_CASE("DoesNotRegisterAgentToolsWithoutRuntimeContext") {
     BuiltinToolsTest fixture;
     const auto defs = fixture.registry().definitions();
 
     for (const auto &def : defs) {
-        CHECK(def.name != "subagent_spawn");
-        CHECK(def.name != "subagent_status");
-        CHECK(def.name != "subagent_wait");
+        CHECK(def.name != "agent_spawn");
+        CHECK(def.name != "agent_send_message");
+        CHECK(def.name != "agent_stop");
     }
 };
 
@@ -647,10 +643,9 @@ TEST_CASE("RegistersBuiltinAndCustomToolsOnly") {
     CHECK(orangutan::testing::has_tool_named(defs, "echo_custom"));
 };
 
-TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
+TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
     ToolRegistry registry;
-    // Real child execution is covered in SubagentIntegrationTest; this regression test only checks that runtime bootstrap wires usable memory and subagent control tools
-    // together in one registry.
+    // This regression test checks that runtime bootstrap wires usable memory tools together in one registry.
     const auto memory_db = test_tmp_root() / "orangutan_runtime_tool_loader_memory.db";
     const auto session_db = test_tmp_root() / "orangutan_runtime_tool_loader_sessions.db";
     std::filesystem::remove(memory_db);
@@ -662,16 +657,10 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
         SessionStore session_store(session_db);
         const auto parent_session_id =
             session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:parent", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
-        const auto child_session_id =
-            session_store.create_empty(orangutan::SessionMetadata{.model = "test-model", .scope_key = "scope:child", .agent_key = "", .origin_kind = "cli", .origin_ref = ""});
 
         {
-            SubagentRunStore run_store(session_db);
-            SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-                return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-            });
             auto current_session_id = parent_session_id;
-            const auto tool_context = make_runtime_tool_context(&manager, &current_session_id);
+            const auto tool_context = make_runtime_tool_context(&current_session_id);
 
             const auto result = register_runtime_tools(registry, &runtime_memory, {}, &tool_context, {}, {});
             const auto defs = registry.definitions();
@@ -685,10 +674,7 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             CHECK(orangutan::testing::has_tool_named(defs, "read"));
             CHECK(not(orangutan::testing::has_tool_named(defs, "ls")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "grep")));
-            // Subagent and memory tools are deferred — not in definitions() but still executable
-            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_spawn")));
-            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_status")));
-            CHECK(not(orangutan::testing::has_tool_named(defs, "subagent_wait")));
+            // Memory tools are deferred — not in definitions() but still executable
             CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "memory_recall")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
@@ -701,22 +687,6 @@ TEST_CASE("RegistersUsableMemoryAndSubagentToolsTogether") {
             const auto recall = registry.execute(ToolUse("recall-runtime", "memory_recall", {{"query", "theme"}}));
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
-
-            const auto spawn = registry.execute(ToolUse("spawn-runtime", "subagent_spawn",
-                                                        {{"child_agent_key", "reviewer"},
-                                                         {"child_scope_key", "scope:child"},
-                                                         {"child_session_id", child_session_id},
-                                                         {"task_summary", "Review the tool layout refactor"}}));
-            CHECK(not(spawn.is_error));
-            const auto spawn_payload = nlohmann::json::parse(spawn.content);
-            REQUIRE(spawn_payload.at("accepted").get<bool>());
-            const auto run_id = spawn_payload.at("run_id").get<std::string>();
-            CHECK(not(run_id.empty()));
-
-            const auto wait = registry.execute(ToolUse("wait-runtime", "subagent_wait", {{"run_id", run_id}, {"timeout_ms", 1000}}));
-            CHECK(not(wait.is_error));
-            const auto wait_payload = nlohmann::json::parse(wait.content);
-            CHECK(wait_payload.at("state").get<std::string>() == "completed");
         }
     }
 
@@ -776,16 +746,11 @@ TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
 };
 
 TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
-    SubagentRunStore run_store(":memory:");
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-
     ToolRegistry registry;
     ToolPermissionSettings permissions;
     permissions.sandbox_mode = ToolSandboxMode::disabled;
     permissions.shell_approval = ToolApprovalPolicy::ask;
-    auto tool_context = make_runtime_tool_context(&manager);
+    auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
@@ -857,16 +822,11 @@ TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
 };
 
 TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
-    SubagentRunStore run_store(":memory:");
-    SubagentManager manager(run_store, [](const SubagentWorkerRequest &) {
-        return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-    });
-
     ToolRegistry registry;
     ToolPermissionSettings permissions;
     permissions.sandbox_mode = ToolSandboxMode::disabled;
     permissions.shell_approval = ToolApprovalPolicy::ask;
-    auto tool_context = make_runtime_tool_context(&manager);
+    auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
     const std::vector<Config::ScriptToolConfig> custom_tools = {{

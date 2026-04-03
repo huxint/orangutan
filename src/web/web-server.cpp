@@ -84,9 +84,6 @@ namespace orangutan::web {
     void WebServer::set_memory_store(memory::MemoryStore *store) {
         memory_store_ = store;
     }
-    void WebServer::set_subagent_manager(subagent::SubagentManager *manager) {
-        subagent_manager_ = manager;
-    }
     void WebServer::set_config(config::Config *config) {
         config_ = config;
     }
@@ -202,7 +199,7 @@ namespace orangutan::web {
         });
 
         server_.Post("/api/chat", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_chat(req, res, config_, session_store_, memory_store_, subagent_manager_, tool_registry_, automation_runtime_, sessions_mutex_, sessions_);
+            web::handle_chat(req, res, config_, session_store_, memory_store_, tool_registry_, automation_runtime_, sessions_mutex_, sessions_);
         });
 
         server_.Post("/api/chat/approval", [this](const httplib::Request &req, httplib::Response &res) {

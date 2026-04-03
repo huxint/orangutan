@@ -2,7 +2,6 @@
 
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/config-builder.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "config/config.hpp"
 
 #include <optional>

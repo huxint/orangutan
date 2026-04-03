@@ -115,11 +115,11 @@ namespace {
         CHECK(general.workspace == coder.workspace);
     };
 
-    TEST_CASE("parent_prompt_guidance_mentions_status_polling_tool") {
-        const auto prompt = bootstrap::append_subagent_prompt_guidance("Parent base prompt.", {"coder"}, false);
+    TEST_CASE("parent_prompt_guidance_mentions_agent_spawn_tool") {
+        const auto prompt = bootstrap::append_agent_prompt_guidance("Parent base prompt.", {"coder"}, false);
 
-        CHECK(prompt.contains("`subagent_status`"));
-        CHECK(prompt.contains("poll later with `subagent_status`"));
+        CHECK(prompt.contains("`agent_spawn`"));
+        CHECK(prompt.contains("Avoid spawning agents for trivial tasks"));
     };
 
     TEST_CASE("make_runtime_memory_context_resolves_workspace_relative_mirror_paths") {

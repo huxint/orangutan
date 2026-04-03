@@ -68,7 +68,7 @@ namespace orangutan::web {
                 {"model", agent_cfg.model},
                 {"workspace", agent_cfg.workspace},
                 {"edit_mode", agent_cfg.edit_mode},
-                {"subagents", agent_cfg.subagents},
+                {"team_agents", agent_cfg.team_agents},
                 {"fallback_models", fallback_models_to_json(agent_cfg.fallback_models)},
                 {"thinking_budget", agent_cfg.thinking_budget},
             };
@@ -188,7 +188,7 @@ namespace orangutan::web {
                 {"model", agent.model},
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},
-                {"subagents", agent.subagents},
+                {"team_agents", agent.team_agents},
             });
         }
         res.set_content(arr.dump(), "application/json");

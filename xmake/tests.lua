@@ -29,7 +29,9 @@ add_test_target("test-memory", rooted("tests/memory/*.cpp"))
 
 add_test_target("test-automation", rooted("tests/automation/*.cpp"))
 
-add_test_target("test-subagent", rooted("tests/subagent/*.cpp"))
+add_test_target("test-coordinator", rooted("tests/coordinator/*.cpp"))
+
+add_test_target("test-swarm", rooted("tests/swarm/*.cpp"))
 
 add_test_target("test-heartbeat", rooted("tests/heartbeat/*.cpp"))
 

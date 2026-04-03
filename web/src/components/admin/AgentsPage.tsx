@@ -21,7 +21,7 @@ interface Agent {
   system_prompt: string;
   workspace: string;
   edit_mode: string;
-  subagents?: string[];
+  team_agents?: string[];
 }
 
 // Cycle through accent colors by index
@@ -195,10 +195,10 @@ export function AgentsPage() {
                         {a.profile} · {a.model}
                       </p>
                     </div>
-                    {(a.subagents?.length ?? 0) > 0 && (
+                    {(a.team_agents?.length ?? 0) > 0 && (
                       <span className="flex items-center gap-1 text-[10px] font-semibold bg-bg-elevated text-text-muted px-1.5 py-0.5 rounded mr-1">
                         <Users size={10} />
-                        {a.subagents!.length}
+                        {a.team_agents!.length}
                       </span>
                     )}
                     <ChevronDown
@@ -233,14 +233,14 @@ export function AgentsPage() {
                             />
                           ))}
 
-                          {/* Subagents */}
-                          {(a.subagents?.length ?? 0) > 0 && (
+                          {/* Team Agents */}
+                          {(a.team_agents?.length ?? 0) > 0 && (
                             <div className="pt-1.5">
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                                Subagents
+                                Team Agents
                               </span>
                               <div className="flex flex-wrap gap-1 mt-1.5">
-                                {a.subagents!.map((s) => (
+                                {a.team_agents!.map((s) => (
                                   <span
                                     key={s}
                                     className="inline-block rounded-md bg-bg-elevated px-1.5 py-0.5 text-[10px] font-mono text-text-secondary"

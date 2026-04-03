@@ -31,8 +31,8 @@ namespace orangutan::providers {
     class Provider;
 }
 
-namespace orangutan::subagent {
-    class SubagentManager;
+namespace orangutan::coordinator {
+    class CoordinatorManager;
 }
 
 namespace orangutan::tools {
@@ -50,16 +50,17 @@ namespace orangutan::bootstrap {
         int thinking_budget = 0;
         Config::MemoryConfig memory;
         ToolPermissionSettings permissions;
-        std::vector<std::string> allowed_child_agents;
+        std::vector<std::string> team_agents;
         RuntimeIdentity identity;
 
         memory::MemoryStore *memory_store = nullptr;
         std::string *current_session_id = nullptr;
-        subagent::SubagentManager *subagent_manager = nullptr;
+        coordinator::CoordinatorManager *coordinator_manager = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
         automation::Runtime *automation_runtime = nullptr;
         bool is_child_run = false;
+        bool coordinator_mode = false;
         ToolApprovalCallback approval_callback;
 
         std::vector<Config::ScriptToolConfig> custom_tools;

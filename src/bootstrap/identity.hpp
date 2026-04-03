@@ -21,7 +21,6 @@ namespace orangutan::bootstrap {
     std::filesystem::path workspace_exports_root(const std::string &workspace_root);
     std::filesystem::path workspace_session_store_path(const std::string &workspace_root);
     std::filesystem::path workspace_memory_store_path(const std::string &workspace_root);
-    std::filesystem::path workspace_subagent_run_store_path(const std::string &workspace_root);
     std::filesystem::path workspace_automation_store_path(const std::string &workspace_root);
 
     std::string derive_cli_runtime_key(const std::string &agent_key);
@@ -36,6 +35,6 @@ namespace orangutan::bootstrap {
 
     RuntimeIdentity derive_child_identity(const std::string &workspace_root, const std::string &raw_caller_id, const std::string &agent_key);
 
-    std::string append_subagent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &allowed_child_agents, bool is_child_run);
+    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, bool is_child_run);
 
 } // namespace orangutan::bootstrap

@@ -55,7 +55,9 @@ namespace orangutan::config {
             .sandbox_mode = ToolSandboxMode::isolated,
             .shell_approval = ToolApprovalPolicy::ask,
         };
-        std::vector<std::string> subagents;
+        std::vector<std::string> team_agents;
+        bool coordinator_mode = false;
+        int max_concurrent_agents = 4;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
     };

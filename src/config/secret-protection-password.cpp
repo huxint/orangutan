@@ -35,7 +35,6 @@ namespace orangutan::config {
                 }
 
                 // Windows console echo is controlled via console modes on the input handle.
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 handle_ = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
                 if (handle_ == INVALID_HANDLE_VALUE || handle_ == nullptr) {
                     return;

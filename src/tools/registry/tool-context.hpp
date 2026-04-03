@@ -16,8 +16,8 @@ namespace orangutan::automation {
     struct InboxItem;
 }
 
-namespace orangutan::subagent {
-    class SubagentManager;
+namespace orangutan::coordinator {
+    class CoordinatorManager;
 }
 
 namespace orangutan::tools {
@@ -71,9 +71,10 @@ namespace orangutan::tools {
         std::string agent_key;
         std::string scope_key;
         std::string *current_session_id = nullptr;
-        std::vector<std::string> allowed_child_agents;
+        coordinator::CoordinatorManager *coordinator_manager = nullptr;
+        std::vector<std::string> team_agents;
         bool is_child_run = false;
-        subagent::SubagentManager *subagent_manager = nullptr;
+        bool coordinator_mode = false;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         automation::Runtime *automation_runtime = nullptr;

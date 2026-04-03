@@ -134,7 +134,7 @@ namespace orangutan::config::detail {
             .fallback_models = cfg.fallback_models,
             .workspace = cfg.workspace,
             .permissions = cfg.permissions,
-            .subagents = {},
+            .team_agents = {},
             .edit_mode = cfg.edit_mode,
             .thinking_budget = cfg.thinking_budget,
         };
@@ -150,8 +150,8 @@ namespace orangutan::config::detail {
             fallback_model.model = expand_env_vars(fallback_model.model);
         }
 
-        for (auto &subagent : cfg.subagents) {
-            subagent = expand_env_vars(subagent);
+        for (auto &agent : cfg.team_agents) {
+            agent = expand_env_vars(agent);
         }
     }
 
@@ -398,8 +398,14 @@ namespace orangutan::config::detail {
             if (const auto *value = find_object_member(agent, "permissions"); value != nullptr) {
                 apply_permissions_object(*value, agent_cfg.permissions);
             }
-            if (const auto *value = find_array_member(agent, "subagents"); value != nullptr) {
-                assign_string_array(*value, agent_cfg.subagents);
+            if (const auto *value = find_array_member(agent, "team_agents"); value != nullptr) {
+                assign_string_array(*value, agent_cfg.team_agents);
+            }
+            if (const auto *value = find_member(agent, "coordinator_mode"); value != nullptr && value->is_boolean()) {
+                agent_cfg.coordinator_mode = value->get<bool>();
+            }
+            if (const auto *value = find_member(agent, "max_concurrent_agents"); value != nullptr && value->is_number_integer()) {
+                agent_cfg.max_concurrent_agents = value->get<int>();
             }
             if (const auto *value = find_member(agent, "edit_mode"); value != nullptr && value->is_string()) {
                 agent_cfg.edit_mode = value->get<std::string>();

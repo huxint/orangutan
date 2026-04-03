@@ -13,7 +13,7 @@ namespace orangutan::web {
     namespace bootstrap = orangutan::bootstrap;
 
     void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     subagent::SubagentManager *subagent_manager, tools::ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                     tools::ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
         if (config == nullptr) {
             res.status = 503;
@@ -96,7 +96,7 @@ namespace orangutan::web {
             auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
             auto approval_stream_open = std::make_shared<std::function<bool()>>();
             session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
-                *config, agent_key, memory_store, &session->session_id, subagent_manager, automation_runtime,
+                *config, agent_key, memory_store, &session->session_id, automation_runtime,
                 [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUse &call,
                                                                                                                                                    const std::string &prompt_text) {
                     return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,

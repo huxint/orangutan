@@ -9,8 +9,6 @@
 #include "providers/provider.hpp"
 #include "skills/skill-loader.hpp"
 #include "storage/session-store.hpp"
-#include "storage/subagent-run-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "web/web-server.hpp"
 #include "config/config.hpp"
 
@@ -106,15 +104,12 @@ namespace orangutan::bootstrap {
         return skill_names;
     }
 
-    detail::WebStartupInspection build_web_startup_inspection(storage::SessionStore *session_store, memory::MemoryStore *memory_store,
-                                                              storage::SubagentRunStore *subagent_run_store, subagent::SubagentManager *subagent_manager,
-                                                              const AgentRuntimeBundle *runtime, skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments,
+    detail::WebStartupInspection build_web_startup_inspection(storage::SessionStore *session_store, memory::MemoryStore *memory_store, const AgentRuntimeBundle *runtime,
+                                                              skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments,
                                                               std::string_view runtime_build_error) {
         detail::WebStartupInspection inspection;
         inspection.has_session_store = session_store != nullptr;
         inspection.has_memory_store = memory_store != nullptr;
-        inspection.has_subagent_run_store = subagent_run_store != nullptr;
-        inspection.has_subagent_manager = subagent_manager != nullptr;
         inspection.has_runtime_bundle = runtime != nullptr;
         inspection.has_runtime_agent = runtime != nullptr && runtime->agent != nullptr;
         inspection.attached_session_store = attachments.session_store_attached;
@@ -128,16 +123,14 @@ namespace orangutan::bootstrap {
         return inspection;
     }
 
-    bool maybe_skip_web_server_start_for_tests(storage::SessionStore *session_store, memory::MemoryStore *memory_store, storage::SubagentRunStore *subagent_run_store,
-                                               subagent::SubagentManager *subagent_manager, const AgentRuntimeBundle *runtime, skills::SkillLoader *skill_loader,
-                                               const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error) {
-        return detail::inspect_web_startup_for_tests(
-            build_web_startup_inspection(session_store, memory_store, subagent_run_store, subagent_manager, runtime, skill_loader, attachments, runtime_build_error));
+    bool maybe_skip_web_server_start_for_tests(storage::SessionStore *session_store, memory::MemoryStore *memory_store, const AgentRuntimeBundle *runtime,
+                                               skills::SkillLoader *skill_loader, const WebServerRuntimeAttachments &attachments, std::string_view runtime_build_error) {
+        return detail::inspect_web_startup_for_tests(build_web_startup_inspection(session_store, memory_store, runtime, skill_loader, attachments, runtime_build_error));
     }
 
     WebServerRuntimeAttachments configure_web_server_runtime(web::WebServer &web_server, const CliOptions &options, config::Config &cfg, storage::SessionStore *session_store,
-                                                             memory::MemoryStore *memory_store, subagent::SubagentManager *subagent_manager,
-                                                             automation::Runtime *automation_runtime, tools::ToolRegistry *tool_registry, skills::SkillLoader *skill_loader) {
+                                                             memory::MemoryStore *memory_store, automation::Runtime *automation_runtime, tools::ToolRegistry *tool_registry,
+                                                             skills::SkillLoader *skill_loader) {
         WebServerRuntimeAttachments attachments;
         web_server.set_static_dir(options.web_dir);
         web_server.set_config(&cfg);
@@ -146,7 +139,6 @@ namespace orangutan::bootstrap {
             attachments.session_store_attached = true;
         }
         web_server.set_memory_store(memory_store);
-        web_server.set_subagent_manager(subagent_manager);
         web_server.set_automation_runtime(automation_runtime);
         if (tool_registry != nullptr) {
             web_server.set_tool_registry(tool_registry);

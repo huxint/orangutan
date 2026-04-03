@@ -18,10 +18,12 @@
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "skills/skill-loader.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
-#include "storage/subagent-run-store.hpp"
+#include "coordinator/coordinator-manager.hpp"
+#include "coordinator/agent-definition-registry.hpp"
+#include "swarm/mailbox.hpp"
+#include "swarm/team-manager.hpp"
 
 #include <CLI/CLI.hpp>
 #include <array>
@@ -97,7 +99,7 @@ namespace {
     int run_channel_mode(orangutan::ChannelManager &channel_manager, orangutan::MessageQueue &message_queue,
                          const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs,
                          const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
-                         orangutan::SubagentManager &subagent_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
+                         orangutan::coordinator::CoordinatorManager *coordinator_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
                          orangutan::automation::Runtime *automation_runtime) {
         auto &stop_requested = orangutan::bootstrap::signal_stop_requested();
         stop_requested.store(false);
@@ -122,7 +124,7 @@ namespace {
         std::signal(SIGTERM, orangutan::bootstrap::handle_signal);
 
         orangutan::bootstrap::run_channel_loop(message_queue, channel_manager, stop_requested, *channel_task_runner, agent_runtime_configs, qq_bot_agents, memory_store,
-                                               session_store, subagent_manager, cfg, hook_manager, automation_runtime);
+                                               session_store, coordinator_manager, cfg, hook_manager, automation_runtime);
 
         channel_task_runner->shutdown(true);
         channel_manager.disconnect_all();
@@ -197,7 +199,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .cli_memory_scope = maybe_primary_identity->memory_scope,
             .memory = cfg.memory,
             .permissions = maybe_selected_agent->permissions,
-            .allowed_child_agents = maybe_selected_agent->subagents,
+            .team_agents = maybe_selected_agent->team_agents,
         };
     }
 
@@ -219,27 +221,50 @@ int orangutan::bootstrap::run(int argc, char **argv) {
 
     std::unique_ptr<orangutan::MemoryStore> memory_store;
     std::unique_ptr<orangutan::SessionStore> session_store;
-    std::unique_ptr<orangutan::SubagentRunStore> subagent_run_store;
     try {
         memory_store = std::make_unique<orangutan::MemoryStore>(orangutan::bootstrap::workspace_memory_store_path(*maybe_app_workspace_root));
         session_store = std::make_unique<orangutan::SessionStore>(orangutan::bootstrap::workspace_session_store_path(*maybe_app_workspace_root));
-        subagent_run_store = std::make_unique<orangutan::SubagentRunStore>(orangutan::bootstrap::workspace_subagent_run_store_path(*maybe_app_workspace_root));
     } catch (const std::exception &e) {
         spdlog::fmt_lib::println(stderr, "Error: failed to initialize runtime stores: {}", e.what());
         return 1;
     }
 
     const auto qq_bot_agents = build_qq_bot_agents(cfg);
-    const auto subagent_child_runtime_configs = detail::build_subagent_child_runtime_configs(*maybe_agent_runtime_configs);
-    orangutan::SubagentManager subagent_manager(*subagent_run_store, orangutan::SubagentExecutionEnvironment{
-                                                                         .agent_configs = &subagent_child_runtime_configs,
-                                                                         .session_store = session_store.get(),
-                                                                         .memory_store = memory_store.get(),
-                                                                     });
+
+    // Create coordinator components
+    auto coordinator_state_root = orangutan::bootstrap::workspace_state_root(*maybe_app_workspace_root);
+    auto agent_definition_registry = std::make_unique<orangutan::coordinator::AgentDefinitionRegistry>();
+    agent_definition_registry->load_builtin_definitions();
+    if (maybe_primary_runtime_cfg.has_value()) {
+        agent_definition_registry->load_from_directory(maybe_primary_runtime_cfg->workspace_root + "/.orangutan/agents");
+    }
+
+    std::unique_ptr<orangutan::swarm::AgentMailbox> agent_mailbox;
+    std::unique_ptr<orangutan::swarm::TeamManager> team_manager;
+    try {
+        agent_mailbox = std::make_unique<orangutan::swarm::AgentMailbox>((coordinator_state_root / "mailbox.db").string());
+        team_manager = std::make_unique<orangutan::swarm::TeamManager>((coordinator_state_root / "teams.db").string());
+    } catch (const std::exception &e) {
+        spdlog::warn("Failed to initialize coordinator stores: {}", e.what());
+    }
+
+    int coordinator_max_concurrent = 4;
+    if (maybe_selected_agent.has_value()) {
+        coordinator_max_concurrent = maybe_selected_agent->max_concurrent_agents;
+    }
+    auto coordinator_manager = std::make_unique<orangutan::coordinator::CoordinatorManager>(coordinator_max_concurrent);
+    coordinator_manager->set_environment(orangutan::coordinator::AgentExecutionEnvironment{
+        .definition_registry = agent_definition_registry.get(),
+        .session_store = session_store.get(),
+        .memory_store = memory_store.get(),
+        .mailbox = agent_mailbox.get(),
+        .team_manager = team_manager.get(),
+    });
+
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
 
     app_runtime.automation_runtime().set_executor(
-        [&cfg, &subagent_manager, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get()](const orangutan::automation::Trigger &trigger) {
+        [&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &coordinator_manager](const orangutan::automation::Trigger &trigger) {
             orangutan::automation::ExecutionResult result;
             auto config_it = maybe_agent_runtime_configs->find(trigger.agent_key);
             if (config_it == maybe_agent_runtime_configs->end()) {
@@ -271,11 +296,11 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                     .thinking_budget = runtime_cfg.thinking_budget,
                     .memory = runtime_cfg.memory,
                     .permissions = runtime_cfg.permissions,
-                    .allowed_child_agents = runtime_cfg.allowed_child_agents,
+                    .team_agents = runtime_cfg.team_agents,
                     .identity = identity,
                     .memory_store = memory_store,
                     .current_session_id = &current_session_id,
-                    .subagent_manager = &subagent_manager,
+                    .coordinator_manager = coordinator_manager.get(),
                     .runtime_origin = base::origin::cli,
                     .raw_caller_id = identity.runtime_key,
                     .automation_runtime = &app_runtime.automation_runtime(),
@@ -341,11 +366,11 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .edit_mode = maybe_primary_runtime_cfg->edit_mode,
                 .memory = maybe_primary_runtime_cfg->memory,
                 .permissions = maybe_primary_runtime_cfg->permissions,
-                .allowed_child_agents = maybe_primary_runtime_cfg->allowed_child_agents,
+                .team_agents = maybe_primary_runtime_cfg->team_agents,
                 .identity = *maybe_primary_identity,
                 .memory_store = memory_store.get(),
                 .current_session_id = &current_session_id,
-                .subagent_manager = &subagent_manager,
+                .coordinator_manager = coordinator_manager.get(),
                 .runtime_origin = base::origin::cli,
                 .raw_caller_id = "cli:local",
                 .automation_runtime = &app_runtime.automation_runtime(),
@@ -377,10 +402,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     std::unique_ptr<orangutan::WebServer> web_server;
     if (options.web_mode) {
         web_server = std::make_unique<orangutan::WebServer>();
-        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &subagent_manager,
-                                                              &app_runtime.automation_runtime(), primary_runtime != nullptr ? &primary_runtime->tools : nullptr, &skill_loader);
-        if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), subagent_run_store.get(), &subagent_manager, primary_runtime.get(), &skill_loader,
-                                                  attachments, web_runtime_build_error)) {
+        const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &app_runtime.automation_runtime(),
+                                                              primary_runtime != nullptr ? &primary_runtime->tools : nullptr, &skill_loader);
+        if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), primary_runtime.get(), &skill_loader, attachments, web_runtime_build_error)) {
             app_runtime.automation_runtime().stop();
             return 0;
         }
@@ -403,8 +427,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             if (auto &callback = detail::channel_mode_callback(); callback) {
                 status = callback();
             } else {
-                status = run_channel_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store, subagent_manager, cfg,
-                                          nullptr, &app_runtime.automation_runtime());
+                status = run_channel_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store,
+                                          coordinator_manager.get(), cfg, nullptr, &app_runtime.automation_runtime());
             }
             channel_exit_code.store(status);
             if (status != 0) {
@@ -457,6 +481,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     if (web_server != nullptr) {
         web_server->stop();
     }
+    coordinator_manager->shutdown();
     app_runtime.automation_runtime().stop();
     return exit_code;
 }

@@ -23,10 +23,6 @@ namespace orangutan::storage {
     class SessionStore;
 }
 
-namespace orangutan::subagent {
-    class SubagentManager;
-}
-
 namespace orangutan::tools {
     class ToolRegistry;
 }
@@ -65,7 +61,7 @@ namespace orangutan::web {
                               const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime);
 
     void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     subagent::SubagentManager *subagent_manager, tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                     tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
     void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
                               std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
@@ -78,8 +74,8 @@ namespace orangutan::web {
 
         [[nodiscard]]
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
-                                                               std::string *current_session_id, subagent::SubagentManager *subagent_manager,
-                                                               automation::Runtime *automation_runtime = nullptr, ToolApprovalCallback approval_callback = {},
+                                                               std::string *current_session_id, automation::Runtime *automation_runtime = nullptr,
+                                                               ToolApprovalCallback approval_callback = {},
                                                                const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 
         [[nodiscard]]

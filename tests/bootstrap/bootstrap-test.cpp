@@ -5,7 +5,6 @@
 #include "bootstrap/runtime-control.hpp"
 #include "bootstrap/identity.hpp"
 #include "memory/memory-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "web/web-server.hpp"
 #include "config/config.hpp"
 #include "config/secret-protection.hpp"
@@ -559,7 +558,7 @@ namespace {
         CHECK(std::filesystem::is_directory(expected));
     };
 
-    TEST_CASE("build_agent_runtime_configs_preserves_default_subagents") {
+    TEST_CASE("build_agent_runtime_configs_preserves_default_team_agents") {
         BootstrapHarness harness;
         Config cfg;
         cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
@@ -568,7 +567,7 @@ namespace {
                                           .profile = "shared",
                                           .model = "gpt-test",
                                           .workspace = harness.workspace_root().string(),
-                                          .subagents = {"coder"},
+                                          .team_agents = {"coder"},
                                       });
         cfg.agents.emplace("coder", AgentConfig{
                                         .profile = "shared",
@@ -580,8 +579,8 @@ namespace {
         REQUIRE(runtime_configs.has_value());
         auto default_it = runtime_configs->find("default");
         REQUIRE(default_it != runtime_configs->end());
-        CHECK(default_it->second.allowed_child_agents.size() == 1UL);
-        CHECK(default_it->second.allowed_child_agents.front() == "coder");
+        CHECK(default_it->second.team_agents.size() == 1UL);
+        CHECK(default_it->second.team_agents.front() == "coder");
     };
 
     TEST_CASE("build_agent_runtime_configs_resolves_cross_profile_fallbacks") {
@@ -609,30 +608,6 @@ namespace {
         CHECK(it->second.fallback_endpoints[0].api_key == "anthropic-key");
     };
 
-    TEST_CASE("build_subagent_child_runtime_configs_propagates_edit_mode") {
-        BootstrapHarness harness;
-        std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> runtime_configs;
-        runtime_configs.emplace("default", bootstrap::AgentRuntimeConfig{
-                                               .agent_key = "default",
-                                               .model = "gpt-test",
-                                               .primary_endpoint =
-                                                   providers::ProviderEndpoint{
-                                                       .profile_name = "shared",
-                                                       .endpoint_style = "openai-chat-completions",
-                                                       .api_key = "test-key",
-                                                       .model = "gpt-test",
-                                                       .base_url = "https://example.test",
-                                                   },
-                                               .workspace_root = harness.workspace_root().string(),
-                                               .edit_mode = "search_replace",
-                                           });
-
-        const auto child_configs = bootstrap::detail::build_subagent_child_runtime_configs(runtime_configs);
-        auto it = child_configs.find("default");
-        REQUIRE(it != child_configs.end());
-        CHECK(it->second.edit_mode == "search_replace");
-    };
-
     TEST_CASE("repl_runtime_lists_memory_tools_and_skills") {
         BootstrapHarness harness;
         harness.write_config();
@@ -657,7 +632,7 @@ namespace {
             .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,
             .permissions = runtime_it->second.permissions,
-            .allowed_child_agents = runtime_it->second.allowed_child_agents,
+            .team_agents = runtime_it->second.team_agents,
             .identity = identity,
             .memory_store = &memory_store,
             .automation_runtime = &app_runtime.automation_runtime(),
@@ -693,8 +668,6 @@ namespace {
         const auto &inspection = *inspection_capture.inspection();
         CHECK(inspection.has_session_store);
         CHECK(inspection.has_memory_store);
-        CHECK(inspection.has_subagent_run_store);
-        CHECK(inspection.has_subagent_manager);
         CHECK(inspection.has_runtime_bundle);
         CHECK(inspection.has_runtime_agent);
         CHECK(inspection.attached_session_store);
@@ -722,8 +695,6 @@ namespace {
         const auto &inspection = *inspection_capture.inspection();
         CHECK(inspection.has_session_store);
         CHECK(inspection.has_memory_store);
-        CHECK(inspection.has_subagent_run_store);
-        CHECK(inspection.has_subagent_manager);
         CHECK_FALSE(inspection.has_runtime_bundle);
         CHECK_FALSE(inspection.has_runtime_agent);
         CHECK(inspection.attached_session_store);
@@ -751,8 +722,6 @@ namespace {
         const auto &inspection = *inspection_capture.inspection();
         CHECK(inspection.has_session_store);
         CHECK(inspection.has_memory_store);
-        CHECK(inspection.has_subagent_run_store);
-        CHECK(inspection.has_subagent_manager);
         CHECK_FALSE(inspection.has_runtime_bundle);
         CHECK_FALSE(inspection.has_runtime_agent);
         CHECK(inspection.attached_session_store);

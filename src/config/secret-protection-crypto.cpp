@@ -75,19 +75,16 @@ namespace orangutan::config {
 
         [[nodiscard]]
         const unsigned char *mbedtls_const_bytes(const_byte_span bytes) noexcept {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             return reinterpret_cast<const unsigned char *>(bytes.data());
         }
 
         [[nodiscard]]
         unsigned char *mbedtls_mutable_bytes(mutable_byte_span bytes) noexcept {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             return reinterpret_cast<unsigned char *>(bytes.data());
         }
 
         [[nodiscard]]
         const unsigned char *mbedtls_const_chars(std::string_view text) noexcept {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             return reinterpret_cast<const unsigned char *>(text.data());
         }
 

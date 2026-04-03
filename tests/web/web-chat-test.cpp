@@ -8,9 +8,7 @@
 #include "config/config.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
-#include "subagent/subagent-manager.hpp"
 #include "storage/session-store.hpp"
-#include "storage/subagent-run-store.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>
@@ -385,7 +383,7 @@ namespace orangutan {
                 .command = "echo hello",
             });
             config.agents["default"].workspace = workspace.string();
-            config.agents["default"].subagents = {"coder"};
+            config.agents["default"].team_agents = {"coder"};
             config.agents["default"].permissions = {
                 .sandbox_mode = ToolSandboxMode::isolated,
                 .shell_approval = ToolApprovalPolicy::ask,
@@ -393,16 +391,11 @@ namespace orangutan {
             config.agents["coder"].workspace = workspace.string();
 
             MemoryStore memory_store((workspace / "memory.db"));
-            SubagentRunStore run_store((workspace / "runs.db"));
-            SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-                return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-            });
             std::string session_id = "web-chat-runtime-session";
 
-            auto runtime =
-                web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr, [](const ToolUse &, const std::string &) {
-                    return false;
-                });
+            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, [](const ToolUse &, const std::string &) {
+                return false;
+            });
 
             CHECK(not(orangutan::testing::has_tool_named(runtime.tools.definitions(), "memory_list")));
             CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
@@ -410,7 +403,7 @@ namespace orangutan {
             CHECK(runtime.tool_context.runtime_origin == base::origin::web);
             CHECK(runtime.tool_context.raw_caller_id == "web:local");
             CHECK(runtime.tool_context.current_session_id == &session_id);
-            CHECK(runtime.tool_context.allowed_child_agents == std::vector<std::string>{"coder"});
+            CHECK(runtime.tool_context.team_agents == std::vector<std::string>{"coder"});
             CHECK(static_cast<bool>(runtime.tool_context.approval_callback));
             REQUIRE(runtime.agent != nullptr);
 
@@ -465,13 +458,9 @@ namespace orangutan {
             config.agents["default"].workspace = workspace.string();
 
             MemoryStore memory_store((workspace / "memory.db"));
-            SubagentRunStore run_store((workspace / "runs.db"));
-            SubagentManager subagent_manager(run_store, [](const SubagentWorkerRequest &) {
-                return SubagentWorkerResult{.status = SubagentRunStatus::succeeded};
-            });
             std::string session_id = "web-chat-skills-hooks";
 
-            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, &subagent_manager, nullptr);
+            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr);
 
             CHECK(runtime.skills_prompt.contains("web-chat-runtime-skill"));
             REQUIRE(runtime.hook_manager != nullptr);

@@ -14,11 +14,11 @@ export interface AgentSummary {
   system_prompt: string;
   workspace: string;
   edit_mode: string;
-  subagents: string[];
+  team_agents: string[];
 }
 
-interface RawAgentSummary extends Omit<AgentSummary, "subagents"> {
-  subagents?: string[];
+interface RawAgentSummary extends Omit<AgentSummary, "team_agents"> {
+  team_agents?: string[];
 }
 
 async function getErrorMessage(res: Response): Promise<string> {
@@ -54,7 +54,7 @@ export function getAgents(): Promise<AgentSummary[]> {
   return apiFetch<RawAgentSummary[]>("/api/agents").then((agents) =>
     agents.map((agent) => ({
       ...agent,
-      subagents: Array.isArray(agent.subagents) ? agent.subagents : [],
+      team_agents: Array.isArray(agent.team_agents) ? agent.team_agents : [],
     })),
   );
 }
