@@ -1,4 +1,5 @@
 #include "memory/runtime-memory.hpp"
+#include "memory/memory-search.hpp"
 #include "memory/memory-type.hpp"
 #include "tools/register.hpp"
 
@@ -8,7 +9,6 @@
 #include <stdexcept>
 #include <string_view>
 #include "utils/format.hpp"
-#include <vector>
 
 namespace orangutan::tools {
     namespace {
@@ -43,53 +43,24 @@ namespace orangutan::tools {
 
             const auto mode = optional_non_empty_string(input, "mode");
             const auto value = optional_non_empty_string(input, "value");
-            const auto query = optional_non_empty_string(input, "query");
-            const auto category = optional_non_empty_string(input, "category");
 
-            if (mode.has_value()) {
-                if (*mode == "query") {
-                    request.mode = RecallMode::query;
-                    if (value.has_value()) {
-                        request.value = *value;
-                        return request;
-                    }
-                    if (query.has_value()) {
-                        request.value = *query;
-                        return request;
-                    }
-                    throw std::runtime_error("recall with mode 'query' requires a non-empty 'value'");
-                }
-
-                if (*mode == "category") {
-                    request.mode = RecallMode::category;
-                    if (value.has_value()) {
-                        request.value = *value;
-                        return request;
-                    }
-                    if (category.has_value()) {
-                        request.value = *category;
-                        return request;
-                    }
-                    throw std::runtime_error("recall with mode 'category' requires a non-empty 'value'");
-                }
-
-                throw std::runtime_error("recall mode must be 'query' or 'category'");
+            if (!mode.has_value() || !value.has_value()) {
+                throw std::runtime_error("recall expects 'mode' (query|category) and 'value'");
             }
 
-            // Preserve legacy behavior: if both legacy fields are present, prefer category lookup.
-            if (category.has_value()) {
-                request.mode = RecallMode::category;
-                request.value = *category;
-                return request;
-            }
-
-            if (query.has_value()) {
+            if (*mode == "query") {
                 request.mode = RecallMode::query;
-                request.value = *query;
+                request.value = *value;
                 return request;
             }
 
-            throw std::runtime_error("recall expects either 'mode' + 'value' or one of 'query'/'category'");
+            if (*mode == "category") {
+                request.mode = RecallMode::category;
+                request.value = *value;
+                return request;
+            }
+
+            throw std::runtime_error("recall mode must be 'query' or 'category'");
         }
 
         nlohmann::json portable_recall_schema() {
@@ -156,23 +127,11 @@ namespace orangutan::tools {
             return merge ? "Updated memory [" + key + "] with merge" : "Updated memory [" + key + "]";
         }
 
-        std::string format_memory_list(const std::vector<MemoryRecord> &entries) {
-            std::string out;
-            for (const auto &entry : entries) {
-                utils::format_to(out, "[{}:{}:{}] {}", magic_enum::enum_name(entry.type), entry.category, entry.key, entry.content);
-                if (!entry.source.empty()) {
-                    utils::format_to(out, " {{source={}}}", entry.source);
-                }
-                out.push_back('\n');
-            }
-            return out;
-        }
-
         std::string list_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
             const auto category = input.value("category", std::string{});
             const auto limit = static_cast<std::size_t>(std::max(1, input.value("limit", 20)));
             const auto entries = runtime_memory.list(category, limit);
-            const auto result = format_memory_list(entries);
+            const auto result = memory_detail::format_records(entries);
             return result.empty() ? "(no memories found)" : result;
         }
 

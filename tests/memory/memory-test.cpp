@@ -1,5 +1,4 @@
 #include "memory/memory-store.hpp"
-#include "memory/memory-type.hpp"
 #include "memory/runtime-memory.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "tools/registry/tool.hpp"
@@ -11,7 +10,6 @@
 #include <fstream>
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
-#include <sqlite3.h>
 #include <set>
 #include <sstream>
 #include <string>
@@ -218,7 +216,6 @@ namespace {
         CHECK_FALSE(bob.contains("Alice"));
         CHECK(global.empty());
     };
-
     TEST_CASE("builtin_memory_tools_register_and_execute") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
@@ -267,7 +264,7 @@ namespace {
         CHECK(forget_result.content.contains("Forgot"));
     };
 
-    TEST_CASE("recall_tools_accept_portable_and_legacy_inputs") {
+    TEST_CASE("recall_rejects_missing_mode_or_value") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
         ToolRegistry registry;
@@ -279,23 +276,18 @@ namespace {
 
         const auto portable_query = registry.execute(ToolUse("recall-query", "recall", {{"mode", "query"}, {"value", "profile.name"}}));
         const auto portable_category = registry.execute(ToolUse("recall-category", "memory_recall", {{"mode", "category"}, {"value", "profile"}}));
-        const auto legacy_query = registry.execute(ToolUse("legacy-query", "recall", {{"query", "profile.name"}}));
-        const auto legacy_category = registry.execute(ToolUse("legacy-category", "memory_recall", {{"category", "profile"}}));
-        const auto legacy_both = registry.execute(ToolUse("legacy-both", "recall", {{"query", "profile.name"}, {"category", "profile"}}));
-        const auto invalid = registry.execute(ToolUse("invalid", "recall", nlohmann::json::object()));
+        const auto missing_mode = registry.execute(ToolUse("no-mode", "recall", {{"value", "profile.name"}}));
+        const auto missing_value = registry.execute(ToolUse("no-value", "recall", {{"mode", "query"}}));
+        const auto empty_input = registry.execute(ToolUse("empty", "recall", nlohmann::json::object()));
 
         CHECK_FALSE(portable_query.is_error);
         CHECK_FALSE(portable_category.is_error);
-        CHECK_FALSE(legacy_query.is_error);
-        CHECK_FALSE(legacy_category.is_error);
-        CHECK_FALSE(legacy_both.is_error);
         CHECK(portable_query.content.contains("Alice"));
         CHECK(portable_category.content.contains("Alice"));
-        CHECK(legacy_query.content.contains("Alice"));
-        CHECK(legacy_category.content.contains("Alice"));
-        CHECK(legacy_both.content.contains("Alice"));
-        CHECK(invalid.is_error);
-        CHECK(invalid.content.contains("recall expects either 'mode' + 'value' or one of 'query'/'category'"));
+        CHECK(missing_mode.is_error);
+        CHECK(missing_value.is_error);
+        CHECK(empty_input.is_error);
+        CHECK(empty_input.content.contains("recall expects 'mode' (query|category) and 'value'"));
     };
 
     TEST_CASE("plugin_style_memory_aliases_work") {
@@ -306,7 +298,7 @@ namespace {
         register_builtin_tools(registry, &runtime_memory);
 
         auto store_result = registry.execute(ToolUse("memory-store-1", "memory_store", {{"key", "profile.name"}, {"content", "Alice"}, {"category", "profile"}}));
-        auto recall_result = registry.execute(ToolUse("memory-recall-1", "memory_recall", {{"query", "profile.name"}}));
+        auto recall_result = registry.execute(ToolUse("memory-recall-1", "memory_recall", {{"mode", "query"}, {"value", "profile.name"}}));
         auto update_result =
             registry.execute(ToolUse("memory-update-1", "memory_update", {{"key", "profile.name"}, {"content", "Alice Example"}, {"category", "profile"}, {"merge", false}}));
         auto stats_result = registry.execute(ToolUse("memory-stats-1", "memory_stats", nlohmann::json::object()));
@@ -333,50 +325,14 @@ namespace {
         register_builtin_tools(bob_registry, &bob_memory);
 
         auto alice_remember = alice_registry.execute(ToolUse("remember-alice", "remember", {{"key", "favorite_color"}, {"content", "green"}}));
-        auto bob_recall = bob_registry.execute(ToolUse("recall-bob", "recall", {{"query", "favorite_color"}}));
-        auto alice_recall = alice_registry.execute(ToolUse("recall-alice", "recall", {{"query", "favorite_color"}}));
+        auto bob_recall = bob_registry.execute(ToolUse("recall-bob", "recall", {{"mode", "query"}, {"value", "favorite_color"}}));
+        auto alice_recall = alice_registry.execute(ToolUse("recall-alice", "recall", {{"mode", "query"}, {"value", "favorite_color"}}));
 
         CHECK_FALSE(alice_remember.is_error);
         CHECK_FALSE(bob_recall.is_error);
         CHECK_FALSE(alice_recall.is_error);
         CHECK(bob_recall.content == "(no memories found)");
         CHECK(alice_recall.content.contains("green"));
-    };
-
-    TEST_CASE("migrates_legacy_memory_table_to_structured_schema") {
-        MemoryStoreHarness harness;
-        sqlite3 *db = nullptr;
-        const auto open_status = sqlite3_open(harness.db_path().string().c_str(), &db);
-        REQUIRE(open_status == SQLITE_OK);
-
-        char *err_msg = nullptr;
-        const auto create_status = sqlite3_exec(db,
-                                                R"(
-                                                CREATE TABLE memories (
-                                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                    key TEXT NOT NULL UNIQUE,
-                                                    content TEXT NOT NULL,
-                                                    category TEXT NOT NULL DEFAULT 'general',
-                                                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                                                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-                                                );
-                                            )",
-                                                nullptr, nullptr, &err_msg);
-        INFO((err_msg != nullptr ? err_msg : "sqlite error"));
-        REQUIRE(create_status == SQLITE_OK);
-        sqlite3_free(err_msg);
-        err_msg = nullptr;
-
-        const auto insert_status =
-            sqlite3_exec(db, "INSERT INTO memories (key, content, category) VALUES ('s:jid:alice\x1fpreferred_name', 'Alice', 'profile');", nullptr, nullptr, &err_msg);
-        INFO((err_msg != nullptr ? err_msg : "sqlite error"));
-        REQUIRE(insert_status == SQLITE_OK);
-        sqlite3_free(err_msg);
-        sqlite3_close(db);
-
-        MemoryStore store(harness.db_path());
-        const auto recall = store.recall("preferred_name", "jid:alice");
-        CHECK(recall.contains("Alice"));
     };
 
     TEST_CASE("stats_expose_journal_entries_separately") {

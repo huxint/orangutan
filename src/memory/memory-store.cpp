@@ -23,24 +23,7 @@ namespace orangutan::memory {
     MemoryStore::~MemoryStore() = default;
 
     void MemoryStore::ensure_schema() {
-        if (!db_.table_exists("memories")) {
-            memory_detail::create_current_schema(db_);
-            fts_enabled_ = memory_detail::enable_fts_if_available(db_);
-            return;
-        }
-
-        const auto schema = memory_detail::inspect_memory_schema(db_);
-        if (!schema.has_scope || !schema.has_memory_key || !schema.has_source || !schema.has_importance || !schema.has_access_count || !schema.has_last_accessed_at) {
-            memory_detail::migrate_legacy_memories(db_);
-        }
-
         memory_detail::create_current_schema(db_);
-
-        // Add type column if missing (v2 migration)
-        if (!memory_detail::inspect_memory_schema(db_).has_type) {
-            memory_detail::add_type_column(db_);
-        }
-
         fts_enabled_ = memory_detail::enable_fts_if_available(db_);
     }
 
@@ -260,12 +243,13 @@ namespace orangutan::memory {
             stmt.bind_text(1, scope);
             auto records = memory_detail::collect_records(stmt);
 
+            sqlite::Statement del(db_, "DELETE FROM memories WHERE id = ?");
             for (const auto &record : records) {
                 const auto age = memory_age_days(record.updated_at);
                 if (age >= stale_days && record.importance <= stale_importance_threshold && record.access_count <= 1) {
-                    sqlite::Statement del(db_, "DELETE FROM memories WHERE id = ?");
                     del.bind_int(1, record.id);
                     static_cast<void>(del.step());
+                    del.reset();
                     ++pruned;
                 }
             }

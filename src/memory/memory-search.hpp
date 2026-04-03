@@ -25,8 +25,6 @@ namespace orangutan::memory::detail {
     [[nodiscard]]
     std::string format_records(const std::vector<MemoryRecord> &records);
     [[nodiscard]]
-    std::string format_records_with_age(const std::vector<MemoryRecord> &records);
-    [[nodiscard]]
     std::string format_memory_manifest(const std::vector<MemoryRecord> &records);
     [[nodiscard]]
     std::string merge_memory_content(const std::string &existing, const std::string &incoming);
@@ -38,8 +36,6 @@ namespace orangutan::memory::detail {
     std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, const std::string &scope, const std::string &key);
     void upsert_memory_record(sqlite::Database &db, const std::string &scope, const std::string &key, const std::string &content, const std::string &category,
                               const std::string &type, const std::string &source, base::f64 importance);
-    [[nodiscard]]
-    std::vector<MemoryRecord> dedupe_records_by_key(std::vector<MemoryRecord> records);
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records);
 
 } // namespace orangutan::memory::detail

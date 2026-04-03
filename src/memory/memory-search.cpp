@@ -132,20 +132,6 @@ namespace orangutan::memory::detail {
         return out;
     }
 
-    std::string format_records_with_age(const std::vector<MemoryRecord> &records) {
-        std::string out;
-        for (const auto &record : records) {
-            utils::format_to(out, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
-            const auto caveat = memory_freshness_caveat(record.updated_at);
-            if (!caveat.empty()) {
-                out.push_back(' ');
-                out.append(caveat);
-            }
-            out.push_back('\n');
-        }
-        return out;
-    }
-
     std::string format_memory_manifest(const std::vector<MemoryRecord> &records) {
         std::string out;
         for (const auto &record : records) {
@@ -247,19 +233,6 @@ namespace orangutan::memory::detail {
         stmt.bind_text(6, source.empty() ? std::string{"manual"} : source);
         stmt.bind_double(7, importance);
         static_cast<void>(stmt.step());
-    }
-
-    std::vector<MemoryRecord> dedupe_records_by_key(std::vector<MemoryRecord> records) {
-        std::set<std::pair<std::string, std::string>> seen;
-        std::vector<MemoryRecord> deduped;
-        deduped.reserve(records.size());
-        for (auto &record : records) {
-            const auto token = std::pair{record.scope, record.key};
-            if (seen.insert(token).second) {
-                deduped.push_back(std::move(record));
-            }
-        }
-        return deduped;
     }
 
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records) {
