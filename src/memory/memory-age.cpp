@@ -2,7 +2,6 @@
 
 #include <charconv>
 #include <chrono>
-#include <ctime>
 #include <spdlog/common.h>
 
 namespace orangutan::memory {
@@ -16,39 +15,21 @@ namespace orangutan::memory {
                 return {};
             }
 
-            std::tm tm{};
-            auto parse_int = [](std::string_view sv) -> int {
-                int result = 0;
-                std::from_chars(sv.data(), sv.data() + sv.size(), result);
+            auto parse_int = [](std::string_view sv) -> unsigned {
+                unsigned result = 0;
+                std::from_chars(sv.begin(), sv.end(), result);
                 return result;
             };
 
-            tm.tm_year = parse_int(value.substr(0, 4)) - 1900;
-            tm.tm_mon = parse_int(value.substr(5, 2)) - 1;
-            tm.tm_mday = parse_int(value.substr(8, 2));
-            tm.tm_hour = parse_int(value.substr(11, 2));
-            tm.tm_min = parse_int(value.substr(14, 2));
-            tm.tm_sec = parse_int(value.substr(17, 2));
-            tm.tm_isdst = -1;
-
-            // SQLite stores UTC by default with datetime('now')
-            const auto time_c = timegm(&tm);
-            if (time_c == static_cast<std::time_t>(-1)) {
-                return {};
-            }
-            return std::chrono::system_clock::from_time_t(time_c);
+            return std::chrono::sys_days{std::chrono::year{static_cast<int>(parse_int(value.substr(0, 4)))} / std::chrono::month{parse_int(value.substr(5, 2))} /
+                                         std::chrono::day{parse_int(value.substr(8, 2))}} +
+                   std::chrono::hours{parse_int(value.substr(11, 2))} + std::chrono::minutes{parse_int(value.substr(14, 2))} + std::chrono::seconds{parse_int(value.substr(17, 2))};
         }
 
     } // namespace
 
     int memory_age_days(std::string_view updated_at) {
-        const auto tp = parse_sqlite_datetime(updated_at);
-        if (tp == std::chrono::system_clock::time_point{}) {
-            return -1;
-        }
-
-        const auto now = std::chrono::system_clock::now();
-        const auto diff = std::chrono::duration_cast<std::chrono::hours>(now - tp).count();
+        const auto diff = std::chrono::duration_cast<std::chrono::hours>(std::chrono::system_clock::now() - parse_sqlite_datetime(updated_at)).count();
         return static_cast<int>(diff / 24);
     }
 

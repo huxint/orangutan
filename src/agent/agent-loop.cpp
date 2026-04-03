@@ -3,12 +3,12 @@
 #include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
 #include "memory/memory-type.hpp"
-#include "memory/memory-search.hpp"
 #include "memory/memory-age.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "utils/string.hpp"
 #include "utils/sender-utils.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdio>
 #include "utils/format.hpp"
@@ -112,7 +112,10 @@ namespace orangutan::agent {
         }
 
         std::string_view type_sv;
-        std::string_view category_sv, key_sv, importance_sv, content_sv;
+        std::string_view category_sv;
+        std::string_view key_sv;
+        std::string_view importance_sv;
+        std::string_view content_sv;
 
         if (fields.size() == 4) {
             // Legacy 4-field format: category|key|importance|content
@@ -340,9 +343,7 @@ namespace orangutan::agent {
                             });
 
             auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
-            if (outcome.loop_status > worst_status) {
-                worst_status = outcome.loop_status;
-            }
+            worst_status = std::max(outcome.loop_status, worst_status);
             result_blocks.emplace_back(std::move(outcome.result));
         }
 
