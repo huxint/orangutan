@@ -179,21 +179,40 @@ If you can say it in one sentence, don't use three. This does not apply to code 
 
         utils::format_to(s, " - Sandbox: {}\n", info.is_sandboxed ? "enabled (shell commands run in an isolated environment)" : "disabled");
 
-        s += "\n## Automation\n";
-        s += "The following automation mechanisms are available:\n";
-        s += " - Heartbeat: periodic polling. When you receive a heartbeat poll, respond with HEARTBEAT_OK if nothing needs attention, or respond with alert text if something "
-             "requires the user's attention.\n";
-        s += " - Cron/Scheduled tasks: time-based jobs that can trigger agent actions on a schedule. Use the heartbeat tool to create, update, or manage scheduled tasks.\n";
+        return s;
+    }
 
-        if (!info.workspace_root.empty()) {
-            s += "\n## Workspace Agent Files\n";
-            s += "The following files under .orangutan/agent/ customize your persona for this workspace:\n";
-            s += " - identity.md: Your custom identity and role for this workspace (layered on top of the global Orangutan identity)\n";
-            s += " - style.md: Tone, formatting, and communication style preferences\n";
-            s += " - memory.md: Fixed background knowledge and context the user wants you to always remember\n";
-            s += "These files are user-editable. If present, their content is included in your system prompt above.\n";
+    std::string automation_section() {
+        return R"(# Automation
+The following automation mechanisms are available:
+ - Heartbeat: periodic polling. When you receive a heartbeat poll, respond with HEARTBEAT_OK if nothing needs attention, or respond with alert text if something requires the user's attention.
+ - Cron/Scheduled tasks: time-based jobs that can trigger agent actions on a schedule. Use the heartbeat tool to create, update, or manage scheduled tasks.)";
+    }
+
+    std::string workspace_agent_section(const std::string &workspace) {
+        if (workspace.empty()) {
+            return {};
         }
 
+        constexpr std::array agent_files = {
+            std::pair{"identity.md", "Custom identity and role"},
+            std::pair{"style.md", "Tone, formatting, and communication style"},
+            std::pair{"memory.md", "Fixed background knowledge and context"},
+        };
+
+        std::string s;
+        bool has_any = false;
+        for (const auto &[filename, label] : agent_files) {
+            const auto content = read_workspace_agent_file(workspace, filename);
+            if (!content.empty()) {
+                if (!has_any) {
+                    s += "# Workspace Agent Files\n";
+                    s += "Files under .orangutan/agent/ that customize your persona for this workspace:\n";
+                    has_any = true;
+                }
+                utils::format_to(s, "\n## {} ({})\n{}\n", filename, label, content);
+            }
+        }
         return s;
     }
 
@@ -230,33 +249,10 @@ If you can say it in one sentence, don't use three. This does not apply to code 
         std::string prompt;
         prompt.reserve(8192);
 
-        // ── Agent persona (identity, style, memory) ──
+        // ── Global identity ──
 
-        // Global identity (always present)
         prompt += identity_section();
         prompt += "\n\n";
-
-        // Custom identity: layered on top of global identity
-        const auto ws_identity = read_workspace_agent_file(env_info.workspace_root, "identity.md");
-        if (!ws_identity.empty()) {
-            prompt += ws_identity;
-            prompt += "\n\n";
-        }
-
-        // Style: from workspace file only
-        const auto ws_style = read_workspace_agent_file(env_info.workspace_root, "style.md");
-        if (!ws_style.empty()) {
-            prompt += ws_style;
-            prompt += "\n\n";
-        }
-
-        // Fixed memory: from workspace file only
-        const auto ws_memory = read_workspace_agent_file(env_info.workspace_root, "memory.md");
-        if (!ws_memory.empty()) {
-            prompt += "# Agent Memory\n";
-            prompt += ws_memory;
-            prompt += "\n\n";
-        }
 
         // ── System sections ──
 
@@ -271,6 +267,14 @@ If you can say it in one sentence, don't use three. This does not apply to code 
         prompt += output_efficiency_section();
         prompt += "\n\n";
         prompt += environment_section(env_info);
+        prompt += "\n\n";
+        prompt += automation_section();
+
+        const auto ws_agent = workspace_agent_section(env_info.workspace_root);
+        if (!ws_agent.empty()) {
+            prompt += "\n\n";
+            prompt += ws_agent;
+        }
 
         return prompt;
     }

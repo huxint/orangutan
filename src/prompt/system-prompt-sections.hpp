@@ -45,9 +45,18 @@ namespace orangutan::prompt {
         bool is_sandboxed = false;
     };
 
-    // Environment: cwd, platform, OS, model, sandbox, heartbeat
+    // Environment: cwd, platform, OS, model, sandbox
     [[nodiscard]]
     std::string environment_section(const EnvironmentInfo &info);
+
+    // Automation: heartbeat, cron/scheduled tasks
+    [[nodiscard]]
+    std::string automation_section();
+
+    // Workspace agent persona files (.orangutan/agent/{identity,style,memory}.md)
+    // Returns empty string if no agent files exist.
+    [[nodiscard]]
+    std::string workspace_agent_section(const std::string &workspace);
 
     // ── Workspace agent files ──
 
