@@ -79,6 +79,12 @@ namespace {
         manager.connect_all();
         manager.register_tools(registry);
 
+        // MCP tools are deferred — discover them first
+        CHECK(registry.has_deferred_tools());
+        for (const auto &summary : registry.deferred_tool_summaries()) {
+            registry.discover_tool(std::string(summary.name));
+        }
+
         const auto defs = registry.definitions();
         const auto it = std::ranges::find(defs, std::string("mock:echo"), &ToolDef::name);
         INFO("expected prefixed mock:echo tool registration");

@@ -684,7 +684,7 @@ TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
             const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}}));
             CHECK(not(remember.is_error));
 
-            const auto recall = registry.execute(ToolUse("recall-runtime", "memory_recall", {{"query", "theme"}}));
+            const auto recall = registry.execute(ToolUse("recall-runtime", "memory_recall", {{"mode", "query"}, {"value", "theme"}}));
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
         }

@@ -223,22 +223,27 @@ namespace {
         RuntimeMemory runtime_memory(store);
         register_builtin_tools(registry, &runtime_memory);
 
-        const auto definitions = registry.definitions();
-        std::set<std::string> tool_names;
-        for (const auto &definition : definitions) {
-            tool_names.insert(definition.name);
+        // Memory tools are registered as deferred — not visible in definitions() until discovered.
+        // Verify they exist by discovering them and then checking definitions.
+        CHECK(registry.has_deferred_tools());
+        const auto deferred = registry.deferred_tool_summaries();
+        std::set<std::string> deferred_names;
+        for (const auto &summary : deferred) {
+            deferred_names.insert(std::string(summary.name));
+            registry.discover_tool(std::string(summary.name));
         }
 
-        CHECK(tool_names.contains("remember"));
-        CHECK(tool_names.contains("recall"));
-        CHECK(tool_names.contains("forget"));
-        CHECK(tool_names.contains("memory_store"));
-        CHECK(tool_names.contains("memory_recall"));
-        CHECK(tool_names.contains("memory_forget"));
-        CHECK(tool_names.contains("memory_update"));
-        CHECK(tool_names.contains("memory_list"));
-        CHECK(tool_names.contains("memory_stats"));
+        CHECK(deferred_names.contains("remember"));
+        CHECK(deferred_names.contains("recall"));
+        CHECK(deferred_names.contains("forget"));
+        CHECK(deferred_names.contains("memory_store"));
+        CHECK(deferred_names.contains("memory_recall"));
+        CHECK(deferred_names.contains("memory_forget"));
+        CHECK(deferred_names.contains("memory_update"));
+        CHECK(deferred_names.contains("memory_list"));
+        CHECK(deferred_names.contains("memory_stats"));
 
+        const auto definitions = registry.definitions();
         const auto *recall_definition = find_tool(definitions, "recall");
         REQUIRE(recall_definition != nullptr);
         CHECK(recall_definition->input_schema.value("type", "") == "object");
