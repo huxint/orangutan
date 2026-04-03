@@ -366,15 +366,15 @@ namespace orangutan::agent {
         history_.push_back(Message::user().text(user_input));
         emit_history_checkpoint(on_history_checkpoint, history_);
 
-        const auto effective_system_prompt = build_system_prompt(user_input);
         std::string final_text;
         const bool human_output = !on_stream_event && !on_tool_event;
 
         for (int iteration = 0; iteration < max_iterations; ++iteration) {
             spdlog::debug("Agent loop iteration {}", iteration + 1);
 
-            // Refresh tool definitions each iteration so newly discovered deferred tools are included
+            // Refresh tool definitions and system prompt each iteration so newly discovered deferred tools are included
             auto tool_defs = tools_.definitions();
+            const auto effective_system_prompt = build_system_prompt(user_input);
 
             bool first_text = true;
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
