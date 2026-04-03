@@ -303,10 +303,9 @@ namespace orangutan::skills {
     }
 
     const SkillDef *SkillLoader::find_skill(std::string_view name) const {
-        for (const auto &skill : skills_) {
-            if (skill.name == name) {
-                return &skill;
-            }
+        auto it = std::ranges::lower_bound(skills_, name, {}, &SkillDef::name);
+        if (it != skills_.end() && it->name == name) {
+            return &*it;
         }
         return nullptr;
     }

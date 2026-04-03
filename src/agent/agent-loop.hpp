@@ -56,6 +56,7 @@ namespace orangutan::agent {
         // Replace conversation history (for session loading)
         void set_history(std::vector<Message> messages) {
             history_ = std::move(messages);
+            tools_.clear_discovered();
         }
 
         // Access conversation history for persistence and export flows.

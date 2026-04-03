@@ -91,60 +91,54 @@ namespace orangutan::agent {
 
     std::optional<DistilledMemoryEntry> parse_memory_line(std::string line) {
         if (line.starts_with("memory|")) {
-            line = line.substr(std::string{"memory|"}.size());
+            line = line.substr(7);
         }
 
-        // Format: type|category|key|importance|content
-        const auto first = line.find('|');
-        if (first == std::string::npos) {
+        // Split by '|' into fields
+        std::vector<std::string_view> fields;
+        std::string_view sv = line;
+        while (true) {
+            auto pos = sv.find('|');
+            if (pos == std::string_view::npos) {
+                fields.push_back(sv);
+                break;
+            }
+            fields.push_back(sv.substr(0, pos));
+            sv = sv.substr(pos + 1);
+        }
+
+        if (fields.size() < 4) {
             return std::nullopt;
         }
-        const auto second = line.find('|', first + 1);
-        if (second == std::string::npos) {
-            return std::nullopt;
-        }
-        const auto third = line.find('|', second + 1);
-        if (third == std::string::npos) {
-            return std::nullopt;
-        }
-        const auto fourth = line.find('|', third + 1);
-        if (fourth == std::string::npos) {
+
+        std::string_view type_sv;
+        std::string_view category_sv, key_sv, importance_sv, content_sv;
+
+        if (fields.size() == 4) {
             // Legacy 4-field format: category|key|importance|content
-            std::string category = static_cast<std::string>(utils::trim_copy(line.substr(0, first)));
-            std::string key = static_cast<std::string>(utils::trim_copy(line.substr(first + 1, second - first - 1)));
-            std::string_view importance_text = utils::trim_copy(line.substr(second + 1, third - second - 1));
-            std::string content = static_cast<std::string>(utils::trim_copy(line.substr(third + 1)));
-            if (content.empty()) {
-                return std::nullopt;
-            }
-            if (category.empty()) {
-                category = "general";
-            }
-            base::f64 importance = 0.5;
-            std::from_chars(importance_text.begin(), importance_text.end(), importance);
-            importance = std::clamp(importance, 0.0, 1.0);
-            if (key.empty()) {
-                key = hash_key("distilled.", content);
-            }
-            return DistilledMemoryEntry{
-                .category = std::move(category),
-                .type = infer_memory_type(category),
-                .key = std::move(key),
-                .importance = importance,
-                .content = std::move(content),
-            };
+            category_sv = fields[0];
+            key_sv = fields[1];
+            importance_sv = fields[2];
+            content_sv = fields[3];
+        } else {
+            // 5-field format: type|category|key|importance|content
+            // Content may contain '|', so rejoin everything from field 4 onwards.
+            type_sv = fields[0];
+            category_sv = fields[1];
+            key_sv = fields[2];
+            importance_sv = fields[3];
+            content_sv = std::string_view(fields[4].data(), static_cast<std::size_t>(line.data() + line.size() - fields[4].data()));
         }
 
-        // New 5-field format: type|category|key|importance|content
-        std::string type_str = static_cast<std::string>(utils::trim_copy(line.substr(0, first)));
-        std::string category = static_cast<std::string>(utils::trim_copy(line.substr(first + 1, second - first - 1)));
-        std::string key = static_cast<std::string>(utils::trim_copy(line.substr(second + 1, third - second - 1)));
-        std::string_view importance_text = utils::trim_copy(line.substr(third + 1, fourth - third - 1));
-        std::string content = static_cast<std::string>(utils::trim_copy(line.substr(fourth + 1)));
+        // Common post-processing
+        auto category = std::string(utils::trim_copy(category_sv));
+        auto key = std::string(utils::trim_copy(key_sv));
+        auto content = std::string(utils::trim_copy(content_sv));
+        auto importance_text = utils::trim_copy(importance_sv);
+
         if (content.empty()) {
             return std::nullopt;
         }
-
         if (category.empty()) {
             category = "general";
         }
@@ -157,9 +151,11 @@ namespace orangutan::agent {
             key = hash_key("distilled.", content);
         }
 
+        auto type = type_sv.empty() ? infer_memory_type(category) : magic_enum::enum_cast<MemoryType>(type_sv, magic_enum::case_insensitive).value_or(MemoryType::user);
+
         return DistilledMemoryEntry{
             .category = std::move(category),
-            .type = magic_enum::enum_cast<MemoryType>(type_str, magic_enum::case_insensitive).value_or(MemoryType::user),
+            .type = type,
             .key = std::move(key),
             .importance = importance,
             .content = std::move(content),
@@ -434,6 +430,7 @@ namespace orangutan::agent {
 
     void AgentLoop::clear_history() {
         history_.clear();
+        tools_.clear_discovered();
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compress_history() {

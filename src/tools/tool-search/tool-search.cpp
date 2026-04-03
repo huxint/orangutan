@@ -4,10 +4,18 @@
 
 #include <algorithm>
 #include <spdlog/spdlog.h>
+#include <string_view>
 
 namespace orangutan::tools {
 
     namespace {
+
+        std::string to_lower(std::string s) {
+            std::ranges::transform(s, s.begin(), [](unsigned char ch) {
+                return std::tolower(ch);
+            });
+            return s;
+        }
 
         std::string format_schema(const nlohmann::json &schema) {
             return schema.is_null() ? "{}" : schema.dump(2);
@@ -21,17 +29,19 @@ namespace orangutan::tools {
 
             // Direct selection: "select:tool1,tool2"
             if (query.starts_with("select:")) {
-                const auto names_str = query.substr(7);
+                const std::string_view names_sv = std::string_view(query).substr(7);
                 std::vector<std::string> names;
-                std::istringstream stream(names_str);
-                std::string name;
-                while (std::getline(stream, name, ',')) {
-                    auto trimmed = name;
-                    trimmed.erase(0, trimmed.find_first_not_of(" \t"));
-                    trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
-                    if (!trimmed.empty()) {
-                        names.push_back(std::move(trimmed));
+                std::string_view remaining = names_sv;
+                while (!remaining.empty()) {
+                    auto comma = remaining.find(',');
+                    auto token = remaining.substr(0, comma);
+                    // Trim whitespace
+                    auto start = token.find_first_not_of(" \t");
+                    auto end = token.find_last_not_of(" \t");
+                    if (start != std::string_view::npos) {
+                        names.emplace_back(token.substr(start, end - start + 1));
                     }
+                    remaining = (comma == std::string_view::npos) ? std::string_view{} : remaining.substr(comma + 1);
                 }
 
                 std::string out;
@@ -64,24 +74,12 @@ namespace orangutan::tools {
             };
 
             std::vector<ScoredMatch> matches;
-            const auto query_lower = [&query]() {
-                std::string lower = query;
-                std::ranges::transform(lower, lower.begin(), [](unsigned char ch) {
-                    return std::tolower(ch);
-                });
-                return lower;
-            }();
+            const auto query_lower = to_lower(query);
 
             for (const auto &s : summaries) {
                 int score = 0;
-                auto name_lower = s.name;
-                std::ranges::transform(name_lower, name_lower.begin(), [](unsigned char ch) {
-                    return std::tolower(ch);
-                });
-                auto desc_lower = s.description;
-                std::ranges::transform(desc_lower, desc_lower.begin(), [](unsigned char ch) {
-                    return std::tolower(ch);
-                });
+                const auto name_lower = to_lower(std::string(s.name));
+                const auto desc_lower = to_lower(std::string(s.description));
 
                 if (name_lower == query_lower) {
                     score += 100;
@@ -90,18 +88,6 @@ namespace orangutan::tools {
                 }
                 if (desc_lower.contains(query_lower)) {
                     score += 20;
-                }
-
-                // Also check individual words in query
-                std::istringstream words(query_lower);
-                std::string word;
-                while (words >> word) {
-                    if (name_lower.contains(word)) {
-                        score += 10;
-                    }
-                    if (desc_lower.contains(word)) {
-                        score += 5;
-                    }
                 }
 
                 if (score > 0) {
@@ -125,15 +111,11 @@ namespace orangutan::tools {
             }
 
             std::string out;
+            utils::format_to(out, "Found {} matching tool(s):\n\n", matches.size());
             for (const auto &m : matches) {
-                const auto *def = registry.find_definition(m.summary->name);
-                if (def == nullptr) {
-                    continue;
-                }
-                registry.discover_tool(m.summary->name);
-                utils::format_to(out, "## {}\n{}\n\nInput schema:\n```json\n{}\n```\n\n", def->name, def->description, format_schema(def->input_schema));
+                utils::format_to(out, "- **{}**: {}\n", m.summary->name, m.summary->description);
             }
-            utils::format_to(out, "Discovered {} tool(s). They are now available for use.", matches.size());
+            out += "\nUse `select:<name>` to discover specific tools and get their full schemas.";
             return out;
         }
 

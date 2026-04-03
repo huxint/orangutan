@@ -38,8 +38,8 @@ namespace orangutan::tools {
     };
 
     struct DeferredToolSummary {
-        std::string name;
-        std::string description;
+        std::string_view name;
+        std::string_view description;
     };
 
     class ToolRegistry {
