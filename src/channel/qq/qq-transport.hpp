@@ -20,9 +20,9 @@ namespace orangutan::channel::qq {
 
         struct Event {
             enum class Kind {
-                Text,
-                Close,
-                Error,
+                text,
+                close,
+                error,
             };
 
             Kind kind;
@@ -31,28 +31,35 @@ namespace orangutan::channel::qq {
 
             [[nodiscard]]
             static Event text(std::string payload) {
-                return Event{.kind = Kind::Text, .payload = std::move(payload)};
+                return Event{.kind = Kind::text, .payload = std::move(payload)};
             }
 
             [[nodiscard]]
             static Event close(base::u16 close_code, std::string reason) {
-                return Event{.kind = Kind::Close, .payload = std::move(reason), .close_code = close_code};
+                return Event{.kind = Kind::close, .payload = std::move(reason), .close_code = close_code};
             }
 
             [[nodiscard]]
             static Event error(std::string message) {
-                return Event{.kind = Kind::Error, .payload = std::move(message)};
+                return Event{.kind = Kind::error, .payload = std::move(message)};
             }
         };
 
         class Connection {
         public:
+            Connection(const Connection &) = delete;
+            Connection &operator=(const Connection &) = delete;
+            Connection(Connection &&) = delete;
+            Connection &operator=(Connection &&) = delete;
             virtual ~Connection() = default;
 
             virtual void send_text(std::string payload) = 0;
             [[nodiscard]]
             virtual std::optional<Event> wait_event(std::chrono::milliseconds timeout) = 0;
             virtual void close() = 0;
+
+        protected:
+            Connection() = default;
         };
 
         using ConnectionFactory = std::function<std::unique_ptr<Connection>(const std::string &url)>;

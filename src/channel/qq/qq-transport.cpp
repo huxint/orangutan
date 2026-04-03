@@ -4,6 +4,7 @@
 #include "types/base.hpp"
 
 #include <arpa/inet.h>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
@@ -82,16 +83,17 @@ namespace orangutan::channel::qq {
 
         class CurlConnection final : public Transport::Connection {
         public:
-            explicit CurlConnection(const std::string &url) {
-                ensure_curl_ready();
-
-                handle_ = curl_easy_init();
+            explicit CurlConnection(const std::string &url)
+            : handle_([] {
+                  ensure_curl_ready();
+                  return curl_easy_init();
+              }()) {
                 if (handle_ == nullptr) {
                     throw std::runtime_error("Failed to initialize libcurl websocket handle");
                 }
 
                 error_buffer_[0] = '\0';
-                curl_easy_setopt(handle_, CURLOPT_ERRORBUFFER, error_buffer_);
+                curl_easy_setopt(handle_, CURLOPT_ERRORBUFFER, error_buffer_.data());
                 curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(handle_, CURLOPT_CONNECT_ONLY, 2L);
                 curl_easy_setopt(handle_, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
@@ -103,7 +105,7 @@ namespace orangutan::channel::qq {
 
                 const auto code = curl_easy_perform(handle_);
                 if (code != CURLE_OK) {
-                    const auto detail = trim_curl_error(error_buffer_);
+                    const auto detail = trim_curl_error(error_buffer_.data());
                     curl_easy_cleanup(handle_);
                     handle_ = nullptr;
                     throw std::runtime_error(curl_message("QQ WebSocket connect", code, detail));
@@ -120,6 +122,11 @@ namespace orangutan::channel::qq {
             ~CurlConnection() override {
                 cleanup();
             }
+
+            CurlConnection(const CurlConnection &) = delete;
+            CurlConnection &operator=(const CurlConnection &) = delete;
+            CurlConnection(CurlConnection &&) = delete;
+            CurlConnection &operator=(CurlConnection &&) = delete;
 
             void send_text(std::string payload) override {
                 ensure_open();
@@ -139,7 +146,7 @@ namespace orangutan::channel::qq {
                         continue;
                     }
 
-                    throw std::runtime_error(curl_message("QQ WebSocket write", code, trim_curl_error(error_buffer_)));
+                    throw std::runtime_error(curl_message("QQ WebSocket write", code, trim_curl_error(error_buffer_.data())));
                 }
             }
 
@@ -155,10 +162,10 @@ namespace orangutan::channel::qq {
                 unsigned int flags = 0;
 
                 while (true) {
-                    char buffer[4096];
+                    std::array<char, 4096> buffer{};
                     std::size_t received = 0;
                     const curl_ws_frame *frame = nullptr;
-                    const auto code = curl_ws_recv(handle_, buffer, sizeof(buffer), &received, &frame);
+                    const auto code = curl_ws_recv(handle_, buffer.data(), buffer.size(), &received, &frame);
 
                     if (code == CURLE_AGAIN) {
                         if (!wait_socket(POLLIN, timeout)) {
@@ -170,7 +177,7 @@ namespace orangutan::channel::qq {
                         return Transport::Event::close(1000, {});
                     }
                     if (code != CURLE_OK) {
-                        throw std::runtime_error(curl_message("QQ WebSocket read", code, trim_curl_error(error_buffer_)));
+                        throw std::runtime_error(curl_message("QQ WebSocket read", code, trim_curl_error(error_buffer_.data())));
                     }
                     if (frame == nullptr) {
                         continue;
@@ -178,7 +185,7 @@ namespace orangutan::channel::qq {
 
                     flags = frame->flags;
                     if (received > 0) {
-                        payload.append(buffer, received);
+                        payload.append(buffer.data(), received);
                     }
                     if (frame->bytesleft > 0) {
                         continue;
@@ -257,7 +264,7 @@ namespace orangutan::channel::qq {
 
             CURL *handle_ = nullptr;
             curl_socket_t socket_ = CURL_SOCKET_BAD;
-            char error_buffer_[CURL_ERROR_SIZE]{};
+            std::array<char, CURL_ERROR_SIZE> error_buffer_{};
             bool closed_ = false;
         };
 
@@ -439,7 +446,7 @@ namespace orangutan::channel::qq {
                 try {
                     auto event = connection->wait_event(std::chrono::milliseconds(100));
                     if (event.has_value()) {
-                        handle_event(std::move(*event));
+                        handle_event(*event);
                     }
                 } catch (const std::exception &e) {
                     handle_connection_error(e.what());
@@ -463,12 +470,12 @@ namespace orangutan::channel::qq {
             return !url_.empty() && !connection_ && reconnect_scheduled_ && Clock::now() >= reconnect_at_;
         }
 
-        void handle_event(Event event) {
+        void handle_event(const Event &event) {
             switch (event.kind) {
-                case Event::Kind::Text:
+                case Event::Kind::text:
                     emit_text(event.payload);
                     return;
-                case Event::Kind::Close: {
+                case Event::Kind::close: {
                     bool emit_close_callback = false;
                     {
                         std::scoped_lock lock(mutex_);
@@ -486,7 +493,7 @@ namespace orangutan::channel::qq {
                     }
                     return;
                 }
-                case Event::Kind::Error:
+                case Event::Kind::error:
                     handle_connection_error(event.payload);
                     return;
             }
