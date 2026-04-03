@@ -160,6 +160,11 @@ namespace orangutan::channel {
             throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
         }
 
+        if (!task) {
+            spdlog::debug("Ignoring empty JidTaskRunner task for '{}'", jid);
+            return;
+        }
+
         auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = jid}) | stdexec::then([task = std::move(task), jid]() mutable {
                             try {
                                 task();

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace orangutan::skills {
 
-    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::string &workspace_root);
+    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, std::string_view workspace_root);
 
     struct SkillDef {
         std::string name;

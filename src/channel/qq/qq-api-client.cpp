@@ -1,7 +1,9 @@
 #include "channel/qq/qq-api-client.hpp"
 
 #include "providers/http-client.hpp"
+#include "utils/string.hpp"
 
+#include <array>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -44,21 +46,6 @@ namespace orangutan::channel::qq {
             }
 
             return default_value;
-        }
-
-        [[nodiscard]]
-        std::string trim(std::string_view input) {
-            std::size_t start = 0;
-            while (start < input.size() && std::isspace(static_cast<unsigned char>(input[start])) != 0) {
-                ++start;
-            }
-
-            std::size_t end = input.size();
-            while (end > start && std::isspace(static_cast<unsigned char>(input[end - 1])) != 0) {
-                --end;
-            }
-
-            return std::string(input.substr(start, end - start));
         }
 
         [[nodiscard]]
@@ -228,7 +215,8 @@ namespace orangutan::channel::qq {
         }
     }
 
-    QqApiClient::HttpRawResponse QqApiClient::perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body, bool with_auth) {
+    QqApiClient::HttpRawResponse QqApiClient::perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body,
+                                                                   bool with_auth) const {
         CurlHandle curl;
         CurlHeaders headers;
         std::string response_body;
@@ -236,7 +224,7 @@ namespace orangutan::channel::qq {
         std::string retry_after;
         std::string method_text(method);
         std::string body_text;
-        char error_buffer[CURL_ERROR_SIZE]{};
+        std::array<char, CURL_ERROR_SIZE> error_buffer{};
 
         headers.append("Content-Type: application/json");
         headers.append("User-Agent: orangutan/qq-channel");
@@ -244,7 +232,7 @@ namespace orangutan::channel::qq {
             headers.append("Authorization: QQBot " + access_token());
         }
 
-        curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error_buffer);
+        curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error_buffer.data());
         curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, default_timeout_seconds);
@@ -295,8 +283,8 @@ namespace orangutan::channel::qq {
                 return total;
             }
 
-            const auto key = to_lower_ascii(trim(line.substr(0, colon)));
-            const auto value = trim(line.substr(colon + 1));
+            const auto key = to_lower_ascii(utils::trim_copy(line.substr(0, colon)));
+            const auto value = static_cast<std::string>(utils::trim_copy(line.substr(colon + 1)));
             if (key == "x-tps-trace-id" && capture->trace_id != nullptr) {
                 *capture->trace_id = value;
             } else if (key == "retry-after" && capture->retry_after != nullptr) {
@@ -309,7 +297,7 @@ namespace orangutan::channel::qq {
 
         const auto code = curl_easy_perform(curl.get());
         if (code != CURLE_OK) {
-            const std::string detail = error_buffer[0] != '\0' ? error_buffer : curl_easy_strerror(code);
+            const std::string detail = error_buffer[0] != '\0' ? error_buffer.data() : curl_easy_strerror(code);
             throw std::runtime_error("QQ API request failed: " + detail);
         }
 
@@ -336,16 +324,13 @@ namespace orangutan::channel::qq {
             return normalized;
         }
 
-        try {
-            const auto payload = nlohmann::json::parse(normalized.body);
+        if (const auto payload = nlohmann::json::parse(normalized.body, nullptr, false); !payload.is_discarded()) {
             if (payload.contains("code") && payload.at("code").is_number_integer()) {
                 normalized.biz_code = payload.at("code").get<int>();
                 if (payload.contains("message") && payload.at("message").is_string()) {
                     normalized.biz_message = payload.at("message").get<std::string>();
                 }
             }
-        } catch (...) {
-            // Preserve raw body for diagnostics; non-JSON payloads are handled by the caller.
         }
 
         return normalized;

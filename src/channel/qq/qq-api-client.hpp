@@ -71,7 +71,7 @@ namespace orangutan::channel::qq {
         QqApiResponse request_with_retry(std::string_view method, const std::string &path, const std::optional<nlohmann::json> &body);
 
         [[nodiscard]]
-        HttpRawResponse perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body, bool with_auth);
+        HttpRawResponse perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body, bool with_auth) const;
 
         [[nodiscard]]
         static QqApiResponse normalize_response(const HttpRawResponse &raw);

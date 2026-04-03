@@ -84,6 +84,36 @@ namespace {
         }
     };
 
+    TEST_CASE("skips_missing_frontmatter") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_missing_frontmatter");
+        write_skill(temp_dir, "missing-frontmatter", R"md(# No frontmatter here
+This skill file should be skipped.
+)md");
+
+        SkillLoader loader;
+        loader.load_from_directories({temp_dir.string()});
+
+        CHECK(loader.active_skills().empty());
+
+        std::filesystem::remove_all(temp_dir);
+    };
+
+    TEST_CASE("skips_unclosed_yaml_frontmatter") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_unclosed_frontmatter");
+        write_skill(temp_dir, "unclosed-frontmatter", R"md(---
+name: unclosed-frontmatter
+description: Missing a closing delimiter
+Body line that should not be parsed.
+)md");
+
+        SkillLoader loader;
+        loader.load_from_directories({temp_dir.string()});
+
+        CHECK(loader.active_skills().empty());
+
+        std::filesystem::remove_all(temp_dir);
+    };
+
     TEST_CASE("skips_unmet_env_dependency") {
         unsetenv("ORANGUTAN_TEST_ENV_SKILL");
 
@@ -94,6 +124,22 @@ namespace {
             INFO("skill with unmet env should not be loaded");
             CHECK(skill.name != "env-skill");
         }
+    };
+
+    TEST_CASE("skips_missing_description_field") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_missing_description");
+        write_skill(temp_dir, "missing-description", R"md(---
+name: missing-description
+---
+This skill should be skipped.
+)md");
+
+        SkillLoader loader;
+        loader.load_from_directories({temp_dir.string()});
+
+        CHECK(find_skill(loader, "missing-description") == nullptr);
+
+        std::filesystem::remove_all(temp_dir);
     };
 
     TEST_CASE("loads_skill_with_met_env_dependency") {
@@ -214,6 +260,26 @@ Body after leading blank line.
 
         CHECK(loader.active_skills().size() == 1UL);
         CHECK(loader.active_skills()[0].name == "blank-line-skill");
+
+        std::filesystem::remove_all(temp_dir);
+    };
+
+    TEST_CASE("continues_loading_skills_after_non_regular_skill_md_path_is_encountered") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_non_regular_skill_path");
+        // A directory at SKILL.md is a portable proxy for a non-readable/non-regular skill file.
+        std::filesystem::create_directories(temp_dir / "00-non-regular-skill" / "SKILL.md");
+        write_skill(temp_dir, "10-readable-skill", R"md(---
+name: readable-skill
+description: Should still load after a non-regular SKILL.md path
+---
+Readable skill body.
+)md");
+
+        SkillLoader loader;
+        loader.load_from_directories({temp_dir.string()});
+
+        REQUIRE(loader.active_skills().size() == 1UL);
+        CHECK(loader.active_skills()[0].name == "readable-skill");
 
         std::filesystem::remove_all(temp_dir);
     };

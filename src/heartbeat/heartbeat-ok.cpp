@@ -1,4 +1,5 @@
 #include "heartbeat/heartbeat-ok.hpp"
+#include "utils/string.hpp"
 
 #include <string_view>
 
@@ -7,28 +8,19 @@ namespace orangutan::heartbeat {
 
         constexpr std::string_view heartbeat_ok_token = "HEARTBEAT_OK";
 
-        std::string_view trim(std::string_view sv) {
-            auto start = sv.find_first_not_of(" \t\r\n");
-            if (start == std::string_view::npos) {
-                return {};
-            }
-            auto end = sv.find_last_not_of(" \t\r\n");
-            return sv.substr(start, end - start + 1);
-        }
-
     } // namespace
 
     bool detect_heartbeat_ok(const std::string &response, int ack_max_chars, std::string *out_stripped) {
-        auto trimmed = trim(response);
+        auto trimmed = utils::trim_copy(response);
         if (trimmed.empty()) {
             return false;
         }
 
         std::string_view remainder;
         if (trimmed.starts_with(heartbeat_ok_token)) {
-            remainder = trim(trimmed.substr(heartbeat_ok_token.size()));
+            remainder = utils::trim_copy(trimmed.substr(heartbeat_ok_token.size()));
         } else if (trimmed.ends_with(heartbeat_ok_token)) {
-            remainder = trim(trimmed.substr(0, trimmed.size() - heartbeat_ok_token.size()));
+            remainder = utils::trim_copy(trimmed.substr(0, trimmed.size() - heartbeat_ok_token.size()));
         } else {
             return false;
         }

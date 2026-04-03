@@ -205,4 +205,35 @@ namespace {
         CHECK(pending_capture_weak.expired());
     };
 
+    TEST_CASE("accepts_move_only_tasks") {
+        JidTaskRunner runner(1);
+
+        auto capture = std::make_unique<int>(42);
+        std::promise<int> result;
+        auto result_future = result.get_future();
+
+        runner.submit("qqbot:c2c:alice", [capture = std::move(capture), &result]() mutable {
+            result.set_value(*capture);
+        });
+
+        REQUIRE(result_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        CHECK(result_future.get() == 42);
+        runner.shutdown();
+    };
+
+    TEST_CASE("empty_task_is_ignored_without_blocking_following_tasks") {
+        JidTaskRunner runner(1);
+
+        std::promise<void> second_ran;
+        auto second_ran_future = second_ran.get_future();
+
+        runner.submit("qqbot:c2c:alice", JidTaskRunner::Task{});
+        runner.submit("qqbot:c2c:alice", [&] {
+            second_ran.set_value();
+        });
+
+        REQUIRE(second_ran_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+        runner.shutdown();
+    };
+
 } // namespace

@@ -17,7 +17,7 @@ namespace orangutan::channel {
 
     class JidTaskRunner {
     public:
-        using Task = std::function<void()>;
+        using Task = std::move_only_function<void()>;
 
         class BlockingLease {
         public:

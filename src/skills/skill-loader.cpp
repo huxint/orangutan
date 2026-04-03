@@ -1,10 +1,12 @@
 #include "skills/skill-loader.hpp"
 #include "bootstrap/identity.hpp"
 #include "utils/file-io.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include "utils/format.hpp"
@@ -16,10 +18,14 @@ namespace orangutan::skills {
 
         constexpr std::string_view yaml_delimiter = "---";
 
-        struct ParsedSkillFile {
-            bool valid = false;
-            SkillDef skill;
+        enum class ParseError {
+            missing_frontmatter,
+            unclosed_frontmatter,
+            missing_required_name,
+            missing_required_description,
         };
+
+        using ParsedSkillFile = std::expected<SkillDef, ParseError>;
 
         std::string_view strip_cr(std::string_view line) {
             if (!line.empty() && line.back() == '\r') {
@@ -65,17 +71,6 @@ namespace orangutan::skills {
             });
         }
 
-        // Trim leading/trailing whitespace from a string_view
-        std::string_view trim(std::string_view sv) {
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front())) != 0) {
-                sv.remove_prefix(1);
-            }
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back())) != 0) {
-                sv.remove_suffix(1);
-            }
-            return sv;
-        }
-
         // Strip surrounding quotes (single or double) from a YAML value
         std::string strip_quotes(std::string_view sv) {
             if (sv.size() >= 2) {
@@ -94,7 +89,7 @@ namespace orangutan::skills {
 
             auto lines = split_lines(yaml_text);
             for (const auto &line : lines) {
-                auto trimmed = trim(line);
+                auto trimmed = utils::trim_copy(line);
                 if (trimmed.empty() || trimmed.front() == '#') {
                     continue;
                 }
@@ -104,8 +99,8 @@ namespace orangutan::skills {
                     continue;
                 }
 
-                auto key = trim(trimmed.substr(0, colon_pos));
-                auto raw_value = trim(trimmed.substr(colon_pos + 1));
+                auto key = utils::trim_copy(trimmed.substr(0, colon_pos));
+                auto raw_value = utils::trim_copy(trimmed.substr(colon_pos + 1));
 
                 // Check for inline YAML array: [item1, item2]
                 auto parse_yaml_array = [](std::string_view val) -> std::vector<std::string> {
@@ -117,7 +112,7 @@ namespace orangutan::skills {
                         std::istringstream items{str};
                         std::string item;
                         while (std::getline(items, item, ',')) {
-                            auto t = trim(item);
+                            auto t = utils::trim_copy(item);
                             if (!t.empty()) {
                                 result.push_back(strip_quotes(t));
                             }
@@ -140,11 +135,25 @@ namespace orangutan::skills {
             return skill;
         }
 
+        void log_parse_error(ParseError error, const std::string &source_path) {
+            switch (error) {
+                case ParseError::missing_frontmatter:
+                    spdlog::warn("Skill file has no frontmatter: {}", source_path);
+                    return;
+                case ParseError::unclosed_frontmatter:
+                    spdlog::warn("Skill file has unclosed frontmatter: {}", source_path);
+                    return;
+                case ParseError::missing_required_name:
+                case ParseError::missing_required_description:
+                    spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
+                    return;
+            }
+        }
+
         ParsedSkillFile parse_skill_file(const std::string &content, const std::string &source_path) {
             auto lines = split_lines(content);
             if (lines.empty()) {
-                spdlog::warn("Skill file has no frontmatter: {}", source_path);
-                return {};
+                return std::unexpected(ParseError::missing_frontmatter);
             }
 
             strip_utf8_bom(lines.front());
@@ -155,13 +164,11 @@ namespace orangutan::skills {
             }
 
             if (open_index == lines.size()) {
-                spdlog::warn("Skill file has no frontmatter: {}", source_path);
-                return {};
+                return std::unexpected(ParseError::missing_frontmatter);
             }
 
             if (!is_yaml_delimiter(lines[open_index])) {
-                spdlog::warn("Skill file has no frontmatter: {}", source_path);
-                return {};
+                return std::unexpected(ParseError::missing_frontmatter);
             }
 
             // Extract frontmatter content and body
@@ -181,8 +188,7 @@ namespace orangutan::skills {
             }
 
             if (!found_closing) {
-                spdlog::warn("Skill file has unclosed frontmatter: {}", source_path);
-                return {};
+                return std::unexpected(ParseError::unclosed_frontmatter);
             }
 
             // Build body
@@ -193,23 +199,22 @@ namespace orangutan::skills {
                 }
                 body.append(lines[index]);
             }
-            auto fm_text = fm_buf;
-
-            SkillDef skill;
-
-            skill = parse_yaml_frontmatter(fm_text, source_path);
+            auto skill = parse_yaml_frontmatter(fm_buf, source_path);
             skill.body = body;
-            if (skill.name.empty() || skill.description.empty()) {
-                spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
-                return {};
+            if (skill.name.empty()) {
+                return std::unexpected(ParseError::missing_required_name);
             }
 
-            return {.valid = true, .skill = std::move(skill)};
+            if (skill.description.empty()) {
+                return std::unexpected(ParseError::missing_required_description);
+            }
+
+            return std::move(skill);
         }
 
     } // namespace
 
-    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::string &workspace_root) {
+    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, std::string_view workspace_root) {
         if (!configured_skill_paths.empty()) {
             return configured_skill_paths;
         }
@@ -219,7 +224,7 @@ namespace orangutan::skills {
             directories.emplace_back(std::string(home) + "/.orangutan/skills");
         }
         if (!workspace_root.empty()) {
-            directories.emplace_back(bootstrap::workspace_skills_root(workspace_root).string());
+            directories.emplace_back(bootstrap::workspace_skills_root(std::string(workspace_root)).string());
         }
         return directories;
     }
@@ -266,17 +271,20 @@ namespace orangutan::skills {
                 }
 
                 auto parsed = parse_skill_file(content, skill_file.string());
-                if (!parsed.valid) {
+                if (!parsed.has_value()) {
+                    log_parse_error(parsed.error(), skill_file.string());
                     continue;
                 }
 
-                if (!env_vars_satisfied(parsed.skill.env)) {
-                    spdlog::debug("Skipping skill '{}' — unmet env dependencies", parsed.skill.name);
+                auto skill = std::move(parsed).value();
+                if (!env_vars_satisfied(skill.env)) {
+                    spdlog::debug("Skipping skill '{}' — unmet env dependencies", skill.name);
                     continue;
                 }
 
-                spdlog::debug("Loaded skill '{}' from {}", parsed.skill.name, parsed.skill.source_path);
-                by_name.insert_or_assign(parsed.skill.name, std::move(parsed.skill));
+                spdlog::debug("Loaded skill '{}' from {}", skill.name, skill.source_path);
+                auto skill_name = skill.name;
+                by_name.insert_or_assign(std::move(skill_name), std::move(skill));
             }
         }
 
