@@ -13,7 +13,10 @@ namespace orangutan::permissions {
     }
 
     static bool is_file_tool(std::string_view name) {
-        return name.contains("file_read")
+        return name == "read"
+            || name == "write"
+            || name == "edit"
+            || name.contains("file_read")
             || name.contains("file_write")
             || name.contains("file_edit");
     }
@@ -25,6 +28,9 @@ namespace orangutan::permissions {
             }
         }
         if (is_file_tool(call.name)) {
+            if (call.input.contains("path") && call.input["path"].is_string()) {
+                return call.input["path"].get<std::string>();
+            }
             if (call.input.contains("file_path") && call.input["file_path"].is_string()) {
                 return call.input["file_path"].get<std::string>();
             }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "tools/registry/permissions.hpp"
 #include "permissions/permission-types.hpp"
 #include "process/subprocess.hpp"
 #include "tools/registry/tool-registry.hpp"
@@ -12,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace orangutan::tools {
 
@@ -57,6 +57,18 @@ namespace orangutan::tools {
         return std::filesystem::path(home) / raw.substr(2);
     }
 
+    inline std::filesystem::path normalize_permission_root(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
+        if (path.empty()) {
+            return {};
+        }
+
+        auto expanded = expand_tool_home_path(path);
+        if (!expanded.is_absolute() && !workspace_root.empty()) {
+            expanded = normalize_tool_path(workspace_root) / expanded;
+        }
+        return normalize_tool_path(expanded);
+    }
+
     inline std::filesystem::path orangutan_config_root() {
         const auto *home = std::getenv("HOME");
         if (home == nullptr || std::string_view{home}.empty()) {
@@ -66,16 +78,40 @@ namespace orangutan::tools {
         return normalize_tool_path(std::filesystem::path(home) / ".orangutan");
     }
 
-    inline bool is_tool_path_allowed(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
-        if (!workspace_root.empty() && is_path_within_workspace(path, workspace_root)) {
-            return true;
+    inline std::vector<std::filesystem::path> permission_roots(const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
+        std::vector<std::filesystem::path> roots;
+        if (!workspace_root.empty()) {
+            roots.push_back(normalize_tool_path(workspace_root));
         }
 
         const auto config_root = orangutan_config_root();
-        return !config_root.empty() && is_path_within_workspace(path, config_root);
+        if (!config_root.empty()) {
+            roots.push_back(config_root);
+        }
+
+        if (permissions != nullptr) {
+            for (const auto &dir : permissions->additional_directories) {
+                auto root = normalize_permission_root(std::filesystem::path(dir), workspace_root);
+                if (!root.empty()) {
+                    roots.push_back(std::move(root));
+                }
+            }
+        }
+
+        return roots;
     }
 
-    inline std::filesystem::path resolve_tool_path(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
+    inline bool is_tool_path_allowed(const std::filesystem::path &path, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr) {
+        for (const auto &root : permission_roots(workspace_root, permissions)) {
+            if (is_path_within_workspace(path, root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    inline std::filesystem::path resolve_tool_path(const std::filesystem::path &path, const std::filesystem::path &workspace_root,
+                                                   const ToolPermissionContext *permissions = nullptr) {
         if (path.empty()) {
             throw std::runtime_error("path is empty");
         }
@@ -88,19 +124,20 @@ namespace orangutan::tools {
         const auto normalized_workspace = normalize_tool_path(workspace_root);
         const auto candidate = expanded.is_absolute() ? expanded : normalized_workspace / expanded;
         const auto normalized_candidate = normalize_tool_path(candidate);
-        if (!is_tool_path_allowed(normalized_candidate, normalized_workspace)) {
+        if (!is_tool_path_allowed(normalized_candidate, normalized_workspace, permissions)) {
             throw std::runtime_error("path escapes workspace sandbox: " + path.string());
         }
 
         return normalized_candidate;
     }
 
-    inline std::filesystem::path resolve_tool_working_dir(const std::string &working_dir, const std::filesystem::path &workspace_root) {
+    inline std::filesystem::path resolve_tool_working_dir(const std::string &working_dir, const std::filesystem::path &workspace_root,
+                                                          const ToolPermissionContext *permissions = nullptr) {
         if (working_dir.empty()) {
             return workspace_root.empty() ? std::filesystem::path{} : normalize_tool_path(workspace_root);
         }
 
-        auto resolved = resolve_tool_path(std::filesystem::path(working_dir), workspace_root);
+        auto resolved = resolve_tool_path(std::filesystem::path(working_dir), workspace_root, permissions);
         std::error_code ec;
         const bool exists = std::filesystem::exists(resolved, ec);
         if (ec) {
@@ -119,8 +156,10 @@ namespace orangutan::tools {
     void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionContext *permissions,
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
-    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
-    void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root);
-    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
+    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
+                            std::string_view edit_mode = "search_replace");
+    void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
+    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
+                            std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan::tools

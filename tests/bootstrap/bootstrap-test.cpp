@@ -608,6 +608,35 @@ namespace {
         CHECK(it->second.fallback_endpoints[0].api_key == "anthropic-key");
     };
 
+    TEST_CASE("build_agent_runtime_configs_constructs_permission_contexts") {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.permissions_config = PermissionConfig{
+            .default_mode = PermissionMode::accept_edits,
+            .allow = {"read"},
+        };
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.agents.emplace("default", AgentConfig{
+                                          .profile = "shared",
+                                          .model = "gpt-test",
+                                          .workspace = harness.workspace_root().string(),
+                                      });
+
+        const auto runtime_configs =
+            bootstrap::detail::build_agent_runtime_configs(cfg, "", CLIPermissionOptions{.permission_mode = PermissionMode::plan, .allowed_tools = {"task(list)"}});
+        REQUIRE(runtime_configs.has_value());
+        const auto it = runtime_configs->find("default");
+        REQUIRE(it != runtime_configs->end());
+
+        CHECK(it->second.permission_context.mode == PermissionMode::plan);
+        CHECK(std::ranges::any_of(it->second.permission_context.allow_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "read" && rule.source == PermissionRuleSource::user_settings;
+        }));
+        CHECK(std::ranges::any_of(it->second.permission_context.allow_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "task" && rule.source == PermissionRuleSource::cli_arg && rule.content.has_value() && rule.content->pattern == "list";
+        }));
+    };
+
     TEST_CASE("repl_runtime_lists_memory_tools_and_skills") {
         BootstrapHarness harness;
         harness.write_config();
@@ -631,7 +660,7 @@ namespace {
             .workspace_root = runtime_it->second.workspace_root,
             .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,
-            .permissions_config = runtime_it->second.permissions_config,
+            .permission_context = runtime_it->second.permission_context,
             .team_agents = runtime_it->second.team_agents,
             .identity = identity,
             .memory_store = &memory_store,

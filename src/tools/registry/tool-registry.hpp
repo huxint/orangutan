@@ -1,7 +1,7 @@
 #pragma once
 
-#include "permissions.hpp"
 #include "permissions/permission-types.hpp"
+#include "types/types.hpp"
 
 #include <functional>
 #include <optional>
@@ -33,6 +33,8 @@ namespace orangutan::tools {
 
     struct Tool {
         ToolDef definition;
+        std::function<PermissionResult(const ToolUse &call, const ToolPermissionContext &ctx)> check_permissions;
+        bool read_only = false;
         std::function<std::string(const nlohmann::json &input)> execute;
         std::function<ToolOutput(const nlohmann::json &input)> execute_rich;
         bool deferred = false;
@@ -46,7 +48,7 @@ namespace orangutan::tools {
     class ToolRegistry {
     public:
         using ExecutionGuard = std::function<std::optional<ToolResult>(const ToolUse &call)>;
-        using DefinitionFilter = std::function<bool(const ToolDef &definition)>;
+        using DefinitionFilter = std::function<bool(const Tool &tool)>;
 
         void register_tool(Tool tool);
         void set_execution_guard(ExecutionGuard guard);
@@ -65,6 +67,8 @@ namespace orangutan::tools {
         std::vector<DeferredToolSummary> deferred_tool_summaries() const;
         [[nodiscard]]
         const ToolDef *find_definition(const std::string &name) const;
+        [[nodiscard]]
+        const Tool *find_tool(const std::string &name) const;
 
     private:
         std::unordered_map<std::string, Tool> tools_;

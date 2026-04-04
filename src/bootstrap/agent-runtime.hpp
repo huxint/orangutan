@@ -2,7 +2,6 @@
 
 #include "bootstrap/identity.hpp"
 #include "config/config.hpp"
-#include "permissions/permission-state.hpp"
 #include "permissions/permission-types.hpp"
 #include "providers/provider.hpp"
 #include "skills/skill-loader.hpp"
@@ -57,7 +56,7 @@ namespace orangutan::bootstrap {
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
         Config::MemoryConfig memory;
-        PermissionConfig permissions_config;
+        ToolPermissionContext permission_context;
         std::vector<std::string> team_agents;
         std::string team_id;
         RuntimeIdentity identity;

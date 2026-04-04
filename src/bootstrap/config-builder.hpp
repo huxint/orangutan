@@ -20,6 +20,7 @@ namespace orangutan::bootstrap::detail {
     std::optional<ResolvedAgentEndpoints> resolve_agent_endpoints(const Config &cfg, const AgentConfig &agent_cfg, const std::string &agent_key,
                                                                   const std::string &cli_api_key_override);
 
-    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override);
+    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override,
+                                                                                                   const CLIPermissionOptions &cli_permission_options = {});
 
 } // namespace orangutan::bootstrap::detail

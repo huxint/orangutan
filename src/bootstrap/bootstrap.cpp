@@ -194,6 +194,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         return 1;
     }
     apply_cli_edit_mode_override(cfg, options.edit_mode);
+    const auto cli_permission_options = build_cli_permission_options(options);
 
     std::optional<orangutan::AgentConfig> maybe_selected_agent;
     std::optional<std::string> maybe_workspace;
@@ -230,7 +231,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .cli_runtime_key = maybe_primary_identity->runtime_key,
             .cli_memory_scope = maybe_primary_identity->memory_scope,
             .memory = cfg.memory,
-            .permissions_config = maybe_selected_agent->permissions_config,
+            .permission_context = initialize_permission_context(maybe_selected_agent->permissions_config, cli_permission_options, *maybe_workspace),
             .team_agents = maybe_selected_agent->team_agents,
         };
     }
@@ -241,7 +242,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         return 1;
     }
 
-    const auto maybe_agent_runtime_configs = detail::build_agent_runtime_configs(cfg, options.api_key);
+    const auto maybe_agent_runtime_configs = detail::build_agent_runtime_configs(cfg, options.api_key, cli_permission_options);
     if (!maybe_agent_runtime_configs.has_value()) {
         return 1;
     }
@@ -359,7 +360,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .edit_mode = runtime_cfg.edit_mode,
                 .thinking_budget = runtime_cfg.thinking_budget,
                 .memory = runtime_cfg.memory,
-                .permissions = runtime_cfg.permissions,
+                .permission_context = runtime_cfg.permission_context,
                 .team_id = request.team_id,
                 .identity = identity,
                 .memory_store = memory_store,
@@ -414,7 +415,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                     .edit_mode = runtime_cfg.edit_mode,
                     .thinking_budget = runtime_cfg.thinking_budget,
                     .memory = runtime_cfg.memory,
-                    .permissions_config = runtime_cfg.permissions_config,
+                    .permission_context = runtime_cfg.permission_context,
                     .team_agents = runtime_cfg.team_agents,
                     .identity = identity,
                     .memory_store = memory_store,
@@ -488,7 +489,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .workspace_root = maybe_primary_runtime_cfg->workspace_root,
                 .edit_mode = maybe_primary_runtime_cfg->edit_mode,
                 .memory = maybe_primary_runtime_cfg->memory,
-                .permissions_config = maybe_primary_runtime_cfg->permissions_config,
+                .permission_context = maybe_primary_runtime_cfg->permission_context,
                 .team_agents = maybe_primary_runtime_cfg->team_agents,
                 .identity = *maybe_primary_identity,
                 .memory_store = memory_store.get(),

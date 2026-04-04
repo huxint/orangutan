@@ -1,4 +1,5 @@
 #include "permissions/rule-parser.hpp"
+#include "permissions/permission-display.hpp"
 #include "permissions/permission-evaluator.hpp"
 #include "permissions/safety-checks.hpp"
 #include "permissions/permission-state.hpp"
@@ -287,4 +288,26 @@ TEST_CASE("PersistAndLoadRule") {
     REQUIRE(loaded[0].behavior == PermissionBehavior::allow);
 
     std::filesystem::remove_all(temp_dir);
+}
+
+TEST_CASE("PermissionDecisionFormatsRuleReasonForDisplay") {
+    const auto decision =
+        PermissionDecision::ask_by_rule(PermissionRuleSource::project_settings, "shell(git push *)", "Shell command approval required.");
+
+    const auto lines = permission_decision_detail_lines(decision);
+    REQUIRE(lines.size() >= 3);
+    CHECK(lines[0] == "Behavior: ask");
+    CHECK(lines[1] == "Reason: rule from project settings");
+    CHECK(lines[2] == "Rule: shell(git push *)");
+}
+
+TEST_CASE("PermissionDecisionSerializesToStructuredJson") {
+    const auto decision = PermissionDecision::ask_by_safety(".git/config", "Protected path approval required.");
+    const auto json = permission_decision_to_json(decision);
+
+    CHECK(json["behavior"] == "ask");
+    CHECK(json["message"] == "Protected path approval required.");
+    REQUIRE(json.contains("reason"));
+    CHECK(json["reason"]["type"] == "safety_check");
+    CHECK(json["reason"]["path"] == ".git/config");
 }

@@ -94,7 +94,7 @@ namespace orangutan::tools {
         std::vector<ToolDef> defs;
         defs.reserve(tools_.size());
         for (const auto &[_, tool] : tools_) {
-            if (definition_filter_ && !definition_filter_(tool.definition)) {
+            if (definition_filter_ && !definition_filter_(tool)) {
                 continue;
             }
             if (tool.deferred && !discovered_tools_.contains(tool.definition.name)) {
@@ -116,7 +116,7 @@ namespace orangutan::tools {
     bool ToolRegistry::has_deferred_tools() const {
         for (const auto &[_, tool] : tools_) {
             if (tool.deferred) {
-                if (definition_filter_ && !definition_filter_(tool.definition)) {
+                if (definition_filter_ && !definition_filter_(tool)) {
                     continue;
                 }
                 return true;
@@ -131,7 +131,7 @@ namespace orangutan::tools {
             if (!tool.deferred) {
                 continue;
             }
-            if (definition_filter_ && !definition_filter_(tool.definition)) {
+            if (definition_filter_ && !definition_filter_(tool)) {
                 continue;
             }
             if (discovered_tools_.contains(tool.definition.name)) {
@@ -147,10 +147,21 @@ namespace orangutan::tools {
         if (it == tools_.end()) {
             return nullptr;
         }
-        if (definition_filter_ && !definition_filter_(it->second.definition)) {
+        if (definition_filter_ && !definition_filter_(it->second)) {
             return nullptr;
         }
         return &it->second.definition;
+    }
+
+    const Tool *ToolRegistry::find_tool(const std::string &name) const {
+        auto it = tools_.find(name);
+        if (it == tools_.end()) {
+            return nullptr;
+        }
+        if (definition_filter_ && !definition_filter_(it->second)) {
+            return nullptr;
+        }
+        return &it->second;
     }
 
     ToolResult ToolRegistry::execute(const ToolUse &call) const {

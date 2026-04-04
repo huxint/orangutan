@@ -15,6 +15,27 @@
 namespace orangutan::tools {
     namespace {
 
+        PermissionResult validate_read_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
+            try {
+                if (call.input.contains("path") && call.input["path"].is_string()) {
+                    resolve_tool_path(std::filesystem::path(call.input.at("path").get<std::string>()), workspace_root, &ctx);
+                }
+
+                if (call.input.contains("paths") && call.input["paths"].is_array()) {
+                    for (const auto &item : call.input.at("paths")) {
+                        if (!item.is_string()) {
+                            return PermissionResult::deny("Read path must be a string");
+                        }
+                        resolve_tool_path(std::filesystem::path(item.get<std::string>()), workspace_root, &ctx);
+                    }
+                }
+            } catch (const std::exception &e) {
+                return PermissionResult::deny(e.what());
+            }
+
+            return PermissionResult::passthrough();
+        }
+
         constexpr std::size_t max_image_size = 5 * 1024 * 1024;
 
         constexpr std::string_view base64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -165,7 +186,7 @@ namespace orangutan::tools {
             return out;
         }
 
-        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
             const bool has_paths = input.contains("paths") && !input["paths"].is_null() && !(input["paths"].is_array() && input["paths"].empty());
 
@@ -186,14 +207,14 @@ namespace orangutan::tools {
             }
 
             if (has_path) {
-                const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root);
+                const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root, permissions);
                 return read_single_file(path, offset, limit, edit_mode);
             }
 
             const auto &paths = input.at("paths");
             ToolOutput combined;
             for (std::size_t i = 0; i < paths.size(); ++i) {
-                const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root);
+                const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root, permissions);
                 if (i > 0) {
                     combined.text.push_back('\n');
                 }
@@ -213,7 +234,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
         registry.register_tool(
             {.definition =
                  {.name = "read",
@@ -238,8 +259,12 @@ namespace orangutan::tools {
                            {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
                          {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                          {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
-             .execute_rich = [workspace_root, mode = std::string(edit_mode)](const nlohmann::json &input) {
-                 return read_file(input, workspace_root, mode);
+             .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                 return validate_read_permissions(call, ctx, workspace_root);
+             },
+             .read_only = true,
+             .execute_rich = [workspace_root, permissions, mode = std::string(edit_mode)](const nlohmann::json &input) {
+                 return read_file(input, workspace_root, permissions, mode);
              }});
     }
 

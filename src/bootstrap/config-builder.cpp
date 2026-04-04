@@ -23,6 +23,12 @@ namespace {
         return fallback.profile + ":" + fallback.model;
     }
 
+    orangutan::ToolPermissionContext build_agent_permission_context(const orangutan::config::AgentConfig &agent_cfg,
+                                                                    const orangutan::CLIPermissionOptions &cli_permission_options,
+                                                                    const std::string &workspace_root) {
+        return orangutan::initialize_permission_context(agent_cfg.permissions_config, cli_permission_options, workspace_root);
+    }
+
 } // namespace
 
 namespace orangutan::bootstrap::detail {
@@ -140,7 +146,8 @@ namespace orangutan::bootstrap::detail {
         return resolved;
     }
 
-    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override) {
+    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override,
+                                                                                                    const CLIPermissionOptions &cli_permission_options) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
             const auto maybe_endpoints = resolve_agent_endpoints(cfg, agent_cfg, agent_key, cli_api_key_override);
@@ -178,7 +185,7 @@ namespace orangutan::bootstrap::detail {
                                           .cli_runtime_key = cli_identity.runtime_key,
                                           .cli_memory_scope = cli_identity.memory_scope,
                                           .memory = cfg.memory,
-                                          .permissions_config = agent_cfg.permissions_config,
+                                          .permission_context = build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
                                           .team_agents = agent_cfg.team_agents,
                                           .coordinator_mode = agent_cfg.coordinator_mode,
                                           .max_concurrent_agents = agent_cfg.max_concurrent_agents,

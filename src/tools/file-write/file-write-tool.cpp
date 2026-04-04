@@ -8,8 +8,22 @@
 namespace orangutan::tools {
     namespace {
 
-        std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
-            const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root);
+        PermissionResult validate_write_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
+            if (!call.input.contains("path") || !call.input["path"].is_string()) {
+                return PermissionResult::deny("Write path is required");
+            }
+
+            try {
+                resolve_tool_path(std::filesystem::path(call.input.at("path").get<std::string>()), workspace_root, &ctx);
+            } catch (const std::exception &e) {
+                return PermissionResult::deny(e.what());
+            }
+
+            return PermissionResult::passthrough();
+        }
+
+        std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
+            const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root, permissions);
             const auto content = input.at("content").get<std::string>();
             spdlog::info("  [tool] write: {}", path.string());
 
@@ -24,7 +38,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root) {
+    void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
         registry.register_tool(
             {.definition = {.name = "write",
                             .description =
@@ -38,12 +52,15 @@ namespace orangutan::tools {
                             .input_schema = {{"type", "object"},
                                              {"properties",
                                               {{"path",
-                                                {{"type", "string"},
+                                               {{"type", "string"},
                                                  {"description", "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
                                                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
                                              {"required", nlohmann::json::array({"path", "content"})}}},
-             .execute = [workspace_root](const nlohmann::json &input) {
-                 return write_file(input, workspace_root);
+             .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                 return validate_write_permissions(call, ctx, workspace_root);
+             },
+             .execute = [workspace_root, permissions](const nlohmann::json &input) {
+                 return write_file(input, workspace_root, permissions);
              }});
     }
 

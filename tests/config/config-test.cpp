@@ -249,4 +249,53 @@ namespace {
         std::filesystem::remove_all(path.parent_path());
     };
 
+    TEST_CASE("parses_new_permissions_format_for_root_and_agents") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "permissions": {
+            "default_mode": "accept-edits",
+            "allow": ["read", "task(list)"],
+            "deny": ["shell(rm:*)"],
+            "ask": ["edit", "write"]
+          },
+          "agents": {
+            "default": {
+              "permissions": {
+                "default_mode": "plan",
+                "allow": ["read"],
+                "ask": ["shell"]
+              }
+            }
+          }
+        })json"));
+
+        const auto cfg = Config::load_from(path);
+        CHECK(cfg.permissions_config.default_mode == PermissionMode::accept_edits);
+        CHECK(cfg.permissions_config.allow == std::vector<std::string>{"read", "task(list)"});
+        CHECK(cfg.permissions_config.deny == std::vector<std::string>{"shell(rm:*)"});
+        CHECK(cfg.permissions_config.ask == std::vector<std::string>{"edit", "write"});
+        REQUIRE(cfg.agents.contains("default"));
+        CHECK(cfg.agents.at("default").permissions_config.default_mode == PermissionMode::plan);
+        CHECK(cfg.agents.at("default").permissions_config.allow == std::vector<std::string>{"read"});
+        CHECK(cfg.agents.at("default").permissions_config.ask == std::vector<std::string>{"shell"});
+    };
+
+    TEST_CASE("deprecated_permission_keys_still_map_into_new_permission_config") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "tools": {
+            "allowed": ["read", "task(list)"],
+            "denied": ["write"]
+          },
+          "permissions": {
+            "allowed_tools": ["shell(git:*)"],
+            "denied_tools": ["shell(rm:*)"]
+          }
+        })json"));
+
+        const auto cfg = Config::load_from(path);
+        CHECK(cfg.permissions_config.allow == std::vector<std::string>{"shell(git:*)"});
+        CHECK(cfg.permissions_config.deny == std::vector<std::string>{"shell(rm:*)"});
+    };
+
 } // namespace

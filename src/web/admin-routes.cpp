@@ -6,11 +6,22 @@
 #include "skills/skill-loader.hpp"
 #include "tools/registry/tool-registry.hpp"
 
+#include <magic_enum/magic_enum.hpp>
+
 namespace orangutan::web {
 
     namespace bootstrap = orangutan::bootstrap;
 
     namespace {
+
+        nlohmann::json permission_config_to_json(const PermissionConfig &permissions_config) {
+            return {
+                {"default_mode", std::string{magic_enum::enum_name(permissions_config.default_mode)}},
+                {"allow", permissions_config.allow},
+                {"deny", permissions_config.deny},
+                {"ask", permissions_config.ask},
+            };
+        }
 
         nlohmann::json fallback_models_to_json(const std::vector<config::FallbackModelRef> &fallback_models) {
             auto array = nlohmann::json::array();
@@ -75,6 +86,7 @@ namespace orangutan::web {
             if (!agent_cfg.profile.empty()) {
                 json["profile"] = agent_cfg.profile;
             }
+            json["permissions"] = permission_config_to_json(agent_cfg.permissions_config);
             return json;
         }
 
@@ -93,7 +105,8 @@ namespace orangutan::web {
                      {"thinking_budget", cfg.thinking_budget},
                  }},
                 {"session", {{"auto_save", cfg.auto_save}}},
-                {"tools", {{"allowed", cfg.allowed_tools}, {"denied", cfg.denied_tools}, {"edit_mode", cfg.edit_mode}}},
+                {"tools", {{"edit_mode", cfg.edit_mode}}},
+                {"permissions", permission_config_to_json(cfg.permissions_config)},
                 {"memory",
                  {
                      {"mirror_enabled", cfg.memory.mirror_enabled},

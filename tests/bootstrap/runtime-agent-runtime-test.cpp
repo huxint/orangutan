@@ -4,6 +4,7 @@
 #include "automation/automation-store.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
+#include "permissions/permission-state.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 
@@ -68,7 +69,7 @@ namespace {
             input.agent_key = "assistant";
             input.workspace_root = workspace_root_.string();
             input.memory = {};
-            input.permissions_config = {};
+            input.permission_context = {};
             input.team_agents = {"coder"};
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
@@ -258,11 +259,55 @@ namespace {
         CHECK(runtime.hook_manager->total_hooks() == 2);
     };
 
+    TEST_CASE("runtime_initializes_permission_context_with_workspace_settings_and_cli_overrides") {
+        RuntimeAgentRuntimeHarness harness;
+        const auto orangutan_dir = harness.workspace_root() / ".orangutan";
+        std::filesystem::create_directories(orangutan_dir);
+
+        {
+            std::ofstream out(orangutan_dir / "settings.json");
+            out << R"json({"permissions":{"allow":["shell(git:*)"]}})json";
+        }
+        {
+            std::ofstream out(orangutan_dir / "settings.local.json");
+            out << R"json({"permissions":{"deny":["edit"]}})json";
+        }
+
+        auto input = harness.make_input();
+        input.permission_context = initialize_permission_context(PermissionConfig{
+            .default_mode = PermissionMode::accept_edits,
+            .allow = {"read"},
+        }, CLIPermissionOptions{
+            .permission_mode = PermissionMode::plan,
+            .allowed_tools = {"task(list)"},
+        }, harness.workspace_root());
+
+        auto runtime = build_agent_runtime(input);
+        const auto *permission_context = runtime.tool_context.permission_context;
+
+        REQUIRE(permission_context != nullptr);
+        CHECK(permission_context->mode == PermissionMode::plan);
+        CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "read" && rule.source == PermissionRuleSource::user_settings;
+        }));
+        CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "shell" && rule.source == PermissionRuleSource::project_settings && rule.content.has_value() &&
+                   rule.content->pattern == "git";
+        }));
+        CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "task" && rule.source == PermissionRuleSource::cli_arg && rule.content.has_value() &&
+                   rule.content->pattern == "list";
+        }));
+        CHECK(std::ranges::any_of(permission_context->deny_rules, [](const PermissionRule &rule) {
+            return rule.tool_name == "edit" && rule.source == PermissionRuleSource::local_settings;
+        }));
+    };
+
     TEST_CASE("keeps_tool_registry_stable_and_permissions_alive_after_move") {
         RuntimeAgentRuntimeHarness harness;
         auto moved_runtime = [&] {
             auto input = harness.make_input();
-            input.permissions_config = {};
+            input.permission_context = {};
             input.custom_tools.push_back(Config::ScriptToolConfig{
                 .name = "custom_echo",
                 .description = "Custom echo script tool",
@@ -281,7 +326,7 @@ namespace {
         const auto result = moved_runtime.tools.execute(ToolUse("custom-echo", "custom_echo", nlohmann::json::object()));
 
         CHECK(result.is_error);
-        CHECK(result.content.contains("Shell tool blocked by approval policy."));
+        CHECK(result.content.contains("Requires approval but interactive approval unavailable"));
     };
 
     TEST_CASE("shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed") {

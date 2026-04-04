@@ -1,7 +1,6 @@
 #pragma once
 
 #include "channel/channel.hpp"
-#include "permissions.hpp"
 #include "permissions/permission-types.hpp"
 #include "types/types.hpp"
 

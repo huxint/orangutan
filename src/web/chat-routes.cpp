@@ -13,7 +13,8 @@ namespace orangutan::web {
     namespace bootstrap = orangutan::bootstrap;
 
     void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     tools::ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                     tools::ToolRegistry * /*tool_registry*/, automation::Runtime *automation_runtime,
+                     std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions) {
         if (config == nullptr) {
             res.status = 503;
@@ -98,11 +99,12 @@ namespace orangutan::web {
             session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
                 *config, agent_key, memory_store, &session->session_id, automation_runtime,
                 [session_ptr, &sessions_mutex, approval_event_emitter, approval_stream_open](const ToolUse &call,
-                                                                                                                                                   const PermissionDecision &decision) {
+                                                                                              const PermissionDecision &decision) {
                     return detail::await_web_approval(*session_ptr, sessions_mutex, call, decision,
                                                       approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
                                                       approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-                }));
+                },
+                session->completion_resume_state));
             if (session->agent() == nullptr) {
                 throw std::runtime_error("failed to initialize web runtime agent");
             }

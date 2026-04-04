@@ -14,16 +14,29 @@ namespace orangutan::tools {
     namespace {
 
         void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext &ctx, const ToolRuntimeContext *tool_context) {
-            registry.set_definition_filter([ctx](const ToolDef &definition) {
+            registry.set_definition_filter([ctx](const Tool &tool) {
                 for (const auto &rule : ctx.deny_rules) {
-                    if (!rule.content && matches_rule(rule, definition.name)) {
+                    if (!rule.content && matches_rule(rule, tool.definition.name)) {
                         return false;
                     }
                 }
+                if (ctx.mode == PermissionMode::plan && !tool.read_only) {
+                    return false;
+                }
                 return true;
             });
-            registry.set_execution_guard([ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
-                auto decision = evaluate_permission(call, ctx);
+            registry.set_execution_guard([&registry, ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
+                const Tool *tool = registry.find_tool(call.name);
+                permissions::ToolPermissionChecker checker;
+                permissions::IsReadOnlyChecker is_read_only;
+                if (tool != nullptr) {
+                    checker = tool->check_permissions;
+                    is_read_only = [tool] {
+                        return tool->read_only;
+                    };
+                }
+
+                auto decision = evaluate_permission(call, ctx, checker, is_read_only);
                 decision = apply_post_processing(decision, ctx.mode);
 
                 switch (decision.behavior) {

@@ -60,7 +60,7 @@ namespace orangutan::bootstrap {
         std::string cli_runtime_key;
         std::string cli_memory_scope;
         Config::MemoryConfig memory;
-        PermissionConfig permissions_config;
+        ToolPermissionContext permission_context;
         std::vector<std::string> team_agents;
         bool coordinator_mode = false;
         int max_concurrent_agents = 4;

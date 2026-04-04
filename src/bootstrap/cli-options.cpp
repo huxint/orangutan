@@ -2,6 +2,7 @@
 
 #include "config/config.hpp"
 #include "config/secret-protection.hpp"
+#include "permissions/permission-display.hpp"
 #include "permissions/permission-types.hpp"
 
 #include <algorithm>
@@ -79,13 +80,22 @@ namespace orangutan::bootstrap {
         spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::info);
     }
 
+    std::string format_cli_permission_prompt(const ToolUse &call, const PermissionDecision &decision) {
+        std::string prompt = decision.message.value_or("Tool requires approval");
+        prompt += "\nTool: " + call.name;
+        for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
+            prompt += "\n" + line;
+        }
+        return prompt;
+    }
+
     ApprovalCallback make_cli_approval_callback(bool allow_prompting) {
         if (!allow_prompting || isatty(STDIN_FILENO) == 0 || isatty(STDOUT_FILENO) == 0) {
             return {};
         }
 
-        return [](const ToolUse & /*call*/, const PermissionDecision &decision) {
-            const auto prompt_text = decision.message.value_or("Tool requires approval");
+        return [](const ToolUse &call, const PermissionDecision &decision) {
+            const auto prompt_text = format_cli_permission_prompt(call, decision);
             spdlog::fmt_lib::print("\n{}\nApprove? [y/N]: ", prompt_text);
             std::fflush(stdout);
             std::string answer;
@@ -158,7 +168,6 @@ namespace orangutan::bootstrap {
     }
 
     namespace {
-
         std::string normalize_enum_token(std::string_view value) {
             return value | std::views::transform([](unsigned char ch) {
                        return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));

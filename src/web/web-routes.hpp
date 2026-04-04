@@ -61,7 +61,8 @@ namespace orangutan::web {
                               const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime);
 
     void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                     tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime,
+                     std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
     void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
                               std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);

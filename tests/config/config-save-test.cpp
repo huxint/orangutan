@@ -69,4 +69,39 @@ namespace {
         std::filesystem::remove_all(path.parent_path());
     };
 
+    TEST_CASE("save_writes_only_new_permissions_format") {
+        orangutan::Config cfg;
+        cfg.permissions_config = orangutan::PermissionConfig{
+            .default_mode = orangutan::PermissionMode::accept_edits,
+            .allow = {"read"},
+            .deny = {"shell(rm:*)"},
+            .ask = {"edit"},
+        };
+        cfg.agents["default"] = orangutan::AgentConfig{
+            .permissions_config =
+                {
+                    .default_mode = orangutan::PermissionMode::plan,
+                    .allow = {"read"},
+                    .ask = {"shell"},
+                },
+        };
+
+        const auto path = orangutan::testing::unique_test_path("config-save-permissions", "config.json");
+        cfg.save_to(path);
+
+        const auto stored = nlohmann::json::parse(read_file(path));
+        CHECK(stored["tools"]["edit_mode"] == "hashline");
+        CHECK_FALSE(stored["tools"].contains("allowed"));
+        CHECK_FALSE(stored["tools"].contains("denied"));
+        CHECK(stored["permissions"]["default_mode"] == "accept_edits");
+        CHECK(stored["permissions"]["allow"] == nlohmann::json::array({"read"}));
+        CHECK(stored["permissions"]["deny"] == nlohmann::json::array({"shell(rm:*)"}));
+        CHECK(stored["permissions"]["ask"] == nlohmann::json::array({"edit"}));
+        CHECK(stored["agents"]["default"]["permissions"]["default_mode"] == "plan");
+        CHECK(stored["agents"]["default"]["permissions"]["allow"] == nlohmann::json::array({"read"}));
+        CHECK(stored["agents"]["default"]["permissions"]["ask"] == nlohmann::json::array({"shell"}));
+
+        std::filesystem::remove_all(path.parent_path());
+    };
+
 } // namespace

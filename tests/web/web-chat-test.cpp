@@ -406,7 +406,7 @@ namespace orangutan {
 
             const auto shell_result = runtime.tools.execute(ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
             CHECK(shell_result.is_error);
-            CHECK((shell_result.content.contains("requires approval") || shell_result.content.contains("rejected by user")));
+            CHECK((shell_result.content.contains("Requires approval") || shell_result.content.contains("Rejected by user")));
         };
 
         TEST_CASE("tasks_slash_command_uses_runtime_tool_output") {

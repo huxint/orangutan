@@ -1,10 +1,14 @@
 #pragma once
 
-#include "tools/registry/permissions.hpp"
-
 #include <string>
 
 namespace orangutan::tools {
+
+    enum class ToolSandboxMode {
+        isolated,
+        workspace_write,
+        disabled,
+    };
 
     struct SandboxedCommand {
         std::string command;

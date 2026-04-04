@@ -1,17 +1,259 @@
 #include "tools/internal.hpp"
 #include "tools/background/background-completion.hpp"
 #include "tools/shell/command-sandbox.hpp"
+#include "permissions/permission-evaluator.hpp"
 #include "utils/sender-utils.hpp"
 #include "process/subprocess.hpp"
 #include "utils/utf8.hpp"
 
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <vector>
 
 namespace orangutan::tools {
     namespace {
+
+        std::string trim_copy(std::string_view value) {
+            std::size_t start = 0;
+            while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start])) != 0) {
+                ++start;
+            }
+
+            std::size_t end = value.size();
+            while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
+                --end;
+            }
+
+            return std::string(value.substr(start, end - start));
+        }
+
+        std::vector<std::string> split_compound_command(std::string_view command) {
+            std::vector<std::string> parts;
+            std::string current;
+            bool in_single_quotes = false;
+            bool in_double_quotes = false;
+            bool escaped = false;
+
+            for (std::size_t index = 0; index < command.size(); ++index) {
+                const char ch = command[index];
+                if (escaped) {
+                    current.push_back(ch);
+                    escaped = false;
+                    continue;
+                }
+
+                if (ch == '\\') {
+                    current.push_back(ch);
+                    escaped = true;
+                    continue;
+                }
+
+                if (ch == '\'' && !in_double_quotes) {
+                    in_single_quotes = !in_single_quotes;
+                    current.push_back(ch);
+                    continue;
+                }
+
+                if (ch == '"' && !in_single_quotes) {
+                    in_double_quotes = !in_double_quotes;
+                    current.push_back(ch);
+                    continue;
+                }
+
+                if (!in_single_quotes && !in_double_quotes) {
+                    const bool is_double_separator = (ch == '&' || ch == '|') && index + 1 < command.size() && command[index + 1] == ch;
+                    if (ch == ';' || is_double_separator) {
+                        auto trimmed = trim_copy(current);
+                        if (!trimmed.empty()) {
+                            parts.push_back(std::move(trimmed));
+                        }
+                        current.clear();
+                        if (is_double_separator) {
+                            ++index;
+                        }
+                        continue;
+                    }
+                }
+
+                current.push_back(ch);
+            }
+
+            auto trimmed = trim_copy(current);
+            if (!trimmed.empty()) {
+                parts.push_back(std::move(trimmed));
+            }
+            return parts;
+        }
+
+        bool is_redirection_operator(std::string_view token) {
+            return token == ">" || token == ">>" || token == "<" || token == "1>" || token == "1>>" || token == "2>" || token == "2>>";
+        }
+
+        std::vector<std::string> tokenize_command(std::string_view command) {
+            std::vector<std::string> tokens;
+            std::string current;
+            bool in_single_quotes = false;
+            bool in_double_quotes = false;
+            bool escaped = false;
+
+            const auto flush = [&] {
+                if (!current.empty()) {
+                    tokens.push_back(std::move(current));
+                    current.clear();
+                }
+            };
+
+            for (std::size_t index = 0; index < command.size(); ++index) {
+                const char ch = command[index];
+                if (escaped) {
+                    current.push_back(ch);
+                    escaped = false;
+                    continue;
+                }
+
+                if (ch == '\\') {
+                    escaped = true;
+                    continue;
+                }
+
+                if (ch == '\'' && !in_double_quotes) {
+                    in_single_quotes = !in_single_quotes;
+                    continue;
+                }
+
+                if (ch == '"' && !in_single_quotes) {
+                    in_double_quotes = !in_double_quotes;
+                    continue;
+                }
+
+                if (!in_single_quotes && !in_double_quotes) {
+                    if (std::isspace(static_cast<unsigned char>(ch)) != 0) {
+                        flush();
+                        continue;
+                    }
+
+                    if (ch == '>' || ch == '<') {
+                        flush();
+                        std::string op(1, ch);
+                        if (index + 1 < command.size() && command[index + 1] == '>') {
+                            op.push_back('>');
+                            ++index;
+                        }
+                        tokens.push_back(std::move(op));
+                        continue;
+                    }
+
+                    if ((ch == '1' || ch == '2') && index + 1 < command.size() && (command[index + 1] == '>' || command[index + 1] == '<')) {
+                        flush();
+                        std::string op(1, ch);
+                        op.push_back(command[index + 1]);
+                        ++index;
+                        if (index + 1 < command.size() && command[index + 1] == '>') {
+                            op.push_back('>');
+                            ++index;
+                        }
+                        tokens.push_back(std::move(op));
+                        continue;
+                    }
+                }
+
+                current.push_back(ch);
+            }
+
+            flush();
+            return tokens;
+        }
+
+        bool should_validate_path_token(std::string_view token, bool force_validation) {
+            if (token.empty()) {
+                return false;
+            }
+
+            if (force_validation) {
+                return true;
+            }
+
+            return token == "~"
+                || token.starts_with("~/")
+                || token.starts_with('/')
+                || token.starts_with("./")
+                || token.starts_with("../");
+        }
+
+        PermissionResult validate_shell_path_token(std::string_view token, const std::filesystem::path &workspace_root,
+                                                   const std::filesystem::path &working_dir, const ToolPermissionContext &ctx) {
+            if (token.empty()) {
+                return PermissionResult::passthrough();
+            }
+
+            try {
+                auto expanded = expand_tool_home_path(std::filesystem::path(token));
+                std::filesystem::path candidate;
+                if (expanded.is_absolute()) {
+                    candidate = normalize_tool_path(expanded);
+                } else {
+                    const auto base = working_dir.empty() ? normalize_tool_path(workspace_root) : working_dir;
+                    candidate = normalize_tool_path(base / expanded);
+                }
+
+                if (!is_tool_path_allowed(candidate, workspace_root, &ctx)) {
+                    return PermissionResult::deny("Shell path escapes permission scope: " + std::string(token));
+                }
+            } catch (const std::exception &e) {
+                return PermissionResult::deny(e.what());
+            }
+
+            return PermissionResult::passthrough();
+        }
+
+        PermissionResult check_shell_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
+            if (!call.input.contains("command") || !call.input["command"].is_string()) {
+                return PermissionResult::deny("Shell command is required");
+            }
+
+            const auto command = call.input.at("command").get<std::string>();
+            std::filesystem::path resolved_working_dir;
+            if (call.input.contains("working_dir") && call.input["working_dir"].is_string()) {
+                try {
+                    resolved_working_dir = resolve_tool_working_dir(call.input.at("working_dir").get<std::string>(), workspace_root, &ctx);
+                } catch (const std::exception &e) {
+                    return PermissionResult::deny(e.what());
+                }
+            } else if (!workspace_root.empty()) {
+                resolved_working_dir = normalize_tool_path(workspace_root);
+            }
+
+            for (const auto &subcommand : split_compound_command(command)) {
+                if (auto deny_rule = permissions::find_matching_rule(call.name, subcommand, ctx.deny_rules); deny_rule.has_value()) {
+                    return PermissionResult::deny("Shell subcommand blocked by deny rule: " + subcommand);
+                }
+                if (auto ask_rule = permissions::find_matching_rule(call.name, subcommand, ctx.ask_rules); ask_rule.has_value()) {
+                    return PermissionResult::ask("Shell subcommand requires approval: " + subcommand);
+                }
+            }
+
+            const auto tokens = tokenize_command(command);
+            bool next_token_is_path = false;
+            for (const auto &token : tokens) {
+                if (is_redirection_operator(token)) {
+                    next_token_is_path = true;
+                    continue;
+                }
+
+                if (should_validate_path_token(token, next_token_is_path)) {
+                    auto result = validate_shell_path_token(token, workspace_root, resolved_working_dir, ctx);
+                    if (!result.is_passthrough) {
+                        return result;
+                    }
+                }
+                next_token_is_path = false;
+            }
+
+            return PermissionResult::passthrough();
+        }
 
         nlohmann::json completion_mode_enum(const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher) {
             if (completion_dispatcher != nullptr && completion_dispatcher->supports_resume_callback()) {
@@ -154,13 +396,13 @@ namespace orangutan::tools {
             return output;
         }
 
-        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionContext * /*permissions*/,
+        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionContext *permissions,
                               const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             const auto command = input.at("command").get<std::string>();
             const bool background = input.value("background", false);
             const auto requested_working_dir = input.value("working_dir", std::string{});
             const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
-            const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root);
+            const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root, permissions);
             const auto working_dir = resolved_working_dir.empty() ? std::string{} : resolved_working_dir.string();
             const auto sandbox_mode = ToolSandboxMode::disabled;
             const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
@@ -268,6 +510,10 @@ namespace orangutan::tools {
                     .name = "shell",
                     .description = description,
                     .input_schema = input_schema,
+                },
+            .check_permissions =
+                [workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace)](const ToolUse &call, const ToolPermissionContext &ctx) {
+                    return check_shell_permissions(call, ctx, workspace_root);
                 },
             .execute =
                 [workspace, permissions, completion_dispatcher, process_manager](const nlohmann::json &input) {

@@ -43,7 +43,7 @@ namespace orangutan::permissions {
     }
 
     bool is_write_operation(const ToolUse &call) {
-        if (call.name == "file_write" || call.name == "file_edit") {
+        if (call.name == "write" || call.name == "edit" || call.name == "file_write" || call.name == "file_edit") {
             return true;
         }
         if (call.name == "shell") {
@@ -53,7 +53,10 @@ namespace orangutan::permissions {
     }
 
     static std::string extract_path_for_safety(const ToolUse &call) {
-        if (call.name == "file_write" || call.name == "file_edit" || call.name == "file_read") {
+        if (call.name == "read" || call.name == "write" || call.name == "edit" || call.name == "file_write" || call.name == "file_edit" || call.name == "file_read") {
+            if (call.input.contains("path") && call.input["path"].is_string()) {
+                return call.input["path"].get<std::string>();
+            }
             if (call.input.contains("file_path") && call.input["file_path"].is_string()) {
                 return call.input["file_path"].get<std::string>();
             }

@@ -262,16 +262,12 @@ namespace orangutan::config::detail {
         }
 
         if (const auto *array = find_array_member(*tools, "allowed"); array != nullptr) {
-            assign_string_array(*array, cfg.allowed_tools);
-            for (const auto &tool : cfg.allowed_tools) {
-                cfg.permissions_config.allow.push_back(tool);
-            }
+            spdlog::warn("tools.allowed is deprecated, use permissions.allow");
+            assign_string_array(*array, cfg.permissions_config.allow);
         }
         if (const auto *array = find_array_member(*tools, "denied"); array != nullptr) {
-            assign_string_array(*array, cfg.denied_tools);
-            for (const auto &tool : cfg.denied_tools) {
-                cfg.permissions_config.deny.push_back(tool);
-            }
+            spdlog::warn("tools.denied is deprecated, use permissions.deny");
+            assign_string_array(*array, cfg.permissions_config.deny);
         }
 
         if (const auto *value = find_member(*tools, "edit_mode"); value != nullptr && value->is_string()) {

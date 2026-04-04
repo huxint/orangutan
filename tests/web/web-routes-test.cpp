@@ -150,6 +150,11 @@ namespace {
     TEST_CASE("get_config_returns_json") {
         orangutan::Config cfg;
         cfg.model = "test-model";
+        cfg.permissions_config = orangutan::PermissionConfig{
+            .default_mode = orangutan::PermissionMode::accept_edits,
+            .allow = {"read"},
+            .ask = {"shell"},
+        };
         orangutan::WebServer server;
         server.set_config(&cfg);
         server.start("127.0.0.1", 0);
@@ -159,6 +164,10 @@ namespace {
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
         CHECK(body["agent"]["model"] == "test-model");
+        CHECK(body["permissions"]["default_mode"] == "accept_edits");
+        CHECK(body["permissions"]["allow"] == nlohmann::json::array({"read"}));
+        CHECK(body["permissions"]["ask"] == nlohmann::json::array({"shell"}));
+        CHECK_FALSE(body["tools"].contains("allowed"));
         CHECK_FALSE(body.contains("api_key"));
         server.stop();
     };
@@ -339,7 +348,7 @@ namespace {
 
         const auto shell_result = runtime.tools.execute(orangutan::ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
         CHECK(shell_result.is_error);
-        CHECK((shell_result.content.contains("requires approval") || shell_result.content.contains("rejected by user")));
+        CHECK((shell_result.content.contains("Requires approval") || shell_result.content.contains("Rejected by user")));
     };
 
     TEST_CASE("shared_web_runtime_loads_skills_and_hooks") {
@@ -491,7 +500,8 @@ namespace {
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
                 *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}),
-                orangutan::PermissionDecision::ask_default("Shell command approval required."),
+                orangutan::PermissionDecision::ask_by_rule(orangutan::PermissionRuleSource::project_settings, "shell(echo hello)",
+                                                           "Shell command approval required."),
                 [&](std::string_view current_event_name, const nlohmann::json &payload) {
                     std::scoped_lock lock(event_mutex);
                     event_name = std::string(current_event_name);
@@ -514,6 +524,10 @@ namespace {
         CHECK(*event_name == "approval_request");
         CHECK((*event_payload)["tool"] == "shell");
         CHECK((*event_payload)["command"] == "echo hello");
+        CHECK((*event_payload)["decision"]["behavior"] == "ask");
+        CHECK((*event_payload)["decision"]["reason"]["type"] == "rule");
+        CHECK((*event_payload)["decision"]["reason"]["source"] == "project_settings");
+        CHECK((*event_payload)["decision"]["reason"]["rule_value"] == "shell(echo hello)");
 
         httplib::Request req;
         req.body =

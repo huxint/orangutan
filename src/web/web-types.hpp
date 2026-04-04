@@ -25,6 +25,7 @@ namespace orangutan::web {
         std::optional<std::string> command;
         std::string sandbox_mode;
         std::string prompt;
+        PermissionDecision decision;
         std::chrono::steady_clock::time_point requested_at = std::chrono::steady_clock::now();
         bool resolved = false;
         bool approved = false;

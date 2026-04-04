@@ -868,6 +868,103 @@ TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
     CHECK(result.content.contains("custom"));
 };
 
+TEST_CASE("ShellCompoundCommandsRespectSubcommandAskRules") {
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.ask_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::ask,
+        .tool_name = "shell",
+        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "git push"},
+    });
+
+    auto tool_context = make_runtime_tool_context();
+    bool prompted = false;
+    std::string decision_message;
+    tool_context.approval_callback = [&prompted, &decision_message](const ToolUse &, const PermissionDecision &decision) {
+        prompted = true;
+        decision_message = decision.message.value_or("");
+        return false;
+    };
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
+
+    const auto result = registry.execute(ToolUse("compound-shell", "shell", {{"command", "echo hello && git push origin main"}}));
+    CHECK(prompted);
+    CHECK(result.is_error);
+    CHECK(decision_message.contains("git push origin main"));
+};
+
+TEST_CASE("WriteToolRejectsPathsOutsidePermissionScope") {
+    const auto root = test_tmp_root() / "permission-scope-block";
+    const auto workspace = root / "workspace";
+    const auto outside = root / "outside";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(workspace);
+    std::filesystem::create_directories(outside);
+
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
+
+    const auto result = registry.execute(ToolUse("outside-write", "write", {{"path", (outside / "blocked.txt").string()}, {"content", "blocked"}}));
+    CHECK(result.is_error);
+    CHECK(result.content.contains("workspace sandbox"));
+    std::filesystem::remove_all(root);
+};
+
+TEST_CASE("WriteToolAllowsConfiguredAdditionalDirectories") {
+    const auto root = test_tmp_root() / "permission-scope-allow";
+    const auto workspace = root / "workspace";
+    const auto outside = root / "outside";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(workspace);
+    std::filesystem::create_directories(outside);
+
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.additional_directories.push_back(outside.string());
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
+
+    const auto target = outside / "allowed.txt";
+    const auto result = registry.execute(ToolUse("outside-write-allowed", "write", {{"path", target.string()}, {"content", "allowed"}}));
+    CHECK_FALSE(result.is_error);
+    CHECK(std::filesystem::exists(target));
+    std::filesystem::remove_all(root);
+};
+
+TEST_CASE("ReadToolIsMarkedReadOnly") {
+    ToolRegistry registry;
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, nullptr));
+
+    const auto *read_tool = registry.find_tool("read");
+    REQUIRE(read_tool != nullptr);
+    CHECK(read_tool->read_only);
+
+    const auto *write_tool = registry.find_tool("write");
+    REQUIRE(write_tool != nullptr);
+    CHECK_FALSE(write_tool->read_only);
+};
+
+TEST_CASE("PlanModeHidesWriteToolsFromDefinitions") {
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::plan;
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
+    const auto defs = registry.definitions();
+
+    CHECK(orangutan::testing::has_tool_named(defs, "read"));
+    CHECK_FALSE(orangutan::testing::has_tool_named(defs, "write"));
+    CHECK_FALSE(orangutan::testing::has_tool_named(defs, "edit"));
+    CHECK_FALSE(orangutan::testing::has_tool_named(defs, "shell"));
+}
+
 TEST_CASE("LsListsDirectory") {
     ScriptToolsTest fixture;
     const auto tmp_dir = test_tmp_root() / "orangutan_ls_test";

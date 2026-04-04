@@ -46,6 +46,9 @@ namespace orangutan::bootstrap {
     void configure_logging(bool verbose);
 
     [[nodiscard]]
+    std::string format_cli_permission_prompt(const ToolUse &call, const PermissionDecision &decision);
+
+    [[nodiscard]]
     ApprovalCallback make_cli_approval_callback(bool allow_prompting);
 
     [[nodiscard]]

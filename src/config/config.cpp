@@ -283,12 +283,6 @@ namespace orangutan::config {
         nlohmann::json tools = {
             {"edit_mode", edit_mode},
         };
-        if (!allowed_tools.empty()) {
-            tools["allowed"] = allowed_tools;
-        }
-        if (!denied_tools.empty()) {
-            tools["denied"] = denied_tools;
-        }
         root["tools"] = std::move(tools);
 
         root["session"] = nlohmann::json{{"auto_save", auto_save}};

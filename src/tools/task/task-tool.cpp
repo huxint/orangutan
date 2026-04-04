@@ -112,6 +112,14 @@ namespace orangutan::tools {
             return op == "add" ? "Added task '" + task.name + "' (" + task_id + ")." : "Updated task '" + task.name + "'.";
         }
 
+        PermissionResult check_task_permissions(const ToolUse &call) {
+            const auto op = call.input.value("op", std::string{});
+            if (op == "list") {
+                return PermissionResult::allow();
+            }
+            return PermissionResult::ask("Task mutations require approval");
+        }
+
     } // namespace
 
     void register_task_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
@@ -143,6 +151,9 @@ namespace orangutan::tools {
                             {"required", nlohmann::json::array({"op"})},
                         },
                 },
+            .check_permissions = [](const ToolUse &call, const ToolPermissionContext &) {
+                return check_task_permissions(call);
+            },
             .execute =
                 [tool_context](const nlohmann::json &input) {
                     return execute_task_tool(input, tool_context);

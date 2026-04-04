@@ -7,6 +7,7 @@
 
 namespace orangutan::tools::file_edit {
 
-    void register_tools(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");
+    void register_tools(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
+                        std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan::tools::file_edit

@@ -4,9 +4,9 @@
   },
   "permissions": {
     "default_mode": "default_mode",
-    "allow": ["file_read", "glob", "grep"],
-    "deny": [],
-    "ask": ["shell"]
+    "allow": ["read", "task(list)"],
+    "deny": ["shell(rm:*)"],
+    "ask": ["edit", "write", "shell"]
   },
   "memory": {
     "mirror_enabled": false,
@@ -61,8 +61,8 @@
       ],
       "permissions": {
         "default_mode": "default_mode",
-        "allow": [],
-        "deny": [],
+        "allow": ["read", "edit"],
+        "deny": ["shell(git push *)"],
         "ask": ["shell"]
       }
     },

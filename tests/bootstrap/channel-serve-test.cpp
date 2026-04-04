@@ -419,7 +419,8 @@ namespace {
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
         });
 
         queue.push(InboundMessage{
@@ -471,6 +472,43 @@ namespace {
         CHECK_FALSE(request_id.empty());
         CHECK(sent_messages[0].second.contains(request_id + " yes"));
 
+        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " yes"}, manager));
+        CHECK(future.get());
+    };
+
+    TEST_CASE("channel_approval_coordinator_includes_decision_reason_details") {
+        ChannelManager manager;
+        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+        auto *qq = qq_channel.get();
+        manager.add_channel(std::move(qq_channel));
+
+        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        const InboundMessage request{
+            .jid = "qqbot:c2c:42",
+            .content = "run shell",
+        };
+        auto callback = coordinator.make_callback(request, manager);
+        REQUIRE(callback != nullptr);
+
+        auto future = std::async(std::launch::async, [&callback] {
+            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "git push origin main"}}),
+                            PermissionDecision::ask_by_rule(PermissionRuleSource::project_settings, "shell(git push *)",
+                                                            "Shell command approval required."));
+        });
+
+        for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        const auto sent_messages = qq->sent_messages();
+        REQUIRE(not sent_messages.empty());
+        CHECK(sent_messages[0].second.contains("Tool: shell"));
+        CHECK(sent_messages[0].second.contains("Command: git push origin main"));
+        CHECK(sent_messages[0].second.contains("Reason: rule from project settings"));
+        CHECK(sent_messages[0].second.contains("Rule: shell(git push *)"));
+
+        const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].second);
+        REQUIRE_FALSE(request_id.empty());
         CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " yes"}, manager));
         CHECK(future.get());
     };
@@ -636,7 +674,8 @@ namespace {
         session_store.bind_jid(jid, session_id, "default");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
         });
 
         queue.push(InboundMessage{
@@ -695,7 +734,8 @@ namespace {
         const auto export_path = bootstrap::workspace_exports_root(identity.workspace) / (session_id + ".md");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
         });
 
         queue.push(InboundMessage{
@@ -755,7 +795,8 @@ namespace {
                                                                                     });
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
         });
 
         queue.push(InboundMessage{
@@ -800,7 +841,7 @@ namespace {
         const std::unordered_map<std::string, std::string> qq_bot_agents;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg, nullptr,
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr,
                                         &automation_runtime);
         });
 
@@ -953,7 +994,8 @@ namespace {
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, nullptr, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, cfg, nullptr,
+                                        nullptr, nullptr);
         });
 
         queue.push(InboundMessage{

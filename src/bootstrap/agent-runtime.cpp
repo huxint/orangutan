@@ -1,7 +1,6 @@
 #include "bootstrap/agent-runtime.hpp"
 
 #include "bootstrap/memory-context.hpp"
-#include "permissions/permission-state.hpp"
 #include "bootstrap/identity.hpp"
 #include "coordinator/coordinator-prompt.hpp"
 #include "prompt/system-prompt-sections.hpp"
@@ -89,7 +88,7 @@ namespace orangutan::bootstrap {
             .background_completion_runtime = input.background_completion_runtime,
         };
 
-        *runtime.permissions_storage_ = initialize_permission_context(input.permissions_config);
+        *runtime.permissions_storage_ = input.permission_context;
         runtime.tool_context.permission_context = runtime.permissions_storage_.get();
         auto tool_bootstrap = register_runtime_tools(runtime.tools, runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
                                                      input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);

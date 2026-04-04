@@ -9,8 +9,8 @@
 #include "automation/scheduler.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
+#include "permissions/permission-display.hpp"
 #include "providers/provider.hpp"
-#include "tools/registry/permissions.hpp"
 #include "agent/agent-loop.hpp"
 #include "web/web-types.hpp"
 #include "memory/memory-store.hpp"
@@ -150,7 +150,7 @@ namespace orangutan::web {
                 .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
-                .permissions_config = agent.permissions_config,
+                .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
                 .team_agents = agent.team_agents,
                 .identity = derive_web_identity(workspace_root, agent_key),
                 .memory_store = memory_store,
@@ -226,6 +226,7 @@ namespace orangutan::web {
                 {"tool", approval.tool},
                 {"sandbox_mode", approval.sandbox_mode},
                 {"prompt", approval.prompt},
+                {"decision", permissions::permission_decision_to_json(approval.decision)},
             };
             if (approval.command.has_value()) {
                 payload["command"] = *approval.command;
@@ -458,6 +459,7 @@ namespace orangutan::web {
         approval->command = internal::extract_approval_command(call);
         approval->sandbox_mode = "";
         approval->prompt = decision.message.value_or("Tool requires approval");
+        approval->decision = decision;
 
         {
             std::scoped_lock sessions_lock(sessions_mutex);

@@ -3,7 +3,6 @@
 #include "types/types.hpp"
 #include "config/secret-protection.hpp"
 #include "permissions/permission-state.hpp"
-#include "tools/registry/permissions.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -79,8 +78,6 @@ namespace orangutan::config {
         std::string workspace;
 
         // tools object
-        std::vector<std::string> allowed_tools;
-        std::vector<std::string> denied_tools;
         std::string edit_mode = "hashline"; // "hashline" | "search_replace"
 
         // permissions object

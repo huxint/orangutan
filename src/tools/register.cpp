@@ -22,15 +22,18 @@ namespace orangutan::tools {
                                      std::string_view edit_mode) {
         const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
         shell::register_tools(registry, workspace, tool_context, permissions);
-        file_read::register_tools(registry, workspace_root, edit_mode);
-        file_write::register_tools(registry, workspace_root);
-        file_edit::register_tools(registry, workspace_root, edit_mode);
+        file_read::register_tools(registry, workspace_root, permissions, edit_mode);
+        file_write::register_tools(registry, workspace_root, permissions);
+        file_edit::register_tools(registry, workspace_root, permissions, edit_mode);
     }
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
                                 const ToolPermissionContext *permissions, std::string_view edit_mode) {
         if (coordinator::is_coordinator_mode(tool_context)) {
             register_coordinator_tools(registry, tool_context);
+            for (const auto &tool_name : coordinator::get_coordinator_allowed_tools()) {
+                registry.discover_tool(tool_name);
+            }
             return;
         }
         register_builtin_core_tools(registry, workspace, tool_context, permissions, edit_mode);

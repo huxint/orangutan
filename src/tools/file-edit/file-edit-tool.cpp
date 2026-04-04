@@ -34,6 +34,16 @@ namespace orangutan::tools {
             bool is_new_file = false;
         };
 
+        PermissionResult deny_invalid_edit_path(std::string path, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
+            try {
+                resolve_tool_path(std::filesystem::path(std::move(path)), workspace_root, &ctx);
+            } catch (const std::exception &e) {
+                return PermissionResult::deny(e.what());
+            }
+
+            return PermissionResult::passthrough();
+        }
+
         std::string render_lines(std::span<const std::string> lines, bool trailing_newline) {
             if (lines.empty()) {
                 return {};
@@ -153,12 +163,13 @@ namespace orangutan::tools {
             return files;
         }
 
-        std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root) {
+        std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root,
+                                                  const ToolPermissionContext *permissions) {
             std::vector<ValidatedFile> validated;
             validated.reserve(files.size());
 
             for (const auto &file : files) {
-                auto resolved = resolve_tool_path(std::filesystem::path(file.path), workspace_root);
+                auto resolved = resolve_tool_path(std::filesystem::path(file.path), workspace_root, permissions);
                 ValidatedFile validated_file{.resolved = std::move(resolved)};
 
                 for (std::size_t i = 0; i < file.hunks.size(); ++i) {
@@ -232,12 +243,12 @@ namespace orangutan::tools {
             }
         }
 
-        std::string execute_hashline_edit(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
+        std::string execute_hashline_edit(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
             const auto path_str = input.at("path").get<std::string>();
             const auto &edits_json = input.at("edits");
             spdlog::info("  [tool] edit (hashline): {} edits on {}", edits_json.size(), path_str);
 
-            auto resolved_path = resolve_tool_path(std::filesystem::path(path_str), workspace_root);
+            auto resolved_path = resolve_tool_path(std::filesystem::path(path_str), workspace_root, permissions);
 
             if (!std::filesystem::exists(resolved_path)) {
                 throw std::runtime_error("file not found: " + path_str);
@@ -317,12 +328,12 @@ namespace orangutan::tools {
             return summary;
         }
 
-        std::string execute_edit_tool(const nlohmann::json &input, const std::filesystem::path &workspace_root) {
+        std::string execute_edit_tool(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
             const auto patch = input.at("patch").get<std::string>();
             spdlog::info("  [tool] edit: {} bytes", patch.size());
 
             const auto files = parse_patch(patch);
-            auto validated = validate_hunks(files, workspace_root);
+            auto validated = validate_hunks(files, workspace_root, permissions);
             apply_hunks(validated, files);
 
             std::size_t total_hunks = 0;
@@ -341,7 +352,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode) {
+    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
         if (edit_mode == "hashline") {
             registry.register_tool(
                 {.definition = {.name = "edit",
@@ -368,13 +379,19 @@ namespace orangutan::tools {
                                                         {{"op", {{"type", "string"}, {"enum", nlohmann::json::array({"replace", "insert_after", "insert_before", "delete"})}}},
                                                          {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
                                                          {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
-                                                         {"content",
+                                                        {"content",
                                                           {{"oneOf", nlohmann::json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
                                                            {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
                                                        {"required", nlohmann::json::array({"op"})}}}}}}},
                                                  {"required", nlohmann::json::array({"path", "edits"})}}},
-                 .execute = [workspace_root](const nlohmann::json &input) {
-                     return execute_hashline_edit(input, workspace_root);
+                 .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                     if (!call.input.contains("path") || !call.input["path"].is_string()) {
+                         return PermissionResult::deny("Edit path is required");
+                     }
+                     return deny_invalid_edit_path(call.input.at("path").get<std::string>(), ctx, workspace_root);
+                 },
+                 .execute = [workspace_root, permissions](const nlohmann::json &input) {
+                     return execute_hashline_edit(input, workspace_root, permissions);
                  }});
         } else {
             registry.register_tool(
@@ -392,8 +409,27 @@ namespace orangutan::tools {
                                                      {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
                                                                      "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
                                                  {"required", nlohmann::json::array({"patch"})}}},
-                 .execute = [workspace_root](const nlohmann::json &input) {
-                     return execute_edit_tool(input, workspace_root);
+                 .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                     if (!call.input.contains("patch") || !call.input["patch"].is_string()) {
+                         return PermissionResult::deny("Edit patch is required");
+                     }
+
+                     try {
+                         const auto files = parse_patch(call.input.at("patch").get<std::string>());
+                         for (const auto &file : files) {
+                             auto result = deny_invalid_edit_path(file.path, ctx, workspace_root);
+                             if (!result.is_passthrough) {
+                                 return result;
+                             }
+                         }
+                     } catch (const std::exception &e) {
+                         return PermissionResult::deny(e.what());
+                     }
+
+                     return PermissionResult::passthrough();
+                 },
+                 .execute = [workspace_root, permissions](const nlohmann::json &input) {
+                     return execute_edit_tool(input, workspace_root, permissions);
                  }});
         }
     }

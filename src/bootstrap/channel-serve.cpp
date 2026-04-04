@@ -3,6 +3,7 @@
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
+#include "permissions/permission-display.hpp"
 #include "permissions/permission-state.hpp"
 #include "automation/scheduler.hpp"
 #include "agent/agent-loop.hpp"
@@ -150,6 +151,22 @@ namespace orangutan::bootstrap {
             }
 
             return {first_segment};
+        }
+
+        std::string format_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id) {
+            std::string prompt = decision.message.value_or("Tool requires approval");
+            prompt += "\nTool: " + call.name;
+            if (call.input.is_object()) {
+                if (const auto it = call.input.find("command"); it != call.input.end() && it->is_string()) {
+                    prompt += "\nCommand: " + it->get<std::string>();
+                }
+            }
+            for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
+                prompt += "\n" + line;
+            }
+            prompt += "\nRequest: " + request_id;
+            prompt += "\nReply with `" + request_id + " yes` to allow or `" + request_id + " no` to reject.";
+            return prompt;
         }
 
         std::string normalize_channel_approval_token(std::string_view content) {
@@ -310,7 +327,7 @@ namespace orangutan::bootstrap {
                 .edit_mode = cfg.edit_mode,
                 .thinking_budget = cfg.thinking_budget,
                 .memory = cfg.memory,
-                .permissions_config = cfg.permissions_config,
+                .permission_context = cfg.permission_context,
                 .team_agents = cfg.team_agents,
                 .identity = identity,
                 .memory_store = memory_store,
@@ -605,8 +622,7 @@ namespace orangutan::bootstrap {
             }
         }
 
-        return [this, message, &channel_manager, task_runner](const ToolUse &, const PermissionDecision &decision) {
-            const auto prompt_text = decision.message.value_or("Tool requires approval");
+        return [this, message, &channel_manager, task_runner](const ToolUse &call, const PermissionDecision &decision) {
             struct WaitOutcome {
                 std::shared_ptr<PendingApproval> pending;
                 bool resolved = false;
@@ -628,13 +644,12 @@ namespace orangutan::bootstrap {
                                 }
                                 return pending;
                             }) |
-                            stdexec::then([this, &message, &channel_manager, task_runner, &prompt_text](std::shared_ptr<PendingApproval> pending) {
+                            stdexec::then([this, &message, &channel_manager, task_runner, &call, &decision](std::shared_ptr<PendingApproval> pending) {
                                 if (pending == nullptr) {
                                     return WaitOutcome{};
                                 }
 
-                                auto reply = prompt_text + "\nRequest: " + pending->request_id + "\nReply with `" + pending->request_id + " yes` to allow or `" +
-                                             pending->request_id + " no` to reject.";
+                                auto reply = format_channel_approval_prompt(call, decision, pending->request_id);
                                 deliver_reply(message, reply, channel_manager);
 
                                 auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
@@ -658,7 +673,7 @@ namespace orangutan::bootstrap {
 
                                 clear_pending(outcome.pending);
                                 if (!outcome.resolved && !outcome.cancelled) {
-                                    deliver_reply(message, "Shell approval timed out. The command was rejected.", channel_manager);
+                                    deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
                                 }
                                 return outcome.approved;
                             });
