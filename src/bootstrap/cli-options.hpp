@@ -1,5 +1,6 @@
 #pragma once
 
+#include "permissions/permission-state.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <CLI/CLI.hpp>
@@ -29,6 +30,10 @@ namespace orangutan::bootstrap {
         int web_port = 18080;
         std::string web_host = "127.0.0.1";
         std::string web_dir = "web/dist";
+        std::string permission_mode_str;
+        bool dangerously_skip_permissions = false;
+        std::string allowed_tools_str;
+        std::string disallowed_tools_str;
     };
 
     [[nodiscard]]
@@ -41,11 +46,14 @@ namespace orangutan::bootstrap {
     void configure_logging(bool verbose);
 
     [[nodiscard]]
-    ToolApprovalCallback make_cli_approval_callback(bool allow_prompting);
+    ApprovalCallback make_cli_approval_callback(bool allow_prompting);
 
     [[nodiscard]]
     bool validate_initial_options(const CliOptions &options);
 
     int run_protect_config_mode(const CliOptions &options);
+
+    [[nodiscard]]
+    CLIPermissionOptions build_cli_permission_options(const CliOptions &options);
 
 } // namespace orangutan::bootstrap

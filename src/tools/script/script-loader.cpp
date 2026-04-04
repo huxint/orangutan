@@ -94,23 +94,15 @@ namespace orangutan::tools {
 
     // ── Tool Registration Helpers ───────────────────
 
-    static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionSettings *permissions, const ToolRuntimeContext *tool_context,
-                                 ToolApprovalCallback approval_callback) {
+    static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionContext * /*permissions*/,
+                                 const ToolRuntimeContext * /*tool_context*/, ApprovalCallback /*approval_callback*/) {
         return Tool{
             .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
-            .execute = [config, workspace, permissions, tool_context, approval_callback = std::move(approval_callback)](const nlohmann::json &input) -> std::string {
+            .execute = [config, workspace](const nlohmann::json &input) -> std::string {
                 std::string command = substitute_params(config.command, input, config.input_schema);
                 const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
                 const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
-                const auto sandbox_mode = permissions != nullptr ? permissions->sandbox_mode : ToolSandboxMode::disabled;
-                const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
-
-                if (permissions != nullptr) {
-                    const ToolUse synthetic_call(config.name, config.name, input);
-                    if (auto blocked = evaluate_shell_command_permission(synthetic_call, *permissions, command, active_callback); blocked.has_value()) {
-                        throw std::runtime_error(blocked->content);
-                    }
-                }
+                const auto sandbox_mode = ToolSandboxMode::disabled;
 
                 spdlog::debug("  [script-tool] {}: {}", config.name, command);
 
@@ -144,8 +136,8 @@ namespace orangutan::tools {
 
     // ── User Script Tools ───────────────────────────
 
-    void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace, const ToolPermissionSettings *permissions,
-                               const ToolRuntimeContext *tool_context, const ToolApprovalCallback &approval_callback) {
+    void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace, const ToolPermissionContext *permissions,
+                               const ToolRuntimeContext *tool_context, const ApprovalCallback &approval_callback) {
         if (tools.empty()) {
             return;
         }

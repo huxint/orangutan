@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools/registry/permissions.hpp"
+#include "permissions/permission-types.hpp"
 #include "process/subprocess.hpp"
 #include "tools/registry/tool-registry.hpp"
 
@@ -115,7 +116,7 @@ namespace orangutan::tools {
         return resolved;
     }
 
-    void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
+    void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionContext *permissions,
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, std::string_view edit_mode = "search_replace");

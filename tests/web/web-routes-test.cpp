@@ -94,10 +94,9 @@ namespace {
             .profile = "shared",
             .model = "gpt-test",
             .workspace = workspace_root.string(),
-            .permissions =
+            .permissions_config =
                 {
-                    .sandbox_mode = orangutan::ToolSandboxMode::isolated,
-                    .shell_approval = orangutan::ToolApprovalPolicy::ask,
+                    .default_mode = orangutan::PermissionMode::default_mode,
                 },
             .team_agents = {"coder"},
         };
@@ -311,7 +310,7 @@ namespace {
         std::string session_id = "web-session";
 
         auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &app_runtime.automation_runtime(),
-                                                                        [](const orangutan::ToolUse &, const std::string &) {
+                                                                        [](const orangutan::ToolUse &, const orangutan::PermissionDecision &) {
                                                                             return false;
                                                                         });
 
@@ -491,8 +490,8 @@ namespace {
 
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}), orangutan::ToolSandboxMode::isolated,
-                "Shell command approval required.",
+                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}),
+                orangutan::PermissionDecision::ask_default("Shell command approval required."),
                 [&](std::string_view current_event_name, const nlohmann::json &payload) {
                     std::scoped_lock lock(event_mutex);
                     event_name = std::string(current_event_name);
@@ -514,7 +513,6 @@ namespace {
         REQUIRE(event_payload.has_value());
         CHECK(*event_name == "approval_request");
         CHECK((*event_payload)["tool"] == "shell");
-        CHECK((*event_payload)["sandbox_mode"] == "isolated");
         CHECK((*event_payload)["command"] == "echo hello");
 
         httplib::Request req;
@@ -547,8 +545,8 @@ namespace {
         auto approval_future = approval_result.get_future();
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}), orangutan::ToolSandboxMode::isolated,
-                "Shell command approval required.",
+                *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}),
+                orangutan::PermissionDecision::ask_default("Shell command approval required."),
                 [](std::string_view, const nlohmann::json &) {
                     return true;
                 },

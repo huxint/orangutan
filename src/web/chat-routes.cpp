@@ -1,8 +1,8 @@
 #include "web/web-route-internal.hpp"
 
 #include "agent/agent-loop.hpp"
+#include "permissions/permission-evaluator.hpp"
 #include "providers/provider.hpp"
-#include "tools/registry/permissions.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
 
@@ -97,9 +97,9 @@ namespace orangutan::web {
             auto approval_stream_open = std::make_shared<std::function<bool()>>();
             session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
                 *config, agent_key, memory_store, &session->session_id, automation_runtime,
-                [session_ptr, &sessions_mutex, sandbox_mode = maybe_agent->permissions.sandbox_mode, approval_event_emitter, approval_stream_open](const ToolUse &call,
-                                                                                                                                                   const std::string &prompt_text) {
-                    return detail::await_web_approval(*session_ptr, sessions_mutex, call, sandbox_mode, prompt_text,
+                [session_ptr, &sessions_mutex, approval_event_emitter, approval_stream_open](const ToolUse &call,
+                                                                                                                                                   const PermissionDecision &decision) {
+                    return detail::await_web_approval(*session_ptr, sessions_mutex, call, decision,
                                                       approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
                                                       approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
                 }));
@@ -128,15 +128,34 @@ namespace orangutan::web {
             }
 
             auto *abort_flag = &session->abort_requested;
-            const auto permissions = maybe_agent->permissions;
             auto *tool_context = &session->runtime->tool_context;
             if (auto *tools = session->tools(); tools != nullptr) {
-                tools->set_execution_guard([abort_flag, permissions, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
+                tools->set_execution_guard([abort_flag, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
                     if (abort_flag->load()) {
                         return ToolResult(call.id, "Operation aborted by user", true);
                     }
-                    const auto &approval_callback = tool_context != nullptr ? tool_context->approval_callback : ToolApprovalCallback{};
-                    return tools::evaluate_tool_permission(call, permissions, approval_callback);
+                    if (tool_context == nullptr || tool_context->permission_context == nullptr) {
+                        return std::nullopt;
+                    }
+                    auto decision = permissions::evaluate_permission(call, *tool_context->permission_context);
+                    decision = permissions::apply_post_processing(decision, tool_context->permission_context->mode);
+                    switch (decision.behavior) {
+                    case PermissionBehavior::allow:
+                        return std::nullopt;
+                    case PermissionBehavior::deny:
+                        return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
+                    case PermissionBehavior::ask: {
+                        const auto &callback = tool_context->approval_callback;
+                        if (!callback) {
+                            return ToolResult{call.id, "Requires approval but unavailable", true};
+                        }
+                        if (!callback(call, decision)) {
+                            return ToolResult{call.id, "Rejected by user", true};
+                        }
+                        return std::nullopt;
+                    }
+                    }
+                    return std::nullopt;
                 });
             }
 

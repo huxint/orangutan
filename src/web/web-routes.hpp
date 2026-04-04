@@ -75,14 +75,14 @@ namespace orangutan::web {
         [[nodiscard]]
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
                                                                std::string *current_session_id, automation::Runtime *automation_runtime = nullptr,
-                                                               ToolApprovalCallback approval_callback = {},
+                                                               ApprovalCallback approval_callback = {},
                                                                const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 
         [[nodiscard]]
         BackgroundCompletionResumeCallback make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &state);
 
         [[nodiscard]]
-        bool await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
+        bool await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, const PermissionDecision &decision,
                                 const web_approval_event_emitter &event_emitter = {}, const std::function<bool()> &stream_open = {},
                                 std::chrono::milliseconds timeout = std::chrono::minutes(2));
 

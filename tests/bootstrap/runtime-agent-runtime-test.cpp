@@ -68,7 +68,7 @@ namespace {
             input.agent_key = "assistant";
             input.workspace_root = workspace_root_.string();
             input.memory = {};
-            input.permissions = {};
+            input.permissions_config = {};
             input.team_agents = {"coder"};
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
@@ -228,7 +228,7 @@ namespace {
         RuntimeAgentRuntimeHarness harness;
         auto moved_runtime = [&] {
             auto input = harness.make_input();
-            input.permissions.shell_approval = ToolApprovalPolicy::deny;
+            input.permissions_config = {};
             input.custom_tools.push_back(Config::ScriptToolConfig{
                 .name = "custom_echo",
                 .description = "Custom echo script tool",

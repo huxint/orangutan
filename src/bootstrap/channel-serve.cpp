@@ -3,6 +3,7 @@
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
+#include "permissions/permission-state.hpp"
 #include "automation/scheduler.hpp"
 #include "agent/agent-loop.hpp"
 #include "cli/cli-ui.hpp"
@@ -283,6 +284,7 @@ namespace orangutan::bootstrap {
 
         std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store,
                                                                        const RuntimeIdentity &identity, coordinator::CoordinatorManager *coordinator_manager,
+                                                                       swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox,
                                                                        const std::string &raw_caller_id, HookManager *hook_manager, automation::Runtime *automation_runtime) {
             auto runtime = std::make_unique<ConversationRuntime>();
             auto completion_resume_state = std::make_shared<detail::ChannelCompletionResumeState>();
@@ -306,12 +308,14 @@ namespace orangutan::bootstrap {
                 .edit_mode = cfg.edit_mode,
                 .thinking_budget = cfg.thinking_budget,
                 .memory = cfg.memory,
-                .permissions = cfg.permissions,
+                .permissions_config = cfg.permissions_config,
                 .team_agents = cfg.team_agents,
                 .identity = identity,
                 .memory_store = memory_store,
                 .current_session_id = &runtime->current_session_id,
                 .coordinator_manager = coordinator_manager,
+                .team_manager = team_manager,
+                .mailbox = mailbox,
                 .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
                 .automation_runtime = automation_runtime,
@@ -431,7 +435,8 @@ namespace orangutan::bootstrap {
                                                     std::mutex &runtimes_mutex, const InboundMessage &message,
                                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                                     const std::unordered_map<std::string, std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                                                    coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager,
+                                                    coordinator::CoordinatorManager *coordinator_manager, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox,
+                                                    const Config &cfg, HookManager *hook_manager,
                                                     automation::Runtime *automation_runtime) {
             std::scoped_lock lock(runtimes_mutex);
             const auto agent_key = resolve_agent_key_for_message(message, qq_bot_agents);
@@ -444,7 +449,7 @@ namespace orangutan::bootstrap {
                 }
 
                 auto identity = derive_channel_identity(cfg_it->second.workspace_root, jid, agent_key);
-                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, coordinator_manager, jid, hook_manager, automation_runtime);
+                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, coordinator_manager, team_manager, mailbox, jid, hook_manager, automation_runtime);
                 if (!message.isolated) {
                     if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
                         try {
@@ -583,7 +588,7 @@ namespace orangutan::bootstrap {
     ChannelApprovalCoordinator::ChannelApprovalCoordinator(std::chrono::milliseconds timeout)
     : timeout_(timeout) {}
 
-    ToolApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner) {
+    ApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner) {
         if (!can_prompt_for_channel_approval(message)) {
             return {};
         }
@@ -595,7 +600,8 @@ namespace orangutan::bootstrap {
             }
         }
 
-        return [this, message, &channel_manager, task_runner](const ToolUse &, const std::string &prompt_text) {
+        return [this, message, &channel_manager, task_runner](const ToolUse &, const PermissionDecision &decision) {
+            const auto prompt_text = decision.message.value_or("Tool requires approval");
             struct WaitOutcome {
                 std::shared_ptr<PendingApproval> pending;
                 bool resolved = false;
@@ -820,7 +826,7 @@ namespace orangutan::bootstrap {
                                                                    coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
                                                                    HookManager *hook_manager, automation::Runtime *automation_runtime) {
             const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
-            auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, raw_caller_id, hook_manager, automation_runtime);
+            auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, nullptr, nullptr, raw_caller_id, hook_manager, automation_runtime);
 
             return ConversationRuntimeInspection{
                 .tool_definitions = runtime->tools().definitions(),
@@ -868,12 +874,13 @@ namespace orangutan::bootstrap {
         void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager,
                                      std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
                                      const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                                     MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
+                                     MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager,
+                                     swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox, const Config &cfg,
                                      HookManager *hook_manager, automation::Runtime *automation_runtime, ChannelApprovalCoordinator &approval_coordinator,
                                      JidTaskRunner &task_runner) {
             try {
                 auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store,
-                                                       coordinator_manager, cfg, hook_manager, automation_runtime);
+                                                       coordinator_manager, team_manager, mailbox, cfg, hook_manager, automation_runtime);
                 if (runtime.completion_resume_state != nullptr) {
                     std::scoped_lock lock(runtime.completion_resume_state->mutex);
                     runtime.completion_resume_state->session_store = &session_store;
@@ -1022,7 +1029,8 @@ namespace orangutan::bootstrap {
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                          MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
+                          MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager,
+                          swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox, const Config &cfg,
                           HookManager *hook_manager, automation::Runtime *automation_runtime) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
         std::mutex runtimes_mutex;
@@ -1051,9 +1059,9 @@ namespace orangutan::bootstrap {
             }
 
             task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store, &session_store,
-                                             coordinator_manager, &cfg, hook_manager, automation_runtime, &approval_coordinator, &task_runner] {
-                process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, coordinator_manager, cfg,
-                                        hook_manager, automation_runtime, approval_coordinator, task_runner);
+                                             coordinator_manager, team_manager, mailbox, &cfg, hook_manager, automation_runtime, &approval_coordinator, &task_runner] {
+                process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, coordinator_manager,
+                                        team_manager, mailbox, cfg, hook_manager, automation_runtime, approval_coordinator, task_runner);
             });
         }
 

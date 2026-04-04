@@ -1,6 +1,7 @@
 #include "tools/runtime-loader/runtime-loader.hpp"
 
-#include "tools/registry/permissions.hpp"
+#include "permissions/permission-evaluator.hpp"
+#include "permissions/rule-parser.hpp"
 #include "tools/register.hpp"
 #include "tools/script/register.hpp"
 #include "tools/tool-search/tool-search.hpp"
@@ -11,24 +12,36 @@ namespace orangutan::tools {
 
     namespace {
 
-        bool should_expose_tool(const ToolPermissionSettings &settings, const std::string &name) {
-            if (!is_tool_allowed(settings, name)) {
-                return false;
-            }
-            if (name == "shell" && settings.shell_approval == ToolApprovalPolicy::deny) {
-                return false;
-            }
-            return true;
-        }
-
-        void apply_permission_policy(ToolRegistry &registry, const ToolPermissionSettings &settings, const ToolRuntimeContext *tool_context,
-                                     ToolApprovalCallback approval_callback) {
-            registry.set_definition_filter([settings](const ToolDef &definition) {
-                return should_expose_tool(settings, definition.name);
+        void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext &ctx, const ToolRuntimeContext *tool_context) {
+            registry.set_definition_filter([ctx](const ToolDef &definition) {
+                for (const auto &rule : ctx.deny_rules) {
+                    if (!rule.content && matches_rule(rule, definition.name)) {
+                        return false;
+                    }
+                }
+                return true;
             });
-            registry.set_execution_guard([settings, approval_callback = std::move(approval_callback), tool_context](const ToolUse &call) {
-                const auto &active_callback = tool_context != nullptr && tool_context->approval_callback ? tool_context->approval_callback : approval_callback;
-                return evaluate_tool_permission(call, settings, active_callback);
+            registry.set_execution_guard([ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
+                auto decision = evaluate_permission(call, ctx);
+                decision = apply_post_processing(decision, ctx.mode);
+
+                switch (decision.behavior) {
+                case PermissionBehavior::allow:
+                    return std::nullopt;
+                case PermissionBehavior::deny:
+                    return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
+                case PermissionBehavior::ask: {
+                    const auto &callback = (tool_context && tool_context->approval_callback) ? tool_context->approval_callback : ApprovalCallback{};
+                    if (!callback) {
+                        return ToolResult{call.id, "Requires approval but interactive approval unavailable", true};
+                    }
+                    if (!callback(call, decision)) {
+                        return ToolResult{call.id, "Rejected by user", true};
+                    }
+                    return std::nullopt;
+                }
+                }
+                return std::nullopt;
             });
         }
 
@@ -36,13 +49,13 @@ namespace orangutan::tools {
 
     RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::string &workspace,
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
-                                                      const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionSettings *permissions,
-                                                      ToolApprovalCallback approval_callback, std::string_view edit_mode) {
+                                                      const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions,
+                                                      std::string_view edit_mode) {
         register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
-        script::register_tools(registry, custom_tools, workspace, permissions, tool_context, approval_callback);
+        script::register_tools(registry, custom_tools, workspace, permissions, tool_context);
 
         if (permissions != nullptr) {
-            apply_permission_policy(registry, *permissions, tool_context, std::move(approval_callback));
+            apply_permission_policy(registry, *permissions, tool_context);
         }
 
         RuntimeToolBootstrapResult result;
@@ -55,7 +68,6 @@ namespace orangutan::tools {
             spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
         }
 
-        // Register tool_search if there are any deferred tools (builtin or MCP)
         if (registry.has_deferred_tools()) {
             register_tool_search(registry);
             spdlog::debug("Registered tool_search for deferred tools");

@@ -2,6 +2,8 @@
 
 #include "bootstrap/identity.hpp"
 #include "config/config.hpp"
+#include "permissions/permission-state.hpp"
+#include "permissions/permission-types.hpp"
 #include "providers/provider.hpp"
 #include "skills/skill-loader.hpp"
 #include "tools/registry/tool.hpp"
@@ -35,6 +37,11 @@ namespace orangutan::coordinator {
     class CoordinatorManager;
 }
 
+namespace orangutan::swarm {
+    class AgentMailbox;
+    class TeamManager;
+}
+
 namespace orangutan::tools {
     class McpManager;
 }
@@ -49,19 +56,21 @@ namespace orangutan::bootstrap {
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
         Config::MemoryConfig memory;
-        ToolPermissionSettings permissions;
+        PermissionConfig permissions_config;
         std::vector<std::string> team_agents;
         RuntimeIdentity identity;
 
         memory::MemoryStore *memory_store = nullptr;
         std::string *current_session_id = nullptr;
         coordinator::CoordinatorManager *coordinator_manager = nullptr;
+        swarm::TeamManager *team_manager = nullptr;
+        swarm::AgentMailbox *mailbox = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
         automation::Runtime *automation_runtime = nullptr;
         bool is_child_run = false;
         bool coordinator_mode = false;
-        ToolApprovalCallback approval_callback;
+        ApprovalCallback approval_callback;
 
         std::vector<Config::ScriptToolConfig> custom_tools;
         std::vector<Config::McpServerConfig> mcp_servers;
@@ -74,7 +83,7 @@ namespace orangutan::bootstrap {
     private:
         std::unique_ptr<ToolRuntimeContext> tool_context_storage_;
         std::unique_ptr<ToolRegistry> tools_storage_;
-        std::unique_ptr<ToolPermissionSettings> permissions_storage_;
+        std::unique_ptr<ToolPermissionContext> permissions_storage_;
 
     public:
         AgentRuntimeBundle();

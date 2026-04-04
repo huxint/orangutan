@@ -384,16 +384,13 @@ namespace orangutan {
             });
             config.agents["default"].workspace = workspace.string();
             config.agents["default"].team_agents = {"coder"};
-            config.agents["default"].permissions = {
-                .sandbox_mode = ToolSandboxMode::isolated,
-                .shell_approval = ToolApprovalPolicy::ask,
-            };
+            config.agents["default"].permissions_config = {};
             config.agents["coder"].workspace = workspace.string();
 
             MemoryStore memory_store((workspace / "memory.db"));
             std::string session_id = "web-chat-runtime-session";
 
-            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, [](const ToolUse &, const std::string &) {
+            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, [](const ToolUse &, const PermissionDecision &) {
                 return false;
             });
 
@@ -545,8 +542,8 @@ namespace orangutan {
 
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUse("shell-deny", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
-                    "Shell command approval required.",
+                    *session_ptr, sessions_mutex, ToolUse("shell-deny", "shell", nlohmann::json{{"command", "echo hello"}}),
+                    PermissionDecision::ask_default("Shell command approval required."),
                     [&](std::string_view, const nlohmann::json &payload) {
                         std::lock_guard lock(event_mutex);
                         event_payload = payload;
@@ -593,8 +590,8 @@ namespace orangutan {
             auto approval_future = approval_result.get_future();
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUse("shell-abort", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
-                    "Shell command approval required.",
+                    *session_ptr, sessions_mutex, ToolUse("shell-abort", "shell", nlohmann::json{{"command", "echo hello"}}),
+                    PermissionDecision::ask_default("Shell command approval required."),
                     [](std::string_view, const nlohmann::json &) {
                         return true;
                     },
@@ -635,8 +632,8 @@ namespace orangutan {
             sessions.emplace(session->session_id, std::move(session));
 
             const auto approved = web::detail::await_web_approval(
-                *session_ptr, sessions_mutex, ToolUse("shell-timeout", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
-                "Shell command approval required.",
+                *session_ptr, sessions_mutex, ToolUse("shell-timeout", "shell", nlohmann::json{{"command", "echo hello"}}),
+                PermissionDecision::ask_default("Shell command approval required."),
                 [](std::string_view, const nlohmann::json &) {
                     return true;
                 },
@@ -659,8 +656,8 @@ namespace orangutan {
             auto approval_future = approval_result.get_future();
             std::thread waiter([&] {
                 approval_result.set_value(web::detail::await_web_approval(
-                    *session_ptr, sessions_mutex, ToolUse("shell-cleanup", "shell", nlohmann::json{{"command", "echo hello"}}), ToolSandboxMode::isolated,
-                    "Shell command approval required.",
+                    *session_ptr, sessions_mutex, ToolUse("shell-cleanup", "shell", nlohmann::json{{"command", "echo hello"}}),
+                    PermissionDecision::ask_default("Shell command approval required."),
                     [](std::string_view, const nlohmann::json &) {
                         return true;
                     },

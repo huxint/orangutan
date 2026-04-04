@@ -2,6 +2,7 @@
 
 #include "channel/channel.hpp"
 #include "permissions.hpp"
+#include "permissions/permission-types.hpp"
 #include "types/types.hpp"
 
 #include <functional>
@@ -18,6 +19,11 @@ namespace orangutan::automation {
 
 namespace orangutan::coordinator {
     class CoordinatorManager;
+}
+
+namespace orangutan::swarm {
+    class AgentMailbox;
+    class TeamManager;
 }
 
 namespace orangutan::tools {
@@ -72,13 +78,16 @@ namespace orangutan::tools {
         std::string scope_key;
         std::string *current_session_id = nullptr;
         coordinator::CoordinatorManager *coordinator_manager = nullptr;
+        swarm::TeamManager *team_manager = nullptr;
+        swarm::AgentMailbox *mailbox = nullptr;
         std::vector<std::string> team_agents;
         bool is_child_run = false;
         bool coordinator_mode = false;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         automation::Runtime *automation_runtime = nullptr;
-        ToolApprovalCallback approval_callback;
+        ApprovalCallback approval_callback;
+        const ToolPermissionContext *permission_context = nullptr;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
         std::vector<Attachment> current_message_attachments;
         AttachmentDownloadCallback attachment_download_callback;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools/registry/permissions.hpp"
+#include "permissions/permission-types.hpp"
 #include "config/config.hpp"
 #include "tools/registry/tool.hpp"
 
@@ -24,7 +25,7 @@ namespace orangutan::tools {
 
     // Register user-defined script tools from config into the registry.
     void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace = {},
-                               const ToolPermissionSettings *permissions = nullptr, const ToolRuntimeContext *tool_context = nullptr,
-                               const ToolApprovalCallback &approval_callback = {});
+                               const ToolPermissionContext *permissions = nullptr, const ToolRuntimeContext *tool_context = nullptr,
+                               const ApprovalCallback &approval_callback = {});
 
 } // namespace orangutan::tools

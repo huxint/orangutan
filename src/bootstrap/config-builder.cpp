@@ -62,9 +62,9 @@ namespace orangutan::bootstrap::detail {
             if (agent_cfg.thinking_budget == 0) {
                 agent_cfg.thinking_budget = cfg.thinking_budget;
             }
-            if (agent_cfg.permissions.allowed_tools.empty() && agent_cfg.permissions.denied_tools.empty() && agent_cfg.permissions.denied_shell_commands.empty() &&
-                agent_cfg.permissions.sandbox_mode == ToolSandboxMode::isolated && agent_cfg.permissions.shell_approval == ToolApprovalPolicy::ask) {
-                agent_cfg.permissions = cfg.permissions;
+            if (agent_cfg.permissions_config.allow.empty() && agent_cfg.permissions_config.deny.empty() && agent_cfg.permissions_config.ask.empty() &&
+                agent_cfg.permissions_config.default_mode == PermissionMode::default_mode) {
+                agent_cfg.permissions_config = cfg.permissions_config;
             }
             static_cast<void>(agent_key);
         }
@@ -178,7 +178,7 @@ namespace orangutan::bootstrap::detail {
                                           .cli_runtime_key = cli_identity.runtime_key,
                                           .cli_memory_scope = cli_identity.memory_scope,
                                           .memory = cfg.memory,
-                                          .permissions = agent_cfg.permissions,
+                                          .permissions_config = agent_cfg.permissions_config,
                                           .team_agents = agent_cfg.team_agents,
                                           .coordinator_mode = agent_cfg.coordinator_mode,
                                           .max_concurrent_agents = agent_cfg.max_concurrent_agents,

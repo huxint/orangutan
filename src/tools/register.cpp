@@ -17,7 +17,7 @@
 
 namespace orangutan::tools {
 
-    void register_builtin_core_tools(ToolRegistry &registry, const std::string &workspace, const ToolRuntimeContext *tool_context, const ToolPermissionSettings *permissions,
+    void register_builtin_core_tools(ToolRegistry &registry, const std::string &workspace, const ToolRuntimeContext *tool_context, const ToolPermissionContext *permissions,
                                      std::string_view edit_mode) {
         const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
         shell::register_tools(registry, workspace, tool_context, permissions);
@@ -27,7 +27,7 @@ namespace orangutan::tools {
     }
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
-                                const ToolPermissionSettings *permissions, std::string_view edit_mode) {
+                                const ToolPermissionContext *permissions, std::string_view edit_mode) {
         register_builtin_core_tools(registry, workspace, tool_context, permissions, edit_mode);
         task::register_tools(registry, tool_context);
         heartbeat::register_tools(registry, tool_context);

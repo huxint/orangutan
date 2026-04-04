@@ -101,10 +101,8 @@ namespace orangutan::web {
             return identity;
         }
 
-        ToolApprovalCallback default_web_approval_callback() {
-            return [](const ToolUse & /*call*/, const std::string & /*prompt_text*/) {
-                // Task 3 keeps approval callback parity in runtime context.
-                // Task 4 will replace this with request/response coordination.
+        ApprovalCallback default_web_approval_callback() {
+            return [](const ToolUse & /*call*/, const PermissionDecision & /*decision*/) {
                 return false;
             };
         }
@@ -124,7 +122,7 @@ namespace orangutan::web {
 
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
-                                                                    ToolApprovalCallback approval_callback,
+                                                                    ApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto &profile = resolve_agent_profile(config, agent, agent_key);
             static_cast<void>(resolve_agent_model(profile, agent, agent_key));
@@ -151,7 +149,7 @@ namespace orangutan::web {
                 .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
-                .permissions = agent.permissions,
+                .permissions_config = agent.permissions_config,
                 .team_agents = agent.team_agents,
                 .identity = derive_web_identity(workspace_root, agent_key),
                 .memory_store = memory_store,
@@ -424,7 +422,7 @@ namespace orangutan::web {
     } // namespace internal
 
     bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
-                                                                   std::string *current_session_id, automation::Runtime *automation_runtime, ToolApprovalCallback approval_callback,
+                                                                   std::string *current_session_id, automation::Runtime *automation_runtime, ApprovalCallback approval_callback,
                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
         const auto maybe_agent = internal::find_effective_agent(&config, agent_key);
         if (!maybe_agent.has_value()) {
@@ -450,14 +448,14 @@ namespace orangutan::web {
         };
     }
 
-    bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, ToolSandboxMode sandbox_mode, const std::string &prompt_text,
+    bool detail::await_web_approval(WebSessionState &session, std::mutex &sessions_mutex, const ToolUse &call, const PermissionDecision &decision,
                                     const web_approval_event_emitter &event_emitter, const std::function<bool()> &stream_open, std::chrono::milliseconds timeout) {
         auto approval = std::make_shared<WebPendingApproval>();
         approval->request_id = internal::make_approval_request_id();
         approval->tool = call.name;
         approval->command = internal::extract_approval_command(call);
-        approval->sandbox_mode = to_string(sandbox_mode);
-        approval->prompt = prompt_text;
+        approval->sandbox_mode = "";
+        approval->prompt = decision.message.value_or("Tool requires approval");
 
         {
             std::scoped_lock sessions_lock(sessions_mutex);

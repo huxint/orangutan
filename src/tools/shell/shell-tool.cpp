@@ -154,7 +154,7 @@ namespace orangutan::tools {
             return output;
         }
 
-        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionSettings *permissions,
+        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionContext * /*permissions*/,
                               const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             const auto command = input.at("command").get<std::string>();
             const bool background = input.value("background", false);
@@ -162,7 +162,7 @@ namespace orangutan::tools {
             const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
             const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root);
             const auto working_dir = resolved_working_dir.empty() ? std::string{} : resolved_working_dir.string();
-            const auto sandbox_mode = permissions != nullptr ? permissions->sandbox_mode : ToolSandboxMode::disabled;
+            const auto sandbox_mode = ToolSandboxMode::disabled;
             const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
             const auto effective_working_dir = sandboxed.working_dir.empty() ? working_dir : sandboxed.working_dir;
 
@@ -208,7 +208,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionSettings *permissions,
+    void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionContext *permissions,
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
         const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
         const bool resume_supported = supports_resume_mode(completion_dispatcher);

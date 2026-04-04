@@ -33,7 +33,7 @@ namespace orangutan::config::detail {
     void expand_agent_config(AgentConfig &cfg);
     void expand_profile_config(ProfileConfig &cfg);
 
-    void apply_permissions_object(const nlohmann::json &permissions, ToolPermissionSettings &settings);
+    void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config);
 
     [[nodiscard]]
     Config parse_agent_section(const nlohmann::json &root, Config cfg);

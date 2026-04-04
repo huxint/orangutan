@@ -33,7 +33,8 @@ target("orangutan-lib")
         path.join(root, "src/utils/*.cpp"),
         path.join(root, "src/cli/*.cpp"),
         path.join(root, "src/prompt/*.cpp"),
-        path.join(root, "src/bootstrap/*.cpp")
+        path.join(root, "src/bootstrap/*.cpp"),
+        path.join(root, "src/permissions/*.cpp")
     )
 
 target("orangutan")

@@ -5,7 +5,7 @@
 
 namespace orangutan::tools::shell {
 
-    void register_tools(ToolRegistry &registry, const std::string &workspace, const ToolRuntimeContext *tool_context, const ToolPermissionSettings *permissions) {
+    void register_tools(ToolRegistry &registry, const std::string &workspace, const ToolRuntimeContext *tool_context, const ToolPermissionContext *permissions) {
         const auto completion_dispatcher = std::make_shared<BackgroundCompletionDispatcher>(tool_context);
         const auto process_manager = std::make_shared<BackgroundProcessManager>([completion_dispatcher](const BackgroundProcessCompletionEvent &event) {
             completion_dispatcher->dispatch(event);

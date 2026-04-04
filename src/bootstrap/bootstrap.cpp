@@ -99,7 +99,8 @@ namespace {
     int run_channel_mode(orangutan::ChannelManager &channel_manager, orangutan::MessageQueue &message_queue,
                          const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs,
                          const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
-                         orangutan::coordinator::CoordinatorManager *coordinator_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
+                         orangutan::coordinator::CoordinatorManager *coordinator_manager, orangutan::swarm::TeamManager *team_manager,
+                         orangutan::swarm::AgentMailbox *mailbox, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
                          orangutan::automation::Runtime *automation_runtime) {
         auto &stop_requested = orangutan::bootstrap::signal_stop_requested();
         stop_requested.store(false);
@@ -124,7 +125,7 @@ namespace {
         std::signal(SIGTERM, orangutan::bootstrap::handle_signal);
 
         orangutan::bootstrap::run_channel_loop(message_queue, channel_manager, stop_requested, *channel_task_runner, agent_runtime_configs, qq_bot_agents, memory_store,
-                                               session_store, coordinator_manager, cfg, hook_manager, automation_runtime);
+                                               session_store, coordinator_manager, team_manager, mailbox, cfg, hook_manager, automation_runtime);
 
         channel_task_runner->shutdown(true);
         channel_manager.disconnect_all();
@@ -198,7 +199,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .cli_runtime_key = maybe_primary_identity->runtime_key,
             .cli_memory_scope = maybe_primary_identity->memory_scope,
             .memory = cfg.memory,
-            .permissions = maybe_selected_agent->permissions,
+            .permissions_config = maybe_selected_agent->permissions_config,
             .team_agents = maybe_selected_agent->team_agents,
         };
     }
@@ -264,7 +265,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
 
     app_runtime.automation_runtime().set_executor(
-        [&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &coordinator_manager](const orangutan::automation::Trigger &trigger) {
+        [&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &coordinator_manager, &team_manager, &agent_mailbox](const orangutan::automation::Trigger &trigger) {
             orangutan::automation::ExecutionResult result;
             auto config_it = maybe_agent_runtime_configs->find(trigger.agent_key);
             if (config_it == maybe_agent_runtime_configs->end()) {
@@ -295,7 +296,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                     .edit_mode = runtime_cfg.edit_mode,
                     .thinking_budget = runtime_cfg.thinking_budget,
                     .memory = runtime_cfg.memory,
-                    .permissions = runtime_cfg.permissions,
+                    .permissions_config = runtime_cfg.permissions_config,
                     .team_agents = runtime_cfg.team_agents,
                     .identity = identity,
                     .memory_store = memory_store,
@@ -365,7 +366,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .workspace_root = maybe_primary_runtime_cfg->workspace_root,
                 .edit_mode = maybe_primary_runtime_cfg->edit_mode,
                 .memory = maybe_primary_runtime_cfg->memory,
-                .permissions = maybe_primary_runtime_cfg->permissions,
+                .permissions_config = maybe_primary_runtime_cfg->permissions_config,
                 .team_agents = maybe_primary_runtime_cfg->team_agents,
                 .identity = *maybe_primary_identity,
                 .memory_store = memory_store.get(),
@@ -428,7 +429,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 status = callback();
             } else {
                 status = run_channel_mode(channel_manager, message_queue, *maybe_agent_runtime_configs, qq_bot_agents, memory_store.get(), *session_store,
-                                          coordinator_manager.get(), cfg, nullptr, &app_runtime.automation_runtime());
+                                          coordinator_manager.get(), team_manager.get(), agent_mailbox.get(), cfg, nullptr, &app_runtime.automation_runtime());
             }
             channel_exit_code.store(status);
             if (status != 0) {

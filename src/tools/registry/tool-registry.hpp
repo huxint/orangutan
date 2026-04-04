@@ -1,6 +1,7 @@
 #pragma once
 
 #include "permissions.hpp"
+#include "permissions/permission-types.hpp"
 
 #include <functional>
 #include <optional>
@@ -76,7 +77,7 @@ namespace orangutan::tools {
     std::string scrub_tool_output(std::string_view text);
 
     void register_builtin_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
-                                const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionSettings *permissions = nullptr,
+                                const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionContext *permissions = nullptr,
                                 std::string_view edit_mode = "search_replace");
 
 } // namespace orangutan::tools

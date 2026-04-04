@@ -1,6 +1,7 @@
 #include "bootstrap/agent-runtime.hpp"
 
 #include "bootstrap/memory-context.hpp"
+#include "permissions/permission-state.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
@@ -37,7 +38,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle::AgentRuntimeBundle()
     : tool_context_storage_(std::make_unique<ToolRuntimeContext>()),
       tools_storage_(std::make_unique<ToolRegistry>()),
-      permissions_storage_(std::make_unique<ToolPermissionSettings>()),
+      permissions_storage_(std::make_unique<ToolPermissionContext>()),
       tools(*tools_storage_),
       tool_context(*tool_context_storage_) {}
 
@@ -46,7 +47,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle::AgentRuntimeBundle(AgentRuntimeBundle &&other) noexcept
     : tool_context_storage_(other.tool_context_storage_ ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),
       tools_storage_(other.tools_storage_ ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>()),
-      permissions_storage_(other.permissions_storage_ ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionSettings>()),
+      permissions_storage_(other.permissions_storage_ ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>()),
       provider(std::move(other.provider)),
       memory(std::move(other.memory)),
       tools(*tools_storage_),
@@ -72,6 +73,8 @@ namespace orangutan::bootstrap {
             .scope_key = input.identity.memory_scope,
             .current_session_id = input.current_session_id,
             .coordinator_manager = input.coordinator_manager,
+            .team_manager = input.team_manager,
+            .mailbox = input.mailbox,
             .team_agents = input.team_agents,
             .is_child_run = input.is_child_run,
             .coordinator_mode = input.coordinator_mode,
@@ -82,9 +85,10 @@ namespace orangutan::bootstrap {
             .background_completion_runtime = input.background_completion_runtime,
         };
 
-        *runtime.permissions_storage_ = input.permissions;
+        *runtime.permissions_storage_ = initialize_permission_context(input.permissions_config);
+        runtime.tool_context.permission_context = runtime.permissions_storage_.get();
         auto tool_bootstrap = register_runtime_tools(runtime.tools, runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
-                                                     input.mcp_servers, runtime.permissions_storage_.get(), input.approval_callback, input.edit_mode);
+                                                     input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
         runtime.skill_loader = std::make_unique<SkillLoader>();
@@ -102,7 +106,7 @@ namespace orangutan::bootstrap {
             .model_name = input.primary_endpoint.model,
             .agent_key = input.agent_key,
             .is_channel_mode = input.runtime_origin != base::origin::cli,
-            .is_sandboxed = input.permissions.sandbox_mode != ToolSandboxMode::disabled,
+            .is_sandboxed = false,
         });
         return runtime;
     }

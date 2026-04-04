@@ -3,6 +3,7 @@
 #include "types/types.hpp"
 #include "channel/channel.hpp"
 #include "config/config.hpp"
+#include "permissions/permission-types.hpp"
 #include "providers/provider.hpp"
 #include "channel/jid-task-runner.hpp"
 #include "memory/memory-store.hpp"
@@ -36,6 +37,11 @@ namespace orangutan::coordinator {
     class CoordinatorManager;
 }
 
+namespace orangutan::swarm {
+    class AgentMailbox;
+    class TeamManager;
+}
+
 namespace orangutan::providers {
     class Provider;
 }
@@ -54,7 +60,7 @@ namespace orangutan::bootstrap {
         std::string cli_runtime_key;
         std::string cli_memory_scope;
         Config::MemoryConfig memory;
-        ToolPermissionSettings permissions;
+        PermissionConfig permissions_config;
         std::vector<std::string> team_agents;
         bool coordinator_mode = false;
         int max_concurrent_agents = 4;
@@ -76,7 +82,7 @@ namespace orangutan::bootstrap {
         explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
         [[nodiscard]]
-        ToolApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
+        ApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
 
         [[nodiscard]]
         bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
@@ -152,7 +158,8 @@ namespace orangutan::bootstrap {
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                          MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
+                          MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager,
+                          swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox, const Config &cfg,
                           hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr);
 
 } // namespace orangutan::bootstrap

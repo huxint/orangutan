@@ -2,6 +2,7 @@
 
 #include "types/types.hpp"
 #include "config/secret-protection.hpp"
+#include "permissions/permission-state.hpp"
 #include "tools/registry/permissions.hpp"
 
 #include <filesystem>
@@ -51,10 +52,7 @@ namespace orangutan::config {
         std::string model = "claude-sonnet-4-20250514";
         std::vector<FallbackModelRef> fallback_models;
         std::string workspace;
-        ToolPermissionSettings permissions{
-            .sandbox_mode = ToolSandboxMode::isolated,
-            .shell_approval = ToolApprovalPolicy::ask,
-        };
+        PermissionConfig permissions_config;
         std::vector<std::string> team_agents;
         bool coordinator_mode = false;
         int max_concurrent_agents = 4;
@@ -86,10 +84,7 @@ namespace orangutan::config {
         std::string edit_mode = "hashline"; // "hashline" | "search_replace"
 
         // permissions object
-        ToolPermissionSettings permissions{
-            .sandbox_mode = ToolSandboxMode::isolated,
-            .shell_approval = ToolApprovalPolicy::ask,
-        };
+        PermissionConfig permissions_config;
 
         // session object
         bool auto_save = true;
@@ -165,10 +160,6 @@ namespace orangutan::config {
 
         // Load config from a specific path (for testing)
         static Config load_from(const std::filesystem::path &path, const ConfigSecretOptions &secret_options = {});
-
-        // Check if a tool is permitted by the allow/deny lists
-        [[nodiscard]]
-        bool is_tool_allowed(const std::string &name) const;
 
         [[nodiscard]]
         std::optional<AgentConfig> find_agent(const std::string &key) const;

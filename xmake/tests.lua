@@ -55,6 +55,8 @@ add_test_target("test-storage", rooted("tests/storage/*.cpp"))
 
 add_test_target("test-process", rooted("tests/process/*.cpp"))
 
+add_test_target("test-permissions", rooted("tests/permissions/*.cpp"))
+
 add_test_target("test-bootstrap", rooted("tests/bootstrap/*.cpp"))
 
 add_test_target("test-utils", rooted("tests/utils/*.cpp"))

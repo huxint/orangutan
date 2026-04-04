@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
+#include <magic_enum/magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
 namespace orangutan::config {
@@ -207,21 +208,6 @@ namespace orangutan::config {
         }
     }
 
-    bool Config::is_tool_allowed(const std::string &name) const {
-        auto effective = permissions;
-        for (const auto &tool : allowed_tools) {
-            if (!std::ranges::contains(effective.allowed_tools, tool)) {
-                effective.allowed_tools.push_back(tool);
-            }
-        }
-        for (const auto &tool : denied_tools) {
-            if (!std::ranges::contains(effective.denied_tools, tool)) {
-                effective.denied_tools.push_back(tool);
-            }
-        }
-        return orangutan::is_tool_allowed(effective, name);
-    }
-
     std::optional<AgentConfig> Config::find_agent(const std::string &key) const {
         if (const auto it = agents.find(key); it != agents.end()) {
             return it->second;
@@ -357,19 +343,18 @@ namespace orangutan::config {
                 if (agent_cfg.thinking_budget != 0) {
                     agent_json["thinking_budget"] = agent_cfg.thinking_budget;
                 }
-                if (agent_cfg.permissions.sandbox_mode != ToolSandboxMode::isolated || agent_cfg.permissions.shell_approval != ToolApprovalPolicy::ask ||
-                    !agent_cfg.permissions.allowed_tools.empty() || !agent_cfg.permissions.denied_tools.empty() || !agent_cfg.permissions.denied_shell_commands.empty()) {
+                if (agent_cfg.permissions_config.default_mode != PermissionMode::default_mode ||
+                    !agent_cfg.permissions_config.allow.empty() || !agent_cfg.permissions_config.deny.empty() || !agent_cfg.permissions_config.ask.empty()) {
                     nlohmann::json permissions_json = nlohmann::json::object();
-                    permissions_json["sandbox_mode"] = to_string(agent_cfg.permissions.sandbox_mode);
-                    permissions_json["shell_approval_policy"] = to_string(agent_cfg.permissions.shell_approval);
-                    if (!agent_cfg.permissions.allowed_tools.empty()) {
-                        permissions_json["allowed_tools"] = agent_cfg.permissions.allowed_tools;
+                    permissions_json["default_mode"] = std::string{magic_enum::enum_name(agent_cfg.permissions_config.default_mode)};
+                    if (!agent_cfg.permissions_config.allow.empty()) {
+                        permissions_json["allow"] = agent_cfg.permissions_config.allow;
                     }
-                    if (!agent_cfg.permissions.denied_tools.empty()) {
-                        permissions_json["denied_tools"] = agent_cfg.permissions.denied_tools;
+                    if (!agent_cfg.permissions_config.deny.empty()) {
+                        permissions_json["deny"] = agent_cfg.permissions_config.deny;
                     }
-                    if (!agent_cfg.permissions.denied_shell_commands.empty()) {
-                        permissions_json["denied_shell_commands"] = agent_cfg.permissions.denied_shell_commands;
+                    if (!agent_cfg.permissions_config.ask.empty()) {
+                        permissions_json["ask"] = agent_cfg.permissions_config.ask;
                     }
                     agent_json["permissions"] = std::move(permissions_json);
                 }
@@ -378,19 +363,18 @@ namespace orangutan::config {
             root["agents"] = std::move(agents_json);
         }
 
-        if (permissions.sandbox_mode != ToolSandboxMode::isolated || permissions.shell_approval != ToolApprovalPolicy::ask || !permissions.allowed_tools.empty() ||
-            !permissions.denied_tools.empty() || !permissions.denied_shell_commands.empty()) {
+        if (permissions_config.default_mode != PermissionMode::default_mode ||
+            !permissions_config.allow.empty() || !permissions_config.deny.empty() || !permissions_config.ask.empty()) {
             nlohmann::json permissions_json = nlohmann::json::object();
-            permissions_json["sandbox_mode"] = to_string(permissions.sandbox_mode);
-            permissions_json["shell_approval_policy"] = to_string(permissions.shell_approval);
-            if (!permissions.allowed_tools.empty()) {
-                permissions_json["allowed_tools"] = permissions.allowed_tools;
+            permissions_json["default_mode"] = std::string{magic_enum::enum_name(permissions_config.default_mode)};
+            if (!permissions_config.allow.empty()) {
+                permissions_json["allow"] = permissions_config.allow;
             }
-            if (!permissions.denied_tools.empty()) {
-                permissions_json["denied_tools"] = permissions.denied_tools;
+            if (!permissions_config.deny.empty()) {
+                permissions_json["deny"] = permissions_config.deny;
             }
-            if (!permissions.denied_shell_commands.empty()) {
-                permissions_json["denied_shell_commands"] = permissions.denied_shell_commands;
+            if (!permissions_config.ask.empty()) {
+                permissions_json["ask"] = permissions_config.ask;
             }
             root["permissions"] = std::move(permissions_json);
         }

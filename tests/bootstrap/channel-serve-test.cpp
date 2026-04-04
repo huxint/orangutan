@@ -4,6 +4,7 @@
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
 #include "channel/channel.hpp"
+#include "permissions/permission-types.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 
@@ -418,7 +419,7 @@ namespace {
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -456,7 +457,7 @@ namespace {
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required.");
+            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
         });
 
         for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
@@ -489,7 +490,7 @@ namespace {
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUse("deny-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required.");
+            return callback(ToolUse("deny-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
         });
 
         for (int attempt = 0; attempt < 20 && qq->sent_messages().empty(); ++attempt) {
@@ -558,7 +559,7 @@ namespace {
 
         runner.submit(approval_request.jid, [&] {
             auto callback = coordinator.make_callback(approval_request, manager, &runner);
-            approval_result.store(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required."));
+            approval_result.store(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required.")));
             approval_finished.set_value();
         });
 
@@ -600,7 +601,7 @@ namespace {
 
         coordinator.shutdown();
 
-        CHECK_FALSE(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), "Shell command approval required."));
+        CHECK_FALSE(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required.")));
         CHECK(qq->sent_messages().empty());
         CHECK(coordinator.make_callback(request, manager) == nullptr);
     };
@@ -635,7 +636,7 @@ namespace {
         session_store.bind_jid(jid, session_id, "default");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -694,7 +695,7 @@ namespace {
         const auto export_path = bootstrap::workspace_exports_root(identity.workspace) / (session_id + ".md");
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -754,7 +755,7 @@ namespace {
                                                                                     });
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg);
         });
 
         queue.push(InboundMessage{
@@ -799,7 +800,7 @@ namespace {
         const std::unordered_map<std::string, std::string> qq_bot_agents;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr,
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, nullptr, nullptr, cfg, nullptr,
                                         &automation_runtime);
         });
 
@@ -952,7 +953,7 @@ namespace {
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
-            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, cfg);
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, nullptr, nullptr, cfg);
         });
 
         queue.push(InboundMessage{

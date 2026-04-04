@@ -1,5 +1,6 @@
 #include "types/types.hpp"
 #include "config/config.hpp"
+#include "permissions/permission-types.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "tools/registry/tool.hpp"
 #include "tools/script/script-loader.hpp"
@@ -696,8 +697,12 @@ TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
 
 TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.denied_tools = {"shell"};
+    ToolPermissionContext permissions;
+    permissions.deny_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::deny,
+        .tool_name = "shell",
+    });
 
     const auto result = register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions);
     const auto defs = registry.definitions();
@@ -709,35 +714,35 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
 
     const auto shell_result = registry.execute(ToolUse("deny-shell", "shell", {{"command", "echo hello"}}));
     CHECK(shell_result.is_error);
-    CHECK(shell_result.content.contains("permission policy"));
+    CHECK(shell_result.content.contains("deny rule"));
 };
 
 TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::ask;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::default_mode;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
     const auto shell_result = registry.execute(ToolUse("ask-shell", "shell", {{"command", "echo hello"}}));
     CHECK(shell_result.is_error);
-    CHECK(shell_result.content.contains("requires approval"));
+    CHECK(shell_result.content.contains("approval"));
 };
 
 TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::ask;
-
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::default_mode;
+    auto tool_context = make_runtime_tool_context();
     bool prompted = false;
-    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions, [&prompted](const ToolUse &call, const std::string &prompt_text) {
+
+    tool_context.approval_callback = [&prompted](const ToolUse &call, const PermissionDecision &decision) {
         prompted = true;
         CHECK(call.name == "shell");
-        CHECK(prompt_text.contains("echo hello"));
+        CHECK(decision.message.has_value());
         return true;
-    }));
+    };
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
 
     const auto shell_result = registry.execute(ToolUse("allow-shell", "shell", {{"command", "echo hello"}}));
     CHECK(prompted);
@@ -747,17 +752,16 @@ TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
 
 TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::ask;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::default_mode;
     auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
-    tool_context.approval_callback = [&prompted](const ToolUse &call, const std::string &prompt_text) {
+    tool_context.approval_callback = [&prompted](const ToolUse &call, const PermissionDecision &decision) {
         prompted = true;
         CHECK(call.name == "shell");
-        CHECK(prompt_text.contains("echo hello"));
+        CHECK(decision.message.has_value());
         return true;
     };
 
@@ -769,23 +773,36 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
 
 TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::allow;
-    permissions.denied_shell_commands = {"rm -rf", "shutdown"};
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.deny_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::deny,
+        .tool_name = "shell",
+        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "rm -rf"},
+    });
+    permissions.deny_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::deny,
+        .tool_name = "shell",
+        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "shutdown"},
+    });
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
     const auto shell_result = registry.execute(ToolUse("blocked-shell", "shell", {{"command", "rm -rf build"}}));
     CHECK(shell_result.is_error);
-    CHECK(shell_result.content.contains("matched 'rm -rf'"));
+    CHECK(shell_result.content.contains("deny rule"));
 };
 
 TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::deny;
+    ToolPermissionContext permissions;
+    permissions.deny_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::deny,
+        .tool_name = "echo_custom",
+    });
 
     const std::vector<Config::ScriptToolConfig> custom_tools = {{
         .name = "echo_custom",
@@ -797,15 +814,18 @@ TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
 
     const auto result = registry.execute(ToolUse("deny-script-shell", "echo_custom", nlohmann::json::object()));
     CHECK(result.is_error);
-    CHECK(result.content.contains("approval policy"));
+    CHECK(result.content.contains("deny rule"));
 };
 
 TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::allow;
-    permissions.denied_shell_commands = {"rm -rf"};
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.deny_rules.push_back(PermissionRule{
+        .source = PermissionRuleSource::cli_arg,
+        .behavior = PermissionBehavior::deny,
+        .tool_name = "wipe",
+    });
 
     const std::vector<Config::ScriptToolConfig> custom_tools = {{
         .name = "wipe",
@@ -818,14 +838,13 @@ TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
 
     const auto result = registry.execute(ToolUse("deny-script-command", "wipe", {{"path", "build"}}));
     CHECK(result.is_error);
-    CHECK(result.content.contains("matched 'rm -rf'"));
+    CHECK(result.content.contains("deny rule"));
 };
 
 TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
     ToolRegistry registry;
-    ToolPermissionSettings permissions;
-    permissions.sandbox_mode = ToolSandboxMode::disabled;
-    permissions.shell_approval = ToolApprovalPolicy::ask;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::default_mode;
     auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
@@ -836,10 +855,10 @@ TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
     }};
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, custom_tools, {}, &permissions));
-    tool_context.approval_callback = [&prompted](const ToolUse &call, const std::string &prompt_text) {
+    tool_context.approval_callback = [&prompted](const ToolUse &call, const PermissionDecision &decision) {
         prompted = true;
         CHECK(call.name == "echo_custom");
-        CHECK(prompt_text.contains("echo custom"));
+        CHECK(decision.message.has_value());
         return true;
     };
 

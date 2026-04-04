@@ -631,7 +631,7 @@ namespace {
             .workspace_root = runtime_it->second.workspace_root,
             .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,
-            .permissions = runtime_it->second.permissions,
+            .permissions_config = runtime_it->second.permissions_config,
             .team_agents = runtime_it->second.team_agents,
             .identity = identity,
             .memory_store = &memory_store,

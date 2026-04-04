@@ -2,12 +2,17 @@
 
 #include "config/config.hpp"
 #include "config/secret-protection.hpp"
+#include "permissions/permission-types.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <ranges>
+#include <sstream>
 
+#include <magic_enum/magic_enum.hpp>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
@@ -59,6 +64,10 @@ namespace orangutan::bootstrap {
         app.add_option("--port", options.web_port, "Web server port (default: 18080)");
         app.add_option("--web-host", options.web_host, "Web server bind address (default: 127.0.0.1)");
         app.add_option("--web-dir", options.web_dir, "Path to web frontend static files");
+        app.add_option("--permission-mode", options.permission_mode_str, "Permission mode")->envname("ORANGUTAN_PERMISSION_MODE");
+        app.add_flag("--dangerously-skip-permissions", options.dangerously_skip_permissions, "Skip all permission checks");
+        app.add_option("--allowed-tools", options.allowed_tools_str, "Comma-separated list of allowed tools");
+        app.add_option("--disallowed-tools", options.disallowed_tools_str, "Comma-separated list of disallowed tools");
     }
 
     void configure_logging(bool verbose) {
@@ -70,12 +79,13 @@ namespace orangutan::bootstrap {
         spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::info);
     }
 
-    ToolApprovalCallback make_cli_approval_callback(bool allow_prompting) {
+    ApprovalCallback make_cli_approval_callback(bool allow_prompting) {
         if (!allow_prompting || isatty(STDIN_FILENO) == 0 || isatty(STDOUT_FILENO) == 0) {
             return {};
         }
 
-        return [](const ToolUse & /*call*/, const std::string &prompt_text) {
+        return [](const ToolUse & /*call*/, const PermissionDecision &decision) {
+            const auto prompt_text = decision.message.value_or("Tool requires approval");
             spdlog::fmt_lib::print("\n{}\nApprove? [y/N]: ", prompt_text);
             std::fflush(stdout);
             std::string answer;
@@ -145,6 +155,54 @@ namespace orangutan::bootstrap {
             spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
             return 1;
         }
+    }
+
+    namespace {
+
+        std::string normalize_enum_token(std::string_view value) {
+            return value | std::views::transform([](unsigned char ch) {
+                       return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));
+                   }) |
+                   std::ranges::to<std::string>();
+        }
+
+        std::vector<std::string> split_comma_list(const std::string &input) {
+            std::vector<std::string> result;
+            std::istringstream stream(input);
+            std::string token;
+            while (std::getline(stream, token, ',')) {
+                auto trimmed = token;
+                std::erase_if(trimmed, [](unsigned char ch) { return std::isspace(ch) != 0; });
+                if (!trimmed.empty()) {
+                    result.push_back(std::move(trimmed));
+                }
+            }
+            return result;
+        }
+
+    } // namespace
+
+    CLIPermissionOptions build_cli_permission_options(const CliOptions &options) {
+        CLIPermissionOptions cli_perms;
+        cli_perms.dangerously_skip_permissions = options.dangerously_skip_permissions;
+
+        if (!options.permission_mode_str.empty()) {
+            auto mode_opt = magic_enum::enum_cast<PermissionMode>(normalize_enum_token(options.permission_mode_str));
+            if (mode_opt.has_value()) {
+                cli_perms.permission_mode = *mode_opt;
+            } else {
+                spdlog::warn("Unknown --permission-mode '{}', ignoring", options.permission_mode_str);
+            }
+        }
+
+        if (!options.allowed_tools_str.empty()) {
+            cli_perms.allowed_tools = split_comma_list(options.allowed_tools_str);
+        }
+        if (!options.disallowed_tools_str.empty()) {
+            cli_perms.disallowed_tools = split_comma_list(options.disallowed_tools_str);
+        }
+
+        return cli_perms;
     }
 
 } // namespace orangutan::bootstrap

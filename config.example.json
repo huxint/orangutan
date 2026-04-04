@@ -3,13 +3,10 @@
     "auto_save": true
   },
   "permissions": {
-    "sandbox_mode": "isolated",
-    "shell_approval_policy": "ask",
-    "denied_shell_commands": [
-      "rm -rf /",
-      "shutdown",
-      "reboot"
-    ]
+    "default_mode": "default_mode",
+    "allow": ["file_read", "glob", "grep"],
+    "deny": [],
+    "ask": ["shell"]
   },
   "memory": {
     "mirror_enabled": false,
@@ -63,12 +60,10 @@
         "research"
       ],
       "permissions": {
-        "sandbox_mode": "isolated",
-        "shell_approval_policy": "ask",
-        "denied_shell_commands": [
-          "git push",
-          "rm -rf /"
-        ]
+        "default_mode": "default_mode",
+        "allow": [],
+        "deny": [],
+        "ask": ["shell"]
       }
     },
     "research": {
