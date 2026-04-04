@@ -52,12 +52,14 @@ namespace orangutan::bootstrap {
         providers::ProviderEndpoint primary_endpoint;
         std::vector<providers::ProviderEndpoint> fallback_endpoints;
         std::string agent_key;
+        std::string agent_name;
         std::string workspace_root;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
         Config::MemoryConfig memory;
         PermissionConfig permissions_config;
         std::vector<std::string> team_agents;
+        std::string team_id;
         RuntimeIdentity identity;
 
         memory::MemoryStore *memory_store = nullptr;
@@ -71,6 +73,7 @@ namespace orangutan::bootstrap {
         bool is_child_run = false;
         bool coordinator_mode = false;
         ApprovalCallback approval_callback;
+        std::string delegated_task_prompt;
 
         std::vector<Config::ScriptToolConfig> custom_tools;
         std::vector<Config::McpServerConfig> mcp_servers;

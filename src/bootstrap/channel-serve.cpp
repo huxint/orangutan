@@ -9,6 +9,7 @@
 #include "cli/cli-ui.hpp"
 #include "cli/session-workflow.hpp"
 #include "channel/qq/qq-channel.hpp"
+#include "coordinator/coordinator-manager.hpp"
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
@@ -304,6 +305,7 @@ namespace orangutan::bootstrap {
                 .primary_endpoint = cfg.primary_endpoint,
                 .fallback_endpoints = cfg.fallback_endpoints,
                 .agent_key = cfg.agent_key,
+                .agent_name = cfg.agent_key,
                 .workspace_root = cfg.workspace_root,
                 .edit_mode = cfg.edit_mode,
                 .thinking_budget = cfg.thinking_budget,
@@ -319,6 +321,7 @@ namespace orangutan::bootstrap {
                 .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
                 .automation_runtime = automation_runtime,
+                .coordinator_mode = cfg.coordinator_mode,
                 .custom_tools = app_cfg.custom_tools,
                 .mcp_servers = app_cfg.mcp_servers,
                 .skill_paths = app_cfg.skill_paths,
@@ -343,6 +346,9 @@ namespace orangutan::bootstrap {
             completion_resume_state->hook_manager = runtime->hook_manager;
             completion_resume_state->current_session_id = &runtime->current_session_id;
             completion_resume_state->persisted_message_count = &runtime->persisted_message_count;
+            if (coordinator_manager != nullptr) {
+                coordinator_manager->register_runtime_notification_handler(runtime->runtime_key, detail::make_channel_completion_resume_callback(completion_resume_state));
+            }
             runtime->completion_resume_state = std::move(completion_resume_state);
             return runtime;
         }

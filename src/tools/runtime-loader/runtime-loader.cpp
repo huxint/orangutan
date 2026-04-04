@@ -2,6 +2,7 @@
 
 #include "permissions/permission-evaluator.hpp"
 #include "permissions/rule-parser.hpp"
+#include "coordinator/coordinator-mode.hpp"
 #include "tools/register.hpp"
 #include "tools/script/register.hpp"
 #include "tools/tool-search/tool-search.hpp"
@@ -51,15 +52,18 @@ namespace orangutan::tools {
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions,
                                                       std::string_view edit_mode) {
+        const bool coordinator_only = coordinator::is_coordinator_mode(tool_context);
         register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
-        script::register_tools(registry, custom_tools, workspace, permissions, tool_context);
+        if (!coordinator_only) {
+            script::register_tools(registry, custom_tools, workspace, permissions, tool_context);
+        }
 
         if (permissions != nullptr) {
             apply_permission_policy(registry, *permissions, tool_context);
         }
 
         RuntimeToolBootstrapResult result;
-        if (!mcp_servers.empty()) {
+        if (!coordinator_only && !mcp_servers.empty()) {
             result.mcp_manager = std::make_unique<McpManager>(mcp_servers);
             result.mcp_manager->connect_all();
             result.mcp_manager->register_tools(registry);
@@ -68,7 +72,8 @@ namespace orangutan::tools {
             spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
         }
 
-        if (registry.has_deferred_tools()) {
+        // Register tool_search if there are any deferred tools (builtin or MCP)
+        if (!coordinator_only && registry.has_deferred_tools()) {
             register_tool_search(registry);
             spdlog::debug("Registered tool_search for deferred tools");
         }

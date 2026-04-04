@@ -2,6 +2,8 @@
 
 #include "bootstrap/memory-context.hpp"
 #include "permissions/permission-state.hpp"
+#include "bootstrap/identity.hpp"
+#include "coordinator/coordinator-prompt.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
@@ -70,7 +72,9 @@ namespace orangutan::bootstrap {
         runtime.tool_context = ToolRuntimeContext{
             .runtime_key = input.identity.runtime_key,
             .agent_key = input.agent_key,
+            .agent_name = input.agent_name.empty() ? input.agent_key : input.agent_name,
             .scope_key = input.identity.memory_scope,
+            .team_id = input.team_id,
             .current_session_id = input.current_session_id,
             .coordinator_manager = input.coordinator_manager,
             .team_manager = input.team_manager,
@@ -93,8 +97,26 @@ namespace orangutan::bootstrap {
 
         runtime.skill_loader = std::make_unique<SkillLoader>();
         runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, input.workspace_root));
-        runtime.skills_prompt = runtime.skill_loader->build_prompt_section();
-        tools::register_skill_tool(runtime.tools, *runtime.skill_loader);
+        std::string prompt_guidance;
+        if (input.coordinator_mode) {
+            prompt_guidance = coordinator::get_coordinator_system_prompt(input.team_agents);
+        } else if (input.is_child_run) {
+            const auto task_description =
+                input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
+            prompt_guidance = coordinator::get_worker_system_prompt_addendum(input.agent_key, task_description);
+        } else if (!input.team_agents.empty()) {
+            prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, false);
+        }
+
+        runtime.skills_prompt = std::move(prompt_guidance);
+        const auto skills_prompt = runtime.skill_loader->build_prompt_section();
+        if (!runtime.skills_prompt.empty() && !skills_prompt.empty()) {
+            runtime.skills_prompt += "\n\n";
+        }
+        runtime.skills_prompt += skills_prompt;
+        if (!input.coordinator_mode) {
+            tools::register_skill_tool(runtime.tools, *runtime.skill_loader);
+        }
 
         runtime.hook_manager = std::make_unique<HookManager>();
         runtime.hook_manager->load_from_directories(resolve_hook_directories(input));

@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -73,6 +74,7 @@ namespace orangutan::coordinator {
 
     // Callback to inject <task-notification> into coordinator's conversation
     using TaskNotificationCallback = std::function<void(const AgentRunRecord &record)>;
+    using RuntimeNotificationHandler = std::function<std::optional<std::string>(const std::string &message)>;
 
     struct WorkerRuntime {
         virtual ~WorkerRuntime() = default;
@@ -102,12 +104,15 @@ namespace orangutan::coordinator {
 
         void set_environment(AgentExecutionEnvironment env);
         void set_notification_callback(TaskNotificationCallback callback);
+        void register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler);
+        void unregister_runtime_notification_handler(const std::string &runtime_key);
         void set_worker_runtime_factory(WorkerRuntimeFactory factory);
 
         [[nodiscard]]
         AgentSpawnResult spawn(const AgentSpawnRequest &request);
 
-        void send_message(const std::string &run_id, const std::string &from, const std::string &text);
+        [[nodiscard]]
+        std::optional<std::string> send_message(const std::string &run_id, const std::string &from, const std::string &text);
 
         void stop(const std::string &run_id);
 
@@ -121,6 +126,7 @@ namespace orangutan::coordinator {
 
     private:
         struct ActiveRun {
+            AgentSpawnRequest request;
             AgentRunRecord record;
             std::stop_source stop_source;
             std::jthread worker_thread;
@@ -132,16 +138,24 @@ namespace orangutan::coordinator {
         int max_concurrent_;
         AgentExecutionEnvironment env_;
         TaskNotificationCallback notification_callback_;
+        std::unordered_map<std::string, RuntimeNotificationHandler> runtime_notification_handlers_;
         WorkerRuntimeFactory worker_runtime_factory_;
 
         mutable std::mutex mutex_;
         std::unordered_map<std::string, std::shared_ptr<ActiveRun>> active_runs_;
+        std::deque<std::string> pending_run_ids_;
         bool shutting_down_ = false;
         std::uint64_t next_run_id_ = 0;
 
         [[nodiscard]]
         std::string make_run_id();
 
+        [[nodiscard]]
+        int count_running_locked() const;
+
+        void launch_run_locked(const std::shared_ptr<ActiveRun> &run);
+        void remove_pending_run_locked(const std::string &run_id);
+        void maybe_start_queued_runs();
         void run_worker(const std::shared_ptr<ActiveRun> &run, std::stop_token stop_token);
     };
 

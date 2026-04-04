@@ -1,7 +1,10 @@
 #include "tools/coordinator/register.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "coordinator/coordinator-manager.hpp"
+#include "swarm/mailbox.hpp"
+#include "swarm/team-manager.hpp"
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -23,8 +26,32 @@ namespace orangutan::tools {
                 return nlohmann::json{{"sent", false}, {"error", "Either run_id or to must be specified"}}.dump();
             }
 
-            auto target = run_id.empty() ? to : run_id;
-            tool_context.coordinator_manager->send_message(target, tool_context.agent_key, text);
+            if (!run_id.empty()) {
+                if (const auto error = tool_context.coordinator_manager->send_message(run_id, tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name, text);
+                    error.has_value()) {
+                    return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
+                }
+                return nlohmann::json{{"sent", true}}.dump();
+            }
+
+            if (tool_context.mailbox == nullptr || tool_context.team_manager == nullptr || tool_context.team_id.empty()) {
+                return nlohmann::json{{"sent", false}, {"error", "Team mailbox is not available in this runtime"}}.dump();
+            }
+
+            auto member_names = tool_context.team_manager->list_member_names(tool_context.team_id);
+            const auto sender_name = tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name;
+
+            if (to == "*") {
+                tool_context.mailbox->send_broadcast(tool_context.team_id, sender_name, text, member_names);
+                return nlohmann::json{{"sent", true}}.dump();
+            }
+
+            const auto found = std::ranges::find(member_names, to);
+            if (found == member_names.end()) {
+                return nlohmann::json{{"sent", false}, {"error", "agent '" + to + "' not found in team"}}.dump();
+            }
+
+            tool_context.mailbox->send(tool_context.team_id, sender_name, to, text);
 
             return nlohmann::json{{"sent", true}}.dump();
         }

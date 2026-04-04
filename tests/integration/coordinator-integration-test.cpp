@@ -22,6 +22,14 @@ namespace {
         manager.set_environment(coordinator::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
         });
+        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
+            struct ImmediateWorker final : coordinator::WorkerRuntime {
+                std::string run(const std::string &, std::stop_token) override {
+                    return "integration done";
+                }
+            };
+            return std::make_unique<ImmediateWorker>();
+        });
 
         std::atomic<bool> notification_received{false};
         std::string notified_run_id;
@@ -41,7 +49,7 @@ namespace {
         REQUIRE(result.accepted);
         REQUIRE(!result.run_id.empty());
 
-        // Wait for the stub worker to complete
+        // Wait for the worker to complete
         for (int i = 0; i < 100 && !notification_received.load(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -55,7 +63,7 @@ namespace {
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
         CHECK(run->status == coordinator::AgentRunStatus::succeeded);
-        CHECK(!run->final_output.empty());
+        CHECK(run->final_output == "integration done");
 
         manager.shutdown();
     }
@@ -82,15 +90,39 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("Coordinator respects max concurrent limit", "[integration][coordinator]") {
+    TEST_CASE("Coordinator queues runs beyond max concurrent limit", "[integration][coordinator]") {
         coordinator::AgentDefinitionRegistry def_registry;
         def_registry.load_builtin_definitions();
 
-        // Allow only 1 concurrent agent -- but the stub completes instantly,
-        // so we just verify that the spawn mechanism works.
         coordinator::CoordinatorManager manager(1);
         manager.set_environment(coordinator::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
+        });
+
+        std::atomic<bool> release_first{false};
+        std::atomic<int> started{0};
+        manager.set_worker_runtime_factory([&](const coordinator::AgentSpawnRequest &request) {
+            struct QueuedWorker final : coordinator::WorkerRuntime {
+                std::atomic<bool> *release_first = nullptr;
+                std::atomic<int> *started = nullptr;
+                std::string task_prompt;
+
+                std::string run(const std::string &, std::stop_token) override {
+                    started->fetch_add(1);
+                    if (task_prompt == "first task") {
+                        for (int i = 0; i < 100 && !release_first->load(); ++i) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                    }
+                    return task_prompt + " complete";
+                }
+            };
+
+            auto worker = std::make_unique<QueuedWorker>();
+            worker->release_first = &release_first;
+            worker->started = &started;
+            worker->task_prompt = request.task_prompt;
+            return worker;
         });
 
         auto r1 = manager.spawn(coordinator::AgentSpawnRequest{
@@ -100,15 +132,37 @@ namespace {
         });
         REQUIRE(r1.accepted);
 
-        // Give the stub worker time to complete
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        for (int i = 0; i < 50 && started.load() < 1; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        REQUIRE(started.load() == 1);
 
         auto r2 = manager.spawn(coordinator::AgentSpawnRequest{
             .agent_key = "explorer",
             .task_prompt = "second task",
             .parent_runtime_key = "test-runtime",
         });
-        CHECK(r2.accepted);
+        REQUIRE(r2.accepted);
+
+        auto queued = manager.get_run(r2.run_id);
+        REQUIRE(queued.has_value());
+        CHECK(queued->status == coordinator::AgentRunStatus::queued);
+        CHECK(started.load() == 1);
+
+        release_first.store(true);
+
+        for (int i = 0; i < 100; ++i) {
+            auto run = manager.get_run(r2.run_id);
+            if (run.has_value() && run->status == coordinator::AgentRunStatus::succeeded) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        auto completed = manager.get_run(r2.run_id);
+        REQUIRE(completed.has_value());
+        CHECK(completed->status == coordinator::AgentRunStatus::succeeded);
+        CHECK(started.load() == 2);
 
         manager.shutdown();
     }
@@ -120,6 +174,20 @@ namespace {
         coordinator::CoordinatorManager manager(2);
         manager.set_environment(coordinator::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
+        });
+        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
+            struct SlowWorker final : coordinator::WorkerRuntime {
+                std::string run(const std::string &, std::stop_token stop_token) override {
+                    for (int i = 0; i < 100; ++i) {
+                        if (stop_token.stop_requested()) {
+                            return "stopped";
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
+                    return "completed";
+                }
+            };
+            return std::make_unique<SlowWorker>();
         });
 
         auto result = manager.spawn(coordinator::AgentSpawnRequest{

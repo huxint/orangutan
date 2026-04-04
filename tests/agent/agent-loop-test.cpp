@@ -145,6 +145,27 @@ namespace {
         std::size_t next_response_ = 0;
     };
 
+    class CountingProvider final : public Provider {
+    public:
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            throw std::runtime_error("chat should not be used in this test");
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            ++call_count_;
+            return {
+                .stop_reason = "end_turn",
+                .content = {Text{"ok"}},
+            };
+        }
+
+        std::string name() const override {
+            return "counting-provider";
+        }
+
+        int call_count_ = 0;
+    };
+
     std::string describe_message(const Message &message) {
         std::string description = std::string(magic_enum::enum_name(message.role())) + ":";
         bool first_block = true;
@@ -226,7 +247,64 @@ namespace {
             REQUIRE(actual_text != nullptr);
             CHECK(actual_text->text == expected_text->text);
         }
-    };
+    }
+
+    TEST_CASE("incoming mailbox messages are injected between turns") {
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = {.name = "noop", .description = "noop", .input_schema = {{"type", "object"}}},
+            .execute = [](const nlohmann::json &) { return std::string("ok"); },
+        });
+
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse{"tool-1", "noop", nlohmann::json::object()}},
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {Text{"finished"}},
+            },
+        });
+
+        AgentLoop loop(provider, tools);
+        int fetch_count = 0;
+        loop.set_incoming_message_fetcher([&fetch_count]() {
+            ++fetch_count;
+            if (fetch_count == 2) {
+                return std::vector<std::string>{"<teammate-message from=\"worker-b\">status update</teammate-message>"};
+            }
+            return std::vector<std::string>{};
+        });
+
+        const auto reply = loop.run("start");
+        CHECK(reply == "finished");
+
+        const auto &history = loop.history();
+        REQUIRE(history.size() >= 5U);
+        bool saw_teammate_message = false;
+        for (const auto &message : history) {
+            for (const auto &block : message) {
+                if (const auto *text = std::get_if<Text>(&block); text != nullptr &&
+                    text->text.contains("<teammate-message from=\"worker-b\">status update</teammate-message>")) {
+                    saw_teammate_message = true;
+                }
+            }
+        }
+        CHECK(saw_teammate_message);
+    }
+
+    TEST_CASE("stop callback terminates agent loop before provider call") {
+        CountingProvider provider;
+        ToolRegistry tools;
+        AgentLoop loop(provider, tools);
+        loop.set_stop_requested_callback([] { return true; });
+
+        const auto reply = loop.run("stop now");
+
+        CHECK(reply == "Task terminated.");
+        CHECK(provider.call_count_ == 0);
+    }
 
     TEST_CASE("compress_history_requires_older_messages_beyond_recent_tail") {
         SummarizingProvider provider;

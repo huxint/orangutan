@@ -47,10 +47,6 @@ You have access to the following tools:
 )";
     }
 
-    std::vector<std::string> get_coordinator_allowed_tools() {
-        return {"agent_spawn", "agent_send_message", "agent_stop"};
-    }
-
     std::string get_worker_system_prompt_addendum(const std::string &agent_key, const std::string &task_description) {
         return "You are a worker agent (type: " + agent_key +
                ") executing a delegated task.\n\n"

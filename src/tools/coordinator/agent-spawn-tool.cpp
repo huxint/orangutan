@@ -1,7 +1,9 @@
 #include "tools/coordinator/register.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "coordinator/coordinator-manager.hpp"
+#include "swarm/team-manager.hpp"
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -20,18 +22,55 @@ namespace orangutan::tools {
                 return nlohmann::json{{"accepted", false}, {"error", "Coordinator manager not available"}}.dump();
             }
 
+            if (!tool_context.team_agents.empty()) {
+                const auto allowed = std::ranges::find(tool_context.team_agents, agent_key);
+                if (allowed == tool_context.team_agents.end()) {
+                    return nlohmann::json{
+                        {"accepted", false},
+                        {"error", "agent '" + agent_key + "' is not in the allowed team_agents list"},
+                    }
+                        .dump();
+                }
+            }
+
+            std::string resolved_team_id;
+            if (!team.empty()) {
+                if (tool_context.team_manager == nullptr) {
+                    return nlohmann::json{{"accepted", false}, {"error", "Team manager is not available"}}.dump();
+                }
+
+                auto team_record = tool_context.team_manager->find_team(team);
+                if (!team_record.has_value()) {
+                    team_record = tool_context.team_manager->find_team_by_name(team);
+                }
+                if (!team_record.has_value()) {
+                    return nlohmann::json{{"accepted", false}, {"error", "Team not found: " + team}}.dump();
+                }
+                resolved_team_id = team_record->id;
+            }
+
             auto result = tool_context.coordinator_manager->spawn(orangutan::coordinator::AgentSpawnRequest{
                 .agent_key = agent_key,
                 .agent_name = name,
                 .task_prompt = prompt,
-                .team_id = team,
+                .team_id = resolved_team_id,
                 .parent_runtime_key = tool_context.runtime_key,
             });
+
+            if (result.accepted && !resolved_team_id.empty() && tool_context.team_manager != nullptr) {
+                tool_context.team_manager->add_member(orangutan::swarm::TeamMemberRecord{
+                    .agent_id = result.run_id,
+                    .name = result.agent_name,
+                    .agent_key = agent_key,
+                    .team_id = resolved_team_id,
+                });
+            }
 
             return nlohmann::json{
                 {"accepted", result.accepted},
                 {"run_id", result.run_id},
                 {"agent_name", result.agent_name},
+                {"status", result.accepted ? "running" : "rejected"},
                 {"error", result.error},
             }
                 .dump();

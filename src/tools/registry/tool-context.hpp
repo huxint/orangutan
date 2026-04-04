@@ -75,7 +75,9 @@ namespace orangutan::tools {
     struct ToolRuntimeContext {
         std::string runtime_key;
         std::string agent_key;
+        std::string agent_name;
         std::string scope_key;
+        std::string team_id;
         std::string *current_session_id = nullptr;
         coordinator::CoordinatorManager *coordinator_manager = nullptr;
         swarm::TeamManager *team_manager = nullptr;

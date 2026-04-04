@@ -22,6 +22,8 @@ namespace orangutan::agent {
     public:
         using ToolEventCallback = std::function<void(const std::string &event_type, const ToolUse &call, const ToolResult *result)>;
         using HistoryCheckpointCallback = std::function<void(const std::vector<Message> &history)>;
+        using IncomingMessageFetcher = std::function<std::vector<std::string>()>;
+        using StopRequestedCallback = std::function<bool()>;
         struct HistoryCompactionResult {
             bool compacted = false;
             std::size_t messages_before = 0;
@@ -53,6 +55,14 @@ namespace orangutan::agent {
             env_info_ = std::move(info);
         }
 
+        void set_incoming_message_fetcher(IncomingMessageFetcher fetcher) {
+            incoming_message_fetcher_ = std::move(fetcher);
+        }
+
+        void set_stop_requested_callback(StopRequestedCallback callback) {
+            stop_requested_callback_ = std::move(callback);
+        }
+
         // Replace conversation history (for session loading)
         void set_history(std::vector<Message> messages) {
             history_ = std::move(messages);
@@ -80,6 +90,8 @@ namespace orangutan::agent {
         hooks::HookManager *hook_manager_ = nullptr;
         int thinking_budget_ = 0;
         prompt::EnvironmentInfo env_info_;
+        IncomingMessageFetcher incoming_message_fetcher_;
+        StopRequestedCallback stop_requested_callback_;
 
         static constexpr int max_iterations = 20;
         static constexpr int max_continuations = 3;
@@ -132,6 +144,10 @@ namespace orangutan::agent {
 
         [[nodiscard]]
         std::string build_session_memory_transcript() const;
+
+        bool inject_incoming_messages(const HistoryCheckpointCallback &on_history_checkpoint);
+        [[nodiscard]]
+        bool stop_requested() const;
     };
 
 } // namespace orangutan::agent

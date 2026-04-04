@@ -2,6 +2,7 @@
 #include "coordinator/agent-definition-registry.hpp"
 #include "swarm/mailbox.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -12,6 +13,34 @@ namespace orangutan::coordinator {
 
         std::int64_t now_millis() {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+
+        std::string escape_xml(std::string_view text) {
+            std::string escaped;
+            escaped.reserve(text.size());
+            for (const char ch : text) {
+                switch (ch) {
+                    case '&':
+                        escaped += "&amp;";
+                        break;
+                    case '<':
+                        escaped += "&lt;";
+                        break;
+                    case '>':
+                        escaped += "&gt;";
+                        break;
+                    case '"':
+                        escaped += "&quot;";
+                        break;
+                    case '\'':
+                        escaped += "&apos;";
+                        break;
+                    default:
+                        escaped.push_back(ch);
+                        break;
+                }
+            }
+            return escaped;
         }
 
         std::string format_task_notification(const AgentRunRecord &record) {
@@ -36,25 +65,25 @@ namespace orangutan::coordinator {
 
             return "<task-notification>\n"
                    "  <task-id>" +
-                   record.run_id +
+                   escape_xml(record.run_id) +
                    "</task-id>\n"
                    "  <agent-key>" +
-                   record.agent_key +
+                   escape_xml(record.agent_key) +
                    "</agent-key>\n"
                    "  <agent-name>" +
-                   record.agent_name +
+                   escape_xml(record.agent_name) +
                    "</agent-name>\n"
                    "  <status>" +
-                   status_str +
+                   escape_xml(status_str) +
                    "</status>\n"
                    "  <summary>" +
-                   record.task_summary +
+                   escape_xml(record.task_summary) +
                    "</summary>\n"
                    "  <result>" +
-                   record.final_output +
+                   escape_xml(record.final_output) +
                    "</result>\n"
                    "  <error>" +
-                   record.error +
+                   escape_xml(record.error) +
                    "</error>\n"
                    "</task-notification>";
         }
@@ -62,7 +91,7 @@ namespace orangutan::coordinator {
     } // namespace
 
     CoordinatorManager::CoordinatorManager(int max_concurrent_agents)
-    : max_concurrent_(max_concurrent_agents) {}
+    : max_concurrent_(std::max(1, max_concurrent_agents)) {}
 
     CoordinatorManager::~CoordinatorManager() {
         shutdown();
@@ -76,6 +105,20 @@ namespace orangutan::coordinator {
     void CoordinatorManager::set_notification_callback(TaskNotificationCallback callback) {
         std::lock_guard lock(mutex_);
         notification_callback_ = std::move(callback);
+    }
+
+    void CoordinatorManager::register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler) {
+        if (runtime_key.empty() || !handler) {
+            return;
+        }
+
+        std::lock_guard lock(mutex_);
+        runtime_notification_handlers_.insert_or_assign(std::move(runtime_key), std::move(handler));
+    }
+
+    void CoordinatorManager::unregister_runtime_notification_handler(const std::string &runtime_key) {
+        std::lock_guard lock(mutex_);
+        runtime_notification_handlers_.erase(runtime_key);
     }
 
     void CoordinatorManager::set_worker_runtime_factory(WorkerRuntimeFactory factory) {
@@ -95,19 +138,6 @@ namespace orangutan::coordinator {
             return AgentSpawnResult{.accepted = false, .error = "Coordinator is shutting down"};
         }
 
-        // Check concurrent limit
-        int active_count = 0;
-        for (const auto &[id, run] : active_runs_) {
-            std::lock_guard run_lock(run->mutex);
-            if (!run->completed) {
-                ++active_count;
-            }
-        }
-
-        if (active_count >= max_concurrent_) {
-            return AgentSpawnResult{.accepted = false, .error = "Maximum concurrent agent limit reached"};
-        }
-
         // Validate agent key if registry available
         if (env_.definition_registry != nullptr && !env_.definition_registry->has(request.agent_key)) {
             return AgentSpawnResult{.accepted = false, .error = "Unknown agent key: " + request.agent_key};
@@ -117,6 +147,7 @@ namespace orangutan::coordinator {
         auto agent_name = request.agent_name.empty() ? request.agent_key + "-" + std::to_string(next_run_id_) : request.agent_name;
 
         auto active_run = std::make_shared<ActiveRun>();
+        active_run->request = request;
         active_run->record = AgentRunRecord{
             .run_id = run_id,
             .agent_key = request.agent_key,
@@ -128,12 +159,14 @@ namespace orangutan::coordinator {
             .started_at = now_millis(),
         };
 
-        auto run_ptr = active_run;
-        active_run->worker_thread = std::jthread([this, run_ptr](std::stop_token token) {
-            run_worker(run_ptr, std::move(token));
-        });
-
         active_runs_.emplace(run_id, std::move(active_run));
+
+        auto run_it = active_runs_.find(run_id);
+        if (count_running_locked() < max_concurrent_) {
+            launch_run_locked(run_it->second);
+        } else {
+            pending_run_ids_.push_back(run_id);
+        }
 
         spdlog::info("Spawned agent run: id={} key={} name={}", run_id, request.agent_key, agent_name);
 
@@ -142,6 +175,59 @@ namespace orangutan::coordinator {
             .run_id = run_id,
             .agent_name = agent_name,
         };
+    }
+
+    int CoordinatorManager::count_running_locked() const {
+        int running_count = 0;
+        for (const auto &[id, run] : active_runs_) {
+            std::lock_guard run_lock(run->mutex);
+            if (run->record.status == AgentRunStatus::running && !run->completed) {
+                ++running_count;
+            }
+        }
+        return running_count;
+    }
+
+    void CoordinatorManager::launch_run_locked(const std::shared_ptr<ActiveRun> &run) {
+        {
+            std::lock_guard run_lock(run->mutex);
+            run->record.status = AgentRunStatus::running;
+        }
+        auto run_ptr = run;
+        run->worker_thread = std::jthread([this, run_ptr](std::stop_token token) {
+            run_worker(run_ptr, token);
+        });
+    }
+
+    void CoordinatorManager::remove_pending_run_locked(const std::string &run_id) {
+        pending_run_ids_.erase(std::remove(pending_run_ids_.begin(), pending_run_ids_.end(), run_id), pending_run_ids_.end());
+    }
+
+    void CoordinatorManager::maybe_start_queued_runs() {
+        std::vector<std::shared_ptr<ActiveRun>> runs_to_launch;
+        {
+            std::lock_guard lock(mutex_);
+            while (!pending_run_ids_.empty() && count_running_locked() + static_cast<int>(runs_to_launch.size()) < max_concurrent_) {
+                auto run_id = pending_run_ids_.front();
+                pending_run_ids_.pop_front();
+
+                const auto it = active_runs_.find(run_id);
+                if (it == active_runs_.end()) {
+                    continue;
+                }
+
+                std::lock_guard run_lock(it->second->mutex);
+                if (it->second->completed || it->second->record.status != AgentRunStatus::queued) {
+                    continue;
+                }
+
+                runs_to_launch.push_back(it->second);
+            }
+
+            for (const auto &run : runs_to_launch) {
+                launch_run_locked(run);
+            }
+        }
     }
 
     void CoordinatorManager::run_worker(const std::shared_ptr<ActiveRun> &run, std::stop_token stop_token) {
@@ -178,21 +264,11 @@ namespace orangutan::coordinator {
             spdlog::warn("Agent worker failed (no factory): id={}", run->record.run_id);
         } else {
             try {
-                AgentSpawnRequest request;
-                {
-                    std::lock_guard lock(run->mutex);
-                    request.agent_key = run->record.agent_key;
-                    request.agent_name = run->record.agent_name;
-                    request.task_prompt = run->record.task_summary;
-                    request.team_id = run->record.team_id;
-                    request.parent_runtime_key = run->record.parent_runtime_key;
-                }
-
-                auto worker = factory(request);
-                auto output = worker->run(request.task_prompt, stop_token);
+                auto worker = factory(run->request);
+                auto output = worker->run(run->request.task_prompt, stop_token);
 
                 std::lock_guard lock(run->mutex);
-                run->record.status = AgentRunStatus::succeeded;
+                run->record.status = stop_token.stop_requested() ? AgentRunStatus::terminated : AgentRunStatus::succeeded;
                 run->record.final_output = std::move(output);
                 run->record.completed_at = now_millis();
                 run->completed = true;
@@ -210,9 +286,28 @@ namespace orangutan::coordinator {
         spdlog::info("Agent worker completed: id={}", run->record.run_id);
 
         TaskNotificationCallback callback;
+        RuntimeNotificationHandler runtime_handler;
+        std::string notification_xml;
         {
             std::lock_guard lock(mutex_);
             callback = notification_callback_;
+            if (!run->record.parent_runtime_key.empty()) {
+                const auto it = runtime_notification_handlers_.find(run->record.parent_runtime_key);
+                if (it != runtime_notification_handlers_.end()) {
+                    runtime_handler = it->second;
+                }
+            }
+        }
+
+        {
+            std::lock_guard lock(run->mutex);
+            notification_xml = format_task_notification(run->record);
+        }
+
+        if (runtime_handler) {
+            if (const auto error = runtime_handler(notification_xml); error.has_value()) {
+                spdlog::warn("Failed to resume runtime {} with task notification: {}", run->record.parent_runtime_key, *error);
+            }
         }
 
         if (callback) {
@@ -220,32 +315,37 @@ namespace orangutan::coordinator {
             callback(run->record);
         }
 
-        spdlog::debug("Task notification: {}", format_task_notification(run->record));
+        spdlog::debug("Task notification: {}", notification_xml);
+        maybe_start_queued_runs();
     }
 
-    void CoordinatorManager::send_message(const std::string &run_id, const std::string &from, const std::string &text) {
+    std::optional<std::string> CoordinatorManager::send_message(const std::string &run_id, const std::string &from, const std::string &text) {
         std::lock_guard lock(mutex_);
 
         auto it = active_runs_.find(run_id);
         if (it == active_runs_.end()) {
             spdlog::warn("send_message: unknown run_id={}", run_id);
-            return;
+            return "Unknown run_id: " + run_id;
         }
 
-        // If mailbox is available, route via mailbox using the agent's team and name
-        if (env_.mailbox != nullptr) {
-            std::lock_guard run_lock(it->second->mutex);
-            auto &record = it->second->record;
-            if (!record.team_id.empty()) {
-                env_.mailbox->send(record.team_id, from, record.agent_name, text);
-            }
+        if (env_.mailbox == nullptr) {
+            return "Mailbox is not available";
         }
 
+        std::lock_guard run_lock(it->second->mutex);
+        auto &record = it->second->record;
+        if (record.team_id.empty()) {
+            return "Target run is not attached to a team mailbox";
+        }
+
+        env_.mailbox->send(record.team_id, from, record.agent_name, text);
         spdlog::debug("Message sent to run_id={} from={}", run_id, from);
+        return std::nullopt;
     }
 
     void CoordinatorManager::stop(const std::string &run_id) {
         std::shared_ptr<ActiveRun> run;
+        bool stopped_queued_run = false;
         {
             std::lock_guard lock(mutex_);
             auto it = active_runs_.find(run_id);
@@ -253,11 +353,27 @@ namespace orangutan::coordinator {
                 spdlog::warn("stop: unknown run_id={}", run_id);
                 return;
             }
-            run = it->second;
+            if (it->second->record.status == AgentRunStatus::queued) {
+                remove_pending_run_locked(run_id);
+                std::lock_guard run_lock(it->second->mutex);
+                it->second->record.status = AgentRunStatus::terminated;
+                it->second->record.completed_at = now_millis();
+                it->second->completed = true;
+                it->second->cv.notify_all();
+                stopped_queued_run = true;
+            } else {
+                run = it->second;
+            }
         }
 
-        // Request cooperative stop
-        run->stop_source.request_stop();
+        if (stopped_queued_run) {
+            spdlog::info("Stopped queued agent run: id={}", run_id);
+            maybe_start_queued_runs();
+            return;
+        }
+
+        // Request cooperative stop on the worker thread's stop source.
+        run->worker_thread.request_stop();
 
         // Wait briefly for completion
         {
@@ -279,6 +395,7 @@ namespace orangutan::coordinator {
         }
 
         spdlog::info("Stopped agent run: id={}", run_id);
+        maybe_start_queued_runs();
     }
 
     std::optional<AgentRunRecord> CoordinatorManager::get_run(const std::string &run_id) const {
@@ -311,13 +428,14 @@ namespace orangutan::coordinator {
                 return;
             }
             shutting_down_ = true;
+            pending_run_ids_.clear();
             for (auto &[id, run] : active_runs_) {
                 runs_to_stop.push_back(run);
             }
         }
 
         for (auto &run : runs_to_stop) {
-            run->stop_source.request_stop();
+            run->worker_thread.request_stop();
         }
 
         // Wait for all to complete

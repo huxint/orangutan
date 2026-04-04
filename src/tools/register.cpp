@@ -1,5 +1,6 @@
 #include "tools/register.hpp"
 
+#include "coordinator/coordinator-mode.hpp"
 #include "tools/coordinator/register.hpp"
 #include "tools/file-edit/register.hpp"
 #include "tools/file-read/register.hpp"
@@ -28,6 +29,10 @@ namespace orangutan::tools {
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::string &workspace, const ToolRuntimeContext *tool_context,
                                 const ToolPermissionContext *permissions, std::string_view edit_mode) {
+        if (coordinator::is_coordinator_mode(tool_context)) {
+            register_coordinator_tools(registry, tool_context);
+            return;
+        }
         register_builtin_core_tools(registry, workspace, tool_context, permissions, edit_mode);
         task::register_tools(registry, tool_context);
         heartbeat::register_tools(registry, tool_context);

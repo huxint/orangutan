@@ -144,6 +144,40 @@ namespace {
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
     };
 
+    TEST_CASE("coordinator_mode_runtime_exposes_only_orchestration_tools") {
+        RuntimeAgentRuntimeHarness harness;
+        auto input = harness.make_input();
+        input.coordinator_mode = true;
+        input.team_agents = {"explorer", "planner"};
+
+        auto runtime = build_agent_runtime(input);
+        const auto definitions = runtime.tools.definitions();
+
+        CHECK(definitions.size() == 3);
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_spawn"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_send_message"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_stop"));
+        CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "shell"));
+        CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "file_read"));
+        CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "tool_search"));
+        CHECK(runtime.skills_prompt.contains("You are a coordinator agent"));
+        CHECK(runtime.skills_prompt.contains("Research"));
+        CHECK(runtime.skills_prompt.contains("Verification"));
+    };
+
+    TEST_CASE("child_runtime_uses_worker_prompt_guidance") {
+        RuntimeAgentRuntimeHarness harness;
+        auto input = harness.make_input();
+        input.is_child_run = true;
+        input.delegated_task_prompt = "Inspect the logging pipeline and report defects.";
+
+        auto runtime = build_agent_runtime(input);
+
+        CHECK(runtime.skills_prompt.contains("You are a worker agent"));
+        CHECK(runtime.skills_prompt.contains("Inspect the logging pipeline and report defects."));
+        CHECK(runtime.skills_prompt.contains("Focus exclusively on the task assigned to you."));
+    };
+
     TEST_CASE("runtime_without_explicit_completion_bindings_does_not_enable_completion_routing") {
         RuntimeAgentRuntimeHarness harness;
         auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-no-owner.db"));

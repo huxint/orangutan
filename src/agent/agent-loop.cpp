@@ -369,6 +369,12 @@ namespace orangutan::agent {
         for (int iteration = 0; iteration < max_iterations; ++iteration) {
             spdlog::debug("Agent loop iteration {}", iteration + 1);
 
+            static_cast<void>(inject_incoming_messages(on_history_checkpoint));
+            if (stop_requested()) {
+                final_text = "Task terminated.";
+                break;
+            }
+
             // Refresh tool definitions and system prompt each iteration so newly discovered deferred tools are included
             auto tool_defs = tools_.definitions();
             const auto effective_system_prompt = build_system_prompt(user_input);
@@ -399,6 +405,11 @@ namespace orangutan::agent {
                 std::fflush(stdout);
             }
 
+            if (stop_requested()) {
+                final_text = "Task terminated.";
+                break;
+            }
+
             // Execute tools and check for loops
             auto [result_blocks, loop_status] = execute_tools(parts.tool_calls, human_output, on_tool_event);
             history_.push_back(Message(base::role::user, std::move(result_blocks)));
@@ -427,6 +438,27 @@ namespace orangutan::agent {
         }
 
         return final_text;
+    }
+
+    bool AgentLoop::inject_incoming_messages(const HistoryCheckpointCallback &on_history_checkpoint) {
+        if (!incoming_message_fetcher_) {
+            return false;
+        }
+
+        auto messages = incoming_message_fetcher_();
+        if (messages.empty()) {
+            return false;
+        }
+
+        for (auto &message : messages) {
+            history_.push_back(Message::user().text(message));
+            emit_history_checkpoint(on_history_checkpoint, history_);
+        }
+        return true;
+    }
+
+    bool AgentLoop::stop_requested() const {
+        return stop_requested_callback_ != nullptr && stop_requested_callback_();
     }
 
     void AgentLoop::clear_history() {
