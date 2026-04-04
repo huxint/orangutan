@@ -78,6 +78,11 @@ namespace orangutan::coordinator {
         notification_callback_ = std::move(callback);
     }
 
+    void CoordinatorManager::set_worker_runtime_factory(WorkerRuntimeFactory factory) {
+        std::lock_guard lock(mutex_);
+        worker_runtime_factory_ = std::move(factory);
+    }
+
     std::string CoordinatorManager::make_run_id() {
         auto seq = next_run_id_++;
         return "run-" + std::to_string(now_millis()) + "-" + std::to_string(seq);
@@ -147,10 +152,6 @@ namespace orangutan::coordinator {
 
         spdlog::info("Agent worker started: id={} key={}", run->record.run_id, run->record.agent_key);
 
-        // Stub implementation: real AgentLoop integration comes later.
-        // For now, just mark as succeeded with a placeholder output.
-
-        // Check for cooperative cancellation
         if (stop_token.stop_requested()) {
             std::lock_guard lock(run->mutex);
             run->record.status = AgentRunStatus::terminated;
@@ -161,19 +162,53 @@ namespace orangutan::coordinator {
             return;
         }
 
-        // Stub: complete immediately
+        WorkerRuntimeFactory factory;
         {
+            std::lock_guard lock(mutex_);
+            factory = worker_runtime_factory_;
+        }
+
+        if (!factory) {
             std::lock_guard lock(run->mutex);
-            run->record.status = AgentRunStatus::succeeded;
-            run->record.final_output = "Agent task completed (stub implementation)";
+            run->record.status = AgentRunStatus::failed;
+            run->record.error = "No worker runtime factory configured";
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
+            spdlog::warn("Agent worker failed (no factory): id={}", run->record.run_id);
+        } else {
+            try {
+                AgentSpawnRequest request;
+                {
+                    std::lock_guard lock(run->mutex);
+                    request.agent_key = run->record.agent_key;
+                    request.agent_name = run->record.agent_name;
+                    request.task_prompt = run->record.task_summary;
+                    request.team_id = run->record.team_id;
+                    request.parent_runtime_key = run->record.parent_runtime_key;
+                }
+
+                auto worker = factory(request);
+                auto output = worker->run(request.task_prompt, stop_token);
+
+                std::lock_guard lock(run->mutex);
+                run->record.status = AgentRunStatus::succeeded;
+                run->record.final_output = std::move(output);
+                run->record.completed_at = now_millis();
+                run->completed = true;
+                run->cv.notify_all();
+            } catch (const std::exception &e) {
+                std::lock_guard lock(run->mutex);
+                run->record.status = AgentRunStatus::failed;
+                run->record.error = e.what();
+                run->record.completed_at = now_millis();
+                run->completed = true;
+                run->cv.notify_all();
+            }
         }
 
         spdlog::info("Agent worker completed: id={}", run->record.run_id);
 
-        // Notify coordinator
         TaskNotificationCallback callback;
         {
             std::lock_guard lock(mutex_);

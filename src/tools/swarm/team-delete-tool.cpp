@@ -1,5 +1,7 @@
 #include "tools/swarm/register.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "swarm/team-manager.hpp"
+#include "swarm/mailbox.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -9,17 +11,28 @@ namespace orangutan::tools {
 
     namespace {
 
-        std::string team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext & /*tool_context*/) {
+        std::string team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
+            if (tool_context.team_manager == nullptr) {
+                return nlohmann::json{{"deleted", false}, {"error", "Team manager is not available"}}.dump();
+            }
+
             auto team_id = input.at("team_id").get<std::string>();
 
             spdlog::info("team_delete called: team_id={}", team_id);
 
-            // Stub: team_manager integration will be added when wiring is complete
-            return nlohmann::json{
-                {"deleted", false},
-                {"error", "Team manager not yet wired up"},
+            auto team = tool_context.team_manager->find_team(team_id);
+            if (!team.has_value()) {
+                return nlohmann::json{{"deleted", false}, {"error", "Team not found: " + team_id}}.dump();
             }
-                .dump();
+
+            tool_context.team_manager->abandon_active_members(team_id);
+            tool_context.team_manager->delete_team(team_id);
+
+            if (tool_context.mailbox != nullptr) {
+                tool_context.mailbox->clear_team(team_id);
+            }
+
+            return nlohmann::json{{"deleted", true}, {"team_id", team_id}}.dump();
         }
 
     } // namespace

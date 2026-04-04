@@ -74,6 +74,13 @@ namespace orangutan::coordinator {
     // Callback to inject <task-notification> into coordinator's conversation
     using TaskNotificationCallback = std::function<void(const AgentRunRecord &record)>;
 
+    struct WorkerRuntime {
+        virtual ~WorkerRuntime() = default;
+        virtual std::string run(const std::string &prompt, std::stop_token stop_token) = 0;
+    };
+
+    using WorkerRuntimeFactory = std::function<std::unique_ptr<WorkerRuntime>(const AgentSpawnRequest &request)>;
+
     // Environment for spawned agent execution
     struct AgentExecutionEnvironment {
         const AgentDefinitionRegistry *definition_registry = nullptr;
@@ -95,6 +102,7 @@ namespace orangutan::coordinator {
 
         void set_environment(AgentExecutionEnvironment env);
         void set_notification_callback(TaskNotificationCallback callback);
+        void set_worker_runtime_factory(WorkerRuntimeFactory factory);
 
         [[nodiscard]]
         AgentSpawnResult spawn(const AgentSpawnRequest &request);
@@ -124,6 +132,7 @@ namespace orangutan::coordinator {
         int max_concurrent_;
         AgentExecutionEnvironment env_;
         TaskNotificationCallback notification_callback_;
+        WorkerRuntimeFactory worker_runtime_factory_;
 
         mutable std::mutex mutex_;
         std::unordered_map<std::string, std::shared_ptr<ActiveRun>> active_runs_;
@@ -146,4 +155,6 @@ namespace orangutan {
     using coordinator::AgentSpawnResult;
     using coordinator::CoordinatorManager;
     using coordinator::TaskNotificationCallback;
+    using coordinator::WorkerRuntime;
+    using coordinator::WorkerRuntimeFactory;
 } // namespace orangutan
