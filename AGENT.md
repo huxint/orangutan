@@ -88,7 +88,19 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 - Use meaningful names; avoid both cryptic abbreviations and excessive verbosity
 - Integer types: prefer semantic aliases from `base::` namespace in `types.hpp`
 - Type aliases: centralize complex types in `types.hpp` using `using`
+- Use auto when the type is verbose
+- Use Doxygen-style comments. Comments must be kept in sync with the code; outdated comments are more harmful than no comments. Good naming and code structure reduce the need for comments, but necessary TODO/FIXME items should still be included
+- Do not pollute the namespace with using namespace xxx
 - Namespaces: no aliases needed for ≤2 levels; alias deeper nesting locally (don't pollute global scope)
+- Namespace: all lowercase, words separated by underscores (lower_case)
+- Class name: CamelCase (CamelCase)
+- Function name: all lowercase, underscore-separated (lower_case)
+- Variable name: all lowercase, underscore-separated (lower_case)
+- Enum constant: all lowercase, underscore-separated (lower_case)
+- Enum type: all lowercase, underscore-separated (lower_case)
+- Private member variable: suffix with underscore (_)
+- Constexpr variable: all uppercase, underscore-separated (UPPER_CASE)
+- Include headers in this order: associated header (if any), C++ standard library, C standard library, third-party libraries, then project headers — each group separated by a blank line
 
 ### Performance
 
