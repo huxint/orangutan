@@ -14,13 +14,9 @@ Checks: >
   -readability-identifier-length,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
-  -readability-redundant-access-specifiers,
-  -cppcoreguidelines-avoid-const-or-ref-data-members,
   -bugprone-easily-swappable-parameters,
   -bugprone-exception-escape,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
-  -cppcoreguidelines-init-variables,
-  -performance-enum-size,
   -readability-function-cognitive-complexity,
   -readability-named-parameter,
   -readability-container-data-pointer,
@@ -41,11 +37,13 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.VariableCase
     value: lower_case
+  - key: readability-identifier-naming.EnumConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.EnumCase
+    value: lower_case
   - key: readability-identifier-naming.PrivateMemberSuffix
     value: '_'
   - key: readability-identifier-naming.ConstexprVariableCase
-    value: lower_case
-  - key: readability-identifier-naming.EnumConstantCase
-    value: lower_case
+    value: UPPER_CASE
 
 HeaderFilterRegex: 'src/.*\.hpp$'
