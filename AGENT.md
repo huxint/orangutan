@@ -124,3 +124,13 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 - Place reusable, extensible utilities in `src/utils/`
 - **Before implementing**: check if a utility already exists—reuse, don't duplicate
 - Prefer existing STL or third-party library functions over custom implementations
+
+## Agent Tools
+
+Modern Alternatives
+- rg not grep
+- fd not find
+- exa not ls
+- sd not sed
+- pnpm not npm
+Fallback to the legacy tools when not available.
