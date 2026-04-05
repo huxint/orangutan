@@ -8,6 +8,7 @@
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
+#include "bootstrap/runtime-assembler.hpp"
 #include "bootstrap/runtime-control.hpp"
 #include "cli/repl.hpp"
 #include "cli/session-workflow.hpp"
@@ -351,28 +352,18 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .memory_scope = "agent:" + runtime_cfg.agent_key + "|worker",
             };
 
-            auto bundle = orangutan::bootstrap::build_agent_runtime(orangutan::bootstrap::AgentRuntimeBuildInput{
-                .primary_endpoint = runtime_cfg.primary_endpoint,
-                .fallback_endpoints = runtime_cfg.fallback_endpoints,
-                .agent_key = runtime_cfg.agent_key,
-                .agent_name = request.agent_name,
-                .workspace_root = runtime_cfg.workspace_root,
-                .edit_mode = runtime_cfg.edit_mode,
-                .thinking_budget = runtime_cfg.thinking_budget,
-                .memory = runtime_cfg.memory,
-                .permission_context = runtime_cfg.permission_context,
-                .team_id = request.team_id,
-                .identity = identity,
-                .memory_store = memory_store,
-                .coordinator_manager = coordinator_manager.get(),
-                .is_child_run = true,
-                .coordinator_mode = runtime_cfg.coordinator_mode,
-                .delegated_task_prompt = request.task_prompt,
-                .custom_tools = cfg.custom_tools,
-                .mcp_servers = cfg.mcp_servers,
-                .skill_paths = cfg.skill_paths,
-                .hook_paths = cfg.hook_paths,
-            });
+            auto bundle = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
+                    .runtime_config = runtime_cfg,
+                    .identity = identity,
+                    .app_config = cfg,
+                    .memory_store = memory_store,
+                    .agent_name = request.agent_name,
+                    .team_agents = std::vector<std::string>{},
+                    .team_id = request.team_id,
+                    .coordinator_manager = coordinator_manager.get(),
+                    .is_child_run = true,
+                    .delegated_task_prompt = request.task_prompt,
+                }));
 
             auto worker = std::make_unique<RuntimeWorker>(std::move(bundle));
             worker->team_id = request.team_id;
@@ -406,34 +397,21 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             };
 
             try {
-                auto runtime = orangutan::bootstrap::build_agent_runtime(orangutan::bootstrap::AgentRuntimeBuildInput{
-                    .primary_endpoint = runtime_cfg.primary_endpoint,
-                    .fallback_endpoints = runtime_cfg.fallback_endpoints,
-                    .agent_key = runtime_cfg.agent_key,
-                    .agent_name = runtime_cfg.agent_key,
-                    .workspace_root = runtime_cfg.workspace_root,
-                    .edit_mode = runtime_cfg.edit_mode,
-                    .thinking_budget = runtime_cfg.thinking_budget,
-                    .memory = runtime_cfg.memory,
-                    .permission_context = runtime_cfg.permission_context,
-                    .team_agents = runtime_cfg.team_agents,
-                    .identity = identity,
-                    .memory_store = memory_store,
-                    .current_session_id = &current_session_id,
-                    .coordinator_manager = coordinator_manager.get(),
-                    .team_manager = team_manager.get(),
-                    .mailbox = agent_mailbox.get(),
-                    .runtime_origin = base::origin::cli,
-                    .raw_caller_id = identity.runtime_key,
-                    .automation_runtime = &app_runtime.automation_runtime(),
-                    .coordinator_mode = runtime_cfg.coordinator_mode,
-                    .custom_tools = cfg.custom_tools,
-                    .mcp_servers = cfg.mcp_servers,
-                    .skill_paths = cfg.skill_paths,
-                    .hook_paths = cfg.hook_paths,
-                    .background_completion_runtime =
-                        make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
-                });
+                auto runtime = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
+                        .runtime_config = runtime_cfg,
+                        .identity = identity,
+                        .app_config = cfg,
+                        .memory_store = memory_store,
+                        .current_session_id = &current_session_id,
+                        .coordinator_manager = coordinator_manager.get(),
+                        .team_manager = team_manager.get(),
+                        .mailbox = agent_mailbox.get(),
+                        .runtime_origin = base::origin::cli,
+                        .raw_caller_id = identity.runtime_key,
+                        .automation_runtime = &app_runtime.automation_runtime(),
+                        .background_completion_runtime =
+                            make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
+                    }));
                 RuntimeCompletionResumeStateGuard completion_resume_guard{completion_resume_state};
                 completion_resume_state->agent = runtime.agent.get();
                 completion_resume_state->provider = runtime.provider.get();
@@ -481,34 +459,22 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             primary_completion_resume_state->persist_session = cfg.auto_save;
             orangutan::bootstrap::detail::maybe_inject_web_runtime_build_failure_for_tests();
             const auto approval_callback = make_cli_approval_callback(!options.event_stream);
-            primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_agent_runtime(orangutan::bootstrap::AgentRuntimeBuildInput{
-                .primary_endpoint = maybe_primary_runtime_cfg->primary_endpoint,
-                .fallback_endpoints = maybe_primary_runtime_cfg->fallback_endpoints,
-                .agent_key = maybe_primary_runtime_cfg->agent_key,
-                .agent_name = maybe_primary_runtime_cfg->agent_key,
-                .workspace_root = maybe_primary_runtime_cfg->workspace_root,
-                .edit_mode = maybe_primary_runtime_cfg->edit_mode,
-                .memory = maybe_primary_runtime_cfg->memory,
-                .permission_context = maybe_primary_runtime_cfg->permission_context,
-                .team_agents = maybe_primary_runtime_cfg->team_agents,
-                .identity = *maybe_primary_identity,
-                .memory_store = memory_store.get(),
-                .current_session_id = &current_session_id,
-                .coordinator_manager = coordinator_manager.get(),
-                .team_manager = team_manager.get(),
-                .mailbox = agent_mailbox.get(),
-                .runtime_origin = base::origin::cli,
-                .raw_caller_id = "cli:local",
-                .automation_runtime = &app_runtime.automation_runtime(),
-                .coordinator_mode = maybe_primary_runtime_cfg->coordinator_mode,
-                .approval_callback = approval_callback,
-                .custom_tools = cfg.custom_tools,
-                .mcp_servers = cfg.mcp_servers,
-                .skill_paths = cfg.skill_paths,
-                .hook_paths = cfg.hook_paths,
-                .background_completion_runtime =
-                    make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(primary_completion_resume_state)),
-            }));
+            primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
+                    .runtime_config = *maybe_primary_runtime_cfg,
+                    .identity = *maybe_primary_identity,
+                    .app_config = cfg,
+                    .memory_store = memory_store.get(),
+                    .current_session_id = &current_session_id,
+                    .coordinator_manager = coordinator_manager.get(),
+                    .team_manager = team_manager.get(),
+                    .mailbox = agent_mailbox.get(),
+                    .runtime_origin = base::origin::cli,
+                    .raw_caller_id = "cli:local",
+                    .automation_runtime = &app_runtime.automation_runtime(),
+                    .approval_callback = approval_callback,
+                    .background_completion_runtime =
+                        make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(primary_completion_resume_state)),
+                })));
             primary_completion_resume_state->agent = primary_runtime->agent.get();
             primary_completion_resume_state->provider = primary_runtime->provider.get();
             primary_completion_resume_state->hook_manager = primary_runtime->hook_manager.get();

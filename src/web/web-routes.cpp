@@ -8,7 +8,9 @@
 #include "cli/slash-commands.hpp"
 #include "automation/scheduler.hpp"
 #include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/channel-serve.hpp"
 #include "bootstrap/identity.hpp"
+#include "bootstrap/runtime-assembler.hpp"
 #include "permissions/permission-display.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
@@ -55,35 +57,6 @@ namespace orangutan::web {
             return std::nullopt;
         }
 
-        const config::ProfileConfig &resolve_agent_profile(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key) {
-            if (agent.profile.empty()) {
-                throw std::runtime_error("agent '" + agent_key + "' is missing a profile");
-            }
-            const auto it = config.profiles.find(agent.profile);
-            if (it == config.profiles.end()) {
-                throw std::runtime_error("agent '" + agent_key + "' references unknown profile '" + agent.profile + "'");
-            }
-            return it->second;
-        }
-
-        const config::ModelConfig &resolve_agent_model(const config::ProfileConfig &profile, const config::AgentConfig &agent, const std::string &agent_key) {
-            const auto it = profile.models.find(agent.model);
-            if (it == profile.models.end()) {
-                throw std::runtime_error("agent '" + agent_key + "' references unknown model '" + agent.model + "'");
-            }
-            return it->second;
-        }
-
-        std::string resolve_agent_api_key(const config::ProfileConfig &profile) {
-            if (!profile.api_key.empty()) {
-                return profile.api_key;
-            }
-            if (const char *env_key = std::getenv("LLM_API_KEY"); env_key != nullptr) {
-                return env_key;
-            }
-            return {};
-        }
-
         std::string resolve_agent_workspace(const config::AgentConfig &agent, const std::string &agent_key) {
             try {
                 return bootstrap::resolve_workspace_root(agent.workspace);
@@ -124,15 +97,12 @@ namespace orangutan::web {
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
                                                                     ApprovalCallback approval_callback,
                                                                     const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
-            const auto &profile = resolve_agent_profile(config, agent, agent_key);
-            static_cast<void>(resolve_agent_model(profile, agent, agent_key));
             const auto maybe_endpoints = bootstrap::detail::resolve_agent_endpoints(config, agent, agent_key, "");
             if (!maybe_endpoints.has_value()) {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
             }
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
-            const auto api_key = resolve_agent_api_key(profile);
-            if (api_key.empty()) {
+            if (maybe_endpoints->primary_endpoint.api_key.empty()) {
                 throw providers::MissingApiKeyError("missing API key for agent '" + agent_key + "'");
             }
 
@@ -141,30 +111,30 @@ namespace orangutan::web {
                 effective_approval_callback = default_web_approval_callback();
             }
 
-            bootstrap::AgentRuntimeBuildInput input{
+            const auto runtime_config = bootstrap::AgentRuntimeConfig{
+                .agent_key = agent_key,
+                .model = agent.model,
+                .fallback_models = fallback_labels(agent.fallback_models),
                 .primary_endpoint = maybe_endpoints->primary_endpoint,
                 .fallback_endpoints = maybe_endpoints->fallback_endpoints,
-                .agent_key = agent_key,
-                .agent_name = agent_key,
                 .workspace_root = workspace_root,
                 .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
                 .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
                 .team_agents = agent.team_agents,
+                .coordinator_mode = agent.coordinator_mode,
+            };
+            auto input = bootstrap::make_runtime_build_input(bootstrap::RuntimeAssemblyRequest{
+                .runtime_config = runtime_config,
                 .identity = derive_web_identity(workspace_root, agent_key),
+                .app_config = config,
                 .memory_store = memory_store,
                 .current_session_id = current_session_id,
-                .coordinator_manager = nullptr,
                 .runtime_origin = base::origin::web,
                 .raw_caller_id = "web:local",
                 .automation_runtime = automation_runtime,
-                .coordinator_mode = agent.coordinator_mode,
                 .approval_callback = effective_approval_callback,
-                .custom_tools = config.custom_tools,
-                .mcp_servers = config.mcp_servers,
-                .skill_paths = config.skill_paths,
-                .hook_paths = config.hook_paths,
                 .background_completion_runtime = (automation_runtime != nullptr && completion_resume_state != nullptr)
                                                      ? make_background_completion_runtime_bindings(
                                                            [automation_runtime](const automation::InboxItem &item) {
@@ -172,7 +142,7 @@ namespace orangutan::web {
                                                            },
                                                            detail::make_web_completion_resume_callback(completion_resume_state))
                                                      : nullptr,
-            };
+            });
             return bootstrap::build_agent_runtime(input);
         }
 

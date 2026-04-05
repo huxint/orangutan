@@ -218,6 +218,38 @@ namespace orangutan {
             CHECK(body["error"] == "missing API key for agent 'default'");
         };
 
+        TEST_CASE("chat_handler_populates_completion_resume_state_for_active_session") {
+            Config config = make_config();
+            const auto workspace = orangutan::testing::unique_test_root("web-chat-active-session");
+            config.agents["default"].workspace = workspace.string();
+
+            const auto memory_db_path = orangutan::testing::unique_test_db_path("web-chat-active-session", "memory.db");
+            MemoryStore memory_store(memory_db_path);
+            WebChatStoreHarness harness;
+            std::mutex sessions_mutex;
+            std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> sessions;
+
+            httplib::Request req;
+            req.body = R"({"message":"hello","agent_key":"default"})";
+            httplib::Response res;
+
+            orangutan::web::handle_chat(req, res, &config, &harness.store(), &memory_store, nullptr, nullptr, sessions_mutex, sessions);
+
+            REQUIRE(sessions.size() == 1UL);
+            const auto &session = *sessions.begin()->second;
+            REQUIRE(session.completion_resume_state != nullptr);
+            {
+                std::scoped_lock lock(session.completion_resume_state->mutex);
+                CHECK(session.completion_resume_state->agent != nullptr);
+                CHECK(session.completion_resume_state->agent_key == "default");
+                CHECK(session.completion_resume_state->automation_runtime == nullptr);
+            }
+
+            sessions.clear();
+            std::filesystem::remove_all(memory_db_path.parent_path());
+            std::filesystem::remove_all(workspace);
+        };
+
         TEST_CASE("help_slash_command_streams_help_without_api_key") {
             orangutan::testing::ScopedEnvVar anthropic_api_key("ANTHROPIC_API_KEY", "");
             orangutan::testing::ScopedEnvVar llm_api_key("LLM_API_KEY", "");
@@ -283,6 +315,60 @@ namespace orangutan {
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 404);
+        };
+
+        TEST_CASE("chat_handler_rejects_session_when_same_session_is_active") {
+            WebChatStoreHarness store_harness;
+            Config config = make_config();
+            const auto session_id =
+                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+
+            std::mutex sessions_mutex;
+            std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> sessions;
+            auto active = std::make_unique<web::WebSessionState>();
+            active->session_id = session_id;
+            sessions.emplace(session_id, std::move(active));
+
+            httplib::Request req;
+            req.body = nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump();
+            httplib::Response res;
+
+            web::handle_chat(req, res, &config, &store_harness.store(), nullptr, nullptr, nullptr, sessions_mutex, sessions);
+
+            CHECK(res.status == 409);
+            REQUIRE_FALSE(res.body.empty());
+            CHECK(nlohmann::json::parse(res.body).at("error") == "session already active");
+        };
+
+        TEST_CASE("chat_handler_uses_shared_runtime_guard_for_shell_path_checks") {
+            WebChatStoreHarness store_harness;
+            Config config = make_config();
+            const auto workspace = orangutan::testing::unique_test_root("web-chat-guard-workspace");
+            config.agents["default"].workspace = workspace.string();
+            const auto session_id =
+                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+
+            std::mutex sessions_mutex;
+            std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> sessions;
+
+            httplib::Request req;
+            req.body = nlohmann::json{{"message", "run shell"}, {"agent_key", "default"}, {"session_id", session_id}}.dump();
+            httplib::Response res;
+
+            web::handle_chat(req, res, &config, &store_harness.store(), nullptr, nullptr, nullptr, sessions_mutex, sessions);
+
+            std::lock_guard lock(sessions_mutex);
+            REQUIRE(sessions.contains(session_id));
+            auto &session = sessions.at(session_id);
+            REQUIRE(session != nullptr);
+            REQUIRE(session->runtime != nullptr);
+
+            session->runtime->tool_context.approval_callback = [](const ToolUse &, const PermissionDecision &) {
+                return false;
+            };
+            const auto result = session->runtime->tools.execute(ToolUse("shell-check", "shell", {{"command", "cat /etc/passwd"}}));
+            CHECK(result.is_error);
+            CHECK(result.content.contains("permission scope"));
         };
 
         TEST_CASE("resume_slash_command_streams_target_session_event") {

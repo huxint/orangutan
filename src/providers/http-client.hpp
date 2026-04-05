@@ -4,8 +4,36 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace orangutan::providers {
+
+    namespace detail {
+
+        inline std::string truncate_http_error_body(std::string_view body, std::size_t max_chars = 512) {
+            if (body.empty()) {
+                return {};
+            }
+
+            if (body.size() <= max_chars) {
+                return std::string(body);
+            }
+
+            std::string truncated(body.substr(0, max_chars));
+            truncated += "... (truncated)";
+            return truncated;
+        }
+
+        inline std::runtime_error make_http_status_error(long http_code, std::string_view body) {
+            std::string message = "HTTP request failed with status " + std::to_string(http_code);
+            const auto snippet = truncate_http_error_body(body);
+            if (!snippet.empty()) {
+                message += ": " + snippet;
+            }
+            return std::runtime_error(std::move(message));
+        }
+
+    } // namespace detail
 
     // RAII wrapper for libcurl easy handle
     class CurlHandle {
@@ -91,8 +119,11 @@ namespace orangutan::providers {
         if (res != CURLE_OK) {
             throw std::runtime_error(std::string("HTTP request failed: ") + curl_easy_strerror(res));
         }
+        if (http_code < 200 || http_code >= 300) {
+            throw detail::make_http_status_error(http_code, response);
+        }
 
-        spdlog::debug("HTTP {} — Response: {}", http_code, response);
+        spdlog::debug("HTTP {} - response: {}", http_code, response);
         return response;
     }
 
@@ -121,8 +152,11 @@ namespace orangutan::providers {
         if (res != CURLE_OK) {
             throw std::runtime_error(std::string("HTTP request failed: ") + curl_easy_strerror(res));
         }
+        if (http_code < 200 || http_code >= 300) {
+            throw detail::make_http_status_error(http_code, response);
+        }
 
-        spdlog::debug("HTTP {} — Response: {}", http_code, response);
+        spdlog::debug("HTTP {} - response: {}", http_code, response);
         return response;
     }
 

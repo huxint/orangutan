@@ -26,6 +26,10 @@ namespace orangutan::tools {
                 return true;
             });
             registry.set_execution_guard([&registry, ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
+                if (tool_context != nullptr && tool_context->abort_checker && tool_context->abort_checker()) {
+                    return ToolResult(call.id, "Operation aborted by user", true);
+                }
+
                 const Tool *tool = registry.find_tool(call.name);
                 permissions::ToolPermissionChecker checker;
                 permissions::IsReadOnlyChecker is_read_only;

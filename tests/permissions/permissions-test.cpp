@@ -204,6 +204,43 @@ TEST_CASE("DefaultModeAsksForUnknownTool") {
     REQUIRE(decision.behavior == PermissionBehavior::ask);
 }
 
+TEST_CASE("AcceptEditsAllowsWorkspaceFileToolsWhenCheckerPasses") {
+    ToolPermissionContext ctx{.mode = PermissionMode::accept_edits};
+    bool checker_called = false;
+
+    ToolUse call{"id1", "write", {{"path", "notes.txt"}}};
+    auto decision = evaluate_permission(
+        call, ctx,
+        [&checker_called](const ToolUse &, const ToolPermissionContext &) {
+            checker_called = true;
+            return PermissionResult::passthrough();
+        },
+        [] {
+            return false;
+        });
+
+    REQUIRE(checker_called);
+    REQUIRE(decision.behavior == PermissionBehavior::allow);
+}
+
+TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
+    ToolPermissionContext ctx{.mode = PermissionMode::accept_edits};
+
+    ToolUse call{"id1", "write", {{"path", "/outside/workspace.txt"}}};
+    auto decision = evaluate_permission(
+        call, ctx,
+        [](const ToolUse &, const ToolPermissionContext &) {
+            return PermissionResult::deny("path escapes workspace sandbox");
+        },
+        [] {
+            return false;
+        });
+
+    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.message.has_value());
+    CHECK(decision.message->contains("workspace sandbox"));
+}
+
 // ── Permission State ─────────────────────────────────────────────────────
 
 TEST_CASE("InitializeContextFromConfig") {

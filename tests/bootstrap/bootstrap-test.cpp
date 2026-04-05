@@ -702,6 +702,7 @@ namespace {
         CHECK(inspection.attached_session_store);
         CHECK(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
+        CHECK(inspection.attached_config_save_path);
         CHECK(not(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
         CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
@@ -729,6 +730,7 @@ namespace {
         CHECK(inspection.attached_session_store);
         CHECK_FALSE(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
+        CHECK(inspection.attached_config_save_path);
         CHECK(inspection.tool_definitions.empty());
         CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
     };
@@ -756,6 +758,7 @@ namespace {
         CHECK(inspection.attached_session_store);
         CHECK_FALSE(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
+        CHECK(inspection.attached_config_save_path);
         CHECK(inspection.tool_definitions.empty());
         CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
         CHECK(inspection.runtime_build_error.contains("injected web runtime failure"));

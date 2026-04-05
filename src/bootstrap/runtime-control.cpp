@@ -115,6 +115,7 @@ namespace orangutan::bootstrap {
         inspection.attached_session_store = attachments.session_store_attached;
         inspection.attached_tool_registry = attachments.tool_registry_attached;
         inspection.attached_skill_loader = attachments.skill_loader_attached;
+        inspection.attached_config_save_path = attachments.config_save_path_attached;
         if (runtime != nullptr) {
             inspection.tool_definitions = runtime->tools.definitions();
         }
@@ -134,6 +135,11 @@ namespace orangutan::bootstrap {
         WebServerRuntimeAttachments attachments;
         web_server.set_static_dir(options.web_dir);
         web_server.set_config(&cfg);
+        const auto config_save_path = config::default_orangutan_config_path();
+        if (!config_save_path.empty()) {
+            web_server.set_config_save_path(config_save_path);
+            attachments.config_save_path_attached = true;
+        }
         if (session_store != nullptr) {
             web_server.set_session_store(session_store);
             attachments.session_store_attached = true;

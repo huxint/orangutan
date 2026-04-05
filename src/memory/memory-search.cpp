@@ -97,27 +97,31 @@ namespace orangutan::memory::detail {
         const auto query_tokens = tokenize_ascii_words(trimmed_query);
         const bool query_has_non_ascii = contains_non_ascii(trimmed_query);
 
-        base::f64 score = (record.importance * 10.0) + static_cast<base::f64>(std::min(record.access_count, 8));
+        base::f64 match_score = 0.0;
 
         if (!normalized_query.empty()) {
-            score += exact_score(normalized_key, normalized_query, 100.0);
-            score += exact_score(normalized_category, normalized_query, 35.0);
-            score += substring_score(normalized_key, normalized_query, 30.0);
-            score += substring_score(normalized_content, normalized_query, 18.0);
-            score += substring_score(normalized_category, normalized_query, 8.0);
+            match_score += exact_score(normalized_key, normalized_query, 100.0);
+            match_score += exact_score(normalized_category, normalized_query, 35.0);
+            match_score += substring_score(normalized_key, normalized_query, 30.0);
+            match_score += substring_score(normalized_content, normalized_query, 18.0);
+            match_score += substring_score(normalized_category, normalized_query, 8.0);
         }
 
         if (query_has_non_ascii) {
-            score += substring_score(record.key, trimmed_query, 28.0);
-            score += substring_score(record.content, trimmed_query, 18.0);
-            score += substring_score(record.category, trimmed_query, 8.0);
+            match_score += substring_score(record.key, trimmed_query, 28.0);
+            match_score += substring_score(record.content, trimmed_query, 18.0);
+            match_score += substring_score(record.category, trimmed_query, 8.0);
         }
 
-        score += token_overlap_score(query_tokens, normalized_key, 12.0);
-        score += token_overlap_score(query_tokens, normalized_category, 6.0);
-        score += token_overlap_score(query_tokens, normalized_content, 5.0);
+        match_score += token_overlap_score(query_tokens, normalized_key, 12.0);
+        match_score += token_overlap_score(query_tokens, normalized_category, 6.0);
+        match_score += token_overlap_score(query_tokens, normalized_content, 5.0);
 
-        return score;
+        if (match_score <= 0.0) {
+            return 0.0;
+        }
+
+        return match_score + (record.importance * 10.0) + static_cast<base::f64>(std::min(record.access_count, 8));
     }
 
     std::string format_records(const std::vector<MemoryRecord> &records) {

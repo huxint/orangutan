@@ -71,6 +71,7 @@ namespace orangutan::bootstrap {
         automation::Runtime *automation_runtime = nullptr;
         bool is_child_run = false;
         bool coordinator_mode = false;
+        RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
         std::string delegated_task_prompt;
 

@@ -58,6 +58,7 @@ namespace orangutan::bootstrap::detail {
         bool attached_session_store = false;
         bool attached_tool_registry = false;
         bool attached_skill_loader = false;
+        bool attached_config_save_path = false;
         std::vector<ToolDef> tool_definitions;
         std::vector<std::string> active_skill_names;
         std::string runtime_build_error;
@@ -88,6 +89,7 @@ namespace orangutan::bootstrap {
         bool session_store_attached = false;
         bool tool_registry_attached = false;
         bool skill_loader_attached = false;
+        bool config_save_path_attached = false;
     };
 
     struct RuntimeCompletionResumeState {

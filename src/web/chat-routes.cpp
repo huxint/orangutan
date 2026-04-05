@@ -1,7 +1,6 @@
 #include "web/web-route-internal.hpp"
 
 #include "agent/agent-loop.hpp"
-#include "permissions/permission-evaluator.hpp"
 #include "providers/provider.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
@@ -90,9 +89,21 @@ namespace orangutan::web {
             return;
         }
 
+        if (!session_id.empty()) {
+            std::scoped_lock lock(sessions_mutex);
+            if (sessions.contains(session_id)) {
+                res.status = 409;
+                res.set_content(R"({"error":"session already active"})", "application/json");
+                return;
+            }
+        }
+
         try {
             auto session = std::make_unique<WebSessionState>();
             session->session_id = session_id;
+            session->completion_resume_state = std::make_shared<WebCompletionResumeState>();
+            session->completion_resume_state->agent_key = agent_key;
+            session->completion_resume_state->automation_runtime = automation_runtime;
             auto *session_ptr = session.get();
             auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
             auto approval_stream_open = std::make_shared<std::function<bool()>>();
@@ -131,42 +142,28 @@ namespace orangutan::web {
 
             auto *abort_flag = &session->abort_requested;
             auto *tool_context = &session->runtime->tool_context;
-            if (auto *tools = session->tools(); tools != nullptr) {
-                tools->set_execution_guard([abort_flag, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
-                    if (abort_flag->load()) {
-                        return ToolResult(call.id, "Operation aborted by user", true);
-                    }
-                    if (tool_context == nullptr || tool_context->permission_context == nullptr) {
-                        return std::nullopt;
-                    }
-                    auto decision = permissions::evaluate_permission(call, *tool_context->permission_context);
-                    decision = permissions::apply_post_processing(decision, tool_context->permission_context->mode);
-                    switch (decision.behavior) {
-                    case PermissionBehavior::allow:
-                        return std::nullopt;
-                    case PermissionBehavior::deny:
-                        return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
-                    case PermissionBehavior::ask: {
-                        const auto &callback = tool_context->approval_callback;
-                        if (!callback) {
-                            return ToolResult{call.id, "Requires approval but unavailable", true};
-                        }
-                        if (!callback(call, decision)) {
-                            return ToolResult{call.id, "Rejected by user", true};
-                        }
-                        return std::nullopt;
-                    }
-                    }
-                    return std::nullopt;
-                });
+            if (tool_context != nullptr) {
+                tool_context->abort_checker = [abort_flag] {
+                    return abort_flag->load();
+                };
             }
 
             auto *agent_ptr = session->agent();
+            if (session->completion_resume_state != nullptr) {
+                std::scoped_lock lock(session->completion_resume_state->mutex);
+                session->completion_resume_state->agent = agent_ptr;
+            }
             const auto active_session_id = session->session_id;
 
             {
                 std::scoped_lock lock(sessions_mutex);
-                sessions[active_session_id] = std::move(session);
+                const auto [inserted_it, inserted] = sessions.try_emplace(active_session_id, std::move(session));
+                if (!inserted) {
+                    res.status = 409;
+                    res.set_content(R"({"error":"session already active"})", "application/json");
+                    return;
+                }
+                session_ptr = inserted_it->second.get();
             }
 
             auto *store_ptr = store;
@@ -237,6 +234,11 @@ namespace orangutan::web {
                         } catch (const std::exception &e) {
                             spdlog::warn("Failed to save session {}: {}", captured_session_id, e.what());
                         }
+                    }
+
+                    if (session_ptr->completion_resume_state != nullptr) {
+                        std::scoped_lock lock(session_ptr->completion_resume_state->mutex);
+                        session_ptr->completion_resume_state->agent = nullptr;
                     }
 
                     {

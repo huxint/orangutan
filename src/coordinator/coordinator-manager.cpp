@@ -430,6 +430,15 @@ namespace orangutan::coordinator {
             shutting_down_ = true;
             pending_run_ids_.clear();
             for (auto &[id, run] : active_runs_) {
+                static_cast<void>(id);
+                std::lock_guard run_lock(run->mutex);
+                if (!run->completed && run->record.status == AgentRunStatus::queued) {
+                    run->record.status = AgentRunStatus::terminated;
+                    run->record.completed_at = now_millis();
+                    run->completed = true;
+                    run->cv.notify_all();
+                    continue;
+                }
                 runs_to_stop.push_back(run);
             }
         }

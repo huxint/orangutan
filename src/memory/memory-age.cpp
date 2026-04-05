@@ -2,34 +2,64 @@
 
 #include <charconv>
 #include <chrono>
+#include <optional>
 #include <spdlog/common.h>
+#include <system_error>
 
 namespace orangutan::memory {
 
     namespace {
 
         /// Parse "YYYY-MM-DD HH:MM:SS" into a system_clock time_point.
-        /// Returns epoch on failure.
-        std::chrono::system_clock::time_point parse_sqlite_datetime(std::string_view value) {
+        [[nodiscard]]
+        std::optional<std::chrono::system_clock::time_point> parse_sqlite_datetime(std::string_view value) {
             if (value.size() < 19) {
-                return {};
+                return std::nullopt;
             }
 
-            auto parse_int = [](std::string_view sv) -> unsigned {
+            auto parse_int = [](std::string_view sv) -> std::optional<unsigned> {
                 unsigned result = 0;
-                std::from_chars(sv.begin(), sv.end(), result);
+                const auto [ptr, ec] = std::from_chars(sv.begin(), sv.end(), result);
+                if (ec != std::errc{} || ptr != sv.end()) {
+                    return std::nullopt;
+                }
                 return result;
             };
 
-            return std::chrono::sys_days{std::chrono::year{static_cast<int>(parse_int(value.substr(0, 4)))} / std::chrono::month{parse_int(value.substr(5, 2))} /
-                                         std::chrono::day{parse_int(value.substr(8, 2))}} +
-                   std::chrono::hours{parse_int(value.substr(11, 2))} + std::chrono::minutes{parse_int(value.substr(14, 2))} + std::chrono::seconds{parse_int(value.substr(17, 2))};
+            const auto year = parse_int(value.substr(0, 4));
+            const auto month = parse_int(value.substr(5, 2));
+            const auto day = parse_int(value.substr(8, 2));
+            const auto hour = parse_int(value.substr(11, 2));
+            const auto minute = parse_int(value.substr(14, 2));
+            const auto second = parse_int(value.substr(17, 2));
+            if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() || !minute.has_value() || !second.has_value()) {
+                return std::nullopt;
+            }
+
+            const auto y = std::chrono::year{static_cast<int>(*year)};
+            const auto m = std::chrono::month{*month};
+            const auto d = std::chrono::day{*day};
+            if (!y.ok() || !m.ok() || !d.ok() || *hour > 23 || *minute > 59 || *second > 59) {
+                return std::nullopt;
+            }
+
+            return std::chrono::sys_days{y / m / d} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
         }
 
     } // namespace
 
     int memory_age_days(std::string_view updated_at) {
-        const auto diff = std::chrono::duration_cast<std::chrono::hours>(std::chrono::system_clock::now() - parse_sqlite_datetime(updated_at)).count();
+        const auto parsed = parse_sqlite_datetime(updated_at);
+        if (!parsed.has_value()) {
+            return -1;
+        }
+
+        const auto now = std::chrono::system_clock::now();
+        if (*parsed > now) {
+            return -1;
+        }
+
+        const auto diff = std::chrono::duration_cast<std::chrono::hours>(now - *parsed).count();
         return static_cast<int>(diff / 24);
     }
 

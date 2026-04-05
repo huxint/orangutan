@@ -3,6 +3,7 @@
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/runtime-assembler.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-state.hpp"
 #include "automation/scheduler.hpp"
@@ -203,8 +204,39 @@ namespace orangutan::bootstrap {
             return line;
         }
 
+        std::string describe_inbound_event(const InboundMessage &message) {
+            if (message.event_kind == InboundEventKind::message) {
+                return message.content;
+            }
+
+            if (!message.reaction.has_value()) {
+                return {};
+            }
+
+            const auto &reaction = *message.reaction;
+            const auto actor = message.sender_name.empty() ? message.sender : message.sender_name;
+            const auto event_label = message.event_kind == InboundEventKind::reaction_added ? "added" : "removed";
+            std::string prompt = "[Reaction event]\n";
+            utils::format_to(prompt, "{} {} a reaction", actor.empty() ? std::string{"A user"} : actor, event_label);
+            if (!reaction.emoji_id.empty()) {
+                utils::format_to(prompt, " (`{}`)", reaction.emoji_id);
+            }
+            if (!reaction.target_id.empty()) {
+                utils::format_to(prompt, " on message `{}`", reaction.target_id);
+            }
+            prompt.push_back('.');
+            return prompt;
+        }
+
+        bool is_supported_inbound_event(const InboundMessage &message) {
+            if (message.is_user_message()) {
+                return true;
+            }
+            return message.reaction.has_value();
+        }
+
         std::string build_agent_input(const InboundMessage &message) {
-            std::string prompt;
+            std::string prompt = describe_inbound_event(message);
 
             if (!message.referenced_content.empty()) {
                 prompt.append("[Quoted/referenced message]\n");
@@ -318,18 +350,10 @@ namespace orangutan::bootstrap {
             completion_resume_state->configured_model = cfg.model;
             completion_resume_state->session_scope_key = runtime->session_scope_key;
             completion_resume_state->automation_runtime = automation_runtime;
-            AgentRuntimeBuildInput input{
-                .primary_endpoint = cfg.primary_endpoint,
-                .fallback_endpoints = cfg.fallback_endpoints,
-                .agent_key = cfg.agent_key,
-                .agent_name = cfg.agent_key,
-                .workspace_root = cfg.workspace_root,
-                .edit_mode = cfg.edit_mode,
-                .thinking_budget = cfg.thinking_budget,
-                .memory = cfg.memory,
-                .permission_context = cfg.permission_context,
-                .team_agents = cfg.team_agents,
+            auto input = make_runtime_build_input(RuntimeAssemblyRequest{
+                .runtime_config = cfg,
                 .identity = identity,
+                .app_config = app_cfg,
                 .memory_store = memory_store,
                 .current_session_id = &runtime->current_session_id,
                 .coordinator_manager = coordinator_manager,
@@ -338,18 +362,14 @@ namespace orangutan::bootstrap {
                 .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
                 .automation_runtime = automation_runtime,
-                .coordinator_mode = cfg.coordinator_mode,
-                .custom_tools = app_cfg.custom_tools,
-                .mcp_servers = app_cfg.mcp_servers,
-                .skill_paths = app_cfg.skill_paths,
-                .hook_paths = app_cfg.hook_paths,
-                .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
-                                                                                     [automation_runtime](const automation::InboxItem &item) {
-                                                                                         static_cast<void>(automation_runtime->store().insert_inbox(item));
-                                                                                     },
-                                                                                     detail::make_channel_completion_resume_callback(completion_resume_state))
-                                                                               : nullptr,
-            };
+                .background_completion_runtime = automation_runtime != nullptr
+                                                   ? make_background_completion_runtime_bindings(
+                                                         [automation_runtime](const automation::InboxItem &item) {
+                                                             static_cast<void>(automation_runtime->store().insert_inbox(item));
+                                                         },
+                                                         detail::make_channel_completion_resume_callback(completion_resume_state))
+                                                   : nullptr,
+            });
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
                 runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools, runtime->runtime->memory.get(),
@@ -1069,8 +1089,8 @@ namespace orangutan::bootstrap {
                 continue;
             }
 
-            if (!message.is_user_message()) {
-                spdlog::debug("Ignoring non-message inbound event for jid '{}'", message.jid);
+            if (!is_supported_inbound_event(message)) {
+                spdlog::debug("Ignoring unsupported inbound event for jid '{}'", message.jid);
                 continue;
             }
 

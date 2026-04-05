@@ -729,6 +729,22 @@ TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
     CHECK(shell_result.content.contains("approval"));
 };
 
+TEST_CASE("ExecutionGuardHonorsRuntimeAbortChecker") {
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = PermissionMode::bypass_permissions;
+    auto tool_context = make_runtime_tool_context();
+    tool_context.abort_checker = [] {
+        return true;
+    };
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
+
+    const auto result = registry.execute(ToolUse("aborted-shell", "shell", {{"command", "echo hello"}}));
+    CHECK(result.is_error);
+    CHECK(result.content == "Operation aborted by user");
+};
+
 TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
     ToolRegistry registry;
     ToolPermissionContext permissions;

@@ -175,3 +175,59 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
 
     manager.shutdown();
 }
+
+TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordinator]") {
+    using namespace std::chrono_literals;
+
+    orangutan::coordinator::CoordinatorManager manager(1);
+    std::atomic<bool> first_started{false};
+
+    manager.set_worker_runtime_factory([&](const orangutan::coordinator::AgentSpawnRequest &request) {
+        struct BlockingWorker final : orangutan::coordinator::WorkerRuntime {
+            std::atomic<bool> *first_started = nullptr;
+            std::string prompt;
+
+            std::string run(const std::string &, std::stop_token stop_token) override {
+                if (prompt == "first") {
+                    first_started->store(true);
+                }
+                while (!stop_token.stop_requested()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                return "stopped";
+            }
+        };
+
+        auto worker = std::make_unique<BlockingWorker>();
+        worker->first_started = &first_started;
+        worker->prompt = request.task_prompt;
+        return worker;
+    });
+
+    const auto first = manager.spawn({
+        .agent_key = "general-purpose",
+        .task_prompt = "first",
+    });
+    REQUIRE(first.accepted);
+
+    for (int i = 0; i < 100 && !first_started.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    REQUIRE(first_started.load());
+
+    const auto second = manager.spawn({
+        .agent_key = "general-purpose",
+        .task_prompt = "second",
+    });
+    REQUIRE(second.accepted);
+
+    const auto queued = manager.get_run(second.run_id);
+    REQUIRE(queued.has_value());
+    CHECK(queued->status == orangutan::coordinator::AgentRunStatus::queued);
+
+    const auto started_at = std::chrono::steady_clock::now();
+    manager.shutdown();
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+    CHECK(elapsed < 2s);
+}

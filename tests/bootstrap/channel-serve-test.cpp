@@ -443,6 +443,58 @@ namespace {
         CHECK(sent_messages[0].second.contains("Error: No runtime configuration for agent: missing"));
     };
 
+    TEST_CASE("run_channel_loop_processes_reaction_events_instead_of_ignoring_them") {
+        ChannelServeHarness harness;
+        ChannelManager manager;
+        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+        auto *qq = qq_channel.get();
+        manager.add_channel(std::move(qq_channel));
+
+        MessageQueue queue;
+        std::atomic<bool> stop_requested{false};
+        JidTaskRunner task_runner(1);
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+
+        const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs;
+        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        Config cfg;
+
+        auto loop = std::async(std::launch::async, [&] {
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
+        });
+
+        queue.push(InboundMessage{
+            .event_kind = InboundEventKind::reaction_added,
+            .jid = "qqbot:guild:42",
+            .sender = "user-1",
+            .sender_name = "user-1",
+            .message_id = "msg-1",
+            .reaction =
+                ReactionInfo{
+                    .user_id = "user-1",
+                    .target_id = "msg-1",
+                    .target_type = 0,
+                    .emoji_id = "128077",
+                    .emoji_type = 1,
+                },
+            .is_group = true,
+        });
+
+        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        stop_requested.store(true);
+        queue.shutdown();
+        CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+        const auto sent_messages = qq->sent_messages();
+        REQUIRE(not sent_messages.empty());
+        CHECK(sent_messages[0].first == "qqbot:guild:42");
+        CHECK(sent_messages[0].second.contains("Error: No runtime configuration for agent: default"));
+    };
+
     TEST_CASE("channel_approval_coordinator_prompts_and_accepts_replies") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");

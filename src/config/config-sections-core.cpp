@@ -43,19 +43,6 @@ namespace orangutan::config::detail {
             }
         }
 
-        void assign_expanded_string_array(const nlohmann::json &array, std::vector<std::string> &target) {
-            target.clear();
-            if (!array.is_array()) {
-                return;
-            }
-
-            for (const auto &item : array) {
-                if (item.is_string()) {
-                    target.push_back(expand_env_vars(item.get<std::string>()));
-                }
-            }
-        }
-
         std::string normalize_enum_token(std::string_view value) {
             return value | std::views::transform([](unsigned char ch) {
                        return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));

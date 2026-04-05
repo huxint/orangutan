@@ -1,5 +1,6 @@
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
+#include "memory/memory-age.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/utf8.hpp"
@@ -75,6 +76,12 @@ namespace {
         CHECK(by_content.contains("Working on orangutan"));
     };
 
+    TEST_CASE("memory_age_invalid_timestamp_reports_unknown") {
+        CHECK(memory_age_days("invalid") < 0);
+        CHECK(memory_age_text("invalid") == "unknown age");
+        CHECK(memory_freshness_caveat("invalid").empty());
+    };
+
     TEST_CASE("recall_by_category_returns_only_matching_entries") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
@@ -123,6 +130,17 @@ namespace {
         CHECK(keys.contains("project.beta"));
         CHECK(keys.contains("project.gamma"));
         CHECK(keys.contains("project.delta"));
+    };
+
+    TEST_CASE("search_excludes_memories_without_any_query_match") {
+        MemoryStoreHarness harness;
+        MemoryStore store(harness.db_path());
+        store.remember("project.current", "orangutan memory refactor", "project", MemoryType::user, {}, "manual", 0.9);
+        store.remember("misc.note", "buy groceries later", "general", MemoryType::user, {}, "manual", 1.0);
+
+        const auto results = store.search("quantum banana");
+
+        CHECK(results.empty());
     };
 
     TEST_CASE("forget_removes_existing_entry") {

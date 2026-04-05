@@ -87,6 +87,7 @@ namespace orangutan::permissions {
                                            const ToolPermissionChecker &tool_checker,
                                            const IsReadOnlyChecker &is_read_only) {
         auto content = extract_tool_content(call);
+        bool is_file_tool_in_workspace = false;
 
         if (auto rule = find_matching_rule(call.name, content, ctx.deny_rules)) {
             auto rule_value = rule->tool_name;
@@ -112,6 +113,9 @@ namespace orangutan::permissions {
                         .message = std::move(result.message),
                         .reason = ToolSpecificDecisionReason{.detail = std::move(detail)}};
             }
+            if (is_file_tool(call.name)) {
+                is_file_tool_in_workspace = true;
+            }
         }
 
         if (auto safety = check_safety(call)) {
@@ -119,7 +123,7 @@ namespace orangutan::permissions {
         }
 
         bool is_read_only_val = is_read_only ? is_read_only() : false;
-        if (auto mode_decision = evaluate_mode(ctx.mode, call, is_read_only_val)) {
+        if (auto mode_decision = evaluate_mode(ctx.mode, call, is_read_only_val, is_file_tool_in_workspace)) {
             return *mode_decision;
         }
 
