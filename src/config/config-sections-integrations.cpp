@@ -1,12 +1,35 @@
 #include "config/config-detail.hpp"
 #include "config/json-access.hpp"
 
-#include <nlohmann/json.hpp>
+#include <array>
 #include <utility>
+
+#include <nlohmann/json.hpp>
 
 #include <spdlog/spdlog.h>
 
 namespace orangutan::config::detail {
+
+    namespace {
+
+        using script_tool_string_field = string_member_field<Config::ScriptToolConfig>;
+        constexpr auto SCRIPT_TOOL_STRING_FIELDS = std::to_array<script_tool_string_field>({
+            {"name", &Config::ScriptToolConfig::name},
+            {"description", &Config::ScriptToolConfig::description},
+            {"command", &Config::ScriptToolConfig::command},
+        });
+
+        using heartbeat_job_string_field = string_member_field<Config::HeartbeatJobConfig>;
+        constexpr auto HEARTBEAT_JOB_STRING_FIELDS = std::to_array<heartbeat_job_string_field>({
+            {"name", &Config::HeartbeatJobConfig::name},
+            {"cron", &Config::HeartbeatJobConfig::cron},
+            {"prompt", &Config::HeartbeatJobConfig::prompt},
+            {"agent", &Config::HeartbeatJobConfig::agent},
+            {"channel", &Config::HeartbeatJobConfig::channel},
+        });
+
+    } // namespace
+
 
     Config parse_security_section(const nlohmann::json &root, Config cfg) {
         const auto *security = find_object_member(root, "security");
@@ -67,20 +90,10 @@ namespace orangutan::config::detail {
             }
 
             Config::ScriptToolConfig tool_cfg;
-            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
-                tool_cfg.name = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "description"); value != nullptr && value->is_string()) {
-                tool_cfg.description = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "command"); value != nullptr && value->is_string()) {
-                tool_cfg.command = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "timeout"); value != nullptr && value->is_number_integer()) {
-                tool_cfg.timeout = value->get<int>();
-            }
-            if (const auto *value = find_member(item, "working_dir"); value != nullptr && value->is_string()) {
-                tool_cfg.working_dir = expand_home_path(expand_env_vars(value->get<std::string>()));
+            assign_string_members(item, tool_cfg, SCRIPT_TOOL_STRING_FIELDS);
+            static_cast<void>(assign_number_member(item, "timeout", tool_cfg, &Config::ScriptToolConfig::timeout));
+            if (assign_string_member(item, "working_dir", tool_cfg, &Config::ScriptToolConfig::working_dir)) {
+                tool_cfg.working_dir = expand_home_path(expand_env_vars(tool_cfg.working_dir));
             }
 
             if (const auto *schema = find_object_member(item, "input_schema"); schema != nullptr) {
@@ -123,11 +136,9 @@ namespace orangutan::config::detail {
             }
 
             Config::McpServerConfig server_cfg;
-            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
-                server_cfg.name = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "command"); value != nullptr && value->is_string()) {
-                server_cfg.command = expand_home_path(expand_env_vars(value->get<std::string>()));
+            static_cast<void>(assign_string_member(item, "name", server_cfg, &Config::McpServerConfig::name));
+            if (assign_string_member(item, "command", server_cfg, &Config::McpServerConfig::command)) {
+                server_cfg.command = expand_home_path(expand_env_vars(server_cfg.command));
             }
             if (const auto *array = find_array_member(item, "args"); array != nullptr) {
                 for (const auto &arg_item : *array) {
@@ -143,9 +154,7 @@ namespace orangutan::config::detail {
                     }
                 }
             }
-            if (const auto *value = find_member(item, "timeout"); value != nullptr && value->is_number_integer()) {
-                server_cfg.timeout = value->get<int>();
-            }
+            static_cast<void>(assign_number_member(item, "timeout", server_cfg, &Config::McpServerConfig::timeout));
 
             if (server_cfg.name.empty()) {
                 spdlog::warn("MCP server missing 'name', skipping");
@@ -196,18 +205,12 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *value = find_member(*heartbeat, "heartbeat_md_path"); value != nullptr && value->is_string()) {
-            cfg.heartbeat_md_path = expand_home_path(expand_env_vars(value->get<std::string>()));
+        if (assign_string_member(*heartbeat, "heartbeat_md_path", cfg, &Config::heartbeat_md_path)) {
+            cfg.heartbeat_md_path = expand_home_path(expand_env_vars(cfg.heartbeat_md_path));
         }
-        if (const auto *value = find_member(*heartbeat, "ack_max_chars"); value != nullptr && value->is_number_integer()) {
-            cfg.ack_max_chars = value->get<int>();
-        }
-        if (const auto *value = find_member(*heartbeat, "isolated_session"); value != nullptr && value->is_boolean()) {
-            cfg.isolated_session = value->get<bool>();
-        }
-        if (const auto *value = find_member(*heartbeat, "light_context"); value != nullptr && value->is_boolean()) {
-            cfg.light_context = value->get<bool>();
-        }
+        static_cast<void>(assign_number_member(*heartbeat, "ack_max_chars", cfg, &Config::ack_max_chars));
+        static_cast<void>(assign_bool_member(*heartbeat, "isolated_session", cfg, &Config::isolated_session));
+        static_cast<void>(assign_bool_member(*heartbeat, "light_context", cfg, &Config::light_context));
 
         const auto *jobs = find_array_member(*heartbeat, "jobs");
         if (jobs == nullptr) {
@@ -220,21 +223,7 @@ namespace orangutan::config::detail {
             }
 
             Config::HeartbeatJobConfig job_cfg;
-            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
-                job_cfg.name = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "cron"); value != nullptr && value->is_string()) {
-                job_cfg.cron = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "prompt"); value != nullptr && value->is_string()) {
-                job_cfg.prompt = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "agent"); value != nullptr && value->is_string()) {
-                job_cfg.agent = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "channel"); value != nullptr && value->is_string()) {
-                job_cfg.channel = value->get<std::string>();
-            }
+            assign_string_members(item, job_cfg, HEARTBEAT_JOB_STRING_FIELDS);
 
             if (job_cfg.name.empty() || job_cfg.cron.empty() || job_cfg.prompt.empty()) {
                 spdlog::warn("Heartbeat job missing required fields (name, cron, prompt), skipping");

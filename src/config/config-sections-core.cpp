@@ -1,8 +1,8 @@
 #include "config/config-detail.hpp"
 #include "config/json-access.hpp"
 
+#include <array>
 #include <cctype>
-#include <nlohmann/json.hpp>
 #include <ranges>
 #include <utility>
 
@@ -12,6 +12,54 @@
 namespace orangutan::config::detail {
     namespace {
 
+
+        using config_string_field = string_member_field<Config>;
+        constexpr auto ROOT_AGENT_STRING_FIELDS = std::to_array<config_string_field>({
+            {"profile", &Config::profile},
+            {"model", &Config::model},
+            {"workspace", &Config::workspace},
+        });
+        constexpr auto TOOLS_STRING_FIELDS = std::to_array<config_string_field>({
+            {"edit_mode", &Config::edit_mode},
+        });
+        constexpr auto QQ_STRING_FIELDS = std::to_array<config_string_field>({
+            {"app_id", &Config::qq_app_id},
+            {"client_secret", &Config::qq_client_secret},
+        });
+
+        using fallback_model_string_field = string_member_field<FallbackModelRef>;
+        constexpr auto FALLBACK_MODEL_STRING_FIELDS = std::to_array<fallback_model_string_field>({
+            {"profile", &FallbackModelRef::profile},
+            {"model", &FallbackModelRef::model},
+        });
+
+        using profile_string_field = string_member_field<ProfileConfig>;
+        constexpr auto PROFILE_STRING_FIELDS = std::to_array<profile_string_field>({
+            {"base_url", &ProfileConfig::base_url},
+            {"api_key", &ProfileConfig::api_key},
+        });
+
+        using memory_string_field = string_member_field<Config::MemoryConfig>;
+        constexpr auto MEMORY_STRING_FIELDS = std::to_array<memory_string_field>({
+            {"mirror_file", &Config::MemoryConfig::mirror_file},
+            {"journal_dir", &Config::MemoryConfig::journal_dir},
+        });
+
+        using agent_string_field = string_member_field<AgentConfig>;
+        constexpr auto AGENT_STRING_FIELDS = std::to_array<agent_string_field>({
+            {"profile", &AgentConfig::profile},
+            {"model", &AgentConfig::model},
+            {"workspace", &AgentConfig::workspace},
+            {"edit_mode", &AgentConfig::edit_mode},
+        });
+
+        using qq_bot_string_field = string_member_field<QqBotConfig>;
+        constexpr auto QQ_BOT_STRING_FIELDS = std::to_array<qq_bot_string_field>({
+            {"name", &QqBotConfig::name},
+            {"app_id", &QqBotConfig::app_id},
+            {"client_secret", &QqBotConfig::client_secret},
+            {"agent", &QqBotConfig::agent},
+        });
 
         void assign_string_array(const nlohmann::json &array, std::vector<std::string> &target) {
             target.clear();
@@ -49,12 +97,7 @@ namespace orangutan::config::detail {
                 }
 
                 FallbackModelRef ref;
-                if (const auto *value = find_member(item, "profile"); value != nullptr && value->is_string()) {
-                    ref.profile = value->get<std::string>();
-                }
-                if (const auto *value = find_member(item, "model"); value != nullptr && value->is_string()) {
-                    ref.model = value->get<std::string>();
-                }
+                assign_string_members(item, ref, FALLBACK_MODEL_STRING_FIELDS);
                 if (!ref.model.empty()) {
                     target.push_back(std::move(ref));
                 }
@@ -68,12 +111,10 @@ namespace orangutan::config::detail {
 
             ModelCostConfig cost;
             bool has_value = false;
-            if (const auto *input = find_member(value, "input"); input != nullptr && input->is_number()) {
-                cost.input = input->get<base::f64>();
+            if (assign_number_member(value, "input", cost, &ModelCostConfig::input)) {
                 has_value = true;
             }
-            if (const auto *output = find_member(value, "output"); output != nullptr && output->is_number()) {
-                cost.output = output->get<base::f64>();
+            if (assign_number_member(value, "output", cost, &ModelCostConfig::output)) {
                 has_value = true;
             }
             return has_value ? std::optional<ModelCostConfig>(cost) : std::nullopt;
@@ -85,17 +126,10 @@ namespace orangutan::config::detail {
 
         ModelConfig parse_model_config(const nlohmann::json &model) {
             ModelConfig cfg;
-            if (const auto *value = find_member(model, "endpoint_style"); value != nullptr && value->is_string()) {
-                cfg.endpoint_style = value->get<std::string>();
-            }
-            if (const auto *value = find_member(model, "max_tokens"); value != nullptr && value->is_number_integer()) {
-                cfg.max_tokens = value->get<int>();
-            }
-            if (const auto *value = find_member(model, "context_window"); value != nullptr && value->is_number_integer()) {
-                cfg.context_window = value->get<int>();
-            }
-            if (const auto *value = find_member(model, "thinking"); value != nullptr && value->is_string()) {
-                cfg.thinking = value->get<std::string>();
+            static_cast<void>(assign_string_member(model, "endpoint_style", cfg, &ModelConfig::endpoint_style));
+            static_cast<void>(assign_optional_number_member(model, "max_tokens", cfg, &ModelConfig::max_tokens));
+            static_cast<void>(assign_optional_number_member(model, "context_window", cfg, &ModelConfig::context_window));
+            if (assign_string_member(model, "thinking", cfg, &ModelConfig::thinking)) {
                 if (!valid_thinking_mode(cfg.thinking)) {
                     throw std::runtime_error("invalid model thinking value: " + cfg.thinking);
                 }
@@ -156,30 +190,14 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *value = find_member(*agent, "profile"); value != nullptr && value->is_string()) {
-            cfg.profile = value->get<std::string>();
-        }
-        if (const auto *value = find_member(*agent, "model"); value != nullptr && value->is_string()) {
-            cfg.model = value->get<std::string>();
-        }
+        assign_string_members(*agent, cfg, ROOT_AGENT_STRING_FIELDS);
         if (const auto *value = find_array_member(*agent, "fallback_models"); value != nullptr) {
             assign_fallback_array(*value, cfg.fallback_models);
         }
-        if (const auto *value = find_member(*agent, "temperature"); value != nullptr && value->is_number()) {
-            cfg.temperature = value->get<base::f64>();
-        }
-        if (const auto *value = find_member(*agent, "max_iterations"); value != nullptr && value->is_number_integer()) {
-            cfg.max_iterations = value->get<int>();
-        }
-        if (const auto *value = find_member(*agent, "max_tokens"); value != nullptr && value->is_number_integer()) {
-            cfg.max_tokens = value->get<int>();
-        }
-        if (const auto *value = find_member(*agent, "thinking_budget"); value != nullptr && value->is_number_integer()) {
-            cfg.thinking_budget = value->get<int>();
-        }
-        if (const auto *value = find_member(*agent, "workspace"); value != nullptr && value->is_string()) {
-            cfg.workspace = value->get<std::string>();
-        }
+        static_cast<void>(assign_number_member(*agent, "temperature", cfg, &Config::temperature));
+        static_cast<void>(assign_number_member(*agent, "max_iterations", cfg, &Config::max_iterations));
+        static_cast<void>(assign_number_member(*agent, "max_tokens", cfg, &Config::max_tokens));
+        static_cast<void>(assign_number_member(*agent, "thinking_budget", cfg, &Config::thinking_budget));
 
         return cfg;
     }
@@ -198,12 +216,7 @@ namespace orangutan::config::detail {
             ProfileConfig profile_cfg;
             const auto &profile = it.value();
 
-            if (const auto *value = find_member(profile, "base_url"); value != nullptr && value->is_string()) {
-                profile_cfg.base_url = value->get<std::string>();
-            }
-            if (const auto *value = find_member(profile, "api_key"); value != nullptr && value->is_string()) {
-                profile_cfg.api_key = value->get<std::string>();
-            }
+            assign_string_members(profile, profile_cfg, PROFILE_STRING_FIELDS);
             if (const auto *headers = find_object_member(profile, "headers"); headers != nullptr) {
                 for (auto header_it = headers->begin(); header_it != headers->end(); ++header_it) {
                     if (header_it.value().is_string()) {
@@ -240,9 +253,7 @@ namespace orangutan::config::detail {
             assign_string_array(*array, cfg.permissions_config.deny);
         }
 
-        if (const auto *value = find_member(*tools, "edit_mode"); value != nullptr && value->is_string()) {
-            cfg.edit_mode = value->get<std::string>();
-        }
+        assign_string_members(*tools, cfg, TOOLS_STRING_FIELDS);
 
         return cfg;
     }
@@ -291,9 +302,7 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *value = find_member(*session, "auto_save"); value != nullptr && value->is_boolean()) {
-            cfg.auto_save = value->get<bool>();
-        }
+        static_cast<void>(assign_bool_member(*session, "auto_save", cfg, &Config::auto_save));
 
         return cfg;
     }
@@ -304,15 +313,8 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *value = find_member(*memory, "mirror_enabled"); value != nullptr && value->is_boolean()) {
-            cfg.memory.mirror_enabled = value->get<bool>();
-        }
-        if (const auto *value = find_member(*memory, "mirror_file"); value != nullptr && value->is_string()) {
-            cfg.memory.mirror_file = value->get<std::string>();
-        }
-        if (const auto *value = find_member(*memory, "journal_dir"); value != nullptr && value->is_string()) {
-            cfg.memory.journal_dir = value->get<std::string>();
-        }
+        static_cast<void>(assign_bool_member(*memory, "mirror_enabled", cfg.memory, &Config::MemoryConfig::mirror_enabled));
+        assign_string_members(*memory, cfg.memory, MEMORY_STRING_FIELDS);
 
         return cfg;
     }
@@ -323,12 +325,7 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *value = find_member(*qq, "app_id"); value != nullptr && value->is_string()) {
-            cfg.qq_app_id = value->get<std::string>();
-        }
-        if (const auto *value = find_member(*qq, "client_secret"); value != nullptr && value->is_string()) {
-            cfg.qq_client_secret = value->get<std::string>();
-        }
+        assign_string_members(*qq, cfg, QQ_STRING_FIELDS);
 
         return cfg;
     }
@@ -348,17 +345,9 @@ namespace orangutan::config::detail {
             auto agent_cfg = agent_defaults;
             const auto &agent = it.value();
 
-            if (const auto *value = find_member(agent, "profile"); value != nullptr && value->is_string()) {
-                agent_cfg.profile = value->get<std::string>();
-            }
-            if (const auto *value = find_member(agent, "model"); value != nullptr && value->is_string()) {
-                agent_cfg.model = value->get<std::string>();
-            }
+            assign_string_members(agent, agent_cfg, AGENT_STRING_FIELDS);
             if (const auto *value = find_array_member(agent, "fallback_models"); value != nullptr) {
                 assign_fallback_array(*value, agent_cfg.fallback_models);
-            }
-            if (const auto *value = find_member(agent, "workspace"); value != nullptr && value->is_string()) {
-                agent_cfg.workspace = value->get<std::string>();
             }
             if (const auto *value = find_object_member(agent, "permissions"); value != nullptr) {
                 apply_permissions_config(*value, agent_cfg.permissions_config);
@@ -366,18 +355,9 @@ namespace orangutan::config::detail {
             if (const auto *value = find_array_member(agent, "team_agents"); value != nullptr) {
                 assign_string_array(*value, agent_cfg.team_agents);
             }
-            if (const auto *value = find_member(agent, "coordinator_mode"); value != nullptr && value->is_boolean()) {
-                agent_cfg.coordinator_mode = value->get<bool>();
-            }
-            if (const auto *value = find_member(agent, "max_concurrent_agents"); value != nullptr && value->is_number_integer()) {
-                agent_cfg.max_concurrent_agents = value->get<int>();
-            }
-            if (const auto *value = find_member(agent, "edit_mode"); value != nullptr && value->is_string()) {
-                agent_cfg.edit_mode = value->get<std::string>();
-            }
-            if (const auto *value = find_member(agent, "thinking_budget"); value != nullptr && value->is_number_integer()) {
-                agent_cfg.thinking_budget = value->get<int>();
-            }
+            static_cast<void>(assign_bool_member(agent, "coordinator_mode", agent_cfg, &AgentConfig::coordinator_mode));
+            static_cast<void>(assign_number_member(agent, "max_concurrent_agents", agent_cfg, &AgentConfig::max_concurrent_agents));
+            static_cast<void>(assign_number_member(agent, "thinking_budget", agent_cfg, &AgentConfig::thinking_budget));
 
             cfg.agents.insert_or_assign(it.key(), std::move(agent_cfg));
         }
@@ -397,18 +377,7 @@ namespace orangutan::config::detail {
             }
 
             QqBotConfig bot_cfg;
-            if (const auto *value = find_member(item, "name"); value != nullptr && value->is_string()) {
-                bot_cfg.name = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "app_id"); value != nullptr && value->is_string()) {
-                bot_cfg.app_id = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "client_secret"); value != nullptr && value->is_string()) {
-                bot_cfg.client_secret = value->get<std::string>();
-            }
-            if (const auto *value = find_member(item, "agent"); value != nullptr && value->is_string()) {
-                bot_cfg.agent = value->get<std::string>();
-            }
+            assign_string_members(item, bot_cfg, QQ_BOT_STRING_FIELDS);
 
             cfg.qq_bots.push_back(std::move(bot_cfg));
         }
