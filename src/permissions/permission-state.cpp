@@ -17,16 +17,16 @@ std::string rule_to_string(const PermissionRule &rule) {
 
     const auto &rc = *rule.content;
     switch (rc.match_type) {
-    case RuleMatchType::prefix:
+    case rule_match_type::prefix:
         return rule.tool_name + "(" + rc.pattern + ":*)";
-    case RuleMatchType::wildcard:
-    case RuleMatchType::exact:
+    case rule_match_type::wildcard:
+    case rule_match_type::exact:
         return rule.tool_name + "(" + rc.pattern + ")";
     }
     return rule.tool_name;
 }
 
-std::vector<PermissionRule> parse_string_list(const std::vector<std::string> &items, PermissionBehavior behavior, PermissionRuleSource source) {
+std::vector<PermissionRule> parse_string_list(const std::vector<std::string> &items, permission_behavior behavior, permission_rule_source source) {
     std::vector<PermissionRule> rules;
     rules.reserve(items.size());
     for (const auto &item : items) {
@@ -43,13 +43,13 @@ void distribute_rules(const std::vector<PermissionRule> &rules, std::vector<Perm
                        std::vector<PermissionRule> &deny_rules, std::vector<PermissionRule> &ask_rules) {
     for (const auto &rule : rules) {
         switch (rule.behavior) {
-        case PermissionBehavior::allow:
+        case permission_behavior::allow:
             allow_rules.push_back(rule);
             break;
-        case PermissionBehavior::deny:
+        case permission_behavior::deny:
             deny_rules.push_back(rule);
             break;
-        case PermissionBehavior::ask:
+        case permission_behavior::ask:
             ask_rules.push_back(rule);
             break;
         }
@@ -58,7 +58,7 @@ void distribute_rules(const std::vector<PermissionRule> &rules, std::vector<Perm
 
 } // namespace
 
-std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &path, PermissionRuleSource source) {
+std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &path, permission_rule_source source) {
     if (path.empty() || !std::filesystem::exists(path)) {
         return {};
     }
@@ -88,7 +88,7 @@ std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &pa
         if (auto it = perms.find("allow"); it != perms.end() && it->is_array()) {
             for (const auto &item : *it) {
                 if (item.is_string()) {
-                    rules.push_back(parse_permission_rule(item.get<std::string>(), PermissionBehavior::allow, source));
+                    rules.push_back(parse_permission_rule(item.get<std::string>(), permission_behavior::allow, source));
                 }
             }
         }
@@ -96,7 +96,7 @@ std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &pa
         if (auto it = perms.find("deny"); it != perms.end() && it->is_array()) {
             for (const auto &item : *it) {
                 if (item.is_string()) {
-                    rules.push_back(parse_permission_rule(item.get<std::string>(), PermissionBehavior::deny, source));
+                    rules.push_back(parse_permission_rule(item.get<std::string>(), permission_behavior::deny, source));
                 }
             }
         }
@@ -104,7 +104,7 @@ std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &pa
         if (auto it = perms.find("ask"); it != perms.end() && it->is_array()) {
             for (const auto &item : *it) {
                 if (item.is_string()) {
-                    rules.push_back(parse_permission_rule(item.get<std::string>(), PermissionBehavior::ask, source));
+                    rules.push_back(parse_permission_rule(item.get<std::string>(), permission_behavior::ask, source));
                 }
             }
         }
@@ -121,11 +121,11 @@ std::vector<PermissionRule> load_rules_from_file(const std::filesystem::path &pa
 
 ToolPermissionContext initialize_permission_context(const PermissionConfig &config, const CLIPermissionOptions &cli_options,
                                                     const std::filesystem::path &project_root) {
-    PermissionMode mode = config.default_mode;
+    permission_mode mode = config.default_mode;
     if (cli_options.dangerously_skip_permissions) {
-        mode = PermissionMode::bypass_permissions;
-    } else if (cli_options.permission_mode.has_value()) {
-        mode = *cli_options.permission_mode;
+        mode = permission_mode::bypass_permissions;
+    } else if (cli_options.mode_override.has_value()) {
+        mode = *cli_options.mode_override;
     }
 
     ToolPermissionContext ctx{
@@ -133,26 +133,26 @@ ToolPermissionContext initialize_permission_context(const PermissionConfig &conf
         .allow_rules = {},
         .deny_rules = {},
         .ask_rules = {},
-        .is_bypass_available = (mode != PermissionMode::bypass_permissions),
+        .is_bypass_available = (mode != permission_mode::bypass_permissions),
     };
 
-    auto user_allow = parse_string_list(config.allow, PermissionBehavior::allow, PermissionRuleSource::user_settings);
-    auto user_deny = parse_string_list(config.deny, PermissionBehavior::deny, PermissionRuleSource::user_settings);
-    auto user_ask = parse_string_list(config.ask, PermissionBehavior::ask, PermissionRuleSource::user_settings);
+    auto user_allow = parse_string_list(config.allow, permission_behavior::allow, permission_rule_source::user_settings);
+    auto user_deny = parse_string_list(config.deny, permission_behavior::deny, permission_rule_source::user_settings);
+    auto user_ask = parse_string_list(config.ask, permission_behavior::ask, permission_rule_source::user_settings);
     append_rules(ctx.allow_rules, std::move(user_allow));
     append_rules(ctx.deny_rules, std::move(user_deny));
     append_rules(ctx.ask_rules, std::move(user_ask));
 
     if (!project_root.empty()) {
-        auto project_rules = load_rules_from_file(project_root / ".orangutan" / "settings.json", PermissionRuleSource::project_settings);
+        auto project_rules = load_rules_from_file(project_root / ".orangutan" / "settings.json", permission_rule_source::project_settings);
         distribute_rules(project_rules, ctx.allow_rules, ctx.deny_rules, ctx.ask_rules);
 
-        auto local_rules = load_rules_from_file(project_root / ".orangutan" / "settings.local.json", PermissionRuleSource::local_settings);
+        auto local_rules = load_rules_from_file(project_root / ".orangutan" / "settings.local.json", permission_rule_source::local_settings);
         distribute_rules(local_rules, ctx.allow_rules, ctx.deny_rules, ctx.ask_rules);
     }
 
-    auto cli_allow = parse_string_list(cli_options.allowed_tools, PermissionBehavior::allow, PermissionRuleSource::cli_arg);
-    auto cli_deny = parse_string_list(cli_options.disallowed_tools, PermissionBehavior::deny, PermissionRuleSource::cli_arg);
+    auto cli_allow = parse_string_list(cli_options.allowed_tools, permission_behavior::allow, permission_rule_source::cli_arg);
+    auto cli_deny = parse_string_list(cli_options.disallowed_tools, permission_behavior::deny, permission_rule_source::cli_arg);
     append_rules(ctx.allow_rules, std::move(cli_allow));
     append_rules(ctx.deny_rules, std::move(cli_deny));
 
@@ -162,20 +162,20 @@ ToolPermissionContext initialize_permission_context(const PermissionConfig &conf
 ToolPermissionContext add_rule(const ToolPermissionContext &ctx, PermissionRule rule) {
     auto copy = ctx;
     switch (rule.behavior) {
-    case PermissionBehavior::allow:
+    case permission_behavior::allow:
         copy.allow_rules.push_back(std::move(rule));
         break;
-    case PermissionBehavior::deny:
+    case permission_behavior::deny:
         copy.deny_rules.push_back(std::move(rule));
         break;
-    case PermissionBehavior::ask:
+    case permission_behavior::ask:
         copy.ask_rules.push_back(std::move(rule));
         break;
     }
     return copy;
 }
 
-ToolPermissionContext change_mode(const ToolPermissionContext &ctx, PermissionMode new_mode) {
+ToolPermissionContext change_mode(const ToolPermissionContext &ctx, permission_mode new_mode) {
     auto copy = ctx;
     copy.mode = new_mode;
     return copy;
@@ -205,13 +205,13 @@ void persist_rule(const PermissionRule &rule, const std::filesystem::path &setti
 
     std::string array_key;
     switch (rule.behavior) {
-    case PermissionBehavior::allow:
+    case permission_behavior::allow:
         array_key = "allow";
         break;
-    case PermissionBehavior::deny:
+    case permission_behavior::deny:
         array_key = "deny";
         break;
-    case PermissionBehavior::ask:
+    case permission_behavior::ask:
         array_key = "ask";
         break;
     }

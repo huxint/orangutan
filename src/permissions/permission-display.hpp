@@ -12,25 +12,25 @@
 
 namespace orangutan::permissions {
 
-    inline std::string permission_behavior_label(PermissionBehavior behavior) {
+    inline std::string permission_behavior_label(permission_behavior behavior) {
         return std::string{magic_enum::enum_name(behavior)};
     }
 
-    inline std::string permission_mode_label(PermissionMode mode) {
+    inline std::string permission_mode_label(permission_mode mode) {
         return std::string{magic_enum::enum_name(mode)};
     }
 
-    inline std::string permission_rule_source_label(PermissionRuleSource source) {
+    inline std::string permission_rule_source_label(permission_rule_source source) {
         switch (source) {
-        case PermissionRuleSource::cli_arg:
+        case permission_rule_source::cli_arg:
             return "CLI";
-        case PermissionRuleSource::session:
+        case permission_rule_source::session:
             return "session";
-        case PermissionRuleSource::local_settings:
+        case permission_rule_source::local_settings:
             return "local settings";
-        case PermissionRuleSource::project_settings:
+        case permission_rule_source::project_settings:
             return "project settings";
-        case PermissionRuleSource::user_settings:
+        case permission_rule_source::user_settings:
             return "user settings";
         }
         return "unknown";

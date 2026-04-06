@@ -39,7 +39,7 @@ namespace orangutan::automation {
             task.name = stmt.column_text(2);
             task.enabled = stmt.column_int(3) != 0;
             const auto schedule_kind = stmt.column_text(4);
-            if (const auto parsed = magic_enum::enum_cast<TaskScheduleKind>(schedule_kind); parsed.has_value()) {
+            if (const auto parsed = magic_enum::enum_cast<task_schedule_kind>(schedule_kind); parsed.has_value()) {
                 task.schedule.kind = *parsed;
             } else {
                 throw std::runtime_error("Unknown task schedule kind: " + schedule_kind);
@@ -76,7 +76,7 @@ namespace orangutan::automation {
             RunRecord run;
             run.id = stmt.column_text(0);
             const auto kind = stmt.column_text(1);
-            if (const auto parsed = magic_enum::enum_cast<Kind>(kind); parsed.has_value()) {
+            if (const auto parsed = magic_enum::enum_cast<automation::kind>(kind); parsed.has_value()) {
                 run.kind = *parsed;
             } else {
                 throw std::runtime_error("Unknown automation kind: " + kind);

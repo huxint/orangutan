@@ -38,7 +38,7 @@ namespace orangutan::hooks {
                 }
 
                 auto event_name = entry.path().filename().string();
-                auto event = magic_enum::enum_cast<HookEvent>(event_name);
+                auto event = magic_enum::enum_cast<hook_event>(event_name);
                 if (!event.has_value()) {
                     spdlog::debug("Ignoring unknown hook event directory: {}", event_name);
                     continue;
@@ -122,7 +122,7 @@ namespace orangutan::hooks {
 
     using dispatch_sender_t = any_sender_of<stdexec::set_value_t(DispatchResult), stdexec::set_error_t(std::exception_ptr), stdexec::set_stopped_t()>;
 
-    static std::optional<DispatchResult> process_hook_result(const HookDef &hook, HookEvent event, bool is_blocking_event, HookResult result) {
+    static std::optional<DispatchResult> process_hook_result(const HookDef &hook, hook_event event, bool is_blocking_event, HookResult result) {
         if (!result.stderr_output.empty()) {
             spdlog::warn("[{}] {}", hook.filename, result.stderr_output);
         }
@@ -144,7 +144,7 @@ namespace orangutan::hooks {
         return std::nullopt;
     }
 
-    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, std::size_t index, HookEvent event, const std::shared_ptr<const nlohmann::json> &context,
+    static dispatch_sender_t dispatch_hooks_sender(std::span<const HookDef> hooks, std::size_t index, hook_event event, const std::shared_ptr<const nlohmann::json> &context,
                                                    bool is_blocking_event) {
         if (index >= hooks.size()) {
             return stdexec::just(DispatchResult{});
@@ -166,20 +166,20 @@ namespace orangutan::hooks {
 
     // ── Hook dispatch ───────────────────────────────
 
-    DispatchResult HookManager::dispatch(HookEvent event, const nlohmann::json &context) const {
+    DispatchResult HookManager::dispatch(hook_event event, const nlohmann::json &context) const {
         auto it = hooks_.find(event);
         if (it == hooks_.end() || it->second.empty()) {
             return {};
         }
 
-        bool is_blocking_event = (event == HookEvent::before_tool_call);
+        bool is_blocking_event = (event == hook_event::before_tool_call);
         auto context_ptr = std::make_shared<nlohmann::json>(context);
         auto pipeline = dispatch_hooks_sender(it->second, 0, event, std::move(context_ptr), is_blocking_event);
         auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "hook dispatch pipeline");
         return result;
     }
 
-    std::size_t HookManager::hook_count(HookEvent event) const {
+    std::size_t HookManager::hook_count(hook_event event) const {
         auto it = hooks_.find(event);
         return (it != hooks_.end()) ? it->second.size() : 0;
     }
@@ -194,9 +194,9 @@ namespace orangutan::hooks {
 
     // ── Context builders ────────────────────────────
 
-    static nlohmann::json build_tool_call_context(HookEvent event, std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error) {
+    static nlohmann::json build_tool_call_context(hook_event event, std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error) {
         nlohmann::json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"tool_name", tool_name}, {"tool_input", tool_input}};
-        if (event == HookEvent::after_tool_call) {
+        if (event == hook_event::after_tool_call) {
             ctx["tool_result"] = tool_result;
             ctx["is_error"] = is_error;
         }
@@ -204,20 +204,20 @@ namespace orangutan::hooks {
     }
 
     nlohmann::json build_before_tool_call_context(std::string_view tool_name, const nlohmann::json &tool_input) {
-        return build_tool_call_context(HookEvent::before_tool_call, tool_name, tool_input, {}, false);
+        return build_tool_call_context(hook_event::before_tool_call, tool_name, tool_input, {}, false);
     }
 
     nlohmann::json build_after_tool_call_context(std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error) {
-        return build_tool_call_context(HookEvent::after_tool_call, tool_name, tool_input, tool_result, is_error);
+        return build_tool_call_context(hook_event::after_tool_call, tool_name, tool_input, tool_result, is_error);
     }
 
-    nlohmann::json build_message_context(HookEvent event, std::string_view role, std::string_view content) {
+    nlohmann::json build_message_context(hook_event event, std::string_view role, std::string_view content) {
         return {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"role", role}, {"content", content}};
     }
 
-    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, std::size_t message_count) {
+    nlohmann::json build_session_context(hook_event event, std::string_view session_id, std::size_t message_count) {
         nlohmann::json ctx = {{"event", magic_enum::enum_name(event)}, {"timestamp", iso8601_now()}, {"session_id", session_id}};
-        if (event == HookEvent::session_end) {
+        if (event == hook_event::session_end) {
             ctx["message_count"] = message_count;
         }
         return ctx;
@@ -227,14 +227,14 @@ namespace orangutan::hooks {
         if (hook_manager == nullptr || session_id.empty()) {
             return;
         }
-        static_cast<void>(hook_manager->dispatch(HookEvent::session_start, build_session_context(HookEvent::session_start, session_id, message_count)));
+        static_cast<void>(hook_manager->dispatch(hook_event::session_start, build_session_context(hook_event::session_start, session_id, message_count)));
     }
 
     void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, std::size_t message_count) {
         if (hook_manager == nullptr || session_id.empty()) {
             return;
         }
-        static_cast<void>(hook_manager->dispatch(HookEvent::session_end, build_session_context(HookEvent::session_end, session_id, message_count)));
+        static_cast<void>(hook_manager->dispatch(hook_event::session_end, build_session_context(hook_event::session_end, session_id, message_count)));
     }
 
 } // namespace orangutan::hooks

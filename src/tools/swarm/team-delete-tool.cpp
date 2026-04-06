@@ -39,7 +39,7 @@ namespace orangutan::tools {
 
             if (tool_context.mailbox != nullptr) {
                 for (const auto &member : active_members) {
-                    tool_context.mailbox->send(team_id, sender, member.name, "Team shutdown requested", MessageType::shutdown_request);
+                    tool_context.mailbox->send(team_id, sender, member.name, "Team shutdown requested", message_type::shutdown_request);
                 }
             }
 

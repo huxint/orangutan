@@ -11,7 +11,7 @@ namespace orangutan::builtin::detail {
             if (!it->is_string()) {
                 return std::unexpected("invalid delivery configuration");
             }
-            const auto mode = magic_enum::enum_cast<automation::DeliveryMode>(it->get_ref<const std::string &>());
+            const auto mode = magic_enum::enum_cast<automation::delivery_mode>(it->get_ref<const std::string &>());
             if (!mode.has_value()) {
                 return std::unexpected("invalid delivery configuration");
             }

@@ -2,6 +2,7 @@
 #include "bootstrap/identity.hpp"
 #include "utils/file-io.hpp"
 #include "utils/string.hpp"
+#include "types/base.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -18,14 +19,14 @@ namespace orangutan::skills {
 
         constexpr std::string_view yaml_delimiter = "---";
 
-        enum class ParseError {
+        enum class parse_error : base::u8 {
             missing_frontmatter,
             unclosed_frontmatter,
             missing_required_name,
             missing_required_description,
         };
 
-        using ParsedSkillFile = std::expected<SkillDef, ParseError>;
+        using ParsedSkillFile = std::expected<SkillDef, parse_error>;
 
         std::string_view strip_cr(std::string_view line) {
             if (!line.empty() && line.back() == '\r') {
@@ -135,16 +136,16 @@ namespace orangutan::skills {
             return skill;
         }
 
-        void log_parse_error(ParseError error, const std::string &source_path) {
+        void log_parse_error(parse_error error, const std::string &source_path) {
             switch (error) {
-                case ParseError::missing_frontmatter:
+                case parse_error::missing_frontmatter:
                     spdlog::warn("Skill file has no frontmatter: {}", source_path);
                     return;
-                case ParseError::unclosed_frontmatter:
+                case parse_error::unclosed_frontmatter:
                     spdlog::warn("Skill file has unclosed frontmatter: {}", source_path);
                     return;
-                case ParseError::missing_required_name:
-                case ParseError::missing_required_description:
+                case parse_error::missing_required_name:
+                case parse_error::missing_required_description:
                     spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
                     return;
             }
@@ -153,7 +154,7 @@ namespace orangutan::skills {
         ParsedSkillFile parse_skill_file(const std::string &content, const std::string &source_path) {
             auto lines = split_lines(content);
             if (lines.empty()) {
-                return std::unexpected(ParseError::missing_frontmatter);
+                return std::unexpected(parse_error::missing_frontmatter);
             }
 
             strip_utf8_bom(lines.front());
@@ -164,11 +165,11 @@ namespace orangutan::skills {
             }
 
             if (open_index == lines.size()) {
-                return std::unexpected(ParseError::missing_frontmatter);
+                return std::unexpected(parse_error::missing_frontmatter);
             }
 
             if (!is_yaml_delimiter(lines[open_index])) {
-                return std::unexpected(ParseError::missing_frontmatter);
+                return std::unexpected(parse_error::missing_frontmatter);
             }
 
             // Extract frontmatter content and body
@@ -188,7 +189,7 @@ namespace orangutan::skills {
             }
 
             if (!found_closing) {
-                return std::unexpected(ParseError::unclosed_frontmatter);
+                return std::unexpected(parse_error::unclosed_frontmatter);
             }
 
             // Build body
@@ -202,11 +203,11 @@ namespace orangutan::skills {
             auto skill = parse_yaml_frontmatter(fm_buf, source_path);
             skill.body = body;
             if (skill.name.empty()) {
-                return std::unexpected(ParseError::missing_required_name);
+                return std::unexpected(parse_error::missing_required_name);
             }
 
             if (skill.description.empty()) {
-                return std::unexpected(ParseError::missing_required_description);
+                return std::unexpected(parse_error::missing_required_description);
             }
 
             return std::move(skill);

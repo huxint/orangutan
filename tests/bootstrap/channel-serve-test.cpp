@@ -465,7 +465,7 @@ namespace {
         });
 
         queue.push(InboundMessage{
-            .event_kind = InboundEventKind::reaction_added,
+            .event_kind = inbound_event_kind::reaction_added,
             .jid = "qqbot:guild:42",
             .sender = "user-1",
             .sender_name = "user-1",
@@ -544,7 +544,7 @@ namespace {
 
         auto future = std::async(std::launch::async, [&callback] {
             return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "git push origin main"}}),
-                            PermissionDecision::ask_by_rule(PermissionRuleSource::project_settings, "shell(git push *)",
+                            PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)",
                                                             "Shell command approval required."));
         });
 
@@ -991,7 +991,7 @@ namespace {
             .command = "printf 'done\\n'",
             .working_dir = harness.workspace_root().string(),
             .pid = 1234,
-            .terminal_status = BackgroundProcessTerminalStatus::exited,
+            .terminal_status = background_process_terminal_status::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
             .metadata = {{std::string(tools::background_completion_mode_metadata_key), "resume"}},

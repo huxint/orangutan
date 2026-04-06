@@ -17,7 +17,7 @@ namespace orangutan::memory {
         std::string key;
         std::string content;
         std::string category;
-        MemoryType type = MemoryType::user;
+        memory_type type = memory_type::user;
         std::string scope;
         std::string source;
         std::string updated_at;
@@ -44,10 +44,10 @@ namespace orangutan::memory {
         MemoryStore(MemoryStore &&) = delete;
         MemoryStore &operator=(MemoryStore &&) = delete;
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", MemoryType type = MemoryType::user,
+        void remember(const std::string &key, const std::string &content, const std::string &category = "general", memory_type type = memory_type::user,
                       const std::string &scope = {}, const std::string &source = "manual", base::f64 importance = 0.5);
 
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, MemoryType type = MemoryType::user, const std::string &scope = {},
+        void update(const std::string &key, const std::string &content, const std::string &category = {}, memory_type type = memory_type::user, const std::string &scope = {},
                     bool merge = true, const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]

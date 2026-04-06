@@ -165,7 +165,7 @@ TEST_CASE("validate_anchor_out_of_range") {
 TEST_CASE("replace_single_line") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .content = {"XXX"},
     }};
@@ -178,7 +178,7 @@ TEST_CASE("replace_single_line") {
 TEST_CASE("replace_range") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .end_anchor = anchor_for("ccc", 3),
         .content = {"NEW"},
@@ -194,7 +194,7 @@ TEST_CASE("replace_range") {
 TEST_CASE("insert_after_with_anchor") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::insert_after,
+        .op = hashline_edit_op::insert_after,
         .anchor = anchor_for("aaa", 1),
         .content = {"INSERTED"},
     }};
@@ -207,7 +207,7 @@ TEST_CASE("insert_after_with_anchor") {
 TEST_CASE("insert_after_without_anchor_appends_to_eof") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::insert_after,
+        .op = hashline_edit_op::insert_after,
         .content = {"APPENDED"},
     }};
     const auto result = apply_hashline_edits(lines, edits);
@@ -219,7 +219,7 @@ TEST_CASE("insert_after_without_anchor_appends_to_eof") {
 TEST_CASE("insert_before_with_anchor") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::insert_before,
+        .op = hashline_edit_op::insert_before,
         .anchor = anchor_for("bbb", 2),
         .content = {"INSERTED"},
     }};
@@ -233,7 +233,7 @@ TEST_CASE("insert_before_with_anchor") {
 TEST_CASE("insert_before_without_anchor_prepends_to_bof") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::insert_before,
+        .op = hashline_edit_op::insert_before,
         .content = {"PREPENDED"},
     }};
     const auto result = apply_hashline_edits(lines, edits);
@@ -245,7 +245,7 @@ TEST_CASE("insert_before_without_anchor_prepends_to_bof") {
 TEST_CASE("delete_single_line") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::del,
+        .op = hashline_edit_op::del,
         .anchor = anchor_for("bbb", 2),
     }};
     const auto result = apply_hashline_edits(lines, edits);
@@ -258,7 +258,7 @@ TEST_CASE("delete_single_line") {
 TEST_CASE("delete_range") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::del,
+        .op = hashline_edit_op::del,
         .anchor = anchor_for("bbb", 2),
         .end_anchor = anchor_for("ccc", 3),
     }};
@@ -272,8 +272,8 @@ TEST_CASE("delete_range") {
 TEST_CASE("multiple_edits_bottom_up") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB"}},
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("ddd", 4), .content = {"DDD"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("ddd", 4), .content = {"DDD"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
@@ -284,8 +284,8 @@ TEST_CASE("multiple_edits_bottom_up") {
 TEST_CASE("delete_and_insert_after_same_anchor_keeps_insertion_at_deleted_location") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::del, .anchor = anchor_for("ccc", 3)},
-        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ccc", 3), .content = {"XXX"}},
+        {.op = hashline_edit_op::del, .anchor = anchor_for("ccc", 3)},
+        {.op = hashline_edit_op::insert_after, .anchor = anchor_for("ccc", 3), .content = {"XXX"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
@@ -299,8 +299,8 @@ TEST_CASE("delete_and_insert_after_same_anchor_keeps_insertion_at_deleted_locati
 TEST_CASE("replace_and_insert_after_same_anchor_uses_replacement_boundary") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB-1", "BBB-2"}},
-        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("bbb", 2), .content = {"TAIL"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("bbb", 2), .content = {"BBB-1", "BBB-2"}},
+        {.op = hashline_edit_op::insert_after, .anchor = anchor_for("bbb", 2), .content = {"TAIL"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
@@ -315,9 +315,9 @@ TEST_CASE("replace_and_insert_after_same_anchor_uses_replacement_boundary") {
 TEST_CASE("range_replace_accepts_boundary_inserts") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
-        {.op = HashlineEditOp::insert_before, .anchor = anchor_for("bbb", 2), .content = {"PRE"}},
-        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ddd", 4), .content = {"POST"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
+        {.op = hashline_edit_op::insert_before, .anchor = anchor_for("bbb", 2), .content = {"PRE"}},
+        {.op = hashline_edit_op::insert_after, .anchor = anchor_for("ddd", 4), .content = {"POST"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);
@@ -332,7 +332,7 @@ TEST_CASE("range_replace_accepts_boundary_inserts") {
 TEST_CASE("replace_with_empty_content_deletes_line") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .content = {},
     }};
@@ -349,7 +349,7 @@ TEST_CASE("hash_mismatch_returns_error") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const auto actual_hash = compute_line_hash("bbb", 2);
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = "2#" + valid_hash_different_from(actual_hash),
         .content = {"XXX"},
     }};
@@ -362,7 +362,7 @@ TEST_CASE("hash_mismatch_error_includes_context_lines") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
     const auto actual_hash = compute_line_hash("ccc", 3);
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = "3#" + valid_hash_different_from(actual_hash),
         .content = {"XXX"},
     }};
@@ -377,8 +377,8 @@ TEST_CASE("hash_mismatch_error_includes_context_lines") {
 TEST_CASE("overlapping_edits_returns_error") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"X"}},
-        {.op = HashlineEditOp::del, .anchor = anchor_for("ccc", 3)},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"X"}},
+        {.op = hashline_edit_op::del, .anchor = anchor_for("ccc", 3)},
     };
     const auto result = apply_hashline_edits(lines, edits);
     CHECK_FALSE(result.ok);
@@ -389,8 +389,8 @@ TEST_CASE("conflicting_edits_returns_error") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const auto anchor = anchor_for("bbb", 2);
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor, .content = {"XXX"}},
-        {.op = HashlineEditOp::replace, .anchor = anchor, .content = {"YYY"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor, .content = {"XXX"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor, .content = {"YYY"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     CHECK_FALSE(result.ok);
@@ -400,7 +400,7 @@ TEST_CASE("conflicting_edits_returns_error") {
 TEST_CASE("invalid_range_returns_error") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("ccc", 3),
         .end_anchor = anchor_for("aaa", 1),
         .content = {"X"},
@@ -413,8 +413,8 @@ TEST_CASE("invalid_range_returns_error") {
 TEST_CASE("insert_inside_replace_range_returns_error") {
     const std::vector<std::string> lines = {"aaa", "bbb", "ccc", "ddd", "eee"};
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
-        {.op = HashlineEditOp::insert_after, .anchor = anchor_for("ccc", 3), .content = {"TAIL"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor_for("bbb", 2), .end_anchor = anchor_for("ddd", 4), .content = {"MID"}},
+        {.op = hashline_edit_op::insert_after, .anchor = anchor_for("ccc", 3), .content = {"TAIL"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     CHECK_FALSE(result.ok);
@@ -426,7 +426,7 @@ TEST_CASE("insert_inside_replace_range_returns_error") {
 TEST_CASE("content_auto_stripping_removes_hash_prefixes") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .content = {"10#KQ:replaced line"},
     }};
@@ -439,7 +439,7 @@ TEST_CASE("content_auto_stripping_removes_hash_prefixes") {
 TEST_CASE("partial_hash_prefix_does_not_strip") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .content = {"10#KQ:line with prefix", "plain line without prefix"},
     }};
@@ -454,7 +454,7 @@ TEST_CASE("partial_hash_prefix_does_not_strip") {
 TEST_CASE("noop_replace_same_content") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const std::vector<HashlineEdit> edits = {{
-        .op = HashlineEditOp::replace,
+        .op = hashline_edit_op::replace,
         .anchor = anchor_for("bbb", 2),
         .content = {"bbb"},
     }};
@@ -469,8 +469,8 @@ TEST_CASE("duplicate_identical_edits_are_deduplicated") {
     const std::vector<std::string> lines = {"aaa", "bbb"};
     const auto anchor = anchor_for("bbb", 2);
     const std::vector<HashlineEdit> edits = {
-        {.op = HashlineEditOp::replace, .anchor = anchor, .content = {"XXX"}},
-        {.op = HashlineEditOp::replace, .anchor = anchor, .content = {"XXX"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor, .content = {"XXX"}},
+        {.op = hashline_edit_op::replace, .anchor = anchor, .content = {"XXX"}},
     };
     const auto result = apply_hashline_edits(lines, edits);
     REQUIRE(result.ok);

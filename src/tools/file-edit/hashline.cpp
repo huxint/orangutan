@@ -167,7 +167,7 @@ namespace orangutan::tools {
         // Internal resolved edit with parsed anchors
         struct ResolvedEdit {
             std::size_t index; // original index in edits vector
-            HashlineEditOp op;
+            hashline_edit_op op;
             std::optional<std::size_t> start_line; // 1-based, from anchor
             std::optional<std::size_t> end_line;   // 1-based, from end_anchor
             std::vector<std::string> content;
@@ -191,7 +191,7 @@ namespace orangutan::tools {
             std::size_t order = 0;
         };
 
-        enum class ApplyGroupKind {
+        enum class apply_group_kind : base::u8 {
             range,
             anchor,
             append,
@@ -199,7 +199,7 @@ namespace orangutan::tools {
         };
 
         struct ApplyGroup {
-            ApplyGroupKind kind;
+            apply_group_kind kind;
             std::size_t sort_line;
             std::size_t start_line = 0;
             std::size_t end_line = 0;
@@ -244,8 +244,8 @@ namespace orangutan::tools {
             return {start, end};
         }
 
-        bool is_range_edit(HashlineEditOp op) {
-            return op == HashlineEditOp::replace || op == HashlineEditOp::del;
+        bool is_range_edit(hashline_edit_op op) {
+            return op == hashline_edit_op::replace || op == hashline_edit_op::del;
         }
 
         void append_content(std::vector<std::string> &target, const std::vector<std::string> &content) {
@@ -270,16 +270,16 @@ namespace orangutan::tools {
 
             // Validate required fields per op type
             switch (edit.op) {
-                case HashlineEditOp::replace:
+                case hashline_edit_op::replace:
                     if (edit.anchor.empty()) {
                         return {.ok = false, .error = "replace edit requires anchor"};
                     }
                     break;
-                case HashlineEditOp::insert_before:
-                case HashlineEditOp::insert_after:
+                case hashline_edit_op::insert_before:
+                case hashline_edit_op::insert_after:
                     // anchor optional (missing anchor inserts at BOF/EOF depending on op)
                     break;
-                case HashlineEditOp::del:
+                case hashline_edit_op::del:
                     if (edit.anchor.empty()) {
                         return {.ok = false, .error = "delete edit requires anchor"};
                     }
@@ -351,7 +351,7 @@ namespace orangutan::tools {
                     if (a.content == b.content) {
                         // Identical -- mark j for removal (set start_line to a sentinel)
                         // We'll filter these out after this loop.
-                        resolved[j].op = HashlineEditOp::replace; // any op
+                        resolved[j].op = hashline_edit_op::replace; // any op
                         resolved[j].start_line = std::nullopt;
                         resolved[j].end_line = std::nullopt;
                         resolved[j].content.clear();
@@ -371,7 +371,7 @@ namespace orangutan::tools {
 
         // Step 4: Detect overlapping ranges (only for replace/delete that occupy line ranges)
         for (std::size_t i = 0; i < resolved.size(); ++i) {
-            if (resolved[i].op != HashlineEditOp::replace && resolved[i].op != HashlineEditOp::del) {
+            if (resolved[i].op != hashline_edit_op::replace && resolved[i].op != hashline_edit_op::del) {
                 continue;
             }
             auto [a_start, a_end] = effective_range(resolved[i]);
@@ -379,7 +379,7 @@ namespace orangutan::tools {
                 continue;
             }
             for (std::size_t j = i + 1; j < resolved.size(); ++j) {
-                if (resolved[j].op != HashlineEditOp::replace && resolved[j].op != HashlineEditOp::del) {
+                if (resolved[j].op != hashline_edit_op::replace && resolved[j].op != hashline_edit_op::del) {
                     continue;
                 }
                 auto [b_start, b_end] = effective_range(resolved[j]);
@@ -434,7 +434,7 @@ namespace orangutan::tools {
 
         // Step 7: Noop detection
         for (auto &re : resolved) {
-            if (re.op != HashlineEditOp::replace) {
+            if (re.op != hashline_edit_op::replace) {
                 continue;
             }
             if (!re.start_line.has_value()) {
@@ -486,7 +486,7 @@ namespace orangutan::tools {
                 .start_line = start,
                 .end_line = end,
                 .before_content = {},
-                .replacement_content = re.op == HashlineEditOp::replace ? re.content : std::vector<std::string>{},
+                .replacement_content = re.op == hashline_edit_op::replace ? re.content : std::vector<std::string>{},
                 .after_content = {},
                 .edit_count = 1,
                 .order = re.index,
@@ -506,7 +506,7 @@ namespace orangutan::tools {
             const auto line = *re.start_line;
             bool attached_to_range = false;
             for (auto &group : range_groups) {
-                if (re.op == HashlineEditOp::insert_before) {
+                if (re.op == hashline_edit_op::insert_before) {
                     if (line == group.start_line) {
                         append_content(group.before_content, re.content);
                         ++group.edit_count;
@@ -553,7 +553,7 @@ namespace orangutan::tools {
                 it = std::prev(anchor_groups.end());
             }
 
-            if (re.op == HashlineEditOp::insert_before) {
+            if (re.op == hashline_edit_op::insert_before) {
                 append_content(it->before_content, re.content);
             } else {
                 append_content(it->after_content, re.content);
@@ -566,7 +566,7 @@ namespace orangutan::tools {
         apply_groups.reserve(range_groups.size() + anchor_groups.size() + anchorless_edits.size());
         for (auto &group : range_groups) {
             apply_groups.push_back({
-                .kind = ApplyGroupKind::range,
+                .kind = apply_group_kind::range,
                 .sort_line = group.start_line,
                 .start_line = group.start_line,
                 .end_line = group.end_line,
@@ -579,7 +579,7 @@ namespace orangutan::tools {
         }
         for (auto &group : anchor_groups) {
             apply_groups.push_back({
-                .kind = ApplyGroupKind::anchor,
+                .kind = apply_group_kind::anchor,
                 .sort_line = group.line,
                 .start_line = group.line,
                 .end_line = group.line,
@@ -592,8 +592,8 @@ namespace orangutan::tools {
         }
         for (const auto &re : anchorless_edits) {
             apply_groups.push_back({
-                .kind = re.op == HashlineEditOp::insert_after ? ApplyGroupKind::append : ApplyGroupKind::prepend,
-                .sort_line = re.op == HashlineEditOp::insert_after ? SIZE_MAX : 0,
+                .kind = re.op == hashline_edit_op::insert_after ? apply_group_kind::append : apply_group_kind::prepend,
+                .sort_line = re.op == hashline_edit_op::insert_after ? SIZE_MAX : 0,
                 .start_line = 0,
                 .end_line = 0,
                 .before_content = {},
@@ -617,7 +617,7 @@ namespace orangutan::tools {
 
         for (const auto &group : apply_groups) {
             switch (group.kind) {
-                case ApplyGroupKind::range: {
+                case apply_group_kind::range: {
                     auto begin_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.start_line - 1);
                     auto end_it = result_lines.begin() + static_cast<std::ptrdiff_t>(group.end_line);
                     std::vector<std::string> combined;
@@ -630,18 +630,18 @@ namespace orangutan::tools {
                     edits_applied += group.edit_count;
                     break;
                 }
-                case ApplyGroupKind::anchor: {
+                case apply_group_kind::anchor: {
                     const auto line_index = static_cast<std::ptrdiff_t>(group.start_line - 1);
                     result_lines.insert(result_lines.begin() + line_index + 1, group.after_content.begin(), group.after_content.end());
                     result_lines.insert(result_lines.begin() + line_index, group.before_content.begin(), group.before_content.end());
                     edits_applied += group.edit_count;
                     break;
                 }
-                case ApplyGroupKind::append:
+                case apply_group_kind::append:
                     result_lines.insert(result_lines.end(), group.replacement_content.begin(), group.replacement_content.end());
                     edits_applied += group.edit_count;
                     break;
-                case ApplyGroupKind::prepend:
+                case apply_group_kind::prepend:
                     result_lines.insert(result_lines.begin(), group.replacement_content.begin(), group.replacement_content.end());
                     edits_applied += group.edit_count;
                     break;

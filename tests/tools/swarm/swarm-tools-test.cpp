@@ -157,8 +157,8 @@ namespace {
         REQUIRE(worker2_messages.size() == 1);
         CHECK(worker1_messages.front().from == "lead");
         CHECK(worker2_messages.front().from == "lead");
-        CHECK(worker1_messages.front().type == MessageType::shutdown_request);
-        CHECK(worker2_messages.front().type == MessageType::shutdown_request);
+        CHECK(worker1_messages.front().type == message_type::shutdown_request);
+        CHECK(worker2_messages.front().type == message_type::shutdown_request);
         CHECK(worker1_messages.front().text == "Team shutdown requested");
 
         CHECK_FALSE(team_manager.find_team(team.id).has_value());

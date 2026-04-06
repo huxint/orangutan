@@ -223,7 +223,7 @@ namespace {
         CHECK(completion_event->command == "completion event test");
         CHECK(completion_event->pid == summary.pid);
         CHECK_FALSE(completion_event->kill_requested);
-        CHECK(completion_event->terminal_status == BackgroundProcessTerminalStatus::exited);
+        CHECK(completion_event->terminal_status == background_process_terminal_status::exited);
         REQUIRE(completion_event->exit_code.has_value());
         CHECK(*completion_event->exit_code == 0);
         CHECK_FALSE(completion_event->signal_number.has_value());
@@ -308,7 +308,7 @@ namespace {
 
         CHECK(completion_event->process_id == summary.process_id);
         CHECK(completion_event->kill_requested);
-        CHECK(completion_event->terminal_status == BackgroundProcessTerminalStatus::signaled);
+        CHECK(completion_event->terminal_status == background_process_terminal_status::signaled);
         REQUIRE(completion_event->signal_number.has_value());
         CHECK(completion_event->signal_number == kill_snapshot.signal_number);
         REQUIRE(completion_event->exit_code.has_value());

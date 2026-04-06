@@ -19,29 +19,29 @@ namespace orangutan::channel::qq {
         };
 
         struct Event {
-            enum class Kind {
+            enum class kind : base::u8 {
                 text,
                 close,
                 error,
             };
 
-            Kind kind;
+            kind kind;
             std::string payload;
             base::u16 close_code = 1000;
 
             [[nodiscard]]
             static Event text(std::string payload) {
-                return Event{.kind = Kind::text, .payload = std::move(payload)};
+                return Event{.kind = kind::text, .payload = std::move(payload)};
             }
 
             [[nodiscard]]
             static Event close(base::u16 close_code, std::string reason) {
-                return Event{.kind = Kind::close, .payload = std::move(reason), .close_code = close_code};
+                return Event{.kind = kind::close, .payload = std::move(reason), .close_code = close_code};
             }
 
             [[nodiscard]]
             static Event error(std::string message) {
-                return Event{.kind = Kind::error, .payload = std::move(message)};
+                return Event{.kind = kind::error, .payload = std::move(message)};
             }
         };
 

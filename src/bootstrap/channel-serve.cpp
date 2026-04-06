@@ -205,7 +205,7 @@ namespace orangutan::bootstrap {
         }
 
         std::string describe_inbound_event(const InboundMessage &message) {
-            if (message.event_kind == InboundEventKind::message) {
+            if (message.event_kind == inbound_event_kind::message) {
                 return message.content;
             }
 
@@ -215,7 +215,7 @@ namespace orangutan::bootstrap {
 
             const auto &reaction = *message.reaction;
             const auto actor = message.sender_name.empty() ? message.sender : message.sender_name;
-            const auto event_label = message.event_kind == InboundEventKind::reaction_added ? "added" : "removed";
+            const auto event_label = message.event_kind == inbound_event_kind::reaction_added ? "added" : "removed";
             std::string prompt = "[Reaction event]\n";
             utils::format_to(prompt, "{} {} a reaction", actor.empty() ? std::string{"A user"} : actor, event_label);
             if (!reaction.emoji_id.empty()) {

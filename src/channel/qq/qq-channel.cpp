@@ -3,6 +3,7 @@
 #include "channel/qq/qq-message-builder.hpp"
 #include "channel/qq/qq-transport.hpp"
 #include "utils/string.hpp"
+#include "types/base.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -154,14 +155,14 @@ namespace orangutan::channel::qq {
         template <class... Ts>
         Overloaded(Ts...) -> Overloaded<Ts...>;
 
-        enum class QqTargetKind {
+        enum class qq_target_kind : base::u8 {
             c2c,
             group,
             guild,
         };
 
         struct QqSendTarget {
-            QqTargetKind kind;
+            qq_target_kind kind;
             std::string id;
         };
 
@@ -172,13 +173,13 @@ namespace orangutan::channel::qq {
             const auto guild_prefix = qq_jid_prefix(bot_name, "guild");
 
             if (jid.starts_with(c2c_prefix)) {
-                return QqSendTarget{.kind = QqTargetKind::c2c, .id = require_openid(jid, c2c_prefix)};
+                return QqSendTarget{.kind = qq_target_kind::c2c, .id = require_openid(jid, c2c_prefix)};
             }
             if (jid.starts_with(group_prefix)) {
-                return QqSendTarget{.kind = QqTargetKind::group, .id = require_openid(jid, group_prefix)};
+                return QqSendTarget{.kind = qq_target_kind::group, .id = require_openid(jid, group_prefix)};
             }
             if (jid.starts_with(guild_prefix)) {
-                return QqSendTarget{.kind = QqTargetKind::guild, .id = require_openid(jid, guild_prefix)};
+                return QqSendTarget{.kind = qq_target_kind::guild, .id = require_openid(jid, guild_prefix)};
             }
 
             throw std::runtime_error("Unsupported QQ jid: " + std::string(jid));
@@ -187,11 +188,11 @@ namespace orangutan::channel::qq {
         [[nodiscard]]
         std::string message_path(const QqSendTarget &target) {
             switch (target.kind) {
-                case QqTargetKind::c2c:
+                case qq_target_kind::c2c:
                     return "/v2/users/" + target.id + "/messages";
-                case QqTargetKind::group:
+                case qq_target_kind::group:
                     return "/v2/groups/" + target.id + "/messages";
-                case QqTargetKind::guild:
+                case qq_target_kind::guild:
                     return "/channels/" + target.id + "/messages";
             }
 
@@ -201,11 +202,11 @@ namespace orangutan::channel::qq {
         [[nodiscard]]
         std::string media_upload_path(const QqSendTarget &target) {
             switch (target.kind) {
-                case QqTargetKind::c2c:
+                case qq_target_kind::c2c:
                     return "/v2/users/" + target.id + "/files";
-                case QqTargetKind::group:
+                case qq_target_kind::group:
                     return "/v2/groups/" + target.id + "/files";
-                case QqTargetKind::guild:
+                case qq_target_kind::guild:
                     throw std::runtime_error("QQ guild currently does not support msg_type=7 media direct send");
             }
 
@@ -1334,7 +1335,7 @@ namespace orangutan::channel::qq {
         const auto channel_id = data.value("channel_id", std::string{});
         const auto user_id = data.value("user_id", std::string{});
         emit_inbound({
-            .event_kind = event_type == "MESSAGE_REACTION_ADD" ? InboundEventKind::reaction_added : InboundEventKind::reaction_removed,
+            .event_kind = event_type == "MESSAGE_REACTION_ADD" ? inbound_event_kind::reaction_added : inbound_event_kind::reaction_removed,
             .jid = make_qq_jid(bot_name_, "guild", channel_id),
             .sender = user_id,
             .sender_name = user_id,
@@ -1668,7 +1669,7 @@ namespace orangutan::channel::qq {
     void QqChannel::send_typing_now(const std::string &jid, const std::string &message_id) {
         try {
             const auto target = resolve_send_target(bot_name_, jid);
-            if (target.kind != QqTargetKind::c2c) {
+            if (target.kind != qq_target_kind::c2c) {
                 return;
             }
             const nlohmann::json payload = {

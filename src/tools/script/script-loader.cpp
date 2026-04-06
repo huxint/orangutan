@@ -81,7 +81,7 @@ namespace orangutan::tools {
     // ── Script Tool Execution ───────────────────────
 
     static SubprocessResult execute_script(const std::string &command, const std::string &workspace, const std::string &working_dir, int timeout_seconds,
-                                           ToolSandboxMode sandbox_mode) {
+                                           tool_sandbox_mode sandbox_mode) {
         const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
         auto pipeline = run_subprocess_sender({
             .command = sandboxed.command,
@@ -102,7 +102,7 @@ namespace orangutan::tools {
                 std::string command = substitute_params(config.command, input, config.input_schema);
                 const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
                 const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
-                const auto sandbox_mode = ToolSandboxMode::disabled;
+                const auto sandbox_mode = tool_sandbox_mode::disabled;
 
                 spdlog::debug("  [script-tool] {}: {}", config.name, command);
 

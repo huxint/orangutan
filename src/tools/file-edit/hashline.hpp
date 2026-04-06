@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "types/base.hpp"
 
 namespace orangutan::tools {
 
@@ -20,7 +21,7 @@ namespace orangutan::tools {
         std::string actual;
     };
 
-    enum class HashlineEditOp {
+    enum class hashline_edit_op : base::u8 {
         replace,
         insert_after,
         insert_before,
@@ -28,7 +29,7 @@ namespace orangutan::tools {
     };
 
     struct HashlineEdit {
-        HashlineEditOp op = HashlineEditOp::replace;
+        hashline_edit_op op = hashline_edit_op::replace;
         std::string anchor;     // "LINE#HASH" -- optional for insert_after/insert_before
         std::string end_anchor; // optional, for range operations
         std::vector<std::string> content;

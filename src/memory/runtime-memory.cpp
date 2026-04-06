@@ -20,13 +20,13 @@ namespace orangutan::memory {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &source,
+    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &source,
                                  base::f64 importance) {
         store_.remember(key, content, category, type, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
 
-    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, MemoryType type, bool merge, const std::string &source,
+    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, memory_type type, bool merge, const std::string &source,
                                base::f64 importance) {
         store_.update(key, content, category, type, context_.scope, merge, source, importance);
         refresh_mirror_after_write();
@@ -89,7 +89,7 @@ namespace orangutan::memory {
         }
 
         const auto key = make_journal_key(trimmed_summary);
-        store_.remember(key, trimmed_summary, "journal", MemoryType::project, context_.scope, source.empty() ? std::string{"session:journal"} : source, 0.35);
+        store_.remember(key, trimmed_summary, "journal", memory_type::project, context_.scope, source.empty() ? std::string{"session:journal"} : source, 0.35);
         const auto journal_result = MemoryMirror::append_daily_journal(context_, trimmed_summary);
         refresh_mirror_after_write();
         return {

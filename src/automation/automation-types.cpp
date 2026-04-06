@@ -53,7 +53,7 @@ namespace orangutan::automation {
         }
 
         if (const auto it = value.find("mode"); it != value.end() && it->is_string()) {
-            if (const auto parsed = magic_enum::enum_cast<DeliveryMode>(it->get_ref<const std::string &>()); parsed.has_value()) {
+            if (const auto parsed = magic_enum::enum_cast<delivery_mode>(it->get_ref<const std::string &>()); parsed.has_value()) {
                 delivery.mode = *parsed;
             }
         }

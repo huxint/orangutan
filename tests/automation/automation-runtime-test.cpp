@@ -41,7 +41,7 @@ namespace {
         task.agent_key = "default";
         task.name = "daily";
         task.prompt = "check";
-        task.schedule.kind = orangutan::automation::TaskScheduleKind::cron;
+        task.schedule.kind = orangutan::automation::task_schedule_kind::cron;
         task.schedule.value = "0 9 * * *";
 
         const auto now = make_local_time(2026, 3, 21, 9, 0, 30);
@@ -94,7 +94,7 @@ namespace {
         task.agent_key = "default";
         task.name = "repo-check";
         task.prompt = "check";
-        task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
+        task.schedule.kind = orangutan::automation::task_schedule_kind::at;
         task.schedule.value = std::to_string(scheduled_at);
         static_cast<void>(store.upsert_task(task));
 
@@ -156,7 +156,7 @@ namespace {
         task.agent_key = "default";
         task.name = "repo-check";
         task.prompt = "check";
-        task.schedule.kind = orangutan::automation::TaskScheduleKind::at;
+        task.schedule.kind = orangutan::automation::task_schedule_kind::at;
         task.schedule.value = std::to_string(orangutan::automation::to_unix_seconds(orangutan::automation::Clock::now()));
         static_cast<void>(store.upsert_task(task));
 

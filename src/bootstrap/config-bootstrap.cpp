@@ -41,8 +41,8 @@ namespace orangutan::bootstrap {
         for (const auto &dir : hook_dirs) {
             spdlog::info("Hook directory: {}", dir);
         }
-        for (const auto event : {hooks::HookEvent::before_tool_call, hooks::HookEvent::after_tool_call, hooks::HookEvent::message_received, hooks::HookEvent::message_sending,
-                                 hooks::HookEvent::session_start, hooks::HookEvent::session_end}) {
+        for (const auto event : {hooks::hook_event::before_tool_call, hooks::hook_event::after_tool_call, hooks::hook_event::message_received, hooks::hook_event::message_sending,
+                                 hooks::hook_event::session_start, hooks::hook_event::session_end}) {
             spdlog::info("Hook count for '{}': {}", magic_enum::enum_name(event), hook_manager.hook_count(event));
         }
         spdlog::info("Loaded {} hook(s) total", hook_manager.total_hooks());

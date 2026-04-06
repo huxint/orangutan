@@ -547,7 +547,7 @@ namespace orangutan {
 
             CHECK(runtime.skills_prompt.contains("web-chat-runtime-skill"));
             REQUIRE(runtime.hook_manager != nullptr);
-            CHECK(runtime.hook_manager->hook_count(HookEvent::before_tool_call) == 1);
+            CHECK(runtime.hook_manager->hook_count(hook_event::before_tool_call) == 1);
         };
 
         TEST_CASE("completion_resume_after_session_shutdown_falls_back_to_inbox_notes") {
@@ -594,7 +594,7 @@ namespace orangutan {
                 .command = "sleep 1",
                 .working_dir = orangutan::testing::unique_test_root("web-chat-completion").string(),
                 .pid = 1234,
-                .terminal_status = BackgroundProcessTerminalStatus::exited,
+                .terminal_status = background_process_terminal_status::exited,
                 .exit_code = 0,
                 .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
                 .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},

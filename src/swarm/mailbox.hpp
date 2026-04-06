@@ -4,10 +4,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "types/base.hpp"
 
 namespace orangutan::swarm {
 
-    enum class MessageType {
+    enum class message_type : base::u8 {
         message,
         shutdown_request,
         shutdown_response,
@@ -21,7 +22,7 @@ namespace orangutan::swarm {
         std::string text;
         std::int64_t timestamp = 0;
         bool read = false;
-        MessageType type = MessageType::message;
+        message_type type = message_type::message;
     };
 
     class AgentMailbox {
@@ -34,7 +35,7 @@ namespace orangutan::swarm {
         AgentMailbox(AgentMailbox &&) = delete;
         AgentMailbox &operator=(AgentMailbox &&) = delete;
 
-        void send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, MessageType type = MessageType::message);
+        void send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type = message_type::message);
 
         void send_broadcast(const std::string &team_id, const std::string &from, const std::string &text, const std::vector<std::string> &team_members);
 
@@ -55,5 +56,5 @@ namespace orangutan::swarm {
 namespace orangutan {
     using swarm::AgentMailbox;
     using swarm::MailboxMessage;
-    using swarm::MessageType;
+    using swarm::message_type;
 } // namespace orangutan

@@ -255,7 +255,7 @@ namespace {
         auto runtime = build_agent_runtime(input);
 
         REQUIRE(runtime.hook_manager != nullptr);
-        CHECK(runtime.hook_manager->hook_count(HookEvent::before_tool_call) == 2);
+        CHECK(runtime.hook_manager->hook_count(hook_event::before_tool_call) == 2);
         CHECK(runtime.hook_manager->total_hooks() == 2);
     };
 
@@ -275,10 +275,10 @@ namespace {
 
         auto input = harness.make_input();
         input.permission_context = initialize_permission_context(PermissionConfig{
-            .default_mode = PermissionMode::accept_edits,
+            .default_mode = permission_mode::accept_edits,
             .allow = {"read"},
         }, CLIPermissionOptions{
-            .permission_mode = PermissionMode::plan,
+            .mode_override = permission_mode::plan,
             .allowed_tools = {"task(list)"},
         }, harness.workspace_root());
 
@@ -286,20 +286,20 @@ namespace {
         const auto *permission_context = runtime.tool_context.permission_context;
 
         REQUIRE(permission_context != nullptr);
-        CHECK(permission_context->mode == PermissionMode::plan);
+        CHECK(permission_context->mode == permission_mode::plan);
         CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "read" && rule.source == PermissionRuleSource::user_settings;
+            return rule.tool_name == "read" && rule.source == permission_rule_source::user_settings;
         }));
         CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "shell" && rule.source == PermissionRuleSource::project_settings && rule.content.has_value() &&
+            return rule.tool_name == "shell" && rule.source == permission_rule_source::project_settings && rule.content.has_value() &&
                    rule.content->pattern == "git";
         }));
         CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "task" && rule.source == PermissionRuleSource::cli_arg && rule.content.has_value() &&
+            return rule.tool_name == "task" && rule.source == permission_rule_source::cli_arg && rule.content.has_value() &&
                    rule.content->pattern == "list";
         }));
         CHECK(std::ranges::any_of(permission_context->deny_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "edit" && rule.source == PermissionRuleSource::local_settings;
+            return rule.tool_name == "edit" && rule.source == permission_rule_source::local_settings;
         }));
     };
 
@@ -363,7 +363,7 @@ namespace {
             .command = "printf 'done\\n'",
             .working_dir = harness.workspace_root().string(),
             .pid = 1234,
-            .terminal_status = BackgroundProcessTerminalStatus::exited,
+            .terminal_status = background_process_terminal_status::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
             .metadata = {{std::string(tools::background_completion_mode_metadata_key), "resume"}},

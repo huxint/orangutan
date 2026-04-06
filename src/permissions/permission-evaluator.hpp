@@ -16,12 +16,12 @@ namespace orangutan::permissions {
                                            const ToolPermissionChecker &tool_checker = {},
                                            const IsReadOnlyChecker &is_read_only = {});
 
-    PermissionDecision apply_post_processing(PermissionDecision decision, PermissionMode mode);
+    PermissionDecision apply_post_processing(PermissionDecision decision, permission_mode mode);
 
     std::optional<PermissionRule> find_matching_rule(std::string_view tool_name, std::string_view content,
                                                      const std::vector<PermissionRule> &rules);
 
-    std::optional<PermissionDecision> evaluate_mode(PermissionMode mode, const ToolUse &call,
+    std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call,
                                                      bool is_read_only, bool is_file_tool_in_workspace = false);
 
 } // namespace orangutan::permissions

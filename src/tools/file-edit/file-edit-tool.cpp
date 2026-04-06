@@ -1,6 +1,7 @@
 #include "tools/internal.hpp"
 #include "tools/file-edit/hashline.hpp"
 #include "utils/file-io.hpp"
+#include "types/base.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -82,18 +83,18 @@ namespace orangutan::tools {
             constexpr std::string_view separator = "=======";
             constexpr std::string_view replace_marker = ">>>>>>> REPLACE";
 
-            enum class State {
+            enum class state : base::u8 {
                 idle,
                 search,
                 replace,
             };
-            auto state = State::idle;
+            auto state_ = state::idle;
             std::string search_buf;
             std::string replace_buf;
 
             while (std::getline(stream, line)) {
-                switch (state) {
-                    case State::idle:
+                switch (state_) {
+                    case state::idle:
                         if (line.starts_with(file_header)) {
                             auto path = line.substr(file_header.size());
                             while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\r')) {
@@ -113,14 +114,14 @@ namespace orangutan::tools {
                             if (files.empty()) {
                                 throw std::runtime_error("hunk before any *** file header");
                             }
-                            state = State::search;
+                            state_ = state::search;
                             search_buf.clear();
                         }
                         break;
 
-                    case State::search:
+                    case state::search:
                         if (line == separator) {
-                            state = State::replace;
+                            state_ = state::replace;
                             replace_buf.clear();
                         } else {
                             if (!search_buf.empty()) {
@@ -130,12 +131,12 @@ namespace orangutan::tools {
                         }
                         break;
 
-                    case State::replace:
+                    case state::replace:
                         if (line == replace_marker) {
                             files.back().hunks.push_back({.search = std::move(search_buf), .replace = std::move(replace_buf)});
                             search_buf.clear();
                             replace_buf.clear();
-                            state = State::idle;
+                            state_ = state::idle;
                         } else {
                             if (!replace_buf.empty()) {
                                 replace_buf += '\n';
@@ -146,10 +147,10 @@ namespace orangutan::tools {
                 }
             }
 
-            if (state == State::search) {
+            if (state_ == state::search) {
                 throw std::runtime_error("unclosed hunk: missing ======= separator");
             }
-            if (state == State::replace) {
+            if (state_ == state::replace) {
                 throw std::runtime_error("unclosed hunk: missing >>>>>>> REPLACE marker");
             }
 
@@ -276,13 +277,13 @@ namespace orangutan::tools {
 
                 const auto op_str = edit_json.at("op").get<std::string>();
                 if (op_str == "replace") {
-                    edit.op = HashlineEditOp::replace;
+                    edit.op = hashline_edit_op::replace;
                 } else if (op_str == "insert_after") {
-                    edit.op = HashlineEditOp::insert_after;
+                    edit.op = hashline_edit_op::insert_after;
                 } else if (op_str == "insert_before") {
-                    edit.op = HashlineEditOp::insert_before;
+                    edit.op = hashline_edit_op::insert_before;
                 } else if (op_str == "delete") {
-                    edit.op = HashlineEditOp::del;
+                    edit.op = hashline_edit_op::del;
                 } else {
                     throw std::runtime_error("unknown edit op: " + op_str);
                 }

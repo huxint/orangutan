@@ -46,14 +46,14 @@ std::string unescape(std::string_view str) {
 
 RuleContent parse_content(std::string_view raw) {
     if (raw.size() >= 2 && raw.substr(raw.size() - 2) == ":*") {
-        return {.match_type = RuleMatchType::prefix, .pattern = unescape(raw.substr(0, raw.size() - 2))};
+        return {.match_type = rule_match_type::prefix, .pattern = unescape(raw.substr(0, raw.size() - 2))};
     }
 
     if (has_unescaped_wildcard(raw)) {
-        return {.match_type = RuleMatchType::wildcard, .pattern = std::string(raw)};
+        return {.match_type = rule_match_type::wildcard, .pattern = std::string(raw)};
     }
 
-    return {.match_type = RuleMatchType::exact, .pattern = unescape(raw)};
+    return {.match_type = rule_match_type::exact, .pattern = unescape(raw)};
 }
 
 bool icase_equal(std::string_view a, std::string_view b) {
@@ -86,7 +86,7 @@ std::string wildcard_to_regex(std::string_view pattern) {
 
 } // namespace
 
-PermissionRule parse_permission_rule(std::string_view rule_str, PermissionBehavior behavior, PermissionRuleSource source) {
+PermissionRule parse_permission_rule(std::string_view rule_str, permission_behavior behavior, permission_rule_source source) {
     auto paren_pos = find_first_unescaped(rule_str, '(');
 
     if (paren_pos == std::string_view::npos) {
@@ -134,11 +134,11 @@ bool matches_rule(const PermissionRule &rule, std::string_view tool_name, std::s
 
     const auto &rc = *rule.content;
     switch (rc.match_type) {
-    case RuleMatchType::exact:
+    case rule_match_type::exact:
         return rc.pattern == content;
-    case RuleMatchType::prefix:
+    case rule_match_type::prefix:
         return matches_prefix(rc.pattern, content);
-    case RuleMatchType::wildcard:
+    case rule_match_type::wildcard:
         return matches_wildcard(rc.pattern, content);
     }
     return false;

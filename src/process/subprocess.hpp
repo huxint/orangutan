@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "types/base.hpp"
 
 #include <stdexec/execution.hpp>
 
@@ -58,7 +59,7 @@ namespace orangutan::process {
         bool stderr_truncated = false;
     };
 
-    enum class BackgroundProcessTerminalStatus {
+    enum class background_process_terminal_status : base::u8 {
         exited,
         signaled,
         unknown,
@@ -81,7 +82,7 @@ namespace orangutan::process {
         std::string working_dir;
         int pid = -1;
         bool kill_requested = false;
-        BackgroundProcessTerminalStatus terminal_status = BackgroundProcessTerminalStatus::unknown;
+        background_process_terminal_status terminal_status = background_process_terminal_status::unknown;
         std::optional<int> exit_code;
         std::optional<int> signal_number;
         BackgroundProcessOutputMetadata stdout;
@@ -128,7 +129,7 @@ namespace orangutan {
     using process::BackgroundProcessOutputMetadata;
     using process::BackgroundProcessSnapshot;
     using process::BackgroundProcessSummary;
-    using process::BackgroundProcessTerminalStatus;
+    using process::background_process_terminal_status;
     using process::run_subprocess;
     using process::run_subprocess_sender;
     using process::SubprocessConfig;

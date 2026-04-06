@@ -170,7 +170,7 @@ namespace orangutan::automation {
             return false;
         }
 
-        if (task.schedule.kind == TaskScheduleKind::at) {
+        if (task.schedule.kind == task_schedule_kind::at) {
             const auto scheduled = parse_absolute_time(task.schedule.value);
             if (!scheduled.has_value() || *scheduled < startup_time) {
                 return false;

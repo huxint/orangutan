@@ -46,16 +46,16 @@ namespace orangutan::coordinator {
         std::string format_task_notification(const AgentRunRecord &record) {
             std::string status_str;
             switch (record.status) {
-                case AgentRunStatus::succeeded:
+                case agent_run_status::succeeded:
                     status_str = "completed";
                     break;
-                case AgentRunStatus::failed:
+                case agent_run_status::failed:
                     status_str = "failed";
                     break;
-                case AgentRunStatus::terminated:
+                case agent_run_status::terminated:
                     status_str = "terminated";
                     break;
-                case AgentRunStatus::abandoned:
+                case agent_run_status::abandoned:
                     status_str = "abandoned";
                     break;
                 default:
@@ -154,7 +154,7 @@ namespace orangutan::coordinator {
             .agent_name = agent_name,
             .team_id = request.team_id,
             .parent_runtime_key = request.parent_runtime_key,
-            .status = AgentRunStatus::queued,
+            .status = agent_run_status::queued,
             .task_summary = request.task_prompt,
             .started_at = now_millis(),
         };
@@ -181,7 +181,7 @@ namespace orangutan::coordinator {
         int running_count = 0;
         for (const auto &[id, run] : active_runs_) {
             std::lock_guard run_lock(run->mutex);
-            if (run->record.status == AgentRunStatus::running && !run->completed) {
+            if (run->record.status == agent_run_status::running && !run->completed) {
                 ++running_count;
             }
         }
@@ -191,7 +191,7 @@ namespace orangutan::coordinator {
     void CoordinatorManager::launch_run_locked(const std::shared_ptr<ActiveRun> &run) {
         {
             std::lock_guard run_lock(run->mutex);
-            run->record.status = AgentRunStatus::running;
+            run->record.status = agent_run_status::running;
         }
         auto run_ptr = run;
         run->worker_thread = std::jthread([this, run_ptr](std::stop_token token) {
@@ -217,7 +217,7 @@ namespace orangutan::coordinator {
                 }
 
                 std::lock_guard run_lock(it->second->mutex);
-                if (it->second->completed || it->second->record.status != AgentRunStatus::queued) {
+                if (it->second->completed || it->second->record.status != agent_run_status::queued) {
                     continue;
                 }
 
@@ -233,14 +233,14 @@ namespace orangutan::coordinator {
     void CoordinatorManager::run_worker(const std::shared_ptr<ActiveRun> &run, std::stop_token stop_token) {
         {
             std::lock_guard lock(run->mutex);
-            run->record.status = AgentRunStatus::running;
+            run->record.status = agent_run_status::running;
         }
 
         spdlog::info("Agent worker started: id={} key={}", run->record.run_id, run->record.agent_key);
 
         if (stop_token.stop_requested()) {
             std::lock_guard lock(run->mutex);
-            run->record.status = AgentRunStatus::terminated;
+            run->record.status = agent_run_status::terminated;
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
@@ -256,7 +256,7 @@ namespace orangutan::coordinator {
 
         if (!factory) {
             std::lock_guard lock(run->mutex);
-            run->record.status = AgentRunStatus::failed;
+            run->record.status = agent_run_status::failed;
             run->record.error = "No worker runtime factory configured";
             run->record.completed_at = now_millis();
             run->completed = true;
@@ -268,14 +268,14 @@ namespace orangutan::coordinator {
                 auto output = worker->run(run->request.task_prompt, stop_token);
 
                 std::lock_guard lock(run->mutex);
-                run->record.status = stop_token.stop_requested() ? AgentRunStatus::terminated : AgentRunStatus::succeeded;
+                run->record.status = stop_token.stop_requested() ? agent_run_status::terminated : agent_run_status::succeeded;
                 run->record.final_output = std::move(output);
                 run->record.completed_at = now_millis();
                 run->completed = true;
                 run->cv.notify_all();
             } catch (const std::exception &e) {
                 std::lock_guard lock(run->mutex);
-                run->record.status = AgentRunStatus::failed;
+                run->record.status = agent_run_status::failed;
                 run->record.error = e.what();
                 run->record.completed_at = now_millis();
                 run->completed = true;
@@ -353,10 +353,10 @@ namespace orangutan::coordinator {
                 spdlog::warn("stop: unknown run_id={}", run_id);
                 return;
             }
-            if (it->second->record.status == AgentRunStatus::queued) {
+            if (it->second->record.status == agent_run_status::queued) {
                 remove_pending_run_locked(run_id);
                 std::lock_guard run_lock(it->second->mutex);
-                it->second->record.status = AgentRunStatus::terminated;
+                it->second->record.status = agent_run_status::terminated;
                 it->second->record.completed_at = now_millis();
                 it->second->completed = true;
                 it->second->cv.notify_all();
@@ -387,7 +387,7 @@ namespace orangutan::coordinator {
         {
             std::lock_guard lock(run->mutex);
             if (!run->completed) {
-                run->record.status = AgentRunStatus::terminated;
+                run->record.status = agent_run_status::terminated;
                 run->record.completed_at = now_millis();
                 run->completed = true;
                 run->cv.notify_all();
@@ -413,7 +413,7 @@ namespace orangutan::coordinator {
         std::vector<AgentRunRecord> result;
         for (const auto &[id, run] : active_runs_) {
             std::lock_guard run_lock(run->mutex);
-            if (run->record.status == AgentRunStatus::queued || run->record.status == AgentRunStatus::running) {
+            if (run->record.status == agent_run_status::queued || run->record.status == agent_run_status::running) {
                 result.push_back(run->record);
             }
         }
@@ -432,8 +432,8 @@ namespace orangutan::coordinator {
             for (auto &[id, run] : active_runs_) {
                 static_cast<void>(id);
                 std::lock_guard run_lock(run->mutex);
-                if (!run->completed && run->record.status == AgentRunStatus::queued) {
-                    run->record.status = AgentRunStatus::terminated;
+                if (!run->completed && run->record.status == agent_run_status::queued) {
+                    run->record.status = agent_run_status::terminated;
                     run->record.completed_at = now_millis();
                     run->completed = true;
                     run->cv.notify_all();
@@ -454,7 +454,7 @@ namespace orangutan::coordinator {
                 return run->completed;
             });
             if (!run->completed) {
-                run->record.status = AgentRunStatus::abandoned;
+                run->record.status = agent_run_status::abandoned;
                 run->record.completed_at = now_millis();
                 run->completed = true;
             }

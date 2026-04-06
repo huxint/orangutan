@@ -270,12 +270,12 @@ namespace {
         })json"));
 
         const auto cfg = Config::load_from(path);
-        CHECK(cfg.permissions_config.default_mode == PermissionMode::accept_edits);
+        CHECK(cfg.permissions_config.default_mode == permission_mode::accept_edits);
         CHECK(cfg.permissions_config.allow == std::vector<std::string>{"read", "task(list)"});
         CHECK(cfg.permissions_config.deny == std::vector<std::string>{"shell(rm:*)"});
         CHECK(cfg.permissions_config.ask == std::vector<std::string>{"edit", "write"});
         REQUIRE(cfg.agents.contains("default"));
-        CHECK(cfg.agents.at("default").permissions_config.default_mode == PermissionMode::plan);
+        CHECK(cfg.agents.at("default").permissions_config.default_mode == permission_mode::plan);
         CHECK(cfg.agents.at("default").permissions_config.allow == std::vector<std::string>{"read"});
         CHECK(cfg.agents.at("default").permissions_config.ask == std::vector<std::string>{"shell"});
     };

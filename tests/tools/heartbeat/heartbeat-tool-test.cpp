@@ -28,7 +28,7 @@ namespace {
         heartbeat.prompt = "before";
         heartbeat.every_seconds = 3600;
         heartbeat.jitter_seconds = 300;
-        heartbeat.delivery.mode = orangutan::automation::DeliveryMode::notify;
+        heartbeat.delivery.mode = orangutan::automation::delivery_mode::notify;
         heartbeat.delivery.targets = {"qqbot:primary:c2c:123456"};
         heartbeat.active_hours = {{.start_minute = 9 * 60, .end_minute = 17 * 60}};
         heartbeat.next_due_at = 1'763'000'000;
@@ -55,7 +55,7 @@ namespace {
         INFO("expected heartbeat update to persist");
         REQUIRE(updated.has_value());
         CHECK(updated->prompt == "after");
-        CHECK(updated->delivery.mode == orangutan::automation::DeliveryMode::notify);
+        CHECK(updated->delivery.mode == orangutan::automation::delivery_mode::notify);
         CHECK(updated->delivery.targets.size() == 1UL);
         CHECK(updated->delivery.targets.front() == "qqbot:primary:c2c:123456");
         CHECK(updated->active_hours.size() == 1UL);

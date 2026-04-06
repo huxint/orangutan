@@ -612,7 +612,7 @@ namespace {
         BootstrapHarness harness;
         Config cfg;
         cfg.permissions_config = PermissionConfig{
-            .default_mode = PermissionMode::accept_edits,
+            .default_mode = permission_mode::accept_edits,
             .allow = {"read"},
         };
         cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
@@ -623,17 +623,17 @@ namespace {
                                       });
 
         const auto runtime_configs =
-            bootstrap::detail::build_agent_runtime_configs(cfg, "", CLIPermissionOptions{.permission_mode = PermissionMode::plan, .allowed_tools = {"task(list)"}});
+            bootstrap::detail::build_agent_runtime_configs(cfg, "", CLIPermissionOptions{.mode_override = permission_mode::plan, .allowed_tools = {"task(list)"}});
         REQUIRE(runtime_configs.has_value());
         const auto it = runtime_configs->find("default");
         REQUIRE(it != runtime_configs->end());
 
-        CHECK(it->second.permission_context.mode == PermissionMode::plan);
+        CHECK(it->second.permission_context.mode == permission_mode::plan);
         CHECK(std::ranges::any_of(it->second.permission_context.allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "read" && rule.source == PermissionRuleSource::user_settings;
+            return rule.tool_name == "read" && rule.source == permission_rule_source::user_settings;
         }));
         CHECK(std::ranges::any_of(it->second.permission_context.allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "task" && rule.source == PermissionRuleSource::cli_arg && rule.content.has_value() && rule.content->pattern == "list";
+            return rule.tool_name == "task" && rule.source == permission_rule_source::cli_arg && rule.content.has_value() && rule.content->pattern == "list";
         }));
     };
 

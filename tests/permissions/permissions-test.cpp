@@ -15,34 +15,34 @@ using namespace orangutan::permissions;
 // ── Rule Parsing ─────────────────────────────────────────────────────────
 
 TEST_CASE("ParseWholeToolRule") {
-    auto rule = parse_permission_rule("Read", PermissionBehavior::allow, PermissionRuleSource::user_settings);
+    auto rule = parse_permission_rule("Read", permission_behavior::allow, permission_rule_source::user_settings);
     REQUIRE(rule.tool_name == "Read");
-    REQUIRE(rule.behavior == PermissionBehavior::allow);
-    REQUIRE(rule.source == PermissionRuleSource::user_settings);
+    REQUIRE(rule.behavior == permission_behavior::allow);
+    REQUIRE(rule.source == permission_rule_source::user_settings);
     REQUIRE(!rule.content.has_value());
 }
 
 TEST_CASE("ParseExactContentRule") {
-    auto rule = parse_permission_rule("Shell(npm install)", PermissionBehavior::deny, PermissionRuleSource::cli_arg);
+    auto rule = parse_permission_rule("Shell(npm install)", permission_behavior::deny, permission_rule_source::cli_arg);
     REQUIRE(rule.tool_name == "Shell");
     REQUIRE(rule.content.has_value());
-    REQUIRE(rule.content->match_type == RuleMatchType::exact);
+    REQUIRE(rule.content->match_type == rule_match_type::exact);
     REQUIRE(rule.content->pattern == "npm install");
 }
 
 TEST_CASE("ParsePrefixRule") {
-    auto rule = parse_permission_rule("Shell(npm:*)", PermissionBehavior::allow, PermissionRuleSource::session);
+    auto rule = parse_permission_rule("Shell(npm:*)", permission_behavior::allow, permission_rule_source::session);
     REQUIRE(rule.tool_name == "Shell");
     REQUIRE(rule.content.has_value());
-    REQUIRE(rule.content->match_type == RuleMatchType::prefix);
+    REQUIRE(rule.content->match_type == rule_match_type::prefix);
     REQUIRE(rule.content->pattern == "npm");
 }
 
 TEST_CASE("ParseWildcardRule") {
-    auto rule = parse_permission_rule("Shell(git * --force)", PermissionBehavior::deny, PermissionRuleSource::project_settings);
+    auto rule = parse_permission_rule("Shell(git * --force)", permission_behavior::deny, permission_rule_source::project_settings);
     REQUIRE(rule.tool_name == "Shell");
     REQUIRE(rule.content.has_value());
-    REQUIRE(rule.content->match_type == RuleMatchType::wildcard);
+    REQUIRE(rule.content->match_type == rule_match_type::wildcard);
     REQUIRE(rule.content->pattern == "git * --force");
 }
 
@@ -75,20 +75,20 @@ TEST_CASE("WildcardMatchFails") {
 // ── Rule Matching ────────────────────────────────────────────────────────
 
 TEST_CASE("WholeToolRuleMatchesAnyContent") {
-    auto rule = parse_permission_rule("shell", PermissionBehavior::allow, PermissionRuleSource::user_settings);
+    auto rule = parse_permission_rule("shell", permission_behavior::allow, permission_rule_source::user_settings);
     REQUIRE(matches_rule(rule, "shell", "ls -la"));
     REQUIRE(matches_rule(rule, "shell", "rm -rf /"));
     REQUIRE(matches_rule(rule, "shell"));
 }
 
 TEST_CASE("RuleMatchIsCaseInsensitive") {
-    auto rule = parse_permission_rule("Shell", PermissionBehavior::allow, PermissionRuleSource::user_settings);
+    auto rule = parse_permission_rule("Shell", permission_behavior::allow, permission_rule_source::user_settings);
     REQUIRE(matches_rule(rule, "shell", "ls"));
     REQUIRE(matches_rule(rule, "SHELL", "ls"));
 }
 
 TEST_CASE("ContentRuleRequiresContentMatch") {
-    auto rule = parse_permission_rule("Shell(npm:*)", PermissionBehavior::allow, PermissionRuleSource::user_settings);
+    auto rule = parse_permission_rule("Shell(npm:*)", permission_behavior::allow, permission_rule_source::user_settings);
     REQUIRE(matches_rule(rule, "shell", "npm install"));
     REQUIRE_FALSE(matches_rule(rule, "shell", "pip install"));
 }
@@ -115,7 +115,7 @@ TEST_CASE("SafetyCheckBlocksWriteToProtectedPath") {
     ToolUse call{"id1", "file_edit", {{"file_path", ".git/config"}}};
     auto decision = check_safety(call);
     REQUIRE(decision.has_value());
-    REQUIRE(decision->behavior == PermissionBehavior::ask);
+    REQUIRE(decision->behavior == permission_behavior::ask);
 }
 
 TEST_CASE("SafetyCheckAllowsReadOfProtectedPath") {
@@ -127,85 +127,85 @@ TEST_CASE("SafetyCheckAllowsReadOfProtectedPath") {
 // ── Permission Pipeline ──────────────────────────────────────────────────
 
 TEST_CASE("DenyRuleBlocksTool") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
-    ctx.deny_rules.push_back(parse_permission_rule("shell", PermissionBehavior::deny, PermissionRuleSource::user_settings));
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    ctx.deny_rules.push_back(parse_permission_rule("shell", permission_behavior::deny, permission_rule_source::user_settings));
 
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
 TEST_CASE("AllowRulePermitsTool") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
-    ctx.allow_rules.push_back(parse_permission_rule("file_read", PermissionBehavior::allow, PermissionRuleSource::user_settings));
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    ctx.allow_rules.push_back(parse_permission_rule("file_read", permission_behavior::allow, permission_rule_source::user_settings));
 
     ToolUse call{"id1", "file_read", {{"file_path", "src/main.cpp"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::allow);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("DenyRuleBeatsAllowRule") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
-    ctx.allow_rules.push_back(parse_permission_rule("shell", PermissionBehavior::allow, PermissionRuleSource::user_settings));
-    ctx.deny_rules.push_back(parse_permission_rule("shell(rm:*)", PermissionBehavior::deny, PermissionRuleSource::user_settings));
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    ctx.allow_rules.push_back(parse_permission_rule("shell", permission_behavior::allow, permission_rule_source::user_settings));
+    ctx.deny_rules.push_back(parse_permission_rule("shell(rm:*)", permission_behavior::deny, permission_rule_source::user_settings));
 
     ToolUse call{"id1", "shell", {{"command", "rm -rf /tmp"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
 TEST_CASE("BypassModeAutoAllows") {
-    ToolPermissionContext ctx{.mode = PermissionMode::bypass_permissions};
+    ToolPermissionContext ctx{.mode = permission_mode::bypass_permissions};
 
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::allow);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("BypassModeStillRespectsDenyRules") {
-    ToolPermissionContext ctx{.mode = PermissionMode::bypass_permissions};
-    ctx.deny_rules.push_back(parse_permission_rule("shell(rm:*)", PermissionBehavior::deny, PermissionRuleSource::user_settings));
+    ToolPermissionContext ctx{.mode = permission_mode::bypass_permissions};
+    ctx.deny_rules.push_back(parse_permission_rule("shell(rm:*)", permission_behavior::deny, permission_rule_source::user_settings));
 
     ToolUse call{"id1", "shell", {{"command", "rm -rf /"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
 TEST_CASE("PlanModeAllowsReadOnly") {
-    ToolPermissionContext ctx{.mode = PermissionMode::plan};
+    ToolPermissionContext ctx{.mode = permission_mode::plan};
 
     ToolUse call{"id1", "file_read", {{"file_path", "test.txt"}}};
     auto decision = evaluate_permission(call, ctx, {}, [] { return true; });
-    REQUIRE(decision.behavior == PermissionBehavior::allow);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("PlanModeDeniesWrite") {
-    ToolPermissionContext ctx{.mode = PermissionMode::plan};
+    ToolPermissionContext ctx{.mode = permission_mode::plan};
 
     ToolUse call{"id1", "shell", {{"command", "echo test"}}};
     auto decision = evaluate_permission(call, ctx, {}, [] { return false; });
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
 TEST_CASE("DontAskModeConvertsAskToDeny") {
-    ToolPermissionContext ctx{.mode = PermissionMode::dont_ask};
+    ToolPermissionContext ctx{.mode = permission_mode::dont_ask};
 
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
     auto decision = evaluate_permission(call, ctx);
     decision = apply_post_processing(decision, ctx.mode);
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
 TEST_CASE("DefaultModeAsksForUnknownTool") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
 
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == PermissionBehavior::ask);
+    REQUIRE(decision.behavior == permission_behavior::ask);
 }
 
 TEST_CASE("AcceptEditsAllowsWorkspaceFileToolsWhenCheckerPasses") {
-    ToolPermissionContext ctx{.mode = PermissionMode::accept_edits};
+    ToolPermissionContext ctx{.mode = permission_mode::accept_edits};
     bool checker_called = false;
 
     ToolUse call{"id1", "write", {{"path", "notes.txt"}}};
@@ -220,11 +220,11 @@ TEST_CASE("AcceptEditsAllowsWorkspaceFileToolsWhenCheckerPasses") {
         });
 
     REQUIRE(checker_called);
-    REQUIRE(decision.behavior == PermissionBehavior::allow);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
-    ToolPermissionContext ctx{.mode = PermissionMode::accept_edits};
+    ToolPermissionContext ctx{.mode = permission_mode::accept_edits};
 
     ToolUse call{"id1", "write", {{"path", "/outside/workspace.txt"}}};
     auto decision = evaluate_permission(
@@ -236,7 +236,7 @@ TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
             return false;
         });
 
-    REQUIRE(decision.behavior == PermissionBehavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::deny);
     REQUIRE(decision.message.has_value());
     CHECK(decision.message->contains("workspace sandbox"));
 }
@@ -245,53 +245,53 @@ TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
 
 TEST_CASE("InitializeContextFromConfig") {
     PermissionConfig config{
-        .default_mode = PermissionMode::accept_edits,
+        .default_mode = permission_mode::accept_edits,
         .allow = {"file_read", "grep"},
         .deny = {"shell(rm:*)"},
     };
 
     auto ctx = initialize_permission_context(config);
-    REQUIRE(ctx.mode == PermissionMode::accept_edits);
+    REQUIRE(ctx.mode == permission_mode::accept_edits);
     REQUIRE(ctx.allow_rules.size() == 2);
     REQUIRE(ctx.deny_rules.size() == 1);
 }
 
 TEST_CASE("CLIOverridesConfigMode") {
-    PermissionConfig config{.default_mode = PermissionMode::default_mode};
-    CLIPermissionOptions cli{.permission_mode = PermissionMode::bypass_permissions};
+    PermissionConfig config{.default_mode = permission_mode::default_mode};
+    CLIPermissionOptions cli{.mode_override = permission_mode::bypass_permissions};
 
     auto ctx = initialize_permission_context(config, cli);
-    REQUIRE(ctx.mode == PermissionMode::bypass_permissions);
+    REQUIRE(ctx.mode == permission_mode::bypass_permissions);
 }
 
 TEST_CASE("DangerouslySkipOverridesAll") {
-    PermissionConfig config{.default_mode = PermissionMode::default_mode};
+    PermissionConfig config{.default_mode = permission_mode::default_mode};
     CLIPermissionOptions cli{
-        .permission_mode = PermissionMode::accept_edits,
+        .mode_override = permission_mode::accept_edits,
         .dangerously_skip_permissions = true,
     };
 
     auto ctx = initialize_permission_context(config, cli);
-    REQUIRE(ctx.mode == PermissionMode::bypass_permissions);
+    REQUIRE(ctx.mode == permission_mode::bypass_permissions);
 }
 
 TEST_CASE("ImmutableContextUpdate") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
-    auto updated = change_mode(ctx, PermissionMode::accept_edits);
-    REQUIRE(ctx.mode == PermissionMode::default_mode);
-    REQUIRE(updated.mode == PermissionMode::accept_edits);
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    auto updated = change_mode(ctx, permission_mode::accept_edits);
+    REQUIRE(ctx.mode == permission_mode::default_mode);
+    REQUIRE(updated.mode == permission_mode::accept_edits);
 }
 
 TEST_CASE("AddRuleCreatesNewContext") {
-    ToolPermissionContext ctx{.mode = PermissionMode::default_mode};
-    auto rule = parse_permission_rule("shell", PermissionBehavior::allow, PermissionRuleSource::session);
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    auto rule = parse_permission_rule("shell", permission_behavior::allow, permission_rule_source::session);
     auto updated = add_rule(ctx, rule);
     REQUIRE(ctx.allow_rules.empty());
     REQUIRE(updated.allow_rules.size() == 1);
 }
 
 TEST_CASE("LoadRulesFromNonexistentFile") {
-    auto rules = load_rules_from_file("/nonexistent/path.json", PermissionRuleSource::project_settings);
+    auto rules = load_rules_from_file("/nonexistent/path.json", permission_rule_source::project_settings);
     REQUIRE(rules.empty());
 }
 
@@ -305,7 +305,7 @@ TEST_CASE("LoadRulesFromValidFile") {
         out << R"json({"permissions": {"allow": ["file_read"], "deny": ["shell(rm:*)"], "ask": ["shell"]}})json";
     }
 
-    auto rules = load_rules_from_file(settings_file, PermissionRuleSource::project_settings);
+    auto rules = load_rules_from_file(settings_file, permission_rule_source::project_settings);
     REQUIRE(rules.size() == 3);
 
     std::filesystem::remove_all(temp_dir);
@@ -316,20 +316,20 @@ TEST_CASE("PersistAndLoadRule") {
     std::filesystem::create_directories(temp_dir);
     auto settings_file = temp_dir / "persist_test.json";
 
-    auto rule = parse_permission_rule("shell(git:*)", PermissionBehavior::allow, PermissionRuleSource::user_settings);
+    auto rule = parse_permission_rule("shell(git:*)", permission_behavior::allow, permission_rule_source::user_settings);
     persist_rule(rule, settings_file);
 
-    auto loaded = load_rules_from_file(settings_file, PermissionRuleSource::user_settings);
+    auto loaded = load_rules_from_file(settings_file, permission_rule_source::user_settings);
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].tool_name == "shell");
-    REQUIRE(loaded[0].behavior == PermissionBehavior::allow);
+    REQUIRE(loaded[0].behavior == permission_behavior::allow);
 
     std::filesystem::remove_all(temp_dir);
 }
 
 TEST_CASE("PermissionDecisionFormatsRuleReasonForDisplay") {
     const auto decision =
-        PermissionDecision::ask_by_rule(PermissionRuleSource::project_settings, "shell(git push *)", "Shell command approval required.");
+        PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required.");
 
     const auto lines = permission_decision_detail_lines(decision);
     REQUIRE(lines.size() >= 3);

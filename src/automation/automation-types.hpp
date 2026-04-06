@@ -13,28 +13,28 @@ namespace orangutan::automation {
     using Clock = std::chrono::system_clock;
     using TimePoint = Clock::time_point;
 
-    enum class Kind {
+    enum class kind : base::u8 {
         task,
         heartbeat,
     };
 
-    enum class DeliveryMode {
+    enum class delivery_mode : base::u8 {
         silent,
         notify,
     };
 
-    enum class TaskScheduleKind {
+    enum class task_schedule_kind : base::u8 {
         at,
         cron,
     };
 
     struct DeliveryPolicy {
-        DeliveryMode mode = DeliveryMode::silent;
+        delivery_mode mode = delivery_mode::silent;
         std::vector<std::string> targets;
     };
 
     struct TaskSchedule {
-        TaskScheduleKind kind = TaskScheduleKind::cron;
+        task_schedule_kind kind = task_schedule_kind::cron;
         std::string value;
     };
 
@@ -75,7 +75,7 @@ namespace orangutan::automation {
 
     struct RunRecord {
         std::string id;
-        Kind kind = Kind::task;
+        automation::kind kind = automation::kind::task;
         std::string automation_id;
         std::string agent_key;
         std::string automation_name;
@@ -100,7 +100,7 @@ namespace orangutan::automation {
     };
 
     struct Trigger {
-        Kind kind = Kind::task;
+        automation::kind kind = automation::kind::task;
         std::string automation_id;
         std::string agent_key;
         std::string name;

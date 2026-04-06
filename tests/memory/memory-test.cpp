@@ -135,8 +135,8 @@ namespace {
     TEST_CASE("search_excludes_memories_without_any_query_match") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("project.current", "orangutan memory refactor", "project", MemoryType::user, {}, "manual", 0.9);
-        store.remember("misc.note", "buy groceries later", "general", MemoryType::user, {}, "manual", 1.0);
+        store.remember("project.current", "orangutan memory refactor", "project", memory_type::user, {}, "manual", 0.9);
+        store.remember("misc.note", "buy groceries later", "general", memory_type::user, {}, "manual", 1.0);
 
         const auto results = store.search("quantum banana");
 
@@ -178,7 +178,7 @@ namespace {
     TEST_CASE("update_preserves_existing_category_and_source_when_omitted") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("profile.name", "Alice", "profile", MemoryType::user, {}, "auto:session", 0.9);
+        store.remember("profile.name", "Alice", "profile", memory_type::user, {}, "auto:session", 0.9);
 
         store.update("profile.name", "Alice Example");
 
@@ -209,7 +209,7 @@ namespace {
     TEST_CASE("stats_count_manual_entries") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("user_name", "Alice", "profile", MemoryType::user, {}, "manual", 0.9);
+        store.remember("user_name", "Alice", "profile", memory_type::user, {}, "manual", 0.9);
         store.remember("project_context", "orangutan", "project");
 
         const auto stats = store.stats();
@@ -221,8 +221,8 @@ namespace {
     TEST_CASE("scoped_memories_do_not_leak_across_identities") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("preferred_name", "Alice", "profile", MemoryType::user, "jid:alice");
-        store.remember("preferred_name", "Bob", "profile", MemoryType::user, "jid:bob");
+        store.remember("preferred_name", "Alice", "profile", memory_type::user, "jid:alice");
+        store.remember("preferred_name", "Bob", "profile", memory_type::user, "jid:bob");
 
         const auto alice = store.recall("preferred_name", "jid:alice");
         const auto bob = store.recall("preferred_name", "jid:bob");
@@ -361,8 +361,8 @@ namespace {
     TEST_CASE("stats_expose_journal_entries_separately") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
-        store.remember("project.current", "orangutan memory refactor", "project", MemoryType::project, {}, "session:distilled", 0.9);
-        store.remember("journal.1", "Reviewed recall ranking and mirror design", "journal", MemoryType::project, {}, "session:journal", 0.4);
+        store.remember("project.current", "orangutan memory refactor", "project", memory_type::project, {}, "session:distilled", 0.9);
+        store.remember("journal.1", "Reviewed recall ranking and mirror design", "journal", memory_type::project, {}, "session:journal", 0.4);
 
         const auto stats = store.stats();
         CHECK(stats.total == 2);
@@ -380,7 +380,7 @@ namespace {
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
 
-        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", memory_type::project, "session:distilled", 0.9);
 
         const auto snapshot = workspace / "MEMORY.md";
         REQUIRE(std::filesystem::exists(snapshot));
@@ -403,7 +403,7 @@ namespace {
                                          .mirror = {.enabled = false, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
 
-        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", memory_type::project, "session:distilled", 0.9);
         CHECK_FALSE(std::filesystem::exists(workspace / "MEMORY.md"));
 
         std::filesystem::remove_all(workspace);
@@ -425,7 +425,7 @@ namespace {
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
-        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", memory_type::project, "session:distilled", 0.9);
 
         const auto refresh = runtime.refresh_mirror();
         CHECK(refresh.skipped);
@@ -455,7 +455,7 @@ namespace {
                                          .workspace = workspace.string(),
                                          .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                      });
-        runtime.remember("project.current", "orangutan memory enhancements", "project", MemoryType::project, "session:distilled", 0.9);
+        runtime.remember("project.current", "orangutan memory enhancements", "project", memory_type::project, "session:distilled", 0.9);
 
         const auto refresh = runtime.refresh_mirror();
         CHECK(refresh.skipped);
@@ -520,8 +520,8 @@ namespace {
                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                   });
 
-        alpha.remember("project.current", "alpha memory", "project", MemoryType::project, "session:distilled", 0.9);
-        beta.remember("project.current", "beta memory", "project", MemoryType::project, "session:distilled", 0.9);
+        alpha.remember("project.current", "alpha memory", "project", memory_type::project, "session:distilled", 0.9);
+        beta.remember("project.current", "beta memory", "project", memory_type::project, "session:distilled", 0.9);
 
         const auto alpha_refresh = alpha.refresh_mirror();
         CHECK(alpha_refresh.refreshed);

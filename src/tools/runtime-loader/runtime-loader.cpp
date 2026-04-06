@@ -20,7 +20,7 @@ namespace orangutan::tools {
                         return false;
                     }
                 }
-                if (ctx.mode == PermissionMode::plan && !tool.read_only) {
+                if (ctx.mode == permission_mode::plan && !tool.read_only) {
                     return false;
                 }
                 return true;
@@ -44,11 +44,11 @@ namespace orangutan::tools {
                 decision = apply_post_processing(decision, ctx.mode);
 
                 switch (decision.behavior) {
-                case PermissionBehavior::allow:
+                case permission_behavior::allow:
                     return std::nullopt;
-                case PermissionBehavior::deny:
+                case permission_behavior::deny:
                     return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
-                case PermissionBehavior::ask: {
+                case permission_behavior::ask: {
                     const auto &callback = (tool_context && tool_context->approval_callback) ? tool_context->approval_callback : ApprovalCallback{};
                     if (!callback) {
                         return ToolResult{call.id, "Requires approval but interactive approval unavailable", true};

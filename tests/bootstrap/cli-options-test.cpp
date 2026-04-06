@@ -31,8 +31,8 @@ namespace {
         app.parse(static_cast<int>(argv.size()), argv.data());
 
         const auto cli_permissions = build_cli_permission_options(options);
-        REQUIRE(cli_permissions.permission_mode.has_value());
-        CHECK(*cli_permissions.permission_mode == PermissionMode::accept_edits);
+        REQUIRE(cli_permissions.mode_override.has_value());
+        CHECK(*cli_permissions.mode_override == permission_mode::accept_edits);
         CHECK(cli_permissions.dangerously_skip_permissions);
         CHECK(cli_permissions.allowed_tools == std::vector<std::string>{"read", "shell(git:*)", "task(list)"});
         CHECK(cli_permissions.disallowed_tools == std::vector<std::string>{"write", "edit"});
@@ -43,13 +43,13 @@ namespace {
         options.permission_mode_str = "definitely-not-a-mode";
 
         const auto cli_permissions = build_cli_permission_options(options);
-        CHECK_FALSE(cli_permissions.permission_mode.has_value());
+        CHECK_FALSE(cli_permissions.mode_override.has_value());
     };
 
     TEST_CASE("cli_permission_prompt_includes_decision_reason_details") {
         const auto prompt = format_cli_permission_prompt(
             ToolUse("approval-shell", "shell", nlohmann::json{{"command", "git push origin main"}}),
-            PermissionDecision::ask_by_rule(PermissionRuleSource::project_settings, "shell(git push *)", "Shell command approval required."));
+            PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required."));
 
         CHECK(prompt.contains("Shell command approval required."));
         CHECK(prompt.contains("Tool: shell"));

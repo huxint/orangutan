@@ -75,10 +75,10 @@ namespace {
         HookManager manager;
         manager.load_from_directories({fixtures.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 4UL);
-        CHECK(manager.hook_count(HookEvent::after_tool_call) == 2UL);
-        CHECK(manager.hook_count(HookEvent::session_start) == 1UL);
-        CHECK(manager.hook_count(HookEvent::session_end) == 1UL);
+        CHECK(manager.hook_count(hook_event::before_tool_call) == 4UL);
+        CHECK(manager.hook_count(hook_event::after_tool_call) == 2UL);
+        CHECK(manager.hook_count(hook_event::session_start) == 1UL);
+        CHECK(manager.hook_count(hook_event::session_end) == 1UL);
         CHECK(manager.total_hooks() >= 8ul);
     };
 
@@ -107,7 +107,7 @@ namespace {
         HookManager manager;
         manager.load_from_directories({temp_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 0UL);
+        CHECK(manager.hook_count(hook_event::before_tool_call) == 0UL);
     };
 
     TEST_CASE("ignores_unknown_event_directories") {
@@ -128,7 +128,7 @@ namespace {
         manager.load_from_directories({temp_dir.string()});
 
         const auto ctx = build_before_tool_call_context("shell", {{"command", "ls"}});
-        const auto result = manager.dispatch(HookEvent::before_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::before_tool_call, ctx);
 
         CHECK(result.allowed);
     };
@@ -141,7 +141,7 @@ namespace {
         manager.load_from_directories({temp_dir.string()});
 
         const auto ctx = build_before_tool_call_context("shell", {{"command", "rm -rf /"}});
-        const auto result = manager.dispatch(HookEvent::before_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::before_tool_call, ctx);
 
         CHECK_FALSE(result.allowed);
         CHECK(result.blocked_by == "01-block.sh");
@@ -156,7 +156,7 @@ namespace {
         manager.load_from_directories({fixtures.string()});
 
         const auto ctx = build_after_tool_call_context("shell", {{"command", "ls"}}, "output", false);
-        const auto result = manager.dispatch(HookEvent::after_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::after_tool_call, ctx);
 
         CHECK(result.allowed);
     };
@@ -164,8 +164,8 @@ namespace {
     TEST_CASE("missing_event_hooks_return_allowed") {
         HookManager manager;
 
-        const auto ctx = build_message_context(HookEvent::message_received, "user", "hello");
-        const auto result = manager.dispatch(HookEvent::message_received, ctx);
+        const auto ctx = build_message_context(hook_event::message_received, "user", "hello");
+        const auto result = manager.dispatch(hook_event::message_received, ctx);
 
         CHECK(result.allowed);
     };
@@ -180,10 +180,10 @@ namespace {
         HookManager manager;
         manager.load_from_directories({global_dir.string(), workspace_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::before_tool_call) == 1UL);
+        CHECK(manager.hook_count(hook_event::before_tool_call) == 1UL);
 
         const auto ctx = build_before_tool_call_context("shell", {{"command", "ls"}});
-        const auto result = manager.dispatch(HookEvent::before_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::before_tool_call, ctx);
 
         CHECK(result.allowed);
     };
@@ -196,7 +196,7 @@ namespace {
         manager.load_from_directories({temp_dir.string()});
 
         const auto ctx = build_before_tool_call_context("shell", {{"command", "ls"}});
-        const auto result = manager.dispatch(HookEvent::before_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::before_tool_call, ctx);
 
         CHECK_FALSE(result.allowed);
         CHECK(result.blocked_by == "01 hook.sh");
@@ -217,10 +217,10 @@ namespace {
         HookManager manager;
         manager.load_from_directories({global_dir.string(), workspace_dir.string()});
 
-        CHECK(manager.hook_count(HookEvent::after_tool_call) == 3UL);
+        CHECK(manager.hook_count(hook_event::after_tool_call) == 3UL);
 
         const auto ctx = build_after_tool_call_context("shell", {{"command", "ls"}}, "ok", false);
-        const auto result = manager.dispatch(HookEvent::after_tool_call, ctx);
+        const auto result = manager.dispatch(hook_event::after_tool_call, ctx);
 
         CHECK(result.allowed);
         CHECK(read_file(log_path) == "global\nworkspace\nnew-shared\n");
@@ -247,7 +247,7 @@ namespace {
     };
 
     TEST_CASE("build_message_context") {
-        const auto ctx = build_message_context(HookEvent::message_received, "user", "hello world");
+        const auto ctx = build_message_context(hook_event::message_received, "user", "hello world");
 
         CHECK(ctx["event"] == "message_received");
         CHECK(ctx["role"] == "user");
@@ -256,7 +256,7 @@ namespace {
     };
 
     TEST_CASE("build_session_context_start") {
-        const auto ctx = build_session_context(HookEvent::session_start, "sess-123");
+        const auto ctx = build_session_context(hook_event::session_start, "sess-123");
 
         CHECK(ctx["event"] == "session_start");
         CHECK(ctx["session_id"] == "sess-123");
@@ -264,7 +264,7 @@ namespace {
     };
 
     TEST_CASE("build_session_context_end") {
-        const auto ctx = build_session_context(HookEvent::session_end, "sess-123", 42);
+        const auto ctx = build_session_context(hook_event::session_end, "sess-123", 42);
 
         CHECK(ctx["event"] == "session_end");
         CHECK(ctx["session_id"] == "sess-123");
@@ -272,9 +272,9 @@ namespace {
     };
 
     TEST_CASE("event_names_match_enum_tokens_in_public_contexts") {
-        CHECK(build_before_tool_call_context("shell", {{"command", "ls"}})["event"] == std::string{magic_enum::enum_name(HookEvent::before_tool_call)});
-        CHECK(build_message_context(HookEvent::message_received, "user", "hello world")["event"] == std::string{magic_enum::enum_name(HookEvent::message_received)});
-        CHECK(build_session_context(HookEvent::session_end, "sess-123", 42)["event"] == std::string{magic_enum::enum_name(HookEvent::session_end)});
+        CHECK(build_before_tool_call_context("shell", {{"command", "ls"}})["event"] == std::string{magic_enum::enum_name(hook_event::before_tool_call)});
+        CHECK(build_message_context(hook_event::message_received, "user", "hello world")["event"] == std::string{magic_enum::enum_name(hook_event::message_received)});
+        CHECK(build_session_context(hook_event::session_end, "sess-123", 42)["event"] == std::string{magic_enum::enum_name(hook_event::session_end)});
     };
 
 } // namespace

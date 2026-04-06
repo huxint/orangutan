@@ -112,14 +112,14 @@ namespace orangutan::tools {
 
     } // namespace
 
-    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, ToolSandboxMode sandbox_mode) {
+    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, tool_sandbox_mode sandbox_mode) {
         switch (sandbox_mode) {
-            case ToolSandboxMode::disabled:
+            case tool_sandbox_mode::disabled:
                 return {
                     .command = command,
                     .working_dir = working_dir,
                 };
-            case ToolSandboxMode::workspace_write:
+            case tool_sandbox_mode::workspace_write:
                 if (workspace_root.empty()) {
                     throw std::runtime_error("workspace-write sandbox mode requires a workspace");
                 }
@@ -127,7 +127,7 @@ namespace orangutan::tools {
                     .command = command,
                     .working_dir = working_dir,
                 };
-            case ToolSandboxMode::isolated:
+            case tool_sandbox_mode::isolated:
                 return prepare_isolated_command(command, workspace_root, working_dir);
         }
 

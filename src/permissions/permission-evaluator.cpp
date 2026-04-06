@@ -48,13 +48,13 @@ namespace orangutan::permissions {
         return std::nullopt;
     }
 
-    std::optional<PermissionDecision> evaluate_mode(PermissionMode mode, const ToolUse &call,
+    std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call,
                                                      bool is_read_only, bool is_file_tool_in_workspace) {
         switch (mode) {
-        case PermissionMode::bypass_permissions:
+        case permission_mode::bypass_permissions:
             return PermissionDecision::allow_by_mode(mode);
 
-        case PermissionMode::accept_edits:
+        case permission_mode::accept_edits:
             if (is_file_tool(call.name) && is_file_tool_in_workspace) {
                 return PermissionDecision::allow_by_mode(mode);
             }
@@ -63,21 +63,21 @@ namespace orangutan::permissions {
             }
             return std::nullopt;
 
-        case PermissionMode::plan:
+        case permission_mode::plan:
             if (is_read_only) {
                 return PermissionDecision::allow_by_mode(mode);
             }
             return PermissionDecision::deny_by_mode(mode, "Plan mode: write operations not allowed");
 
-        case PermissionMode::dont_ask:
-        case PermissionMode::default_mode:
+        case permission_mode::dont_ask:
+        case permission_mode::default_mode:
             return std::nullopt;
         }
         return std::nullopt;
     }
 
-    PermissionDecision apply_post_processing(PermissionDecision decision, PermissionMode mode) {
-        if (mode == PermissionMode::dont_ask && decision.behavior == PermissionBehavior::ask) {
+    PermissionDecision apply_post_processing(PermissionDecision decision, permission_mode mode) {
+        if (mode == permission_mode::dont_ask && decision.behavior == permission_behavior::ask) {
             return PermissionDecision::deny_by_mode(mode, decision.message.value_or("Denied: dont_ask mode"));
         }
         return decision;

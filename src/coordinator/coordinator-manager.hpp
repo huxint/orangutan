@@ -12,6 +12,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include "types/base.hpp"
 
 // Forward declarations
 namespace orangutan::coordinator {
@@ -33,7 +34,7 @@ namespace orangutan::swarm {
 
 namespace orangutan::coordinator {
 
-    enum class AgentRunStatus {
+    enum class agent_run_status : base::u8 {
         queued,
         running,
         succeeded,
@@ -48,7 +49,7 @@ namespace orangutan::coordinator {
         std::string agent_name;
         std::string team_id;
         std::string parent_runtime_key;
-        AgentRunStatus status = AgentRunStatus::queued;
+        agent_run_status status = agent_run_status::queued;
         std::string task_summary;
         std::string final_output;
         std::string error;
@@ -164,7 +165,7 @@ namespace orangutan::coordinator {
 namespace orangutan {
     using coordinator::AgentExecutionEnvironment;
     using coordinator::AgentRunRecord;
-    using coordinator::AgentRunStatus;
+    using coordinator::agent_run_status;
     using coordinator::AgentSpawnRequest;
     using coordinator::AgentSpawnResult;
     using coordinator::CoordinatorManager;

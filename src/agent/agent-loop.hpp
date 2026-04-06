@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "types/base.hpp"
 
 namespace orangutan::hooks {
     class HookManager;
@@ -93,13 +94,13 @@ namespace orangutan::agent {
         IncomingMessageFetcher incoming_message_fetcher_;
         StopRequestedCallback stop_requested_callback_;
 
-        static constexpr int max_iterations = 20;
-        static constexpr int max_continuations = 3;
-        static constexpr int loop_detection_threshold = 3;
-        static constexpr int loop_abort_threshold = 5;
-        static constexpr int compaction_threshold = 50;
-        static constexpr int compaction_keep_recent = 10;
-        static constexpr std::size_t max_memory_prompt_bytes = 4096;
+        static constexpr int MAX_ITERATIONS = 20;
+        static constexpr int MAX_CONTINUATIONS = 3;
+        static constexpr int LOOP_DETECTION_THRESHOLD = 3;
+        static constexpr int LOOP_ABORT_THRESHOLD = 5;
+        static constexpr int COMPACTION_THRESHOLD = 50;
+        static constexpr int COMPACTION_KEEP_RECENT = 10;
+        static constexpr std::size_t MAX_MEMORY_PROMPT_BYTES = 4096;
 
         // Loop detection: tracks (tool_name, input_hash) call counts per run
         struct ToolCallSignature {
@@ -119,17 +120,17 @@ namespace orangutan::agent {
 
         std::unordered_map<ToolCallSignature, int, SignatureHash> call_counts_;
 
-        enum class LoopStatus {
+        enum class loop_status : base::u8 {
             ok,
             warning,
             abort
         };
 
         // Returns loop status for the given tool call
-        LoopStatus check_loop_detection(const ToolUse &call);
+        loop_status check_loop_detection(const ToolUse &call);
 
         // Execute tools, check for loops, return (result_blocks, loop_status)
-        std::pair<std::vector<Content>, LoopStatus> execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event);
+        std::pair<std::vector<Content>, loop_status> execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event);
 
         // Handle max_tokens continuation (returns appended text)
         std::string handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,

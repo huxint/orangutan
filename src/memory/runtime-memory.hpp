@@ -29,9 +29,9 @@ namespace orangutan::memory {
             return context_;
         }
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", MemoryType type = MemoryType::user,
+        void remember(const std::string &key, const std::string &content, const std::string &category = "general", memory_type type = memory_type::user,
                       const std::string &source = "manual", base::f64 importance = 0.5);
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, MemoryType type = MemoryType::user, bool merge = true,
+        void update(const std::string &key, const std::string &content, const std::string &category = {}, memory_type type = memory_type::user, bool merge = true,
                     const std::string &source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]

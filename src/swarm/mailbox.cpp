@@ -12,26 +12,26 @@ namespace orangutan::swarm {
 
     namespace {
 
-        std::string message_type_to_string(MessageType type) {
+        std::string message_type_to_string(message_type type) {
             switch (type) {
-                case MessageType::message:
+                case message_type::message:
                     return "message";
-                case MessageType::shutdown_request:
+                case message_type::shutdown_request:
                     return "shutdown_request";
-                case MessageType::shutdown_response:
+                case message_type::shutdown_response:
                     return "shutdown_response";
             }
             return "message";
         }
 
-        MessageType string_to_message_type(const std::string &s) {
+        message_type string_to_message_type(const std::string &s) {
             if (s == "shutdown_request") {
-                return MessageType::shutdown_request;
+                return message_type::shutdown_request;
             }
             if (s == "shutdown_response") {
-                return MessageType::shutdown_response;
+                return message_type::shutdown_response;
             }
-            return MessageType::message;
+            return message_type::message;
         }
 
         std::string generate_id() {
@@ -101,7 +101,7 @@ namespace orangutan::swarm {
 
     AgentMailbox::~AgentMailbox() = default;
 
-    void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, MessageType type) {
+    void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type) {
         std::lock_guard lock(impl_->mutex);
 
         const char *sql = "INSERT INTO agent_mailbox (id, team_id, sender, recipient, body, timestamp, is_read, message_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?);";
@@ -134,7 +134,7 @@ namespace orangutan::swarm {
     void AgentMailbox::send_broadcast(const std::string &team_id, const std::string &from, const std::string &text, const std::vector<std::string> &team_members) {
         for (const auto &member : team_members) {
             if (member != from) {
-                send(team_id, from, member, text, MessageType::message);
+                send(team_id, from, member, text, message_type::message);
             }
         }
     }

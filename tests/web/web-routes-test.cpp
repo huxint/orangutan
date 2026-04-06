@@ -96,7 +96,7 @@ namespace {
             .workspace = workspace_root.string(),
             .permissions_config =
                 {
-                    .default_mode = orangutan::PermissionMode::default_mode,
+                    .default_mode = orangutan::permission_mode::default_mode,
                 },
             .team_agents = {"coder"},
         };
@@ -151,7 +151,7 @@ namespace {
         orangutan::Config cfg;
         cfg.model = "test-model";
         cfg.permissions_config = orangutan::PermissionConfig{
-            .default_mode = orangutan::PermissionMode::accept_edits,
+            .default_mode = orangutan::permission_mode::accept_edits,
             .allow = {"read"},
             .ask = {"shell"},
         };
@@ -387,7 +387,7 @@ namespace {
 
         CHECK(runtime.skills_prompt.contains("web-runtime-skill"));
         REQUIRE(runtime.hook_manager != nullptr);
-        CHECK(runtime.hook_manager->hook_count(orangutan::HookEvent::before_tool_call) == 1);
+        CHECK(runtime.hook_manager->hook_count(orangutan::hook_event::before_tool_call) == 1);
     };
 
     TEST_CASE("automation_endpoints_expose_shared_state") {
@@ -397,7 +397,7 @@ namespace {
         orangutan::automation::TaskSpec task_spec;
         task_spec.agent_key = "default";
         task_spec.name = "repo-check";
-        task_spec.schedule.kind = orangutan::automation::TaskScheduleKind::cron;
+        task_spec.schedule.kind = orangutan::automation::task_schedule_kind::cron;
         task_spec.schedule.value = "0 * * * *";
         task_spec.prompt = "Check the repository state.";
         const auto task_id = automation_runtime.save_task(task_spec);
@@ -500,7 +500,7 @@ namespace {
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
                 *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}),
-                orangutan::PermissionDecision::ask_by_rule(orangutan::PermissionRuleSource::project_settings, "shell(echo hello)",
+                orangutan::PermissionDecision::ask_by_rule(orangutan::permission_rule_source::project_settings, "shell(echo hello)",
                                                            "Shell command approval required."),
                 [&](std::string_view current_event_name, const nlohmann::json &payload) {
                     std::scoped_lock lock(event_mutex);

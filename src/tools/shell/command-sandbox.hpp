@@ -1,10 +1,11 @@
 #pragma once
 
 #include <string>
+#include "types/base.hpp"
 
 namespace orangutan::tools {
 
-    enum class ToolSandboxMode {
+    enum class tool_sandbox_mode : base::u8 {
         isolated,
         workspace_write,
         disabled,
@@ -16,6 +17,6 @@ namespace orangutan::tools {
     };
 
     [[nodiscard]]
-    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, ToolSandboxMode sandbox_mode);
+    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, tool_sandbox_mode sandbox_mode);
 
 } // namespace orangutan::tools

@@ -12,7 +12,7 @@
 namespace orangutan::tools {
     namespace {
 
-        using automation::TaskScheduleKind;
+        using automation::task_schedule_kind;
 
         std::string format_task(const automation::TaskSpec &task) {
             std::string out;
@@ -81,7 +81,7 @@ namespace orangutan::tools {
             task.enabled = input.contains("enabled") ? input.value("enabled", true) : task.enabled;
 
             const auto schedule_kind_value = input.value("schedule_kind", std::string{magic_enum::enum_name(task.schedule.kind)});
-            const auto parsed_kind = magic_enum::enum_cast<TaskScheduleKind>(schedule_kind_value);
+            const auto parsed_kind = magic_enum::enum_cast<task_schedule_kind>(schedule_kind_value);
             if (!parsed_kind.has_value()) {
                 return "Error: schedule_kind must be 'at' or 'cron'.";
             }
@@ -92,7 +92,7 @@ namespace orangutan::tools {
                 return "Error: name, schedule, and prompt are required.";
             }
 
-            if (task.schedule.kind == TaskScheduleKind::cron) {
+            if (task.schedule.kind == task_schedule_kind::cron) {
                 if (!parse_cron(task.schedule.value).has_value()) {
                     return "Error: invalid cron schedule.";
                 }

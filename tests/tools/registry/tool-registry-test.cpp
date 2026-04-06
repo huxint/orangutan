@@ -699,8 +699,8 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
     permissions.deny_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::deny,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::deny,
         .tool_name = "shell",
     });
 
@@ -720,7 +720,7 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
 TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::default_mode;
+    permissions.mode = permission_mode::default_mode;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
 
@@ -732,7 +732,7 @@ TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
 TEST_CASE("ExecutionGuardHonorsRuntimeAbortChecker") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
     auto tool_context = make_runtime_tool_context();
     tool_context.abort_checker = [] {
         return true;
@@ -748,7 +748,7 @@ TEST_CASE("ExecutionGuardHonorsRuntimeAbortChecker") {
 TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::default_mode;
+    permissions.mode = permission_mode::default_mode;
     auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
@@ -769,7 +769,7 @@ TEST_CASE("ShellApprovalCallbackCanAllowCommand") {
 TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::default_mode;
+    permissions.mode = permission_mode::default_mode;
     auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
@@ -790,18 +790,18 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
 TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
     permissions.deny_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::deny,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::deny,
         .tool_name = "shell",
-        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "rm -rf"},
+        .content = RuleContent{.match_type = rule_match_type::prefix, .pattern = "rm -rf"},
     });
     permissions.deny_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::deny,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::deny,
         .tool_name = "shell",
-        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "shutdown"},
+        .content = RuleContent{.match_type = rule_match_type::prefix, .pattern = "shutdown"},
     });
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
@@ -815,8 +815,8 @@ TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
     permissions.deny_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::deny,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::deny,
         .tool_name = "echo_custom",
     });
 
@@ -836,10 +836,10 @@ TEST_CASE("ScriptToolsRespectShellApprovalPolicy") {
 TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
     permissions.deny_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::deny,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::deny,
         .tool_name = "wipe",
     });
 
@@ -860,7 +860,7 @@ TEST_CASE("ScriptToolsRespectDeniedShellCommands") {
 TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::default_mode;
+    permissions.mode = permission_mode::default_mode;
     auto tool_context = make_runtime_tool_context();
     bool prompted = false;
 
@@ -887,12 +887,12 @@ TEST_CASE("ScriptToolsUseDynamicApprovalCallbackFromToolContext") {
 TEST_CASE("ShellCompoundCommandsRespectSubcommandAskRules") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
     permissions.ask_rules.push_back(PermissionRule{
-        .source = PermissionRuleSource::cli_arg,
-        .behavior = PermissionBehavior::ask,
+        .source = permission_rule_source::cli_arg,
+        .behavior = permission_behavior::ask,
         .tool_name = "shell",
-        .content = RuleContent{.match_type = RuleMatchType::prefix, .pattern = "git push"},
+        .content = RuleContent{.match_type = rule_match_type::prefix, .pattern = "git push"},
     });
 
     auto tool_context = make_runtime_tool_context();
@@ -922,7 +922,7 @@ TEST_CASE("WriteToolRejectsPathsOutsidePermissionScope") {
 
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
 
@@ -942,7 +942,7 @@ TEST_CASE("WriteToolAllowsConfiguredAdditionalDirectories") {
 
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::bypass_permissions;
+    permissions.mode = permission_mode::bypass_permissions;
     permissions.additional_directories.push_back(outside.string());
 
     static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
@@ -970,7 +970,7 @@ TEST_CASE("ReadToolIsMarkedReadOnly") {
 TEST_CASE("PlanModeHidesWriteToolsFromDefinitions") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
-    permissions.mode = PermissionMode::plan;
+    permissions.mode = permission_mode::plan;
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
     const auto defs = registry.definitions();

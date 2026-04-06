@@ -11,7 +11,7 @@
 
 namespace orangutan::hooks {
 
-    enum class HookEvent : base::u8 {
+    enum class hook_event : base::u8 {
         before_tool_call,
         after_tool_call,
         message_received,
@@ -20,15 +20,15 @@ namespace orangutan::hooks {
         session_end,
     };
 
-    struct HookEventHash {
-        std::size_t operator()(HookEvent e) const noexcept {
+    struct hook_event_hash {
+        std::size_t operator()(hook_event e) const noexcept {
             return std::hash<base::u8>{}(std::to_underlying(e));
         }
     };
 
     struct HookDef {
         std::string path;
-        HookEvent event;
+        hook_event event;
         std::string filename;
     };
 
@@ -51,16 +51,16 @@ namespace orangutan::hooks {
         // Dispatch hooks for an event. Returns DispatchResult with rejection details.
         // For before_tool_call: returns allowed=false if any hook blocked (non-zero exit).
         [[nodiscard]]
-        DispatchResult dispatch(HookEvent event, const nlohmann::json &context) const;
+        DispatchResult dispatch(hook_event event, const nlohmann::json &context) const;
 
         [[nodiscard]]
-        std::size_t hook_count(HookEvent event) const;
+        std::size_t hook_count(hook_event event) const;
 
         [[nodiscard]]
         std::size_t total_hooks() const;
 
     private:
-        std::unordered_map<HookEvent, std::vector<HookDef>, HookEventHash> hooks_;
+        std::unordered_map<hook_event, std::vector<HookDef>, hook_event_hash> hooks_;
     };
 
     // Build JSON context for before/after tool call hooks
@@ -68,10 +68,10 @@ namespace orangutan::hooks {
     nlohmann::json build_after_tool_call_context(std::string_view tool_name, const nlohmann::json &tool_input, std::string_view tool_result, bool is_error);
 
     // Build JSON context for message hooks
-    nlohmann::json build_message_context(HookEvent event, std::string_view role, std::string_view content);
+    nlohmann::json build_message_context(hook_event event, std::string_view role, std::string_view content);
 
     // Build JSON context for session hooks
-    nlohmann::json build_session_context(HookEvent event, std::string_view session_id, std::size_t message_count = 0);
+    nlohmann::json build_session_context(hook_event event, std::string_view session_id, std::size_t message_count = 0);
 
     void dispatch_session_start(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
     void dispatch_session_end(HookManager *hook_manager, std::string_view session_id, std::size_t message_count = 0);
@@ -88,8 +88,8 @@ namespace orangutan {
     using hooks::dispatch_session_start;
     using hooks::DispatchResult;
     using hooks::HookDef;
-    using hooks::HookEvent;
-    using hooks::HookEventHash;
+    using hooks::hook_event;
+    using hooks::hook_event_hash;
     using hooks::HookManager;
     using hooks::HookResult;
 

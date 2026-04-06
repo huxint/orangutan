@@ -62,7 +62,7 @@ namespace {
 
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
-        CHECK(run->status == coordinator::AgentRunStatus::succeeded);
+        CHECK(run->status == coordinator::agent_run_status::succeeded);
         CHECK(run->final_output == "integration done");
 
         manager.shutdown();
@@ -146,14 +146,14 @@ namespace {
 
         auto queued = manager.get_run(r2.run_id);
         REQUIRE(queued.has_value());
-        CHECK(queued->status == coordinator::AgentRunStatus::queued);
+        CHECK(queued->status == coordinator::agent_run_status::queued);
         CHECK(started.load() == 1);
 
         release_first.store(true);
 
         for (int i = 0; i < 100; ++i) {
             auto run = manager.get_run(r2.run_id);
-            if (run.has_value() && run->status == coordinator::AgentRunStatus::succeeded) {
+            if (run.has_value() && run->status == coordinator::agent_run_status::succeeded) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -161,7 +161,7 @@ namespace {
 
         auto completed = manager.get_run(r2.run_id);
         REQUIRE(completed.has_value());
-        CHECK(completed->status == coordinator::AgentRunStatus::succeeded);
+        CHECK(completed->status == coordinator::agent_run_status::succeeded);
         CHECK(started.load() == 2);
 
         manager.shutdown();
@@ -204,7 +204,7 @@ namespace {
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
         // Status should be either succeeded (if worker completed before stop) or terminated
-        CHECK((run->status == coordinator::AgentRunStatus::succeeded || run->status == coordinator::AgentRunStatus::terminated));
+        CHECK((run->status == coordinator::agent_run_status::succeeded || run->status == coordinator::agent_run_status::terminated));
 
         manager.shutdown();
     }

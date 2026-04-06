@@ -1,6 +1,7 @@
 #pragma once
 
 #include "channel/allowlist.hpp"
+#include "types/base.hpp"
 
 #include <nlohmann/json.hpp>
 #include <functional>
@@ -13,7 +14,7 @@
 
 namespace orangutan::channel {
 
-    enum class InboundEventKind {
+    enum class inbound_event_kind : base::u8 {
         message,
         reaction_added,
         reaction_removed,
@@ -40,7 +41,7 @@ namespace orangutan::channel {
     };
 
     struct InboundMessage {
-        InboundEventKind event_kind = InboundEventKind::message;
+        inbound_event_kind event_kind = inbound_event_kind::message;
         std::string jid;
         std::string sender;
         std::string sender_name;
@@ -61,7 +62,7 @@ namespace orangutan::channel {
 
         [[nodiscard]]
         bool is_user_message() const {
-            return event_kind == InboundEventKind::message;
+            return event_kind == inbound_event_kind::message;
         }
     };
 
@@ -263,7 +264,7 @@ namespace orangutan {
     using channel::Channel;
     using channel::ChannelManager;
     using channel::EmbedPayload;
-    using channel::InboundEventKind;
+    using channel::inbound_event_kind;
     using channel::InboundMessage;
     using channel::KeyboardPayload;
     using channel::MarkdownPayload;

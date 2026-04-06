@@ -73,7 +73,7 @@ namespace orangutan::agent {
 
     struct DistilledMemoryEntry {
         std::string category;
-        MemoryType type = MemoryType::user;
+        memory_type type = memory_type::user;
         std::string key;
         base::f64 importance = 0.5;
         std::string content;
@@ -154,7 +154,7 @@ namespace orangutan::agent {
             key = hash_key("distilled.", content);
         }
 
-        auto type = type_sv.empty() ? infer_memory_type(category) : magic_enum::enum_cast<MemoryType>(type_sv, magic_enum::case_insensitive).value_or(MemoryType::user);
+        auto type = type_sv.empty() ? infer_memory_type(category) : magic_enum::enum_cast<memory_type>(type_sv, magic_enum::case_insensitive).value_or(memory_type::user);
 
         return DistilledMemoryEntry{
             .category = std::move(category),
@@ -231,29 +231,29 @@ namespace orangutan::agent {
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
 
-    AgentLoop::LoopStatus AgentLoop::check_loop_detection(const ToolUse &call) {
+    AgentLoop::loop_status AgentLoop::check_loop_detection(const ToolUse &call) {
         auto input_hash = std::hash<std::string>{}(call.input.dump());
         ToolCallSignature sig{.name = call.name, .input_hash = input_hash};
 
         auto &count = call_counts_[sig];
         ++count;
 
-        if (count >= loop_abort_threshold) {
+        if (count >= LOOP_ABORT_THRESHOLD) {
             spdlog::warn("Loop abort: tool '{}' called {} times with same input, forcing stop", call.name, count);
-            return LoopStatus::abort;
+            return loop_status::abort;
         }
-        if (count >= loop_detection_threshold) {
+        if (count >= LOOP_DETECTION_THRESHOLD) {
             spdlog::warn("Loop detected: tool '{}' called {} times with same input", call.name, count);
-            return LoopStatus::warning;
+            return loop_status::warning;
         }
-        return LoopStatus::ok;
+        return loop_status::ok;
     }
 
     std::string AgentLoop::handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,
                                                const ToolEventCallback &on_tool_event, const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
         std::string continued_text;
 
-        for (int attempt = 0; attempt < max_continuations; ++attempt) {
+        for (int attempt = 0; attempt < MAX_CONTINUATIONS; ++attempt) {
             spdlog::debug("Max-token continuation attempt {}", attempt + 1);
 
             history_.push_back(Message::user().text("Please continue from where you left off."));
@@ -276,25 +276,25 @@ namespace orangutan::agent {
         return continued_text;
     }
 
-    std::pair<std::vector<Content>, AgentLoop::LoopStatus> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
+    std::pair<std::vector<Content>, AgentLoop::loop_status> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
         struct ToolExecutionState {
             ToolUse call;
-            LoopStatus loop_status = LoopStatus::ok;
+            loop_status status = loop_status::ok;
             std::optional<ToolResult> result;
         };
 
         struct ToolExecutionOutcome {
             ToolResult result;
-            LoopStatus loop_status = LoopStatus::ok;
+            loop_status status = loop_status::ok;
         };
 
         std::vector<Content> result_blocks;
-        LoopStatus worst_status = LoopStatus::ok;
+        loop_status worst_status = loop_status::ok;
 
         for (const auto &call : calls) {
             auto pipeline = stdexec::just(ToolExecutionState{.call = call}) | stdexec::then([this, human_output, &on_tool_event](ToolExecutionState state) {
-                                if (auto status = check_loop_detection(state.call); status != LoopStatus::ok) {
-                                    state.loop_status = status;
+                                if (auto status = check_loop_detection(state.call); status != loop_status::ok) {
+                                    state.status = status;
                                 }
                                 if (human_output) {
                                     spdlog::fmt_lib::println("  -> {}", spdlog::fmt_lib::styled(state.call.name, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::cyan)));
@@ -310,7 +310,7 @@ namespace orangutan::agent {
                                 }
 
                                 auto hook_ctx = build_before_tool_call_context(state.call.name, state.call.input);
-                                auto hook_result = hook_manager_->dispatch(HookEvent::before_tool_call, hook_ctx);
+                                auto hook_result = hook_manager_->dispatch(hook_event::before_tool_call, hook_ctx);
                                 if (!hook_result.allowed) {
                                     std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
                                     if (!hook_result.block_reason.empty()) {
@@ -328,7 +328,7 @@ namespace orangutan::agent {
                                 state.result = tools_.execute(state.call);
                                 if (hook_manager_ != nullptr) {
                                     auto hook_ctx = build_after_tool_call_context(state.call.name, state.call.input, state.result->content, state.result->is_error);
-                                    static_cast<void>(hook_manager_->dispatch(HookEvent::after_tool_call, hook_ctx));
+                                    static_cast<void>(hook_manager_->dispatch(hook_event::after_tool_call, hook_ctx));
                                 }
                                 return state;
                             }) |
@@ -338,12 +338,12 @@ namespace orangutan::agent {
                                 }
                                 return ToolExecutionOutcome{
                                     .result = std::move(*state.result),
-                                    .loop_status = state.loop_status,
+                                    .status = state.status,
                                 };
                             });
 
             auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
-            worst_status = std::max(outcome.loop_status, worst_status);
+            worst_status = std::max(outcome.status, worst_status);
             result_blocks.emplace_back(std::move(outcome.result));
         }
 
@@ -356,8 +356,8 @@ namespace orangutan::agent {
 
         // Dispatch message_received hook
         if (hook_manager_ != nullptr) {
-            auto ctx = build_message_context(HookEvent::message_received, "user", user_input);
-            static_cast<void>(hook_manager_->dispatch(HookEvent::message_received, ctx));
+            auto ctx = build_message_context(hook_event::message_received, "user", user_input);
+            static_cast<void>(hook_manager_->dispatch(hook_event::message_received, ctx));
         }
 
         history_.push_back(Message::user().text(user_input));
@@ -366,7 +366,7 @@ namespace orangutan::agent {
         std::string final_text;
         const bool human_output = !on_stream_event && !on_tool_event;
 
-        for (int iteration = 0; iteration < max_iterations; ++iteration) {
+        for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
             spdlog::debug("Agent loop iteration {}", iteration + 1);
 
             static_cast<void>(inject_incoming_messages(on_history_checkpoint));
@@ -415,13 +415,13 @@ namespace orangutan::agent {
             history_.push_back(Message(base::role::user, std::move(result_blocks)));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
-            if (loop_status == LoopStatus::abort) {
+            if (loop_status == loop_status::abort) {
                 final_text = "I got stuck in a loop repeating the same action. Please try rephrasing your request.";
                 history_.push_back(Message::assistant().text(final_text));
                 emit_history_checkpoint(on_history_checkpoint, history_);
                 break;
             }
-            if (loop_status == LoopStatus::warning) {
+            if (loop_status == loop_status::warning) {
                 history_.push_back(Message::user().text("You are repeating the same tool call with the same arguments. "
                                                         "This is not making progress. Try a different approach or "
                                                         "explain what you're trying to accomplish."));
@@ -433,8 +433,8 @@ namespace orangutan::agent {
 
         // Dispatch message_sending hook
         if (hook_manager_ != nullptr && !final_text.empty()) {
-            auto ctx = build_message_context(HookEvent::message_sending, "assistant", final_text);
-            static_cast<void>(hook_manager_->dispatch(HookEvent::message_sending, ctx));
+            auto ctx = build_message_context(hook_event::message_sending, "assistant", final_text);
+            static_cast<void>(hook_manager_->dispatch(hook_event::message_sending, ctx));
         }
 
         return final_text;
@@ -467,7 +467,7 @@ namespace orangutan::agent {
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compress_history() {
-        return compact_history(compaction_keep_recent + 1);
+        return compact_history(COMPACTION_KEEP_RECENT + 1);
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compact_history(std::size_t minimum_history_size) {
@@ -481,13 +481,13 @@ namespace orangutan::agent {
             return result;
         }
 
-        const auto keep_start = static_cast<int>(history_.size()) - compaction_keep_recent;
+        const auto keep_start = static_cast<int>(history_.size()) - COMPACTION_KEEP_RECENT;
         if (keep_start <= 0) {
             result.status = "Not enough history to compress yet.";
             return result;
         }
 
-        spdlog::info("Compacting history: {} messages -> summarizing first {}, keeping last {}", history_.size(), keep_start, compaction_keep_recent);
+        spdlog::info("Compacting history: {} messages -> summarizing first {}, keeping last {}", history_.size(), keep_start, COMPACTION_KEEP_RECENT);
 
         // Build the older messages to summarize
         std::vector<Message> older_messages(history_.begin(), history_.begin() + keep_start);
@@ -692,12 +692,12 @@ namespace orangutan::agent {
                 candidate.push_back(' ');
                 candidate.append(caveat);
             }
-            if (used + candidate.size() + 1 > max_memory_prompt_bytes) {
+            if (used + candidate.size() + 1 > MAX_MEMORY_PROMPT_BYTES) {
                 if (wrote_any) {
                     break;
                 }
 
-                const std::size_t remaining = max_memory_prompt_bytes > used + 4 ? max_memory_prompt_bytes - used - 4 : 0;
+                const std::size_t remaining = MAX_MEMORY_PROMPT_BYTES > used + 4 ? MAX_MEMORY_PROMPT_BYTES - used - 4 : 0;
                 candidate = remaining == 0 ? "..." : candidate.substr(0, remaining) + "...";
             }
 

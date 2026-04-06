@@ -27,14 +27,14 @@ namespace orangutan::memory {
         fts_enabled_ = memory_detail::enable_fts_if_available(db_);
     }
 
-    void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &scope,
+    void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &scope,
                                const std::string &source, base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto type_str = std::string(magic_enum::enum_name(type));
         memory_detail::upsert_memory_record(db_, scope, key, content, category, type_str, source, importance);
     }
 
-    void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, MemoryType type, const std::string &scope, bool merge,
+    void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &scope, bool merge,
                              const std::string &source, base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto existing = memory_detail::fetch_memory_by_key(db_, scope, key);
@@ -52,7 +52,7 @@ namespace orangutan::memory {
             if (category.empty()) {
                 final_category = existing->category;
             }
-            if (type == MemoryType::user && !category.empty()) {
+            if (type == memory_type::user && !category.empty()) {
                 // If type wasn't explicitly set but category was, infer from category
                 final_type = std::string(magic_enum::enum_name(infer_memory_type(final_category)));
             }

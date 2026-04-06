@@ -2,12 +2,13 @@
 
 #include <cstdint>
 #include <string_view>
+#include "types/base.hpp"
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::memory {
 
     /// Semantic memory types inspired by Claude Code's taxonomy.
-    enum class MemoryType : std::uint8_t {
+    enum class memory_type : base::u8 {
         /// User's role, goals, preferences, knowledge, and personal context.
         user,
         /// Corrections, validated approaches, and guidance on how to work.
@@ -18,15 +19,15 @@ namespace orangutan::memory {
         reference,
     };
 
-    /// Infer a MemoryType from a legacy category string.
+    /// Infer a memory_type from a legacy category string.
     [[nodiscard]]
-    MemoryType infer_memory_type(std::string_view category);
+    memory_type infer_memory_type(std::string_view category);
 
 } // namespace orangutan::memory
 
 namespace orangutan {
 
     using memory::infer_memory_type;
-    using memory::MemoryType;
+    using memory::memory_type;
 
 } // namespace orangutan

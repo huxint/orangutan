@@ -283,7 +283,7 @@ namespace {
                                                            });
 
         REQUIRE(called);
-        CHECK(captured.event_kind == InboundEventKind::reaction_added);
+        CHECK(captured.event_kind == inbound_event_kind::reaction_added);
         CHECK(captured.jid == "qqbot:bot:guild:guild-channel-1");
         REQUIRE(captured.reaction.has_value());
         CHECK(captured.reaction->target_id == "message-1");

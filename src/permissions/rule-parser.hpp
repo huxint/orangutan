@@ -6,7 +6,7 @@
 
 namespace orangutan::permissions {
 
-    PermissionRule parse_permission_rule(std::string_view rule_str, PermissionBehavior behavior, PermissionRuleSource source);
+    PermissionRule parse_permission_rule(std::string_view rule_str, permission_behavior behavior, permission_rule_source source);
 
     bool matches_rule(const PermissionRule &rule, std::string_view tool_name, std::string_view content = {});
 

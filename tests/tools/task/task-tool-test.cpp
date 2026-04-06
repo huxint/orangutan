@@ -20,9 +20,9 @@ namespace {
         task.agent_key = "default";
         task.name = "daily";
         task.prompt = "before";
-        task.schedule.kind = orangutan::automation::TaskScheduleKind::cron;
+        task.schedule.kind = orangutan::automation::task_schedule_kind::cron;
         task.schedule.value = "0 9 * * *";
-        task.delivery.mode = orangutan::automation::DeliveryMode::notify;
+        task.delivery.mode = orangutan::automation::delivery_mode::notify;
         task.delivery.targets = {"qqbot:primary:c2c:123456"};
         static_cast<void>(runtime.save_task(task));
 
@@ -46,7 +46,7 @@ namespace {
         INFO("expected task update to persist");
         REQUIRE(updated.has_value());
         CHECK(updated->prompt == "after");
-        CHECK(updated->delivery.mode == orangutan::automation::DeliveryMode::notify);
+        CHECK(updated->delivery.mode == orangutan::automation::delivery_mode::notify);
         CHECK(updated->delivery.targets.size() == 1UL);
         CHECK(updated->delivery.targets.front() == "qqbot:primary:c2c:123456");
 

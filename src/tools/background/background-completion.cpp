@@ -32,14 +32,14 @@ namespace orangutan::tools {
 
         std::string process_status(const BackgroundProcessCompletionEvent &event) {
             switch (event.terminal_status) {
-                case BackgroundProcessTerminalStatus::signaled:
+                case background_process_terminal_status::signaled:
                     return event.kill_requested ? "killed" : "signaled";
-                case BackgroundProcessTerminalStatus::exited:
+                case background_process_terminal_status::exited:
                     if (event.exit_code.has_value() && *event.exit_code == 0) {
                         return "completed";
                     }
                     return "failed";
-                case BackgroundProcessTerminalStatus::unknown:
+                case background_process_terminal_status::unknown:
                 default:
                     return "unknown";
             }

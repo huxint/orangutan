@@ -69,7 +69,7 @@ namespace orangutan::bootstrap::detail {
                 agent_cfg.thinking_budget = cfg.thinking_budget;
             }
             if (agent_cfg.permissions_config.allow.empty() && agent_cfg.permissions_config.deny.empty() && agent_cfg.permissions_config.ask.empty() &&
-                agent_cfg.permissions_config.default_mode == PermissionMode::default_mode) {
+                agent_cfg.permissions_config.default_mode == permission_mode::default_mode) {
                 agent_cfg.permissions_config = cfg.permissions_config;
             }
             static_cast<void>(agent_key);

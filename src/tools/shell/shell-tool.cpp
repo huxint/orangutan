@@ -404,7 +404,7 @@ namespace orangutan::tools {
             const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
             const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root, permissions);
             const auto working_dir = resolved_working_dir.empty() ? std::string{} : resolved_working_dir.string();
-            const auto sandbox_mode = ToolSandboxMode::disabled;
+            const auto sandbox_mode = tool_sandbox_mode::disabled;
             const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
             const auto effective_working_dir = sandboxed.working_dir.empty() ? working_dir : sandboxed.working_dir;
 

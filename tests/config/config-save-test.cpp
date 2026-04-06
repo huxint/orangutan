@@ -72,7 +72,7 @@ namespace {
     TEST_CASE("save_writes_only_new_permissions_format") {
         orangutan::Config cfg;
         cfg.permissions_config = orangutan::PermissionConfig{
-            .default_mode = orangutan::PermissionMode::accept_edits,
+            .default_mode = orangutan::permission_mode::accept_edits,
             .allow = {"read"},
             .deny = {"shell(rm:*)"},
             .ask = {"edit"},
@@ -80,7 +80,7 @@ namespace {
         cfg.agents["default"] = orangutan::AgentConfig{
             .permissions_config =
                 {
-                    .default_mode = orangutan::PermissionMode::plan,
+                    .default_mode = orangutan::permission_mode::plan,
                     .allow = {"read"},
                     .ask = {"shell"},
                 },

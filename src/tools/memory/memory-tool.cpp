@@ -2,6 +2,7 @@
 #include "memory/memory-search.hpp"
 #include "memory/memory-type.hpp"
 #include "tools/register.hpp"
+#include "types/base.hpp"
 
 #include <spdlog/common.h>
 #include <algorithm>
@@ -12,13 +13,13 @@
 
 namespace orangutan::tools {
     namespace {
-        enum class RecallMode {
+        enum class recall_mode : base::u8 {
             query,
             category,
         };
 
         struct RecallRequest {
-            RecallMode mode;
+            recall_mode mode;
             std::string value;
             std::size_t limit = 8;
         };
@@ -49,13 +50,13 @@ namespace orangutan::tools {
             }
 
             if (*mode == "query") {
-                request.mode = RecallMode::query;
+                request.mode = recall_mode::query;
                 request.value = *value;
                 return request;
             }
 
             if (*mode == "category") {
-                request.mode = RecallMode::category;
+                request.mode = recall_mode::category;
                 request.value = *value;
                 return request;
             }
@@ -87,7 +88,7 @@ namespace orangutan::tools {
             const auto content = input.at("content").get<std::string>();
             const auto category = input.value("category", std::string{"general"});
             const auto type_str = input.value("type", std::string{"user"});
-            const auto type = magic_enum::enum_cast<MemoryType>(type_str, magic_enum::case_insensitive).value_or(MemoryType::user);
+            const auto type = magic_enum::enum_cast<memory_type>(type_str, magic_enum::case_insensitive).value_or(memory_type::user);
             const auto source = input.value("source", std::string{"manual"});
             const auto importance = input.value("importance", 0.5);
             runtime_memory.remember(key, content, category, type, source, importance);
@@ -96,7 +97,7 @@ namespace orangutan::tools {
 
         std::string recall_memory(const nlohmann::json &input, RuntimeMemory &runtime_memory) {
             const auto request = parse_recall_request(input);
-            if (request.mode == RecallMode::category) {
+            if (request.mode == recall_mode::category) {
                 const auto entries = runtime_memory.recall_by_category(request.value, request.limit);
                 std::string result;
                 for (const auto &[key, content] : entries) {
@@ -119,7 +120,7 @@ namespace orangutan::tools {
             const auto content = input.at("content").get<std::string>();
             const auto category = input.contains("category") ? input.at("category").get<std::string>() : std::string{};
             const auto type_str = input.value("type", std::string{"user"});
-            const auto type = magic_enum::enum_cast<MemoryType>(type_str, magic_enum::case_insensitive).value_or(MemoryType::user);
+            const auto type = magic_enum::enum_cast<memory_type>(type_str, magic_enum::case_insensitive).value_or(memory_type::user);
             const auto merge = input.value("merge", true);
             const auto source = input.contains("source") ? input.at("source").get<std::string>() : std::string{};
             const auto importance = input.value("importance", 0.5);

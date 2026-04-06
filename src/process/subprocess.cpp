@@ -93,13 +93,13 @@ namespace orangutan::process {
             }
         }
 
-        enum class WriteStatus {
+        enum class write_status : base::u8 {
             open,
             closed,
             done,
         };
 
-        WriteStatus write_pending(int fd, std::string_view data, std::size_t &written) {
+        write_status write_pending(int fd, std::string_view data, std::size_t &written) {
             while (written < data.size()) {
                 const auto pending = data.substr(written);
                 auto n = write(fd, pending.data(), pending.size());
@@ -111,11 +111,11 @@ namespace orangutan::process {
                     continue;
                 }
                 if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    return WriteStatus::open;
+                    return write_status::open;
                 }
-                return WriteStatus::closed;
+                return write_status::closed;
             }
-            return WriteStatus::done;
+            return write_status::done;
         }
 
         void signal_process(pid_t pid, int signal_number) {
@@ -441,7 +441,7 @@ namespace orangutan::process {
                     stdin_fd = -1;
                 } else if ((fds[0].revents & POLLOUT) != 0) {
                     auto write_status = write_pending(stdin_fd, config.stdin_data, stdin_written);
-                    if (write_status != WriteStatus::open) {
+                    if (write_status != write_status::open) {
                         close(stdin_fd);
                         stdin_fd = -1;
                     }
@@ -513,7 +513,7 @@ namespace orangutan::process {
             pid_t waited = -1;
             int status = 0;
             int wait_error = 0;
-            BackgroundProcessTerminalStatus terminal_status = BackgroundProcessTerminalStatus::unknown;
+            background_process_terminal_status terminal_status = background_process_terminal_status::unknown;
             std::optional<int> exit_code = -1;
             std::optional<int> signal_number;
         };
@@ -645,11 +645,11 @@ namespace orangutan::process {
 
             if (WIFEXITED(outcome.status)) {
                 outcome.exit_code = WEXITSTATUS(outcome.status);
-                outcome.terminal_status = BackgroundProcessTerminalStatus::exited;
+                outcome.terminal_status = background_process_terminal_status::exited;
             } else if (WIFSIGNALED(outcome.status)) {
                 outcome.signal_number = WTERMSIG(outcome.status);
                 outcome.exit_code = 128 + WTERMSIG(outcome.status);
-                outcome.terminal_status = BackgroundProcessTerminalStatus::signaled;
+                outcome.terminal_status = background_process_terminal_status::signaled;
             }
 
             return outcome;

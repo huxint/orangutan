@@ -266,7 +266,7 @@ namespace orangutan::config::detail {
 
     void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config) {
         if (const auto *value = find_member(permissions, "default_mode"); value != nullptr && value->is_string()) {
-            auto mode_opt = magic_enum::enum_cast<PermissionMode>(normalize_enum_token(value->get<std::string>()));
+            auto mode_opt = magic_enum::enum_cast<permission_mode>(normalize_enum_token(value->get<std::string>()));
             if (mode_opt.has_value()) {
                 config.default_mode = *mode_opt;
             } else {

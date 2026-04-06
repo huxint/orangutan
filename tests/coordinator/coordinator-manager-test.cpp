@@ -61,7 +61,7 @@ TEST_CASE("CoordinatorManager stop requests the worker stop token", "[coordinato
 
     const auto run = manager.get_run(result.run_id);
     REQUIRE(run.has_value());
-    CHECK((run->status == orangutan::coordinator::AgentRunStatus::terminated || run->status == orangutan::coordinator::AgentRunStatus::succeeded));
+    CHECK((run->status == orangutan::coordinator::agent_run_status::terminated || run->status == orangutan::coordinator::agent_run_status::succeeded));
 
     manager.shutdown();
 }
@@ -154,14 +154,14 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
 
     const auto queued_run = manager.get_run(second.run_id);
     REQUIRE(queued_run.has_value());
-    CHECK(queued_run->status == orangutan::coordinator::AgentRunStatus::queued);
+    CHECK(queued_run->status == orangutan::coordinator::agent_run_status::queued);
     CHECK(started.load() == 1);
 
     release_first.store(true);
 
     for (int i = 0; i < 100; ++i) {
         const auto run = manager.get_run(second.run_id);
-        if (run.has_value() && run->status == orangutan::coordinator::AgentRunStatus::succeeded) {
+        if (run.has_value() && run->status == orangutan::coordinator::agent_run_status::succeeded) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -170,7 +170,7 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
     CHECK(started.load() == 2);
     const auto completed_run = manager.get_run(second.run_id);
     REQUIRE(completed_run.has_value());
-    CHECK(completed_run->status == orangutan::coordinator::AgentRunStatus::succeeded);
+    CHECK(completed_run->status == orangutan::coordinator::agent_run_status::succeeded);
     CHECK(completed_run->final_output == "second task done");
 
     manager.shutdown();
@@ -223,7 +223,7 @@ TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordin
 
     const auto queued = manager.get_run(second.run_id);
     REQUIRE(queued.has_value());
-    CHECK(queued->status == orangutan::coordinator::AgentRunStatus::queued);
+    CHECK(queued->status == orangutan::coordinator::agent_run_status::queued);
 
     const auto started_at = std::chrono::steady_clock::now();
     manager.shutdown();

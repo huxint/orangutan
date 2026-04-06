@@ -265,7 +265,7 @@ namespace orangutan::automation {
         const auto now_seconds = to_unix_seconds(now);
 
         for (const auto &task : store_.list_tasks()) {
-            if (task.schedule.kind != TaskScheduleKind::at) {
+            if (task.schedule.kind != task_schedule_kind::at) {
                 continue;
             }
             const auto scheduled = parse_absolute_time(task.schedule.value);
@@ -332,7 +332,7 @@ namespace orangutan::automation {
 
                             const auto body = result_body(result);
 
-                            if (trigger.delivery.mode == DeliveryMode::silent) {
+                            if (trigger.delivery.mode == delivery_mode::silent) {
                                 if (!result.workspace_root.empty()) {
                                     completed.log_path = LogWriter::append(result.workspace_root, make_log_entry(trigger, result, started_at, completed.status));
                                 }
@@ -370,7 +370,7 @@ namespace orangutan::automation {
     void Runtime::execute_task(const TaskSpec &task, std::optional<base::i64> forced_timestamp) {
         const auto started_at = forced_timestamp.value_or(to_unix_seconds(Clock::now()));
         const Trigger trigger{
-            .kind = Kind::task,
+            .kind = kind::task,
             .automation_id = task.id,
             .agent_key = task.agent_key,
             .name = task.name,
@@ -382,13 +382,13 @@ namespace orangutan::automation {
         with_agent_execution_lease(this, task.agent_key, [&] {
             completed.emplace(execute_trigger(trigger, started_at));
         });
-        store_.update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == TaskScheduleKind::cron);
+        store_.update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == task_schedule_kind::cron);
     }
 
     void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<base::i64> forced_timestamp) {
         const auto started_at = forced_timestamp.value_or(to_unix_seconds(Clock::now()));
         const Trigger trigger{
-            .kind = Kind::heartbeat,
+            .kind = kind::heartbeat,
             .automation_id = heartbeat.id,
             .agent_key = heartbeat.agent_key,
             .name = heartbeat.name,

@@ -472,10 +472,10 @@ namespace orangutan::channel::qq {
 
         void handle_event(const Event &event) {
             switch (event.kind) {
-                case Event::Kind::text:
+                case Event::kind::text:
                     emit_text(event.payload);
                     return;
-                case Event::Kind::close: {
+                case Event::kind::close: {
                     bool emit_close_callback = false;
                     {
                         std::scoped_lock lock(mutex_);
@@ -493,7 +493,7 @@ namespace orangutan::channel::qq {
                     }
                     return;
                 }
-                case Event::Kind::error:
+                case Event::kind::error:
                     handle_connection_error(event.payload);
                     return;
             }

@@ -195,7 +195,7 @@ namespace orangutan::memory::detail {
                 .key = stmt.column_text(1),
                 .content = stmt.column_text(2),
                 .category = stmt.column_text(3),
-                .type = magic_enum::enum_cast<MemoryType>(stmt.column_text(4), magic_enum::case_insensitive).value_or(MemoryType::user),
+                .type = magic_enum::enum_cast<memory_type>(stmt.column_text(4), magic_enum::case_insensitive).value_or(memory_type::user),
                 .scope = stmt.column_text(5),
                 .source = stmt.column_text(6),
                 .updated_at = stmt.column_text(7),
