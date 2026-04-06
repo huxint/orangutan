@@ -4,6 +4,8 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 using Catch::Matchers::ContainsSubstring;
 
@@ -22,3 +24,24 @@ TEST_CASE("http_status_error_truncates_large_body") {
     CHECK_THAT(message, ContainsSubstring("truncated"));
 }
 
+TEST_CASE("compose_headers_applies_required_fallbacks_and_preserves_custom_headers") {
+    const std::unordered_map<std::string, std::string> custom_headers{
+        {"Authorization", "Bearer custom-token"},
+        {"x-team", "infra"},
+    };
+
+    auto headers = orangutan::providers::compose_headers(custom_headers,
+                                                         {orangutan::providers::HeaderFallback{"Content-Type", "application/json"},
+                                                          orangutan::providers::HeaderFallback{"Authorization", "Bearer fallback-token"}});
+
+    REQUIRE(headers.get() != nullptr);
+    std::vector<std::string> values;
+    for (const auto *item = headers.get(); item != nullptr; item = item->next) {
+        values.emplace_back(item->data);
+    }
+
+    CHECK(values.size() == 3UL);
+    CHECK(values[0] == "Content-Type: application/json");
+    CHECK(values[1] == "Authorization: Bearer custom-token");
+    CHECK(values[2] == "x-team: infra");
+}

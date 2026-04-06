@@ -7,6 +7,7 @@
 #include <magic_enum/magic_enum.hpp>
 
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -34,6 +35,14 @@ namespace orangutan::permissions {
             return "user settings";
         }
         return "unknown";
+    }
+
+    inline std::string default_tool_approval_message(std::string_view tool_name) {
+        return "Tool '" + std::string(tool_name) + "' requires approval";
+    }
+
+    inline std::string approval_prompt_message(const PermissionDecision &decision, std::string_view fallback = "Tool requires approval") {
+        return decision.message.value_or(std::string{fallback});
     }
 
     inline nlohmann::json permission_reason_to_json(const DecisionReason &reason) {

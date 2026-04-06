@@ -7,8 +7,10 @@
 #include <exec/any_sender_of.hpp>
 #include <algorithm>
 #include <exception>
+#include <functional>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 #include "utils/format.hpp"
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -34,15 +36,25 @@ namespace orangutan::providers {
         }
 
         std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
-            if (endpoint.endpoint_style == "anthropic-messages" || endpoint.endpoint_style.empty()) {
-                return std::make_unique<AnthropicProvider>(endpoint);
+            using provider_constructor = std::function<std::unique_ptr<Provider>(const ProviderEndpoint &)>;
+            static const std::unordered_map<std::string, provider_constructor> PROVIDER_BY_STYLE{
+                {"anthropic-messages", [](const ProviderEndpoint &value) {
+                     return std::make_unique<AnthropicProvider>(value);
+                 }},
+                {"openai-chat-completions", [](const ProviderEndpoint &value) {
+                     return std::make_unique<OpenAiProvider>(value);
+                 }},
+                {"openai-responses", [](const ProviderEndpoint &value) {
+                     return std::make_unique<OpenAiProvider>(value);
+                 }},
+            };
+
+            const auto style = resolved_endpoint_style(endpoint);
+            if (auto it = PROVIDER_BY_STYLE.find(style); it != PROVIDER_BY_STYLE.end()) {
+                return it->second(endpoint);
             }
 
-            if (endpoint.endpoint_style == "openai-chat-completions" || endpoint.endpoint_style == "openai-responses") {
-                return std::make_unique<OpenAiProvider>(endpoint);
-            }
-
-            throw std::runtime_error("Unknown endpoint_style: " + endpoint.endpoint_style + ". Supported: anthropic-messages, openai-chat-completions, openai-responses");
+            throw std::runtime_error("Unknown endpoint_style: " + style + ". Supported: anthropic-messages, openai-chat-completions, openai-responses");
         }
 
         class FallbackProvider final : public Provider {

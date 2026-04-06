@@ -155,7 +155,7 @@ namespace orangutan::bootstrap {
         }
 
         std::string format_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id) {
-            std::string prompt = decision.message.value_or("Tool requires approval");
+            std::string prompt = permissions::approval_prompt_message(decision);
             prompt += "\nTool: " + call.name;
             if (call.input.is_object()) {
                 if (const auto it = call.input.find("command"); it != call.input.end() && it->is_string()) {

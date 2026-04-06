@@ -24,22 +24,6 @@ namespace orangutan::providers {
             return reason;
         }
 
-        void append_header_if_missing(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key,
-                                      std::string_view fallback_value) {
-            if (!custom_headers.contains(static_cast<std::string>(key))) {
-                headers.append(static_cast<std::string>(key) + ": " + static_cast<std::string>(fallback_value));
-            }
-        }
-
-        void append_custom_headers(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers) {
-            for (const auto &[name, value] : custom_headers) {
-                auto header = name;
-                header += ": ";
-                header += value;
-                headers.append(header);
-            }
-        }
-
         nlohmann::json tool_to_openai_function(const ToolDef &tool) {
             return {
                 {"type", "function"},
@@ -85,24 +69,17 @@ namespace orangutan::providers {
             return {{"role", "user"}, {"content", content}};
         }
 
-        class ChatCompletionsStreamAccumulator {
+        class ChatCompletionsStreamAccumulator final : public JsonSseAccumulator<ChatCompletionsStreamAccumulator> {
         public:
             explicit ChatCompletionsStreamAccumulator(const StreamCallback &on_event)
             : on_event_(on_event) {}
 
-            void handle_data(const std::string &data) {
-                if (data == "[DONE]") {
-                    return;
-                }
+            [[nodiscard]]
+            std::string_view parse_error_context() const {
+                return "OpenAI SSE data";
+            }
 
-                nlohmann::json event_data;
-                try {
-                    event_data = nlohmann::json::parse(data);
-                } catch (const nlohmann::json::parse_error &e) {
-                    spdlog::warn("Failed to parse OpenAI SSE data: {}", e.what());
-                    return;
-                }
-
+            void handle_parsed_payload(const nlohmann::json &event_data) {
                 if (!event_data.contains("choices") || event_data["choices"].empty()) {
                     return;
                 }
@@ -194,24 +171,17 @@ namespace orangutan::providers {
             }
         };
 
-        class ResponsesStreamAccumulator {
+        class ResponsesStreamAccumulator final : public JsonSseAccumulator<ResponsesStreamAccumulator> {
         public:
             explicit ResponsesStreamAccumulator(const StreamCallback &on_event)
             : on_event_(on_event) {}
 
-            void handle_event(const std::string &event_name, const std::string &data) {
-                if (data == "[DONE]") {
-                    return;
-                }
+            [[nodiscard]]
+            std::string_view parse_error_context() const {
+                return "Responses SSE data";
+            }
 
-                nlohmann::json payload;
-                try {
-                    payload = nlohmann::json::parse(data);
-                } catch (const nlohmann::json::parse_error &e) {
-                    spdlog::warn("Failed to parse Responses SSE data: {}", e.what());
-                    return;
-                }
-
+            void handle_parsed_payload(std::string_view event_name, const nlohmann::json &payload) {
                 if (event_name == "response.output_text.delta") {
                     const auto delta = payload.value("delta", std::string{});
                     text_content_ += delta;
@@ -463,10 +433,8 @@ namespace orangutan::providers {
         const auto request_body = body.dump();
         spdlog::debug("OpenAI request body: {}", request_body);
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
-        append_custom_headers(headers, endpoint_.headers);
+        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
+                                                           HeaderFallback{"Authorization", std::string{"Bearer "} + endpoint_.api_key}});
 
         const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");
         auto response_body = http_post(url, request_body, headers);
@@ -492,10 +460,8 @@ namespace orangutan::providers {
         const auto request_body = body.dump();
         spdlog::debug("OpenAI stream request body: {}", request_body);
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
-        append_custom_headers(headers, endpoint_.headers);
+        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
+                                                           HeaderFallback{"Authorization", std::string{"Bearer "} + endpoint_.api_key}});
 
         const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");
 
