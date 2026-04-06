@@ -25,7 +25,6 @@ namespace orangutan::config::detail {
         std::optional<std::string> cached_password_;
     };
 
-    void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver);
 
     [[nodiscard]]
     AgentConfig make_agent_defaults(const Config &cfg);

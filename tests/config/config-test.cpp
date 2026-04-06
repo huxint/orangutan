@@ -2,7 +2,6 @@
 #include "config/secret-protection.hpp"
 #include "test-helpers.hpp"
 
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -22,6 +21,11 @@ namespace {
         ~ConfigFileHarness() {
             std::filesystem::remove_all(tmp_dir_);
         }
+
+        ConfigFileHarness(const ConfigFileHarness &) = delete;
+        ConfigFileHarness &operator=(const ConfigFileHarness &) = delete;
+        ConfigFileHarness(ConfigFileHarness &&) = delete;
+        ConfigFileHarness &operator=(ConfigFileHarness &&) = delete;
 
         [[nodiscard]]
         std::string write_config(const nlohmann::json &content) const {
@@ -178,6 +182,41 @@ namespace {
         REQUIRE(cfg.profiles.contains("gateway-a"));
         CHECK(cfg.profiles.at("gateway-a").api_key == "sk-protected-profile");
     };
+
+    TEST_CASE("loads_protected_qq_and_qq_bot_client_secrets") {
+        ConfigFileHarness harness;
+        const auto protected_qq_secret = protect_config_secret("qq-protected-secret", "qq-password", "qq.client_secret");
+        const auto protected_bot_secret = protect_config_secret("qq-bot-protected-secret", "qq-password", "qq_bots.client_secret");
+        const auto path = harness.write_config(nlohmann::json{
+            {"agent", {{"model", "shared-model"}}},
+            {"qq",
+             {
+                 {"app_id", "qq-app-id"},
+                 {"client_secret", protected_qq_secret},
+             }},
+            {"qq_bots",
+             {
+                 {
+                     {"name", "bot-a"},
+                     {"app_id", "bot-app-id"},
+                     {"client_secret", protected_bot_secret},
+                     {"agent", "default"},
+                 },
+             }},
+            {"agents",
+             {
+                 {"default", {{"model", "shared-model"}}},
+             }},
+        });
+
+        const auto cfg = Config::load_from(path, ConfigSecretOptions{
+                                                     .password_override = "qq-password",
+                                                 });
+        CHECK(cfg.qq_client_secret == "qq-protected-secret");
+        REQUIRE(cfg.qq_bots.size() == 1UL);
+        CHECK(cfg.qq_bots[0].client_secret == "qq-bot-protected-secret");
+    };
+
 
     TEST_CASE("invalid_thinking_value_rejects_config") {
         ConfigFileHarness harness;
