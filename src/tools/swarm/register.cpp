@@ -1,15 +1,19 @@
 #include "tools/swarm/register.hpp"
-#include "tools/registry/tool-context.hpp"
+#include "tools/internal.hpp"
+
+#include <array>
 
 namespace orangutan::tools {
 
-    void register_swarm_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        if (tool_context == nullptr) {
-            return;
-        }
+    namespace {
+        constexpr std::array SWARM_TOOL_REGISTRARS = {
+            register_team_create_tool,
+            register_team_delete_tool,
+        };
+    } // namespace
 
-        register_team_create_tool(registry, tool_context);
-        register_team_delete_tool(registry, tool_context);
+    void register_swarm_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        register_contextual_tools(registry, tool_context, SWARM_TOOL_REGISTRARS);
     }
 
 } // namespace orangutan::tools
