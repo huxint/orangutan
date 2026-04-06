@@ -1,20 +1,22 @@
 #include "providers/provider.hpp"
 
-#include "providers/anthropic-provider.hpp"
-#include "providers/openai-provider.hpp"
-#include "utils/sender-utils.hpp"
-
-#include <exec/any_sender_of.hpp>
 #include <algorithm>
+#include <array>
 #include <exception>
-#include <functional>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
-#include "utils/format.hpp"
-#include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
+
+#include <exec/any_sender_of.hpp>
+#include <spdlog/spdlog.h>
+
+#include "providers/anthropic-provider.hpp"
+#include "providers/openai-provider.hpp"
+#include "utils/format.hpp"
+#include "utils/sender-utils.hpp"
 
 namespace orangutan::providers {
     namespace {
@@ -24,37 +26,67 @@ namespace orangutan::providers {
             using std::runtime_error::runtime_error;
         };
 
-        std::string resolved_endpoint_style(const ProviderEndpoint &endpoint) {
-            return endpoint.endpoint_style.empty() ? std::string{"anthropic-messages"} : endpoint.endpoint_style;
+        constexpr std::string_view DEFAULT_ENDPOINT_STYLE = "anthropic-messages";
+
+        [[nodiscard]]
+        std::string_view resolved_endpoint_style(const ProviderEndpoint &endpoint) noexcept {
+            return endpoint.endpoint_style.empty() ? DEFAULT_ENDPOINT_STYLE : std::string_view{endpoint.endpoint_style};
         }
 
         void ensure_api_key_present(const ProviderEndpoint &endpoint) {
             if (!endpoint.api_key.empty()) {
                 return;
             }
-            throw MissingApiKeyError("missing API key for endpoint_style '" + resolved_endpoint_style(endpoint) + "' model '" + endpoint.model + "'");
+            throw MissingApiKeyError("missing API key for endpoint_style '" + std::string{resolved_endpoint_style(endpoint)} + "' model '" + endpoint.model + "'");
+        }
+
+        [[nodiscard]]
+        std::unique_ptr<Provider> make_anthropic_provider(const ProviderEndpoint &endpoint) {
+            return std::make_unique<AnthropicProvider>(endpoint);
+        }
+
+        [[nodiscard]]
+        std::unique_ptr<Provider> make_openai_provider(const ProviderEndpoint &endpoint) {
+            return std::make_unique<OpenAiProvider>(endpoint);
+        }
+
+        using ProviderConstructor = std::unique_ptr<Provider> (*)(const ProviderEndpoint &);
+
+        struct ProviderStyleSpec {
+            std::string_view style;
+            ProviderConstructor constructor;
+        };
+
+        constexpr auto PROVIDER_STYLE_SPECS = std::to_array<ProviderStyleSpec>({
+            {.style = "anthropic-messages", .constructor = make_anthropic_provider},
+            {.style = "openai-chat-completions", .constructor = make_openai_provider},
+            {.style = "openai-responses", .constructor = make_openai_provider},
+        });
+
+        [[nodiscard]]
+        const std::string &supported_provider_styles() {
+            static const std::string styles = [] {
+                std::string joined;
+                bool first_style = true;
+                for (const auto &spec : PROVIDER_STYLE_SPECS) {
+                    if (!first_style) {
+                        joined.append(", ");
+                    }
+                    joined.append(spec.style);
+                    first_style = false;
+                }
+                return joined;
+            }();
+            return styles;
         }
 
         std::unique_ptr<Provider> instantiate_provider(const ProviderEndpoint &endpoint) {
-            using provider_constructor = std::function<std::unique_ptr<Provider>(const ProviderEndpoint &)>;
-            static const std::unordered_map<std::string, provider_constructor> PROVIDER_BY_STYLE{
-                {"anthropic-messages", [](const ProviderEndpoint &value) {
-                     return std::make_unique<AnthropicProvider>(value);
-                 }},
-                {"openai-chat-completions", [](const ProviderEndpoint &value) {
-                     return std::make_unique<OpenAiProvider>(value);
-                 }},
-                {"openai-responses", [](const ProviderEndpoint &value) {
-                     return std::make_unique<OpenAiProvider>(value);
-                 }},
-            };
-
             const auto style = resolved_endpoint_style(endpoint);
-            if (auto it = PROVIDER_BY_STYLE.find(style); it != PROVIDER_BY_STYLE.end()) {
-                return it->second(endpoint);
+            if (const auto *const it = std::ranges::find(PROVIDER_STYLE_SPECS, style, &ProviderStyleSpec::style); it != PROVIDER_STYLE_SPECS.end()) {
+                return it->constructor(endpoint);
             }
 
-            throw std::runtime_error("Unknown endpoint_style: " + style + ". Supported: anthropic-messages, openai-chat-completions, openai-responses");
+            throw std::runtime_error("Unknown endpoint_style: " + std::string{style} + ". Supported: " + supported_provider_styles());
         }
 
         class FallbackProvider final : public Provider {
@@ -102,7 +134,7 @@ namespace orangutan::providers {
             [[nodiscard]]
             std::string name() const override {
                 std::scoped_lock lock(mutex_);
-                return endpoints_[preferred_index_].endpoint_style.empty() ? std::string{"anthropic-messages"} : endpoints_[preferred_index_].endpoint_style;
+                return std::string{resolved_endpoint_style(endpoints_[preferred_index_])};
             }
 
             [[nodiscard]]
@@ -221,6 +253,11 @@ namespace orangutan::providers {
                 return next_model;
             }
 
+            void record_failed_attempt() {
+                std::scoped_lock lock(mutex_);
+                ++usage_.failed_attempts;
+            }
+
             template <typename Fn>
             response_sender_t execute_attempt_sender(RequestAttemptState state, Fn &fn) {
                 return stdexec::just(std::move(state)) | stdexec::then([this, &fn](RequestAttemptState active_state) {
@@ -246,12 +283,10 @@ namespace orangutan::providers {
                            try {
                                std::rethrow_exception(result.error);
                            } catch (const NonRetryableProviderError &) {
-                               std::scoped_lock lock(mutex_);
-                               ++usage_.failed_attempts;
+                               record_failed_attempt();
                                throw;
                            } catch (const MissingApiKeyError &) {
-                               std::scoped_lock lock(mutex_);
-                               ++usage_.failed_attempts;
+                               record_failed_attempt();
                                throw;
                            } catch (const std::exception &error) {
                                if (!advance_after_retryable_failure(result.state, error.what()).has_value()) {
@@ -279,15 +314,19 @@ namespace orangutan::providers {
 
         std::vector<ProviderEndpoint> build_provider_chain(const ProviderEndpoint &primary_endpoint, std::vector<ProviderEndpoint> fallback_endpoints) {
             std::vector<ProviderEndpoint> endpoints;
+            endpoints.reserve(1 + fallback_endpoints.size());
             endpoints.push_back(primary_endpoint);
 
+            std::unordered_set<std::string> seen_models;
+            if (!primary_endpoint.model.empty()) {
+                static_cast<void>(seen_models.insert(primary_endpoint.model));
+            }
+
             for (auto &fallback_endpoint : fallback_endpoints) {
-                if (fallback_endpoint.model.empty() || fallback_endpoint.model == primary_endpoint.model) {
+                if (fallback_endpoint.model.empty()) {
                     continue;
                 }
-                if (std::ranges::any_of(endpoints, [&](const ProviderEndpoint &endpoint) {
-                        return endpoint.model == fallback_endpoint.model;
-                    })) {
+                if (!seen_models.insert(fallback_endpoint.model).second) {
                     continue;
                 }
                 endpoints.push_back(std::move(fallback_endpoint));
