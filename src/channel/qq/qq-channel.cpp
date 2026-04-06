@@ -233,7 +233,7 @@ namespace orangutan::channel::qq {
         std::mutex mutex;
         std::condition_variable cv;
         std::mutex heartbeat_mutex;
-        std::condition_variable heartbeat_cv;
+        std::condition_variable_any heartbeat_cv;
         bool ready = false;
         bool hello_received = false;
         bool close_requested = false;
@@ -241,16 +241,13 @@ namespace orangutan::channel::qq {
         base::u32 last_seq = 0;
         std::string session_id;
         std::chrono::milliseconds heartbeat_interval{0};
-        std::atomic<bool> heartbeat_stop{false};
-        std::thread heartbeat_thread;
+        std::jthread heartbeat_thread;
         std::mutex token_refresh_mutex;
-        std::condition_variable token_refresh_cv;
-        std::atomic<bool> token_refresh_stop{false};
-        std::thread token_refresh_thread;
+        std::condition_variable_any token_refresh_cv;
+        std::jthread token_refresh_thread;
         std::mutex debounce_mutex;
-        std::condition_variable debounce_cv;
-        std::atomic<bool> debounce_stop{false};
-        std::thread debounce_thread;
+        std::condition_variable_any debounce_cv;
+        std::jthread debounce_thread;
         std::unordered_map<std::string, PendingDebouncedMessage> pending_messages;
         std::chrono::milliseconds debounce_window{1500};
         std::chrono::milliseconds debounce_max_wait{8000};
@@ -270,9 +267,8 @@ namespace orangutan::channel::qq {
             std::chrono::steady_clock::time_point last_sent_at;
         };
         std::mutex typing_mutex;
-        std::condition_variable typing_cv;
-        std::atomic<bool> typing_stop{false};
-        std::thread typing_thread;
+        std::condition_variable_any typing_cv;
+        std::jthread typing_thread;
         std::unordered_map<std::string, TypingState> typing_states;
 
         std::unique_ptr<qq::Transport> websocket;
@@ -665,16 +661,15 @@ namespace orangutan::channel::qq {
         stop_heartbeat();
 
         runtime_->heartbeat_interval = interval;
-        runtime_->heartbeat_stop = false;
-        runtime_->heartbeat_thread = std::thread([this] {
-            while (!runtime_->heartbeat_stop.load()) {
+        runtime_->heartbeat_thread = std::jthread([this](std::stop_token token) {
+            while (!token.stop_requested()) {
                 std::unique_lock<std::mutex> wait_lock(runtime_->heartbeat_mutex);
-                const bool should_stop = runtime_->heartbeat_cv.wait_for(wait_lock, runtime_->heartbeat_interval, [this] {
-                    return runtime_->heartbeat_stop.load();
+                const bool should_stop = runtime_->heartbeat_cv.wait_for(wait_lock, token, runtime_->heartbeat_interval, [&token] {
+                    return token.stop_requested();
                 });
                 wait_lock.unlock();
 
-                if (should_stop || runtime_->heartbeat_stop.load()) {
+                if (should_stop || token.stop_requested()) {
                     break;
                 }
 
@@ -703,9 +698,9 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::stop_heartbeat() {
-        runtime_->heartbeat_stop = true;
-        runtime_->heartbeat_cv.notify_all();
         if (runtime_->heartbeat_thread.joinable()) {
+            runtime_->heartbeat_thread.request_stop();
+            runtime_->heartbeat_cv.notify_all();
             runtime_->heartbeat_thread.join();
         }
     }
@@ -713,16 +708,15 @@ namespace orangutan::channel::qq {
     void QqChannel::start_token_refresh_loop() {
         stop_token_refresh_loop();
 
-        runtime_->token_refresh_stop = false;
-        runtime_->token_refresh_thread = std::thread([this] {
-            while (!runtime_->token_refresh_stop.load()) {
+        runtime_->token_refresh_thread = std::jthread([this](std::stop_token token) {
+            while (!token.stop_requested()) {
                 std::unique_lock lock(runtime_->token_refresh_mutex);
-                const bool should_stop = runtime_->token_refresh_cv.wait_for(lock, std::chrono::minutes(1), [this] {
-                    return runtime_->token_refresh_stop.load();
+                const bool should_stop = runtime_->token_refresh_cv.wait_for(lock, token, std::chrono::minutes(1), [&token] {
+                    return token.stop_requested();
                 });
                 lock.unlock();
 
-                if (should_stop || runtime_->token_refresh_stop.load()) {
+                if (should_stop || token.stop_requested()) {
                     break;
                 }
 
@@ -736,9 +730,9 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::stop_token_refresh_loop() {
-        runtime_->token_refresh_stop = true;
-        runtime_->token_refresh_cv.notify_all();
         if (runtime_->token_refresh_thread.joinable()) {
+            runtime_->token_refresh_thread.request_stop();
+            runtime_->token_refresh_cv.notify_all();
             runtime_->token_refresh_thread.join();
         }
     }
@@ -746,16 +740,15 @@ namespace orangutan::channel::qq {
     void QqChannel::start_debounce_loop() {
         stop_debounce_loop();
 
-        runtime_->debounce_stop = false;
-        runtime_->debounce_thread = std::thread([this] {
-            while (!runtime_->debounce_stop.load()) {
+        runtime_->debounce_thread = std::jthread([this](std::stop_token token) {
+            while (!token.stop_requested()) {
                 std::vector<std::tuple<std::string, std::string, std::string, std::string>> ready_messages;
                 {
                     std::unique_lock lock(runtime_->debounce_mutex);
-                    runtime_->debounce_cv.wait_for(lock, std::chrono::milliseconds(200), [this] {
-                        return runtime_->debounce_stop.load() || !runtime_->pending_messages.empty();
+                    runtime_->debounce_cv.wait_for(lock, token, std::chrono::milliseconds(200), [this, &token] {
+                        return token.stop_requested() || !runtime_->pending_messages.empty();
                     });
-                    if (runtime_->debounce_stop.load()) {
+                    if (token.stop_requested()) {
                         break;
                     }
 
@@ -780,9 +773,9 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::stop_debounce_loop() {
-        runtime_->debounce_stop = true;
-        runtime_->debounce_cv.notify_all();
         if (runtime_->debounce_thread.joinable()) {
+            runtime_->debounce_thread.request_stop();
+            runtime_->debounce_cv.notify_all();
             runtime_->debounce_thread.join();
         }
 
@@ -1689,17 +1682,16 @@ namespace orangutan::channel::qq {
 
     void QqChannel::start_typing_keepalive() {
         stop_typing_keepalive();
-        runtime_->typing_stop = false;
-        runtime_->typing_thread = std::thread([this] {
+        runtime_->typing_thread = std::jthread([this](std::stop_token token) {
             constexpr auto typing_interval = std::chrono::seconds(50);
-            while (!runtime_->typing_stop.load()) {
+            while (!token.stop_requested()) {
                 std::vector<std::pair<std::string, std::string>> to_send;
                 {
                     std::unique_lock lock(runtime_->typing_mutex);
-                    runtime_->typing_cv.wait_for(lock, std::chrono::seconds(10), [this] {
-                        return runtime_->typing_stop.load() || !runtime_->typing_states.empty();
+                    runtime_->typing_cv.wait_for(lock, token, std::chrono::seconds(10), [this, &token] {
+                        return token.stop_requested() || !runtime_->typing_states.empty();
                     });
-                    if (runtime_->typing_stop.load()) {
+                    if (token.stop_requested()) {
                         break;
                     }
 
@@ -1720,9 +1712,9 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::stop_typing_keepalive() {
-        runtime_->typing_stop = true;
-        runtime_->typing_cv.notify_all();
         if (runtime_->typing_thread.joinable()) {
+            runtime_->typing_thread.request_stop();
+            runtime_->typing_cv.notify_all();
             runtime_->typing_thread.join();
         }
     }

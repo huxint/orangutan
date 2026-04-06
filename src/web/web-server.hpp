@@ -1,14 +1,17 @@
 #pragma once
 
 #include "web/web-types.hpp"
+
 #include <chrono>
-#include <httplib.h>
+#include <condition_variable>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+
+#include <httplib.h>
 
 namespace orangutan::automation {
     class Runtime;
@@ -68,10 +71,14 @@ namespace orangutan::web {
 
     private:
         httplib::Server server_;
-        std::thread server_thread_;
+        std::jthread server_thread_;
         std::filesystem::path static_dir_;
         int port_ = 0;
         std::atomic<bool> running_{false};
+
+        std::mutex startup_mutex_;
+        std::condition_variable startup_cv_;
+        bool startup_complete_ = false;
 
         storage::SessionStore *session_store_ = nullptr;
         memory::MemoryStore *memory_store_ = nullptr;
