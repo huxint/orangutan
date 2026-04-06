@@ -84,7 +84,7 @@ namespace orangutan::memory::detail {
         });
     }
 
-    base::f64 score_memory_match(const MemoryRecord &record, const std::string &query) {
+    base::f64 score_memory_match(const MemoryRecord &record, std::string_view query) {
         auto trimmed_query = utils::trim_copy(query);
         if (trimmed_query.empty()) {
             return 0.0;
@@ -145,7 +145,7 @@ namespace orangutan::memory::detail {
         return out;
     }
 
-    std::string merge_memory_content(const std::string &existing, const std::string &incoming) {
+    std::string merge_memory_content(std::string_view existing, std::string_view incoming) {
         const auto trimmed_existing = utils::trim_copy(existing);
         const auto trimmed_incoming = utils::trim_copy(incoming);
         if (trimmed_existing.empty() || trimmed_incoming.contains(trimmed_existing)) {
@@ -171,7 +171,7 @@ namespace orangutan::memory::detail {
         return fragments | std::ranges::views::join_with(std::string_view{"\n"}) | std::ranges::to<std::string>();
     }
 
-    std::optional<std::string> build_fts_query(const std::string &query) {
+    std::optional<std::string> build_fts_query(std::string_view query) {
         const auto tokens = tokenize_ascii_words(query);
         if (tokens.empty()) {
             return std::nullopt;

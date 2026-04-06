@@ -110,45 +110,45 @@ namespace orangutan::bootstrap {
         return normalize_path(path);
     }
 
-    std::filesystem::path workspace_state_root(const std::string &workspace_root) {
+    std::filesystem::path workspace_state_root(std::string_view workspace_root) {
         if (workspace_root.empty()) {
             return {};
         }
         return std::filesystem::path(workspace_root) / ".orangutan";
     }
 
-    std::filesystem::path workspace_skills_root(const std::string &workspace_root) {
+    std::filesystem::path workspace_skills_root(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "skills";
     }
 
-    std::filesystem::path workspace_hooks_root(const std::string &workspace_root) {
+    std::filesystem::path workspace_hooks_root(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "hooks";
     }
 
-    std::filesystem::path workspace_memory_root(const std::string &workspace_root) {
+    std::filesystem::path workspace_memory_root(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "memory";
     }
 
-    std::filesystem::path workspace_identity_root(const std::string &workspace_root, const std::string &runtime_key) {
+    std::filesystem::path workspace_identity_root(std::string_view workspace_root, std::string_view runtime_key) {
         if (workspace_root.empty() || runtime_key.empty()) {
             return {};
         }
-        return workspace_state_root(workspace_root) / "identities" / make_identity_slug(runtime_key);
+        return workspace_state_root(workspace_root) / "identities" / make_identity_slug(std::string(runtime_key));
     }
 
-    std::filesystem::path workspace_exports_root(const std::string &workspace_root) {
+    std::filesystem::path workspace_exports_root(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "exports";
     }
 
-    std::filesystem::path workspace_session_store_path(const std::string &workspace_root) {
+    std::filesystem::path workspace_session_store_path(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "sessions.db";
     }
 
-    std::filesystem::path workspace_memory_store_path(const std::string &workspace_root) {
+    std::filesystem::path workspace_memory_store_path(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "memory.db";
     }
 
-    std::filesystem::path workspace_automation_store_path(const std::string &workspace_root) {
+    std::filesystem::path workspace_automation_store_path(std::string_view workspace_root) {
         return workspace_state_root(workspace_root) / "automation.db";
     }
 

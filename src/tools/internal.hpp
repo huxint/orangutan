@@ -131,7 +131,7 @@ namespace orangutan::tools {
         return normalized_candidate;
     }
 
-    inline std::filesystem::path resolve_tool_working_dir(const std::string &working_dir, const std::filesystem::path &workspace_root,
+    inline std::filesystem::path resolve_tool_working_dir(std::string_view working_dir, const std::filesystem::path &workspace_root,
                                                           const ToolPermissionContext *permissions = nullptr) {
         if (working_dir.empty()) {
             return workspace_root.empty() ? std::filesystem::path{} : normalize_tool_path(workspace_root);

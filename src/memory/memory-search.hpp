@@ -21,15 +21,15 @@ namespace orangutan::memory::detail {
     [[nodiscard]]
     bool contains_non_ascii(std::string_view value);
     [[nodiscard]]
-    base::f64 score_memory_match(const MemoryRecord &record, const std::string &query);
+    base::f64 score_memory_match(const MemoryRecord &record, std::string_view query);
     [[nodiscard]]
     std::string format_records(const std::vector<MemoryRecord> &records);
     [[nodiscard]]
     std::string format_memory_manifest(const std::vector<MemoryRecord> &records);
     [[nodiscard]]
-    std::string merge_memory_content(const std::string &existing, const std::string &incoming);
+    std::string merge_memory_content(std::string_view existing, std::string_view incoming);
     [[nodiscard]]
-    std::optional<std::string> build_fts_query(const std::string &query);
+    std::optional<std::string> build_fts_query(std::string_view query);
     [[nodiscard]]
     std::vector<MemoryRecord> collect_records(sqlite::Statement &stmt);
     [[nodiscard]]
