@@ -1,7 +1,7 @@
 #pragma once
 
 #include "permissions/permission-types.hpp"
-#include "types/types.hpp"
+#include "types/tool-def.hpp"
 
 #include <functional>
 #include <optional>
@@ -60,6 +60,7 @@ namespace orangutan::tools {
 
         // Deferred tool discovery
         void discover_tool(const std::string &name) const;
+        void discover_deferred_tools() const;
         void clear_discovered() const;
         [[nodiscard]]
         bool has_deferred_tools() const;

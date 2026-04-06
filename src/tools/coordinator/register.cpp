@@ -2,7 +2,6 @@
 #include "tools/registry/tool-context.hpp"
 
 #include <array>
-#include <string>
 #include <string_view>
 
 namespace orangutan::tools {
@@ -32,10 +31,5 @@ namespace orangutan::tools {
         }
     }
 
-    void discover_coordinator_tools(ToolRegistry &registry) {
-        for (const auto &spec : COORDINATOR_TOOL_SPECS) {
-            registry.discover_tool(std::string{spec.name});
-        }
-    }
 
 } // namespace orangutan::tools

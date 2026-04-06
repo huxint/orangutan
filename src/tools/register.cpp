@@ -28,7 +28,7 @@ namespace orangutan::tools {
                                 const ToolPermissionContext *permissions, std::string_view edit_mode) {
         if (coordinator::is_coordinator_mode(tool_context)) {
             register_coordinator_tools(registry, tool_context);
-            discover_coordinator_tools(registry);
+            registry.discover_deferred_tools();
             return;
         }
 
