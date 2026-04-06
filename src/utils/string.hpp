@@ -6,12 +6,12 @@ namespace orangutan::utils {
 
     [[nodiscard]]
     inline std::string_view trim_copy(std::string_view value) {
-        constexpr std::string_view blanks = " \t\n\r\f\v";
-        const auto first = value.find_first_not_of(blanks);
+        constexpr std::string_view BLANKS = " \t\n\r\f\v";
+        const auto first = value.find_first_not_of(BLANKS);
         if (first == std::string_view::npos) {
             return {};
         }
-        const auto last = value.find_last_not_of(blanks);
+        const auto last = value.find_last_not_of(BLANKS);
         return value.substr(first, last - first + 1);
     }
 

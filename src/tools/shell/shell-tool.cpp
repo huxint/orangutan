@@ -335,7 +335,7 @@ namespace orangutan::tools {
                         throw std::runtime_error("on_complete.prompt must be a string");
                     }
                     prompt_present = true;
-                    prompt = utf8::sanitize_and_truncate_valid_prefix(prompt_it->get_ref<const std::string &>(), background_completion_prompt_max_chars, true);
+                    prompt = utf8::sanitize_and_truncate_valid_prefix(prompt_it->get_ref<const std::string &>(), BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true);
                 }
             }
 
@@ -345,9 +345,9 @@ namespace orangutan::tools {
                 return completion;
             }
 
-            completion.metadata.emplace(std::string(background_completion_mode_metadata_key), mode);
+            completion.metadata.emplace(std::string(BACKGROUND_COMPLETION_MODE_METADATA_KEY), mode);
             if (prompt_present) {
-                completion.metadata.emplace(std::string(background_completion_prompt_metadata_key), prompt);
+                completion.metadata.emplace(std::string(BACKGROUND_COMPLETION_PROMPT_METADATA_KEY), prompt);
             }
             return completion;
         }

@@ -296,7 +296,7 @@ namespace {
 
         const std::string prompt_unit = "\xE4\xBD\xA0\xE5\xA5\xBD\xF0\x9F\x9A\x80";
         std::string prompt;
-        for (std::size_t i = 0; i < orangutan::tools::background_completion_prompt_max_chars; ++i) {
+        for (std::size_t i = 0; i < orangutan::tools::BACKGROUND_COMPLETION_PROMPT_MAX_CHARS; ++i) {
             prompt += prompt_unit;
         }
         const auto start_payload = harness.start_background_shell({
@@ -320,11 +320,11 @@ namespace {
         CHECK(inbox_completion.at("process_id") == start_payload.at("process_id"));
         CHECK(inbox_prompt == resume_prompt);
         CHECK(inbox_prompt.size() < prompt.size());
-        CHECK(inbox_prompt.size() <= orangutan::tools::background_completion_prompt_max_chars);
+        CHECK(inbox_prompt.size() <= orangutan::tools::BACKGROUND_COMPLETION_PROMPT_MAX_CHARS);
         CHECK(inbox_prompt.ends_with("..."));
         CHECK(inbox_prompt.contains(prompt_unit));
-        CHECK(items.front().body.size() <= orangutan::tools::background_completion_payload_max_bytes);
-        CHECK(resume_messages.front().size() <= orangutan::tools::background_completion_payload_max_bytes);
+        CHECK(items.front().body.size() <= orangutan::tools::BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES);
+        CHECK(resume_messages.front().size() <= orangutan::tools::BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES);
     };
 
     TEST_CASE("unsupported_completion_routing_does_not_advertise_or_accept_on_complete") {
@@ -370,7 +370,7 @@ namespace {
             .exit_code = 0,
             .stdout = {.tail = "stdout " + secret, .total_bytes = secret.size() + 7, .truncated = false},
             .stderr = {.tail = "stderr " + secret, .total_bytes = secret.size() + 7, .truncated = false},
-            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
         const auto items = harness.wait_for_inbox_size(1);
@@ -407,7 +407,7 @@ namespace {
             .terminal_status = background_process_terminal_status::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "inbox"}},
+            .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "inbox"}},
         });
 
         const auto items = harness.wait_for_inbox_size(1);
@@ -438,8 +438,8 @@ namespace {
             .stderr = {.tail = stderr_tail, .total_bytes = stderr_tail.size(), .truncated = false},
             .metadata =
                 {
-                    {std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"},
-                    {std::string(orangutan::tools::background_completion_prompt_metadata_key), prompt},
+                    {std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"},
+                    {std::string(orangutan::tools::BACKGROUND_COMPLETION_PROMPT_METADATA_KEY), prompt},
                 },
         });
 
@@ -534,7 +534,7 @@ namespace {
             .terminal_status = background_process_terminal_status::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
         const auto items = harness.wait_for_inbox_size(2);

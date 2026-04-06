@@ -79,7 +79,7 @@ namespace orangutan::memory {
             return {};
         }
 
-        const auto effective_limit = limit == 0 ? memory_detail::default_search_limit : limit;
+        const auto effective_limit = limit == 0 ? memory_detail::DEFAULT_SEARCH_LIMIT : limit;
         std::unordered_map<int, base::f64> fts_bonus_by_id;
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
@@ -98,7 +98,7 @@ namespace orangutan::memory {
         sqlite::Statement stmt(db_, "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                     "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
         stmt.bind_text(1, scope);
-        stmt.bind_int(2, static_cast<int>(memory_detail::search_scan_limit));
+        stmt.bind_int(2, static_cast<int>(memory_detail::SEARCH_SCAN_LIMIT));
 
         auto records = memory_detail::collect_records(stmt);
         struct RankedRecord {
@@ -181,7 +181,7 @@ namespace orangutan::memory {
 
     std::vector<MemoryRecord> MemoryStore::list(const std::string &scope, const std::string &category, std::size_t limit) {
         std::scoped_lock lock(mutex_);
-        const auto capped_limit = static_cast<int>(limit == 0 ? memory_detail::default_list_limit : limit);
+        const auto capped_limit = static_cast<int>(limit == 0 ? memory_detail::DEFAULT_LIST_LIMIT : limit);
 
         sqlite::Statement stmt(db_, category.empty() ? "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                                        "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?"

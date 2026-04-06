@@ -366,7 +366,7 @@ namespace {
             .terminal_status = background_process_terminal_status::exited,
             .exit_code = 0,
             .stdout = {.tail = "done\\n", .total_bytes = 5, .truncated = false},
-            .metadata = {{std::string(tools::background_completion_mode_metadata_key), "resume"}},
+            .metadata = {{std::string(tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
         const auto inbox_items = automation_store->list_inbox(second_input.agent_key);

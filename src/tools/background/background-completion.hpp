@@ -8,10 +8,10 @@
 
 namespace orangutan::tools {
 
-    inline constexpr std::string_view background_completion_mode_metadata_key = "on_complete.mode";
-    inline constexpr std::string_view background_completion_prompt_metadata_key = "on_complete.prompt";
-    inline constexpr std::size_t background_completion_prompt_max_chars = 2048;
-    inline constexpr std::size_t background_completion_payload_max_bytes = 16384;
+    inline constexpr std::string_view BACKGROUND_COMPLETION_MODE_METADATA_KEY = "on_complete.mode";
+    inline constexpr std::string_view BACKGROUND_COMPLETION_PROMPT_METADATA_KEY = "on_complete.prompt";
+    inline constexpr std::size_t BACKGROUND_COMPLETION_PROMPT_MAX_CHARS = 2048;
+    inline constexpr std::size_t BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES = 16384;
 
     class BackgroundCompletionDispatcher {
     public:

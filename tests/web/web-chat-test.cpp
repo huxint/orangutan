@@ -597,7 +597,7 @@ namespace orangutan {
                 .terminal_status = background_process_terminal_status::exited,
                 .exit_code = 0,
                 .stdout = {.tail = "done\n", .total_bytes = 5, .truncated = false},
-                .metadata = {{std::string(orangutan::tools::background_completion_mode_metadata_key), "resume"}},
+                .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
             });
 
             CHECK(provider_calls == 0UL);

@@ -26,7 +26,7 @@ namespace orangutan::tools {
         constexpr std::size_t max_command_chars = 2048;
         constexpr std::size_t max_working_dir_chars = 1024;
         constexpr std::size_t max_failure_reason_chars = 512;
-        constexpr std::size_t max_failure_payload_bytes = background_completion_payload_max_bytes * 2;
+        constexpr std::size_t max_failure_payload_bytes = BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES * 2;
         constexpr std::size_t max_title_command_chars = 80;
         constexpr std::size_t max_inbox_title_chars = 160;
 
@@ -67,15 +67,15 @@ namespace orangutan::tools {
         }
 
         std::string completion_mode(const std::map<std::string, std::string> &metadata) {
-            if (const auto it = metadata.find(std::string(background_completion_mode_metadata_key)); it != metadata.end() && !it->second.empty()) {
+            if (const auto it = metadata.find(std::string(BACKGROUND_COMPLETION_MODE_METADATA_KEY)); it != metadata.end() && !it->second.empty()) {
                 return it->second;
             }
             return "inbox";
         }
 
         std::optional<std::string> completion_prompt(const std::map<std::string, std::string> &metadata) {
-            if (const auto it = metadata.find(std::string(background_completion_prompt_metadata_key)); it != metadata.end()) {
-                return utf8::sanitize_and_truncate_valid_prefix(it->second, background_completion_prompt_max_chars, true);
+            if (const auto it = metadata.find(std::string(BACKGROUND_COMPLETION_PROMPT_METADATA_KEY)); it != metadata.end()) {
+                return utf8::sanitize_and_truncate_valid_prefix(it->second, BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true);
             }
             return std::nullopt;
         }
@@ -166,7 +166,7 @@ namespace orangutan::tools {
 
         const auto payload = build_completion_payload(event, runtime_key_, agent_key_);
         const auto payload_text = scrub_tool_output(payload.dump(2));
-        if (payload_text.size() > background_completion_payload_max_bytes) {
+        if (payload_text.size() > BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES) {
             spdlog::warn("background completion payload exceeded bounded size for process {}", event.process_id);
             return;
         }
