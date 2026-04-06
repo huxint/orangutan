@@ -1,7 +1,6 @@
 #pragma once
 
 #include "providers/provider.hpp"
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,10 +43,6 @@ namespace orangutan::providers {
         [[nodiscard]]
         nlohmann::json build_chat_completions_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
                                                             int resolved_max_tokens, bool stream) const;
-
-        // Convert orangutan Message to OpenAI message format
-        [[nodiscard]]
-        static std::optional<nlohmann::json> message_to_openai(const Message &msg);
 
         // Parse OpenAI response into LLMResponse
         [[nodiscard]]
