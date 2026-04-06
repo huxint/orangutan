@@ -28,27 +28,23 @@ namespace orangutan::tools {
                                 const ToolPermissionContext *permissions, std::string_view edit_mode) {
         if (coordinator::is_coordinator_mode(tool_context)) {
             register_coordinator_tools(registry, tool_context);
-            for (const auto &tool_name : coordinator::get_coordinator_allowed_tools()) {
-                registry.discover_tool(tool_name);
-            }
+            discover_coordinator_tools(registry);
             return;
         }
+
         register_builtin_core_tools(registry, workspace, tool_context, permissions, edit_mode);
         register_task_tool(registry, tool_context);
         register_heartbeat_tool(registry, tool_context);
         register_inbox_tool(registry, tool_context);
         register_message_attachments_tool(registry, workspace, tool_context);
-        // Register coordinator/swarm tools if coordinator_manager is available
-        if (tool_context != nullptr && tool_context->coordinator_manager != nullptr && !tool_context->is_child_run) {
-            if (tool_context->coordinator_mode) {
-                // In coordinator mode, only register orchestration tools
-                register_coordinator_tools(registry, tool_context);
-            } else if (!tool_context->team_agents.empty()) {
-                // Non-coordinator agents with team_agents can spawn and communicate
-                register_coordinator_tools(registry, tool_context);
-                register_swarm_tools(registry, tool_context);
-            }
+
+        const bool can_register_collaboration_tools = tool_context != nullptr && tool_context->coordinator_manager != nullptr && !tool_context->is_child_run;
+        if (can_register_collaboration_tools && !tool_context->team_agents.empty()) {
+            // Team workers can orchestrate sub-agents and manage their team lifecycle.
+            register_coordinator_tools(registry, tool_context);
+            register_swarm_tools(registry, tool_context);
         }
+
         if (runtime_memory != nullptr) {
             register_builtin_memory_tools(registry, *runtime_memory);
         }

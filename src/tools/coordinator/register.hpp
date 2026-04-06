@@ -11,5 +11,6 @@ namespace orangutan::tools {
     void register_agent_stop_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 
     void register_coordinator_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+    void discover_coordinator_tools(ToolRegistry &registry);
 
 } // namespace orangutan::tools
