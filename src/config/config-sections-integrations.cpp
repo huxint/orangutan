@@ -1,4 +1,5 @@
 #include "config/config-detail.hpp"
+#include "config/json-access.hpp"
 
 #include <nlohmann/json.hpp>
 #include <utility>
@@ -6,27 +7,6 @@
 #include <spdlog/spdlog.h>
 
 namespace orangutan::config::detail {
-    namespace {
-
-        const nlohmann::json *find_member(const nlohmann::json &object, std::string_view key) {
-            if (!object.is_object()) {
-                return nullptr;
-            }
-            const auto it = object.find(std::string(key));
-            return it == object.end() ? nullptr : &*it;
-        }
-
-        const nlohmann::json *find_object_member(const nlohmann::json &object, std::string_view key) {
-            const auto *value = find_member(object, key);
-            return value != nullptr && value->is_object() ? value : nullptr;
-        }
-
-        const nlohmann::json *find_array_member(const nlohmann::json &object, std::string_view key) {
-            const auto *value = find_member(object, key);
-            return value != nullptr && value->is_array() ? value : nullptr;
-        }
-
-    } // namespace
 
     Config parse_security_section(const nlohmann::json &root, Config cfg) {
         const auto *security = find_object_member(root, "security");
