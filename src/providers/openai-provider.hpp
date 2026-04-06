@@ -37,6 +37,14 @@ namespace orangutan::providers {
         nlohmann::json build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens, bool stream,
                                           int thinking_budget) const;
 
+        [[nodiscard]]
+        nlohmann::json build_responses_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
+                                                     int resolved_max_tokens, bool stream) const;
+
+        [[nodiscard]]
+        nlohmann::json build_chat_completions_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
+                                                            int resolved_max_tokens, bool stream) const;
+
         // Convert orangutan Message to OpenAI message format
         [[nodiscard]]
         static std::optional<nlohmann::json> message_to_openai(const Message &msg);
