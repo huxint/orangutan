@@ -25,7 +25,7 @@ namespace {
 
     orangutan::ToolPermissionContext build_agent_permission_context(const orangutan::config::AgentConfig &agent_cfg,
                                                                     const orangutan::CLIPermissionOptions &cli_permission_options,
-                                                                    const std::string &workspace_root) {
+                                                                    std::string_view workspace_root) {
         return orangutan::initialize_permission_context(agent_cfg.permissions_config, cli_permission_options, workspace_root);
     }
 
@@ -33,9 +33,9 @@ namespace {
 
 namespace orangutan::bootstrap::detail {
 
-    std::string resolve_api_key(const std::string &cli_api_key_override, const ProfileConfig &profile) {
+    std::string resolve_api_key(std::string_view cli_api_key_override, const ProfileConfig &profile) {
         if (!cli_api_key_override.empty()) {
-            return cli_api_key_override;
+            return std::string{cli_api_key_override};
         }
         if (!profile.api_key.empty()) {
             return profile.api_key;
@@ -83,8 +83,8 @@ namespace orangutan::bootstrap::detail {
         return effective_agents;
     }
 
-    std::optional<ResolvedAgentEndpoints> resolve_agent_endpoints(const Config &cfg, const AgentConfig &agent_cfg, const std::string &agent_key,
-                                                                  const std::string &cli_api_key_override) {
+    std::optional<ResolvedAgentEndpoints> resolve_agent_endpoints(const Config &cfg, const AgentConfig &agent_cfg, std::string_view agent_key,
+                                                                  std::string_view cli_api_key_override) {
         if (agent_cfg.profile.empty()) {
             spdlog::fmt_lib::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
             return std::nullopt;
@@ -146,7 +146,7 @@ namespace orangutan::bootstrap::detail {
         return resolved;
     }
 
-    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, const std::string &cli_api_key_override,
+    std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, std::string_view cli_api_key_override,
                                                                                                     const CLIPermissionOptions &cli_permission_options) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {

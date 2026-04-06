@@ -23,40 +23,40 @@ namespace orangutan::automation {
         Store &operator=(Store &&) = delete;
 
         [[nodiscard]]
-        std::vector<TaskSpec> list_tasks(const std::string &agent_key = {}) const;
+        std::vector<TaskSpec> list_tasks(std::string_view agent_key = {}) const;
         [[nodiscard]]
-        std::optional<TaskSpec> find_task(const std::string &agent_key, const std::string &id_or_name) const;
+        std::optional<TaskSpec> find_task(std::string_view agent_key, std::string_view id_or_name) const;
         [[nodiscard]]
         std::string upsert_task(const TaskSpec &task);
         [[nodiscard]]
-        bool remove_task(const std::string &agent_key, const std::string &id_or_name);
-        void update_task_run_state(const std::string &task_id, std::optional<base::i64> last_run_at, std::string_view last_status, bool enabled);
+        bool remove_task(std::string_view agent_key, std::string_view id_or_name);
+        void update_task_run_state(std::string_view task_id, std::optional<base::i64> last_run_at, std::string_view last_status, bool enabled);
 
         [[nodiscard]]
-        std::vector<HeartbeatSpec> list_heartbeats(const std::string &agent_key = {}) const;
+        std::vector<HeartbeatSpec> list_heartbeats(std::string_view agent_key = {}) const;
         [[nodiscard]]
-        std::optional<HeartbeatSpec> find_heartbeat(const std::string &agent_key, const std::string &id_or_name) const;
+        std::optional<HeartbeatSpec> find_heartbeat(std::string_view agent_key, std::string_view id_or_name) const;
         [[nodiscard]]
         std::string upsert_heartbeat(const HeartbeatSpec &heartbeat);
         [[nodiscard]]
-        bool remove_heartbeat(const std::string &agent_key, const std::string &id_or_name);
-        void update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at, std::string_view last_status,
+        bool remove_heartbeat(std::string_view agent_key, std::string_view id_or_name);
+        void update_heartbeat_run_state(std::string_view heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at, std::string_view last_status,
                                         bool paused);
 
         [[nodiscard]]
         std::string insert_run(const RunRecord &run);
-        void complete_run(const std::string &run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
+        void complete_run(std::string_view run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
                           std::optional<base::i64> finished_at);
         [[nodiscard]]
-        std::vector<RunRecord> list_runs(const std::string &agent_key = {}) const;
+        std::vector<RunRecord> list_runs(std::string_view agent_key = {}) const;
 
         [[nodiscard]]
         std::string insert_inbox(const InboxItem &item);
         [[nodiscard]]
-        std::vector<InboxItem> list_inbox(const std::string &agent_key) const;
+        std::vector<InboxItem> list_inbox(std::string_view agent_key) const;
         [[nodiscard]]
-        bool ack_inbox(const std::string &agent_key, const std::string &id);
-        void clear_inbox(const std::string &agent_key);
+        bool ack_inbox(std::string_view agent_key, std::string_view id);
+        void clear_inbox(std::string_view agent_key);
 
     private:
         sqlite::Database db_;

@@ -60,37 +60,37 @@ namespace orangutan::automation {
         void stop();
         void run_pending(TimePoint now);
         [[nodiscard]]
-        AgentExecutionLease acquire_agent_execution_lease(const std::string &agent_key);
+        AgentExecutionLease acquire_agent_execution_lease(std::string_view agent_key);
 
         [[nodiscard]]
-        std::vector<TaskSpec> list_tasks(const std::string &agent_key) const;
+        std::vector<TaskSpec> list_tasks(std::string_view agent_key) const;
         [[nodiscard]]
-        std::optional<TaskSpec> find_task(const std::string &agent_key, const std::string &id_or_name) const;
+        std::optional<TaskSpec> find_task(std::string_view agent_key, std::string_view id_or_name) const;
         [[nodiscard]]
         std::string save_task(const TaskSpec &task);
         [[nodiscard]]
-        bool remove_task(const std::string &agent_key, const std::string &id_or_name);
+        bool remove_task(std::string_view agent_key, std::string_view id_or_name);
         [[nodiscard]]
-        std::string run_task_now(const std::string &agent_key, const std::string &id_or_name);
+        std::string run_task_now(std::string_view agent_key, std::string_view id_or_name);
 
         [[nodiscard]]
-        std::vector<HeartbeatSpec> list_heartbeats(const std::string &agent_key) const;
+        std::vector<HeartbeatSpec> list_heartbeats(std::string_view agent_key) const;
         [[nodiscard]]
-        std::optional<HeartbeatSpec> find_heartbeat(const std::string &agent_key, const std::string &id_or_name) const;
+        std::optional<HeartbeatSpec> find_heartbeat(std::string_view agent_key, std::string_view id_or_name) const;
         [[nodiscard]]
         std::string save_heartbeat(const HeartbeatSpec &heartbeat);
         [[nodiscard]]
-        bool remove_heartbeat(const std::string &agent_key, const std::string &id_or_name);
+        bool remove_heartbeat(std::string_view agent_key, std::string_view id_or_name);
         [[nodiscard]]
-        bool pause_heartbeat(const std::string &agent_key, const std::string &id_or_name, bool paused);
+        bool pause_heartbeat(std::string_view agent_key, std::string_view id_or_name, bool paused);
         [[nodiscard]]
-        std::string run_heartbeat_now(const std::string &agent_key, const std::string &id_or_name);
+        std::string run_heartbeat_now(std::string_view agent_key, std::string_view id_or_name);
 
         [[nodiscard]]
-        std::vector<InboxItem> list_inbox(const std::string &agent_key) const;
+        std::vector<InboxItem> list_inbox(std::string_view agent_key) const;
         [[nodiscard]]
-        bool ack_inbox(const std::string &agent_key, const std::string &id);
-        void clear_inbox(const std::string &agent_key);
+        bool ack_inbox(std::string_view agent_key, std::string_view id);
+        void clear_inbox(std::string_view agent_key);
 
         [[nodiscard]]
         Store &store() noexcept;
@@ -121,7 +121,7 @@ namespace orangutan::automation {
         };
 
         [[nodiscard]]
-        std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(const std::string &agent_key);
+        std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(std::string_view agent_key);
         [[nodiscard]]
         CompletedExecution execute_trigger(const Trigger &trigger, base::i64 started_at);
         void execute_task(const TaskSpec &task, std::optional<base::i64> forced_timestamp = std::nullopt);
@@ -134,7 +134,7 @@ namespace orangutan::automation {
         using Result = std::invoke_result_t<Fn>;
         std::optional<Runtime::AgentExecutionLease> lease;
         if (runtime != nullptr) {
-            lease.emplace(runtime->acquire_agent_execution_lease(std::string(agent_key)));
+            lease.emplace(runtime->acquire_agent_execution_lease(agent_key));
         }
 
         if constexpr (std::is_void_v<Result>) {

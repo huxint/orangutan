@@ -157,15 +157,15 @@ namespace orangutan::automation {
         static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "automation run_pending pipeline"));
     }
 
-    Runtime::AgentExecutionLease Runtime::acquire_agent_execution_lease(const std::string &agent_key) {
+    Runtime::AgentExecutionLease Runtime::acquire_agent_execution_lease(std::string_view agent_key) {
         return AgentExecutionLease(get_agent_execution_gate(agent_key));
     }
 
-    std::vector<TaskSpec> Runtime::list_tasks(const std::string &agent_key) const {
+    std::vector<TaskSpec> Runtime::list_tasks(std::string_view agent_key) const {
         return store_.list_tasks(agent_key);
     }
 
-    std::optional<TaskSpec> Runtime::find_task(const std::string &agent_key, const std::string &id_or_name) const {
+    std::optional<TaskSpec> Runtime::find_task(std::string_view agent_key, std::string_view id_or_name) const {
         return store_.find_task(agent_key, id_or_name);
     }
 
@@ -173,11 +173,11 @@ namespace orangutan::automation {
         return store_.upsert_task(task);
     }
 
-    bool Runtime::remove_task(const std::string &agent_key, const std::string &id_or_name) {
+    bool Runtime::remove_task(std::string_view agent_key, std::string_view id_or_name) {
         return store_.remove_task(agent_key, id_or_name);
     }
 
-    std::string Runtime::run_task_now(const std::string &agent_key, const std::string &id_or_name) {
+    std::string Runtime::run_task_now(std::string_view agent_key, std::string_view id_or_name) {
         const auto task = store_.find_task(agent_key, id_or_name);
         if (!task.has_value()) {
             return "Error: task not found.";
@@ -186,11 +186,11 @@ namespace orangutan::automation {
         return "Task run queued.";
     }
 
-    std::vector<HeartbeatSpec> Runtime::list_heartbeats(const std::string &agent_key) const {
+    std::vector<HeartbeatSpec> Runtime::list_heartbeats(std::string_view agent_key) const {
         return store_.list_heartbeats(agent_key);
     }
 
-    std::optional<HeartbeatSpec> Runtime::find_heartbeat(const std::string &agent_key, const std::string &id_or_name) const {
+    std::optional<HeartbeatSpec> Runtime::find_heartbeat(std::string_view agent_key, std::string_view id_or_name) const {
         return store_.find_heartbeat(agent_key, id_or_name);
     }
 
@@ -202,11 +202,11 @@ namespace orangutan::automation {
         return store_.upsert_heartbeat(heartbeat);
     }
 
-    bool Runtime::remove_heartbeat(const std::string &agent_key, const std::string &id_or_name) {
+    bool Runtime::remove_heartbeat(std::string_view agent_key, std::string_view id_or_name) {
         return store_.remove_heartbeat(agent_key, id_or_name);
     }
 
-    bool Runtime::pause_heartbeat(const std::string &agent_key, const std::string &id_or_name, bool paused) {
+    bool Runtime::pause_heartbeat(std::string_view agent_key, std::string_view id_or_name, bool paused) {
         const auto heartbeat = store_.find_heartbeat(agent_key, id_or_name);
         if (!heartbeat.has_value()) {
             return false;
@@ -220,7 +220,7 @@ namespace orangutan::automation {
         return true;
     }
 
-    std::string Runtime::run_heartbeat_now(const std::string &agent_key, const std::string &id_or_name) {
+    std::string Runtime::run_heartbeat_now(std::string_view agent_key, std::string_view id_or_name) {
         const auto heartbeat = store_.find_heartbeat(agent_key, id_or_name);
         if (!heartbeat.has_value()) {
             return "Error: heartbeat not found.";
@@ -231,15 +231,15 @@ namespace orangutan::automation {
         return "Heartbeat run queued.";
     }
 
-    std::vector<InboxItem> Runtime::list_inbox(const std::string &agent_key) const {
+    std::vector<InboxItem> Runtime::list_inbox(std::string_view agent_key) const {
         return store_.list_inbox(agent_key);
     }
 
-    bool Runtime::ack_inbox(const std::string &agent_key, const std::string &id) {
+    bool Runtime::ack_inbox(std::string_view agent_key, std::string_view id) {
         return store_.ack_inbox(agent_key, id);
     }
 
-    void Runtime::clear_inbox(const std::string &agent_key) {
+    void Runtime::clear_inbox(std::string_view agent_key) {
         store_.clear_inbox(agent_key);
     }
 
@@ -289,8 +289,8 @@ namespace orangutan::automation {
         }
     }
 
-    std::shared_ptr<Runtime::AgentExecutionGate> Runtime::get_agent_execution_gate(const std::string &agent_key) {
-        const auto key = agent_key.empty() ? std::string("default") : agent_key;
+    std::shared_ptr<Runtime::AgentExecutionGate> Runtime::get_agent_execution_gate(std::string_view agent_key) {
+        const std::string key{agent_key.empty() ? "default" : agent_key};
         std::scoped_lock lock(agent_execution_gates_mutex_);
         auto &entry = agent_execution_gates_[key];
         auto gate = entry.lock();

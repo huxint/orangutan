@@ -17,7 +17,7 @@ namespace orangutan::channel {
           deny_(std::move(deny)) {}
 
         [[nodiscard]]
-        bool is_allowed(const std::string &jid) const {
+        bool is_allowed(std::string_view jid) const {
             if (std::ranges::any_of(deny_, [&jid](const auto &pattern) {
                     return matches(pattern, jid);
                 })) {

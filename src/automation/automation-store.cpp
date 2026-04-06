@@ -121,7 +121,7 @@ namespace orangutan::automation {
         ensure_schema();
     }
 
-    std::vector<TaskSpec> Store::list_tasks(const std::string &agent_key) const {
+    std::vector<TaskSpec> Store::list_tasks(std::string_view agent_key) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, schedule_kind, schedule_value, prompt, notes, delivery_json, last_run_at, last_status "
                                     "FROM tasks "
@@ -136,7 +136,7 @@ namespace orangutan::automation {
         return tasks;
     }
 
-    std::optional<TaskSpec> Store::find_task(const std::string &agent_key, const std::string &id_or_name) const {
+    std::optional<TaskSpec> Store::find_task(std::string_view agent_key, std::string_view id_or_name) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, schedule_kind, schedule_value, prompt, notes, delivery_json, last_run_at, last_status "
                                     "FROM tasks "
@@ -185,7 +185,7 @@ namespace orangutan::automation {
         return task.id;
     }
 
-    bool Store::remove_task(const std::string &agent_key, const std::string &id_or_name) {
+    bool Store::remove_task(std::string_view agent_key, std::string_view id_or_name) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "DELETE FROM tasks WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2)");
         stmt.bind_text(1, agent_key);
@@ -194,7 +194,7 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::update_task_run_state(const std::string &task_id, std::optional<base::i64> last_run_at, std::string_view last_status, bool enabled) {
+    void Store::update_task_run_state(std::string_view task_id, std::optional<base::i64> last_run_at, std::string_view last_status, bool enabled) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE tasks SET last_run_at = ?2, last_status = ?3, enabled = ?4 WHERE id = ?1");
         stmt.bind_text(1, task_id);
@@ -204,7 +204,7 @@ namespace orangutan::automation {
         static_cast<void>(stmt.step());
     }
 
-    std::vector<HeartbeatSpec> Store::list_heartbeats(const std::string &agent_key) const {
+    std::vector<HeartbeatSpec> Store::list_heartbeats(std::string_view agent_key) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, every_seconds, jitter_seconds, active_hours_json, prompt, notes, delivery_json, paused, next_due_at, "
                                     "last_run_at, last_status "
@@ -220,7 +220,7 @@ namespace orangutan::automation {
         return heartbeats;
     }
 
-    std::optional<HeartbeatSpec> Store::find_heartbeat(const std::string &agent_key, const std::string &id_or_name) const {
+    std::optional<HeartbeatSpec> Store::find_heartbeat(std::string_view agent_key, std::string_view id_or_name) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, agent_key, name, enabled, every_seconds, jitter_seconds, active_hours_json, prompt, notes, delivery_json, paused, next_due_at, "
                                     "last_run_at, last_status "
@@ -278,7 +278,7 @@ namespace orangutan::automation {
         return heartbeat.id;
     }
 
-    bool Store::remove_heartbeat(const std::string &agent_key, const std::string &id_or_name) {
+    bool Store::remove_heartbeat(std::string_view agent_key, std::string_view id_or_name) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "DELETE FROM heartbeats WHERE (?1 = '' OR agent_key = ?1) AND (id = ?2 OR name = ?2)");
         stmt.bind_text(1, agent_key);
@@ -287,7 +287,7 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::update_heartbeat_run_state(const std::string &heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at,
+    void Store::update_heartbeat_run_state(std::string_view heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at,
                                            std::string_view last_status, bool paused) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE heartbeats SET last_run_at = ?2, next_due_at = ?3, last_status = ?4, paused = ?5 WHERE id = ?1");
@@ -324,7 +324,7 @@ namespace orangutan::automation {
         return run.id;
     }
 
-    void Store::complete_run(const std::string &run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
+    void Store::complete_run(std::string_view run_id, std::string_view status, std::string_view summary, std::string_view delivery_status, std::string_view log_path,
                              std::optional<base::i64> finished_at) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE automation_runs SET finished_at = ?2, status = ?3, summary = ?4, delivery_status = ?5, log_path = ?6 WHERE id = ?1");
@@ -337,7 +337,7 @@ namespace orangutan::automation {
         static_cast<void>(stmt.step());
     }
 
-    std::vector<RunRecord> Store::list_runs(const std::string &agent_key) const {
+    std::vector<RunRecord> Store::list_runs(std::string_view agent_key) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, kind, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, delivery_status, log_path "
                                     "FROM automation_runs "
@@ -374,7 +374,7 @@ namespace orangutan::automation {
         return item.id;
     }
 
-    std::vector<InboxItem> Store::list_inbox(const std::string &agent_key) const {
+    std::vector<InboxItem> Store::list_inbox(std::string_view agent_key) const {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT id, agent_key, source_kind, source_run_id, title, body, created_at, acked_at, status "
                                     "FROM agent_inbox "
@@ -389,7 +389,7 @@ namespace orangutan::automation {
         return items;
     }
 
-    bool Store::ack_inbox(const std::string &agent_key, const std::string &id) {
+    bool Store::ack_inbox(std::string_view agent_key, std::string_view id) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE agent_inbox SET acked_at = ?3, status = 'acked' WHERE agent_key = ?1 AND id = ?2");
         stmt.bind_text(1, agent_key);
@@ -399,7 +399,7 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::clear_inbox(const std::string &agent_key) {
+    void Store::clear_inbox(std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "DELETE FROM agent_inbox WHERE agent_key = ?1");
         stmt.bind_text(1, agent_key);

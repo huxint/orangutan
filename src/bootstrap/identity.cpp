@@ -85,7 +85,7 @@ namespace orangutan::bootstrap {
 
     } // namespace
 
-    std::string resolve_workspace_root(const std::string &workspace) {
+    std::string resolve_workspace_root(std::string_view workspace) {
         std::filesystem::path path = workspace.empty() ? std::filesystem::path(default_workspace_root_path()) : std::filesystem::path(workspace);
         if (!path.is_absolute()) {
             path = std::filesystem::absolute(path);
@@ -152,23 +152,23 @@ namespace orangutan::bootstrap {
         return workspace_state_root(workspace_root) / "automation.db";
     }
 
-    std::string derive_cli_runtime_key(const std::string &agent_key) {
+    std::string derive_cli_runtime_key(std::string_view agent_key) {
         if (agent_key.empty() || agent_key == "default") {
             return "cli:local";
         }
 
-        return "agent:" + agent_key + "|cli:local";
+        return "agent:" + std::string(agent_key) + "|cli:local";
     }
 
-    std::string derive_cli_session_scope(const std::string &agent_key) {
+    std::string derive_cli_session_scope(std::string_view agent_key) {
         if (agent_key.empty() || agent_key == "default") {
             return {};
         }
 
-        return "agent:" + agent_key;
+        return "agent:" + std::string(agent_key);
     }
 
-    RuntimeIdentity derive_cli_identity(const std::string &workspace_root, const std::string &agent_key) {
+    RuntimeIdentity derive_cli_identity(const std::string &workspace_root, std::string_view agent_key) {
         const auto runtime_key = derive_cli_runtime_key(agent_key);
         RuntimeIdentity identity{
             .workspace = workspace_root,
@@ -179,19 +179,19 @@ namespace orangutan::bootstrap {
         return identity;
     }
 
-    std::string derive_channel_runtime_key(const std::string &jid, const std::string &agent_key) {
+    std::string derive_channel_runtime_key(std::string_view jid, std::string_view agent_key) {
         if (jid.empty()) {
             return {};
         }
 
         if (agent_key.empty()) {
-            return "jid:" + jid;
+            return "jid:" + std::string(jid);
         }
 
-        return "agent:" + agent_key + "|jid:" + jid;
+        return "agent:" + std::string(agent_key) + "|jid:" + std::string(jid);
     }
 
-    RuntimeIdentity derive_channel_identity(const std::string &workspace_root, const std::string &jid, const std::string &agent_key) {
+    RuntimeIdentity derive_channel_identity(const std::string &workspace_root, std::string_view jid, std::string_view agent_key) {
         const auto runtime_key = derive_channel_runtime_key(jid, agent_key);
         RuntimeIdentity identity{
             .workspace = workspace_root,
@@ -201,7 +201,7 @@ namespace orangutan::bootstrap {
         return identity;
     }
 
-    RuntimeIdentity derive_child_identity(const std::string &workspace_root, const std::string &raw_caller_id, const std::string &agent_key) {
+    RuntimeIdentity derive_child_identity(const std::string &workspace_root, std::string_view raw_caller_id, std::string_view agent_key) {
         if (raw_caller_id.empty() || raw_caller_id == "cli:local") {
             return derive_cli_identity(workspace_root, agent_key);
         }
