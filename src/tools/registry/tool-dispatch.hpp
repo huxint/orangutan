@@ -52,7 +52,8 @@ namespace orangutan::tools {
         [[nodiscard]]
         Response run(const nlohmann::json &input) const {
             if (!input.contains(op_field_)) {
-                return {.message = missing_op_error_formatter_(op_field_), .is_error = true};
+                const auto message = missing_op_error_formatter_ != nullptr ? missing_op_error_formatter_(op_field_) : "missing required field: " + op_field_;
+                return {.message = message, .is_error = true};
             }
 
             if (!input.at(op_field_).is_string()) {

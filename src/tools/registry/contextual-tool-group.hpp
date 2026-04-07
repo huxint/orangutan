@@ -16,20 +16,24 @@ namespace orangutan::tools {
         channel_origin,
     };
 
-    class ContextGateEvaluator {
-    public:
-        [[nodiscard]]
-        static bool evaluate(context_gate gate, const ToolRuntimeContext &context, base::origin required_origin = base::origin::cli) {
-            switch (gate) {
-                case context_gate::automation_runtime:
-                    return context.automation_runtime != nullptr;
-                case context_gate::channel_origin:
-                    return context.runtime_origin == required_origin;
-            }
+    namespace detail {
 
-            return false;
-        }
-    };
+        class ContextGateEvaluator {
+        public:
+            [[nodiscard]]
+            static bool evaluate(context_gate gate, const ToolRuntimeContext &context, base::origin required_origin = base::origin::cli) {
+                switch (gate) {
+                    case context_gate::automation_runtime:
+                        return context.automation_runtime != nullptr;
+                    case context_gate::channel_origin:
+                        return context.runtime_origin == required_origin;
+                }
+
+                return false;
+            }
+        };
+
+    } // namespace detail
 
     class ContextualToolGroup {
     public:
@@ -42,13 +46,13 @@ namespace orangutan::tools {
 
         ContextualToolGroup &require_automation_runtime() {
             return when([](const ToolRuntimeContext &ctx) {
-                return ContextGateEvaluator::evaluate(context_gate::automation_runtime, ctx);
+                return detail::ContextGateEvaluator::evaluate(context_gate::automation_runtime, ctx);
             });
         }
 
         ContextualToolGroup &require_channel_origin(base::origin origin) {
             return when([origin](const ToolRuntimeContext &ctx) {
-                return ContextGateEvaluator::evaluate(context_gate::channel_origin, ctx, origin);
+                return detail::ContextGateEvaluator::evaluate(context_gate::channel_origin, ctx, origin);
             });
         }
 

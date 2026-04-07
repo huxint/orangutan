@@ -154,6 +154,16 @@ TEST_CASE("tool_dispatch: handles missing op with formatter error", "[tools][reg
     CHECK(result.message == "missing required field: op");
 }
 
+TEST_CASE("tool_dispatch: empty missing-op formatter falls back to structured default", "[tools][registry][abstractions]") {
+    auto dispatch = tool_dispatch().op_field("op").missing_op_error_formatter({});
+
+    CHECK_NOTHROW([&dispatch] {
+        const auto result = dispatch.run(nlohmann::json{{"id", "m-2"}});
+        CHECK(result.is_error);
+        CHECK(result.message == "missing required field: op");
+    }());
+}
+
 TEST_CASE("tool_dispatch: formats unknown op from formatter", "[tools][registry][abstractions]") {
     auto dispatch = tool_dispatch().op_field("op").unknown_op_error_formatter([](std::string_view op) {
         return std::string{"unsupported operation: "} + std::string{op};
