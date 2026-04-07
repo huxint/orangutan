@@ -1,8 +1,5 @@
 #pragma once
 
-#include "tool-context.hpp"
-#include "tool-registry.hpp"
-
 #include <functional>
 #include <ranges>
 #include <stdexcept>
@@ -13,6 +10,9 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+
+#include "tool-context.hpp"
+#include "tool-registry.hpp"
 
 namespace orangutan::tools {
 

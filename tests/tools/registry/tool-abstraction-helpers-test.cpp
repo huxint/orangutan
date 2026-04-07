@@ -1,15 +1,15 @@
-#include "tools/registry/tool-context.hpp"
-#include "tools/registry/tool-registry.hpp"
-#include "tools/registry/tool-spec-builder.hpp"
-#include "tools/registry/schema-fragments.hpp"
+#include <algorithm>
+#include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <nlohmann/json.hpp>
 
-#include <algorithm>
-#include <string>
-#include <string_view>
+#include "tools/registry/schema-fragments.hpp"
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-registry.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 
 using namespace orangutan;
 using namespace orangutan::tools;
