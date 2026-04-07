@@ -83,7 +83,8 @@ namespace orangutan::sqlite {
     }
 
     void Statement::bind_text(int index, std::string_view value) {
-        sqlite3_bind_text(stmt_, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+        const char *text = value.empty() ? "" : value.data();
+        sqlite3_bind_text(stmt_, index, text, static_cast<int>(value.size()), SQLITE_TRANSIENT);
     }
 
     void Statement::bind_int(int index, int value) {
