@@ -87,4 +87,76 @@ namespace {
         CHECK(payload.at("attachment").at("download_pending").get<bool>() == false);
     }
 
+    TEST_CASE("message_attachments_not_registered_for_non_channel_context") {
+        ToolRegistry registry;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::cli,
+        };
+
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+
+        CHECK(registry.find_definition("message_attachments") == nullptr);
+    }
+
+    TEST_CASE("message_attachments_unknown_op_returns_exact_error") {
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .current_message_attachments = attachments,
+            .attachment_download_callback =
+                [](const Attachment &attachment, const std::string &) {
+                    return attachment;
+                },
+        };
+
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        const auto result = registry.execute(ToolUse("unknown-op", "message_attachments", {{"op", "noop"}}));
+
+        const auto payload = nlohmann::json::parse(result.content);
+        CHECK(payload.at("error").get<std::string>() == "unknown operation. Supported: list, download.");
+    }
+
+    TEST_CASE("message_attachments_list_without_attachments_returns_exact_error") {
+        ToolRegistry registry;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+        };
+
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        const auto result = registry.execute(ToolUse("list-empty", "message_attachments", {{"op", "list"}}));
+
+        const auto payload = nlohmann::json::parse(result.content);
+        CHECK(payload.at("error").get<std::string>() == "the current message has no attachments.");
+    }
+
+    TEST_CASE("message_attachments_download_without_callback_returns_exact_error") {
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .current_message_attachments = attachments,
+        };
+
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        const auto result = registry.execute(ToolUse("download-no-callback", "message_attachments", {{"op", "download"}, {"index", 0}}));
+
+        const auto payload = nlohmann::json::parse(result.content);
+        CHECK(payload.at("error").get<std::string>() == "attachment downloads are not available in this context.");
+    }
+
 } // namespace
