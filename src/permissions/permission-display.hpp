@@ -23,16 +23,16 @@ namespace orangutan::permissions {
 
     inline std::string permission_rule_source_label(permission_rule_source source) {
         switch (source) {
-        case permission_rule_source::cli_arg:
-            return "CLI";
-        case permission_rule_source::session:
-            return "session";
-        case permission_rule_source::local_settings:
-            return "local settings";
-        case permission_rule_source::project_settings:
-            return "project settings";
-        case permission_rule_source::user_settings:
-            return "user settings";
+            case permission_rule_source::cli_arg:
+                return "CLI";
+            case permission_rule_source::session:
+                return "session";
+            case permission_rule_source::local_settings:
+                return "local settings";
+            case permission_rule_source::project_settings:
+                return "project settings";
+            case permission_rule_source::user_settings:
+                return "user settings";
         }
         return "unknown";
     }
