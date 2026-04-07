@@ -1,5 +1,6 @@
 #include "tools/coordinator/register.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 #include "coordinator/coordinator-manager.hpp"
 #include "swarm/mailbox.hpp"
 #include "swarm/team-manager.hpp"
@@ -27,7 +28,8 @@ namespace orangutan::tools {
             }
 
             if (!run_id.empty()) {
-                if (const auto error = tool_context.coordinator_manager->send_message(run_id, tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name, text);
+                if (const auto error =
+                        tool_context.coordinator_manager->send_message(run_id, tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name, text);
                     error.has_value()) {
                     return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
                 }
@@ -59,19 +61,19 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_send_message_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool({.definition = {.name = "agent_send_message",
-                                               .description = "Send a message to a running agent. Can address by run_id or agent name.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
-                                                                  {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
-                                                                  {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
-                                                                {"required", nlohmann::json::array({"text"})}}},
-                                .execute =
-                                    [tool_context](const nlohmann::json &input) {
-                                        return agent_send_message_handler(input, *tool_context);
-                                    },
-                                .deferred = true});
+        registry.register_tool(tool_spec_builder("agent_send_message")
+                                   .description("Send a message to a running agent. Can address by run_id or agent name.")
+                                   .input_schema({{"type", "object"},
+                                                  {"properties",
+                                                   {{"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
+                                                    {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
+                                                    {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
+                                                  {"required", nlohmann::json::array({"text"})}})
+                                   .execute([tool_context](const nlohmann::json &input) {
+                                       return agent_send_message_handler(input, *tool_context);
+                                   })
+                                   .deferred()
+                                   .build());
     }
 
 } // namespace orangutan::tools

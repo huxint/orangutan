@@ -1,5 +1,6 @@
 #include "tools/coordinator/register.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 #include "coordinator/coordinator-manager.hpp"
 #include "swarm/team-manager.hpp"
 
@@ -67,10 +68,7 @@ namespace orangutan::tools {
             }
 
             return nlohmann::json{
-                {"accepted", result.accepted},
-                {"run_id", result.run_id},
-                {"agent_name", result.agent_name},
-                {"status", result.accepted ? "running" : "rejected"},
+                {"accepted", result.accepted}, {"run_id", result.run_id}, {"agent_name", result.agent_name}, {"status", result.accepted ? "running" : "rejected"},
                 {"error", result.error},
             }
                 .dump();
@@ -79,21 +77,20 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(
-            {.definition = {.name = "agent_spawn",
-                            .description = "Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.",
-                            .input_schema = {{"type", "object"},
-                                             {"properties",
-                                              {{"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
-                                               {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
-                                               {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
-                                               {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}}}},
-                                             {"required", nlohmann::json::array({"agent_key", "prompt"})}}},
-             .execute =
-                 [tool_context](const nlohmann::json &input) {
-                     return agent_spawn_handler(input, *tool_context);
-                 },
-             .deferred = true});
+        registry.register_tool(tool_spec_builder("agent_spawn")
+                                   .description("Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.")
+                                   .input_schema({{"type", "object"},
+                                                  {"properties",
+                                                   {{"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
+                                                    {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
+                                                    {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
+                                                    {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}}}},
+                                                  {"required", nlohmann::json::array({"agent_key", "prompt"})}})
+                                   .execute([tool_context](const nlohmann::json &input) {
+                                       return agent_spawn_handler(input, *tool_context);
+                                   })
+                                   .deferred()
+                                   .build());
     }
 
 } // namespace orangutan::tools

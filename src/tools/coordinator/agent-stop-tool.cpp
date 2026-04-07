@@ -1,5 +1,6 @@
 #include "tools/coordinator/register.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 #include "coordinator/coordinator-manager.hpp"
 
 #include <nlohmann/json.hpp>
@@ -31,16 +32,16 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_stop_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool({.definition = {.name = "agent_stop",
-                                               .description = "Stop a running agent. The agent will be given a chance to clean up before being terminated.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
-                                                                {"required", nlohmann::json::array({"run_id"})}}},
-                                .execute =
-                                    [tool_context](const nlohmann::json &input) {
-                                        return agent_stop_handler(input, *tool_context);
-                                    },
-                                .deferred = true});
+        registry.register_tool(tool_spec_builder("agent_stop")
+                                   .description("Stop a running agent. The agent will be given a chance to clean up before being terminated.")
+                                   .input_schema({{"type", "object"},
+                                                  {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
+                                                  {"required", nlohmann::json::array({"run_id"})}})
+                                   .execute([tool_context](const nlohmann::json &input) {
+                                       return agent_stop_handler(input, *tool_context);
+                                   })
+                                   .deferred()
+                                   .build());
     }
 
 } // namespace orangutan::tools
