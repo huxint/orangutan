@@ -64,7 +64,7 @@ namespace orangutan::tools {
     void register_inbox_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         contextual_tool_group()
             .require_automation_runtime()
-            .add(tool_spec_builder("inbox")
+            .add(make_tool_spec_builder("inbox")
                      .description("Inspect and manage unread automation delivery results for the current agent.")
                      .input_schema(schema_fragments::object_with_required(
                          {

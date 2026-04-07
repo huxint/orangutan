@@ -173,7 +173,7 @@ namespace orangutan::tools {
     void register_heartbeat_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         contextual_tool_group()
             .require_automation_runtime()
-            .add(tool_spec_builder("heartbeat")
+            .add(make_tool_spec_builder("heartbeat")
                      .description("Manage approximate periodic heartbeats for the current agent.")
                      .input_schema(schema_fragments::object_with_required(
                          {

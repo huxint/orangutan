@@ -98,7 +98,7 @@ namespace orangutan::tools {
 
         contextual_tool_group()
             .require_channel_origin(base::origin::channel)
-            .add(tool_spec_builder("message_attachments")
+            .add(make_tool_spec_builder("message_attachments")
                      .description("Inspect attachment metadata from the current inbound channel message and download one into the workspace only on explicit demand.")
                      .input_schema(schema_fragments::object_with_required(
                          {

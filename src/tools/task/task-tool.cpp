@@ -153,7 +153,7 @@ namespace orangutan::tools {
     void register_task_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         contextual_tool_group()
             .require_automation_runtime()
-            .add(tool_spec_builder("task")
+            .add(make_tool_spec_builder("task")
                      .description("Manage precise scheduled tasks for the current agent.")
                      .input_schema(schema_fragments::object_with_required(
                          {

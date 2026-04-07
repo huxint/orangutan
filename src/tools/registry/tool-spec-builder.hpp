@@ -69,8 +69,13 @@ namespace orangutan::tools {
     };
 
     [[nodiscard]]
-    inline ToolSpecBuilder tool_spec_builder(std::string name) {
+    inline ToolSpecBuilder make_tool_spec_builder(std::string name) {
         return ToolSpecBuilder(std::move(name));
+    }
+
+    [[nodiscard]]
+    inline ToolSpecBuilder tool_spec_builder(std::string name) {
+        return make_tool_spec_builder(std::move(name));
     }
 
 } // namespace orangutan::tools

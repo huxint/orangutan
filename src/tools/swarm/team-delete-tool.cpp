@@ -57,7 +57,7 @@ namespace orangutan::tools {
 
     void register_team_delete_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         registry.register_tool(
-            tool_spec_builder("team_delete")
+            make_tool_spec_builder("team_delete")
                 .description("Delete a team and deactivate all its members.")
                 .input_schema({{"type", "object"},
                                {"properties",

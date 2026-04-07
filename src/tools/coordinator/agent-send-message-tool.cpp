@@ -61,7 +61,7 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_send_message_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(tool_spec_builder("agent_send_message")
+        registry.register_tool(make_tool_spec_builder("agent_send_message")
                                    .description("Send a message to a running agent. Can address by run_id or agent name.")
                                    .input_schema({{"type", "object"},
                                                   {"properties",

@@ -77,7 +77,7 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(tool_spec_builder("agent_spawn")
+        registry.register_tool(make_tool_spec_builder("agent_spawn")
                                    .description("Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.")
                                    .input_schema({{"type", "object"},
                                                   {"properties",
