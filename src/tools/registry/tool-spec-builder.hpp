@@ -1,17 +1,12 @@
 #pragma once
 
 #include <functional>
-#include <ranges>
 #include <stdexcept>
 #include <string>
-#include <string_view>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include <nlohmann/json.hpp>
 
-#include "tool-context.hpp"
 #include "tool-registry.hpp"
 
 namespace orangutan::tools {
@@ -77,116 +72,5 @@ namespace orangutan::tools {
     inline ToolSpecBuilder tool_spec_builder(std::string name) {
         return ToolSpecBuilder(std::move(name));
     }
-
-    class ContextualToolGroup {
-    public:
-        using Gate = std::function<bool(const ToolRuntimeContext &)>;
-
-        ContextualToolGroup &when(Gate gate) {
-            gates_.push_back(std::move(gate));
-            return *this;
-        }
-
-        ContextualToolGroup &require_automation_runtime() {
-            return when([](const ToolRuntimeContext &ctx) {
-                return ctx.automation_runtime != nullptr;
-            });
-        }
-
-        ContextualToolGroup &require_channel_origin(base::origin origin) {
-            return when([origin](const ToolRuntimeContext &ctx) {
-                return ctx.runtime_origin == origin;
-            });
-        }
-
-        ContextualToolGroup &add(ToolSpecBuilder spec) {
-            specs_.push_back(std::move(spec));
-            return *this;
-        }
-
-        void register_into(ToolRegistry &registry, const ToolRuntimeContext *tool_context) const {
-            const ToolRuntimeContext default_context{};
-            const ToolRuntimeContext &context = (tool_context != nullptr) ? *tool_context : default_context;
-            const bool allowed = std::ranges::all_of(gates_, [&context](const Gate &gate) {
-                return gate(context);
-            });
-
-            if (!allowed) {
-                return;
-            }
-
-            for (const auto &spec : specs_) {
-                registry.register_tool(spec.build());
-            }
-        }
-
-    private:
-        std::vector<Gate> gates_;
-        std::vector<ToolSpecBuilder> specs_;
-    };
-
-    class ToolDispatch {
-    public:
-        struct Response {
-            std::string message;
-            bool is_error = false;
-        };
-
-        using response = Response;
-
-        using Handler = std::function<Response(const nlohmann::json &)>;
-        using handler = Handler;
-        using missing_op_error_formatter_fn = std::function<std::string(std::string_view)>;
-
-        ToolDispatch &op_field(std::string field_name) {
-            op_field_ = std::move(field_name);
-            return *this;
-        }
-
-        ToolDispatch &unknown_op_error(std::string message) {
-            unknown_op_error_ = std::move(message);
-            return *this;
-        }
-
-        ToolDispatch &missing_op_error_formatter(missing_op_error_formatter_fn formatter) {
-            missing_op_error_formatter_ = std::move(formatter);
-            return *this;
-        }
-
-        ToolDispatch &on(std::string op, Handler fn) {
-            handlers_.insert_or_assign(std::move(op), std::move(fn));
-            return *this;
-        }
-
-        [[nodiscard]]
-        Response run(const nlohmann::json &input) const {
-            if (!input.contains(op_field_)) {
-                return {.message = missing_op_error_formatter_(op_field_), .is_error = true};
-            }
-
-            if (!input.at(op_field_).is_string()) {
-                return {.message = "invalid type for field: " + op_field_, .is_error = true};
-            }
-
-            const auto op = input.at(op_field_).get<std::string>();
-            const auto it = handlers_.find(op);
-            if (it == handlers_.end()) {
-                return {.message = unknown_op_error_, .is_error = true};
-            }
-
-            return it->second(input);
-        }
-
-    private:
-        std::string op_field_ = "op";
-        std::string unknown_op_error_ = "unknown operation";
-        missing_op_error_formatter_fn missing_op_error_formatter_ = [](std::string_view field_name) {
-            return "missing required field: " + std::string(field_name);
-        };
-        std::unordered_map<std::string, Handler> handlers_;
-    };
-
-    using contextual_tool_group = ContextualToolGroup;
-    using tool_dispatch = ToolDispatch;
 
 } // namespace orangutan::tools

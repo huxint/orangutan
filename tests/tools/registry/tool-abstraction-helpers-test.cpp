@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp>
 
 #include "tools/registry/schema-fragments.hpp"
+#include "tools/registry/contextual-tool-group.hpp"
+#include "tools/registry/tool-dispatch.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
@@ -150,6 +152,16 @@ TEST_CASE("tool_dispatch: handles missing op with formatter error", "[tools][reg
     const auto result = dispatch.run(nlohmann::json{{"id", "m-1"}});
     CHECK(result.is_error);
     CHECK(result.message == "missing required field: op");
+}
+
+TEST_CASE("tool_dispatch: formats unknown op from formatter", "[tools][registry][abstractions]") {
+    auto dispatch = tool_dispatch().op_field("op").unknown_op_error_formatter([](std::string_view op) {
+        return std::string{"unsupported operation: "} + std::string{op};
+    });
+
+    const auto result = dispatch.run(nlohmann::json{{"op", "publish"}, {"id", "u-2"}});
+    CHECK(result.is_error);
+    CHECK(result.message == "unsupported operation: publish");
 }
 
 TEST_CASE("schema_fragments: builds op+id object schema", "[tools][registry][abstractions]") {
