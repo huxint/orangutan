@@ -152,6 +152,14 @@ TEST_CASE("tool_dispatch: handles missing op with formatter error", "[tools][reg
     CHECK(result.message == "missing required field: op");
 }
 
+TEST_CASE("tool_dispatch: handles invalid op type with dedicated error", "[tools][registry][abstractions]") {
+    auto dispatch = tool_dispatch();
+
+    const auto result = dispatch.run(nlohmann::json{{"op", 7}, {"id", "m-2"}});
+    CHECK(result.is_error);
+    CHECK(result.message == "invalid type for field: op");
+}
+
 TEST_CASE("schema_fragments: builds op+id object schema", "[tools][registry][abstractions]") {
     const auto schema = schema_fragments::op_id_object_schema();
 
