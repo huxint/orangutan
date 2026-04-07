@@ -1,17 +1,17 @@
 #include "tools/task/task-tool.hpp"
 
+#include <magic_enum/magic_enum.hpp>
+
+#include "automation/cron-parser.hpp"
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
-#include "automation/cron-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
-
 #include "utils/format.hpp"
-#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::tools {
     namespace {

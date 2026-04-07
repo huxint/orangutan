@@ -1,15 +1,16 @@
 #include "tools/message-attachments/message-attachments-tool.hpp"
 
+#include <filesystem>
+#include <string>
+
+#include <nlohmann/json.hpp>
+
 #include "tools/internal.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
-
-#include <filesystem>
-#include <nlohmann/json.hpp>
-#include <string>
 
 namespace orangutan::tools {
 

@@ -2,13 +2,13 @@
 
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
+
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
-
 #include "utils/format.hpp"
 
 namespace orangutan::tools {
