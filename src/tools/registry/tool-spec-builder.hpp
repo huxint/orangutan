@@ -137,7 +137,6 @@ namespace orangutan::tools {
         using Handler = std::function<Response(const nlohmann::json &)>;
         using handler = Handler;
         using missing_op_error_formatter_fn = std::function<std::string(std::string_view)>;
-        using invalid_op_type_error_formatter_fn = std::function<std::string(std::string_view)>;
 
         ToolDispatch &op_field(std::string field_name) {
             op_field_ = std::move(field_name);
@@ -154,11 +153,6 @@ namespace orangutan::tools {
             return *this;
         }
 
-        ToolDispatch &invalid_op_type_error_formatter(invalid_op_type_error_formatter_fn formatter) {
-            invalid_op_type_error_formatter_ = std::move(formatter);
-            return *this;
-        }
-
         ToolDispatch &on(std::string op, Handler fn) {
             handlers_.insert_or_assign(std::move(op), std::move(fn));
             return *this;
@@ -171,7 +165,7 @@ namespace orangutan::tools {
             }
 
             if (!input.at(op_field_).is_string()) {
-                return {.message = invalid_op_type_error_formatter_(op_field_), .is_error = true};
+                return {.message = "invalid type for field: " + op_field_, .is_error = true};
             }
 
             const auto op = input.at(op_field_).get<std::string>();
@@ -188,9 +182,6 @@ namespace orangutan::tools {
         std::string unknown_op_error_ = "unknown operation";
         missing_op_error_formatter_fn missing_op_error_formatter_ = [](std::string_view field_name) {
             return "missing required field: " + std::string(field_name);
-        };
-        invalid_op_type_error_formatter_fn invalid_op_type_error_formatter_ = [](std::string_view field_name) {
-            return "invalid type for field: " + std::string(field_name);
         };
         std::unordered_map<std::string, Handler> handlers_;
     };

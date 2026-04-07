@@ -23,11 +23,6 @@ namespace orangutan::tools::schema_fragments {
     }
 
     [[nodiscard]]
-    inline nlohmann::json empty_object_fragment() {
-        return empty_object_schema();
-    }
-
-    [[nodiscard]]
     inline nlohmann::json id_field() {
         return {
             {"type", "string"},
