@@ -108,16 +108,16 @@ namespace orangutan::permissions {
                     lines.push_back("Reason: rule from " + permission_rule_source_label(value.source));
                     lines.push_back("Rule: " + value.rule_value);
                 } else if constexpr (std::is_same_v<Value, ModeDecisionReason>) {
-                    lines.push_back("Reason: mode");
+                    lines.emplace_back("Reason: mode");
                     lines.push_back("Mode: " + permission_mode_label(value.mode));
                 } else if constexpr (std::is_same_v<Value, SafetyCheckDecisionReason>) {
-                    lines.push_back("Reason: safety check");
+                    lines.emplace_back("Reason: safety check");
                     lines.push_back("Path: " + value.path);
                 } else if constexpr (std::is_same_v<Value, ToolSpecificDecisionReason>) {
-                    lines.push_back("Reason: tool-specific check");
+                    lines.emplace_back("Reason: tool-specific check");
                     lines.push_back("Detail: " + value.detail);
                 } else {
-                    lines.push_back("Reason: hook");
+                    lines.emplace_back("Reason: hook");
                 }
             },
             *decision.reason);
