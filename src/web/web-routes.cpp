@@ -428,7 +428,7 @@ namespace orangutan::web {
         approval->tool = call.name;
         approval->command = internal::extract_approval_command(call);
         approval->sandbox_mode = "";
-        approval->prompt = decision.message.value_or("Tool requires approval");
+        approval->prompt = permissions::approval_prompt_message(decision);
         approval->decision = decision;
 
         {

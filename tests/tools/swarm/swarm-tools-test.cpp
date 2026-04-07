@@ -97,7 +97,8 @@ namespace {
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["created"] == false);
-        CHECK(json["error"] == "Team manager is not available");
+        REQUIRE(json["error"].is_string());
+        CHECK(json["error"].get<std::string>() == "Team manager is not available");
     }
 
     TEST_CASE("team_delete tool returns an error when team manager is unavailable", "[tools][swarm]") {
@@ -118,7 +119,8 @@ namespace {
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["deleted"] == false);
-        CHECK(json["error"] == "Team manager is not available");
+        REQUIRE(json["error"].is_string());
+        CHECK(json["error"].get<std::string>() == "Team manager is not available");
     }
 
     TEST_CASE("team_delete sends shutdown requests before deleting the team", "[tools][swarm]") {

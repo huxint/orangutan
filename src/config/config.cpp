@@ -1,12 +1,12 @@
 #include "config/config-detail.hpp"
 #include "config/secret-fields.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
+
+#include <nlohmann/json.hpp>
 
 #include <magic_enum/magic_enum.hpp>
 #include <spdlog/spdlog.h>
@@ -105,16 +105,20 @@ namespace orangutan::config {
         }
 
         Config parse_json(const nlohmann::json &root, const ConfigSecretOptions &secret_options) {
-            Config cfg;
-            cfg = parse_agent_section(root, std::move(cfg));
-            cfg = parse_profiles_section(root, std::move(cfg));
-            cfg = parse_tools_section(root, std::move(cfg));
-            cfg = parse_permissions_section(root, std::move(cfg));
-            cfg = parse_session_section(root, std::move(cfg));
-            cfg = parse_memory_section(root, std::move(cfg));
-            cfg = parse_qq_section(root, std::move(cfg));
-
+            auto resolved_root = root;
             ConfigPasswordResolver password_resolver(secret_options);
+            for (auto &secret : collect_config_secret_json_values(resolved_root)) {
+                resolve_secret_field(*secret.value, secret.field_kind, secret.display_field, password_resolver);
+            }
+
+            Config cfg;
+            cfg = parse_agent_section(resolved_root, std::move(cfg));
+            cfg = parse_profiles_section(resolved_root, std::move(cfg));
+            cfg = parse_tools_section(resolved_root, std::move(cfg));
+            cfg = parse_permissions_section(resolved_root, std::move(cfg));
+            cfg = parse_session_section(resolved_root, std::move(cfg));
+            cfg = parse_memory_section(resolved_root, std::move(cfg));
+            cfg = parse_qq_section(resolved_root, std::move(cfg));
 
             cfg.profile = expand_env_vars(cfg.profile);
             cfg.model = expand_env_vars(cfg.model);
@@ -123,24 +127,21 @@ namespace orangutan::config {
                 fallback_model.profile = expand_env_vars(fallback_model.profile);
                 fallback_model.model = expand_env_vars(fallback_model.model);
             }
-            for (auto &[profile_name, profile_cfg] : cfg.profiles) {
-                const auto display_field = "profiles." + profile_name + ".api_key";
-                resolve_secret_field(profile_cfg.api_key, profile_api_key_field().field_kind, display_field, password_resolver);
+            for (auto &[_, profile_cfg] : cfg.profiles) {
                 expand_profile_config(profile_cfg);
             }
             cfg.memory.mirror_file = expand_home_path(expand_env_vars(cfg.memory.mirror_file));
             cfg.memory.journal_dir = expand_home_path(expand_env_vars(cfg.memory.journal_dir));
             cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);
-            resolve_secret_field(cfg.qq_client_secret, qq_client_secret_field().field_kind, "qq.client_secret", password_resolver);
 
-            cfg = parse_agents_section(root, std::move(cfg));
-            cfg = parse_qq_bots_section(root, std::move(cfg));
-            cfg = parse_security_section(root, std::move(cfg));
-            cfg = parse_skills_section(root, std::move(cfg));
-            cfg = parse_custom_tools_section(root, std::move(cfg));
-            cfg = parse_mcp_section(root, std::move(cfg));
-            cfg = parse_hooks_section(root, std::move(cfg));
-            cfg = parse_heartbeat_section(root, std::move(cfg));
+            cfg = parse_agents_section(resolved_root, std::move(cfg));
+            cfg = parse_qq_bots_section(resolved_root, std::move(cfg));
+            cfg = parse_security_section(resolved_root, std::move(cfg));
+            cfg = parse_skills_section(resolved_root, std::move(cfg));
+            cfg = parse_custom_tools_section(resolved_root, std::move(cfg));
+            cfg = parse_mcp_section(resolved_root, std::move(cfg));
+            cfg = parse_hooks_section(resolved_root, std::move(cfg));
+            cfg = parse_heartbeat_section(resolved_root, std::move(cfg));
 
             for (auto &[key, agent_cfg] : cfg.agents) {
                 expand_agent_config(agent_cfg);
@@ -155,12 +156,9 @@ namespace orangutan::config {
                 });
             }
 
-            for (std::size_t index = 0; index < cfg.qq_bots.size(); ++index) {
-                auto &bot = cfg.qq_bots[index];
+            for (auto &bot : cfg.qq_bots) {
                 bot.name = expand_env_vars(bot.name);
                 bot.app_id = expand_env_vars(bot.app_id);
-                const auto display_field = "qq_bots[" + std::to_string(index) + "].client_secret";
-                resolve_secret_field(bot.client_secret, qq_bot_client_secret_field().field_kind, display_field, password_resolver);
                 bot.agent = expand_env_vars(bot.agent);
 
                 if (bot.agent.empty()) {

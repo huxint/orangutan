@@ -71,22 +71,13 @@ namespace orangutan::config {
             }
         }
 
-        std::size_t protect_secret_value(nlohmann::json &parent, std::string_view key_name, std::string_view field_kind, std::string_view password) {
-            if (!parent.is_object()) {
-                return 0;
-            }
-
-            const auto it = parent.find(std::string(key_name));
-            if (it == parent.end() || !it->is_string()) {
-                return 0;
-            }
-
-            const auto plaintext = it->get<std::string>();
+        std::size_t protect_secret_value(ConfigSecretJsonValue &secret, std::string_view password) {
+            auto &plaintext = *secret.value;
             if (plaintext.empty() || is_env_reference(plaintext) || is_protected_config_secret(plaintext)) {
                 return 0;
             }
 
-            *it = protect_config_secret(plaintext, password, field_kind);
+            plaintext = protect_config_secret(plaintext, password, secret.field_kind);
             return 1;
         }
 
@@ -110,22 +101,8 @@ namespace orangutan::config {
 
         std::size_t protected_count = 0;
 
-        if (auto it = root.find("profiles"); it != root.end() && it->is_object()) {
-            for (auto profile_it = it->begin(); profile_it != it->end(); ++profile_it) {
-                if (profile_it.value().is_object()) {
-                    protected_count += protect_secret_value(profile_it.value(), profile_api_key_field().key_name, profile_api_key_field().field_kind, password);
-                }
-            }
-        }
-        if (auto it = root.find("qq"); it != root.end() && it->is_object()) {
-            protected_count += protect_secret_value(*it, qq_client_secret_field().key_name, qq_client_secret_field().field_kind, password);
-        }
-        if (auto it = root.find("qq_bots"); it != root.end() && it->is_array()) {
-            for (auto &bot : *it) {
-                if (bot.is_object()) {
-                    protected_count += protect_secret_value(bot, qq_bot_client_secret_field().key_name, qq_bot_client_secret_field().field_kind, password);
-                }
-            }
+        for (auto &secret : collect_config_secret_json_values(root)) {
+            protected_count += protect_secret_value(secret, password);
         }
 
         if (protected_count == 0) {

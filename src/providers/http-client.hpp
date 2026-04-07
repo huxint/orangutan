@@ -2,9 +2,12 @@
 
 #include <curl/curl.h>
 #include <spdlog/spdlog.h>
+#include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace orangutan::providers {
 
@@ -78,8 +81,21 @@ namespace orangutan::providers {
 
         CurlHeaders(const CurlHeaders &) = delete;
         CurlHeaders &operator=(const CurlHeaders &) = delete;
-        CurlHeaders(CurlHeaders &&) = delete;
-        CurlHeaders &operator=(CurlHeaders &&) = delete;
+        CurlHeaders(CurlHeaders &&other) noexcept
+        : list_(other.list_) {
+            other.list_ = nullptr;
+        }
+        CurlHeaders &operator=(CurlHeaders &&other) noexcept {
+            if (this == &other) {
+                return *this;
+            }
+            if (list_ != nullptr) {
+                curl_slist_free_all(list_);
+            }
+            list_ = other.list_;
+            other.list_ = nullptr;
+            return *this;
+        }
 
         void append(const std::string &header) {
             list_ = curl_slist_append(list_, header.c_str());
@@ -93,6 +109,45 @@ namespace orangutan::providers {
     private:
         struct curl_slist *list_ = nullptr;
     };
+
+    struct HeaderFallback {
+        std::string key;
+        std::string fallback;
+    };
+
+    inline void append_header(CurlHeaders &headers, std::string_view key, std::string_view value) {
+        std::string header{key};
+        header += ": ";
+        header += value;
+        headers.append(header);
+    }
+
+    [[nodiscard]]
+    inline std::optional<std::string_view> find_header_value(const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key) {
+        if (auto it = custom_headers.find(std::string{key}); it != custom_headers.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]]
+    inline CurlHeaders compose_headers(const std::unordered_map<std::string, std::string> &custom_headers, std::initializer_list<HeaderFallback> required_headers) {
+        CurlHeaders headers;
+        for (const auto &required : required_headers) {
+            const auto value = find_header_value(custom_headers, required.key).value_or(required.fallback);
+            append_header(headers, required.key, value);
+        }
+
+        for (const auto &[name, value] : custom_headers) {
+            const auto is_required = std::ranges::any_of(required_headers, [&name](const HeaderFallback &required) {
+                return required.key == name;
+            });
+            if (!is_required) {
+                append_header(headers, name, value);
+            }
+        }
+        return headers;
+    }
 
     // Perform a blocking HTTP POST and return the response body
     // Throws on curl errors or non-200 HTTP status

@@ -46,6 +46,7 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 | `std::array<T, N>` | C-style arrays | Type-safe, bounds-checked |
 | `std::expected<T, E>` | Exceptions / error codes | Explicit, composable |
 | `std::jthread` | `std::thread` | Auto-join, stop tokens |
+| `std::scoped_lock` | `std::lock_guard` | Lightweight |
 | PMR allocators | Default allocators | Runtime flexibility |
 
 ### Syntax & Style

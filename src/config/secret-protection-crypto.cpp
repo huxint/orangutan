@@ -38,6 +38,103 @@ namespace orangutan::config {
         using mutable_byte_span = std::span<std::byte>;
         using decode_table = std::array<int, 256>;
 
+        class EntropyContext final {
+          public:
+            EntropyContext() {
+                mbedtls_entropy_init(&value_);
+            }
+
+            ~EntropyContext() {
+                mbedtls_entropy_free(&value_);
+            }
+
+            EntropyContext(const EntropyContext &) = delete;
+            EntropyContext &operator=(const EntropyContext &) = delete;
+            EntropyContext(EntropyContext &&) = delete;
+            EntropyContext &operator=(EntropyContext &&) = delete;
+
+            [[nodiscard]]
+            mbedtls_entropy_context *get() noexcept {
+                return &value_;
+            }
+
+          private:
+            mbedtls_entropy_context value_{};
+        };
+
+        class CtrDrbgContext final {
+          public:
+            CtrDrbgContext() {
+                mbedtls_ctr_drbg_init(&value_);
+            }
+
+            ~CtrDrbgContext() {
+                mbedtls_ctr_drbg_free(&value_);
+            }
+
+            CtrDrbgContext(const CtrDrbgContext &) = delete;
+            CtrDrbgContext &operator=(const CtrDrbgContext &) = delete;
+            CtrDrbgContext(CtrDrbgContext &&) = delete;
+            CtrDrbgContext &operator=(CtrDrbgContext &&) = delete;
+
+            [[nodiscard]]
+            mbedtls_ctr_drbg_context *get() noexcept {
+                return &value_;
+            }
+
+          private:
+            mbedtls_ctr_drbg_context value_{};
+        };
+
+        class MdContext final {
+          public:
+            MdContext() {
+                mbedtls_md_init(&value_);
+            }
+
+            ~MdContext() {
+                mbedtls_md_free(&value_);
+            }
+
+            MdContext(const MdContext &) = delete;
+            MdContext &operator=(const MdContext &) = delete;
+            MdContext(MdContext &&) = delete;
+            MdContext &operator=(MdContext &&) = delete;
+
+            [[nodiscard]]
+            mbedtls_md_context_t *get() noexcept {
+                return &value_;
+            }
+
+          private:
+            mbedtls_md_context_t value_{};
+        };
+
+        class GcmContext final {
+          public:
+            GcmContext() {
+                mbedtls_gcm_init(&value_);
+            }
+
+            ~GcmContext() {
+                mbedtls_gcm_free(&value_);
+            }
+
+            GcmContext(const GcmContext &) = delete;
+            GcmContext &operator=(const GcmContext &) = delete;
+            GcmContext(GcmContext &&) = delete;
+            GcmContext &operator=(GcmContext &&) = delete;
+
+            [[nodiscard]]
+            mbedtls_gcm_context *get() noexcept {
+                return &value_;
+            }
+
+          private:
+            mbedtls_gcm_context value_{};
+        };
+
+
         struct ProtectedPayload {
             byte_array<salt_size> salt{};
             byte_array<iv_size> iv{};
@@ -170,27 +267,16 @@ namespace orangutan::config {
         }
 
         void fill_random_bytes(mutable_byte_span output) {
-            mbedtls_entropy_context entropy;
-            mbedtls_ctr_drbg_context ctr_drbg;
-            mbedtls_entropy_init(&entropy);
-            mbedtls_ctr_drbg_init(&ctr_drbg);
+            EntropyContext entropy;
+            CtrDrbgContext ctr_drbg;
 
-            const auto cleanup = [&] {
-                mbedtls_ctr_drbg_free(&ctr_drbg);
-                mbedtls_entropy_free(&entropy);
-            };
-
-            if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, mbedtls_const_chars(rng_personalization), rng_personalization.size()) != 0) {
-                cleanup();
+            if (mbedtls_ctr_drbg_seed(ctr_drbg.get(), mbedtls_entropy_func, entropy.get(), mbedtls_const_chars(rng_personalization), rng_personalization.size()) != 0) {
                 throw ConfigSecretProtectionError("Failed to generate config secret protection randomness.");
             }
 
-            if (mbedtls_ctr_drbg_random(&ctr_drbg, mbedtls_mutable_bytes(output), output.size()) != 0) {
-                cleanup();
+            if (mbedtls_ctr_drbg_random(ctr_drbg.get(), mbedtls_mutable_bytes(output), output.size()) != 0) {
                 throw ConfigSecretProtectionError("Failed to generate config secret protection randomness.");
             }
-
-            cleanup();
         }
 
         [[nodiscard]]
@@ -200,28 +286,20 @@ namespace orangutan::config {
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
             }
 
-            mbedtls_md_context_t md_ctx;
-            mbedtls_md_init(&md_ctx);
-
-            const auto cleanup = [&] {
-                mbedtls_md_free(&md_ctx);
-            };
-
-            if (mbedtls_md_setup(&md_ctx, md_info, 1) != 0) {
-                cleanup();
+            MdContext md_ctx;
+            if (mbedtls_md_setup(md_ctx.get(), md_info, 1) != 0) {
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
             }
 
             byte_array<key_size> key{};
-            if (mbedtls_pkcs5_pbkdf2_hmac(&md_ctx, mbedtls_const_chars(password), password.size(), mbedtls_const_bytes(salt), salt.size(), pbkdf2_iterations, key.size(),
+            if (mbedtls_pkcs5_pbkdf2_hmac(md_ctx.get(), mbedtls_const_chars(password), password.size(), mbedtls_const_bytes(salt), salt.size(), pbkdf2_iterations, key.size(),
                                           mbedtls_mutable_bytes(std::span{key})) != 0) {
-                cleanup();
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
             }
 
-            cleanup();
             return key;
         }
+
 
         [[nodiscard]]
         std::string aad_for_field(std::string_view field_kind) {
@@ -231,54 +309,38 @@ namespace orangutan::config {
         [[nodiscard]]
         byte_vector encrypt_aes_gcm(const_byte_span plaintext, std::span<const std::byte, key_size> key, std::span<const std::byte, iv_size> iv, const_byte_span aad,
                                     byte_array<tag_size> &tag) {
-            mbedtls_gcm_context ctx;
-            mbedtls_gcm_init(&ctx);
-
-            const auto cleanup = [&] {
-                mbedtls_gcm_free(&ctx);
-            };
-
-            if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
-                cleanup();
+            GcmContext ctx;
+            if (mbedtls_gcm_setkey(ctx.get(), MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
                 throw ConfigSecretProtectionError("Failed to initialize config secret encryption.");
             }
 
             byte_vector ciphertext(plaintext.size());
-            if (mbedtls_gcm_crypt_and_tag(&ctx, MBEDTLS_GCM_ENCRYPT, plaintext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(),
+            if (mbedtls_gcm_crypt_and_tag(ctx.get(), MBEDTLS_GCM_ENCRYPT, plaintext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(),
                                           mbedtls_const_bytes(plaintext), mbedtls_mutable_bytes(std::span{ciphertext}), tag.size(), mbedtls_mutable_bytes(std::span{tag})) != 0) {
-                cleanup();
                 throw ConfigSecretProtectionError("Failed to encrypt config secret.");
             }
 
-            cleanup();
             return ciphertext;
         }
+
 
         [[nodiscard]]
         byte_vector decrypt_aes_gcm(const_byte_span ciphertext, std::span<const std::byte, key_size> key, std::span<const std::byte, iv_size> iv,
                                     std::span<const std::byte, tag_size> tag, const_byte_span aad, std::string_view display_field) {
-            mbedtls_gcm_context ctx;
-            mbedtls_gcm_init(&ctx);
-
-            const auto cleanup = [&] {
-                mbedtls_gcm_free(&ctx);
-            };
-
-            if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
-                cleanup();
+            GcmContext ctx;
+            if (mbedtls_gcm_setkey(ctx.get(), MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
                 throw ConfigSecretProtectionError("Failed to initialize config secret decryption for '" + std::string(display_field) + "'.");
             }
 
             byte_vector plaintext(ciphertext.size());
-            if (mbedtls_gcm_auth_decrypt(&ctx, ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag), tag.size(),
+            if (mbedtls_gcm_auth_decrypt(ctx.get(), ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag), tag.size(),
                                          mbedtls_const_bytes(ciphertext), mbedtls_mutable_bytes(std::span{plaintext})) != 0) {
-                cleanup();
                 throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
             }
 
-            cleanup();
             return plaintext;
         }
+
 
         [[nodiscard]]
         byte_vector serialize_payload(const ProtectedPayload &payload) {

@@ -2,6 +2,7 @@
 #include "test-helpers.hpp"
 
 #include <filesystem>
+#include <string_view>
 #include <catch2/catch_test_macros.hpp>
 
 namespace {
@@ -53,6 +54,22 @@ namespace {
         INFO("expected PRAGMA busy_timeout to return one row");
         REQUIRE(query.step());
         CHECK(query.column_int(0) == 1000);
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    TEST_CASE("bind_text preserves empty string_view as empty text") {
+        const auto db_path = orangutan::testing::unique_test_db_path("sqlite-empty-bind", "sqlite.db");
+        orangutan::sqlite::Database db(db_path);
+
+        std::string_view empty;
+        orangutan::sqlite::Statement query(db, "SELECT (?1 = '') AS eq_empty, (?1 IS NULL) AS is_null");
+        query.bind_text(1, empty);
+
+        INFO("expected sqlite query to return one row");
+        REQUIRE(query.step());
+        CHECK(query.column_int(0) == 1);
+        CHECK(query.column_int(1) == 0);
 
         std::filesystem::remove_all(db_path.parent_path());
     };

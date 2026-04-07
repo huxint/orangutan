@@ -1,10 +1,13 @@
 #include "tools/swarm/register.hpp"
-#include "tools/registry/tool-context.hpp"
-#include "swarm/team-manager.hpp"
+
+#include <string>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-#include <string>
+
+#include "swarm/team-manager.hpp"
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 
 namespace orangutan::tools {
 
@@ -32,18 +35,18 @@ namespace orangutan::tools {
     } // namespace
 
     void register_team_create_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool({.definition = {.name = "team_create",
-                                               .description = "Create a new team for organizing agents that collaborate on a shared task.",
-                                               .input_schema = {{"type", "object"},
-                                                                {"properties",
-                                                                 {{"name", {{"type", "string"}, {"description", "A unique name for the team"}}},
-                                                                  {"description", {{"type", "string"}, {"description", "Optional description of the team's purpose"}}}}},
-                                                                {"required", nlohmann::json::array({"name"})}}},
-                                .execute =
-                                    [tool_context](const nlohmann::json &input) {
-                                        return team_create_handler(input, *tool_context);
-                                    },
-                                .deferred = true});
+        registry.register_tool(make_tool_spec_builder("team_create")
+                                   .description("Create a new team for organizing agents that collaborate on a shared task.")
+                                   .input_schema({{"type", "object"},
+                                                  {"properties",
+                                                   {{"name", {{"type", "string"}, {"description", "A unique name for the team"}}},
+                                                    {"description", {{"type", "string"}, {"description", "Optional description of the team's purpose"}}}}},
+                                                  {"required", nlohmann::json::array({"name"})}})
+                                   .execute([tool_context](const nlohmann::json &input) {
+                                       return team_create_handler(input, *tool_context);
+                                   })
+                                   .deferred()
+                                   .build());
     }
 
 } // namespace orangutan::tools

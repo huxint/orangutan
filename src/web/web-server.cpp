@@ -14,45 +14,65 @@ namespace orangutan::web {
         setup_routes();
         port_ = 0;
         running_ = false;
+        {
+            std::lock_guard lock(startup_mutex_);
+            startup_complete_ = false;
+        }
 
-        server_thread_ = std::thread([this, host, port] {
+        server_thread_ = std::jthread([this, host, port] {
+            int bound_port = 0;
             if (port == 0) {
-                port_ = server_.bind_to_any_port(host);
-                if (port_ <= 0) {
+                bound_port = server_.bind_to_any_port(host);
+                if (bound_port <= 0) {
+                    std::lock_guard lock(startup_mutex_);
+                    startup_complete_ = true;
+                    startup_cv_.notify_all();
                     return;
                 }
             } else {
                 if (!server_.bind_to_port(host, port)) {
+                    std::lock_guard lock(startup_mutex_);
+                    startup_complete_ = true;
+                    startup_cv_.notify_all();
                     return;
                 }
-                port_ = port;
+                bound_port = port;
             }
 
-            running_ = true;
-            spdlog::info("Web server listening on {}:{}", host, port_);
+            {
+                std::lock_guard lock(startup_mutex_);
+                port_ = bound_port;
+                running_ = true;
+                startup_complete_ = true;
+            }
+            startup_cv_.notify_all();
+
+            spdlog::info("web server listening on {}:{}", host, port_);
             server_.listen_after_bind();
             running_ = false;
         });
 
-        for (int attempt = 0; attempt < 200 && port_ == 0; ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        if (port_ <= 0) {
-            if (server_thread_.joinable()) {
-                server_thread_.join();
-            }
-            throw std::runtime_error(port == 0 ? "Failed to bind web server to any port on " + host : "Failed to bind web server to " + host + ":" + std::to_string(port));
+        std::unique_lock lock(startup_mutex_);
+        constexpr auto STARTUP_TIMEOUT = std::chrono::seconds(5);
+        if (!startup_cv_.wait_for(lock, STARTUP_TIMEOUT, [this] { return startup_complete_; })) {
+            lock.unlock();
+            server_.stop();
+            server_thread_.join();
+            throw std::runtime_error("web server startup timed out on " + host + ":" + std::to_string(port));
         }
 
-        for (int attempt = 0; attempt < 200 && !running_; ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (port_ <= 0) {
+            lock.unlock();
+            server_thread_.join();
+            throw std::runtime_error(port == 0 ? "failed to bind web server to any port on " + host
+                                               : "failed to bind web server to " + host + ":" + std::to_string(port));
         }
+
         if (!running_) {
+            lock.unlock();
             server_.stop();
-            if (server_thread_.joinable()) {
-                server_thread_.join();
-            }
-            throw std::runtime_error("Web server failed to start listening on " + host + ":" + std::to_string(port_));
+            server_thread_.join();
+            throw std::runtime_error("web server failed to start listening on " + host + ":" + std::to_string(port_));
         }
     }
 

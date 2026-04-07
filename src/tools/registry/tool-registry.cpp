@@ -2,6 +2,7 @@
 
 #include "utils/utf8.hpp"
 
+#include <algorithm>
 #include <ctre.hpp>
 #include <exception>
 #include <spdlog/spdlog.h>
@@ -10,7 +11,7 @@
 namespace orangutan::tools {
 
     namespace {
-        constexpr std::string_view redaction_marker = "[REDACTED]";
+        constexpr std::string_view REDACTION_MARKER = "[REDACTED]";
 
         template <ctll::fixed_string Pattern, class Rewriter>
         bool rewrite_matches(std::string &text, Rewriter rewriter) {
@@ -43,7 +44,7 @@ namespace orangutan::tools {
         bool redact_after_prefix(std::string &text) {
             return rewrite_matches<Pattern>(text, [](std::string &out, const auto &match) {
                 out.append(match.template get<1>().to_view());
-                out.append(redaction_marker);
+                out.append(REDACTION_MARKER);
             });
         }
 
@@ -51,7 +52,7 @@ namespace orangutan::tools {
         bool redact_between_edges(std::string &text) {
             return rewrite_matches<Pattern>(text, [](std::string &out, const auto &match) {
                 out.append(match.template get<1>().to_view());
-                out.append(redaction_marker);
+                out.append(REDACTION_MARKER);
                 out.append(match.template get<2>().to_view());
             });
         }
@@ -109,20 +110,27 @@ namespace orangutan::tools {
         discovered_tools_.insert(name);
     }
 
+    void ToolRegistry::discover_deferred_tools() const {
+        for (const auto &[name, tool] : tools_) {
+            if (!tool.deferred) {
+                continue;
+            }
+            if (definition_filter_ && !definition_filter_(tool)) {
+                continue;
+            }
+            discovered_tools_.insert(name);
+        }
+    }
+
     void ToolRegistry::clear_discovered() const {
         discovered_tools_.clear();
     }
 
     bool ToolRegistry::has_deferred_tools() const {
-        for (const auto &[_, tool] : tools_) {
-            if (tool.deferred) {
-                if (definition_filter_ && !definition_filter_(tool)) {
-                    continue;
-                }
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(tools_, [this](const auto &entry) {
+            const auto &tool = entry.second;
+            return tool.deferred && (!definition_filter_ || definition_filter_(tool));
+        });
     }
 
     std::vector<DeferredToolSummary> ToolRegistry::deferred_tool_summaries() const {
@@ -137,7 +145,7 @@ namespace orangutan::tools {
             if (discovered_tools_.contains(tool.definition.name)) {
                 continue;
             }
-            summaries.push_back({tool.definition.name, tool.definition.description});
+            summaries.push_back({.name = tool.definition.name, .description = tool.definition.description});
         }
         return summaries;
     }

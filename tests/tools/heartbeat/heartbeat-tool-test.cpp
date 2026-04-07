@@ -16,6 +16,40 @@ namespace {
         return path;
     }
 
+    TEST_CASE("heartbeat_unknown_op_returns_exact_error") {
+        const auto db_path = make_test_db_path("heartbeat-tool-unknown-op.db");
+        orangutan::automation::Store store(db_path.string());
+        orangutan::automation::Runtime runtime(store);
+
+        orangutan::ToolRuntimeContext context{
+            .agent_key = "default",
+            .automation_runtime = &runtime,
+        };
+        orangutan::ToolRegistry registry;
+        orangutan::tools::register_heartbeat_tool(registry, &context);
+
+        const auto result = registry.execute(orangutan::ToolUse("heartbeat-unknown-op", "heartbeat", {{"op", "noop"}}));
+
+        CHECK(result.content == "Error: unknown operation. Supported: add, update, remove, list, run, pause, resume.");
+    }
+
+    TEST_CASE("heartbeat_update_requires_id_or_name_with_exact_error") {
+        const auto db_path = make_test_db_path("heartbeat-tool-missing-id.db");
+        orangutan::automation::Store store(db_path.string());
+        orangutan::automation::Runtime runtime(store);
+
+        orangutan::ToolRuntimeContext context{
+            .agent_key = "default",
+            .automation_runtime = &runtime,
+        };
+        orangutan::ToolRegistry registry;
+        orangutan::tools::register_heartbeat_tool(registry, &context);
+
+        const auto result = registry.execute(orangutan::ToolUse("heartbeat-update-missing-id", "heartbeat", {{"op", "update"}, {"prompt", "after"}}));
+
+        CHECK(result.content == "Error: id or name is required.");
+    }
+
     TEST_CASE("update_preserves_delivery_schedule_state_and_active_hours_when_fields_are_omitted") {
         const auto db_path = make_test_db_path("heartbeat-tool-update.db");
         orangutan::automation::Store store(db_path.string());

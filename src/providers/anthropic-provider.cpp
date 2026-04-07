@@ -26,44 +26,25 @@ namespace orangutan::providers {
             return 0;
         }
 
-        void append_header_if_missing(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key,
-                                      std::string_view fallback_value) {
-            if (!custom_headers.contains(static_cast<std::string>(key))) {
-                headers.append(static_cast<std::string>(key) + ": " + static_cast<std::string>(fallback_value));
-            }
-        }
-
-        void append_custom_headers(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers) {
-            for (const auto &[name, value] : custom_headers) {
-                auto header = name;
-                header += ": ";
-                header += value;
-                headers.append(header);
-            }
-        }
-
     } // namespace
 
     // ── StreamAccumulator ───────────────────────────
 
-    class StreamAccumulator {
+    class StreamAccumulator final : public JsonSseAccumulator<StreamAccumulator> {
     public:
         explicit StreamAccumulator(const StreamCallback &on_event)
         : on_event_(on_event) {}
 
-        void handle_event(const std::string &data) {
-            if (data == "[DONE]") {
-                return;
-            }
+        void handle_event(std::string_view data) {
+            handle_data(data);
+        }
 
-            nlohmann::json event_data;
-            try {
-                event_data = nlohmann::json::parse(data);
-            } catch (const nlohmann::json::parse_error &e) {
-                spdlog::warn("Failed to parse SSE data: {}", e.what());
-                return;
-            }
+        [[nodiscard]]
+        std::string_view parse_error_context() const {
+            return "SSE data";
+        }
 
+        void handle_parsed_payload(const nlohmann::json &event_data) {
             auto type = event_data.value("type", "");
             dispatch_event(type, event_data);
             on_event_(type, event_data);
@@ -207,11 +188,9 @@ namespace orangutan::providers {
         std::string request_body = body.dump();
         spdlog::debug("Request body: {}", request_body);
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "x-api-key", endpoint_.api_key);
-        append_header_if_missing(headers, endpoint_.headers, "anthropic-version", "2023-06-01");
-        append_custom_headers(headers, endpoint_.headers);
+        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
+                                                           HeaderFallback{"x-api-key", endpoint_.api_key},
+                                                           HeaderFallback{"anthropic-version", "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";
         auto response_body = http_post(url, request_body, headers);
@@ -241,11 +220,9 @@ namespace orangutan::providers {
             accumulator.handle_event(data);
         });
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "x-api-key", endpoint_.api_key);
-        append_header_if_missing(headers, endpoint_.headers, "anthropic-version", "2023-06-01");
-        append_custom_headers(headers, endpoint_.headers);
+        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
+                                                           HeaderFallback{"x-api-key", endpoint_.api_key},
+                                                           HeaderFallback{"anthropic-version", "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";
         long http_code = http_post_stream(url, request_body, headers, parser);

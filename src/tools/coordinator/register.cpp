@@ -1,16 +1,20 @@
 #include "tools/coordinator/register.hpp"
-#include "tools/registry/tool-context.hpp"
+#include "tools/internal.hpp"
+
+#include <array>
 
 namespace orangutan::tools {
 
-    void register_coordinator_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        if (tool_context == nullptr) {
-            return;
-        }
+    namespace {
+        constexpr std::array COORDINATOR_TOOL_REGISTRARS = {
+            register_agent_spawn_tool,
+            register_agent_send_message_tool,
+            register_agent_stop_tool,
+        };
+    } // namespace
 
-        register_agent_spawn_tool(registry, tool_context);
-        register_agent_send_message_tool(registry, tool_context);
-        register_agent_stop_tool(registry, tool_context);
+    void register_coordinator_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        register_contextual_tools(registry, tool_context, COORDINATOR_TOOL_REGISTRARS);
     }
 
 } // namespace orangutan::tools

@@ -18,6 +18,11 @@ namespace {
             std::filesystem::remove_all(root_);
         }
 
+        ConfigSecretFileHarness(const ConfigSecretFileHarness &) = delete;
+        ConfigSecretFileHarness &operator=(const ConfigSecretFileHarness &) = delete;
+        ConfigSecretFileHarness(ConfigSecretFileHarness &&) = delete;
+        ConfigSecretFileHarness &operator=(ConfigSecretFileHarness &&) = delete;
+
         [[nodiscard]]
         std::filesystem::path config_path() const {
             return root_ / "config.json";
@@ -51,7 +56,7 @@ namespace {
         REQUIRE_THROWS_AS(orangutan::reveal_config_secret(stored, "shared-password", "profiles.api_key", "profiles.gateway-a.api_key"), orangutan::ConfigSecretProtectionError);
     };
 
-    TEST_CASE("protect_flow_encrypts_profile_api_keys_and_skips_nested_model_metadata") {
+    TEST_CASE("protect_flow_encrypts_declared_secret_fields_and_skips_non_secret_values") {
         ConfigSecretFileHarness harness;
         harness.write_config(nlohmann::json::parse(R"json({
           "profiles": {
@@ -70,18 +75,32 @@ namespace {
           },
           "qq": {
             "client_secret": "plain-qq-secret"
-          }
+          },
+          "qq_bots": [
+            {
+              "name": "bot-a",
+              "client_secret": "plain-bot-secret",
+              "agent": "default"
+            },
+            {
+              "name": "bot-b",
+              "client_secret": "${BOT_SECRET}",
+              "agent": "default"
+            }
+          ]
         })json"));
 
         const auto result = orangutan::protect_config_file_secrets(harness.config_path(), "protect-password");
         REQUIRE(result.modified);
-        CHECK(result.protected_count == 2UL);
+        CHECK(result.protected_count == 3UL);
 
         const auto updated = ConfigSecretFileHarness::read_config_json(harness.config_path());
         CHECK(updated["profiles"]["gateway-a"]["api_key"].get<std::string>().starts_with("enc:v1:"));
         CHECK(updated["profiles"]["gateway-b"]["api_key"] == "${PROFILE_B_KEY}");
         CHECK(updated["profiles"]["gateway-a"]["models"]["gpt-4.1"]["max_tokens"] == 32000);
         CHECK(updated["qq"]["client_secret"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["qq_bots"][0]["client_secret"].get<std::string>().starts_with("enc:v1:"));
+        CHECK(updated["qq_bots"][1]["client_secret"] == "${BOT_SECRET}");
     };
 
     TEST_CASE("protect_flow_preserves_config_permissions") {

@@ -10,6 +10,58 @@
 
 namespace {
 
+    TEST_CASE("task_unknown_op_returns_exact_error") {
+        const auto db_path = orangutan::testing::unique_test_db_path("task-tool", "task-tool-unknown-op.db");
+        orangutan::automation::Store store(db_path.string());
+        orangutan::automation::Runtime runtime(store);
+
+        orangutan::ToolRuntimeContext context{
+            .agent_key = "default",
+            .automation_runtime = &runtime,
+        };
+        orangutan::ToolRegistry registry;
+        orangutan::tools::register_task_tool(registry, &context);
+
+        const auto result = registry.execute(orangutan::ToolUse("task-unknown-op", "task", {{"op", "noop"}}));
+
+        CHECK(result.content == "Error: unknown operation. Supported: add, update, remove, list, run.");
+    }
+
+    TEST_CASE("task_update_requires_id_or_name_with_exact_error") {
+        const auto db_path = orangutan::testing::unique_test_db_path("task-tool", "task-tool-missing-id.db");
+        orangutan::automation::Store store(db_path.string());
+        orangutan::automation::Runtime runtime(store);
+
+        orangutan::ToolRuntimeContext context{
+            .agent_key = "default",
+            .automation_runtime = &runtime,
+        };
+        orangutan::ToolRegistry registry;
+        orangutan::tools::register_task_tool(registry, &context);
+
+        const auto result = registry.execute(orangutan::ToolUse("task-update-missing-id", "task", {{"op", "update"}, {"prompt", "after"}}));
+
+        CHECK(result.content == "Error: id or name is required.");
+    }
+
+    TEST_CASE("task_registered_tool_reports_unavailable_context_at_execute_time") {
+        const auto db_path = orangutan::testing::unique_test_db_path("task-tool", "task-tool-unavailable-context.db");
+        orangutan::automation::Store store(db_path.string());
+        orangutan::automation::Runtime runtime(store);
+
+        orangutan::ToolRuntimeContext context{
+            .agent_key = "default",
+            .automation_runtime = &runtime,
+        };
+        orangutan::ToolRegistry registry;
+        orangutan::tools::register_task_tool(registry, &context);
+
+        context.automation_runtime = nullptr;
+        const auto result = registry.execute(orangutan::ToolUse("task-list-unavailable", "task", {{"op", "list"}}));
+
+        CHECK(result.content == "Error: task tool is not available in this context.");
+    }
+
     TEST_CASE("update_preserves_delivery_when_fields_are_omitted") {
         const auto db_path = orangutan::testing::unique_test_db_path("task-tool", "task-tool-update.db");
         orangutan::automation::Store store(db_path.string());

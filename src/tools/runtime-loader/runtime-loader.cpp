@@ -4,7 +4,7 @@
 #include "permissions/rule-parser.hpp"
 #include "coordinator/coordinator-mode.hpp"
 #include "tools/register.hpp"
-#include "tools/script/register.hpp"
+#include "tools/script/script-loader.hpp"
 #include "tools/tool-search/tool-search.hpp"
 
 #include <spdlog/spdlog.h>
@@ -20,10 +20,7 @@ namespace orangutan::tools {
                         return false;
                     }
                 }
-                if (ctx.mode == permission_mode::plan && !tool.read_only) {
-                    return false;
-                }
-                return true;
+                return ctx.mode != permission_mode::plan || tool.read_only;
             });
             registry.set_execution_guard([&registry, ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
                 if (tool_context != nullptr && tool_context->abort_checker && tool_context->abort_checker()) {
@@ -72,7 +69,7 @@ namespace orangutan::tools {
         const bool coordinator_only = coordinator::is_coordinator_mode(tool_context);
         register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
         if (!coordinator_only) {
-            script::register_tools(registry, custom_tools, workspace, permissions, tool_context);
+            register_script_tools(registry, custom_tools, workspace, permissions, tool_context);
         }
 
         if (permissions != nullptr) {

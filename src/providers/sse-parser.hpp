@@ -1,6 +1,10 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -23,10 +27,51 @@ namespace orangutan::providers {
         void emit_event();
     };
 
+    template <typename Derived>
+    class JsonSseAccumulator {
+    public:
+        void handle_data(std::string_view data) {
+            if (data == "[DONE]") {
+                return;
+            }
+
+            if (auto payload = parse_payload(data, derived().parse_error_context()); payload.has_value()) {
+                derived().handle_parsed_payload(*payload);
+            }
+        }
+
+        void handle_event(std::string_view event_name, std::string_view data) {
+            if (data == "[DONE]") {
+                return;
+            }
+
+            if (auto payload = parse_payload(data, derived().parse_error_context()); payload.has_value()) {
+                derived().handle_parsed_payload(event_name, *payload);
+            }
+        }
+
+    private:
+        [[nodiscard]]
+        static std::optional<nlohmann::json> parse_payload(std::string_view data, std::string_view context) {
+            try {
+                return nlohmann::json::parse(data);
+            } catch (const nlohmann::json::parse_error &error) {
+                spdlog::warn("Failed to parse {}: {}", context, error.what());
+                return std::nullopt;
+            }
+        }
+
+        [[nodiscard]]
+        Derived &derived() {
+            return static_cast<Derived &>(*this);
+        }
+    };
+
 } // namespace orangutan::providers
 
 namespace orangutan {
 
+    using providers::JsonSseAccumulator;
     using providers::SseParser;
 
 } // namespace orangutan

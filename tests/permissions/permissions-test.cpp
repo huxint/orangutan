@@ -202,6 +202,8 @@ TEST_CASE("DefaultModeAsksForUnknownTool") {
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
     auto decision = evaluate_permission(call, ctx);
     REQUIRE(decision.behavior == permission_behavior::ask);
+    REQUIRE(decision.message.has_value());
+    CHECK(*decision.message == "Tool 'shell' requires approval");
 }
 
 TEST_CASE("AcceptEditsAllowsWorkspaceFileToolsWhenCheckerPasses") {

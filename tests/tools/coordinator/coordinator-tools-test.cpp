@@ -184,7 +184,8 @@ namespace {
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["sent"] == false);
-        CHECK(json["error"] == "Either run_id or to must be specified");
+        REQUIRE(json["error"].is_string());
+        CHECK(json["error"].get<std::string>() == "Either run_id or to must be specified");
 
         manager.shutdown();
     }

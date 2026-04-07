@@ -24,22 +24,6 @@ namespace orangutan::providers {
             return reason;
         }
 
-        void append_header_if_missing(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key,
-                                      std::string_view fallback_value) {
-            if (!custom_headers.contains(static_cast<std::string>(key))) {
-                headers.append(static_cast<std::string>(key) + ": " + static_cast<std::string>(fallback_value));
-            }
-        }
-
-        void append_custom_headers(CurlHeaders &headers, const std::unordered_map<std::string, std::string> &custom_headers) {
-            for (const auto &[name, value] : custom_headers) {
-                auto header = name;
-                header += ": ";
-                header += value;
-                headers.append(header);
-            }
-        }
-
         nlohmann::json tool_to_openai_function(const ToolDef &tool) {
             return {
                 {"type", "function"},
@@ -85,24 +69,193 @@ namespace orangutan::providers {
             return {{"role", "user"}, {"content", content}};
         }
 
-        class ChatCompletionsStreamAccumulator {
+        constexpr std::string_view RESPONSES_ENDPOINT_STYLE = "openai-responses";
+        constexpr std::string_view RESPONSES_API_PATH = "/v1/responses";
+        constexpr std::string_view CHAT_COMPLETIONS_API_PATH = "/v1/chat/completions";
+
+        [[nodiscard]]
+        bool uses_responses_api(std::string_view endpoint_style) noexcept {
+            return endpoint_style == RESPONSES_ENDPOINT_STYLE;
+        }
+
+        [[nodiscard]]
+        std::string openai_request_url(const ProviderEndpoint &endpoint) {
+            const auto path = uses_responses_api(endpoint.endpoint_style) ? RESPONSES_API_PATH : CHAT_COMPLETIONS_API_PATH;
+            return endpoint.base_url + std::string{path};
+        }
+
+        [[nodiscard]]
+        CurlHeaders make_openai_headers(const ProviderEndpoint &endpoint) {
+            return compose_headers(endpoint.headers,
+                                   {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
+                                    HeaderFallback{.key = "Authorization", .fallback = std::string{"Bearer "} + endpoint.api_key}});
+        }
+
+        template <typename Converter>
+        void append_tool_definitions(nlohmann::json &body, const std::vector<ToolDef> &tools, Converter &&converter) {
+            if (tools.empty()) {
+                return;
+            }
+
+            auto convert_tool = std::forward<Converter>(converter);
+            auto &serialized_tools = body["tools"];
+            serialized_tools = nlohmann::json::array();
+            for (const auto &tool : tools) {
+                serialized_tools.push_back(convert_tool(tool));
+            }
+        }
+
+        void throw_if_openai_error(const nlohmann::json &response_json) {
+            if (!response_json.contains("error")) {
+                return;
+            }
+
+            std::string error_message = "API error";
+            if (response_json["error"].contains("message")) {
+                error_message = response_json["error"]["message"].get<std::string>();
+            }
+            throw std::runtime_error("API error: " + error_message);
+        }
+
+        [[nodiscard]]
+        bool has_reasoning_effort(const ProviderEndpoint &endpoint) noexcept {
+            return endpoint.thinking != "none" && !endpoint.thinking.empty();
+        }
+
+        [[nodiscard]]
+        std::optional<nlohmann::json> message_to_openai(const Message &msg) {
+            if (msg.role() == base::role::assistant) {
+                return detail::serialize_openai_assistant_message(msg);
+            }
+
+            if (msg.role() == base::role::user) {
+                for (const auto &block : msg) {
+                    if (const auto *result = std::get_if<ToolResult>(&block)) {
+                        if (result->tool_use_id.empty()) {
+                            spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
+                            continue;
+                        }
+                        return nlohmann::json{{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}};
+                    }
+                }
+
+                std::string text;
+                for (const auto &block : msg) {
+                    if (const auto *tb = std::get_if<Text>(&block)) {
+                        text += tb->text;
+                    }
+                }
+                if (text.empty()) {
+                    return std::nullopt;
+                }
+                return nlohmann::json{{"role", "user"}, {"content", text}};
+            }
+
+            return nlohmann::json{{"role", magic_enum::enum_name(msg.role())}, {"content", ""}};
+        }
+
+        void append_chat_serialized_message(nlohmann::json &chat_messages, const Message &msg) {
+            if (auto converted = message_to_openai(msg); converted.has_value()) {
+                chat_messages.push_back(std::move(*converted));
+            }
+        }
+
+        void append_chat_user_message(nlohmann::json &chat_messages, const Message &msg) {
+            bool saw_tool_results = false;
+            std::string user_text;
+
+            for (const auto &block : msg) {
+                if (const auto *result = std::get_if<ToolResult>(&block)) {
+                    saw_tool_results = true;
+                    if (result->tool_use_id.empty()) {
+                        spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
+                        continue;
+                    }
+                    chat_messages.push_back({{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}});
+                    if (!result->images.empty()) {
+                        chat_messages.push_back(build_image_user_message(*result));
+                    }
+                } else if (const auto *tb = std::get_if<Text>(&block)) {
+                    user_text += tb->text;
+                }
+            }
+
+            if (saw_tool_results) {
+                if (!user_text.empty()) {
+                    chat_messages.push_back({{"role", "user"}, {"content", user_text}});
+                }
+                return;
+            }
+            append_chat_serialized_message(chat_messages, msg);
+        }
+
+        void append_chat_history_message(nlohmann::json &chat_messages, const Message &msg) {
+            if (msg.role() == base::role::user) {
+                append_chat_user_message(chat_messages, msg);
+                return;
+            }
+            append_chat_serialized_message(chat_messages, msg);
+        }
+
+        void append_responses_history_message(nlohmann::json &responses_input, const Message &msg) {
+            auto converted = message_to_openai(msg);
+            if (!converted.has_value()) {
+                return;
+            }
+
+            // function_call_output is a top-level input item, not nested in a message
+            if (converted->contains("tool_call_id")) {
+                responses_input.push_back({
+                    {"type", "function_call_output"},
+                    {"call_id", (*converted)["tool_call_id"]},
+                    {"output", converted->value("content", std::string{})},
+                });
+                // Inject images from the original message as a follow-up user input
+                for (const auto &block : msg) {
+                    if (const auto *result = std::get_if<ToolResult>(&block); (result != nullptr) && !result->images.empty()) {
+                        responses_input.push_back(build_responses_image_input(*result));
+                    }
+                }
+                return;
+            }
+
+            const auto role = converted->value("role", "user");
+
+            // Emit text content as a simple message
+            std::string content;
+            if (converted->contains("content") && (*converted)["content"].is_string()) {
+                content = (*converted)["content"].get<std::string>();
+            }
+            if (!content.empty()) {
+                responses_input.push_back({
+                    {"role", role},
+                    {"content", content},
+                });
+            }
+
+            // function_call items are top-level input items
+            if (converted->contains("tool_calls")) {
+                for (const auto &tool_call : (*converted)["tool_calls"]) {
+                    responses_input.push_back({
+                        {"type", "function_call"},
+                        {"call_id", tool_call["id"]},
+                        {"name", tool_call["function"]["name"]},
+                        {"arguments", tool_call["function"]["arguments"]},
+                    });
+                }
+            }
+        }
+        class ChatCompletionsStreamAccumulator final : public JsonSseAccumulator<ChatCompletionsStreamAccumulator> {
         public:
             explicit ChatCompletionsStreamAccumulator(const StreamCallback &on_event)
             : on_event_(on_event) {}
 
-            void handle_data(const std::string &data) {
-                if (data == "[DONE]") {
-                    return;
-                }
+            [[nodiscard]]
+            static std::string_view parse_error_context() {
+                return "OpenAI SSE data";
+            }
 
-                nlohmann::json event_data;
-                try {
-                    event_data = nlohmann::json::parse(data);
-                } catch (const nlohmann::json::parse_error &e) {
-                    spdlog::warn("Failed to parse OpenAI SSE data: {}", e.what());
-                    return;
-                }
-
+            void handle_parsed_payload(const nlohmann::json &event_data) {
                 if (!event_data.contains("choices") || event_data["choices"].empty()) {
                     return;
                 }
@@ -139,7 +292,7 @@ namespace orangutan::providers {
         private:
             using ToolCallState = detail::OpenAiToolCallState;
 
-            const StreamCallback &on_event_;
+            std::reference_wrapper<const StreamCallback> on_event_;
             std::string text_content_;
             std::string reasoning_content_;
             std::vector<ToolCallState> tool_calls_;
@@ -157,7 +310,7 @@ namespace orangutan::providers {
                 }
                 const auto text = delta["content"].get<std::string>();
                 text_content_ += text;
-                on_event_("text_delta", {{"text", text}});
+                on_event_.get()("text_delta", {{"text", text}});
             }
 
             void handle_reasoning_delta(const nlohmann::json &delta) {
@@ -166,7 +319,7 @@ namespace orangutan::providers {
                 }
                 const auto text = delta["reasoning_content"].get<std::string>();
                 reasoning_content_ += text;
-                on_event_("thinking_delta", {{"thinking", text}});
+                on_event_.get()("thinking_delta", {{"thinking", text}});
             }
 
             void handle_tool_call_deltas(const nlohmann::json &delta) {
@@ -187,41 +340,34 @@ namespace orangutan::providers {
                     detail::merge_chat_completions_tool_call_delta(call, tc);
 
                     if (!call.announced && !call.id.empty() && !call.name.empty()) {
-                        on_event_("tool_call_start", {{"id", call.id}, {"name", call.name}, {"input", nlohmann::json::object()}});
+                        on_event_.get()("tool_call_start", {{"id", call.id}, {"name", call.name}, {"input", nlohmann::json::object()}});
                         call.announced = true;
                     }
                 }
             }
         };
 
-        class ResponsesStreamAccumulator {
+        class ResponsesStreamAccumulator final : public JsonSseAccumulator<ResponsesStreamAccumulator> {
         public:
             explicit ResponsesStreamAccumulator(const StreamCallback &on_event)
             : on_event_(on_event) {}
 
-            void handle_event(const std::string &event_name, const std::string &data) {
-                if (data == "[DONE]") {
-                    return;
-                }
+            [[nodiscard]]
+            static std::string_view parse_error_context() {
+                return "Responses SSE data";
+            }
 
-                nlohmann::json payload;
-                try {
-                    payload = nlohmann::json::parse(data);
-                } catch (const nlohmann::json::parse_error &e) {
-                    spdlog::warn("Failed to parse Responses SSE data: {}", e.what());
-                    return;
-                }
-
+            void handle_parsed_payload(std::string_view event_name, const nlohmann::json &payload) {
                 if (event_name == "response.output_text.delta") {
                     const auto delta = payload.value("delta", std::string{});
                     text_content_ += delta;
-                    on_event_("text_delta", {{"text", delta}});
+                    on_event_.get()("text_delta", {{"text", delta}});
                     return;
                 }
                 if (event_name == "response.reasoning_summary_text.delta" || event_name == "response.reasoning.delta") {
                     const auto delta = payload.value("delta", std::string{});
                     reasoning_content_ += delta;
-                    on_event_("thinking_delta", {{"thinking", delta}});
+                    on_event_.get()("thinking_delta", {{"thinking", delta}});
                     return;
                 }
                 if (event_name == "response.output_item.added") {
@@ -231,7 +377,7 @@ namespace orangutan::providers {
                         call.id = item.value("call_id", item.value("id", std::string{}));
                         call.name = item.value("name", std::string{});
                         if (!call.announced && !call.id.empty() && !call.name.empty()) {
-                            on_event_("tool_call_start", {{"id", call.id}, {"name", call.name}, {"input", nlohmann::json::object()}});
+                            on_event_.get()("tool_call_start", {{"id", call.id}, {"name", call.name}, {"input", nlohmann::json::object()}});
                             call.announced = true;
                         }
                     }
@@ -275,7 +421,7 @@ namespace orangutan::providers {
         private:
             using ToolCallState = detail::OpenAiToolCallState;
 
-            const StreamCallback &on_event_;
+            std::reference_wrapper<const StreamCallback> on_event_;
             std::string text_content_;
             std::string reasoning_content_;
             std::unordered_map<std::string, ToolCallState> tool_calls_;
@@ -287,120 +433,50 @@ namespace orangutan::providers {
     OpenAiProvider::OpenAiProvider(ProviderEndpoint endpoint)
     : endpoint_(std::move(endpoint)) {}
 
-    std::optional<nlohmann::json> OpenAiProvider::message_to_openai(const Message &msg) {
-        if (msg.role() == base::role::assistant) {
-            return detail::serialize_openai_assistant_message(msg);
-        }
-
-        if (msg.role() == base::role::user) {
-            for (const auto &block : msg) {
-                if (const auto *result = std::get_if<ToolResult>(&block)) {
-                    if (result->tool_use_id.empty()) {
-                        spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
-                        continue;
-                    }
-                    return nlohmann::json{{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}};
-                }
-            }
-
-            std::string text;
-            for (const auto &block : msg) {
-                if (const auto *tb = std::get_if<Text>(&block)) {
-                    text += tb->text;
-                }
-            }
-            if (text.empty()) {
-                return std::nullopt;
-            }
-            return nlohmann::json{{"role", "user"}, {"content", text}};
-        }
-
-        return nlohmann::json{{"role", magic_enum::enum_name(msg.role())}, {"content", ""}};
-    }
 
     nlohmann::json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
                                                       bool stream, int thinking_budget) const {
         const auto resolved_max_tokens = endpoint_.default_max_tokens.value_or(max_tokens);
+        static_cast<void>(thinking_budget);
+        if (uses_responses_api(endpoint_.endpoint_style)) {
+            return build_responses_request_body(system_prompt, messages, tools, resolved_max_tokens, stream);
+        }
+        return build_chat_completions_request_body(system_prompt, messages, tools, resolved_max_tokens, stream);
+    }
 
-        if (endpoint_.endpoint_style == "openai-responses") {
-            nlohmann::json body;
-            body["model"] = endpoint_.model;
-            body["max_output_tokens"] = resolved_max_tokens;
-            if (!system_prompt.empty()) {
-                body["instructions"] = system_prompt;
-            }
-            if (stream) {
-                body["stream"] = true;
-            }
-            if (endpoint_.thinking != "none" && !endpoint_.thinking.empty()) {
-                body["reasoning"] = {{"effort", endpoint_.thinking}};
-            }
-
-            body["input"] = nlohmann::json::array();
-            for (const auto &msg : messages) {
-                auto converted = message_to_openai(msg);
-                if (!converted.has_value()) {
-                    continue;
-                }
-                // function_call_output is a top-level input item, not nested in a message
-                if (converted->contains("tool_call_id")) {
-                    body["input"].push_back({
-                        {"type", "function_call_output"},
-                        {"call_id", (*converted)["tool_call_id"]},
-                        {"output", converted->value("content", std::string{})},
-                    });
-                    // Inject images from the original message as a follow-up user input
-                    for (const auto &block : msg) {
-                        if (const auto *result = std::get_if<ToolResult>(&block); (result != nullptr) && !result->images.empty()) {
-                            body["input"].push_back(build_responses_image_input(*result));
-                        }
-                    }
-                    continue;
-                }
-
-                const auto role = converted->value("role", "user");
-
-                // Emit text content as a simple message
-                std::string content;
-                if (converted->contains("content") && (*converted)["content"].is_string()) {
-                    content = (*converted)["content"].get<std::string>();
-                }
-                if (!content.empty()) {
-                    body["input"].push_back({
-                        {"role", role},
-                        {"content", content},
-                    });
-                }
-
-                // function_call items are top-level input items
-                if (converted->contains("tool_calls")) {
-                    for (const auto &tool_call : (*converted)["tool_calls"]) {
-                        body["input"].push_back({
-                            {"type", "function_call"},
-                            {"call_id", tool_call["id"]},
-                            {"name", tool_call["function"]["name"]},
-                            {"arguments", tool_call["function"]["arguments"]},
-                        });
-                    }
-                }
-            }
-
-            if (!tools.empty()) {
-                body["tools"] = nlohmann::json::array();
-                for (const auto &tool : tools) {
-                    body["tools"].push_back(response_tool_to_json(tool));
-                }
-            }
-            return body;
+    nlohmann::json OpenAiProvider::build_responses_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
+                                                                 int resolved_max_tokens, bool stream) const {
+        nlohmann::json body;
+        body["model"] = endpoint_.model;
+        body["max_output_tokens"] = resolved_max_tokens;
+        if (!system_prompt.empty()) {
+            body["instructions"] = system_prompt;
+        }
+        if (stream) {
+            body["stream"] = true;
+        }
+        if (has_reasoning_effort(endpoint_)) {
+            body["reasoning"] = {{"effort", endpoint_.thinking}};
         }
 
+        body["input"] = nlohmann::json::array();
+        for (const auto &msg : messages) {
+            append_responses_history_message(body["input"], msg);
+        }
+
+        append_tool_definitions(body, tools, response_tool_to_json);
+        return body;
+    }
+
+    nlohmann::json OpenAiProvider::build_chat_completions_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
+                                                                        int resolved_max_tokens, bool stream) const {
         nlohmann::json body;
         body["model"] = endpoint_.model;
         body["max_tokens"] = resolved_max_tokens;
         if (stream) {
             body["stream"] = true;
         }
-        if (endpoint_.thinking != "none" && !endpoint_.thinking.empty()) {
+        if (has_reasoning_effort(endpoint_)) {
             body["reasoning_effort"] = endpoint_.thinking;
         }
 
@@ -410,51 +486,10 @@ namespace orangutan::providers {
         }
 
         for (const auto &msg : messages) {
-            if (msg.role() == base::role::user) {
-                bool saw_tool_results = false;
-                bool appended_tool_results = false;
-                std::string user_text;
-
-                for (const auto &block : msg) {
-                    if (const auto *result = std::get_if<ToolResult>(&block)) {
-                        saw_tool_results = true;
-                        if (result->tool_use_id.empty()) {
-                            spdlog::warn("Skipping tool result with empty tool_call_id while serializing history");
-                            continue;
-                        }
-                        appended_tool_results = true;
-                        body["messages"].push_back({{"role", "tool"}, {"tool_call_id", result->tool_use_id}, {"content", result->content}});
-                        if (!result->images.empty()) {
-                            body["messages"].push_back(build_image_user_message(*result));
-                        }
-                    } else if (const auto *tb = std::get_if<Text>(&block)) {
-                        user_text += tb->text;
-                    }
-                }
-
-                if (!user_text.empty() && appended_tool_results) {
-                    body["messages"].push_back({{"role", "user"}, {"content", user_text}});
-                } else if (saw_tool_results) {
-                    if (!user_text.empty()) {
-                        body["messages"].push_back({{"role", "user"}, {"content", user_text}});
-                    }
-                } else if (auto converted = message_to_openai(msg); converted.has_value()) {
-                    body["messages"].push_back(std::move(*converted));
-                }
-            } else {
-                if (auto converted = message_to_openai(msg); converted.has_value()) {
-                    body["messages"].push_back(std::move(*converted));
-                }
-            }
+            append_chat_history_message(body["messages"], msg);
         }
 
-        if (!tools.empty()) {
-            body["tools"] = nlohmann::json::array();
-            for (const auto &tool : tools) {
-                body["tools"].push_back(tool_to_openai_function(tool));
-            }
-        }
-
+        append_tool_definitions(body, tools, tool_to_openai_function);
         return body;
     }
 
@@ -463,24 +498,13 @@ namespace orangutan::providers {
         const auto request_body = body.dump();
         spdlog::debug("OpenAI request body: {}", request_body);
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
-        append_custom_headers(headers, endpoint_.headers);
-
-        const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");
+        auto headers = make_openai_headers(endpoint_);
+        const std::string url = openai_request_url(endpoint_);
         auto response_body = http_post(url, request_body, headers);
         auto resp = nlohmann::json::parse(response_body);
 
-        if (resp.contains("error")) {
-            std::string err_msg = "API error";
-            if (resp["error"].contains("message")) {
-                err_msg = resp["error"]["message"].get<std::string>();
-            }
-            throw std::runtime_error("API error: " + err_msg);
-        }
-
-        if (endpoint_.endpoint_style == "openai-responses") {
+        throw_if_openai_error(resp);
+        if (uses_responses_api(endpoint_.endpoint_style)) {
             return parse_responses_response(resp);
         }
         return parse_chat_completions_response(resp);
@@ -492,14 +516,10 @@ namespace orangutan::providers {
         const auto request_body = body.dump();
         spdlog::debug("OpenAI stream request body: {}", request_body);
 
-        CurlHeaders headers;
-        append_header_if_missing(headers, endpoint_.headers, "Content-Type", "application/json");
-        append_header_if_missing(headers, endpoint_.headers, "Authorization", std::string{"Bearer "} + endpoint_.api_key);
-        append_custom_headers(headers, endpoint_.headers);
+        auto headers = make_openai_headers(endpoint_);
+        const std::string url = openai_request_url(endpoint_);
 
-        const std::string url = endpoint_.base_url + (endpoint_.endpoint_style == "openai-responses" ? "/v1/responses" : "/v1/chat/completions");
-
-        if (endpoint_.endpoint_style == "openai-responses") {
+        if (uses_responses_api(endpoint_.endpoint_style)) {
             ResponsesStreamAccumulator accumulator(on_event);
             SseParser parser([&](const std::string &event_name, const std::string &data) {
                 accumulator.handle_event(event_name, data);

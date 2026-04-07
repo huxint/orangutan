@@ -81,7 +81,7 @@ namespace orangutan::bootstrap {
     }
 
     std::string format_cli_permission_prompt(const ToolUse &call, const PermissionDecision &decision) {
-        std::string prompt = decision.message.value_or("Tool requires approval");
+        std::string prompt = permissions::approval_prompt_message(decision);
         prompt += "\nTool: " + call.name;
         for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
             prompt += "\n" + line;

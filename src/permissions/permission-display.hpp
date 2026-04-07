@@ -7,6 +7,7 @@
 #include <magic_enum/magic_enum.hpp>
 
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -22,18 +23,26 @@ namespace orangutan::permissions {
 
     inline std::string permission_rule_source_label(permission_rule_source source) {
         switch (source) {
-        case permission_rule_source::cli_arg:
-            return "CLI";
-        case permission_rule_source::session:
-            return "session";
-        case permission_rule_source::local_settings:
-            return "local settings";
-        case permission_rule_source::project_settings:
-            return "project settings";
-        case permission_rule_source::user_settings:
-            return "user settings";
+            case permission_rule_source::cli_arg:
+                return "CLI";
+            case permission_rule_source::session:
+                return "session";
+            case permission_rule_source::local_settings:
+                return "local settings";
+            case permission_rule_source::project_settings:
+                return "project settings";
+            case permission_rule_source::user_settings:
+                return "user settings";
         }
         return "unknown";
+    }
+
+    inline std::string default_tool_approval_message(std::string_view tool_name) {
+        return "Tool '" + std::string(tool_name) + "' requires approval";
+    }
+
+    inline std::string approval_prompt_message(const PermissionDecision &decision, std::string_view fallback = "Tool requires approval") {
+        return decision.message.value_or(std::string{fallback});
     }
 
     inline nlohmann::json permission_reason_to_json(const DecisionReason &reason) {
@@ -99,16 +108,16 @@ namespace orangutan::permissions {
                     lines.push_back("Reason: rule from " + permission_rule_source_label(value.source));
                     lines.push_back("Rule: " + value.rule_value);
                 } else if constexpr (std::is_same_v<Value, ModeDecisionReason>) {
-                    lines.push_back("Reason: mode");
+                    lines.emplace_back("Reason: mode");
                     lines.push_back("Mode: " + permission_mode_label(value.mode));
                 } else if constexpr (std::is_same_v<Value, SafetyCheckDecisionReason>) {
-                    lines.push_back("Reason: safety check");
+                    lines.emplace_back("Reason: safety check");
                     lines.push_back("Path: " + value.path);
                 } else if constexpr (std::is_same_v<Value, ToolSpecificDecisionReason>) {
-                    lines.push_back("Reason: tool-specific check");
+                    lines.emplace_back("Reason: tool-specific check");
                     lines.push_back("Detail: " + value.detail);
                 } else {
-                    lines.push_back("Reason: hook");
+                    lines.emplace_back("Reason: hook");
                 }
             },
             *decision.reason);

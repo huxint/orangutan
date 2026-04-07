@@ -1,5 +1,6 @@
 #include "permissions/permission-evaluator.hpp"
 
+#include "permissions/permission-display.hpp"
 #include "permissions/rule-parser.hpp"
 #include "permissions/safety-checks.hpp"
 #include "types/content.hpp"
@@ -48,6 +49,33 @@ namespace orangutan::permissions {
         return std::nullopt;
     }
 
+    static std::string rule_value_string(const PermissionRule &rule) {
+        auto value = rule.tool_name;
+        if (rule.content.has_value()) {
+            value += "(" + rule.content->pattern + ")";
+        }
+        return value;
+    }
+
+    static std::optional<PermissionDecision> make_rule_decision(std::string_view tool_name, std::string_view content,
+                                                                 const std::vector<PermissionRule> &rules, permission_behavior behavior) {
+        const auto rule = find_matching_rule(tool_name, content, rules);
+        if (!rule.has_value()) {
+            return std::nullopt;
+        }
+
+        auto value = rule_value_string(*rule);
+        switch (behavior) {
+        case permission_behavior::deny:
+            return PermissionDecision::deny_by_rule(rule->source, std::move(value), "Blocked by deny rule");
+        case permission_behavior::ask:
+            return PermissionDecision::ask_by_rule(rule->source, std::move(value), "Requires approval per ask rule");
+        case permission_behavior::allow:
+            return PermissionDecision::allow_by_rule(rule->source, std::move(value));
+        }
+        return std::nullopt;
+    }
+
     std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call,
                                                      bool is_read_only, bool is_file_tool_in_workspace) {
         switch (mode) {
@@ -89,20 +117,12 @@ namespace orangutan::permissions {
         auto content = extract_tool_content(call);
         bool is_file_tool_in_workspace = false;
 
-        if (auto rule = find_matching_rule(call.name, content, ctx.deny_rules)) {
-            auto rule_value = rule->tool_name;
-            if (rule->content) {
-                rule_value += "(" + rule->content->pattern + ")";
-            }
-            return PermissionDecision::deny_by_rule(rule->source, std::move(rule_value), "Blocked by deny rule");
+        if (auto decision = make_rule_decision(call.name, content, ctx.deny_rules, permission_behavior::deny); decision.has_value()) {
+            return *decision;
         }
 
-        if (auto rule = find_matching_rule(call.name, content, ctx.ask_rules)) {
-            auto rule_value = rule->tool_name;
-            if (rule->content) {
-                rule_value += "(" + rule->content->pattern + ")";
-            }
-            return PermissionDecision::ask_by_rule(rule->source, std::move(rule_value), "Requires approval per ask rule");
+        if (auto decision = make_rule_decision(call.name, content, ctx.ask_rules, permission_behavior::ask); decision.has_value()) {
+            return *decision;
         }
 
         if (tool_checker) {
@@ -127,15 +147,11 @@ namespace orangutan::permissions {
             return *mode_decision;
         }
 
-        if (auto rule = find_matching_rule(call.name, content, ctx.allow_rules)) {
-            auto rule_value = rule->tool_name;
-            if (rule->content) {
-                rule_value += "(" + rule->content->pattern + ")";
-            }
-            return PermissionDecision::allow_by_rule(rule->source, std::move(rule_value));
+        if (auto decision = make_rule_decision(call.name, content, ctx.allow_rules, permission_behavior::allow); decision.has_value()) {
+            return *decision;
         }
 
-        return PermissionDecision::ask_default("Tool '" + call.name + "' requires approval");
+        return PermissionDecision::ask_default(default_tool_approval_message(call.name));
     }
 
 } // namespace orangutan::permissions
