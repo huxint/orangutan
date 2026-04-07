@@ -1,11 +1,13 @@
 #include "tools/coordinator/register.hpp"
-#include "tools/registry/tool-context.hpp"
-#include "tools/registry/tool-spec-builder.hpp"
-#include "coordinator/coordinator-manager.hpp"
+
+#include <string>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-#include <string>
+
+#include "coordinator/coordinator-manager.hpp"
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 
 namespace orangutan::tools {
 

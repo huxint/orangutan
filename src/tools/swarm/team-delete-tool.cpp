@@ -1,14 +1,16 @@
 #include "tools/swarm/register.hpp"
-#include "tools/registry/tool-context.hpp"
-#include "tools/registry/tool-spec-builder.hpp"
-#include "swarm/team-manager.hpp"
-#include "swarm/mailbox.hpp"
 
 #include <chrono>
-#include <nlohmann/json.hpp>
-#include <spdlog/spdlog.h>
 #include <string>
 #include <thread>
+
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+
+#include "swarm/mailbox.hpp"
+#include "swarm/team-manager.hpp"
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-spec-builder.hpp"
 
 namespace orangutan::tools {
 
