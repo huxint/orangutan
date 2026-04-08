@@ -155,7 +155,7 @@ namespace orangutan::channel {
         shutdown(true);
     }
 
-    void JidTaskRunner::submit(const std::string &jid, Task task) {
+    void JidTaskRunner::submit(std::string_view jid, Task task) {
         if (jid.empty()) {
             throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
         }
@@ -165,7 +165,7 @@ namespace orangutan::channel {
             return;
         }
 
-        auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = jid}) | stdexec::then([task = std::move(task), jid]() mutable {
+        auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = std::string(jid)}) | stdexec::then([task = std::move(task), jid = std::string(jid)]() mutable {
                             try {
                                 task();
                             } catch (const std::exception &e) {
@@ -177,7 +177,7 @@ namespace orangutan::channel {
         stdexec::start_detached(std::move(pipeline));
     }
 
-    void JidTaskRunner::enqueue_scheduled_task(const std::string &jid, std::unique_ptr<QueuedTask> task) {
+    void JidTaskRunner::enqueue_scheduled_task(std::string_view jid, std::unique_ptr<QueuedTask> task) {
         if (jid.empty()) {
             throw std::invalid_argument("JidTaskRunner requires a non-empty jid");
         }
@@ -194,14 +194,14 @@ namespace orangutan::channel {
                 return;
             }
 
-            auto &bucket = buckets_[jid];
+            auto &bucket = buckets_[std::string(jid)];
             bucket.tasks.push_back(std::move(task));
             if (bucket.active) {
                 return;
             }
 
             bucket.active = true;
-            ready_jids_.push(jid);
+            ready_jids_.emplace(jid);
         }
 
         cv_.notify_one();

@@ -9,6 +9,7 @@
 #include <mutex>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -45,7 +46,7 @@ namespace orangutan::channel {
         JidTaskRunner(JidTaskRunner &&) = delete;
         JidTaskRunner &operator=(JidTaskRunner &&) = delete;
 
-        void submit(const std::string &jid, Task task);
+        void submit(std::string_view jid, Task task);
         void shutdown(bool discard_pending = false);
 
         [[nodiscard]]
@@ -74,7 +75,7 @@ namespace orangutan::channel {
         std::atomic<bool> stopping_{false};
         std::atomic<bool> discard_pending_{false};
 
-        void enqueue_scheduled_task(const std::string &jid, std::unique_ptr<QueuedTask> task);
+        void enqueue_scheduled_task(std::string_view jid, std::unique_ptr<QueuedTask> task);
         void spawn_worker_locked();
         void release_blocking_lease();
         void worker_loop();
