@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 namespace orangutan::config::detail {
@@ -14,9 +15,9 @@ namespace orangutan::config::detail {
         : options_(std::move(options)) {}
 
         [[nodiscard]]
-        const std::string &resolve() {
+        std::string_view resolve() {
             if (!cached_password_.has_value()) {
-                cached_password_ = resolve_config_secret_password(options_);
+                cached_password_.emplace(resolve_config_secret_password(options_));
             }
             return *cached_password_;
         }
@@ -25,7 +26,6 @@ namespace orangutan::config::detail {
         ConfigSecretOptions options_;
         std::optional<std::string> cached_password_;
     };
-
 
     [[nodiscard]]
     AgentConfig make_agent_defaults(const Config &cfg);
