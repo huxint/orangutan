@@ -17,6 +17,10 @@ namespace {
         ~SessionStoreHarness() {
             std::filesystem::remove_all(db_path.parent_path());
         }
+        SessionStoreHarness(const SessionStoreHarness &) = delete;
+        SessionStoreHarness &operator=(const SessionStoreHarness &) = delete;
+        SessionStoreHarness(SessionStoreHarness &&) = delete;
+        SessionStoreHarness &operator=(SessionStoreHarness &&) = delete;
 
         [[nodiscard]]
         orangutan::SessionStore store() const {
@@ -38,6 +42,10 @@ namespace {
                 sqlite3_close(db);
             }
         }
+        SqliteDb(const SqliteDb &) = delete;
+        SqliteDb &operator=(const SqliteDb &) = delete;
+        SqliteDb(SqliteDb &&) = delete;
+        SqliteDb &operator=(SqliteDb &&) = delete;
 
         sqlite3 *db = nullptr;
     };

@@ -384,9 +384,9 @@ namespace orangutan::tools {
                                     output += "[exit code: " + std::to_string(result.exit_code) + "]";
                                 }
 
-                                constexpr std::size_t max_output = 8192;
-                                if (output.size() > max_output) {
-                                    output = output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
+                                constexpr std::size_t MAX_OUTPUT = 8192;
+                                if (output.size() > MAX_OUTPUT) {
+                                    output = output.substr(0, MAX_OUTPUT) + "\n... (truncated, total " + std::to_string(output.size()) + " bytes)";
                                 }
 
                                 return output;

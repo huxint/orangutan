@@ -36,9 +36,9 @@ namespace orangutan::tools {
             return PermissionResult::passthrough();
         }
 
-        constexpr std::size_t max_image_size = 5 * 1024 * 1024;
+        constexpr std::size_t MAX_IMAGE_SIZE = std::size_t{5} * 1024 * 1024;
 
-        constexpr std::string_view base64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        constexpr std::string_view BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
         std::string encode_base64(const std::vector<char> &data) {
             std::string encoded;
@@ -48,10 +48,10 @@ namespace orangutan::tools {
                 const unsigned int b1 = (i + 1 < data.size()) ? static_cast<unsigned char>(data[i + 1]) : 0U;
                 const unsigned int b2 = (i + 2 < data.size()) ? static_cast<unsigned char>(data[i + 2]) : 0U;
                 const unsigned int combined = (b0 << 16U) | (b1 << 8U) | b2;
-                encoded.push_back(base64_alphabet[(combined >> 18U) & 0x3FU]);
-                encoded.push_back(base64_alphabet[(combined >> 12U) & 0x3FU]);
-                encoded.push_back((i + 1 < data.size()) ? base64_alphabet[(combined >> 6U) & 0x3FU] : '=');
-                encoded.push_back((i + 2 < data.size()) ? base64_alphabet[combined & 0x3FU] : '=');
+                encoded.push_back(BASE64_ALPHABET[(combined >> 18U) & 0x3FU]);
+                encoded.push_back(BASE64_ALPHABET[(combined >> 12U) & 0x3FU]);
+                encoded.push_back((i + 1 < data.size()) ? BASE64_ALPHABET[(combined >> 6U) & 0x3FU] : '=');
+                encoded.push_back((i + 2 < data.size()) ? BASE64_ALPHABET[combined & 0x3FU] : '=');
             }
             return encoded;
         }
@@ -96,8 +96,8 @@ namespace orangutan::tools {
 
         ToolOutput read_image_file(const std::filesystem::path &path) {
             const auto size = std::filesystem::file_size(path);
-            if (size > max_image_size) {
-                return ToolOutput{spdlog::fmt_lib::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, max_image_size)};
+            if (size > MAX_IMAGE_SIZE) {
+                return ToolOutput{spdlog::fmt_lib::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, MAX_IMAGE_SIZE)};
             }
 
             fileio::File file(path, "rb");
@@ -108,15 +108,15 @@ namespace orangutan::tools {
             const auto media_type = guess_media_type(path);
             const auto b64 = encode_base64(buf);
             const auto description = spdlog::fmt_lib::format("Image: {} ({} bytes, {})", path.string(), size, media_type);
-            return ToolOutput{description, {{media_type, b64}}};
+            return ToolOutput{description, {{.media_type = media_type, .data = b64}}};
         }
 
         bool is_binary_file(const std::filesystem::path &path) {
             try {
                 fileio::File file(path, "rb");
 
-                constexpr std::size_t sample_size = 8192;
-                std::vector<char> buf(sample_size);
+                constexpr std::size_t SAMPLE_SIZE = 8192;
+                std::vector<char> buf(SAMPLE_SIZE);
                 const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
                 if (std::ferror(file.get()) != 0) {
                     return false;

@@ -124,6 +124,10 @@ namespace orangutan {
             ~WebChatStoreHarness() {
                 std::filesystem::remove_all(db_path_.parent_path());
             }
+            WebChatStoreHarness(const WebChatStoreHarness &) = delete;
+            WebChatStoreHarness &operator=(const WebChatStoreHarness &) = delete;
+            WebChatStoreHarness(WebChatStoreHarness &&) = delete;
+            WebChatStoreHarness &operator=(WebChatStoreHarness &&) = delete;
 
             SessionStore &store() {
                 return store_;
@@ -153,6 +157,10 @@ namespace orangutan {
             ~WebChatServerHarness() {
                 server_.stop();
             }
+            WebChatServerHarness(const WebChatServerHarness &) = delete;
+            WebChatServerHarness &operator=(const WebChatServerHarness &) = delete;
+            WebChatServerHarness(WebChatServerHarness &&) = delete;
+            WebChatServerHarness &operator=(WebChatServerHarness &&) = delete;
 
             httplib::Client &client() {
                 return *client_;
@@ -357,7 +365,7 @@ namespace orangutan {
 
             web::handle_chat(req, res, &config, &store_harness.store(), nullptr, nullptr, nullptr, sessions_mutex, sessions);
 
-            std::lock_guard lock(sessions_mutex);
+            std::scoped_lock lock(sessions_mutex);
             REQUIRE(sessions.contains(session_id));
             auto &session = sessions.at(session_id);
             REQUIRE(session != nullptr);
@@ -631,7 +639,7 @@ namespace orangutan {
                     *session_ptr, sessions_mutex, ToolUse("shell-deny", "shell", nlohmann::json{{"command", "echo hello"}}),
                     PermissionDecision::ask_default("Shell command approval required."),
                     [&](std::string_view, const nlohmann::json &payload) {
-                        std::lock_guard lock(event_mutex);
+                        std::scoped_lock lock(event_mutex);
                         event_payload = payload;
                         event_cv.notify_one();
                         return true;
@@ -686,7 +694,7 @@ namespace orangutan {
 
             for (int attempt = 0; attempt < 50; ++attempt) {
                 {
-                    std::lock_guard lock(sessions_mutex);
+                    std::scoped_lock lock(sessions_mutex);
                     if (session_ptr->pending_approval != nullptr) {
                         break;
                     }
@@ -694,7 +702,7 @@ namespace orangutan {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             {
-                std::lock_guard lock(sessions_mutex);
+                std::scoped_lock lock(sessions_mutex);
                 REQUIRE(session_ptr->pending_approval != nullptr);
             }
 
@@ -726,7 +734,7 @@ namespace orangutan {
                 {}, std::chrono::milliseconds(50));
 
             CHECK_FALSE(approved);
-            std::lock_guard lock(sessions_mutex);
+            std::scoped_lock lock(sessions_mutex);
             CHECK(session_ptr->pending_approval == nullptr);
         };
 
@@ -752,7 +760,7 @@ namespace orangutan {
 
             for (int attempt = 0; attempt < 50; ++attempt) {
                 {
-                    std::lock_guard lock(sessions_mutex);
+                    std::scoped_lock lock(sessions_mutex);
                     if (session_ptr->pending_approval != nullptr) {
                         break;
                     }
@@ -760,7 +768,7 @@ namespace orangutan {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             {
-                std::lock_guard lock(sessions_mutex);
+                std::scoped_lock lock(sessions_mutex);
                 REQUIRE(session_ptr->pending_approval != nullptr);
             }
 

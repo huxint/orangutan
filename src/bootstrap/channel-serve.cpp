@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -39,7 +40,7 @@ namespace orangutan::bootstrap {
 
         namespace cli = orangutan::cli;
 
-        constexpr auto serve_poll_interval = std::chrono::milliseconds(50);
+        constexpr auto SERVE_POLL_INTERVAL = std::chrono::milliseconds(50);
 
         template <typename Fn>
         class ScopeExit {
@@ -53,6 +54,7 @@ namespace orangutan::bootstrap {
             ScopeExit(ScopeExit &&other) noexcept
             : fn_(std::move(other.fn_)),
               active_(std::exchange(other.active_, false)) {}
+            ScopeExit &operator=(ScopeExit &&) = delete;
 
             ~ScopeExit() {
                 if (active_) {
@@ -68,7 +70,7 @@ namespace orangutan::bootstrap {
         template <typename Fn>
         ScopeExit(Fn) -> ScopeExit<Fn>;
 
-        enum class channel_approval_decision {
+        enum class channel_approval_decision : std::uint8_t {
             approve,
             deny,
             invalid,
@@ -135,12 +137,12 @@ namespace orangutan::bootstrap {
         };
 
         std::string extract_qq_bot_name(const std::string &jid) {
-            constexpr std::string_view prefix = "qqbot:";
-            if (!jid.starts_with(prefix)) {
+            constexpr std::string_view PREFIX = "qqbot:";
+            if (!jid.starts_with(PREFIX)) {
                 return {};
             }
 
-            const auto remainder = jid.substr(prefix.size());
+            const auto remainder = jid.substr(PREFIX.size());
             const auto first_colon = remainder.find(':');
             if (first_colon == std::string::npos) {
                 return {};
@@ -215,7 +217,7 @@ namespace orangutan::bootstrap {
 
             const auto &reaction = *message.reaction;
             const auto actor = message.sender_name.empty() ? message.sender : message.sender_name;
-            const auto event_label = message.event_kind == inbound_event_kind::reaction_added ? "added" : "removed";
+            const auto *const event_label = message.event_kind == inbound_event_kind::reaction_added ? "added" : "removed";
             std::string prompt = "[Reaction event]\n";
             utils::format_to(prompt, "{} {} a reaction", actor.empty() ? std::string{"A user"} : actor, event_label);
             if (!reaction.emoji_id.empty()) {
@@ -1078,7 +1080,7 @@ namespace orangutan::bootstrap {
 
         while (!stop_requested.load()) {
             InboundMessage message;
-            if (!queue.try_pop(message, serve_poll_interval)) {
+            if (!queue.try_pop(message, SERVE_POLL_INTERVAL)) {
                 if (queue.is_shutdown()) {
                     break;
                 }

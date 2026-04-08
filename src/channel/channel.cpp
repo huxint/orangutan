@@ -158,8 +158,8 @@ namespace orangutan::channel {
             auto channel_jids = channel->known_user_jids();
             jids.insert(jids.end(), std::make_move_iterator(channel_jids.begin()), std::make_move_iterator(channel_jids.end()));
         }
-        std::sort(jids.begin(), jids.end());
-        jids.erase(std::unique(jids.begin(), jids.end()), jids.end());
+        std::ranges::sort(jids);
+        jids.erase(std::ranges::unique(jids).begin(), jids.end());
         return jids;
     }
 

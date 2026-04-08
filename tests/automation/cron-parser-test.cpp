@@ -50,7 +50,7 @@ namespace {
     TEST_CASE("parses_every_five_minutes") {
         const auto expr = parse_cron("*/5 * * * *");
         REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 12ul);
+        CHECK(expr->minute.values.size() == 12UL);
         CHECK(expr->minute.values.contains(0));
         CHECK(expr->minute.values.contains(55));
     };

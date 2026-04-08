@@ -10,9 +10,9 @@ using namespace orangutan;
 using namespace orangutan::tools;
 
 static std::string valid_hash_different_from(std::string_view actual) {
-    constexpr std::string_view alphabet = "ZPMQVRWSNKTXJBYH";
-    for (char first : alphabet) {
-        for (char second : alphabet) {
+    constexpr std::string_view ALPHABET = "ZPMQVRWSNKTXJBYH";
+    for (char first : ALPHABET) {
+        for (char second : ALPHABET) {
             std::string candidate;
             candidate.push_back(first);
             candidate.push_back(second);
@@ -97,7 +97,7 @@ TEST_CASE("format_hashline_hash_part_is_2_chars") {
 
 TEST_CASE("parse_anchor_valid_format") {
     const auto anchor = parse_anchor("42#KQ");
-    CHECK(anchor.line == 42ul);
+    CHECK(anchor.line == 42UL);
     CHECK(anchor.hash == "KQ");
 };
 

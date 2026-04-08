@@ -284,7 +284,7 @@ namespace {
             out << "  \"profiles\": {\n";
             out << "    \"test-profile\": {\n";
             out << "      \"base_url\": \"https://example.test\",\n";
-            out << "      \"api_key\": \"" << api_key << "\",\n";
+            out << R"(      "api_key": ")" << api_key << "\",\n";
             out << "      \"models\": {\n";
             out << "        \"gpt-test\": {\n";
             out << "          \"endpoint_style\": \"openai-chat-completions\"\n";
@@ -296,7 +296,7 @@ namespace {
             out << "    \"default\": {\n";
             out << "      \"profile\": \"test-profile\",\n";
             out << "      \"model\": \"gpt-test\",\n";
-            out << "      \"workspace\": \"" << workspace_root_.string() << "\"\n";
+            out << R"(      "workspace": ")" << workspace_root_.string() << "\"\n";
             out << "    }\n";
             out << "  }\n";
             out << "}\n";
@@ -518,7 +518,7 @@ namespace {
         const auto agents = bootstrap::detail::build_effective_agents(cfg);
         const auto expected = (harness.home_root() / "workspace").lexically_normal().string();
 
-        CHECK(agents.count("default") == 0UL);
+        CHECK_FALSE(agents.contains("default"));
         CHECK(agents.count("coder") == 1UL);
         CHECK(agents.at("coder").workspace == expected);
     };

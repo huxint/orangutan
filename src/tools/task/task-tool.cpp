@@ -39,10 +39,10 @@ namespace orangutan::tools {
             const auto agent_key = ctx->agent_key.empty() ? std::string("default") : ctx->agent_key;
             auto &runtime = *ctx->automation_runtime;
 
-            const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
+                const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
                 if (op == "update") {
                     if (const auto error = require_id_or_name(request); error.has_value()) {
-                        return tool_dispatch::response{*error, true};
+                        return tool_dispatch::response{.message = *error, .is_error = true};
                     }
                 }
                 const auto id_or_name = request.value("id", request.value("name", ""));
@@ -51,7 +51,7 @@ namespace orangutan::tools {
                 if (op == "update") {
                     const auto existing = runtime.find_task(agent_key, id_or_name);
                     if (!existing.has_value()) {
-                        return tool_dispatch::response{"Error: task not found.", true};
+                        return tool_dispatch::response{.message = "Error: task not found.", .is_error = true};
                     }
                     task = *existing;
                 }
@@ -66,33 +66,33 @@ namespace orangutan::tools {
                 const auto schedule_kind_value = request.value("schedule_kind", std::string{magic_enum::enum_name(task.schedule.kind)});
                 const auto parsed_kind = magic_enum::enum_cast<task_schedule_kind>(schedule_kind_value);
                 if (!parsed_kind.has_value()) {
-                    return tool_dispatch::response{"Error: schedule_kind must be 'at' or 'cron'.", true};
+                    return tool_dispatch::response{.message = "Error: schedule_kind must be 'at' or 'cron'.", .is_error = true};
                 }
                 task.schedule.kind = *parsed_kind;
                 task.schedule.value = request.value("schedule", task.schedule.value);
 
                 if (task.name.empty() || task.prompt.empty() || task.schedule.value.empty()) {
-                    return tool_dispatch::response{"Error: name, schedule, and prompt are required.", true};
+                    return tool_dispatch::response{.message = "Error: name, schedule, and prompt are required.", .is_error = true};
                 }
 
                 if (task.schedule.kind == task_schedule_kind::cron) {
                     if (!parse_cron(task.schedule.value).has_value()) {
-                        return tool_dispatch::response{"Error: invalid cron schedule.", true};
+                        return tool_dispatch::response{.message = "Error: invalid cron schedule.", .is_error = true};
                     }
                 } else {
                     if (!automation::parse_absolute_time(task.schedule.value).has_value()) {
-                        return tool_dispatch::response{"Error: invalid absolute schedule.", true};
+                        return tool_dispatch::response{.message = "Error: invalid absolute schedule.", .is_error = true};
                     }
                 }
 
                 auto delivery = builtin::detail::parse_delivery_overlay(request, task.delivery);
                 if (!delivery.has_value()) {
-                    return tool_dispatch::response{"Error: " + delivery.error() + ".", true};
+                    return tool_dispatch::response{.message = "Error: " + delivery.error() + ".", .is_error = true};
                 }
                 task.delivery = std::move(*delivery);
 
                 const auto task_id = runtime.save_task(task);
-                return tool_dispatch::response{op == "add" ? "Added task '" + task.name + "' (" + task_id + ")." : "Updated task '" + task.name + "'."};
+                return tool_dispatch::response{.message = op == "add" ? "Added task '" + task.name + "' (" + task_id + ")." : "Updated task '" + task.name + "'."};
             };
 
             return dispatch_message(tool_dispatch()
@@ -101,30 +101,30 @@ namespace orangutan::tools {
                                             [&runtime, &agent_key](const nlohmann::json &) {
                                                 const auto tasks = runtime.list_tasks(agent_key);
                                                 if (tasks.empty()) {
-                                                    return tool_dispatch::response{"No tasks configured."};
+                                                    return tool_dispatch::response{.message = "No tasks configured."};
                                                 }
                                                 std::string out;
                                                 for (const auto &task : tasks) {
                                                     out.append(format_task(task));
                                                     out.push_back('\n');
                                                 }
-                                                return tool_dispatch::response{std::move(out)};
+                                                return tool_dispatch::response{.message = std::move(out)};
                                             })
                                         .on("remove",
                                             [&runtime, &agent_key](const nlohmann::json &request) {
                                                 if (const auto error = require_id_or_name(request); error.has_value()) {
-                                                    return tool_dispatch::response{*error, true};
+                                                    return tool_dispatch::response{.message = *error, .is_error = true};
                                                 }
                                                 const auto id_or_name = request.value("id", request.value("name", ""));
-                                                return tool_dispatch::response{runtime.remove_task(agent_key, id_or_name) ? "Removed task." : "Error: task not found."};
+                                                return tool_dispatch::response{.message = runtime.remove_task(agent_key, id_or_name) ? "Removed task." : "Error: task not found."};
                                             })
                                         .on("run",
                                             [&runtime, &agent_key](const nlohmann::json &request) {
                                                 if (const auto error = require_id_or_name(request); error.has_value()) {
-                                                    return tool_dispatch::response{*error, true};
+                                                    return tool_dispatch::response{.message = *error, .is_error = true};
                                                 }
                                                 const auto id_or_name = request.value("id", request.value("name", ""));
-                                                return tool_dispatch::response{runtime.run_task_now(agent_key, id_or_name)};
+                                                return tool_dispatch::response{.message = runtime.run_task_now(agent_key, id_or_name)};
                                             })
                                         .on("add",
                                             [&run_add_or_update](const nlohmann::json &request) {

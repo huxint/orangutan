@@ -9,7 +9,7 @@
 namespace orangutan::heartbeat {
     namespace {
 
-        constexpr std::size_t heartbeat_md_size_warning = 10240;
+        constexpr std::size_t HEARTBEAT_MD_SIZE_WARNING = 10240;
 
         bool is_empty_or_headers_only(const std::string &content) {
             std::istringstream stream(content);
@@ -57,7 +57,7 @@ namespace orangutan::heartbeat {
             return std::nullopt;
         }
 
-        if (file_size > heartbeat_md_size_warning) {
+        if (file_size > HEARTBEAT_MD_SIZE_WARNING) {
             spdlog::warn("HEARTBEAT.md at '{}' is {}KB — large files waste tokens on every heartbeat run", path.string(), file_size / 1024);
         }
 

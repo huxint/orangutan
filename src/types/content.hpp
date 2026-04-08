@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
@@ -13,22 +12,24 @@ namespace orangutan {
         std::string text;
 
         Text() = default;
-
-        template <typename Str>
-            requires std::convertible_to<Str, std::string_view>
-        Text(Str value)
-        : text(static_cast<std::string>(std::string_view{value})) {}
+        Text(std::string value)
+        : text(std::move(value)) {}
+        Text(std::string_view value)
+        : text(value) {}
+        Text(const char *value)
+        : text(value != nullptr ? value : "") {}
     };
 
     struct Thinking {
         std::string thinking;
 
         Thinking() = default;
-
-        template <typename Str>
-            requires std::convertible_to<Str, std::string_view>
-        Thinking(Str value)
-        : thinking(static_cast<std::string>(std::string_view{value})) {}
+        Thinking(std::string value)
+        : thinking(std::move(value)) {}
+        Thinking(std::string_view value)
+        : thinking(value) {}
+        Thinking(const char *value)
+        : thinking(value != nullptr ? value : "") {}
     };
 
     struct ToolUse {

@@ -15,7 +15,7 @@ namespace orangutan::web {
         port_ = 0;
         running_ = false;
         {
-            std::lock_guard lock(startup_mutex_);
+            std::scoped_lock lock(startup_mutex_);
             startup_complete_ = false;
         }
 
@@ -24,14 +24,14 @@ namespace orangutan::web {
             if (port == 0) {
                 bound_port = server_.bind_to_any_port(host);
                 if (bound_port <= 0) {
-                    std::lock_guard lock(startup_mutex_);
+                    std::scoped_lock lock(startup_mutex_);
                     startup_complete_ = true;
                     startup_cv_.notify_all();
                     return;
                 }
             } else {
                 if (!server_.bind_to_port(host, port)) {
-                    std::lock_guard lock(startup_mutex_);
+                    std::scoped_lock lock(startup_mutex_);
                     startup_complete_ = true;
                     startup_cv_.notify_all();
                     return;
@@ -40,7 +40,7 @@ namespace orangutan::web {
             }
 
             {
-                std::lock_guard lock(startup_mutex_);
+                std::scoped_lock lock(startup_mutex_);
                 port_ = bound_port;
                 running_ = true;
                 startup_complete_ = true;

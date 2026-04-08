@@ -44,10 +44,10 @@ namespace orangutan::tools {
             write_all(STDERR_FILENO, message);
         }
 
-        constexpr std::string_view protocol_version = "2024-11-05";
-        constexpr auto initialize_timeout = std::chrono::seconds(10);
-        constexpr auto graceful_shutdown_timeout = std::chrono::seconds(5);
-        constexpr auto terminate_timeout = std::chrono::seconds(2);
+        constexpr std::string_view PROTOCOL_VERSION = "2024-11-05";
+        constexpr auto INITIALIZE_TIMEOUT = std::chrono::seconds(10);
+        constexpr auto GRACEFUL_SHUTDOWN_TIMEOUT = std::chrono::seconds(5);
+        constexpr auto TERMINATE_TIMEOUT = std::chrono::seconds(2);
 
         int remaining_ms(std::chrono::steady_clock::time_point deadline) {
             const auto now = std::chrono::steady_clock::now();
@@ -183,18 +183,18 @@ namespace orangutan::tools {
         try {
             const auto result = send_request("initialize",
                                              {
-                                                 {"protocolVersion", protocol_version},
+                                                 {"protocolVersion", PROTOCOL_VERSION},
                                                  {"capabilities", nlohmann::json::object()},
                                                  {"clientInfo", {{"name", "orangutan"}, {"version", "0.1.0"}}},
                                              },
-                                             initialize_timeout);
+                                             INITIALIZE_TIMEOUT);
 
             const auto server_protocol = result.value("protocolVersion", std::string{});
-            if (!server_protocol.empty() && server_protocol != protocol_version) {
-                spdlog::warn("MCP server '{}' reported protocol '{}', client requested '{}'", config_.name, server_protocol, protocol_version);
+            if (!server_protocol.empty() && server_protocol != PROTOCOL_VERSION) {
+                spdlog::warn("MCP server '{}' reported protocol '{}', client requested '{}'", config_.name, server_protocol, PROTOCOL_VERSION);
             }
 
-            send_notification("notifications/initialized", nlohmann::json::object(), initialize_timeout);
+            send_notification("notifications/initialized", nlohmann::json::object(), INITIALIZE_TIMEOUT);
         } catch (...) {
             disconnect();
             throw;
@@ -205,10 +205,10 @@ namespace orangutan::tools {
         close_if_open(stdin_fd_);
 
         if (child_pid_ != -1) {
-            const auto graceful_deadline = std::chrono::steady_clock::now() + graceful_shutdown_timeout;
+            const auto graceful_deadline = std::chrono::steady_clock::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
             if (!wait_for_pid_exit(child_pid_, graceful_deadline)) {
                 signal_process(child_pid_, SIGTERM);
-                const auto terminate_deadline = std::chrono::steady_clock::now() + terminate_timeout;
+                const auto terminate_deadline = std::chrono::steady_clock::now() + TERMINATE_TIMEOUT;
                 if (!wait_for_pid_exit(child_pid_, terminate_deadline)) {
                     signal_process(child_pid_, SIGKILL);
                     static_cast<void>(waitpid(child_pid_, nullptr, 0));

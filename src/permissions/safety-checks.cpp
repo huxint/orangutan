@@ -9,13 +9,13 @@
 
 namespace orangutan::permissions {
 
-    static constexpr std::array protected_dirs = {
+    static constexpr std::array PROTECTED_DIRS = {
         std::string_view{".git"},
         std::string_view{".orangutan"},
         std::string_view{".claude"},
     };
 
-    static constexpr std::array protected_suffixes = {
+    static constexpr std::array PROTECTED_SUFFIXES = {
         std::string_view{".bashrc"},
         std::string_view{".zshrc"},
         std::string_view{".profile"},
@@ -23,7 +23,7 @@ namespace orangutan::permissions {
     };
 
     bool is_protected_path(std::string_view path) {
-        for (auto dir : protected_dirs) {
+        for (auto dir : PROTECTED_DIRS) {
             if (path == dir) {
                 return true;
             }
@@ -37,7 +37,7 @@ namespace orangutan::permissions {
             }
         }
 
-        return std::ranges::any_of(protected_suffixes, [&](auto suffix) {
+        return std::ranges::any_of(PROTECTED_SUFFIXES, [&](auto suffix) {
             return path.ends_with(suffix);
         });
     }

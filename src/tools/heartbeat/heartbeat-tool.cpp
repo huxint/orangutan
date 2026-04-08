@@ -38,17 +38,17 @@ namespace orangutan::tools {
             const auto agent_key = ctx->agent_key.empty() ? std::string("default") : ctx->agent_key;
             auto &runtime = *ctx->automation_runtime;
 
-            const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
+                const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
                 const auto id_or_name = request.value("id", request.value("name", ""));
                 if (op == "update" && id_or_name.empty()) {
-                    return tool_dispatch::response{"Error: id or name is required.", true};
+                    return tool_dispatch::response{.message = "Error: id or name is required.", .is_error = true};
                 }
 
                 automation::HeartbeatSpec heartbeat;
                 if (op == "update") {
                     const auto existing = runtime.find_heartbeat(agent_key, id_or_name);
                     if (!existing.has_value()) {
-                        return tool_dispatch::response{"Error: heartbeat not found.", true};
+                        return tool_dispatch::response{.message = "Error: heartbeat not found.", .is_error = true};
                     }
                     heartbeat = *existing;
                 }
@@ -64,20 +64,20 @@ namespace orangutan::tools {
                 if (const auto it = request.find("every"); it != request.end() && it->is_string()) {
                     const auto parsed = automation::parse_duration_seconds(it->get<std::string>());
                     if (!parsed.has_value()) {
-                        return tool_dispatch::response{"Error: invalid heartbeat interval.", true};
+                        return tool_dispatch::response{.message = "Error: invalid heartbeat interval.", .is_error = true};
                     }
                     heartbeat.every_seconds = *parsed;
                 }
                 if (const auto it = request.find("jitter"); it != request.end() && it->is_string()) {
                     const auto parsed = automation::parse_duration_seconds(it->get<std::string>());
                     if (!parsed.has_value()) {
-                        return tool_dispatch::response{"Error: invalid heartbeat jitter.", true};
+                        return tool_dispatch::response{.message = "Error: invalid heartbeat jitter.", .is_error = true};
                     }
                     heartbeat.jitter_seconds = *parsed;
                 }
 
                 if (heartbeat.name.empty() || heartbeat.prompt.empty() || heartbeat.every_seconds <= 0) {
-                    return tool_dispatch::response{"Error: name, prompt, and every are required.", true};
+                    return tool_dispatch::response{.message = "Error: name, prompt, and every are required.", .is_error = true};
                 }
 
                 const bool has_active_hours_field = request.contains("active_hours");
@@ -85,13 +85,13 @@ namespace orangutan::tools {
 
                 auto delivery = builtin::detail::parse_delivery_overlay(request, heartbeat.delivery);
                 if (!delivery.has_value()) {
-                    return tool_dispatch::response{"Error: " + delivery.error() + ".", true};
+                    return tool_dispatch::response{.message = "Error: " + delivery.error() + ".", .is_error = true};
                 }
                 heartbeat.delivery = std::move(*delivery);
 
                 auto active_hours = builtin::detail::parse_active_hours_overlay(request);
                 if (!active_hours.has_value()) {
-                    return tool_dispatch::response{"Error: " + active_hours.error() + ".", true};
+                    return tool_dispatch::response{.message = "Error: " + active_hours.error() + ".", .is_error = true};
                 }
                 if (active_hours->has_value()) {
                     heartbeat.active_hours = std::move(**active_hours);
@@ -101,7 +101,7 @@ namespace orangutan::tools {
                 }
 
                 const auto heartbeat_id = runtime.save_heartbeat(heartbeat);
-                return tool_dispatch::response{op == "add" ? "Added heartbeat '" + heartbeat.name + "' (" + heartbeat_id + ")." : "Updated heartbeat '" + heartbeat.name + "'."};
+                return tool_dispatch::response{.message = op == "add" ? "Added heartbeat '" + heartbeat.name + "' (" + heartbeat_id + ")." : "Updated heartbeat '" + heartbeat.name + "'."};
             };
 
             const auto normalized_op = input.value("op", "");
@@ -115,46 +115,46 @@ namespace orangutan::tools {
                         [&runtime, &agent_key](const nlohmann::json &) {
                             const auto heartbeats = runtime.list_heartbeats(agent_key);
                             if (heartbeats.empty()) {
-                                return tool_dispatch::response{"No heartbeats configured."};
+                                return tool_dispatch::response{.message = "No heartbeats configured."};
                             }
                             std::string out;
                             for (const auto &heartbeat : heartbeats) {
                                 out.append(format_heartbeat(heartbeat));
                                 out.push_back('\n');
                             }
-                            return tool_dispatch::response{std::move(out)};
+                            return tool_dispatch::response{.message = std::move(out)};
                         })
                     .on("remove",
                         [&runtime, &agent_key](const nlohmann::json &request) {
                             const auto id_or_name = request.value("id", request.value("name", ""));
                             if (id_or_name.empty()) {
-                                return tool_dispatch::response{"Error: id or name is required.", true};
+                                return tool_dispatch::response{.message = "Error: id or name is required.", .is_error = true};
                             }
-                            return tool_dispatch::response{runtime.remove_heartbeat(agent_key, id_or_name) ? "Removed heartbeat." : "Error: heartbeat not found."};
+                            return tool_dispatch::response{.message = runtime.remove_heartbeat(agent_key, id_or_name) ? "Removed heartbeat." : "Error: heartbeat not found."};
                         })
                     .on("run",
                         [&runtime, &agent_key](const nlohmann::json &request) {
                             const auto id_or_name = request.value("id", request.value("name", ""));
                             if (id_or_name.empty()) {
-                                return tool_dispatch::response{"Error: id or name is required.", true};
+                                return tool_dispatch::response{.message = "Error: id or name is required.", .is_error = true};
                             }
-                            return tool_dispatch::response{runtime.run_heartbeat_now(agent_key, id_or_name)};
+                            return tool_dispatch::response{.message = runtime.run_heartbeat_now(agent_key, id_or_name)};
                         })
                     .on("pause",
                         [&runtime, &agent_key](const nlohmann::json &request) {
                             const auto id_or_name = request.value("id", request.value("name", ""));
                             if (id_or_name.empty()) {
-                                return tool_dispatch::response{"Error: id or name is required.", true};
+                                return tool_dispatch::response{.message = "Error: id or name is required.", .is_error = true};
                             }
-                            return tool_dispatch::response{runtime.pause_heartbeat(agent_key, id_or_name, true) ? "Paused heartbeat." : "Error: heartbeat not found."};
+                            return tool_dispatch::response{.message = runtime.pause_heartbeat(agent_key, id_or_name, true) ? "Paused heartbeat." : "Error: heartbeat not found."};
                         })
                     .on("resume",
                         [&runtime, &agent_key](const nlohmann::json &request) {
                             const auto id_or_name = request.value("id", request.value("name", ""));
                             if (id_or_name.empty()) {
-                                return tool_dispatch::response{"Error: id or name is required.", true};
+                                return tool_dispatch::response{.message = "Error: id or name is required.", .is_error = true};
                             }
-                            return tool_dispatch::response{runtime.pause_heartbeat(agent_key, id_or_name, false) ? "Resumed heartbeat." : "Error: heartbeat not found."};
+                            return tool_dispatch::response{.message = runtime.pause_heartbeat(agent_key, id_or_name, false) ? "Resumed heartbeat." : "Error: heartbeat not found."};
                         })
                     .on("add",
                         [&run_add_or_update](const nlohmann::json &request) {

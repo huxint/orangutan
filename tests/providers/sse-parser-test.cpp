@@ -41,7 +41,7 @@ TEST_CASE("json_sse_accumulator_ignores_done_and_invalid_payload") {
     class TestAccumulator final : public orangutan::providers::JsonSseAccumulator<TestAccumulator> {
     public:
         [[nodiscard]]
-        std::string_view parse_error_context() const {
+        static std::string_view parse_error_context() {
             return "test payload";
         }
 
@@ -65,7 +65,7 @@ TEST_CASE("json_sse_accumulator_supports_named_events") {
     class TestAccumulator final : public orangutan::providers::JsonSseAccumulator<TestAccumulator> {
     public:
         [[nodiscard]]
-        std::string_view parse_error_context() const {
+        static std::string_view parse_error_context() {
             return "test event payload";
         }
 

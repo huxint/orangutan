@@ -33,21 +33,21 @@ namespace orangutan::providers {
     class StreamAccumulator final : public JsonSseAccumulator<StreamAccumulator> {
     public:
         explicit StreamAccumulator(const StreamCallback &on_event)
-        : on_event_(on_event) {}
+        : on_event_(&on_event) {}
 
         void handle_event(std::string_view data) {
             handle_data(data);
         }
 
         [[nodiscard]]
-        std::string_view parse_error_context() const {
+        static std::string_view parse_error_context() {
             return "SSE data";
         }
 
         void handle_parsed_payload(const nlohmann::json &event_data) {
             auto type = event_data.value("type", "");
             dispatch_event(type, event_data);
-            on_event_(type, event_data);
+            (*on_event_)(type, event_data);
         }
 
         [[nodiscard]]
@@ -85,7 +85,7 @@ namespace orangutan::providers {
             std::string input_json;
         };
 
-        const StreamCallback &on_event_;
+        const StreamCallback *on_event_;
         std::vector<BlockState> blocks_;
         std::string stop_reason_;
 
@@ -108,11 +108,12 @@ namespace orangutan::providers {
             if (block_type == "tool_use") {
                 state.id = block.value("id", "");
                 state.name = block.value("name", "");
-                on_event_("tool_call_start", {
-                                                 {"id", state.id},
-                                                 {"name", state.name},
-                                                 {"input", nlohmann::json::object()},
-                                             });
+                (*on_event_)("tool_call_start",
+                             {
+                                 {"id", state.id},
+                                 {"name", state.name},
+                                 {"input", nlohmann::json::object()},
+                             });
             }
             blocks_.push_back(std::move(state));
         }
@@ -129,12 +130,12 @@ namespace orangutan::providers {
 
             if (delta_type == "text_delta") {
                 block.text += delta["text"].get<std::string>();
-                on_event_("text_delta", delta);
+                (*on_event_)("text_delta", delta);
             } else if (delta_type == "input_json_delta") {
                 block.input_json += delta["partial_json"].get<std::string>();
             } else if (delta_type == "thinking_delta") {
                 block.text += delta["thinking"].get<std::string>();
-                on_event_("thinking_delta", {{"thinking", delta["thinking"]}});
+                (*on_event_)("thinking_delta", {{"thinking", delta["thinking"]}});
             }
         }
 
@@ -188,9 +189,10 @@ namespace orangutan::providers {
         std::string request_body = body.dump();
         spdlog::debug("Request body: {}", request_body);
 
-        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
-                                                           HeaderFallback{"x-api-key", endpoint_.api_key},
-                                                           HeaderFallback{"anthropic-version", "2023-06-01"}});
+        auto headers = compose_headers(endpoint_.headers,
+                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
+                                        HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
+                                        HeaderFallback{.key = "anthropic-version", .fallback = "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";
         auto response_body = http_post(url, request_body, headers);
@@ -220,9 +222,10 @@ namespace orangutan::providers {
             accumulator.handle_event(data);
         });
 
-        auto headers = compose_headers(endpoint_.headers, {HeaderFallback{"Content-Type", "application/json"},
-                                                           HeaderFallback{"x-api-key", endpoint_.api_key},
-                                                           HeaderFallback{"anthropic-version", "2023-06-01"}});
+        auto headers = compose_headers(endpoint_.headers,
+                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
+                                        HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
+                                        HeaderFallback{.key = "anthropic-version", .fallback = "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";
         long http_code = http_post_stream(url, request_body, headers, parser);

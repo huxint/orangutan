@@ -48,7 +48,6 @@ namespace orangutan::storage {
                 }
                 if (type == "tool_result") {
                     const auto &content_field = item.at("content");
-                    std::string content_text;
                     ToolResult result;
                     result.tool_use_id = item.at("tool_use_id").get<std::string>();
                     result.is_error = item.value("is_error", false);
@@ -62,8 +61,8 @@ namespace orangutan::storage {
                             } else if (part_type == "image") {
                                 if (part.contains("source")) {
                                     result.images.push_back({
-                                        part["source"].value("media_type", std::string{}),
-                                        part["source"].value("data", std::string{}),
+                                        .media_type = part["source"].value("media_type", std::string{}),
+                                        .data = part["source"].value("data", std::string{}),
                                     });
                                 }
                             }
@@ -368,13 +367,13 @@ namespace orangutan::storage {
                     [&](auto &&item) {
                         using T = std::decay_t<decltype(item)>;
                         if constexpr (std::same_as<T, Text>) {
-                            message.text(std::move(item));
+                            message.text(std::forward<decltype(item)>(item));
                         } else if constexpr (std::same_as<T, Thinking>) {
-                            message.thinking(std::move(item));
+                            message.thinking(std::forward<decltype(item)>(item));
                         } else if constexpr (std::same_as<T, ToolUse>) {
-                            message.tool_use(std::move(item));
+                            message.tool_use(std::forward<decltype(item)>(item));
                         } else if constexpr (std::same_as<T, ToolResult>) {
-                            message.tool_result(std::move(item));
+                            message.tool_result(std::forward<decltype(item)>(item));
                         }
                     },
                     block);

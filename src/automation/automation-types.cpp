@@ -13,13 +13,13 @@ namespace orangutan::automation {
 
         std::string random_hex(std::size_t count) {
             static thread_local std::mt19937_64 rng{std::random_device{}()};
-            static constexpr std::array<char, 16> hex = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+            static constexpr std::array<char, 16> HEX = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
             std::string value;
             value.reserve(count);
             std::uniform_int_distribution<int> dist(0, 15);
             for (std::size_t index = 0; index < count; ++index) {
-                value.push_back(hex.at(static_cast<std::size_t>(dist(rng))));
+                value.push_back(HEX.at(static_cast<std::size_t>(dist(rng))));
             }
             return value;
         }

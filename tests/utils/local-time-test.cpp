@@ -19,8 +19,8 @@ TEST_CASE("local_time_round_trips_with_chrono_types") {
     const auto tod = std::chrono::hh_mm_ss{round_tripped - local_day};
 
     CHECK(static_cast<int>(ymd.year()) == 2026);
-    CHECK(static_cast<unsigned>(ymd.month()) == 3u);
-    CHECK(static_cast<unsigned>(ymd.day()) == 14u);
+    CHECK(static_cast<unsigned>(ymd.month()) == 3U);
+    CHECK(static_cast<unsigned>(ymd.day()) == 14U);
     CHECK(tod.hours().count() == 9);
     CHECK(tod.minutes().count() == 30);
     CHECK(tod.seconds().count() == 45);

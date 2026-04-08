@@ -17,7 +17,7 @@ namespace orangutan::skills {
 
     namespace {
 
-        constexpr std::string_view yaml_delimiter = "---";
+        constexpr std::string_view YAML_DELIMITER = "---";
 
         enum class parse_error : base::u8 {
             missing_frontmatter,
@@ -36,7 +36,7 @@ namespace orangutan::skills {
         }
 
         bool is_yaml_delimiter(std::string_view line) {
-            return strip_cr(line) == yaml_delimiter;
+            return strip_cr(line) == YAML_DELIMITER;
         }
 
         bool is_blank_line(std::string_view line) {
@@ -56,9 +56,9 @@ namespace orangutan::skills {
         }
 
         void strip_utf8_bom(std::string &line) {
-            constexpr std::string_view bom = "\xEF\xBB\xBF";
-            if (line.starts_with(bom)) {
-                line.erase(0, bom.size());
+            constexpr std::string_view BOM = "\xEF\xBB\xBF";
+            if (line.starts_with(BOM)) {
+                line.erase(0, BOM.size());
             }
         }
 

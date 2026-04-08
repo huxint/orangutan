@@ -21,11 +21,11 @@
 
 namespace orangutan::channel::qq {
 
-    constexpr std::string_view qq_api_base = "https://api.sgroup.qq.com";
-    constexpr std::string_view qq_token_url = "https://bots.qq.com/app/getAppAccessToken";
-    constexpr long default_timeout_seconds = 120L;
-    constexpr auto token_refresh_ahead = std::chrono::minutes(5);
-    constexpr auto min_background_refresh_interval = std::chrono::seconds(60);
+    constexpr std::string_view QQ_API_BASE = "https://api.sgroup.qq.com";
+    constexpr std::string_view QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
+    constexpr long DEFAULT_TIMEOUT_SECONDS = 120L;
+    constexpr auto TOKEN_REFRESH_AHEAD = std::chrono::minutes(5);
+    constexpr auto MIN_BACKGROUND_REFRESH_INTERVAL = std::chrono::seconds(60);
 
     [[nodiscard]]
     base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
@@ -70,7 +70,7 @@ namespace orangutan::channel::qq {
     void QqApiClient::ensure_access_token() {
         std::scoped_lock lock(token_mutex_);
         const auto now = std::chrono::steady_clock::now();
-        if (!access_token_.empty() && now + token_refresh_ahead < token_expiry_) {
+        if (!access_token_.empty() && now + TOKEN_REFRESH_AHEAD < token_expiry_) {
             return;
         }
 
@@ -89,7 +89,7 @@ namespace orangutan::channel::qq {
 
     void QqApiClient::refresh_access_token_locked(std::chrono::steady_clock::time_point now) {
         const auto refresh_interval = [](std::chrono::seconds ttl) {
-            return std::max(min_background_refresh_interval, ttl / 3);
+            return std::max(MIN_BACKGROUND_REFRESH_INTERVAL, ttl / 3);
         };
 
         const nlohmann::json request_body = {
@@ -97,13 +97,13 @@ namespace orangutan::channel::qq {
             {"clientSecret", client_secret_},
         };
 
-        const auto raw = perform_http_request("POST", std::string(qq_token_url), request_body, false);
+        const auto raw = perform_http_request("POST", std::string(QQ_TOKEN_URL), request_body, false);
         const auto response = normalize_response(raw);
         if (response.http_status >= 400) {
-            throw std::runtime_error(build_api_error_message("POST", std::string(qq_token_url), response));
+            throw std::runtime_error(build_api_error_message("POST", std::string(QQ_TOKEN_URL), response));
         }
         if (response.biz_code != 0) {
-            throw std::runtime_error(build_api_error_message("POST", std::string(qq_token_url), response));
+            throw std::runtime_error(build_api_error_message("POST", std::string(QQ_TOKEN_URL), response));
         }
 
         const auto payload = response.parse_json_body();
@@ -167,7 +167,7 @@ namespace orangutan::channel::qq {
 
         while (true) {
             ensure_access_token();
-            const auto full_url = is_absolute_url(path) ? path : std::string(qq_api_base) + path;
+            const auto full_url = is_absolute_url(path) ? path : std::string(QQ_API_BASE) + path;
 
             const auto raw = perform_http_request(method, full_url, body, true);
             auto response = normalize_response(raw);
@@ -226,8 +226,8 @@ namespace orangutan::channel::qq {
         curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error_buffer.data());
         curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
-        curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, default_timeout_seconds);
-        curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, default_timeout_seconds);
+        curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, DEFAULT_TIMEOUT_SECONDS);
+        curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, DEFAULT_TIMEOUT_SECONDS);
         curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
 
         if (method == "GET") {

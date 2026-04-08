@@ -15,20 +15,20 @@
 namespace orangutan::tools {
     namespace {
 
-        constexpr std::string_view completion_message_type = "background_process_completion";
-        constexpr std::string_view completion_resume_failure_type = "background_process_completion_resume_failure";
-        constexpr std::string_view inbox_source_kind = "background_process";
-        constexpr std::string_view default_agent_key = "default";
-        constexpr std::size_t max_output_summary_bytes = 2048;
-        constexpr std::size_t max_runtime_key_chars = 256;
-        constexpr std::size_t max_agent_key_chars = 128;
-        constexpr std::size_t max_process_id_chars = 128;
-        constexpr std::size_t max_command_chars = 2048;
-        constexpr std::size_t max_working_dir_chars = 1024;
-        constexpr std::size_t max_failure_reason_chars = 512;
-        constexpr std::size_t max_failure_payload_bytes = BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES * 2;
-        constexpr std::size_t max_title_command_chars = 80;
-        constexpr std::size_t max_inbox_title_chars = 160;
+        constexpr std::string_view COMPLETION_MESSAGE_TYPE = "background_process_completion";
+        constexpr std::string_view COMPLETION_RESUME_FAILURE_TYPE = "background_process_completion_resume_failure";
+        constexpr std::string_view INBOX_SOURCE_KIND = "background_process";
+        constexpr std::string_view DEFAULT_AGENT_KEY = "default";
+        constexpr std::size_t MAX_OUTPUT_SUMMARY_BYTES = 2048;
+        constexpr std::size_t MAX_RUNTIME_KEY_CHARS = 256;
+        constexpr std::size_t MAX_AGENT_KEY_CHARS = 128;
+        constexpr std::size_t MAX_PROCESS_ID_CHARS = 128;
+        constexpr std::size_t MAX_COMMAND_CHARS = 2048;
+        constexpr std::size_t MAX_WORKING_DIR_CHARS = 1024;
+        constexpr std::size_t MAX_FAILURE_REASON_CHARS = 512;
+        constexpr std::size_t MAX_FAILURE_PAYLOAD_BYTES = BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES * 2;
+        constexpr std::size_t MAX_TITLE_COMMAND_CHARS = 80;
+        constexpr std::size_t MAX_INBOX_TITLE_CHARS = 160;
 
         std::string process_status(const BackgroundProcessCompletionEvent &event) {
             switch (event.terminal_status) {
@@ -46,16 +46,16 @@ namespace orangutan::tools {
         }
 
         std::string scrub_and_bound_title(std::string_view title) {
-            return utf8::truncate_valid_prefix(scrub_tool_output(utf8::sanitize(title)), max_inbox_title_chars, true);
+            return utf8::truncate_valid_prefix(scrub_tool_output(utf8::sanitize(title)), MAX_INBOX_TITLE_CHARS, true);
         }
 
         std::string clip_command(std::string_view command) {
-            return utf8::sanitize_and_truncate_valid_prefix(command, max_title_command_chars, true);
+            return utf8::sanitize_and_truncate_valid_prefix(command, MAX_TITLE_COMMAND_CHARS, true);
         }
 
         nlohmann::json summarize_output(const BackgroundProcessOutputMetadata &output) {
             const std::string sanitized_tail = utf8::sanitize(output.tail);
-            std::string tail = utf8::truncate_valid_suffix(sanitized_tail, max_output_summary_bytes);
+            std::string tail = utf8::truncate_valid_suffix(sanitized_tail, MAX_OUTPUT_SUMMARY_BYTES);
             bool truncated = output.truncated;
             truncated = truncated || tail.size() < sanitized_tail.size();
 
@@ -82,12 +82,12 @@ namespace orangutan::tools {
 
         nlohmann::json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
             nlohmann::json payload = {
-                {"type", completion_message_type},
-                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key, max_runtime_key_chars, true)},
-                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key, max_agent_key_chars, true)},
-                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, max_process_id_chars, true)},
-                {"command", utf8::sanitize_and_truncate_valid_prefix(event.command, max_command_chars, true)},
-                {"working_dir", utf8::sanitize_and_truncate_valid_prefix(event.working_dir, max_working_dir_chars, true)},
+                {"type", COMPLETION_MESSAGE_TYPE},
+                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key, MAX_RUNTIME_KEY_CHARS, true)},
+                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key, MAX_AGENT_KEY_CHARS, true)},
+                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, MAX_PROCESS_ID_CHARS, true)},
+                {"command", utf8::sanitize_and_truncate_valid_prefix(event.command, MAX_COMMAND_CHARS, true)},
+                {"working_dir", utf8::sanitize_and_truncate_valid_prefix(event.working_dir, MAX_WORKING_DIR_CHARS, true)},
                 {"pid", event.pid},
                 {"status", process_status(event)},
                 {"kill_requested", event.kill_requested},
@@ -111,7 +111,7 @@ namespace orangutan::tools {
             if (!reason.has_value() || reason->empty()) {
                 return "resume callback returned an unspecified failure";
             }
-            return utf8::sanitize_and_truncate_valid_prefix(*reason, max_failure_reason_chars, true);
+            return utf8::sanitize_and_truncate_valid_prefix(*reason, MAX_FAILURE_REASON_CHARS, true);
         }
 
         bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
@@ -138,7 +138,7 @@ namespace orangutan::tools {
         }
 
         runtime_key_ = tool_context->runtime_key;
-        agent_key_ = tool_context->agent_key.empty() ? std::string(default_agent_key) : tool_context->agent_key;
+        agent_key_ = tool_context->agent_key.empty() ? std::string(DEFAULT_AGENT_KEY) : tool_context->agent_key;
         background_completion_runtime_ = tool_context->background_completion_runtime;
         if (background_completion_runtime_ != nullptr) {
             supports_completion_routing_ = background_completion_runtime_->supports_completion_routing();
@@ -175,22 +175,22 @@ namespace orangutan::tools {
 
         const auto insert_resume_failure_note = [&](std::string_view reason) {
             const auto failure_payload = nlohmann::json{
-                {"type", completion_resume_failure_type},
-                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key_, max_runtime_key_chars, true)},
-                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key_, max_agent_key_chars, true)},
-                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, max_process_id_chars, true)},
-                {"reason", utf8::sanitize_and_truncate_valid_prefix(reason, max_failure_reason_chars, true)},
+                {"type", COMPLETION_RESUME_FAILURE_TYPE},
+                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key_, MAX_RUNTIME_KEY_CHARS, true)},
+                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key_, MAX_AGENT_KEY_CHARS, true)},
+                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, MAX_PROCESS_ID_CHARS, true)},
+                {"reason", utf8::sanitize_and_truncate_valid_prefix(reason, MAX_FAILURE_REASON_CHARS, true)},
                 {"completion", persisted_payload},
             };
             const auto failure_body = scrub_tool_output(failure_payload.dump(2));
-            if (failure_body.size() > max_failure_payload_bytes) {
+            if (failure_body.size() > MAX_FAILURE_PAYLOAD_BYTES) {
                 spdlog::warn("background completion failure payload exceeded bounded size for process {}", event.process_id);
                 return;
             }
             static_cast<void>(insert_inbox_item(*bindings,
                                                 automation::InboxItem{
                                                     .agent_key = agent_key_,
-                                                    .source_kind = std::string(inbox_source_kind),
+                                                    .source_kind = std::string(INBOX_SOURCE_KIND),
                                                     .source_run_id = event.process_id,
                                                     .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
                                                     .body = failure_body,
@@ -203,7 +203,7 @@ namespace orangutan::tools {
                             return insert_inbox_item(*bindings,
                                                      automation::InboxItem{
                                                          .agent_key = agent_key_,
-                                                         .source_kind = std::string(inbox_source_kind),
+                                                         .source_kind = std::string(INBOX_SOURCE_KIND),
                                                          .source_run_id = event.process_id,
                                                          .title = inbox_title_for_event(event),
                                                          .body = payload_text,

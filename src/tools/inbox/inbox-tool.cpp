@@ -30,7 +30,7 @@ namespace orangutan::tools {
                                         [&runtime, &agent_key](const nlohmann::json &) {
                                             const auto items = runtime.list_inbox(agent_key);
                                             if (items.empty()) {
-                                                return tool_dispatch::response{"Inbox is empty."};
+                                                return tool_dispatch::response{.message = "Inbox is empty."};
                                             }
                                             std::string out;
                                             for (const auto &item : items) {
@@ -39,20 +39,20 @@ namespace orangutan::tools {
                                                 out.append(item.body);
                                                 out.push_back('\n');
                                             }
-                                            return tool_dispatch::response{std::move(out)};
+                                            return tool_dispatch::response{.message = std::move(out)};
                                         })
                                     .on("clear",
                                         [&runtime, &agent_key](const nlohmann::json &) {
                                             runtime.clear_inbox(agent_key);
-                                            return tool_dispatch::response{"Inbox cleared."};
+                                            return tool_dispatch::response{.message = "Inbox cleared."};
                                         })
                                     .on("ack",
                                         [&runtime, &agent_key](const nlohmann::json &request) {
                                             const auto id = request.value("id", "");
                                             if (id.empty()) {
-                                                return tool_dispatch::response{"Error: id is required.", true};
+                                                return tool_dispatch::response{.message = "Error: id is required.", .is_error = true};
                                             }
-                                            return tool_dispatch::response{runtime.ack_inbox(agent_key, id) ? "Inbox item acknowledged." : "Error: inbox item not found."};
+                                            return tool_dispatch::response{.message = runtime.ack_inbox(agent_key, id) ? "Inbox item acknowledged." : "Error: inbox item not found."};
                                         })
                                     .run(routed_input);
 

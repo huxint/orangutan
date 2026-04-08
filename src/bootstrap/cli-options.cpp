@@ -198,7 +198,7 @@ namespace orangutan::bootstrap {
         if (!options.permission_mode_str.empty()) {
             auto mode_opt = magic_enum::enum_cast<permission_mode>(normalize_enum_token(options.permission_mode_str));
             if (mode_opt.has_value()) {
-                cli_perms.mode_override = *mode_opt;
+                cli_perms.mode_override = mode_opt;
             } else {
                 spdlog::warn("Unknown --permission-mode '{}', ignoring", options.permission_mode_str);
             }

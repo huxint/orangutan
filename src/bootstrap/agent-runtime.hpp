@@ -102,8 +102,10 @@ namespace orangutan::bootstrap {
         // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
         std::unique_ptr<providers::Provider> provider;
         std::unique_ptr<memory::RuntimeMemory> memory;
+        // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
         ToolRegistry &tools;
         ToolRuntimeContext &tool_context;
+        // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
         std::unique_ptr<tools::McpManager> mcp_manager;
         std::string skills_prompt;
         std::unique_ptr<skills::SkillLoader> skill_loader;

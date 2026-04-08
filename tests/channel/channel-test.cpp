@@ -87,11 +87,11 @@ namespace {
         }
 
         void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override {
-            added_reactions_.push_back({jid, message_id, type, id});
+            added_reactions_.push_back({.jid = jid, .message_id = message_id, .type = type, .id = id});
         }
 
         void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override {
-            removed_reactions_.push_back({jid, message_id, type, id});
+            removed_reactions_.push_back({.jid = jid, .message_id = message_id, .type = type, .id = id});
         }
 
         void disconnect() override {
@@ -168,6 +168,7 @@ namespace {
             return removed_reactions_;
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
         std::vector<std::string> known_user_jids_;
 
     private:

@@ -10,7 +10,7 @@ namespace orangutan::sqlite {
 
     namespace {
 
-        constexpr auto default_busy_timeout_ms = 1000;
+        constexpr auto DEFAULT_BUSY_TIMEOUT_MS = 1000;
 
         std::string sqlite_error(sqlite3 *db, std::string_view fallback = "unknown error") {
             const auto *message = sqlite3_errmsg(db);
@@ -29,7 +29,7 @@ namespace orangutan::sqlite {
         if (sqlite3_open(path_text.c_str(), &db_) != SQLITE_OK) {
             throw std::runtime_error("Failed to open sqlite database: " + path_text + ": " + sqlite_error(db_));
         }
-        if (sqlite3_busy_timeout(db_, default_busy_timeout_ms) != SQLITE_OK) {
+        if (sqlite3_busy_timeout(db_, DEFAULT_BUSY_TIMEOUT_MS) != SQLITE_OK) {
             throw std::runtime_error("Failed to configure sqlite busy timeout: " + sqlite_error(db_));
         }
     }

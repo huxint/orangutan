@@ -79,6 +79,11 @@ namespace orangutan::coordinator {
 
     struct WorkerRuntime {
         virtual ~WorkerRuntime() = default;
+        WorkerRuntime() = default;
+        WorkerRuntime(const WorkerRuntime &) = delete;
+        WorkerRuntime &operator=(const WorkerRuntime &) = delete;
+        WorkerRuntime(WorkerRuntime &&) = delete;
+        WorkerRuntime &operator=(WorkerRuntime &&) = delete;
         virtual std::string run(const std::string &prompt, std::stop_token stop_token) = 0;
     };
 
@@ -157,7 +162,7 @@ namespace orangutan::coordinator {
         void launch_run_locked(const std::shared_ptr<ActiveRun> &run);
         void remove_pending_run_locked(const std::string &run_id);
         void maybe_start_queued_runs();
-        void run_worker(const std::shared_ptr<ActiveRun> &run, std::stop_token stop_token);
+        void run_worker(const std::shared_ptr<ActiveRun> &run, const std::stop_token &stop_token);
     };
 
 } // namespace orangutan::coordinator

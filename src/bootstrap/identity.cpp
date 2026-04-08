@@ -15,15 +15,15 @@ namespace orangutan::bootstrap {
 
     namespace {
 
-        constexpr base::u64 fnv_offset_basis = 14695981039346656037ULL;
-        constexpr base::u64 fnv_prime = 1099511628211ULL;
-        constexpr std::size_t max_identity_label_length = 48;
+        constexpr base::u64 FNV_OFFSET_BASIS = 14695981039346656037ULL;
+        constexpr base::u64 FNV_PRIME = 1099511628211ULL;
+        constexpr std::size_t MAX_IDENTITY_LABEL_LENGTH = 48;
 
         base::u64 fnv1a_64(std::string_view input) {
-            base::u64 hash = fnv_offset_basis;
+            base::u64 hash = FNV_OFFSET_BASIS;
             for (const unsigned char ch : input) {
                 hash ^= ch;
-                hash *= fnv_prime;
+                hash *= FNV_PRIME;
             }
             return hash;
         }
@@ -56,8 +56,8 @@ namespace orangutan::bootstrap {
             if (sanitized.empty()) {
                 sanitized = "identity";
             }
-            if (sanitized.size() > max_identity_label_length) {
-                sanitized.resize(max_identity_label_length);
+            if (sanitized.size() > MAX_IDENTITY_LABEL_LENGTH) {
+                sanitized.resize(MAX_IDENTITY_LABEL_LENGTH);
             }
             return sanitized;
         }

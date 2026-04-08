@@ -17,7 +17,7 @@
 namespace orangutan::config {
     namespace {
 
-        constexpr const char *password_env_var = "ORANGUTAN_CONFIG_PASSWORD";
+        constexpr const char *PASSWORD_ENV_VAR = "ORANGUTAN_CONFIG_PASSWORD";
 
 #ifdef _WIN32
 
@@ -153,7 +153,7 @@ namespace orangutan::config {
             return options.password_override;
         }
 
-        if (const char *env_password = std::getenv(password_env_var); env_password != nullptr && !std::string_view{env_password}.empty()) {
+        if (const char *env_password = std::getenv(PASSWORD_ENV_VAR); env_password != nullptr && !std::string_view{env_password}.empty()) {
             return env_password;
         }
 

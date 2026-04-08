@@ -65,8 +65,8 @@ namespace orangutan::cli {
         }
 
         std::string out = "## Sessions\n";
-        constexpr std::size_t max_sessions_to_show = 10;
-        const auto count = std::min(max_sessions_to_show, sessions.size());
+        constexpr std::size_t MAX_SESSIONS_TO_SHOW = 10;
+        const auto count = std::min(MAX_SESSIONS_TO_SHOW, sessions.size());
         for (std::size_t index = 0; index < count; ++index) {
             const auto &session = sessions[index];
             utils::format_to(out, "- 🧵 `{}`", session.id);

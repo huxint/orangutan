@@ -16,7 +16,7 @@ namespace orangutan::tools {
 
     namespace {
 
-        constexpr int kDefaultGracePeriodMs = 5000;
+        constexpr int K_DEFAULT_GRACE_PERIOD_MS = 5000;
 
         std::string team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
             if (tool_context.team_manager == nullptr) {
@@ -24,7 +24,7 @@ namespace orangutan::tools {
             }
 
             auto team_id = input.at("team_id").get<std::string>();
-            auto grace_period_ms = input.value("grace_period_ms", kDefaultGracePeriodMs);
+            auto grace_period_ms = input.value("grace_period_ms", K_DEFAULT_GRACE_PERIOD_MS);
             if (grace_period_ms < 0) {
                 return nlohmann::json{{"deleted", false}, {"error", "grace_period_ms must be >= 0"}}.dump();
             }
@@ -37,7 +37,10 @@ namespace orangutan::tools {
             }
 
             auto active_members = tool_context.team_manager->list_members(team_id);
-            auto sender = !tool_context.agent_name.empty() ? tool_context.agent_name : (!tool_context.agent_key.empty() ? tool_context.agent_key : "system");
+            auto sender = tool_context.agent_name;
+            if (sender.empty()) {
+                sender = tool_context.agent_key.empty() ? std::string{"system"} : tool_context.agent_key;
+            }
 
             if (tool_context.mailbox != nullptr) {
                 for (const auto &member : active_members) {

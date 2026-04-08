@@ -6,7 +6,7 @@
 namespace orangutan::heartbeat {
     namespace {
 
-        constexpr std::string_view heartbeat_ok_token = "HEARTBEAT_OK";
+        constexpr std::string_view HEARTBEAT_OK_TOKEN = "HEARTBEAT_OK";
 
     } // namespace
 
@@ -17,10 +17,10 @@ namespace orangutan::heartbeat {
         }
 
         std::string_view remainder;
-        if (trimmed.starts_with(heartbeat_ok_token)) {
-            remainder = utils::trim_copy(trimmed.substr(heartbeat_ok_token.size()));
-        } else if (trimmed.ends_with(heartbeat_ok_token)) {
-            remainder = utils::trim_copy(trimmed.substr(0, trimmed.size() - heartbeat_ok_token.size()));
+        if (trimmed.starts_with(HEARTBEAT_OK_TOKEN)) {
+            remainder = utils::trim_copy(trimmed.substr(HEARTBEAT_OK_TOKEN.size()));
+        } else if (trimmed.ends_with(HEARTBEAT_OK_TOKEN)) {
+            remainder = utils::trim_copy(trimmed.substr(0, trimmed.size() - HEARTBEAT_OK_TOKEN.size()));
         } else {
             return false;
         }

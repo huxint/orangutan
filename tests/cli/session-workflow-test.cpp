@@ -42,6 +42,10 @@ namespace {
         ~SessionWorkflowHarness() {
             std::filesystem::remove_all(temp_root_);
         }
+        SessionWorkflowHarness(const SessionWorkflowHarness &) = delete;
+        SessionWorkflowHarness &operator=(const SessionWorkflowHarness &) = delete;
+        SessionWorkflowHarness(SessionWorkflowHarness &&) = delete;
+        SessionWorkflowHarness &operator=(SessionWorkflowHarness &&) = delete;
 
         [[nodiscard]]
         const std::filesystem::path &session_db_path() const {

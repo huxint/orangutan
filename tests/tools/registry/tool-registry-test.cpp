@@ -188,6 +188,10 @@ public:
         tmp_env_.reset();
         std::filesystem::remove_all(workspace_);
     }
+    BuiltinToolsWorkspaceTest(const BuiltinToolsWorkspaceTest &) = delete;
+    BuiltinToolsWorkspaceTest &operator=(const BuiltinToolsWorkspaceTest &) = delete;
+    BuiltinToolsWorkspaceTest(BuiltinToolsWorkspaceTest &&) = delete;
+    BuiltinToolsWorkspaceTest &operator=(BuiltinToolsWorkspaceTest &&) = delete;
 
     [[nodiscard]]
     const std::filesystem::path &workspace() const {
@@ -224,6 +228,10 @@ public:
         tmp_env_.reset();
         std::filesystem::remove_all(temp_root_);
     }
+    BuiltinToolsWorkspaceConfigAccessTest(const BuiltinToolsWorkspaceConfigAccessTest &) = delete;
+    BuiltinToolsWorkspaceConfigAccessTest &operator=(const BuiltinToolsWorkspaceConfigAccessTest &) = delete;
+    BuiltinToolsWorkspaceConfigAccessTest(BuiltinToolsWorkspaceConfigAccessTest &&) = delete;
+    BuiltinToolsWorkspaceConfigAccessTest &operator=(BuiltinToolsWorkspaceConfigAccessTest &&) = delete;
 
     [[nodiscard]]
     const std::filesystem::path &home() const {
@@ -1562,6 +1570,10 @@ public:
         tmp_env_.reset();
         std::filesystem::remove_all(workspace_);
     }
+    HashlineToolsTest(const HashlineToolsTest &) = delete;
+    HashlineToolsTest &operator=(const HashlineToolsTest &) = delete;
+    HashlineToolsTest(HashlineToolsTest &&) = delete;
+    HashlineToolsTest &operator=(HashlineToolsTest &&) = delete;
 
     [[nodiscard]]
     const std::filesystem::path &workspace() const {

@@ -95,7 +95,7 @@ namespace orangutan::tools {
     // ── Tool Registration Helpers ───────────────────
 
     static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionContext * /*permissions*/,
-                                 const ToolRuntimeContext * /*tool_context*/, ApprovalCallback /*approval_callback*/) {
+                                 const ToolRuntimeContext * /*tool_context*/, const ApprovalCallback & /*approval_callback*/) {
         return Tool{
             .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
             .execute = [config, workspace](const nlohmann::json &input) -> std::string {
@@ -124,9 +124,9 @@ namespace orangutan::tools {
                     throw std::runtime_error(error_msg);
                 }
 
-                constexpr std::size_t max_output = 8192;
-                if (result.stdout_output.size() > max_output) {
-                    result.stdout_output = result.stdout_output.substr(0, max_output) + "\n... (truncated, total " + std::to_string(result.stdout_output.size()) + " bytes)";
+                constexpr std::size_t MAX_OUTPUT = 8192;
+                if (result.stdout_output.size() > MAX_OUTPUT) {
+                    result.stdout_output = result.stdout_output.substr(0, MAX_OUTPUT) + "\n... (truncated, total " + std::to_string(result.stdout_output.size()) + " bytes)";
                 }
 
                 return result.stdout_output;

@@ -94,7 +94,7 @@ namespace orangutan::swarm {
     TeamManager::~TeamManager() = default;
 
     TeamRecord TeamManager::create_team(const std::string &name, const std::string &description, const std::string &lead_agent_id) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         TeamRecord record;
         record.id = generate_team_id();
@@ -128,7 +128,7 @@ namespace orangutan::swarm {
     }
 
     std::optional<TeamRecord> TeamManager::find_team(const std::string &team_id) const {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "SELECT id, name, description, lead_agent_id, created_at, active FROM teams WHERE id = ?;";
         sqlite3_stmt *stmt = nullptr;
@@ -156,7 +156,7 @@ namespace orangutan::swarm {
     }
 
     std::optional<TeamRecord> TeamManager::find_team_by_name(const std::string &name) const {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "SELECT id, name, description, lead_agent_id, created_at, active FROM teams WHERE name = ?;";
         sqlite3_stmt *stmt = nullptr;
@@ -184,7 +184,7 @@ namespace orangutan::swarm {
     }
 
     void TeamManager::delete_team(const std::string &team_id) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         // Delete members first
         const char *del_members_sql = "DELETE FROM team_members WHERE team_id = ?;";
@@ -207,7 +207,7 @@ namespace orangutan::swarm {
     }
 
     void TeamManager::add_member(const TeamMemberRecord &member) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "INSERT INTO team_members (agent_id, name, agent_key, team_id, joined_at, active) VALUES (?, ?, ?, ?, ?, 1);";
         sqlite3_stmt *stmt = nullptr;
@@ -233,7 +233,7 @@ namespace orangutan::swarm {
     }
 
     std::vector<TeamMemberRecord> TeamManager::list_members(const std::string &team_id) const {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "SELECT agent_id, name, agent_key, team_id, joined_at, active FROM team_members WHERE team_id = ? AND active = 1;";
         sqlite3_stmt *stmt = nullptr;
@@ -271,7 +271,7 @@ namespace orangutan::swarm {
     }
 
     void TeamManager::deactivate_member(const std::string &team_id, const std::string &agent_id) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "UPDATE team_members SET active = 0 WHERE team_id = ? AND agent_id = ?;";
         sqlite3_stmt *stmt = nullptr;
@@ -287,7 +287,7 @@ namespace orangutan::swarm {
     }
 
     void TeamManager::abandon_active_members(const std::string &team_id) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "UPDATE team_members SET active = 0 WHERE team_id = ? AND active = 1;";
         sqlite3_stmt *stmt = nullptr;
@@ -302,7 +302,7 @@ namespace orangutan::swarm {
     }
 
     std::vector<TeamRecord> TeamManager::list_active_teams() const {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "SELECT id, name, description, lead_agent_id, created_at, active FROM teams WHERE active = 1;";
         sqlite3_stmt *stmt = nullptr;

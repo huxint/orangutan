@@ -11,12 +11,12 @@
 namespace orangutan::memory {
     namespace {
 
-        constexpr std::string_view managed_begin_marker = "<!-- ORANGUTAN:MEMORY:BEGIN -->";
-        constexpr std::string_view managed_end_marker = "<!-- ORANGUTAN:MEMORY:END -->";
+        constexpr std::string_view MANAGED_BEGIN_MARKER = "<!-- ORANGUTAN:MEMORY:BEGIN -->";
+        constexpr std::string_view MANAGED_END_MARKER = "<!-- ORANGUTAN:MEMORY:END -->";
 
         std::string render_managed_block(const bootstrap::RuntimeMemoryContext &context, const std::vector<MemoryRecord> &durable_records) {
             std::string out;
-            out.append(managed_begin_marker);
+            out.append(MANAGED_BEGIN_MARKER);
             out.push_back('\n');
             utils::format_to(out, "Generated durable memory for scope `{}`. Edit outside this managed block only.\n\n", context.scope);
             if (durable_records.empty()) {
@@ -30,7 +30,7 @@ namespace orangutan::memory {
                     out.push_back('\n');
                 }
             }
-            out.append(managed_end_marker);
+            out.append(MANAGED_END_MARKER);
             out.push_back('\n');
             return out;
         }
@@ -55,17 +55,17 @@ namespace orangutan::memory {
         }
 
         const auto current = fileio::read_file(result.path);
-        const auto begin = current.find(managed_begin_marker);
-        const auto end = current.find(managed_end_marker);
-        const auto second_begin = begin == std::string::npos ? std::string::npos : current.find(managed_begin_marker, begin + managed_begin_marker.size());
-        const auto second_end = end == std::string::npos ? std::string::npos : current.find(managed_end_marker, end + managed_end_marker.size());
+        const auto begin = current.find(MANAGED_BEGIN_MARKER);
+        const auto end = current.find(MANAGED_END_MARKER);
+        const auto second_begin = begin == std::string::npos ? std::string::npos : current.find(MANAGED_BEGIN_MARKER, begin + MANAGED_BEGIN_MARKER.size());
+        const auto second_end = end == std::string::npos ? std::string::npos : current.find(MANAGED_END_MARKER, end + MANAGED_END_MARKER.size());
         if (begin == std::string::npos || end == std::string::npos || end < begin || second_begin != std::string::npos || second_end != std::string::npos) {
             result.skipped = true;
             result.status = "Existing snapshot markers are missing or malformed; refresh skipped.";
             return result;
         }
 
-        const auto suffix_start = end + managed_end_marker.size();
+        const auto suffix_start = end + MANAGED_END_MARKER.size();
         const auto updated = current.substr(0, begin) + rendered + current.substr(suffix_start);
         fileio::write_file(result.path, updated);
         result.refreshed = true;

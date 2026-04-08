@@ -58,8 +58,8 @@ namespace orangutan::tools {
         }
 
     private:
-        const BackgroundCompletionInboxCallback inbox_callback_;
-        const BackgroundCompletionResumeCallback resume_callback_;
+        BackgroundCompletionInboxCallback inbox_callback_;
+        BackgroundCompletionResumeCallback resume_callback_;
     };
 
     [[nodiscard]]

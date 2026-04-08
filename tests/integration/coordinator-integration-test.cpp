@@ -36,7 +36,7 @@ namespace {
         std::mutex notify_mutex;
 
         manager.set_notification_callback([&](const coordinator::AgentRunRecord &record) {
-            std::lock_guard lock(notify_mutex);
+            std::scoped_lock lock(notify_mutex);
             notified_run_id = record.run_id;
             notification_received.store(true);
         });
@@ -56,7 +56,7 @@ namespace {
 
         REQUIRE(notification_received.load());
         {
-            std::lock_guard lock(notify_mutex);
+            std::scoped_lock lock(notify_mutex);
             CHECK(notified_run_id == result.run_id);
         }
 

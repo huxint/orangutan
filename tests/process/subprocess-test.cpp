@@ -170,7 +170,7 @@ namespace {
 
     TEST_CASE("background_manager_publishes_completion_event_exactly_once_with_bounded_output") {
         ScopedEnvVar tmp_env("TMPDIR", test_tmp_root().string());
-        constexpr std::size_t max_output_tail_bytes = 16384;
+        constexpr std::size_t MAX_OUTPUT_TAIL_BYTES = 16384;
         const std::string stdout_text = std::string(20000, 'O') + "stdout-tail\n";
         const std::string stderr_text = std::string(19000, 'E') + "stderr-tail\n";
 
@@ -232,13 +232,13 @@ namespace {
 
         CHECK(completion_event->stdout.total_bytes == stdout_text.size());
         CHECK(completion_event->stdout.truncated);
-        CHECK(completion_event->stdout.tail.size() == max_output_tail_bytes);
-        CHECK(completion_event->stdout.tail == stdout_text.substr(stdout_text.size() - max_output_tail_bytes));
+        CHECK(completion_event->stdout.tail.size() == MAX_OUTPUT_TAIL_BYTES);
+        CHECK(completion_event->stdout.tail == stdout_text.substr(stdout_text.size() - MAX_OUTPUT_TAIL_BYTES));
 
         CHECK(completion_event->stderr.total_bytes == stderr_text.size());
         CHECK(completion_event->stderr.truncated);
-        CHECK(completion_event->stderr.tail.size() == max_output_tail_bytes);
-        CHECK(completion_event->stderr.tail == stderr_text.substr(stderr_text.size() - max_output_tail_bytes));
+        CHECK(completion_event->stderr.tail.size() == MAX_OUTPUT_TAIL_BYTES);
+        CHECK(completion_event->stderr.tail == stderr_text.substr(stderr_text.size() - MAX_OUTPUT_TAIL_BYTES));
     };
 
     TEST_CASE("background_manager_kill_stops_running_process") {
@@ -422,8 +422,8 @@ namespace {
             callback_count.fetch_add(1, std::memory_order_relaxed);
         });
 
-        constexpr int iterations = 512;
-        for (int i = 0; i < iterations; ++i) {
+        constexpr int ITERATIONS = 512;
+        for (int i = 0; i < ITERATIONS; ++i) {
             const auto summary = manager.start(
                 {
                     .command = "/bin/true",
@@ -456,7 +456,7 @@ namespace {
             CHECK(final_snapshot.exit_code == 0);
         }
 
-        CHECK(callback_count.load(std::memory_order_relaxed) == iterations);
+        CHECK(callback_count.load(std::memory_order_relaxed) == ITERATIONS);
     };
 
     TEST_CASE("background_manager_kill_after_completion_does_not_deadlock") {

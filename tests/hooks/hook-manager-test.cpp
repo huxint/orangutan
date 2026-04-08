@@ -40,6 +40,10 @@ namespace {
             std::error_code ec;
             std::filesystem::remove_all(root, ec);
         }
+        TempDirGuard(const TempDirGuard &) = delete;
+        TempDirGuard &operator=(const TempDirGuard &) = delete;
+        TempDirGuard(TempDirGuard &&) = delete;
+        TempDirGuard &operator=(TempDirGuard &&) = delete;
 
         [[nodiscard]]
         std::string string() const {
@@ -79,7 +83,7 @@ namespace {
         CHECK(manager.hook_count(hook_event::after_tool_call) == 2UL);
         CHECK(manager.hook_count(hook_event::session_start) == 1UL);
         CHECK(manager.hook_count(hook_event::session_end) == 1UL);
-        CHECK(manager.total_hooks() >= 8ul);
+        CHECK(manager.total_hooks() >= 8UL);
     };
 
     TEST_CASE("empty_directory_has_no_hooks") {

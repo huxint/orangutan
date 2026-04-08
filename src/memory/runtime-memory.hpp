@@ -73,6 +73,7 @@ namespace orangutan::memory {
         std::string manifest(std::size_t limit = 200);
 
     private:
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
         MemoryStore &store_;
         bootstrap::RuntimeMemoryContext context_;
         MemoryMirror mirror_;

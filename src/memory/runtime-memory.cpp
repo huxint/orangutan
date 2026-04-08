@@ -101,25 +101,25 @@ namespace orangutan::memory {
     }
 
     bool RuntimeMemory::query_requests_journal(std::string_view query) {
-        static constexpr auto normalized_keywords = std::to_array<std::string_view>({
+        static constexpr auto NORMALIZED_KEYWORDS = std::to_array<std::string_view>({
             "journal",
             "diary",
             "previous session",
             "last session",
             "recent session",
         });
-        static constexpr auto raw_keywords = std::to_array<std::string_view>({
+        static constexpr auto RAW_KEYWORDS = std::to_array<std::string_view>({
             "日记",
             "会话",
         });
 
         const auto trimmed_query = utils::trim_copy(query);
         const auto normalized = una::cases::to_lowercase_utf8(trimmed_query);
-        return std::ranges::any_of(normalized_keywords,
+        return std::ranges::any_of(NORMALIZED_KEYWORDS,
                                    [&normalized](std::string_view keyword) {
                                        return normalized.contains(keyword);
                                    }) ||
-               std::ranges::any_of(raw_keywords, [trimmed_query](std::string_view keyword) {
+               std::ranges::any_of(RAW_KEYWORDS, [trimmed_query](std::string_view keyword) {
                    return trimmed_query.contains(keyword);
                });
     }

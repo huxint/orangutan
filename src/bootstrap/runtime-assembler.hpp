@@ -12,9 +12,12 @@ namespace orangutan::bootstrap {
     struct AgentRuntimeConfig;
 
     struct RuntimeAssemblyRequest {
+        // These are required non-owning inputs captured for assembly.
+        // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
         const AgentRuntimeConfig &runtime_config;
         const RuntimeIdentity &identity;
         const Config &app_config;
+        // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
         memory::MemoryStore *memory_store = nullptr;
         std::string agent_name;
@@ -39,4 +42,3 @@ namespace orangutan::bootstrap {
     AgentRuntimeBuildInput make_runtime_build_input(const RuntimeAssemblyRequest &request);
 
 } // namespace orangutan::bootstrap
-

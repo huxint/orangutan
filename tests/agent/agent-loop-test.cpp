@@ -226,12 +226,12 @@ namespace {
         CHECK(result.compacted);
         CHECK(result.messages_before == 60);
         CHECK(result.messages_after == 11);
-        CHECK(provider.last_summary_input_size_ == 50ul);
+        CHECK(provider.last_summary_input_size_ == 50UL);
         CHECK(provider.last_tool_count_ == 0UL);
         CHECK(provider.last_system_prompt_.contains("conversation summarizer"));
 
         const auto &compacted = loop.history();
-        REQUIRE(compacted.size() == 11ul);
+        REQUIRE(compacted.size() == 11UL);
         const auto *summary = std::get_if<Text>(&*compacted[0].begin());
         REQUIRE(summary != nullptr);
         CHECK(summary->text.contains("Earlier conversation summary"));
@@ -384,8 +384,8 @@ namespace {
         const auto result = loop.distill_session_memory();
 
         CHECK_FALSE(result.distilled);
-        CHECK(store.recall("profile.name", "agent:default|jid:test") == "");
-        CHECK(store.recall("deployment key", "agent:default|jid:test") == "");
+        CHECK(store.recall("profile.name", "agent:default|jid:test").empty());
+        CHECK(store.recall("deployment key", "agent:default|jid:test").empty());
 
         std::filesystem::remove_all(db_path.parent_path());
     };
@@ -545,7 +545,7 @@ namespace {
         AgentLoop loop(provider, tools);
         const auto checkpoints = capture_checkpoint_descriptions(loop, "check status");
 
-        REQUIRE(checkpoints.size() >= 8ul);
+        REQUIRE(checkpoints.size() >= 8UL);
         CHECK(checkpoints[0] == std::vector<std::string>{"user:text=check status"});
         CHECK(checkpoints[1] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup"});
         CHECK(checkpoints[2] == std::vector<std::string>{"user:text=check status", "assistant:tool_use=lookup", "user:tool_result=tool result"});

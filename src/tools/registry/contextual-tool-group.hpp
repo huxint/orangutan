@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <ranges>
 #include <utility>
@@ -11,7 +12,7 @@
 
 namespace orangutan::tools {
 
-    enum class context_gate {
+    enum class context_gate : std::uint8_t {
         automation_runtime,
         channel_origin,
     };

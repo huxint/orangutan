@@ -53,12 +53,14 @@ namespace orangutan::channel::qq {
             std::chrono::steady_clock::time_point received_at;
             int reply_count = 0;
 
-            static constexpr int max_replies = 4;
-            static constexpr auto ttl = std::chrono::hours(1);
+            // NOLINTNEXTLINE(readability-identifier-naming)
+            static constexpr int MAX_REPLIES = 4;
+            // NOLINTNEXTLINE(readability-identifier-naming)
+            static constexpr auto TTL = std::chrono::hours(1);
 
             [[nodiscard]]
             bool can_reply(std::chrono::steady_clock::time_point now) const {
-                return reply_count < max_replies && (now - received_at) < ttl;
+                return reply_count < MAX_REPLIES && (now - received_at) < TTL;
             }
         };
 

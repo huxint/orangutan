@@ -2,6 +2,7 @@
 
 #include "tools/registry/tool.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -14,7 +15,7 @@ namespace orangutan::cli {
         std::optional<std::string> session_id;
     };
 
-    enum class slash_command_surface {
+    enum class slash_command_surface : std::uint8_t {
         cli,
         channel,
         web,

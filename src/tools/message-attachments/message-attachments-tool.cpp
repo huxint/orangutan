@@ -59,18 +59,19 @@ namespace orangutan::tools {
                                                 for (std::size_t index = 0; index < attachments.size(); ++index) {
                                                     payload.push_back(describe_attachment(attachments.at(index), index));
                                                 }
-                                                return tool_dispatch::response{payload.dump(2)};
+                                                return tool_dispatch::response{.message = payload.dump(2)};
                                             })
                                         .on("download",
                                             [&attachments, &workspace_root, &tool_context](const nlohmann::json &request) {
                                                 if (!tool_context->attachment_download_callback) {
-                                                    return tool_dispatch::response{R"({"error":"attachment downloads are not available in this context."})", true};
+                                                    return tool_dispatch::response{.message = R"({"error":"attachment downloads are not available in this context."})",
+                                                                                   .is_error = true};
                                                 }
 
                                                 const auto requested_index = request.value("index", -1);
                                                 if (requested_index < 0 || static_cast<std::size_t>(requested_index) >= attachments.size()) {
-                                                    return tool_dispatch::response{R"({"error":"index is required and must refer to an attachment from the current message."})",
-                                                                                   true};
+                                                    return tool_dispatch::response{.message = R"({"error":"index is required and must refer to an attachment from the current message."})",
+                                                                                   .is_error = true};
                                                 }
 
                                                 const auto attachment_index = static_cast<std::size_t>(requested_index);
@@ -79,10 +80,10 @@ namespace orangutan::tools {
                                                 const auto resolved_target = resolve_tool_path(std::filesystem::path(requested_target), workspace_root);
                                                 const auto downloaded = tool_context->attachment_download_callback(attachment, resolved_target.string());
 
-                                                return tool_dispatch::response{nlohmann::json{{"saved_to", downloaded.local_path},
-                                                                                              {"download_error", downloaded.download_error},
-                                                                                              {"attachment", describe_attachment(downloaded, attachment_index)}}
-                                                                                   .dump(2)};
+                                                return tool_dispatch::response{.message = nlohmann::json{{"saved_to", downloaded.local_path},
+                                                                                                         {"download_error", downloaded.download_error},
+                                                                                                         {"attachment", describe_attachment(downloaded, attachment_index)}}
+                                                                                              .dump(2)};
                                             }),
                                     routed_input_with_default_op(input, "list"));
         }

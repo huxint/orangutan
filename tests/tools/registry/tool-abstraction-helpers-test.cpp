@@ -136,7 +136,7 @@ TEST_CASE("tool_dispatch: returns configured unknown-op error", "[tools][registr
 
 TEST_CASE("tool_dispatch: routes known op to matching handler", "[tools][registry][abstractions]") {
     auto dispatch = tool_dispatch().op_field("op").on("ping", [](const nlohmann::json &) {
-        return tool_dispatch::response{"pong"};
+        return tool_dispatch::response{.message = "pong"};
     });
 
     const auto result = dispatch.run(nlohmann::json{{"op", "ping"}, {"id", "k-1"}});
@@ -205,7 +205,7 @@ TEST_CASE("op_tool_support: require_id returns exact compatibility text", "[tool
 TEST_CASE("op_tool_support: dispatch_message returns tool_dispatch message unchanged", "[tools][registry][abstractions]") {
     const auto output = dispatch_message(tool_dispatch().on("list",
                                                             [](const nlohmann::json &) {
-                                                                return tool_dispatch::response{"ok"};
+                                                                return tool_dispatch::response{.message = "ok"};
                                                             }),
                                          nlohmann::json{{"op", "list"}});
 

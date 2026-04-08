@@ -102,7 +102,7 @@ namespace orangutan::swarm {
     AgentMailbox::~AgentMailbox() = default;
 
     void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "INSERT INTO agent_mailbox (id, team_id, sender, recipient, body, timestamp, is_read, message_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?);";
         sqlite3_stmt *stmt = nullptr;
@@ -140,7 +140,7 @@ namespace orangutan::swarm {
     }
 
     std::vector<MailboxMessage> AgentMailbox::poll(const std::string &team_id, const std::string &agent_name) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "SELECT id, team_id, sender, recipient, body, timestamp, is_read, message_type "
                           "FROM agent_mailbox WHERE team_id = ? AND recipient = ? AND is_read = 0 "
@@ -179,7 +179,7 @@ namespace orangutan::swarm {
             return;
         }
 
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         for (const auto &id : message_ids) {
             const char *sql = "UPDATE agent_mailbox SET is_read = 1 WHERE id = ?;";
@@ -199,7 +199,7 @@ namespace orangutan::swarm {
     }
 
     void AgentMailbox::clear_team(const std::string &team_id) {
-        std::lock_guard lock(impl_->mutex);
+        std::scoped_lock lock(impl_->mutex);
 
         const char *sql = "DELETE FROM agent_mailbox WHERE team_id = ?;";
         sqlite3_stmt *stmt = nullptr;

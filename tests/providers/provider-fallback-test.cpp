@@ -221,7 +221,8 @@ namespace {
                 },
                 1024));
             FAIL("expected interrupted primary stream");
-        } catch (const std::runtime_error &) {
+        } catch (const std::runtime_error &error) {
+            INFO(error.what());
         }
 
         CHECK(observed_chunks.size() == 1UL);

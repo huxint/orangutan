@@ -26,21 +26,21 @@
 namespace orangutan::channel::qq {
 
     namespace {
-        constexpr int gateway_op_dispatch = 0;
-        constexpr int gateway_op_heartbeat = 1;
-        constexpr int gateway_op_identify = 2;
-        constexpr int gateway_op_resume = 6;
-        constexpr int gateway_op_reconnect = 7;
-        constexpr int gateway_op_invalid_session = 9;
-        constexpr int gateway_op_hello = 10;
-        constexpr int gateway_op_heartbeat_ack = 11;
-        constexpr base::u32 intent_public_guild_messages = 1U << 9;
-        constexpr base::u32 intent_guild_message_reactions = 1U << 10;
-        constexpr base::u32 intent_group_messages = 1U << 25;
-        constexpr base::u32 intent_interaction = 1U << 26;
-        constexpr base::u32 intent_guild_at_message = 1U << 30;
-        constexpr base::u32 intent_direct_messages = 1U << 12;
-        constexpr std::chrono::seconds connect_timeout{10};
+        constexpr int GATEWAY_OP_DISPATCH = 0;
+        constexpr int GATEWAY_OP_HEARTBEAT = 1;
+        constexpr int GATEWAY_OP_IDENTIFY = 2;
+        constexpr int GATEWAY_OP_RESUME = 6;
+        constexpr int GATEWAY_OP_RECONNECT = 7;
+        constexpr int GATEWAY_OP_INVALID_SESSION = 9;
+        constexpr int GATEWAY_OP_HELLO = 10;
+        constexpr int GATEWAY_OP_HEARTBEAT_ACK = 11;
+        constexpr base::u32 INTENT_PUBLIC_GUILD_MESSAGES = 1U << 9;
+        constexpr base::u32 INTENT_GUILD_MESSAGE_REACTIONS = 1U << 10;
+        constexpr base::u32 INTENT_GROUP_MESSAGES = 1U << 25;
+        constexpr base::u32 INTENT_INTERACTION = 1U << 26;
+        constexpr base::u32 INTENT_GUILD_AT_MESSAGE = 1U << 30;
+        constexpr base::u32 INTENT_DIRECT_MESSAGES = 1U << 12;
+        constexpr std::chrono::seconds CONNECT_TIMEOUT{10};
 
         std::string qq_jid_prefix(std::string_view bot_name, std::string_view kind) {
             if (bot_name.empty()) {
@@ -260,7 +260,7 @@ namespace orangutan::channel::qq {
 
         std::mutex ref_index_mutex;
         std::unordered_map<std::string, std::string> ref_index_cache;
-        static constexpr std::size_t ref_index_max_entries = 50000;
+        static constexpr std::size_t REF_INDEX_MAX_ENTRIES = 50000;
 
         struct TypingState {
             std::string message_id;
@@ -313,7 +313,7 @@ namespace orangutan::channel::qq {
         connect_websocket(gateway_url);
 
         std::unique_lock<std::mutex> lock(runtime_->mutex);
-        const bool ready = runtime_->cv.wait_for(lock, connect_timeout, [this] {
+        const bool ready = runtime_->cv.wait_for(lock, CONNECT_TIMEOUT, [this] {
             return runtime_->ready || !runtime_->last_error.empty();
         });
 
@@ -528,7 +528,7 @@ namespace orangutan::channel::qq {
                 jids.push_back(make_qq_jid(bot_name_, user.kind, user.openid));
             }
         }
-        std::sort(jids.begin(), jids.end());
+        std::ranges::sort(jids);
         return jids;
     }
 
@@ -615,7 +615,7 @@ namespace orangutan::channel::qq {
             std::scoped_lock lock(runtime_->mutex);
             if (!runtime_->session_id.empty() && runtime_->last_seq > 0) {
                 payload = {
-                    {"op", gateway_op_resume},
+                    {"op", GATEWAY_OP_RESUME},
                     {"d",
                      {
                          {"token", token},
@@ -625,12 +625,12 @@ namespace orangutan::channel::qq {
                 };
             } else {
                 payload = {
-                    {"op", gateway_op_identify},
+                    {"op", GATEWAY_OP_IDENTIFY},
                     {"d",
                      {
                          {"token", token},
-                         {"intents", intent_public_guild_messages | intent_guild_message_reactions | intent_direct_messages | intent_group_messages | intent_interaction |
-                                         intent_guild_at_message},
+                         {"intents", INTENT_PUBLIC_GUILD_MESSAGES | INTENT_GUILD_MESSAGE_REACTIONS | INTENT_DIRECT_MESSAGES | INTENT_GROUP_MESSAGES | INTENT_INTERACTION |
+                                         INTENT_GUILD_AT_MESSAGE},
                          {"shard", nlohmann::json::array({0, 1})},
                          {"properties",
                           {
@@ -674,7 +674,7 @@ namespace orangutan::channel::qq {
                 }
 
                 nlohmann::json heartbeat{
-                    {"op", gateway_op_heartbeat},
+                    {"op", GATEWAY_OP_HEARTBEAT},
                 };
 
                 {
@@ -1069,7 +1069,7 @@ namespace orangutan::channel::qq {
 
         const auto op = payload.value("op", -1);
         switch (op) {
-            case gateway_op_hello: {
+            case GATEWAY_OP_HELLO: {
                 const auto hello = payload.value("d", nlohmann::json::object());
                 const auto interval = std::chrono::milliseconds(parse_integer_like(hello, "heartbeat_interval", 41250));
                 {
@@ -1081,7 +1081,7 @@ namespace orangutan::channel::qq {
                 send_gateway_identity_or_resume();
                 break;
             }
-            case gateway_op_dispatch: {
+            case GATEWAY_OP_DISPATCH: {
                 const auto event_type = payload.value("t", std::string{});
                 const auto event_data = payload.value("d", nlohmann::json::object());
                 bool should_persist = false;
@@ -1115,10 +1115,10 @@ namespace orangutan::channel::qq {
                 handle_dispatch(event_type, event_data);
                 break;
             }
-            case gateway_op_heartbeat_ack:
+            case GATEWAY_OP_HEARTBEAT_ACK:
                 spdlog::debug("QQ heartbeat acknowledged");
                 break;
-            case gateway_op_reconnect:
+            case GATEWAY_OP_RECONNECT:
                 spdlog::warn("QQ gateway requested reconnect");
                 connected_ = false;
                 stop_heartbeat();
@@ -1128,7 +1128,7 @@ namespace orangutan::channel::qq {
                 }
 #endif
                 break;
-            case gateway_op_invalid_session:
+            case GATEWAY_OP_INVALID_SESSION:
                 spdlog::warn("QQ gateway reported invalid session");
                 connected_ = false;
                 stop_heartbeat();
@@ -1402,7 +1402,7 @@ namespace orangutan::channel::qq {
         if (!tracker.can_reply(now)) {
             return false;
         }
-        const auto remaining = MessageReplyTracker::max_replies - tracker.reply_count;
+        const auto remaining = MessageReplyTracker::MAX_REPLIES - tracker.reply_count;
         if (reply_units > remaining) {
             return false;
         }
@@ -1568,7 +1568,7 @@ namespace orangutan::channel::qq {
 
             {
                 std::scoped_lock lock(runtime_->ref_index_mutex);
-                if (runtime_->ref_index_cache.size() >= RuntimeState::ref_index_max_entries) {
+                if (runtime_->ref_index_cache.size() >= RuntimeState::REF_INDEX_MAX_ENTRIES) {
                     auto it = runtime_->ref_index_cache.begin();
                     if (it != runtime_->ref_index_cache.end()) {
                         runtime_->ref_index_cache.erase(it);
@@ -1683,7 +1683,7 @@ namespace orangutan::channel::qq {
     void QqChannel::start_typing_keepalive() {
         stop_typing_keepalive();
         runtime_->typing_thread = std::jthread([this](std::stop_token token) {
-            constexpr auto typing_interval = std::chrono::seconds(50);
+            constexpr auto TYPING_INTERVAL = std::chrono::seconds(50);
             while (!token.stop_requested()) {
                 std::vector<std::pair<std::string, std::string>> to_send;
                 {
@@ -1697,7 +1697,7 @@ namespace orangutan::channel::qq {
 
                     const auto now = std::chrono::steady_clock::now();
                     for (auto &[jid, state] : runtime_->typing_states) {
-                        if (now - state.last_sent_at >= typing_interval) {
+                        if (now - state.last_sent_at >= TYPING_INTERVAL) {
                             to_send.emplace_back(jid, state.message_id);
                             state.last_sent_at = now;
                         }
@@ -1731,11 +1731,11 @@ namespace orangutan::channel::qq {
         const auto &text = text_payload->text;
 
         struct Segment {
-            enum Kind {
+            enum class segment_kind : base::u8 {
                 text_segment,
                 media_segment
             };
-            Kind kind = text_segment;
+            segment_kind kind = segment_kind::text_segment;
             std::string content;
             int file_type = 1;
         };
@@ -1746,7 +1746,7 @@ namespace orangutan::channel::qq {
         auto flush_text = [&](const std::string &t) {
             auto trimmed = std::string(trim_copy(t));
             if (!trimmed.empty()) {
-                segments.push_back({.kind = Segment::text_segment, .content = std::move(trimmed)});
+                segments.push_back({.kind = Segment::segment_kind::text_segment, .content = std::move(trimmed)});
             }
         };
 
@@ -1762,15 +1762,15 @@ namespace orangutan::channel::qq {
                 int file_type;
             };
 
-            constexpr std::array<TagDef, 5> tags = {{
-                {"<qqimg>", "</qqimg>", 1},
-                {"<qqimage>", "</qqimage>", 1},
-                {"<qqvoice>", "</qqvoice>", 3},
-                {"<qqvideo>", "</qqvideo>", 2},
-                {"<qqfile>", "</qqfile>", 4},
+            constexpr std::array<TagDef, 5> TAGS = {{
+                {.open_tag = "<qqimg>", .close_tag = "</qqimg>", .file_type = 1},
+                {.open_tag = "<qqimage>", .close_tag = "</qqimage>", .file_type = 1},
+                {.open_tag = "<qqvoice>", .close_tag = "</qqvoice>", .file_type = 3},
+                {.open_tag = "<qqvideo>", .close_tag = "</qqvideo>", .file_type = 2},
+                {.open_tag = "<qqfile>", .close_tag = "</qqfile>", .file_type = 4},
             }};
 
-            for (const auto &tag : tags) {
+            for (const auto &tag : TAGS) {
                 const auto pos = remaining.find(tag.open_tag);
                 if (pos != std::string::npos && pos < best_pos) {
                     const auto close_pos = remaining.find(tag.close_tag, pos + tag.open_tag.size());
@@ -1793,7 +1793,7 @@ namespace orangutan::channel::qq {
                             const auto url = remaining.substr(bracket_close + 2, paren_close - bracket_close - 2);
                             if (url.starts_with("http://") || url.starts_with("https://")) {
                                 flush_text(remaining.substr(0, md_pos));
-                                segments.push_back({.kind = Segment::media_segment, .content = std::string(trim_copy(url)), .file_type = 1});
+                                segments.push_back({.kind = Segment::segment_kind::media_segment, .content = std::string(trim_copy(url)), .file_type = 1});
                                 remaining.erase(0, paren_close + 1);
                                 continue;
                             }
@@ -1809,7 +1809,7 @@ namespace orangutan::channel::qq {
             flush_text(remaining.substr(0, best_pos));
 
             // Find closing tag position to advance past it
-            for (const auto &tag : tags) {
+            for (const auto &tag : TAGS) {
                 if (tag.file_type == best_file_type) {
                     const auto open_pos = remaining.find(tag.open_tag, best_pos);
                     if (open_pos == best_pos) {
@@ -1824,13 +1824,13 @@ namespace orangutan::channel::qq {
 
             auto media_url = std::string(trim_copy(best_tag));
             if (media_url.starts_with("http://") || media_url.starts_with("https://")) {
-                segments.push_back({.kind = Segment::media_segment, .content = std::move(media_url), .file_type = best_file_type});
+                segments.push_back({.kind = Segment::segment_kind::media_segment, .content = std::move(media_url), .file_type = best_file_type});
             }
         }
 
         // If no media segments were found, fall back to debounce
-        const bool has_media = std::any_of(segments.begin(), segments.end(), [](const Segment &s) {
-            return s.kind == Segment::media_segment;
+        const bool has_media = std::ranges::any_of(segments, [](const Segment &s) {
+            return s.kind == Segment::segment_kind::media_segment;
         });
         if (!has_media) {
             enqueue_debounced_text(jid, text, message.reply_to_message_id, message.reference_message_id);
@@ -1840,7 +1840,7 @@ namespace orangutan::channel::qq {
         // Send each segment
         for (const auto &segment : segments) {
             try {
-                if (segment.kind == Segment::text_segment) {
+                if (segment.kind == Segment::segment_kind::text_segment) {
                     send_outbound_now(jid, OutboundMessage{
                                                .payload = TextPayload{.text = segment.content},
                                                .reply_to_message_id = message.reply_to_message_id,

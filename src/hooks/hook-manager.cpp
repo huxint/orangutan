@@ -89,14 +89,14 @@ namespace orangutan::hooks {
     // ── Hook execution ──────────────────────────────
 
     static auto execute_hook_sender(const HookDef &hook, nlohmann::json context) {
-        constexpr int hook_timeout_seconds = 5;
+        constexpr int HOOK_TIMEOUT_SECONDS = 5;
         auto hook_path = hook.path;
         auto hook_filename = hook.filename;
 
         return stdexec::just(std::move(context)) | stdexec::then([](const nlohmann::json &active_context) {
                    return active_context.dump();
                }) |
-               stdexec::let_value([hook_path = std::move(hook_path), hook_timeout_seconds](std::string stdin_data) mutable {
+               stdexec::let_value([hook_path = std::move(hook_path), hook_timeout_seconds = HOOK_TIMEOUT_SECONDS](std::string stdin_data) mutable {
                    return run_subprocess_sender({
                        .command = std::move(hook_path),
                        .stdin_data = std::move(stdin_data),
@@ -104,7 +104,7 @@ namespace orangutan::hooks {
                        .use_shell = false,
                    });
                }) |
-               stdexec::then([hook_filename = std::move(hook_filename), hook_timeout_seconds](SubprocessResult subprocess_result) {
+               stdexec::then([hook_filename = std::move(hook_filename), hook_timeout_seconds = HOOK_TIMEOUT_SECONDS](SubprocessResult subprocess_result) {
                    if (subprocess_result.timed_out) {
                        spdlog::warn("[{}] Hook timed out after {}s", hook_filename, hook_timeout_seconds);
                    }

@@ -28,6 +28,10 @@ namespace {
         ~MemoryStoreHarness() {
             std::filesystem::remove_all(db_path_.parent_path());
         }
+        MemoryStoreHarness(const MemoryStoreHarness &) = delete;
+        MemoryStoreHarness &operator=(const MemoryStoreHarness &) = delete;
+        MemoryStoreHarness(MemoryStoreHarness &&) = delete;
+        MemoryStoreHarness &operator=(MemoryStoreHarness &&) = delete;
 
         [[nodiscard]]
         const std::filesystem::path &db_path() const {
@@ -74,9 +78,11 @@ namespace {
         MemoryStoreHarness store_harness_;
 
     public:
+        // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
         MemoryStore store_;
         ToolRegistry registry;
         RuntimeMemory runtime_memory_;
+        // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
     };
 
     std::set<std::string> discover_deferred_tool_names(ToolRegistry &registry) {

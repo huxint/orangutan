@@ -98,7 +98,7 @@ namespace orangutan::tools {
             std::ranges::sort(matches, [](const ScoredMatch &a, const ScoredMatch &b) {
                 return a.score > b.score;
             });
-            if (static_cast<int>(matches.size()) > max_results) {
+            if (std::cmp_greater(matches.size(), max_results)) {
                 matches.resize(static_cast<std::size_t>(max_results));
             }
 

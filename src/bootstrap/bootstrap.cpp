@@ -517,7 +517,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     std::signal(SIGTERM, handle_signal);
 
     if (options.channel_mode) {
-        channel_thread = std::jthread([&](std::stop_token token) {
+        channel_thread = std::jthread([&](const std::stop_token &token) {
             int status = 0;
             if (auto &callback = detail::channel_mode_callback(); callback) {
                 status = callback();

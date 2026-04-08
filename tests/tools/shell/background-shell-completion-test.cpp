@@ -114,8 +114,12 @@ namespace {
             resume_state_.reset();
             std::filesystem::remove_all(workspace_root_);
         }
+        BackgroundShellCompletionHarness(const BackgroundShellCompletionHarness &) = delete;
+        BackgroundShellCompletionHarness &operator=(const BackgroundShellCompletionHarness &) = delete;
+        BackgroundShellCompletionHarness(BackgroundShellCompletionHarness &&) = delete;
+        BackgroundShellCompletionHarness &operator=(BackgroundShellCompletionHarness &&) = delete;
 
-        nlohmann::json start_background_shell(nlohmann::json input) {
+        nlohmann::json start_background_shell(nlohmann::json input) const {
             input["background"] = true;
             const auto result = registry_.execute(ToolUse("background-shell", "shell", std::move(input)));
             INFO(result.content);
@@ -127,7 +131,7 @@ namespace {
             return nlohmann::json::parse(result.content);
         }
 
-        std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+        std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) const {
             const auto deadline = std::chrono::steady_clock::now() + timeout;
             while (std::chrono::steady_clock::now() < deadline) {
                 auto items = runtime_->list_inbox(tool_context_.agent_key);

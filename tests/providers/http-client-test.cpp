@@ -31,8 +31,8 @@ TEST_CASE("compose_headers_applies_required_fallbacks_and_preserves_custom_heade
     };
 
     auto headers = orangutan::providers::compose_headers(custom_headers,
-                                                         {orangutan::providers::HeaderFallback{"Content-Type", "application/json"},
-                                                          orangutan::providers::HeaderFallback{"Authorization", "Bearer fallback-token"}});
+                                                         {orangutan::providers::HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
+                                                          orangutan::providers::HeaderFallback{.key = "Authorization", .fallback = "Bearer fallback-token"}});
 
     REQUIRE(headers.get() != nullptr);
     std::vector<std::string> values;

@@ -76,6 +76,10 @@ namespace {
         ~SingleShotHarness() {
             std::filesystem::remove_all(session_db_path_.parent_path());
         }
+        SingleShotHarness(const SingleShotHarness &) = delete;
+        SingleShotHarness &operator=(const SingleShotHarness &) = delete;
+        SingleShotHarness(SingleShotHarness &&) = delete;
+        SingleShotHarness &operator=(SingleShotHarness &&) = delete;
 
         [[nodiscard]]
         const std::filesystem::path &session_db_path() const {

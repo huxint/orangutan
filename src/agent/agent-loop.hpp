@@ -83,8 +83,11 @@ namespace orangutan::agent {
         SessionMemoryDistillationResult distill_session_memory();
 
     private:
+        // Non-owning runtime dependencies are intentionally stored as references.
+        // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
         Provider &provider_;
         ToolRegistry &tools_;
+        // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
         std::vector<Message> history_;
         memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;

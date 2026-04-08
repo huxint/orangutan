@@ -78,25 +78,25 @@ namespace orangutan::tools {
             std::istringstream stream{std::string(patch)};
             std::string line;
 
-            constexpr std::string_view file_header = "*** ";
-            constexpr std::string_view search_marker = "<<<<<<< SEARCH";
-            constexpr std::string_view separator = "=======";
-            constexpr std::string_view replace_marker = ">>>>>>> REPLACE";
+            constexpr std::string_view FILE_HEADER = "*** ";
+            constexpr std::string_view SEARCH_MARKER = "<<<<<<< SEARCH";
+            constexpr std::string_view SEPARATOR = "=======";
+            constexpr std::string_view REPLACE_MARKER = ">>>>>>> REPLACE";
 
             enum class state : base::u8 {
                 idle,
                 search,
                 replace,
             };
-            auto state_ = state::idle;
+            auto parse_state = state::idle;
             std::string search_buf;
             std::string replace_buf;
 
             while (std::getline(stream, line)) {
-                switch (state_) {
+                switch (parse_state) {
                     case state::idle:
-                        if (line.starts_with(file_header)) {
-                            auto path = line.substr(file_header.size());
+                        if (line.starts_with(FILE_HEADER)) {
+                            auto path = line.substr(FILE_HEADER.size());
                             while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\r')) {
                                 path.pop_back();
                             }
@@ -110,18 +110,18 @@ namespace orangutan::tools {
                             if (it == files.end()) {
                                 files.push_back({.path = std::move(path), .hunks = {}});
                             }
-                        } else if (line == search_marker) {
+                        } else if (line == SEARCH_MARKER) {
                             if (files.empty()) {
                                 throw std::runtime_error("hunk before any *** file header");
                             }
-                            state_ = state::search;
+                            parse_state = state::search;
                             search_buf.clear();
                         }
                         break;
 
                     case state::search:
-                        if (line == separator) {
-                            state_ = state::replace;
+                        if (line == SEPARATOR) {
+                            parse_state = state::replace;
                             replace_buf.clear();
                         } else {
                             if (!search_buf.empty()) {
@@ -132,11 +132,11 @@ namespace orangutan::tools {
                         break;
 
                     case state::replace:
-                        if (line == replace_marker) {
+                        if (line == REPLACE_MARKER) {
                             files.back().hunks.push_back({.search = std::move(search_buf), .replace = std::move(replace_buf)});
                             search_buf.clear();
                             replace_buf.clear();
-                            state_ = state::idle;
+                            parse_state = state::idle;
                         } else {
                             if (!replace_buf.empty()) {
                                 replace_buf += '\n';
@@ -147,10 +147,10 @@ namespace orangutan::tools {
                 }
             }
 
-            if (state_ == state::search) {
+            if (parse_state == state::search) {
                 throw std::runtime_error("unclosed hunk: missing ======= separator");
             }
-            if (state_ == state::replace) {
+            if (parse_state == state::replace) {
                 throw std::runtime_error("unclosed hunk: missing >>>>>>> REPLACE marker");
             }
 

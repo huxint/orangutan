@@ -115,14 +115,14 @@ namespace orangutan::agent {
         std::string_view category_sv;
         std::string_view key_sv;
         std::string_view importance_sv;
-        std::string_view content_sv;
+        std::string content;
 
         if (fields.size() == 4) {
             // Legacy 4-field format: category|key|importance|content
             category_sv = fields[0];
             key_sv = fields[1];
             importance_sv = fields[2];
-            content_sv = fields[3];
+            content = std::string(utils::trim_copy(fields[3]));
         } else {
             // 5-field format: type|category|key|importance|content
             // Content may contain '|', so rejoin everything from field 4 onwards.
@@ -130,13 +130,13 @@ namespace orangutan::agent {
             category_sv = fields[1];
             key_sv = fields[2];
             importance_sv = fields[3];
-            content_sv = std::string_view(fields[4].data(), static_cast<std::size_t>(line.data() + line.size() - fields[4].data()));
+            const auto content_offset = static_cast<std::size_t>(fields[4].data() - line.data());
+            content = std::string(utils::trim_copy(line.substr(content_offset)));
         }
 
         // Common post-processing
         auto category = std::string(utils::trim_copy(category_sv));
         auto key = std::string(utils::trim_copy(key_sv));
-        auto content = std::string(utils::trim_copy(content_sv));
         auto importance_text = utils::trim_copy(importance_sv);
 
         if (content.empty()) {
@@ -204,9 +204,9 @@ namespace orangutan::agent {
             }
         }
 
-        constexpr std::size_t max_distilled_memories = 8;
-        if (parsed.memories.size() > max_distilled_memories) {
-            parsed.memories.resize(max_distilled_memories);
+        constexpr std::size_t MAX_DISTILLED_MEMORIES = 8;
+        if (parsed.memories.size() > MAX_DISTILLED_MEMORIES) {
+            parsed.memories.resize(MAX_DISTILLED_MEMORIES);
         }
         return parsed;
     }
@@ -265,7 +265,7 @@ namespace orangutan::agent {
 
             auto parts = split_response(response);
             continued_text += parts.text;
-            history_.push_back(Message(base::role::assistant, std::move(parts.all_blocks)));
+            history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (response.stop_reason != "max_tokens") {
@@ -385,7 +385,7 @@ namespace orangutan::agent {
 
             auto parts = split_response(response);
             final_text += parts.text;
-            history_.push_back(Message(base::role::assistant, std::move(parts.all_blocks)));
+            history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             // No tool calls — possibly done or truncated
@@ -412,7 +412,7 @@ namespace orangutan::agent {
 
             // Execute tools and check for loops
             auto [result_blocks, loop_status] = execute_tools(parts.tool_calls, human_output, on_tool_event);
-            history_.push_back(Message(base::role::user, std::move(result_blocks)));
+            history_.emplace_back(base::role::user, std::move(result_blocks));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (loop_status == loop_status::abort) {
@@ -562,13 +562,13 @@ namespace orangutan::agent {
             transcript.push_back('\n');
         }
 
-        constexpr std::size_t max_session_transcript_chars = 6000;
-        if (transcript.size() <= max_session_transcript_chars) {
+        constexpr std::size_t MAX_SESSION_TRANSCRIPT_CHARS = 6000;
+        if (transcript.size() <= MAX_SESSION_TRANSCRIPT_CHARS) {
             return transcript;
         }
 
-        constexpr std::size_t retained_side_chars = 2800;
-        return transcript.substr(0, retained_side_chars) + "\n...\n" + transcript.substr(transcript.size() - retained_side_chars);
+        constexpr std::size_t RETAINED_SIDE_CHARS = 2800;
+        return transcript.substr(0, RETAINED_SIDE_CHARS) + "\n...\n" + transcript.substr(transcript.size() - RETAINED_SIDE_CHARS);
     }
 
     AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
@@ -595,7 +595,7 @@ namespace orangutan::agent {
             return result;
         }
 
-        constexpr std::string_view distillation_prompt = "You are distilling long-term memory from a completed conversation. "
+        constexpr std::string_view DISTILLATION_PROMPT = "You are distilling long-term memory from a completed conversation. "
                                                          "Extract only durable, reusable information that should help future sessions. "
                                                          "Prefer stable facts, preferences, project context, decisions, and lessons learned. "
                                                          "Ignore greetings, temporary chatter, and one-off execution details. "
@@ -615,7 +615,7 @@ namespace orangutan::agent {
             std::vector<Message> messages;
             messages.push_back(Message::user().text(transcript));
             std::vector<ToolDef> no_tools;
-            const auto response = provider_.chat(std::string(distillation_prompt), messages, no_tools, 1024);
+            const auto response = provider_.chat(std::string(DISTILLATION_PROMPT), messages, no_tools, 1024);
 
             std::string distilled_text;
             for (const auto &block : response.content) {

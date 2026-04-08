@@ -176,12 +176,12 @@ namespace orangutan::automation {
 
     std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after) {
         // Advance minute by minute from `after`, up to ~2 years
-        constexpr int max_minutes = 2 * 366 * 24 * 60;
+        constexpr int MAX_MINUTES = 2 * 366 * 24 * 60;
 
         // Round up to next whole minute
         auto candidate = std::chrono::ceil<std::chrono::minutes>(after + std::chrono::seconds(1));
 
-        for (int i = 0; i < max_minutes; ++i) {
+        for (int i = 0; i < MAX_MINUTES; ++i) {
             if (cron_matches(expr, candidate)) {
                 return candidate;
             }

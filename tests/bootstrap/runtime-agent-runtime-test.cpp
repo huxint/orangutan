@@ -55,6 +55,10 @@ namespace {
             memory_store_.reset();
             std::filesystem::remove_all(temp_root_);
         }
+        RuntimeAgentRuntimeHarness(const RuntimeAgentRuntimeHarness &) = delete;
+        RuntimeAgentRuntimeHarness &operator=(const RuntimeAgentRuntimeHarness &) = delete;
+        RuntimeAgentRuntimeHarness(RuntimeAgentRuntimeHarness &&) = delete;
+        RuntimeAgentRuntimeHarness &operator=(RuntimeAgentRuntimeHarness &&) = delete;
 
         [[nodiscard]]
         AgentRuntimeBuildInput make_input() {

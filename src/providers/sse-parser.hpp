@@ -30,6 +30,8 @@ namespace orangutan::providers {
     template <typename Derived>
     class JsonSseAccumulator {
     public:
+        ~JsonSseAccumulator() = default;
+
         void handle_data(std::string_view data) {
             if (data == "[DONE]") {
                 return;
@@ -51,6 +53,13 @@ namespace orangutan::providers {
         }
 
     private:
+        friend Derived;
+
+        JsonSseAccumulator() = default;
+        JsonSseAccumulator(const JsonSseAccumulator &) = default;
+        JsonSseAccumulator &operator=(const JsonSseAccumulator &) = default;
+        JsonSseAccumulator(JsonSseAccumulator &&) = default;
+        JsonSseAccumulator &operator=(JsonSseAccumulator &&) = default;
         [[nodiscard]]
         static std::optional<nlohmann::json> parse_payload(std::string_view data, std::string_view context) {
             try {

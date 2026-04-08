@@ -8,7 +8,7 @@ namespace orangutan::cli {
 
     namespace {
 
-        enum class slash_argument_mode {
+        enum class slash_argument_mode : base::u8 {
             none,
             optional,
             required,
@@ -235,7 +235,7 @@ namespace orangutan::cli {
             return {.handled = true, .text = result.content};
         }
 
-        constexpr auto k_shared_slash_commands = std::array{
+        constexpr auto SHARED_SLASH_COMMANDS = std::array{
             make_shared_spec(make_definition("help", "/help", slash_argument_mode::none, slash_command_surface_mask::all,
                                              make_description("show this help", "show this help", "show this help")),
                              invoke_no_arg<&SharedSlashCommandContext::help>),
@@ -385,7 +385,7 @@ namespace orangutan::cli {
             return {.handled = true, .text = wrap_slash_reply("Inbox", "📥", "Usage: /inbox | /inbox ack <id> | /inbox clear")};
         }
 
-        constexpr auto k_registry_slash_commands = std::array{
+        constexpr auto REGISTRY_SLASH_COMMANDS = std::array{
             make_registry_spec(make_definition("tasks", "/tasks", slash_argument_mode::optional, slash_command_surface_mask::all,
                                                make_description("list tasks or run `/tasks run <id>`", "list tasks, `/tasks run <id>`, or `/tasks remove <id>`",
                                                                 "list tasks, `/tasks run <id>`, or `/tasks remove <id>`")),
@@ -400,7 +400,7 @@ namespace orangutan::cli {
                                handle_inbox_command),
         };
 
-        constexpr auto k_cli_only_help_commands = std::array{
+        constexpr auto CLI_ONLY_HELP_COMMANDS = std::array{
             make_help_only_spec(
                 make_definition("clear", "/clear", slash_argument_mode::none, slash_command_surface_mask::cli, make_description("clear conversation history", "", ""))),
             make_help_only_spec(
@@ -430,9 +430,9 @@ namespace orangutan::cli {
 
     std::string render_slash_help_text(slash_command_surface surface) {
         std::string out = "## Commands\n";
-        append_help_lines(out, k_shared_slash_commands, surface);
-        append_help_lines(out, k_registry_slash_commands, surface);
-        append_help_lines(out, k_cli_only_help_commands, surface);
+        append_help_lines(out, SHARED_SLASH_COMMANDS, surface);
+        append_help_lines(out, REGISTRY_SLASH_COMMANDS, surface);
+        append_help_lines(out, CLI_ONLY_HELP_COMMANDS, surface);
         if (!out.empty() && out.back() == '\n') {
             out.pop_back();
         }
@@ -441,7 +441,7 @@ namespace orangutan::cli {
 
     SlashCommandReply dispatch_shared_slash_command(const std::string &line, const SharedSlashCommandContext &context) {
         const auto command = parse_slash_command(line);
-        if (const auto reply = dispatch_command_table(command, k_shared_slash_commands, context); reply.handled) {
+        if (const auto reply = dispatch_command_table(command, SHARED_SLASH_COMMANDS, context); reply.handled) {
             return reply;
         }
         if (context.tool_registry != nullptr) {
@@ -454,7 +454,7 @@ namespace orangutan::cli {
 
     SlashCommandReply handle_registry_slash_command(const std::string &line, const ToolRegistry *tool_registry) {
         const auto command = parse_slash_command(line);
-        return dispatch_command_table(command, k_registry_slash_commands, tool_registry);
+        return dispatch_command_table(command, REGISTRY_SLASH_COMMANDS, tool_registry);
     }
 
 } // namespace orangutan::cli

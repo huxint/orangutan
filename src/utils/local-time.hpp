@@ -11,7 +11,7 @@ namespace orangutan::utils {
         inline std::tm local_tm_from(std::chrono::system_clock::time_point tp) {
             const auto time = std::chrono::system_clock::to_time_t(tp);
             std::tm result{};
-#if defined(_WIN32)
+#ifdef _WIN32
             if (localtime_s(&result, &time) != 0) {
                 throw std::runtime_error("failed to convert system time to local time");
             }

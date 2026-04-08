@@ -20,7 +20,7 @@ namespace orangutan::hooks {
         session_end,
     };
 
-    struct hook_event_hash {
+    struct HookEventHash {
         std::size_t operator()(hook_event e) const noexcept {
             return std::hash<base::u8>{}(std::to_underlying(e));
         }
@@ -60,7 +60,7 @@ namespace orangutan::hooks {
         std::size_t total_hooks() const;
 
     private:
-        std::unordered_map<hook_event, std::vector<HookDef>, hook_event_hash> hooks_;
+        std::unordered_map<hook_event, std::vector<HookDef>, HookEventHash> hooks_;
     };
 
     // Build JSON context for before/after tool call hooks
@@ -89,7 +89,7 @@ namespace orangutan {
     using hooks::DispatchResult;
     using hooks::HookDef;
     using hooks::hook_event;
-    using hooks::hook_event_hash;
+    using hooks::HookEventHash;
     using hooks::HookManager;
     using hooks::HookResult;
 

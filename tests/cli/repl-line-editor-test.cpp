@@ -30,8 +30,10 @@ namespace orangutan::cli {
                 history.emplace_back(line);
             }
 
+            // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
             std::vector<std::string> prompts;
             std::vector<std::string> history;
+            // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 
         private:
             std::vector<std::optional<std::string>> responses_;

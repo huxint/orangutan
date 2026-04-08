@@ -72,11 +72,11 @@ namespace orangutan::cli {
             ++suffix;
         }
 
-        constexpr std::size_t context_lines = 3;
-        const auto prefix_context_start = prefix > context_lines ? prefix - context_lines : 0;
+        constexpr std::size_t CONTEXT_LINES = 3;
+        const auto prefix_context_start = prefix > CONTEXT_LINES ? prefix - CONTEXT_LINES : 0;
         const auto prefix_context_count = prefix - prefix_context_start;
         const auto suffix_context_start = old_lines.size() - suffix;
-        const auto suffix_context_count = std::min(suffix, context_lines);
+        const auto suffix_context_count = std::min(suffix, CONTEXT_LINES);
 
         auto hunk_lines = nlohmann::json::array();
         for (std::size_t index = prefix_context_start; index < prefix; ++index) {

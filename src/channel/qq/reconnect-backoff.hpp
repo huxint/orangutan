@@ -10,8 +10,8 @@ namespace orangutan::channel::qq {
     public:
         [[nodiscard]]
         std::chrono::milliseconds next_delay() {
-            const auto delay = delays.at(index_);
-            if (index_ + 1 < delays.size()) {
+            const auto delay = DELAYS.at(index_);
+            if (index_ + 1 < DELAYS.size()) {
                 ++index_;
             }
             return delay;
@@ -22,7 +22,7 @@ namespace orangutan::channel::qq {
         }
 
     private:
-        static constexpr std::array delays{
+        static constexpr std::array DELAYS{
             std::chrono::seconds(1), std::chrono::seconds(2), std::chrono::seconds(4), std::chrono::seconds(8), std::chrono::seconds(15),
         };
         std::size_t index_ = 0;

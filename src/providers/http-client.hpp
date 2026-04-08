@@ -33,7 +33,7 @@ namespace orangutan::providers {
             if (!snippet.empty()) {
                 message += ": " + snippet;
             }
-            return std::runtime_error(std::move(message));
+            return std::runtime_error(message);
         }
 
     } // namespace detail
