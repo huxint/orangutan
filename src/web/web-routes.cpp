@@ -102,6 +102,7 @@ namespace orangutan::web {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
             }
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
+            const auto identity = derive_web_identity(workspace_root, agent_key);
             if (maybe_endpoints->primary_endpoint.api_key.empty()) {
                 throw providers::MissingApiKeyError("missing API key for agent '" + agent_key + "'");
             }
@@ -126,9 +127,9 @@ namespace orangutan::web {
                 .coordinator_mode = agent.coordinator_mode,
             };
             auto input = bootstrap::make_runtime_build_input(bootstrap::RuntimeAssemblyRequest{
-                .runtime_config = runtime_config,
-                .identity = derive_web_identity(workspace_root, agent_key),
-                .app_config = config,
+                .runtime_config = &runtime_config,
+                .identity = &identity,
+                .app_config = &config,
                 .memory_store = memory_store,
                 .current_session_id = current_session_id,
                 .runtime_origin = base::origin::web,
@@ -384,11 +385,11 @@ namespace orangutan::web {
                                          runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
                                      return cli::SlashCommandReply{
                                          .handled = true,
-                                         .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools, current_session_id,
+                                         .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools(), current_session_id,
                                                                                                         agent_key, active_model, fallback_model_labels, metadata.scope_key)),
                                      };
                                  },
-                             .tool_registry = &runtime.tools,
+                             .tool_registry = &runtime.tools(),
                          });
         }
 

@@ -371,10 +371,10 @@ namespace orangutan {
             REQUIRE(session != nullptr);
             REQUIRE(session->runtime != nullptr);
 
-            session->runtime->tool_context.approval_callback = [](const ToolUse &, const PermissionDecision &) {
+            session->runtime->tool_context().approval_callback = [](const ToolUse &, const PermissionDecision &) {
                 return false;
             };
-            const auto result = session->runtime->tools.execute(ToolUse("shell-check", "shell", {{"command", "cat /etc/passwd"}}));
+            const auto result = session->runtime->tools().execute(ToolUse("shell-check", "shell", {{"command", "cat /etc/passwd"}}));
             CHECK(result.is_error);
             CHECK(result.content.contains("permission scope"));
         };
@@ -488,17 +488,17 @@ namespace orangutan {
                 return false;
             });
 
-            CHECK(not(orangutan::testing::has_tool_named(runtime.tools.definitions(), "memory_list")));
-            CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
-            CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "tool_search"));
-            CHECK(runtime.tool_context.runtime_origin == base::origin::web);
-            CHECK(runtime.tool_context.raw_caller_id == "web:local");
-            CHECK(runtime.tool_context.current_session_id == &session_id);
-            CHECK(runtime.tool_context.team_agents == std::vector<std::string>{"coder"});
-            CHECK(static_cast<bool>(runtime.tool_context.approval_callback));
+            CHECK(not(orangutan::testing::has_tool_named(runtime.tools().definitions(), "memory_list")));
+            CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "custom_echo"));
+            CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "tool_search"));
+            CHECK(runtime.tool_context().runtime_origin == base::origin::web);
+            CHECK(runtime.tool_context().raw_caller_id == "web:local");
+            CHECK(runtime.tool_context().current_session_id == &session_id);
+            CHECK(runtime.tool_context().team_agents == std::vector<std::string>{"coder"});
+            CHECK(static_cast<bool>(runtime.tool_context().approval_callback));
             REQUIRE(runtime.agent != nullptr);
 
-            const auto shell_result = runtime.tools.execute(ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
+            const auto shell_result = runtime.tools().execute(ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
             CHECK(shell_result.is_error);
             CHECK((shell_result.content.contains("Requires approval") || shell_result.content.contains("Rejected by user")));
         };

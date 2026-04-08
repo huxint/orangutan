@@ -49,7 +49,7 @@ namespace orangutan::web {
 
         [[nodiscard]]
         tools::ToolRegistry *tools() const noexcept {
-            return runtime != nullptr ? &runtime->tools : nullptr;
+            return runtime != nullptr ? &runtime->tools() : nullptr;
         }
 
         WebSessionState() = default;

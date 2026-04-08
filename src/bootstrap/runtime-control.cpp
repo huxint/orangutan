@@ -117,7 +117,7 @@ namespace orangutan::bootstrap {
         inspection.attached_skill_loader = attachments.skill_loader_attached;
         inspection.attached_config_save_path = attachments.config_save_path_attached;
         if (runtime != nullptr) {
-            inspection.tool_definitions = runtime->tools.definitions();
+            inspection.tool_definitions = runtime->tools().definitions();
         }
         inspection.active_skill_names = collect_active_skill_names(skill_loader);
         inspection.runtime_build_error = std::string(runtime_build_error);

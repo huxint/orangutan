@@ -671,7 +671,7 @@ namespace {
             .hook_paths = cfg.hook_paths,
         });
 
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
         CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "task")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "heartbeat")));

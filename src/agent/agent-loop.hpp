@@ -67,7 +67,7 @@ namespace orangutan::agent {
         // Replace conversation history (for session loading)
         void set_history(std::vector<Message> messages) {
             history_ = std::move(messages);
-            tools_.clear_discovered();
+            tools_->clear_discovered();
         }
 
         // Access conversation history for persistence and export flows.
@@ -83,11 +83,8 @@ namespace orangutan::agent {
         SessionMemoryDistillationResult distill_session_memory();
 
     private:
-        // Non-owning runtime dependencies are intentionally stored as references.
-        // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-        Provider &provider_;
-        ToolRegistry &tools_;
-        // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+        Provider *provider_ = nullptr;
+        ToolRegistry *tools_ = nullptr;
         std::vector<Message> history_;
         memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;

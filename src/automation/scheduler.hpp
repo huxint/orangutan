@@ -98,7 +98,7 @@ namespace orangutan::automation {
         const Store &store() const noexcept;
 
     private:
-        Store &store_;
+        Store *store_ = nullptr;
         LogWriter log_writer_;
         Executor executor_;
         Notifier notifier_;

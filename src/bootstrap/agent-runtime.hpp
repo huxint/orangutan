@@ -102,16 +102,22 @@ namespace orangutan::bootstrap {
         // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
         std::unique_ptr<providers::Provider> provider;
         std::unique_ptr<memory::RuntimeMemory> memory;
-        // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-        ToolRegistry &tools;
-        ToolRuntimeContext &tool_context;
-        // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
         std::unique_ptr<tools::McpManager> mcp_manager;
         std::string skills_prompt;
         std::unique_ptr<skills::SkillLoader> skill_loader;
         std::unique_ptr<hooks::HookManager> hook_manager;
         std::unique_ptr<agent::AgentLoop> agent;
         // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+
+        [[nodiscard]]
+        ToolRegistry &tools() noexcept;
+        [[nodiscard]]
+        const ToolRegistry &tools() const noexcept;
+
+        [[nodiscard]]
+        ToolRuntimeContext &tool_context() noexcept;
+        [[nodiscard]]
+        const ToolRuntimeContext &tool_context() const noexcept;
 
         friend AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input);
     };

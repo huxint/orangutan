@@ -141,7 +141,7 @@ namespace orangutan::web {
             }
 
             auto *abort_flag = &session->abort_requested;
-            auto *tool_context = &session->runtime->tool_context;
+            auto *tool_context = &session->runtime->tool_context();
             if (tool_context != nullptr) {
                 tool_context->abort_checker = [abort_flag] {
                     return abort_flag->load();

@@ -225,8 +225,8 @@ namespace orangutan::agent {
     }
 
     AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
-    : provider_(provider),
-      tools_(tools),
+    : provider_(&provider),
+      tools_(&tools),
       memory_(memory),
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
@@ -259,9 +259,9 @@ namespace orangutan::agent {
             history_.push_back(Message::user().text("Please continue from where you left off."));
             emit_history_checkpoint(on_history_checkpoint, history_);
 
-            auto tool_defs = tools_.definitions();
+            auto tool_defs = tools_->definitions();
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-            LLMResponse response = provider_.chat_stream(system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
+            LLMResponse response = provider_->chat_stream(system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
 
             auto parts = split_response(response);
             continued_text += parts.text;
@@ -325,7 +325,7 @@ namespace orangutan::agent {
                                     return state;
                                 }
 
-                                state.result = tools_.execute(state.call);
+                                state.result = tools_->execute(state.call);
                                 if (hook_manager_ != nullptr) {
                                     auto hook_ctx = build_after_tool_call_context(state.call.name, state.call.input, state.result->content, state.result->is_error);
                                     static_cast<void>(hook_manager_->dispatch(hook_event::after_tool_call, hook_ctx));
@@ -376,12 +376,12 @@ namespace orangutan::agent {
             }
 
             // Refresh tool definitions and system prompt each iteration so newly discovered deferred tools are included
-            auto tool_defs = tools_.definitions();
+            auto tool_defs = tools_->definitions();
             const auto effective_system_prompt = build_system_prompt(user_input);
 
             bool first_text = true;
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-            LLMResponse response = provider_.chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
+            LLMResponse response = provider_->chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
 
             auto parts = split_response(response);
             final_text += parts.text;
@@ -463,7 +463,7 @@ namespace orangutan::agent {
 
     void AgentLoop::clear_history() {
         history_.clear();
-        tools_.clear_discovered();
+        tools_->clear_discovered();
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compress_history() {
@@ -500,7 +500,7 @@ namespace orangutan::agent {
 
         std::vector<ToolDef> no_tools;
         try {
-            auto response = provider_.chat(summary_prompt, older_messages, no_tools, 1024);
+            auto response = provider_->chat(summary_prompt, older_messages, no_tools, 1024);
 
             // Extract summary text
             std::string summary_text;
@@ -615,7 +615,7 @@ namespace orangutan::agent {
             std::vector<Message> messages;
             messages.push_back(Message::user().text(transcript));
             std::vector<ToolDef> no_tools;
-            const auto response = provider_.chat(std::string(DISTILLATION_PROMPT), messages, no_tools, 1024);
+            const auto response = provider_->chat(std::string(DISTILLATION_PROMPT), messages, no_tools, 1024);
 
             std::string distilled_text;
             for (const auto &block : response.content) {
@@ -658,7 +658,7 @@ namespace orangutan::agent {
         base += skills_prompt_;
 
         // Append deferred tool index so the LLM knows what tools are available via tool_search
-        const auto deferred = tools_.deferred_tool_summaries();
+        const auto deferred = tools_->deferred_tool_summaries();
         if (!deferred.empty()) {
             base += "\n\n<available-deferred-tools>\n";
             base += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";

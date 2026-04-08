@@ -131,7 +131,7 @@ namespace {
         auto input = harness.make_input();
 
         auto runtime = build_agent_runtime(input);
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
 
         REQUIRE(runtime.agent != nullptr);
         REQUIRE(runtime.provider != nullptr);
@@ -142,7 +142,7 @@ namespace {
         CHECK(orangutan::testing::has_tool_named(definitions, "process_list"));
         CHECK(orangutan::testing::has_tool_named(definitions, "process_poll"));
         CHECK(orangutan::testing::has_tool_named(definitions, "process_kill"));
-        CHECK(runtime.tool_context.background_completion_runtime == nullptr);
+        CHECK(runtime.tool_context().background_completion_runtime == nullptr);
         const auto *shell = find_tool_named(definitions, "shell");
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));
@@ -155,16 +155,16 @@ namespace {
         input.permission_context.mode = permission_mode::bypass_permissions;
 
         auto runtime = build_agent_runtime(input);
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
 
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "remember"));
         CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
-        CHECK(runtime.tools.has_deferred_tools());
+        CHECK(runtime.tools().has_deferred_tools());
 
-        const auto remember = runtime.tools.execute(ToolUse("remember-before-discovery", "remember", {{"key", "runtime.theme"}, {"content", "amber"}}));
+        const auto remember = runtime.tools().execute(ToolUse("remember-before-discovery", "remember", {{"key", "runtime.theme"}, {"content", "amber"}}));
         CHECK_FALSE(remember.is_error);
 
-        const auto recall = runtime.tools.execute(ToolUse("recall-before-discovery", "memory_recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
+        const auto recall = runtime.tools().execute(ToolUse("recall-before-discovery", "memory_recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
         CHECK_FALSE(recall.is_error);
         CHECK(recall.content.contains("amber"));
     };
@@ -176,7 +176,7 @@ namespace {
         input.team_agents = {"explorer", "planner"};
 
         auto runtime = build_agent_runtime(input);
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
 
         CHECK(definitions.size() == 3);
         CHECK(orangutan::testing::has_tool_named(definitions, "agent_spawn"));
@@ -212,12 +212,12 @@ namespace {
         input.automation_runtime = automation_runtime.get();
 
         auto runtime = build_agent_runtime(input);
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
         const auto *shell = find_tool_named(definitions, "shell");
 
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));
-        CHECK(runtime.tool_context.background_completion_runtime == nullptr);
+        CHECK(runtime.tool_context().background_completion_runtime == nullptr);
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
     };
 
@@ -234,19 +234,19 @@ namespace {
         input.background_completion_runtime = background_completion_runtime;
 
         auto runtime = build_agent_runtime(input);
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
         const auto *shell = find_tool_named(definitions, "shell");
 
-        CHECK(runtime.tool_context.background_completion_runtime == background_completion_runtime);
+        CHECK(runtime.tool_context().background_completion_runtime == background_completion_runtime);
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));
         CHECK(shell->input_schema["properties"].contains("on_complete"));
         CHECK(shell->input_schema["properties"]["on_complete"]["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox", "resume"}));
 
         input.background_completion_runtime.reset();
-        CHECK(runtime.tool_context.background_completion_runtime != nullptr);
-        CHECK(runtime.tool_context.background_completion_runtime->supports_completion_routing());
-        CHECK(runtime.tool_context.background_completion_runtime->supports_resume_callback());
+        CHECK(runtime.tool_context().background_completion_runtime != nullptr);
+        CHECK(runtime.tool_context().background_completion_runtime->supports_completion_routing());
+        CHECK(runtime.tool_context().background_completion_runtime->supports_resume_callback());
     };
 
     TEST_CASE("loads_skills_prompt_from_configured_skill_directory") {
@@ -310,7 +310,7 @@ namespace {
             harness.workspace_root());
 
         auto runtime = build_agent_runtime(input);
-        const auto *permission_context = runtime.tool_context.permission_context;
+        const auto *permission_context = runtime.tool_context().permission_context;
 
         REQUIRE(permission_context != nullptr);
         CHECK(permission_context->mode == permission_mode::plan);
@@ -340,15 +340,15 @@ namespace {
             });
 
             auto runtime = build_agent_runtime(input);
-            CHECK(orangutan::testing::has_tool_named(runtime.tools.definitions(), "custom_echo"));
-            const auto *tools_before_move = &runtime.tools;
+            CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "custom_echo"));
+            const auto *tools_before_move = &runtime.tools();
 
             auto moved = std::move(runtime);
-            CHECK(&moved.tools == tools_before_move);
+            CHECK(&moved.tools() == tools_before_move);
             return moved;
         }();
 
-        const auto result = moved_runtime.tools.execute(ToolUse("custom-echo", "custom_echo", nlohmann::json::object()));
+        const auto result = moved_runtime.tools().execute(ToolUse("custom-echo", "custom_echo", nlohmann::json::object()));
 
         CHECK(result.is_error);
         CHECK(result.content.contains("Requires approval but interactive approval unavailable"));
@@ -372,11 +372,11 @@ namespace {
 
         auto first_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(first_input));
         auto second_runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(second_input));
-        tools::BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context);
+        tools::BackgroundCompletionDispatcher dispatcher(&second_runtime->tool_context());
 
         first_runtime.reset();
 
-        const auto definitions = second_runtime->tools.definitions();
+        const auto definitions = second_runtime->tools().definitions();
         const auto *shell = find_tool_named(definitions, "shell");
         REQUIRE(shell != nullptr);
         CHECK(shell->input_schema.contains("properties"));

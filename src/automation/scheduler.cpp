@@ -103,7 +103,7 @@ namespace orangutan::automation {
     }
 
     Runtime::Runtime(Store &store)
-    : store_(store) {}
+    : store_(&store) {}
 
     Runtime::~Runtime() {
         stop();
@@ -143,7 +143,7 @@ namespace orangutan::automation {
     }
 
     void Runtime::run_pending(TimePoint now) {
-        const auto due = collect_due_items(store_.list_tasks(), store_.list_heartbeats(), now, startup_time_);
+        const auto due = collect_due_items(store_->list_tasks(), store_->list_heartbeats(), now, startup_time_);
         auto pipeline = stdexec::just() | stdexec::then([this, due] {
                             for (const auto &task : due.tasks) {
                                 execute_task(task);
@@ -162,23 +162,23 @@ namespace orangutan::automation {
     }
 
     std::vector<TaskSpec> Runtime::list_tasks(std::string_view agent_key) const {
-        return store_.list_tasks(agent_key);
+        return store_->list_tasks(agent_key);
     }
 
     std::optional<TaskSpec> Runtime::find_task(std::string_view agent_key, std::string_view id_or_name) const {
-        return store_.find_task(agent_key, id_or_name);
+        return store_->find_task(agent_key, id_or_name);
     }
 
     std::string Runtime::save_task(const TaskSpec &task) {
-        return store_.upsert_task(task);
+        return store_->upsert_task(task);
     }
 
     bool Runtime::remove_task(std::string_view agent_key, std::string_view id_or_name) {
-        return store_.remove_task(agent_key, id_or_name);
+        return store_->remove_task(agent_key, id_or_name);
     }
 
     std::string Runtime::run_task_now(std::string_view agent_key, std::string_view id_or_name) {
-        const auto task = store_.find_task(agent_key, id_or_name);
+        const auto task = store_->find_task(agent_key, id_or_name);
         if (!task.has_value()) {
             return "Error: task not found.";
         }
@@ -187,11 +187,11 @@ namespace orangutan::automation {
     }
 
     std::vector<HeartbeatSpec> Runtime::list_heartbeats(std::string_view agent_key) const {
-        return store_.list_heartbeats(agent_key);
+        return store_->list_heartbeats(agent_key);
     }
 
     std::optional<HeartbeatSpec> Runtime::find_heartbeat(std::string_view agent_key, std::string_view id_or_name) const {
-        return store_.find_heartbeat(agent_key, id_or_name);
+        return store_->find_heartbeat(agent_key, id_or_name);
     }
 
     std::string Runtime::save_heartbeat(const HeartbeatSpec &heartbeat_input) {
@@ -199,15 +199,15 @@ namespace orangutan::automation {
         if (!heartbeat.next_due_at.has_value()) {
             heartbeat.next_due_at = plan_next_heartbeat_due(heartbeat, Clock::now());
         }
-        return store_.upsert_heartbeat(heartbeat);
+        return store_->upsert_heartbeat(heartbeat);
     }
 
     bool Runtime::remove_heartbeat(std::string_view agent_key, std::string_view id_or_name) {
-        return store_.remove_heartbeat(agent_key, id_or_name);
+        return store_->remove_heartbeat(agent_key, id_or_name);
     }
 
     bool Runtime::pause_heartbeat(std::string_view agent_key, std::string_view id_or_name, bool paused) {
-        const auto heartbeat = store_.find_heartbeat(agent_key, id_or_name);
+        const auto heartbeat = store_->find_heartbeat(agent_key, id_or_name);
         if (!heartbeat.has_value()) {
             return false;
         }
@@ -216,12 +216,12 @@ namespace orangutan::automation {
         if (!paused) {
             next_due_at = plan_next_heartbeat_due(*heartbeat, Clock::now());
         }
-        store_.update_heartbeat_run_state(heartbeat->id, heartbeat->last_run_at, next_due_at, heartbeat->last_status, paused);
+        store_->update_heartbeat_run_state(heartbeat->id, heartbeat->last_run_at, next_due_at, heartbeat->last_status, paused);
         return true;
     }
 
     std::string Runtime::run_heartbeat_now(std::string_view agent_key, std::string_view id_or_name) {
-        const auto heartbeat = store_.find_heartbeat(agent_key, id_or_name);
+        const auto heartbeat = store_->find_heartbeat(agent_key, id_or_name);
         if (!heartbeat.has_value()) {
             return "Error: heartbeat not found.";
         }
@@ -232,23 +232,23 @@ namespace orangutan::automation {
     }
 
     std::vector<InboxItem> Runtime::list_inbox(std::string_view agent_key) const {
-        return store_.list_inbox(agent_key);
+        return store_->list_inbox(agent_key);
     }
 
     bool Runtime::ack_inbox(std::string_view agent_key, std::string_view id) {
-        return store_.ack_inbox(agent_key, id);
+        return store_->ack_inbox(agent_key, id);
     }
 
     void Runtime::clear_inbox(std::string_view agent_key) {
-        store_.clear_inbox(agent_key);
+        store_->clear_inbox(agent_key);
     }
 
     Store &Runtime::store() noexcept {
-        return store_;
+        return *store_;
     }
 
     const Store &Runtime::store() const noexcept {
-        return store_;
+        return *store_;
     }
 
     void Runtime::scheduler_loop() {
@@ -264,7 +264,7 @@ namespace orangutan::automation {
     void Runtime::normalize_state(TimePoint now) {
         const auto now_seconds = to_unix_seconds(now);
 
-        for (const auto &task : store_.list_tasks()) {
+        for (const auto &task : store_->list_tasks()) {
             if (task.schedule.kind != task_schedule_kind::at) {
                 continue;
             }
@@ -273,11 +273,11 @@ namespace orangutan::automation {
                 continue;
             }
             if (*scheduled < now_seconds && !task.last_run_at.has_value()) {
-                store_.update_task_run_state(task.id, task.last_run_at, "missed", false);
+                store_->update_task_run_state(task.id, task.last_run_at, "missed", false);
             }
         }
 
-        for (const auto &heartbeat : store_.list_heartbeats()) {
+        for (const auto &heartbeat : store_->list_heartbeats()) {
             if (!heartbeat.enabled) {
                 continue;
             }
@@ -285,7 +285,7 @@ namespace orangutan::automation {
             if (!next_due.has_value() || *next_due < now_seconds) {
                 next_due = plan_next_heartbeat_due(heartbeat, now);
             }
-            store_.update_heartbeat_run_state(heartbeat.id, heartbeat.last_run_at, next_due, heartbeat.last_status, heartbeat.paused);
+            store_->update_heartbeat_run_state(heartbeat.id, heartbeat.last_run_at, next_due, heartbeat.last_status, heartbeat.paused);
         }
     }
 
@@ -309,7 +309,7 @@ namespace orangutan::automation {
             callbacks.notifier = notifier_;
         }
 
-        const auto run_id = store_.insert_run(RunRecord{
+        const auto run_id = store_->insert_run(RunRecord{
             .kind = trigger.kind,
             .automation_id = trigger.automation_id,
             .agent_key = trigger.agent_key,
@@ -363,7 +363,7 @@ namespace orangutan::automation {
 
         auto [completed] = execution::sync_wait_or_throw(std::move(pipeline), "automation execute_trigger pipeline");
 
-        store_.complete_run(run_id, completed.status, completed.result.summary, completed.delivery_status, completed.log_path, completed.finished_at);
+        store_->complete_run(run_id, completed.status, completed.result.summary, completed.delivery_status, completed.log_path, completed.finished_at);
         return completed;
     }
 
@@ -382,7 +382,7 @@ namespace orangutan::automation {
         with_agent_execution_lease(this, task.agent_key, [&] {
             completed.emplace(execute_trigger(trigger, started_at));
         });
-        store_.update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == task_schedule_kind::cron);
+        store_->update_task_run_state(task.id, completed->finished_at, completed->status, task.schedule.kind == task_schedule_kind::cron);
     }
 
     void Runtime::execute_heartbeat(const HeartbeatSpec &heartbeat, std::optional<base::i64> forced_timestamp) {
@@ -400,11 +400,11 @@ namespace orangutan::automation {
         const auto completed = execute_trigger(trigger, started_at);
         updated.last_run_at = completed.finished_at;
         updated.next_due_at = plan_next_heartbeat_due(updated, Clock::now());
-        store_.update_heartbeat_run_state(heartbeat.id, updated.last_run_at, updated.next_due_at, completed.status, heartbeat.paused);
+        store_->update_heartbeat_run_state(heartbeat.id, updated.last_run_at, updated.next_due_at, completed.status, heartbeat.paused);
     }
 
     void Runtime::record_delivery_failure(const Trigger &trigger, std::string_view run_id, std::string_view title, std::string_view body) {
-        static_cast<void>(store_.insert_inbox(InboxItem{
+        static_cast<void>(store_->insert_inbox(InboxItem{
             .agent_key = trigger.agent_key,
             .source_kind = std::string(magic_enum::enum_name(trigger.kind)),
             .source_run_id = std::string(run_id),

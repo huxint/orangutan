@@ -102,12 +102,12 @@ namespace orangutan::bootstrap {
 
             [[nodiscard]]
             ToolRegistry &tools() const {
-                return runtime->tools;
+                return runtime->tools();
             }
 
             [[nodiscard]]
             ToolRuntimeContext &tool_context() const {
-                return runtime->tool_context;
+                return runtime->tool_context();
             }
 
             [[nodiscard]]
@@ -353,9 +353,9 @@ namespace orangutan::bootstrap {
             completion_resume_state->session_scope_key = runtime->session_scope_key;
             completion_resume_state->automation_runtime = automation_runtime;
             auto input = make_runtime_build_input(RuntimeAssemblyRequest{
-                .runtime_config = cfg,
-                .identity = identity,
-                .app_config = app_cfg,
+                .runtime_config = &cfg,
+                .identity = &identity,
+                .app_config = &app_cfg,
                 .memory_store = memory_store,
                 .current_session_id = &runtime->current_session_id,
                 .coordinator_manager = coordinator_manager,
@@ -374,7 +374,7 @@ namespace orangutan::bootstrap {
             });
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
-                runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools, runtime->runtime->memory.get(),
+                runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools(), runtime->runtime->memory.get(),
                                                                       runtime->runtime->skills_prompt, hook_manager);
                 runtime->hook_manager = hook_manager;
             } else {

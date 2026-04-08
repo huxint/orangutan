@@ -39,9 +39,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle::AgentRuntimeBundle()
     : tool_context_storage_(std::make_unique<ToolRuntimeContext>()),
       tools_storage_(std::make_unique<ToolRegistry>()),
-      permissions_storage_(std::make_unique<ToolPermissionContext>()),
-      tools(*tools_storage_),
-      tool_context(*tool_context_storage_) {}
+      permissions_storage_(std::make_unique<ToolPermissionContext>()) {}
 
     AgentRuntimeBundle::~AgentRuntimeBundle() = default;
 
@@ -51,13 +49,27 @@ namespace orangutan::bootstrap {
       permissions_storage_(other.permissions_storage_ ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>()),
       provider(std::move(other.provider)),
       memory(std::move(other.memory)),
-      tools(*tools_storage_),
-      tool_context(*tool_context_storage_),
       mcp_manager(std::move(other.mcp_manager)),
       skills_prompt(std::move(other.skills_prompt)),
       skill_loader(std::move(other.skill_loader)),
       hook_manager(std::move(other.hook_manager)),
       agent(std::move(other.agent)) {}
+
+    ToolRegistry &AgentRuntimeBundle::tools() noexcept {
+        return *tools_storage_;
+    }
+
+    const ToolRegistry &AgentRuntimeBundle::tools() const noexcept {
+        return *tools_storage_;
+    }
+
+    ToolRuntimeContext &AgentRuntimeBundle::tool_context() noexcept {
+        return *tool_context_storage_;
+    }
+
+    const ToolRuntimeContext &AgentRuntimeBundle::tool_context() const noexcept {
+        return *tool_context_storage_;
+    }
 
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
@@ -68,7 +80,7 @@ namespace orangutan::bootstrap {
             runtime.memory = std::make_unique<RuntimeMemory>(*input.memory_store, make_runtime_memory_context(input.identity, input.memory));
         }
 
-        runtime.tool_context = ToolRuntimeContext{
+        runtime.tool_context() = ToolRuntimeContext{
             .runtime_key = input.identity.runtime_key,
             .agent_key = input.agent_key,
             .agent_name = input.agent_name.empty() ? input.agent_key : input.agent_name,
@@ -90,8 +102,8 @@ namespace orangutan::bootstrap {
         };
 
         *runtime.permissions_storage_ = input.permission_context;
-        runtime.tool_context.permission_context = runtime.permissions_storage_.get();
-        auto tool_bootstrap = register_runtime_tools(runtime.tools, runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
+        runtime.tool_context().permission_context = runtime.permissions_storage_.get();
+        auto tool_bootstrap = register_runtime_tools(runtime.tools(), runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
                                                      input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
@@ -115,13 +127,13 @@ namespace orangutan::bootstrap {
         }
         runtime.skills_prompt += skills_prompt;
         if (!input.coordinator_mode) {
-            tools::register_skill_tool(runtime.tools, *runtime.skill_loader);
+            tools::register_skill_tool(runtime.tools(), *runtime.skill_loader);
         }
 
         runtime.hook_manager = std::make_unique<HookManager>();
         runtime.hook_manager->load_from_directories(resolve_hook_directories(input));
 
-        runtime.agent = std::make_unique<AgentLoop>(*runtime.provider, runtime.tools, runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
+        runtime.agent = std::make_unique<AgentLoop>(*runtime.provider, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
         runtime.agent->set_environment_info(prompt::EnvironmentInfo{
             .workspace_root = input.workspace_root,

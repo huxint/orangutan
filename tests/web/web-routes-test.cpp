@@ -323,7 +323,7 @@ namespace {
                                                                             return false;
                                                                         });
 
-        const auto definitions = runtime.tools.definitions();
+        const auto definitions = runtime.tools().definitions();
         CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK(orangutan::testing::has_tool_named(definitions, "custom_echo"));
@@ -331,12 +331,12 @@ namespace {
         CHECK(not(orangutan::testing::has_tool_named(definitions, "heartbeat")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "inbox")));
         CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
-        CHECK(runtime.tool_context.runtime_origin == base::origin::web);
-        CHECK(runtime.tool_context.raw_caller_id == "web:local");
-        CHECK(runtime.tool_context.current_session_id == &session_id);
-        CHECK(runtime.tool_context.team_agents == std::vector<std::string>({"coder"}));
-        CHECK(runtime.tool_context.automation_runtime == &app_runtime.automation_runtime());
-        CHECK(runtime.tool_context.approval_callback != nullptr);
+        CHECK(runtime.tool_context().runtime_origin == base::origin::web);
+        CHECK(runtime.tool_context().raw_caller_id == "web:local");
+        CHECK(runtime.tool_context().current_session_id == &session_id);
+        CHECK(runtime.tool_context().team_agents == std::vector<std::string>({"coder"}));
+        CHECK(runtime.tool_context().automation_runtime == &app_runtime.automation_runtime());
+        CHECK(runtime.tool_context().approval_callback != nullptr);
         CHECK(runtime.agent != nullptr);
 
         const auto shell = std::ranges::find_if(definitions, [](const orangutan::ToolDef &definition) {
@@ -346,7 +346,7 @@ namespace {
         CHECK(shell->input_schema.contains("properties"));
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
 
-        const auto shell_result = runtime.tools.execute(orangutan::ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
+        const auto shell_result = runtime.tools().execute(orangutan::ToolUse("web-shell", "shell", {{"command", "echo hello"}}));
         CHECK(shell_result.is_error);
         CHECK((shell_result.content.contains("Requires approval") || shell_result.content.contains("Rejected by user")));
     };

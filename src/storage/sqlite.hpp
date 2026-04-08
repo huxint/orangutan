@@ -75,7 +75,7 @@ namespace orangutan::sqlite {
         void commit();
 
     private:
-        const Database &db_;
+        const Database *db_ = nullptr;
         bool committed_ = false;
     };
 

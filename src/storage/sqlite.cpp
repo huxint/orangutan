@@ -133,18 +133,18 @@ namespace orangutan::sqlite {
     }
 
     Transaction::Transaction(const Database &db)
-    : db_(db) {
-        db_.exec("BEGIN IMMEDIATE TRANSACTION;", "SQLite transaction begin failed");
+    : db_(&db) {
+        db_->exec("BEGIN IMMEDIATE TRANSACTION;", "SQLite transaction begin failed");
     }
 
     Transaction::~Transaction() {
         if (!committed_) {
-            static_cast<void>(db_.try_exec("ROLLBACK;"));
+            static_cast<void>(db_->try_exec("ROLLBACK;"));
         }
     }
 
     void Transaction::commit() {
-        db_.exec("COMMIT;", "SQLite transaction commit failed");
+        db_->exec("COMMIT;", "SQLite transaction commit failed");
         committed_ = true;
     }
 

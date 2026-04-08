@@ -319,8 +319,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                         return stop_token.stop_requested();
                     });
 
-                    if (bundle.tool_context.mailbox != nullptr && !team_id.empty() && !agent_name.empty()) {
-                        auto *mailbox = bundle.tool_context.mailbox;
+                    if (bundle.tool_context().mailbox != nullptr && !team_id.empty() && !agent_name.empty()) {
+                        auto *mailbox = bundle.tool_context().mailbox;
                         const auto team = team_id;
                         const auto name = agent_name;
                         bundle.agent->set_incoming_message_fetcher([mailbox, team, name]() {
@@ -353,9 +353,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             };
 
             auto bundle = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
-                    .runtime_config = runtime_cfg,
-                    .identity = identity,
-                    .app_config = cfg,
+                    .runtime_config = &runtime_cfg,
+                    .identity = &identity,
+                    .app_config = &cfg,
                     .memory_store = memory_store,
                     .agent_name = request.agent_name,
                     .team_agents = std::vector<std::string>{},
@@ -398,9 +398,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
 
             try {
                 auto runtime = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
-                        .runtime_config = runtime_cfg,
-                        .identity = identity,
-                        .app_config = cfg,
+                        .runtime_config = &runtime_cfg,
+                        .identity = &identity,
+                        .app_config = &cfg,
                         .memory_store = memory_store,
                         .current_session_id = &current_session_id,
                         .coordinator_manager = coordinator_manager.get(),
@@ -460,9 +460,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             orangutan::bootstrap::detail::maybe_inject_web_runtime_build_failure_for_tests();
             const auto approval_callback = make_cli_approval_callback(!options.event_stream);
             primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
-                    .runtime_config = *maybe_primary_runtime_cfg,
-                    .identity = *maybe_primary_identity,
-                    .app_config = cfg,
+                    .runtime_config = &*maybe_primary_runtime_cfg,
+                    .identity = &*maybe_primary_identity,
+                    .app_config = &cfg,
                     .memory_store = memory_store.get(),
                     .current_session_id = &current_session_id,
                     .coordinator_manager = coordinator_manager.get(),
@@ -498,7 +498,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     if (options.web_mode) {
         web_server = std::make_unique<orangutan::WebServer>();
         const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &app_runtime.automation_runtime(),
-                                                              primary_runtime != nullptr ? &primary_runtime->tools : nullptr, &skill_loader);
+                                                              primary_runtime != nullptr ? &primary_runtime->tools() : nullptr, &skill_loader);
         if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), primary_runtime.get(), &skill_loader, attachments, web_runtime_build_error)) {
             app_runtime.automation_runtime().stop();
             return 0;
@@ -554,7 +554,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 } else {
                     orangutan::cli::run_repl(*primary_runtime->agent, *primary_runtime->provider, *session_store, maybe_primary_runtime_cfg->model,
                                              maybe_primary_runtime_cfg->fallback_models, cfg, current_session_id, maybe_primary_runtime_cfg->agent_key,
-                                             maybe_primary_runtime_cfg->cli_memory_scope, maybe_primary_runtime_cfg->workspace_root, &skill_loader, &primary_runtime->tools,
+                                             maybe_primary_runtime_cfg->cli_memory_scope, maybe_primary_runtime_cfg->workspace_root, &skill_loader, &primary_runtime->tools(),
                                              primary_runtime->hook_manager.get(), &app_runtime.automation_runtime());
                 }
             }

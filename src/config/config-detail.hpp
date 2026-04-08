@@ -21,8 +21,7 @@ namespace orangutan::config::detail {
         }
 
     private:
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-        const ConfigSecretOptions &options_;
+        ConfigSecretOptions options_;
         std::optional<std::string> cached_password_;
     };
 
