@@ -97,13 +97,13 @@ namespace orangutan::channel::qq {
             {"clientSecret", client_secret_},
         };
 
-        const auto raw = perform_http_request("POST", std::string(QQ_TOKEN_URL), request_body, false);
-        const auto response = normalize_response(raw);
+        auto raw = perform_http_request("POST", std::string(QQ_TOKEN_URL), request_body, false);
+        const auto response = normalize_response(std::move(raw));
         if (response.http_status >= 400) {
-            throw std::runtime_error(build_api_error_message("POST", std::string(QQ_TOKEN_URL), response));
+            throw std::runtime_error(build_api_error_message("POST", QQ_TOKEN_URL, response));
         }
         if (response.biz_code != 0) {
-            throw std::runtime_error(build_api_error_message("POST", std::string(QQ_TOKEN_URL), response));
+            throw std::runtime_error(build_api_error_message("POST", QQ_TOKEN_URL, response));
         }
 
         const auto payload = response.parse_json_body();
@@ -169,8 +169,8 @@ namespace orangutan::channel::qq {
             ensure_access_token();
             const auto full_url = is_absolute_url(path) ? path : std::string(QQ_API_BASE) + path;
 
-            const auto raw = perform_http_request(method, full_url, body, true);
-            auto response = normalize_response(raw);
+            auto raw = perform_http_request(method, full_url, body, true);
+            auto response = normalize_response(std::move(raw));
 
             if (response.http_status == 401 && token_refresh_retries < 1) {
                 ++token_refresh_retries;
@@ -303,12 +303,12 @@ namespace orangutan::channel::qq {
         };
     }
 
-    QqApiResponse QqApiClient::normalize_response(const HttpRawResponse &raw) {
+    QqApiResponse QqApiClient::normalize_response(HttpRawResponse raw) {
         QqApiResponse normalized{
             .http_status = raw.status,
-            .body = raw.body,
-            .trace_id = raw.trace_id,
-            .retry_after = raw.retry_after,
+            .body = std::move(raw.body),
+            .trace_id = std::move(raw.trace_id),
+            .retry_after = std::move(raw.retry_after),
         };
 
         if (normalized.body.empty()) {
@@ -341,7 +341,7 @@ namespace orangutan::channel::qq {
         return std::chrono::seconds(1);
     }
 
-    std::string QqApiClient::build_api_error_message(std::string_view method, const std::string &path, const QqApiResponse &response) {
+    std::string QqApiClient::build_api_error_message(std::string_view method, std::string_view path, const QqApiResponse &response) {
         std::string message = "QQ API ";
         message.append(method);
         message.push_back(' ');

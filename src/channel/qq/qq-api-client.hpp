@@ -71,13 +71,13 @@ namespace orangutan::channel::qq {
         HttpRawResponse perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body, bool with_auth) const;
 
         [[nodiscard]]
-        static QqApiResponse normalize_response(const HttpRawResponse &raw);
+        static QqApiResponse normalize_response(HttpRawResponse raw);
 
         [[nodiscard]]
         static std::chrono::milliseconds parse_retry_after_delay(const std::string &retry_after);
 
         [[nodiscard]]
-        static std::string build_api_error_message(std::string_view method, const std::string &path, const QqApiResponse &response);
+        static std::string build_api_error_message(std::string_view method, std::string_view path, const QqApiResponse &response);
 
         void refresh_access_token_locked(std::chrono::steady_clock::time_point now);
 
