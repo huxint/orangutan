@@ -206,7 +206,7 @@ namespace orangutan::memory::detail {
         return records;
     }
 
-    std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, const std::string &scope, const std::string &key) {
+    std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, std::string_view scope, std::string_view key) {
         sqlite::Statement stmt(db, "SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                    "FROM memories WHERE scope = ? AND memory_key = ? LIMIT 1");
         stmt.bind_text(1, scope);
@@ -218,8 +218,8 @@ namespace orangutan::memory::detail {
         return rows.front();
     }
 
-    void upsert_memory_record(sqlite::Database &db, const std::string &scope, const std::string &key, const std::string &content, const std::string &category,
-                              const std::string &type, const std::string &source, base::f64 importance) {
+    void upsert_memory_record(sqlite::Database &db, std::string_view scope, std::string_view key, std::string_view content, std::string_view category, std::string_view type,
+                              std::string_view source, base::f64 importance) {
         sqlite::Statement stmt(db, "INSERT INTO memories (scope, memory_key, content, category, type, source, importance, created_at, updated_at, last_accessed_at) "
                                    "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "
                                    "ON CONFLICT(scope, memory_key) DO UPDATE SET "
@@ -232,9 +232,9 @@ namespace orangutan::memory::detail {
         stmt.bind_text(1, scope);
         stmt.bind_text(2, key);
         stmt.bind_text(3, content);
-        stmt.bind_text(4, category.empty() ? std::string{"general"} : category);
-        stmt.bind_text(5, type.empty() ? std::string{"user"} : type);
-        stmt.bind_text(6, source.empty() ? std::string{"manual"} : source);
+        stmt.bind_text(4, category.empty() ? std::string_view{"general"} : category);
+        stmt.bind_text(5, type.empty() ? std::string_view{"user"} : type);
+        stmt.bind_text(6, source.empty() ? std::string_view{"manual"} : source);
         stmt.bind_double(7, importance);
         static_cast<void>(stmt.step());
     }

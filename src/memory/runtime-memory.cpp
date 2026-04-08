@@ -20,19 +20,19 @@ namespace orangutan::memory {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &source,
+    void RuntimeMemory::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view source,
                                  base::f64 importance) {
         store_->remember(key, content, category, type, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
 
-    void RuntimeMemory::update(const std::string &key, const std::string &content, const std::string &category, memory_type type, bool merge, const std::string &source,
+    void RuntimeMemory::update(std::string_view key, std::string_view content, std::string_view category, memory_type type, bool merge, std::string_view source,
                                base::f64 importance) {
         store_->update(key, content, category, type, context_.scope, merge, source, importance);
         refresh_mirror_after_write();
     }
 
-    bool RuntimeMemory::forget(const std::string &key) {
+    bool RuntimeMemory::forget(std::string_view key) {
         const auto forgot = store_->forget(key, context_.scope);
         if (forgot) {
             refresh_mirror_after_write();
@@ -40,11 +40,11 @@ namespace orangutan::memory {
         return forgot;
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::search(const std::string &query, std::size_t limit) {
+    std::vector<MemoryRecord> RuntimeMemory::search(std::string_view query, std::size_t limit) {
         return store_->search(query, context_.scope, limit);
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::prompt_memories(const std::string &query, std::size_t limit) {
+    std::vector<MemoryRecord> RuntimeMemory::prompt_memories(std::string_view query, std::size_t limit) {
         auto records = search(query, std::max<std::size_t>(limit, 8));
         if (query_requests_journal(query)) {
             if (records.size() > limit) {
@@ -62,15 +62,15 @@ namespace orangutan::memory {
         return records;
     }
 
-    std::string RuntimeMemory::recall(const std::string &query, std::size_t limit) {
+    std::string RuntimeMemory::recall(std::string_view query, std::size_t limit) {
         return store_->recall(query, context_.scope, limit);
     }
 
-    std::vector<std::pair<std::string, std::string>> RuntimeMemory::recall_by_category(const std::string &category, std::size_t limit) {
+    std::vector<std::pair<std::string, std::string>> RuntimeMemory::recall_by_category(std::string_view category, std::size_t limit) {
         return store_->recall_by_category(category, context_.scope, limit);
     }
 
-    std::vector<MemoryRecord> RuntimeMemory::list(const std::string &category, std::size_t limit) {
+    std::vector<MemoryRecord> RuntimeMemory::list(std::string_view category, std::size_t limit) {
         return store_->list(context_.scope, category, limit);
     }
 
@@ -82,7 +82,7 @@ namespace orangutan::memory {
         return MemoryMirror::refresh_snapshot(context_, durable_records());
     }
 
-    JournalStoreResult RuntimeMemory::store_journal_summary(const std::string &summary, const std::string &source) {
+    JournalStoreResult RuntimeMemory::store_journal_summary(std::string_view summary, std::string_view source) {
         auto trimmed_summary = static_cast<std::string>(utils::trim_copy(summary));
         if (trimmed_summary.empty()) {
             return {.stored = false, .mirrored = false, .status = "Journal summary is empty.", .key = {}};

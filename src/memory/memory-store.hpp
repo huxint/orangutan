@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -44,41 +45,41 @@ namespace orangutan::memory {
         MemoryStore(MemoryStore &&) = delete;
         MemoryStore &operator=(MemoryStore &&) = delete;
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", memory_type type = memory_type::user,
-                      const std::string &scope = {}, const std::string &source = "manual", base::f64 importance = 0.5);
+        void remember(std::string_view key, std::string_view content, std::string_view category = "general", memory_type type = memory_type::user, std::string_view scope = {},
+                      std::string_view source = "manual", base::f64 importance = 0.5);
 
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, memory_type type = memory_type::user, const std::string &scope = {},
-                    bool merge = true, const std::string &source = {}, base::f64 importance = 0.5);
-
-        [[nodiscard]]
-        std::vector<MemoryRecord> search(const std::string &query, const std::string &scope = {}, std::size_t limit = 8);
+        void update(std::string_view key, std::string_view content, std::string_view category = {}, memory_type type = memory_type::user, std::string_view scope = {},
+                    bool merge = true, std::string_view source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
-        std::string recall(const std::string &query, const std::string &scope = {}, std::size_t limit = 8);
+        std::vector<MemoryRecord> search(std::string_view query, std::string_view scope = {}, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, const std::string &scope = {}, std::size_t limit = 20);
+        std::string recall(std::string_view query, std::string_view scope = {}, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> list(const std::string &scope = {}, const std::string &category = {}, std::size_t limit = 20);
+        std::vector<std::pair<std::string, std::string>> recall_by_category(std::string_view category, std::string_view scope = {}, std::size_t limit = 20);
 
         [[nodiscard]]
-        MemoryStats stats(const std::string &scope = {});
+        std::vector<MemoryRecord> list(std::string_view scope = {}, std::string_view category = {}, std::size_t limit = 20);
 
         [[nodiscard]]
-        bool forget(const std::string &key, const std::string &scope = {});
+        MemoryStats stats(std::string_view scope = {});
 
         [[nodiscard]]
-        std::string dump_all(const std::string &scope = {}, std::size_t limit = 50);
+        bool forget(std::string_view key, std::string_view scope = {});
+
+        [[nodiscard]]
+        std::string dump_all(std::string_view scope = {}, std::size_t limit = 50);
 
         /// Consolidate memories: prune stale low-importance entries, enforce per-scope limits.
         /// Returns the number of records pruned.
         [[nodiscard]]
-        std::size_t consolidate(const std::string &scope = {}, std::size_t max_per_scope = 200, int stale_days = 90, base::f64 stale_importance_threshold = 0.3);
+        std::size_t consolidate(std::string_view scope = {}, std::size_t max_per_scope = 200, int stale_days = 90, base::f64 stale_importance_threshold = 0.3);
 
         /// Generate a concise manifest listing of all non-journal memories.
         [[nodiscard]]
-        std::string manifest(const std::string &scope = {}, std::size_t limit = 200);
+        std::string manifest(std::string_view scope = {}, std::size_t limit = 200);
 
     private:
         sqlite::Database db_;

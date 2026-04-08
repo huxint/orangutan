@@ -27,22 +27,22 @@ namespace orangutan::memory {
         fts_enabled_ = memory_detail::enable_fts_if_available(db_);
     }
 
-    void MemoryStore::remember(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &scope,
-                               const std::string &source, base::f64 importance) {
+    void MemoryStore::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view scope, std::string_view source,
+                               base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto type_str = std::string(magic_enum::enum_name(type));
         memory_detail::upsert_memory_record(db_, scope, key, content, category, type_str, source, importance);
     }
 
-    void MemoryStore::update(const std::string &key, const std::string &content, const std::string &category, memory_type type, const std::string &scope, bool merge,
-                             const std::string &source, base::f64 importance) {
+    void MemoryStore::update(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view scope, bool merge,
+                             std::string_view source, base::f64 importance) {
         std::scoped_lock lock(mutex_);
         const auto existing = memory_detail::fetch_memory_by_key(db_, scope, key);
 
-        auto final_content = content;
-        auto final_category = category;
+        auto final_content = std::string(content);
+        auto final_category = std::string(category);
         auto final_type = std::string(magic_enum::enum_name(type));
-        auto final_source = source;
+        auto final_source = std::string(source);
         auto final_importance = importance;
 
         if (existing.has_value()) {
@@ -72,7 +72,7 @@ namespace orangutan::memory {
         memory_detail::upsert_memory_record(db_, scope, key, final_content, final_category, final_type, final_source, final_importance);
     }
 
-    std::vector<MemoryRecord> MemoryStore::search(const std::string &query, const std::string &scope, std::size_t limit) {
+    std::vector<MemoryRecord> MemoryStore::search(std::string_view query, std::string_view scope, std::size_t limit) {
         std::scoped_lock lock(mutex_);
         const auto trimmed_query = static_cast<std::string>(utils::trim_copy(query));
         if (trimmed_query.empty()) {
@@ -164,11 +164,11 @@ namespace orangutan::memory {
         return selected;
     }
 
-    std::string MemoryStore::recall(const std::string &query, const std::string &scope, std::size_t limit) {
+    std::string MemoryStore::recall(std::string_view query, std::string_view scope, std::size_t limit) {
         return memory_detail::format_records(search(query, scope, limit));
     }
 
-    std::vector<std::pair<std::string, std::string>> MemoryStore::recall_by_category(const std::string &category, const std::string &scope, std::size_t limit) {
+    std::vector<std::pair<std::string, std::string>> MemoryStore::recall_by_category(std::string_view category, std::string_view scope, std::size_t limit) {
         auto records = list(scope, category, limit);
 
         std::vector<std::pair<std::string, std::string>> entries;
@@ -179,7 +179,7 @@ namespace orangutan::memory {
         return entries;
     }
 
-    std::vector<MemoryRecord> MemoryStore::list(const std::string &scope, const std::string &category, std::size_t limit) {
+    std::vector<MemoryRecord> MemoryStore::list(std::string_view scope, std::string_view category, std::size_t limit) {
         std::scoped_lock lock(mutex_);
         const auto capped_limit = static_cast<int>(limit == 0 ? memory_detail::DEFAULT_LIST_LIMIT : limit);
 
@@ -198,7 +198,7 @@ namespace orangutan::memory {
         return memory_detail::collect_records(stmt);
     }
 
-    MemoryStats MemoryStore::stats(const std::string &scope) {
+    MemoryStats MemoryStore::stats(std::string_view scope) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement totals(db_, "SELECT COUNT(*), COUNT(DISTINCT category), "
                                       "SUM(CASE WHEN source LIKE 'auto:%' THEN 1 ELSE 0 END), "
@@ -218,7 +218,7 @@ namespace orangutan::memory {
         return result;
     }
 
-    bool MemoryStore::forget(const std::string &key, const std::string &scope) {
+    bool MemoryStore::forget(std::string_view key, std::string_view scope) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "DELETE FROM memories WHERE scope = ? AND memory_key = ?");
         stmt.bind_text(1, scope);
@@ -227,11 +227,11 @@ namespace orangutan::memory {
         return db_.changes() > 0;
     }
 
-    std::string MemoryStore::dump_all(const std::string &scope, std::size_t limit) {
+    std::string MemoryStore::dump_all(std::string_view scope, std::size_t limit) {
         return memory_detail::format_records(list(scope, {}, limit));
     }
 
-    std::size_t MemoryStore::consolidate(const std::string &scope, std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
+    std::size_t MemoryStore::consolidate(std::string_view scope, std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
         std::scoped_lock lock(mutex_);
 
         // Phase 1: Prune stale, low-importance, non-journal memories.
@@ -277,7 +277,7 @@ namespace orangutan::memory {
         return pruned;
     }
 
-    std::string MemoryStore::manifest(const std::string &scope, std::size_t limit) {
+    std::string MemoryStore::manifest(std::string_view scope, std::size_t limit) {
         auto records = list(scope, {}, limit);
         std::erase_if(records, [](const MemoryRecord &record) {
             return record.category == "journal";

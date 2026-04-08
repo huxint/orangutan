@@ -33,9 +33,9 @@ namespace orangutan::memory::detail {
     [[nodiscard]]
     std::vector<MemoryRecord> collect_records(sqlite::Statement &stmt);
     [[nodiscard]]
-    std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, const std::string &scope, const std::string &key);
-    void upsert_memory_record(sqlite::Database &db, const std::string &scope, const std::string &key, const std::string &content, const std::string &category,
-                              const std::string &type, const std::string &source, base::f64 importance);
+    std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, std::string_view scope, std::string_view key);
+    void upsert_memory_record(sqlite::Database &db, std::string_view scope, std::string_view key, std::string_view content, std::string_view category, std::string_view type,
+                              std::string_view source, base::f64 importance);
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records);
 
 } // namespace orangutan::memory::detail

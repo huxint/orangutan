@@ -29,28 +29,28 @@ namespace orangutan::memory {
             return context_;
         }
 
-        void remember(const std::string &key, const std::string &content, const std::string &category = "general", memory_type type = memory_type::user,
-                      const std::string &source = "manual", base::f64 importance = 0.5);
-        void update(const std::string &key, const std::string &content, const std::string &category = {}, memory_type type = memory_type::user, bool merge = true,
-                    const std::string &source = {}, base::f64 importance = 0.5);
+        void remember(std::string_view key, std::string_view content, std::string_view category = "general", memory_type type = memory_type::user,
+                      std::string_view source = "manual", base::f64 importance = 0.5);
+        void update(std::string_view key, std::string_view content, std::string_view category = {}, memory_type type = memory_type::user, bool merge = true,
+                    std::string_view source = {}, base::f64 importance = 0.5);
 
         [[nodiscard]]
-        bool forget(const std::string &key);
+        bool forget(std::string_view key);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> search(const std::string &query, std::size_t limit = 8);
+        std::vector<MemoryRecord> search(std::string_view query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> prompt_memories(const std::string &query, std::size_t limit = 8);
+        std::vector<MemoryRecord> prompt_memories(std::string_view query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::string recall(const std::string &query, std::size_t limit = 8);
+        std::string recall(std::string_view query, std::size_t limit = 8);
 
         [[nodiscard]]
-        std::vector<std::pair<std::string, std::string>> recall_by_category(const std::string &category, std::size_t limit = 20);
+        std::vector<std::pair<std::string, std::string>> recall_by_category(std::string_view category, std::size_t limit = 20);
 
         [[nodiscard]]
-        std::vector<MemoryRecord> list(const std::string &category = {}, std::size_t limit = 20);
+        std::vector<MemoryRecord> list(std::string_view category = {}, std::size_t limit = 20);
 
         [[nodiscard]]
         MemoryStats stats();
@@ -59,7 +59,7 @@ namespace orangutan::memory {
         MemoryMirrorRefreshResult refresh_mirror() const;
 
         [[nodiscard]]
-        JournalStoreResult store_journal_summary(const std::string &summary, const std::string &source = "session:journal");
+        JournalStoreResult store_journal_summary(std::string_view summary, std::string_view source = "session:journal");
 
         [[nodiscard]]
         static bool query_requests_journal(std::string_view query);
