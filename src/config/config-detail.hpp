@@ -4,13 +4,14 @@
 
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <utility>
 
 namespace orangutan::config::detail {
 
     class ConfigPasswordResolver {
     public:
-        explicit ConfigPasswordResolver(const ConfigSecretOptions &options)
-        : options_(options) {}
+        explicit ConfigPasswordResolver(ConfigSecretOptions options)
+        : options_(std::move(options)) {}
 
         [[nodiscard]]
         const std::string &resolve() {
