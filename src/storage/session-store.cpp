@@ -32,7 +32,7 @@ namespace orangutan::storage {
             return arr;
         }
 
-        std::vector<Content> deserialize_content(const std::string &json_str) {
+        std::vector<Content> deserialize_content(std::string_view json_str) {
             std::vector<Content> blocks;
             const auto arr = nlohmann::json::parse(json_str);
 
@@ -138,7 +138,7 @@ namespace orangutan::storage {
             db.exec("CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);", "Failed to recreate binding index");
         }
 
-        void write_messages(sqlite::Database &db, const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index) {
+        void write_messages(sqlite::Database &db, std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index) {
             sqlite::Statement insert_msg(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
             for (std::size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
@@ -153,7 +153,7 @@ namespace orangutan::storage {
             }
         }
 
-        void insert_session(sqlite::Database &db, const std::string &session_id, const SessionMetadata &metadata) {
+        void insert_session(sqlite::Database &db, std::string_view session_id, const SessionMetadata &metadata) {
             sqlite::Statement insert_session_stmt(db, "INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) "
                                                       "VALUES (?, ?, ?, ?, ?, ?)");
             insert_session_stmt.bind_text(1, session_id);
@@ -165,7 +165,7 @@ namespace orangutan::storage {
             static_cast<void>(insert_session_stmt.step());
         }
 
-        void update_session_model(sqlite::Database &db, const std::string &session_id, const std::string &model) {
+        void update_session_model(sqlite::Database &db, std::string_view session_id, std::string_view model) {
             if (model.empty()) {
                 return;
             }
@@ -176,7 +176,7 @@ namespace orangutan::storage {
             static_cast<void>(stmt.step());
         }
 
-        void update_session_metadata(sqlite::Database &db, const std::string &session_id, const SessionMetadata &metadata) {
+        void update_session_metadata(sqlite::Database &db, std::string_view session_id, const SessionMetadata &metadata) {
             sqlite::Statement stmt(db, "UPDATE sessions "
                                        "SET model = ?, scope_key = ?, agent_key = ?, origin_kind = ?, origin_ref = ? "
                                        "WHERE id = ?");
@@ -189,7 +189,7 @@ namespace orangutan::storage {
             static_cast<void>(stmt.step());
         }
 
-        bool session_exists(sqlite::Database &db, const std::string &session_id) {
+        bool session_exists(sqlite::Database &db, std::string_view session_id) {
             sqlite::Statement stmt(db, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1");
             stmt.bind_text(1, session_id);
             return stmt.step();
@@ -293,7 +293,7 @@ namespace orangutan::storage {
         return session_id;
     }
 
-    void SessionStore::update(const std::string &session_id, const std::vector<Message> &messages, const std::string &model) {
+    void SessionStore::update(std::string_view session_id, const std::vector<Message> &messages, std::string_view model) {
         std::scoped_lock lock(mutex_);
         sqlite::Transaction tx(db_);
 
@@ -309,7 +309,7 @@ namespace orangutan::storage {
         spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
     }
 
-    void SessionStore::update(const std::string &session_id, const std::vector<Message> &messages, const SessionMetadata &metadata) {
+    void SessionStore::update(std::string_view session_id, const std::vector<Message> &messages, const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
         sqlite::Transaction tx(db_);
 
@@ -325,7 +325,7 @@ namespace orangutan::storage {
         spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
     }
 
-    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const std::string &model) {
+    void SessionStore::append(std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index, std::string_view model) {
         std::scoped_lock lock(mutex_);
         if (start_index > messages.size()) {
             throw std::runtime_error("append start_index is out of range");
@@ -339,7 +339,7 @@ namespace orangutan::storage {
         spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
 
-    void SessionStore::append(const std::string &session_id, const std::vector<Message> &messages, std::size_t start_index, const SessionMetadata &metadata) {
+    void SessionStore::append(std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index, const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
         if (start_index > messages.size()) {
             throw std::runtime_error("append start_index is out of range");
@@ -353,7 +353,7 @@ namespace orangutan::storage {
         spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
 
-    std::vector<Message> SessionStore::load(const std::string &session_id) {
+    std::vector<Message> SessionStore::load(std::string_view session_id) {
         std::scoped_lock lock(mutex_);
 
         sqlite::Statement stmt(db_, "SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq");
@@ -382,13 +382,13 @@ namespace orangutan::storage {
         }
 
         if (messages.empty() && !session_exists(db_, session_id)) {
-            throw std::runtime_error("Session not found: " + session_id);
+            throw std::runtime_error("Session not found: " + std::string(session_id));
         }
 
         return messages;
     }
 
-    std::vector<SessionInfo> SessionStore::list_sessions(const std::string &scope_key) {
+    std::vector<SessionInfo> SessionStore::list_sessions(std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, scope_key.empty() ? "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
                                                         "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
@@ -418,7 +418,7 @@ namespace orangutan::storage {
         return sessions;
     }
 
-    std::vector<SessionInfo> SessionStore::list_sessions_for_agent(const std::string &agent_key) {
+    std::vector<SessionInfo> SessionStore::list_sessions_for_agent(std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
                                     "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
@@ -442,7 +442,7 @@ namespace orangutan::storage {
         return sessions;
     }
 
-    void SessionStore::remove(const std::string &session_id) {
+    void SessionStore::remove(std::string_view session_id) {
         std::scoped_lock lock(mutex_);
         sqlite::Transaction tx(db_);
 
@@ -470,7 +470,7 @@ namespace orangutan::storage {
         return std::nullopt;
     }
 
-    void SessionStore::bind_jid(const std::string &jid, const std::string &session_id, const std::string &agent_key) {
+    void SessionStore::bind_jid(std::string_view jid, std::string_view session_id, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
                                     "VALUES (?, ?, ?, datetime('now')) "
@@ -481,7 +481,7 @@ namespace orangutan::storage {
         static_cast<void>(stmt.step());
     }
 
-    void SessionStore::clear_jid(const std::string &jid, const std::string &agent_key) {
+    void SessionStore::clear_jid(std::string_view jid, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "DELETE FROM channel_session_bindings WHERE jid = ? AND agent_key = ?");
         stmt.bind_text(1, jid);
@@ -489,7 +489,7 @@ namespace orangutan::storage {
         static_cast<void>(stmt.step());
     }
 
-    std::optional<std::string> SessionStore::bound_session_for_jid(const std::string &jid, const std::string &agent_key) {
+    std::optional<std::string> SessionStore::bound_session_for_jid(std::string_view jid, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT session_id FROM channel_session_bindings WHERE jid = ? AND agent_key = ?");
         stmt.bind_text(1, jid);
@@ -500,7 +500,7 @@ namespace orangutan::storage {
         return std::nullopt;
     }
 
-    bool SessionStore::session_belongs_to_scope(const std::string &session_id, const std::string &scope_key) {
+    bool SessionStore::session_belongs_to_scope(std::string_view session_id, std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT 1 FROM sessions WHERE id = ? AND scope_key = ? LIMIT 1");
         stmt.bind_text(1, session_id);
@@ -508,7 +508,7 @@ namespace orangutan::storage {
         return stmt.step();
     }
 
-    bool SessionStore::session_belongs_to_agent(const std::string &session_id, const std::string &agent_key) {
+    bool SessionStore::session_belongs_to_agent(std::string_view session_id, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1");
         stmt.bind_text(1, session_id);
