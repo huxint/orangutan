@@ -16,3 +16,4 @@ docs/superpowers/
 .xmake/
 .planning/
 xmake-requires.lock
+.omx/
