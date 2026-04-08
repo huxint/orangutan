@@ -7,6 +7,7 @@
 #include "automation/scheduler.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
+#include "tools/registry/op-tool-support.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
@@ -39,10 +40,12 @@ namespace orangutan::tools {
             auto &runtime = *ctx->automation_runtime;
 
             const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
-                const auto id_or_name = request.value("id", request.value("name", ""));
-                if (op == "update" && id_or_name.empty()) {
-                    return tool_dispatch::response{"Error: id or name is required.", true};
+                if (op == "update") {
+                    if (const auto error = require_id_or_name(request); error.has_value()) {
+                        return tool_dispatch::response{*error, true};
+                    }
                 }
+                const auto id_or_name = request.value("id", request.value("name", ""));
 
                 automation::TaskSpec task;
                 if (op == "update") {
@@ -92,52 +95,46 @@ namespace orangutan::tools {
                 return tool_dispatch::response{op == "add" ? "Added task '" + task.name + "' (" + task_id + ")." : "Updated task '" + task.name + "'."};
             };
 
-            const auto normalized_op = input.value("op", "");
-            auto routed_input = input;
-            routed_input["op"] = normalized_op;
-
-            const auto result = tool_dispatch()
-                                    .unknown_op_error("Error: unknown operation. Supported: add, update, remove, list, run.")
-                                    .on("list",
-                                        [&runtime, &agent_key](const nlohmann::json &) {
-                                            const auto tasks = runtime.list_tasks(agent_key);
-                                            if (tasks.empty()) {
-                                                return tool_dispatch::response{"No tasks configured."};
-                                            }
-                                            std::string out;
-                                            for (const auto &task : tasks) {
-                                                out.append(format_task(task));
-                                                out.push_back('\n');
-                                            }
-                                            return tool_dispatch::response{std::move(out)};
-                                        })
-                                    .on("remove",
-                                        [&runtime, &agent_key](const nlohmann::json &request) {
-                                            const auto id_or_name = request.value("id", request.value("name", ""));
-                                            if (id_or_name.empty()) {
-                                                return tool_dispatch::response{"Error: id or name is required.", true};
-                                            }
-                                            return tool_dispatch::response{runtime.remove_task(agent_key, id_or_name) ? "Removed task." : "Error: task not found."};
-                                        })
-                                    .on("run",
-                                        [&runtime, &agent_key](const nlohmann::json &request) {
-                                            const auto id_or_name = request.value("id", request.value("name", ""));
-                                            if (id_or_name.empty()) {
-                                                return tool_dispatch::response{"Error: id or name is required.", true};
-                                            }
-                                            return tool_dispatch::response{runtime.run_task_now(agent_key, id_or_name)};
-                                        })
-                                    .on("add",
-                                        [&run_add_or_update](const nlohmann::json &request) {
-                                            return run_add_or_update(request, "add");
-                                        })
-                                    .on("update",
-                                        [&run_add_or_update](const nlohmann::json &request) {
-                                            return run_add_or_update(request, "update");
-                                        })
-                                    .run(routed_input);
-
-            return result.message;
+            return dispatch_message(tool_dispatch()
+                                        .unknown_op_error("Error: unknown operation. Supported: add, update, remove, list, run.")
+                                        .on("list",
+                                            [&runtime, &agent_key](const nlohmann::json &) {
+                                                const auto tasks = runtime.list_tasks(agent_key);
+                                                if (tasks.empty()) {
+                                                    return tool_dispatch::response{"No tasks configured."};
+                                                }
+                                                std::string out;
+                                                for (const auto &task : tasks) {
+                                                    out.append(format_task(task));
+                                                    out.push_back('\n');
+                                                }
+                                                return tool_dispatch::response{std::move(out)};
+                                            })
+                                        .on("remove",
+                                            [&runtime, &agent_key](const nlohmann::json &request) {
+                                                if (const auto error = require_id_or_name(request); error.has_value()) {
+                                                    return tool_dispatch::response{*error, true};
+                                                }
+                                                const auto id_or_name = request.value("id", request.value("name", ""));
+                                                return tool_dispatch::response{runtime.remove_task(agent_key, id_or_name) ? "Removed task." : "Error: task not found."};
+                                            })
+                                        .on("run",
+                                            [&runtime, &agent_key](const nlohmann::json &request) {
+                                                if (const auto error = require_id_or_name(request); error.has_value()) {
+                                                    return tool_dispatch::response{*error, true};
+                                                }
+                                                const auto id_or_name = request.value("id", request.value("name", ""));
+                                                return tool_dispatch::response{runtime.run_task_now(agent_key, id_or_name)};
+                                            })
+                                        .on("add",
+                                            [&run_add_or_update](const nlohmann::json &request) {
+                                                return run_add_or_update(request, "add");
+                                            })
+                                        .on("update",
+                                            [&run_add_or_update](const nlohmann::json &request) {
+                                                return run_add_or_update(request, "update");
+                                            }),
+                                    routed_input_with_default_op(input, ""));
         }
 
         PermissionResult check_task_permissions(const ToolUse &call) {

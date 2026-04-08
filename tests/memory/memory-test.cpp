@@ -62,6 +62,81 @@ namespace {
         return it == definitions.end() ? nullptr : &*it;
     }
 
+    class BuiltinMemoryToolsHarness {
+    public:
+        BuiltinMemoryToolsHarness()
+        : store_(store_harness_.db_path()),
+          runtime_memory_(store_) {
+            register_builtin_tools(registry, &runtime_memory_);
+        }
+
+    private:
+        MemoryStoreHarness store_harness_;
+
+    public:
+        MemoryStore store_;
+        ToolRegistry registry;
+        RuntimeMemory runtime_memory_;
+    };
+
+    std::set<std::string> discover_deferred_tool_names(ToolRegistry &registry) {
+        std::set<std::string> names;
+        for (const auto &summary : registry.deferred_tool_summaries()) {
+            names.insert(std::string(summary.name));
+            registry.discover_tool(std::string(summary.name));
+        }
+        return names;
+    }
+
+    std::vector<ToolDef> discover_tool_definitions(ToolRegistry &registry) {
+        registry.discover_deferred_tools();
+        return registry.definitions();
+    }
+
+    nlohmann::json remember_input_schema() {
+        return nlohmann::json{
+            {"type", "object"},
+            {"properties",
+             {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
+              {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
+              {"category", {{"type", "string"}, {"description", "Granular category label (e.g. profile, preference, project)"}}},
+              {"type", {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
+              {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
+              {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
+            {"required", nlohmann::json::array({"key", "content"})}};
+    }
+
+    nlohmann::json memory_store_input_schema() {
+        return nlohmann::json{
+            {"type", "object"},
+            {"properties",
+             {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
+              {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
+              {"category", {{"type", "string"}, {"description", "Granular category label"}}},
+              {"type", {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
+              {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
+              {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
+            {"required", nlohmann::json::array({"key", "content"})}};
+    }
+
+    nlohmann::json recall_input_schema() {
+        return nlohmann::json{{"type", "object"},
+                              {"additionalProperties", false},
+                              {"properties",
+                               {{"mode",
+                                 {{"type", "string"},
+                                  {"enum", nlohmann::json::array({"query", "category"})},
+                                  {"description", "How to recall memories: 'query' searches keys/content, 'category' lists a category"}}},
+                                {"value", {{"type", "string"}, {"description", "Search text or category name, depending on mode"}}},
+                                {"limit", {{"type", "integer"}, {"description", "Maximum number of memories to return"}}}}},
+                              {"required", nlohmann::json::array({"mode", "value"})}};
+    }
+
+    nlohmann::json forget_input_schema() {
+        return nlohmann::json{
+            {"type", "object"}, {"properties", {{"key", {{"type", "string"}, {"description", "The memory key to delete"}}}}}, {"required", nlohmann::json::array({"key"})}};
+    }
+
     TEST_CASE("remember_and_recall_by_key_or_content") {
         MemoryStoreHarness harness;
         MemoryStore store(harness.db_path());
@@ -234,22 +309,13 @@ namespace {
         CHECK_FALSE(bob.contains("Alice"));
         CHECK(global.empty());
     };
-    TEST_CASE("builtin_memory_tools_register_and_execute") {
-        MemoryStoreHarness harness;
-        MemoryStore store(harness.db_path());
-        tools::ToolRegistry registry;
-        RuntimeMemory runtime_memory(store);
-        register_builtin_tools(registry, &runtime_memory);
+    TEST_CASE("builtin_memory_tools_advertise_expected_deferred_names") {
+        BuiltinMemoryToolsHarness harness;
 
         // Memory tools are registered as deferred — not visible in definitions() until discovered.
         // Verify they exist by discovering them and then checking definitions.
-        CHECK(registry.has_deferred_tools());
-        const auto deferred = registry.deferred_tool_summaries();
-        std::set<std::string> deferred_names;
-        for (const auto &summary : deferred) {
-            deferred_names.insert(std::string(summary.name));
-            registry.discover_tool(std::string(summary.name));
-        }
+        CHECK(harness.registry.has_deferred_tools());
+        const auto deferred_names = discover_deferred_tool_names(harness.registry);
 
         CHECK(deferred_names.contains("remember"));
         CHECK(deferred_names.contains("recall"));
@@ -260,29 +326,75 @@ namespace {
         CHECK(deferred_names.contains("memory_update"));
         CHECK(deferred_names.contains("memory_list"));
         CHECK(deferred_names.contains("memory_stats"));
+    };
 
-        const auto definitions = registry.definitions();
+    TEST_CASE("remember_and_memory_store_definitions_match_current_contracts") {
+        BuiltinMemoryToolsHarness harness;
+        const auto definitions = discover_tool_definitions(harness.registry);
+        const auto *remember_definition = find_tool(definitions, "remember");
+        const auto *memory_store_definition = find_tool(definitions, "memory_store");
+
+        REQUIRE(remember_definition != nullptr);
+        REQUIRE(memory_store_definition != nullptr);
+
+        CHECK(remember_definition->name == "remember");
+        CHECK(memory_store_definition->name == "memory_store");
+
+        CHECK(remember_definition->description == "Store a durable fact, preference, or project context for future conversations. Use meaningful, stable keys like 'project.lang', "
+                                                  "'preference.style', or 'decision.auth-method'. Type must be one of: user (role/preferences/knowledge), feedback "
+                                                  "(corrections/approaches), project (work/decisions/deadlines), reference (external pointers).");
+        CHECK(remember_definition->input_schema == remember_input_schema());
+
+        CHECK(memory_store_definition->description == "Plugin-style alias for remember. Type must be one of: user, feedback, project, reference.");
+        CHECK(memory_store_definition->input_schema == memory_store_input_schema());
+    };
+
+    TEST_CASE("recall_and_memory_recall_definitions_match_current_contracts") {
+        BuiltinMemoryToolsHarness harness;
+        const auto definitions = discover_tool_definitions(harness.registry);
         const auto *recall_definition = find_tool(definitions, "recall");
-        REQUIRE(recall_definition != nullptr);
-        CHECK(recall_definition->input_schema.value("type", "") == "object");
-        CHECK_FALSE(recall_definition->input_schema.contains("anyOf"));
-        CHECK(recall_definition->input_schema.value("additionalProperties", true) == false);
-        CHECK(recall_definition->input_schema["required"] == nlohmann::json::array({"mode", "value"}));
-        CHECK(recall_definition->input_schema["properties"]["mode"]["enum"] == nlohmann::json::array({"query", "category"}));
-        CHECK(recall_definition->input_schema["properties"].contains("value"));
-
         const auto *memory_recall_definition = find_tool(definitions, "memory_recall");
-        REQUIRE(memory_recall_definition != nullptr);
-        CHECK_FALSE(memory_recall_definition->input_schema.contains("anyOf"));
 
-        auto remember_result = registry.execute(ToolUse("remember-1", "remember", {{"key", "preferred_language"}, {"content", "C++"}, {"category", "preferences"}}));
+        REQUIRE(recall_definition != nullptr);
+        REQUIRE(memory_recall_definition != nullptr);
+
+        CHECK(recall_definition->name == "recall");
+        CHECK(memory_recall_definition->name == "memory_recall");
+        CHECK(recall_definition->description == "Recall stored memories. Use mode='query' with value=<search text>, or mode='category' with value=<category name>.");
+        CHECK(memory_recall_definition->description == "Plugin-style alias for recall. Use mode='query' or mode='category' with value=<text>.");
+        CHECK(recall_definition->input_schema == memory_recall_definition->input_schema);
+        CHECK(recall_definition->input_schema == recall_input_schema());
+        CHECK_FALSE(memory_recall_definition->input_schema.contains("anyOf"));
+    };
+
+    TEST_CASE("forget_and_memory_forget_definitions_match_current_contracts") {
+        BuiltinMemoryToolsHarness harness;
+        const auto definitions = discover_tool_definitions(harness.registry);
+        const auto *forget_definition = find_tool(definitions, "forget");
+        const auto *memory_forget_definition = find_tool(definitions, "memory_forget");
+
+        REQUIRE(forget_definition != nullptr);
+        REQUIRE(memory_forget_definition != nullptr);
+
+        CHECK(forget_definition->name == "forget");
+        CHECK(memory_forget_definition->name == "memory_forget");
+        CHECK(forget_definition->description == "Delete a stored memory by key.");
+        CHECK(memory_forget_definition->description == "Plugin-style alias for forget.");
+        CHECK(forget_definition->input_schema == memory_forget_definition->input_schema);
+        CHECK(forget_definition->input_schema == forget_input_schema());
+    };
+
+    TEST_CASE("builtin_memory_tools_execute_core_triplet") {
+        BuiltinMemoryToolsHarness harness;
+
+        auto remember_result = harness.registry.execute(ToolUse("remember-1", "remember", {{"key", "preferred_language"}, {"content", "C++"}, {"category", "preferences"}}));
         CHECK_FALSE(remember_result.is_error);
 
-        auto recall_result = registry.execute(ToolUse("recall-1", "recall", {{"mode", "query"}, {"value", "preferred_language"}}));
+        auto recall_result = harness.registry.execute(ToolUse("recall-1", "recall", {{"mode", "query"}, {"value", "preferred_language"}}));
         CHECK_FALSE(recall_result.is_error);
         CHECK(recall_result.content.contains("C++"));
 
-        auto forget_result = registry.execute(ToolUse("forget-1", "forget", {{"key", "preferred_language"}}));
+        auto forget_result = harness.registry.execute(ToolUse("forget-1", "forget", {{"key", "preferred_language"}}));
         CHECK_FALSE(forget_result.is_error);
         CHECK(forget_result.content.contains("Forgot"));
     };
@@ -326,15 +438,21 @@ namespace {
             registry.execute(ToolUse("memory-update-1", "memory_update", {{"key", "profile.name"}, {"content", "Alice Example"}, {"category", "profile"}, {"merge", false}}));
         auto stats_result = registry.execute(ToolUse("memory-stats-1", "memory_stats", nlohmann::json::object()));
         auto list_result = registry.execute(ToolUse("memory-list-1", "memory_list", {{"category", "profile"}}));
+        auto forget_result = registry.execute(ToolUse("memory-forget-1", "memory_forget", {{"key", "profile.name"}}));
+        auto recall_after_forget = registry.execute(ToolUse("memory-recall-2", "memory_recall", {{"mode", "query"}, {"value", "profile.name"}}));
 
         CHECK_FALSE(store_result.is_error);
         CHECK_FALSE(recall_result.is_error);
         CHECK_FALSE(update_result.is_error);
         CHECK_FALSE(stats_result.is_error);
         CHECK_FALSE(list_result.is_error);
+        CHECK_FALSE(forget_result.is_error);
+        CHECK_FALSE(recall_after_forget.is_error);
         CHECK(recall_result.content.contains("Alice"));
         CHECK(stats_result.content.contains("total=1"));
         CHECK(list_result.content.contains("Alice Example"));
+        CHECK(forget_result.content.contains("Forgot"));
+        CHECK(recall_after_forget.content == "(no memories found)");
     };
 
     TEST_CASE("builtin_memory_tools_respect_memory_scope") {

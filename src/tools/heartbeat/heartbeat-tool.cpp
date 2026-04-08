@@ -5,6 +5,7 @@
 
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
+#include "tools/registry/op-tool-support.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
@@ -107,7 +108,7 @@ namespace orangutan::tools {
             auto routed_input = input;
             routed_input["op"] = normalized_op;
 
-            const auto result =
+            return dispatch_message(
                 tool_dispatch()
                     .unknown_op_error("Error: unknown operation. Supported: add, update, remove, list, run, pause, resume.")
                     .on("list",
@@ -162,10 +163,8 @@ namespace orangutan::tools {
                     .on("update",
                         [&run_add_or_update](const nlohmann::json &request) {
                             return run_add_or_update(request, "update");
-                        })
-                    .run(routed_input);
-
-            return result.message;
+                        }),
+                routed_input);
         }
 
     } // namespace

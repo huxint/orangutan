@@ -145,6 +145,26 @@ namespace {
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
     };
 
+    TEST_CASE("deferred_tools_remain_directly_executable_before_discovery") {
+        RuntimeAgentRuntimeHarness harness;
+        auto input = harness.make_input();
+        input.permission_context.mode = permission_mode::bypass_permissions;
+
+        auto runtime = build_agent_runtime(input);
+        const auto definitions = runtime.tools.definitions();
+
+        CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "remember"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
+        CHECK(runtime.tools.has_deferred_tools());
+
+        const auto remember = runtime.tools.execute(ToolUse("remember-before-discovery", "remember", {{"key", "runtime.theme"}, {"content", "amber"}}));
+        CHECK_FALSE(remember.is_error);
+
+        const auto recall = runtime.tools.execute(ToolUse("recall-before-discovery", "memory_recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
+        CHECK_FALSE(recall.is_error);
+        CHECK(recall.content.contains("amber"));
+    };
+
     TEST_CASE("coordinator_mode_runtime_exposes_only_orchestration_tools") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
@@ -274,13 +294,16 @@ namespace {
         }
 
         auto input = harness.make_input();
-        input.permission_context = initialize_permission_context(PermissionConfig{
-            .default_mode = permission_mode::accept_edits,
-            .allow = {"read"},
-        }, CLIPermissionOptions{
-            .mode_override = permission_mode::plan,
-            .allowed_tools = {"task(list)"},
-        }, harness.workspace_root());
+        input.permission_context = initialize_permission_context(
+            PermissionConfig{
+                .default_mode = permission_mode::accept_edits,
+                .allow = {"read"},
+            },
+            CLIPermissionOptions{
+                .mode_override = permission_mode::plan,
+                .allowed_tools = {"task(list)"},
+            },
+            harness.workspace_root());
 
         auto runtime = build_agent_runtime(input);
         const auto *permission_context = runtime.tool_context.permission_context;
@@ -291,12 +314,10 @@ namespace {
             return rule.tool_name == "read" && rule.source == permission_rule_source::user_settings;
         }));
         CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "shell" && rule.source == permission_rule_source::project_settings && rule.content.has_value() &&
-                   rule.content->pattern == "git";
+            return rule.tool_name == "shell" && rule.source == permission_rule_source::project_settings && rule.content.has_value() && rule.content->pattern == "git";
         }));
         CHECK(std::ranges::any_of(permission_context->allow_rules, [](const PermissionRule &rule) {
-            return rule.tool_name == "task" && rule.source == permission_rule_source::cli_arg && rule.content.has_value() &&
-                   rule.content->pattern == "list";
+            return rule.tool_name == "task" && rule.source == permission_rule_source::cli_arg && rule.content.has_value() && rule.content->pattern == "list";
         }));
         CHECK(std::ranges::any_of(permission_context->deny_rules, [](const PermissionRule &rule) {
             return rule.tool_name == "edit" && rule.source == permission_rule_source::local_settings;

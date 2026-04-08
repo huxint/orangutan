@@ -47,20 +47,51 @@ namespace {
         SECTION("registers agent_spawn tool") {
             const auto *def = registry.find_definition("agent_spawn");
             REQUIRE(def != nullptr);
-            CHECK(!def->description.empty());
-            CHECK(def->input_schema.contains("properties"));
+
+            CHECK(def->name == "agent_spawn");
+            CHECK(def->description == "Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.");
+            CHECK(def->input_schema == nlohmann::json{
+                                           {"type", "object"},
+                                           {"properties",
+                                            {
+                                                {"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
+                                                {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
+                                                {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
+                                                {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
+                                            }},
+                                           {"required", nlohmann::json::array({"agent_key", "prompt"})},
+                                       });
         }
 
         SECTION("registers agent_send_message tool") {
             const auto *def = registry.find_definition("agent_send_message");
             REQUIRE(def != nullptr);
-            CHECK(!def->description.empty());
+
+            CHECK(def->name == "agent_send_message");
+            CHECK(def->description == "Send a message to a running agent. Can address by run_id or agent name.");
+            CHECK(def->input_schema == nlohmann::json{
+                                           {"type", "object"},
+                                           {"properties",
+                                            {
+                                                {"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
+                                                {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
+                                                {"text", {{"type", "string"}, {"description", "The message text to send"}}},
+                                            }},
+                                           {"required", nlohmann::json::array({"text"})},
+                                       });
         }
 
         SECTION("registers agent_stop tool") {
             const auto *def = registry.find_definition("agent_stop");
             REQUIRE(def != nullptr);
-            CHECK(!def->description.empty());
+
+            CHECK(def->name == "agent_stop");
+            CHECK(def->description == "Stop a running agent. The agent will be given a chance to clean up before being terminated.");
+            CHECK(def->input_schema == nlohmann::json{
+                                           {"type", "object"},
+                                           {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
+                                           {"required", nlohmann::json::array({"run_id"})},
+                                       });
         }
 
         SECTION("has deferred tools") {

@@ -35,17 +35,36 @@ namespace {
         SECTION("registers team_create tool") {
             const auto *def = registry.find_definition("team_create");
             REQUIRE(def != nullptr);
-            CHECK(!def->description.empty());
-            CHECK(def->input_schema.contains("properties"));
-            CHECK(def->input_schema["properties"].contains("name"));
+
+            CHECK(def->name == "team_create");
+            CHECK(def->description == "Create a new team for organizing agents that collaborate on a shared task.");
+            CHECK(def->input_schema == nlohmann::json{
+                                           {"type", "object"},
+                                           {"properties",
+                                            {
+                                                {"name", {{"type", "string"}, {"description", "A unique name for the team"}}},
+                                                {"description", {{"type", "string"}, {"description", "Optional description of the team's purpose"}}},
+                                            }},
+                                           {"required", nlohmann::json::array({"name"})},
+                                       });
         }
 
         SECTION("registers team_delete tool") {
             const auto *def = registry.find_definition("team_delete");
             REQUIRE(def != nullptr);
-            CHECK(!def->description.empty());
-            CHECK(def->input_schema.contains("properties"));
-            CHECK(def->input_schema["properties"].contains("team_id"));
+
+            CHECK(def->name == "team_delete");
+            CHECK(def->description == "Delete a team and deactivate all its members.");
+            CHECK(def->input_schema ==
+                  nlohmann::json{
+                      {"type", "object"},
+                      {"properties",
+                       {
+                           {"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
+                           {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}},
+                       }},
+                      {"required", nlohmann::json::array({"team_id"})},
+                  });
         }
 
         SECTION("has deferred tools") {

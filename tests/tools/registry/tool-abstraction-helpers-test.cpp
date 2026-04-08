@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -6,6 +5,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <nlohmann/json.hpp>
 
+#include "tools/registry/op-tool-support.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/tool-dispatch.hpp"
@@ -174,31 +174,75 @@ TEST_CASE("tool_dispatch: formats unknown op from formatter", "[tools][registry]
     CHECK(result.message == "unsupported operation: publish");
 }
 
+TEST_CASE("op_tool_support: routed_input_with_default_op preserves explicit op", "[tools][registry][abstractions]") {
+    const auto input = nlohmann::json{{"op", "list"}, {"name", "demo"}};
+    const auto routed = routed_input_with_default_op(input, "fallback");
+
+    CHECK(routed.at("op") == "list");
+    CHECK(routed.at("name") == "demo");
+}
+
+TEST_CASE("op_tool_support: routed_input_with_default_op injects provided default", "[tools][registry][abstractions]") {
+    const auto routed = routed_input_with_default_op(nlohmann::json::object(), "list");
+
+    CHECK(routed.at("op") == "list");
+}
+
+TEST_CASE("op_tool_support: require_id_or_name returns exact compatibility text", "[tools][registry][abstractions]") {
+    const auto result = require_id_or_name(nlohmann::json::object());
+
+    REQUIRE(result.has_value());
+    CHECK(*result == "Error: id or name is required.");
+}
+
+TEST_CASE("op_tool_support: require_id returns exact compatibility text", "[tools][registry][abstractions]") {
+    const auto result = require_id(nlohmann::json::object());
+
+    REQUIRE(result.has_value());
+    CHECK(*result == "Error: id is required.");
+}
+
+TEST_CASE("op_tool_support: dispatch_message returns tool_dispatch message unchanged", "[tools][registry][abstractions]") {
+    const auto output = dispatch_message(tool_dispatch().on("list",
+                                                            [](const nlohmann::json &) {
+                                                                return tool_dispatch::response{"ok"};
+                                                            }),
+                                         nlohmann::json{{"op", "list"}});
+
+    CHECK(output == "ok");
+}
+
 TEST_CASE("schema_fragments: builds op+id object schema", "[tools][registry][abstractions]") {
     const auto schema = schema_fragments::op_id_object_schema();
 
-    CHECK(schema.at("type") == "object");
-    const auto &required = schema.at("required");
-    const auto has_required_key = [&required](std::string_view key) {
-        return std::ranges::any_of(required, [key](const nlohmann::json &required_key) {
-            return required_key.is_string() && required_key.get<std::string_view>() == key;
-        });
-    };
-
-    CHECK(has_required_key("op"));
-    CHECK(has_required_key("id"));
-    CHECK(schema.at("properties").at("op").at("type") == "string");
-    CHECK(schema.at("properties").at("id").at("type") == "string");
+    CHECK(schema == nlohmann::json{
+                        {"type", "object"},
+                        {"properties",
+                         {
+                             {"op", {{"type", "string"}}},
+                             {"id", {{"type", "string"}}},
+                         }},
+                        {"required", nlohmann::json::array({"op", "id"})},
+                    });
 }
 
 TEST_CASE("schema_fragments: provides empty object and delivery fields", "[tools][registry][abstractions]") {
     const auto empty_schema = schema_fragments::empty_object();
     const auto delivery_fields = schema_fragments::delivery_fields();
 
-    CHECK(empty_schema.at("type") == "object");
-    CHECK(empty_schema.contains("properties"));
-    CHECK(empty_schema.at("properties").empty());
+    CHECK(empty_schema == nlohmann::json{
+                              {"type", "object"},
+                              {"properties", nlohmann::json::object()},
+                          });
 
-    CHECK(delivery_fields.contains("channel"));
-    CHECK(delivery_fields.contains("thread_id"));
+    CHECK(delivery_fields == nlohmann::json{
+                                 {"channel", {{"type", "string"}}},
+                                 {"thread_id", {{"type", "string"}}},
+                             });
+}
+
+TEST_CASE("schema_fragments: compatibility-critical reusable fields preserve exact JSON", "[tools][registry][abstractions]") {
+    CHECK(schema_fragments::non_negative_index_field() == nlohmann::json{{"type", "integer"}, {"minimum", 0}});
+    CHECK(schema_fragments::delivery_mode_field() == nlohmann::json{{"type", "string"}, {"enum", nlohmann::json::array({"silent", "notify"})}});
+    CHECK(schema_fragments::delivery_targets_field() == nlohmann::json{{"type", "array"}, {"items", {{"type", "string"}}}});
 }

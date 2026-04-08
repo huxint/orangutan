@@ -717,6 +717,19 @@ TEST_CASE("DeniedToolsAreHiddenAndBlockedByPolicy") {
     CHECK(shell_result.content.contains("deny rule"));
 };
 
+TEST_CASE("FilteredToolsAreTreatedAsFilteredBeforeToolSpecificPermissionLookup") {
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = permission_mode::plan;
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, nullptr, {}, {}, &permissions));
+
+    const auto shell_result = registry.execute(ToolUse("plan-filtered-shell", "shell", nlohmann::json::object()));
+    CHECK(shell_result.is_error);
+    CHECK(shell_result.content.contains("Plan mode"));
+    CHECK_FALSE(shell_result.content.contains("command is required"));
+};
+
 TEST_CASE("ShellApprovalAskBlocksWhenPromptUnavailable") {
     ToolRegistry registry;
     ToolPermissionContext permissions;

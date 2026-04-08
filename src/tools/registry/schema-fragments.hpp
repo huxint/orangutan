@@ -30,6 +30,14 @@ namespace orangutan::tools::schema_fragments {
     }
 
     [[nodiscard]]
+    inline nlohmann::json non_negative_index_field() {
+        return {
+            {"type", "integer"},
+            {"minimum", 0},
+        };
+    }
+
+    [[nodiscard]]
     inline nlohmann::json op_enum(std::initializer_list<std::string_view> values) {
         auto ops = nlohmann::json::array();
         for (const auto value : values) {

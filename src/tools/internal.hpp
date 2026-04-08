@@ -5,7 +5,6 @@
 #include "tools/registry/tool-registry.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -19,19 +18,6 @@ namespace orangutan::tools {
 
     class BackgroundCompletionDispatcher;
 
-
-    using ContextualToolRegistrar = void (*)(ToolRegistry &, const ToolRuntimeContext *);
-
-    template <std::size_t N>
-    void register_contextual_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context, const std::array<ContextualToolRegistrar, N> &registrars) {
-        if (tool_context == nullptr) {
-            return;
-        }
-
-        for (const auto registrar : registrars) {
-            registrar(registry, tool_context);
-        }
-    }
     inline std::filesystem::path normalize_tool_path(const std::filesystem::path &path) {
         std::error_code ec;
         auto normalized = std::filesystem::weakly_canonical(path, ec);
@@ -117,10 +103,9 @@ namespace orangutan::tools {
     }
 
     inline bool is_tool_path_allowed(const std::filesystem::path &path, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr) {
-        return std::ranges::any_of(permission_roots(workspace_root, permissions),
-                                   [&path](const auto &root) {
-                                       return is_path_within_workspace(path, root);
-                                   });
+        return std::ranges::any_of(permission_roots(workspace_root, permissions), [&path](const auto &root) {
+            return is_path_within_workspace(path, root);
+        });
     }
 
     inline std::filesystem::path resolve_tool_path(const std::filesystem::path &path, const std::filesystem::path &workspace_root,

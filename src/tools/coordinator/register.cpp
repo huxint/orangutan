@@ -1,6 +1,4 @@
 #include "tools/coordinator/register.hpp"
-#include "tools/internal.hpp"
-
 #include <array>
 
 namespace orangutan::tools {
@@ -14,7 +12,13 @@ namespace orangutan::tools {
     } // namespace
 
     void register_coordinator_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        register_contextual_tools(registry, tool_context, COORDINATOR_TOOL_REGISTRARS);
+        if (tool_context == nullptr) {
+            return;
+        }
+
+        for (const auto registrar : COORDINATOR_TOOL_REGISTRARS) {
+            registrar(registry, tool_context);
+        }
     }
 
 } // namespace orangutan::tools
