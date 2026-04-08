@@ -18,7 +18,7 @@ using namespace orangutan;
 
 namespace {
 
-    using PerformHttpRequestPtr = QqApiClient::HttpRawResponse (QqApiClient::*)(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body,
+    using PerformHttpRequestPtr = QqApiClient::HttpRawResponse (QqApiClient::*)(std::string_view method, std::string_view url, const std::optional<nlohmann::json> &body,
                                                                                 bool with_auth) const;
 
     static_assert(std::is_same_v<decltype(&QqApiClient::perform_http_request), PerformHttpRequestPtr>);

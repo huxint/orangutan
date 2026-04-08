@@ -42,16 +42,16 @@ namespace orangutan::channel::qq {
         virtual std::string get_gateway_url();
 
         [[nodiscard]]
-        virtual QqApiResponse get(const std::string &path);
+        virtual QqApiResponse get(std::string_view path);
 
         [[nodiscard]]
-        virtual QqApiResponse post(const std::string &path, const nlohmann::json &body);
+        virtual QqApiResponse post(std::string_view path, const nlohmann::json &body);
 
         [[nodiscard]]
-        virtual QqApiResponse put(const std::string &path, const nlohmann::json &body);
+        virtual QqApiResponse put(std::string_view path, const nlohmann::json &body);
 
         [[nodiscard]]
-        virtual QqApiResponse del(const std::string &path);
+        virtual QqApiResponse del(std::string_view path);
 
         [[nodiscard]]
         static bool is_retryable_gateway_status(int status_code);
@@ -65,16 +65,16 @@ namespace orangutan::channel::qq {
         };
 
         [[nodiscard]]
-        QqApiResponse request_with_retry(std::string_view method, const std::string &path, const std::optional<nlohmann::json> &body);
+        QqApiResponse request_with_retry(std::string_view method, std::string_view path, const std::optional<nlohmann::json> &body);
 
         [[nodiscard]]
-        HttpRawResponse perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body, bool with_auth) const;
+        HttpRawResponse perform_http_request(std::string_view method, std::string_view url, const std::optional<nlohmann::json> &body, bool with_auth) const;
 
         [[nodiscard]]
         static QqApiResponse normalize_response(HttpRawResponse raw);
 
         [[nodiscard]]
-        static std::chrono::milliseconds parse_retry_after_delay(const std::string &retry_after);
+        static std::chrono::milliseconds parse_retry_after_delay(std::string_view retry_after);
 
         [[nodiscard]]
         static std::string build_api_error_message(std::string_view method, std::string_view path, const QqApiResponse &response);

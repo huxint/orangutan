@@ -140,19 +140,19 @@ namespace orangutan::channel::qq {
         return payload.at("url").get<std::string>();
     }
 
-    QqApiResponse QqApiClient::get(const std::string &path) {
+    QqApiResponse QqApiClient::get(std::string_view path) {
         return request_with_retry("GET", path, std::nullopt);
     }
 
-    QqApiResponse QqApiClient::post(const std::string &path, const nlohmann::json &body) {
+    QqApiResponse QqApiClient::post(std::string_view path, const nlohmann::json &body) {
         return request_with_retry("POST", path, body);
     }
 
-    QqApiResponse QqApiClient::put(const std::string &path, const nlohmann::json &body) {
+    QqApiResponse QqApiClient::put(std::string_view path, const nlohmann::json &body) {
         return request_with_retry("PUT", path, body);
     }
 
-    QqApiResponse QqApiClient::del(const std::string &path) {
+    QqApiResponse QqApiClient::del(std::string_view path) {
         return request_with_retry("DELETE", path, std::nullopt);
     }
 
@@ -160,14 +160,14 @@ namespace orangutan::channel::qq {
         return status_code == 502 || status_code == 503 || status_code == 504;
     }
 
-    QqApiResponse QqApiClient::request_with_retry(std::string_view method, const std::string &path, const std::optional<nlohmann::json> &body) {
+    QqApiResponse QqApiClient::request_with_retry(std::string_view method, std::string_view path, const std::optional<nlohmann::json> &body) {
         int token_refresh_retries = 0;
         int rate_limit_retries = 0;
         int gateway_retries = 0;
 
         while (true) {
             ensure_access_token();
-            const auto full_url = is_absolute_url(path) ? path : std::string(QQ_API_BASE) + path;
+            const auto full_url = is_absolute_url(path) ? std::string(path) : std::string(QQ_API_BASE) + std::string(path);
 
             auto raw = perform_http_request(method, full_url, body, true);
             auto response = normalize_response(std::move(raw));
@@ -206,7 +206,7 @@ namespace orangutan::channel::qq {
         }
     }
 
-    QqApiClient::HttpRawResponse QqApiClient::perform_http_request(std::string_view method, const std::string &url, const std::optional<nlohmann::json> &body,
+    QqApiClient::HttpRawResponse QqApiClient::perform_http_request(std::string_view method, std::string_view url, const std::optional<nlohmann::json> &body,
                                                                    bool with_auth) const {
         CurlHandle curl;
         CurlHeaders headers;
@@ -214,6 +214,7 @@ namespace orangutan::channel::qq {
         std::string trace_id;
         std::string retry_after;
         std::string method_text(method);
+        std::string url_text(url);
         std::string body_text;
         std::array<char, CURL_ERROR_SIZE> error_buffer{};
 
@@ -224,7 +225,7 @@ namespace orangutan::channel::qq {
         }
 
         curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error_buffer.data());
-        curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl.get(), CURLOPT_URL, url_text.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, DEFAULT_TIMEOUT_SECONDS);
         curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, DEFAULT_TIMEOUT_SECONDS);
@@ -327,14 +328,15 @@ namespace orangutan::channel::qq {
         return normalized;
     }
 
-    std::chrono::milliseconds QqApiClient::parse_retry_after_delay(const std::string &retry_after) {
+    std::chrono::milliseconds QqApiClient::parse_retry_after_delay(std::string_view retry_after) {
         if (retry_after.empty()) {
             return std::chrono::seconds(1);
         }
 
         char *end_ptr = nullptr;
-        const auto seconds = std::strtod(retry_after.c_str(), &end_ptr);
-        if (end_ptr != retry_after.c_str() && std::isfinite(seconds) && seconds > 0.0) {
+        const std::string retry_after_text(retry_after);
+        const auto seconds = std::strtod(retry_after_text.c_str(), &end_ptr);
+        if (end_ptr != retry_after_text.c_str() && std::isfinite(seconds) && seconds > 0.0) {
             return std::chrono::milliseconds(static_cast<base::i64>(seconds * 1000.0));
         }
 

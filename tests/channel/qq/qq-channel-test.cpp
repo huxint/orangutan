@@ -79,16 +79,16 @@ namespace {
         }
 
         [[nodiscard]]
-        QqApiResponse get(const std::string &path) override {
-            last_get_path = path;
+        QqApiResponse get(std::string_view path) override {
+            last_get_path = std::string(path);
             return download_response;
         }
 
         [[nodiscard]]
-        QqApiResponse post(const std::string &path, const nlohmann::json &body) override {
+        QqApiResponse post(std::string_view path, const nlohmann::json &body) override {
             requests.push_back({
                 .method = "POST",
-                .path = path,
+                .path = std::string(path),
                 .body = body,
             });
             if (path.ends_with("/files")) {
@@ -104,10 +104,10 @@ namespace {
         }
 
         [[nodiscard]]
-        QqApiResponse put(const std::string &path, const nlohmann::json &body) override {
+        QqApiResponse put(std::string_view path, const nlohmann::json &body) override {
             requests.push_back({
                 .method = "PUT",
-                .path = path,
+                .path = std::string(path),
                 .body = body,
             });
             return QqApiResponse{
@@ -117,10 +117,10 @@ namespace {
         }
 
         [[nodiscard]]
-        QqApiResponse del(const std::string &path) override {
+        QqApiResponse del(std::string_view path) override {
             requests.push_back({
                 .method = "DELETE",
-                .path = path,
+                .path = std::string(path),
                 .body = nlohmann::json::object(),
             });
             return QqApiResponse{
