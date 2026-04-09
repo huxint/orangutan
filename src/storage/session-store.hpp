@@ -1,5 +1,6 @@
 #pragma once
 
+#include "permissions/permission-types.hpp"
 #include "storage/sqlite.hpp"
 #include "types/types.hpp"
 #include <cstdint>
@@ -62,6 +63,13 @@ namespace orangutan::storage {
 
         // Load a session's messages by ID
         std::vector<Message> load(std::string_view session_id);
+
+        // Persist/load session-scoped permission rules that should be rehydrated when a session resumes.
+        void save_session_permission_rule(std::string_view session_id, PermissionRule rule);
+        std::vector<PermissionRule> load_session_permission_rules(std::string_view session_id);
+        ToolPermissionContext load_session_permission_context(std::string_view session_id, const ToolPermissionContext &base_context);
+        void replace_session_permission_rules(std::string_view session_id, const ToolPermissionContext &context);
+        void clear_session_permission_rules(std::string_view session_id);
 
         // List all saved sessions
         std::vector<SessionInfo> list_sessions(std::string_view scope_key = {});

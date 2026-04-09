@@ -10,6 +10,7 @@
 #include "channel/message-queue.hpp"
 #include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
+#include "tools/registry/tool-context.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -48,6 +49,8 @@ namespace orangutan::providers {
 
 namespace orangutan::bootstrap {
 
+    struct AgentRuntimeBundle;
+
     struct AgentRuntimeConfig {
         std::string agent_key;
         std::string model;
@@ -82,7 +85,8 @@ namespace orangutan::bootstrap {
         explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
         [[nodiscard]]
-        ApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr);
+        ApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr,
+                                       tools::PermissionRuleMutationCallback permission_rule_mutator = {});
 
         [[nodiscard]]
         bool handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager);
@@ -97,6 +101,7 @@ namespace orangutan::bootstrap {
             std::condition_variable cv;
             bool resolved = false;
             bool approved = false;
+            bool always_allow = false;
             bool cancelled = false;
         };
 
@@ -131,6 +136,7 @@ namespace orangutan::bootstrap {
         struct ChannelCompletionResumeState {
             std::mutex mutex;
             agent::AgentLoop *agent = nullptr;
+            AgentRuntimeBundle *runtime = nullptr;
             providers::Provider *provider = nullptr;
             hooks::HookManager *hook_manager = nullptr;
             std::string *current_session_id = nullptr;

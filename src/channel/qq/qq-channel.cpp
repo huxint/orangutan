@@ -1291,9 +1291,9 @@ namespace orangutan::channel::qq {
             return;
         }
 
+        const auto event_data = data.value("data", nlohmann::json::object());
         std::string button_data;
         if (data.contains("data")) {
-            const auto event_data = data.value("data", nlohmann::json::object());
             const auto resolved = event_data.value("resolved", nlohmann::json::object());
             button_data = resolved.value("button_data", std::string{});
             if (button_data.empty()) {
@@ -1302,19 +1302,24 @@ namespace orangutan::channel::qq {
         }
 
         const auto user_openid = data.value("user_openid", std::string{});
+        const auto group_openid = data.value("group_openid", event_data.value("group_openid", std::string{}));
         const auto channel_id = data.value("channel_id", std::string{});
         const bool is_guild = !channel_id.empty();
-        if (!is_guild) {
+        const bool is_group = !is_guild && !group_openid.empty();
+        if (!is_guild && !is_group) {
             remember_known_user("c2c", user_openid);
+        } else if (is_group && !user_openid.empty()) {
+            remember_known_user("group", user_openid);
         }
         emit_inbound({
-            .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id) : make_qq_jid(bot_name_, "c2c", user_openid),
+            .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id)
+                            : (is_group ? make_qq_jid(bot_name_, "group", group_openid) : make_qq_jid(bot_name_, "c2c", user_openid)),
             .sender = user_openid,
             .sender_name = user_openid,
             .content = button_data,
             .timestamp = data.value("timestamp", std::string{}),
             .message_id = interaction_id,
-            .is_group = is_guild,
+            .is_group = is_guild || is_group,
         });
     }
 

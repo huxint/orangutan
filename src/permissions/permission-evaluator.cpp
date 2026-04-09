@@ -1,3 +1,4 @@
+#include "permissions/approval-signature.hpp"
 #include "permissions/permission-evaluator.hpp"
 
 #include "permissions/permission-display.hpp"
@@ -23,6 +24,10 @@ namespace orangutan::permissions {
     }
 
     static std::string extract_tool_content(const ToolUse &call) {
+        if (auto content = approval_match_content(call); !content.empty()) {
+            return content;
+        }
+
         if (is_shell_tool(call.name)) {
             if (call.input.contains("command") && call.input["command"].is_string()) {
                 return call.input["command"].get<std::string>();

@@ -51,6 +51,10 @@ namespace orangutan::channel::qq {
             channel.handle_reaction_event(event_type, data);
         }
 
+        static void handle_interaction(QqChannel &channel, const nlohmann::json &data) {
+            channel.handle_interaction(data);
+        }
+
         static std::string parse_message_scene_ext_value(const nlohmann::json &data, std::string_view key) {
             return QqChannel::parse_message_scene_ext_value(data, key);
         }
@@ -289,6 +293,48 @@ namespace {
         CHECK(captured.reaction->target_id == "message-1");
         CHECK(captured.reaction->emoji_id == "128512");
         CHECK(captured.reaction->emoji_type == 1);
+    }
+
+    TEST_CASE("qq_channel_interaction_events_ack_and_preserve_group_button_data") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+
+        InboundMessage captured;
+        bool called = false;
+        qqtest::QqChannelTestAccess::set_on_message(channel, [&](const InboundMessage &message) {
+            captured = message;
+            called = true;
+        });
+
+        qqtest::QqChannelTestAccess::handle_interaction(channel,
+                                                        nlohmann::json{
+                                                            {"id", "interaction-1"},
+                                                            {"timestamp", "2026-04-02T13:05:00Z"},
+                                                            {"user_openid", "user-openid"},
+                                                            {"group_openid", "group-openid"},
+                                                            {"data",
+                                                             {
+                                                                 {"resolved", {{"button_data", "approval:shell-approval-1:deny"}}},
+                                                             }},
+                                                        });
+
+        REQUIRE(called);
+        CHECK(captured.jid == "qqbot:bot:group:group-openid");
+        CHECK(captured.sender == "user-openid");
+        CHECK(captured.sender_name == "user-openid");
+        CHECK(captured.content == "approval:shell-approval-1:deny");
+        CHECK(captured.message_id == "interaction-1");
+        CHECK(captured.is_group);
+
+        REQUIRE(api->requests.size() == 1UL);
+        CHECK(api->requests[0].method == "PUT");
+        CHECK(api->requests[0].path == "/interactions/interaction-1");
+        CHECK(api->requests[0].body.at("code").get<int>() == 0);
     }
 
 } // namespace

@@ -1,4 +1,6 @@
 #include "types/types.hpp"
+#include "automation/automation-store.hpp"
+#include "automation/scheduler.hpp"
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
@@ -806,6 +808,47 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     CHECK(prompted);
     CHECK(not(shell_result.is_error));
     CHECK(shell_result.content.contains("hello"));
+};
+
+TEST_CASE("TaskToolAllowsMatchingCanonicalSessionRuleWithoutPrompt") {
+    const auto automation_db = test_tmp_root() / "orangutan_task_rule_bypass.db";
+    std::filesystem::remove(automation_db);
+
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = permission_mode::default_mode;
+    permissions.allow_rules.push_back(PermissionRule{
+        .source = permission_rule_source::session,
+        .behavior = permission_behavior::allow,
+        .tool_name = "task",
+        .content = RuleContent{.match_type = rule_match_type::exact, .pattern = "op=add|name=nightly-sync"},
+    });
+
+    automation::Store store(automation_db);
+    automation::Runtime runtime(store);
+    auto tool_context = make_runtime_tool_context();
+    tool_context.automation_runtime = &runtime;
+
+    bool prompted = false;
+    tool_context.approval_callback = [&prompted](const ToolUse &, const PermissionDecision &) {
+        prompted = true;
+        return false;
+    };
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
+
+    const auto result = registry.execute(ToolUse("task-rule-bypass", "task", {
+                                                                     {"op", "add"},
+                                                                     {"name", "nightly-sync"},
+                                                                     {"schedule_kind", "cron"},
+                                                                     {"schedule", "0 * * * *"},
+                                                                     {"prompt", "sync nightly"},
+                                                                 }));
+
+    CHECK_FALSE(result.is_error);
+    CHECK_FALSE(prompted);
+    CHECK(result.content.contains("Added task 'nightly-sync'"));
+    std::filesystem::remove(automation_db);
 };
 
 TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {

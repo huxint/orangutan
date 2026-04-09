@@ -42,7 +42,6 @@ namespace orangutan::web {
             {
                 std::scoped_lock lock(startup_mutex_);
                 port_ = bound_port;
-                running_ = true;
                 startup_complete_ = true;
             }
             startup_cv_.notify_all();
@@ -68,8 +67,11 @@ namespace orangutan::web {
                                                : "failed to bind web server to " + host + ":" + std::to_string(port));
         }
 
+        lock.unlock();
+        server_.wait_until_ready();
+        running_ = server_.is_running();
+
         if (!running_) {
-            lock.unlock();
             server_.stop();
             server_thread_.join();
             throw std::runtime_error("web server failed to start listening on " + host + ":" + std::to_string(port_));

@@ -3,6 +3,7 @@
 #include "bootstrap/memory-context.hpp"
 #include "bootstrap/identity.hpp"
 #include "coordinator/coordinator-prompt.hpp"
+#include "permissions/permission-state.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
@@ -71,6 +72,14 @@ namespace orangutan::bootstrap {
         return *tool_context_storage_;
     }
 
+    const ToolPermissionContext &AgentRuntimeBundle::permissions() const noexcept {
+        return *permissions_storage_;
+    }
+
+    void AgentRuntimeBundle::replace_permissions(ToolPermissionContext context) {
+        *permissions_storage_ = std::move(context);
+    }
+
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
 
@@ -103,6 +112,12 @@ namespace orangutan::bootstrap {
 
         *runtime.permissions_storage_ = input.permission_context;
         runtime.tool_context().permission_context = runtime.permissions_storage_.get();
+        runtime.tool_context().permission_rule_mutator = [permission_context = runtime.tool_context().permission_context](PermissionRule rule) {
+            if (permission_context == nullptr) {
+                return;
+            }
+            *permission_context = add_rule(*permission_context, std::move(rule));
+        };
         auto tool_bootstrap = register_runtime_tools(runtime.tools(), runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
                                                      input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);

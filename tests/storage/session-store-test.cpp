@@ -2,6 +2,7 @@
 #include "types/types.hpp"
 #include "test-helpers.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <set>
 #include <catch2/catch_test_macros.hpp>
@@ -65,6 +66,16 @@ namespace {
             .agent_key = "",
             .origin_kind = "cli",
             .origin_ref = "",
+        };
+    }
+
+    orangutan::PermissionRule make_permission_rule(std::string tool_name, orangutan::permission_behavior behavior, std::optional<orangutan::RuleContent> content = std::nullopt,
+                                                   orangutan::permission_rule_source source = orangutan::permission_rule_source::session) {
+        return orangutan::PermissionRule{
+            .source = source,
+            .behavior = behavior,
+            .tool_name = std::move(tool_name),
+            .content = std::move(content),
         };
     }
 
@@ -432,6 +443,138 @@ TEST_CASE("can_bind_and_resolve_session_for_jid") {
     }
 };
 
+TEST_CASE("can_save_and_load_session_permission_rules") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    auto messages = std::vector{Message::user().text("Hello")};
+    const auto session_id = store.save(messages, make_session_metadata("model-a"));
+
+    store.save_session_permission_rule(session_id, make_permission_rule("shell", permission_behavior::allow,
+                                                                       RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
+    store.save_session_permission_rule(session_id, make_permission_rule("task", permission_behavior::ask,
+                                                                       RuleContent{.match_type = rule_match_type::exact, .pattern = "run"},
+                                                                       permission_rule_source::cli_arg));
+
+    const auto rules = store.load_session_permission_rules(session_id);
+    REQUIRE(rules.size() == std::size_t{2});
+
+    CHECK(rules[0].source == permission_rule_source::session);
+    CHECK(rules[0].behavior == permission_behavior::allow);
+    CHECK(rules[0].tool_name == "shell");
+    REQUIRE(rules[0].content.has_value());
+    if (rules[0].content.has_value()) {
+        CHECK(rules[0].content->match_type == rule_match_type::prefix);
+        CHECK(rules[0].content->pattern == "git");
+    }
+
+    CHECK(rules[1].source == permission_rule_source::session);
+    CHECK(rules[1].behavior == permission_behavior::ask);
+    CHECK(rules[1].tool_name == "task");
+    REQUIRE(rules[1].content.has_value());
+    if (rules[1].content.has_value()) {
+        CHECK(rules[1].content->match_type == rule_match_type::exact);
+        CHECK(rules[1].content->pattern == "run");
+    }
+};
+
+TEST_CASE("session_permission_rules_are_scoped_per_session") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    auto messages = std::vector{Message::user().text("Hello")};
+    const auto first_session = store.save(messages, make_session_metadata("model-a"));
+    const auto second_session = store.save(messages, make_session_metadata("model-b"));
+
+    store.save_session_permission_rule(first_session, make_permission_rule("shell", permission_behavior::allow,
+                                                                           RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
+    store.save_session_permission_rule(second_session, make_permission_rule("read", permission_behavior::allow,
+                                                                            RuleContent{.match_type = rule_match_type::exact, .pattern = "README.md"}));
+
+    const auto first_rules = store.load_session_permission_rules(first_session);
+    const auto second_rules = store.load_session_permission_rules(second_session);
+
+    REQUIRE(first_rules.size() == std::size_t{1});
+    REQUIRE(second_rules.size() == std::size_t{1});
+    CHECK(first_rules[0].tool_name == "shell");
+    CHECK(second_rules[0].tool_name == "read");
+};
+
+TEST_CASE("load_session_permission_context_replaces_prior_session_rules_only") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    auto messages = std::vector{Message::user().text("Hello")};
+    const auto session_id = store.save(messages, make_session_metadata("model-a"));
+    store.save_session_permission_rule(session_id, make_permission_rule("shell", permission_behavior::allow,
+                                                                       RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
+
+    ToolPermissionContext context;
+    context.allow_rules.push_back(make_permission_rule("read", permission_behavior::allow, std::nullopt, permission_rule_source::user_settings));
+    context.allow_rules.push_back(make_permission_rule("shell", permission_behavior::allow,
+                                                      RuleContent{.match_type = rule_match_type::prefix, .pattern = "stale"},
+                                                      permission_rule_source::session));
+    context.ask_rules.push_back(make_permission_rule("task", permission_behavior::ask,
+                                                    RuleContent{.match_type = rule_match_type::exact, .pattern = "run"},
+                                                    permission_rule_source::session));
+
+    const auto rehydrated = store.load_session_permission_context(session_id, context);
+    CHECK(rehydrated.allow_rules.size() == std::size_t{2});
+    CHECK(rehydrated.ask_rules.empty());
+    CHECK(std::ranges::any_of(rehydrated.allow_rules, [](const PermissionRule &rule) {
+        return rule.tool_name == "read" && rule.source == permission_rule_source::user_settings;
+    }));
+    CHECK(std::ranges::any_of(rehydrated.allow_rules, [](const PermissionRule &rule) {
+        return rule.tool_name == "shell" && rule.source == permission_rule_source::session && rule.content.has_value() && rule.content->pattern == "git";
+    }));
+
+    const auto cleared = store.load_session_permission_context("", rehydrated);
+    CHECK(cleared.ask_rules.empty());
+    CHECK(cleared.allow_rules.size() == std::size_t{1});
+    CHECK(cleared.allow_rules[0].tool_name == "read");
+    CHECK(cleared.allow_rules[0].source == permission_rule_source::user_settings);
+};
+
+TEST_CASE("replace_session_permission_rules_persists_only_session_scoped_rules") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    auto messages = std::vector{Message::user().text("Hello")};
+    const auto session_id = store.save(messages, make_session_metadata("model-a"));
+
+    ToolPermissionContext context;
+    context.allow_rules.push_back(make_permission_rule("read", permission_behavior::allow, std::nullopt, permission_rule_source::user_settings));
+    context.allow_rules.push_back(make_permission_rule("shell", permission_behavior::allow,
+                                                      RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"},
+                                                      permission_rule_source::session));
+    context.ask_rules.push_back(make_permission_rule("task", permission_behavior::ask,
+                                                    RuleContent{.match_type = rule_match_type::exact, .pattern = "run"},
+                                                    permission_rule_source::session));
+
+    store.replace_session_permission_rules(session_id, context);
+    auto rules = store.load_session_permission_rules(session_id);
+    REQUIRE(rules.size() == std::size_t{2});
+    CHECK(std::ranges::none_of(rules, [](const PermissionRule &rule) {
+        return rule.tool_name == "read";
+    }));
+    CHECK(std::ranges::any_of(rules, [](const PermissionRule &rule) {
+        return rule.tool_name == "shell" && rule.behavior == permission_behavior::allow;
+    }));
+    CHECK(std::ranges::any_of(rules, [](const PermissionRule &rule) {
+        return rule.tool_name == "task" && rule.behavior == permission_behavior::ask;
+    }));
+
+    ToolPermissionContext updated_context;
+    updated_context.deny_rules.push_back(make_permission_rule("edit", permission_behavior::deny,
+                                                             RuleContent{.match_type = rule_match_type::exact, .pattern = "notes.md"},
+                                                             permission_rule_source::session));
+    store.replace_session_permission_rules(session_id, updated_context);
+    rules = store.load_session_permission_rules(session_id);
+    REQUIRE(rules.size() == std::size_t{1});
+    CHECK(rules[0].tool_name == "edit");
+    CHECK(rules[0].behavior == permission_behavior::deny);
+};
+
 TEST_CASE("jid_bindings_are_scoped_by_agent_key") {
     SessionStoreHarness harness;
     auto store = harness.store();
@@ -475,9 +618,25 @@ TEST_CASE("removing_session_clears_jid_binding") {
     auto messages = std::vector{Message::user().text("Hello")};
     const auto session_id = store.save(messages, make_session_metadata("model-a"));
     store.bind_jid("qqbot:c2c:alice", session_id);
+    store.save_session_permission_rule(session_id, make_permission_rule("shell", permission_behavior::allow,
+                                                                       RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
 
     store.remove(session_id);
     CHECK(store.bound_session_for_jid("qqbot:c2c:alice") == std::nullopt);
+    CHECK(store.load_session_permission_rules(session_id).empty());
+};
+
+TEST_CASE("can_clear_session_permission_rules") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    auto messages = std::vector{Message::user().text("Hello")};
+    const auto session_id = store.save(messages, make_session_metadata("model-a"));
+    store.save_session_permission_rule(session_id, make_permission_rule("shell", permission_behavior::allow,
+                                                                       RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
+
+    store.clear_session_permission_rules(session_id);
+    CHECK(store.load_session_permission_rules(session_id).empty());
 };
 
 TEST_CASE("append_adds_only_new_messages") {
@@ -607,4 +766,10 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
     if (migrated_binding.has_value()) {
         CHECK(*migrated_binding == "legacy-session");
     }
+
+    store.save_session_permission_rule("legacy-session", make_permission_rule("shell", permission_behavior::allow,
+                                                                              RuleContent{.match_type = rule_match_type::prefix, .pattern = "git"}));
+    const auto session_rules = store.load_session_permission_rules("legacy-session");
+    REQUIRE(session_rules.size() == std::size_t{1});
+    CHECK(session_rules[0].tool_name == "shell");
 };

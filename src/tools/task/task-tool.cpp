@@ -1,10 +1,13 @@
 #include "tools/task/task-tool.hpp"
 
 #include <magic_enum/magic_enum.hpp>
+#include <ranges>
 
 #include "automation/cron-parser.hpp"
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
+#include "permissions/approval-signature.hpp"
+#include "permissions/rule-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/op-tool-support.hpp"
@@ -137,11 +140,20 @@ namespace orangutan::tools {
                                     routed_input_with_default_op(input, ""));
         }
 
-        PermissionResult check_task_permissions(const ToolUse &call) {
+        PermissionResult check_task_permissions(const ToolUse &call, const ToolPermissionContext &ctx) {
             const auto op = call.input.value("op", std::string{});
             if (op == "list") {
                 return PermissionResult::allow();
             }
+
+            const auto content = approval_match_content(call);
+            const auto allowed = std::ranges::any_of(ctx.allow_rules, [&](const PermissionRule &rule) {
+                return matches_rule(rule, call.name, content);
+            });
+            if (allowed) {
+                return PermissionResult::allow();
+            }
+
             return PermissionResult::ask("Task mutations require approval");
         }
 
@@ -166,8 +178,8 @@ namespace orangutan::tools {
                              {"targets", schema_fragments::delivery_targets_field()},
                          },
                          {"op"}))
-                     .check_permissions([](const ToolUse &call, const ToolPermissionContext &) {
-                         return check_task_permissions(call);
+                     .check_permissions([](const ToolUse &call, const ToolPermissionContext &ctx) {
+                         return check_task_permissions(call, ctx);
                      })
                      .execute([tool_context](const nlohmann::json &input) {
                          return execute_task_tool(input, tool_context);

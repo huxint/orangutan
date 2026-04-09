@@ -1,3 +1,4 @@
+#include "permissions/approval-signature.hpp"
 #include "permissions/rule-parser.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-evaluator.hpp"
@@ -241,6 +242,59 @@ TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
     REQUIRE(decision.behavior == permission_behavior::deny);
     REQUIRE(decision.message.has_value());
     CHECK(decision.message->contains("workspace sandbox"));
+}
+
+TEST_CASE("EditPatchAllowRuleMatchesCanonicalPathInsteadOfPatchBody") {
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    ctx.allow_rules.push_back(parse_permission_rule("edit(src/main.cpp)", permission_behavior::allow, permission_rule_source::session));
+
+    ToolUse call{
+        "edit-1",
+        "edit",
+        {
+            {"patch", "*** src/main.cpp\n<<<<<<< SEARCH\nold value\n=======\nnew value\n>>>>>>> REPLACE\n"},
+        },
+    };
+
+    const auto decision = evaluate_permission(call, ctx);
+    REQUIRE(decision.behavior == permission_behavior::allow);
+}
+
+TEST_CASE("TaskAllowRuleMatchesCanonicalOperationAndName") {
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+    ctx.allow_rules.push_back(parse_permission_rule("task(op=add|name=nightly-sync)", permission_behavior::allow, permission_rule_source::session));
+
+    ToolUse call{
+        "task-1",
+        "task",
+        {
+            {"op", "add"},
+            {"name", "nightly-sync"},
+            {"schedule_kind", "cron"},
+            {"schedule", "0 * * * *"},
+            {"prompt", "run nightly sync"},
+        },
+    };
+
+    const auto decision = evaluate_permission(call, ctx);
+    REQUIRE(decision.behavior == permission_behavior::allow);
+}
+
+TEST_CASE("ShellCompoundCommandsAreNotEligibleForSessionAlwaysAllow") {
+    const ToolUse call{
+        "shell-1",
+        "shell",
+        {
+            {"command", "echo hello && git push"},
+        },
+    };
+
+    const auto signature = derive_approval_signature(call);
+    CHECK_FALSE(signature.always_allow_eligible);
+    CHECK(signature.downgrade_reason.contains("compound"));
+    REQUIRE(signature.content.has_value());
+    CHECK(signature.content->pattern == "echo hello && git push");
+    CHECK_FALSE(make_session_allow_rule(call).has_value());
 }
 
 // ── Permission State ─────────────────────────────────────────────────────

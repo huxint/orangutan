@@ -1,6 +1,7 @@
 #include "storage/session-store.hpp"
 #include "types/base.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <spdlog/common.h>
@@ -195,6 +196,44 @@ namespace orangutan::storage {
             return stmt.step();
         }
 
+        void append_permission_rule(ToolPermissionContext &ctx, PermissionRule rule) {
+            switch (rule.behavior) {
+            case permission_behavior::allow:
+                ctx.allow_rules.push_back(std::move(rule));
+                break;
+            case permission_behavior::deny:
+                ctx.deny_rules.push_back(std::move(rule));
+                break;
+            case permission_behavior::ask:
+                ctx.ask_rules.push_back(std::move(rule));
+                break;
+            }
+        }
+
+        void remove_session_rules(std::vector<PermissionRule> &rules) {
+            rules.erase(std::remove_if(rules.begin(), rules.end(), [](const PermissionRule &rule) {
+                           return rule.source == permission_rule_source::session;
+                       }),
+                        rules.end());
+        }
+
+        void append_session_rules_from_context(std::vector<PermissionRule> &target, const std::vector<PermissionRule> &rules) {
+            for (const auto &rule : rules) {
+                if (rule.source == permission_rule_source::session) {
+                    target.push_back(rule);
+                }
+            }
+        }
+
+        void bind_session_permission_rule(sqlite::Statement &stmt, std::string_view session_id, const PermissionRule &rule) {
+            stmt.bind_text(1, session_id);
+            stmt.bind_int(2, static_cast<int>(rule.behavior));
+            stmt.bind_text(3, rule.tool_name);
+            stmt.bind_int(4, rule.content.has_value() ? 1 : 0);
+            stmt.bind_int(5, rule.content.has_value() ? static_cast<int>(rule.content->match_type) : static_cast<int>(rule_match_type::exact));
+            stmt.bind_text(6, rule.content.has_value() ? rule.content->pattern : std::string_view{});
+        }
+
     } // namespace
 
     SessionStore::SessionStore()
@@ -238,8 +277,20 @@ namespace orangutan::storage {
             PRIMARY KEY (jid, agent_key),
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS session_permission_rules (
+            session_id TEXT NOT NULL,
+            behavior INTEGER NOT NULL,
+            tool_name TEXT NOT NULL,
+            has_content INTEGER NOT NULL DEFAULT 0,
+            content_match_type INTEGER NOT NULL DEFAULT 0,
+            content_pattern TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (session_id, behavior, tool_name, has_content, content_match_type, content_pattern),
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
         CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_session_permission_rules_session ON session_permission_rules(session_id, created_at);
     )",
                  "Failed to create session schema");
 
@@ -386,6 +437,119 @@ namespace orangutan::storage {
         }
 
         return messages;
+    }
+
+    void SessionStore::save_session_permission_rule(std::string_view session_id, PermissionRule rule) {
+        if (session_id.empty()) {
+            throw std::runtime_error("Session id is required to persist a session permission rule");
+        }
+
+        std::scoped_lock lock(mutex_);
+        if (!session_exists(db_, session_id)) {
+            throw std::runtime_error("Session not found: " + std::string(session_id));
+        }
+
+        rule.source = permission_rule_source::session;
+
+        sqlite::Statement stmt(db_, "INSERT OR IGNORE INTO session_permission_rules "
+                                    "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                                    "VALUES (?, ?, ?, ?, ?, ?)");
+        bind_session_permission_rule(stmt, session_id, rule);
+        static_cast<void>(stmt.step());
+    }
+
+    std::vector<PermissionRule> SessionStore::load_session_permission_rules(std::string_view session_id) {
+        if (session_id.empty()) {
+            return {};
+        }
+
+        std::scoped_lock lock(mutex_);
+        sqlite::Statement stmt(db_, "SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
+                                   "FROM session_permission_rules "
+                                   "WHERE session_id = ? "
+                                   "ORDER BY created_at ASC, rowid ASC");
+        stmt.bind_text(1, session_id);
+
+        std::vector<PermissionRule> rules;
+        while (stmt.step()) {
+            const auto behavior = static_cast<permission_behavior>(stmt.column_int(0));
+            const auto has_content = stmt.column_int(2) != 0;
+
+            PermissionRule rule{
+                .source = permission_rule_source::session,
+                .behavior = behavior,
+                .tool_name = stmt.column_text(1),
+                .content = std::nullopt,
+            };
+            if (has_content) {
+                rule.content = RuleContent{
+                    .match_type = static_cast<rule_match_type>(stmt.column_int(3)),
+                    .pattern = stmt.column_text(4),
+                };
+            }
+            rules.push_back(std::move(rule));
+        }
+
+        return rules;
+    }
+
+    ToolPermissionContext SessionStore::load_session_permission_context(std::string_view session_id, const ToolPermissionContext &base_context) {
+        auto context = base_context;
+        remove_session_rules(context.allow_rules);
+        remove_session_rules(context.deny_rules);
+        remove_session_rules(context.ask_rules);
+
+        for (auto &rule : load_session_permission_rules(session_id)) {
+            append_permission_rule(context, std::move(rule));
+        }
+
+        return context;
+    }
+
+    void SessionStore::clear_session_permission_rules(std::string_view session_id) {
+        if (session_id.empty()) {
+            return;
+        }
+
+        std::scoped_lock lock(mutex_);
+        sqlite::Statement stmt(db_, "DELETE FROM session_permission_rules WHERE session_id = ?");
+        stmt.bind_text(1, session_id);
+        static_cast<void>(stmt.step());
+    }
+
+    void SessionStore::replace_session_permission_rules(std::string_view session_id, const ToolPermissionContext &context) {
+        if (session_id.empty()) {
+            return;
+        }
+
+        std::vector<PermissionRule> session_rules;
+        append_session_rules_from_context(session_rules, context.allow_rules);
+        append_session_rules_from_context(session_rules, context.deny_rules);
+        append_session_rules_from_context(session_rules, context.ask_rules);
+
+        std::scoped_lock lock(mutex_);
+        if (!session_exists(db_, session_id)) {
+            throw std::runtime_error("Session not found: " + std::string(session_id));
+        }
+
+        sqlite::Transaction tx(db_);
+        // Replace the persisted session-scoped subset atomically so resumed sessions mirror
+        // the in-memory rules exactly, without leaking non-session rules into storage.
+        sqlite::Statement clear(db_, "DELETE FROM session_permission_rules WHERE session_id = ?");
+        clear.bind_text(1, session_id);
+        static_cast<void>(clear.step());
+
+        sqlite::Statement insert(db_, "INSERT OR IGNORE INTO session_permission_rules "
+                                      "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                                      "VALUES (?, ?, ?, ?, ?, ?)");
+        for (auto rule : session_rules) {
+            rule.source = permission_rule_source::session;
+            bind_session_permission_rule(insert, session_id, rule);
+            static_cast<void>(insert.step());
+            insert.reset();
+        }
+
+        tx.commit();
     }
 
     std::vector<SessionInfo> SessionStore::list_sessions(std::string_view scope_key) {

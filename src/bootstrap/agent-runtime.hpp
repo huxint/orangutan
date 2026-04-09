@@ -118,6 +118,10 @@ namespace orangutan::bootstrap {
         ToolRuntimeContext &tool_context() noexcept;
         [[nodiscard]]
         const ToolRuntimeContext &tool_context() const noexcept;
+        [[nodiscard]]
+        const ToolPermissionContext &permissions() const noexcept;
+
+        void replace_permissions(ToolPermissionContext context);
 
         friend AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input);
     };

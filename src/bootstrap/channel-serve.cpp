@@ -4,6 +4,7 @@
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/runtime-assembler.hpp"
+#include "permissions/approval-signature.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-state.hpp"
 #include "automation/scheduler.hpp"
@@ -11,6 +12,7 @@
 #include "cli/cli-ui.hpp"
 #include "cli/session-workflow.hpp"
 #include "channel/qq/qq-channel.hpp"
+#include "channel/qq/qq-approval-keyboard.hpp"
 #include "coordinator/coordinator-manager.hpp"
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
@@ -71,7 +73,8 @@ namespace orangutan::bootstrap {
         ScopeExit(Fn) -> ScopeExit<Fn>;
 
         enum class channel_approval_decision : std::uint8_t {
-            approve,
+            approve_once,
+            approve_always,
             deny,
             invalid,
         };
@@ -121,6 +124,7 @@ namespace orangutan::bootstrap {
                 }
                 std::scoped_lock lock(completion_resume_state->mutex);
                 completion_resume_state->agent = nullptr;
+                completion_resume_state->runtime = nullptr;
                 completion_resume_state->provider = nullptr;
                 completion_resume_state->hook_manager = nullptr;
                 completion_resume_state->current_session_id = nullptr;
@@ -156,7 +160,11 @@ namespace orangutan::bootstrap {
             return {first_segment};
         }
 
-        std::string format_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id) {
+        bool is_qq_channel_target(std::string_view target) {
+            return target.starts_with("qqbot:");
+        }
+
+        std::string format_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id, bool include_allow_always) {
             std::string prompt = permissions::approval_prompt_message(decision);
             prompt += "\nTool: " + call.name;
             if (call.input.is_object()) {
@@ -168,7 +176,9 @@ namespace orangutan::bootstrap {
                 prompt += "\n" + line;
             }
             prompt += "\nRequest: " + request_id;
-            prompt += "\nReply with `" + request_id + " yes` to allow or `" + request_id + " no` to reject.";
+            prompt += "\nButtons: ";
+            prompt += include_allow_always ? "allow once / always allow / deny" : "allow once / deny";
+            prompt += "\nIf the QQ buttons fail, reply with `" + request_id + " yes` or `" + request_id + " no`.";
             return prompt;
         }
 
@@ -271,7 +281,7 @@ namespace orangutan::bootstrap {
             }
 
             if (normalized == "y" || normalized == "yes" || normalized == "approve" || normalized == "approved" || normalized == "allow") {
-                return channel_approval_decision::approve;
+                return channel_approval_decision::approve_once;
             }
             if (normalized == "n" || normalized == "no" || normalized == "deny" || normalized == "denied" || normalized == "reject") {
                 return channel_approval_decision::deny;
@@ -281,10 +291,26 @@ namespace orangutan::bootstrap {
 
         ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content) {
             ParsedChannelApprovalReply parsed;
+            if (const auto callback = channel::qq::parse_approval_callback_data(content); callback.has_value()) {
+                parsed.request_id = callback->request_id;
+                switch (callback->action) {
+                    case channel::qq::approval_action::allow_once:
+                        parsed.decision = channel_approval_decision::approve_once;
+                        break;
+                    case channel::qq::approval_action::always_allow:
+                        parsed.decision = channel_approval_decision::approve_always;
+                        break;
+                    case channel::qq::approval_action::deny:
+                        parsed.decision = channel_approval_decision::deny;
+                        break;
+                }
+                return parsed;
+            }
+
             std::istringstream stream(content);
             for (std::string token; static_cast<bool>(stream >> token);) {
                 const auto normalized = normalize_channel_approval_token(token);
-                if (normalized.starts_with("shell-approval-")) {
+                if (normalized.starts_with("tool-approval-") || normalized.starts_with("shell-approval-")) {
                     parsed.request_id = normalized;
                     continue;
                 }
@@ -299,14 +325,14 @@ namespace orangutan::bootstrap {
 
         std::string format_pending_channel_approval_prompt(const std::vector<std::string> &request_ids) {
             if (request_ids.empty()) {
-                return "Shell approval is pending.";
+                return "Tool approval is pending.";
             }
 
             if (request_ids.size() == 1) {
-                return "Shell approval is pending. Reply with `" + request_ids.front() + " yes` or `" + request_ids.front() + " no`.";
+                return "Tool approval is pending. Use the QQ buttons, or reply with `" + request_ids.front() + " yes` or `" + request_ids.front() + " no`.";
             }
 
-            std::string prompt = "Multiple shell approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
+            std::string prompt = "Multiple tool approvals are pending. Use the QQ buttons, or reply with `<request-id> yes` or `<request-id> no`. Pending:";
             for (const auto &request_id : request_ids) {
                 utils::format_to(prompt, " {}", request_id);
             }
@@ -381,6 +407,7 @@ namespace orangutan::bootstrap {
                 runtime->hook_manager = runtime->runtime->hook_manager.get();
             }
             completion_resume_state->agent = runtime->runtime->agent.get();
+            completion_resume_state->runtime = runtime->runtime.get();
             completion_resume_state->provider = runtime->runtime->provider.get();
             completion_resume_state->hook_manager = runtime->hook_manager;
             completion_resume_state->current_session_id = &runtime->current_session_id;
@@ -412,11 +439,28 @@ namespace orangutan::bootstrap {
             };
         }
 
+        void rehydrate_session_permissions(SessionStore &session_store, std::string_view session_id, AgentRuntimeBundle *runtime) {
+            if (runtime == nullptr) {
+                return;
+            }
+
+            runtime->replace_permissions(session_store.load_session_permission_context(session_id, runtime->permissions()));
+        }
+
+        void persist_session_permissions(SessionStore &session_store, std::string_view session_id, const AgentRuntimeBundle *runtime) {
+            if (runtime == nullptr || session_id.empty()) {
+                return;
+            }
+
+            session_store.replace_session_permission_rules(session_id, runtime->permissions());
+        }
+
         void persist_channel_session(const std::string &jid, ConversationRuntime &runtime, SessionStore &session_store) {
             const auto &history = runtime.agent().history();
             if (history.empty()) {
                 session_store.clear_jid(jid, runtime.agent_key);
                 runtime.current_session_id.clear();
+                rehydrate_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
                 runtime.persisted_message_count = 0;
                 return;
             }
@@ -436,6 +480,7 @@ namespace orangutan::bootstrap {
                 runtime.persisted_message_count = history.size();
             }
 
+            persist_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
             session_store.bind_jid(jid, runtime.current_session_id, runtime.agent_key);
             if (created_session) {
                 dispatch_session_start(runtime.hook_manager, runtime.current_session_id, history.size());
@@ -451,6 +496,7 @@ namespace orangutan::bootstrap {
             if (history.empty()) {
                 state.session_store->clear_jid(state.jid, state.agent_key);
                 state.current_session_id->clear();
+                rehydrate_session_permissions(*state.session_store, *state.current_session_id, state.runtime);
                 *state.persisted_message_count = 0;
                 return std::nullopt;
             }
@@ -469,6 +515,7 @@ namespace orangutan::bootstrap {
                 *state.persisted_message_count = history.size();
             }
 
+            persist_session_permissions(*state.session_store, *state.current_session_id, state.runtime);
             state.session_store->bind_jid(state.jid, *state.current_session_id, state.agent_key);
             if (created_session) {
                 dispatch_session_start(state.hook_manager, *state.current_session_id, history.size());
@@ -500,7 +547,9 @@ namespace orangutan::bootstrap {
                             if (!session_store.session_belongs_to_scope(*session_id, runtime->session_scope_key)) {
                                 spdlog::warn("Session {} does not belong to runtime scope '{}' for jid '{}' agent '{}'", *session_id, runtime->session_scope_key, jid, agent_key);
                                 session_store.clear_jid(jid, agent_key);
+                                rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
                             } else {
+                                rehydrate_session_permissions(session_store, *session_id, runtime->runtime.get());
                                 runtime->agent().set_history(session_store.load(*session_id));
                                 runtime->current_session_id = *session_id;
                                 runtime->persisted_message_count = runtime->agent().history().size();
@@ -510,6 +559,7 @@ namespace orangutan::bootstrap {
                         } catch (const std::exception &e) {
                             spdlog::warn("Failed to restore session {} for jid '{}' agent '{}': {}", *session_id, jid, agent_key, e.what());
                             session_store.clear_jid(jid, agent_key);
+                            rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
                         }
                     }
                 }
@@ -544,6 +594,7 @@ namespace orangutan::bootstrap {
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
                                 runtime.current_session_id.clear();
                                 session_store.clear_jid(message.jid, runtime.agent_key);
+                                rehydrate_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
                                 runtime.persisted_message_count = 0;
                                 return cli::SlashCommandReply{.handled = true, .text = cli::describe_new_session_result(result, true)};
                             },
@@ -613,6 +664,7 @@ namespace orangutan::bootstrap {
                                     dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent().history().size());
                                 }
 
+                                rehydrate_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
                                 runtime.persisted_message_count = runtime.agent().history().size();
                                 session_store.bind_jid(message.jid, *resolved_session_id, runtime.agent_key);
                                 return cli::SlashCommandReply{.handled = true, .text = "🧵 Resumed session: " + runtime.current_session_id};
@@ -632,7 +684,8 @@ namespace orangutan::bootstrap {
     ChannelApprovalCoordinator::ChannelApprovalCoordinator(std::chrono::milliseconds timeout)
     : timeout_(timeout) {}
 
-    ApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner) {
+    ApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner,
+                                                               tools::PermissionRuleMutationCallback permission_rule_mutator) {
         if (!can_prompt_for_channel_approval(message)) {
             return {};
         }
@@ -644,12 +697,14 @@ namespace orangutan::bootstrap {
             }
         }
 
-        return [this, message, &channel_manager, task_runner](const ToolUse &call, const PermissionDecision &decision) {
+        return [this, message, &channel_manager, task_runner, permission_rule_mutator = std::move(permission_rule_mutator)](const ToolUse &call,
+                                                                                                                            const PermissionDecision &decision) {
             struct WaitOutcome {
                 std::shared_ptr<PendingApproval> pending;
                 bool resolved = false;
                 bool cancelled = false;
                 bool approved = false;
+                bool always_allow = false;
             };
 
             auto pipeline = stdexec::just() | stdexec::then([this, &message]() {
@@ -659,7 +714,7 @@ namespace orangutan::bootstrap {
                                     if (shutting_down_) {
                                         return std::shared_ptr<PendingApproval>{};
                                     }
-                                    pending->request_id = "shell-approval-" + std::to_string(++next_prompt_id_);
+                                    pending->request_id = "tool-approval-" + std::to_string(++next_prompt_id_);
                                     pending->jid = message.jid;
                                     pending_by_request_id_[pending->request_id] = pending;
                                     pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
@@ -671,8 +726,20 @@ namespace orangutan::bootstrap {
                                     return WaitOutcome{};
                                 }
 
-                                auto reply = format_channel_approval_prompt(call, decision, pending->request_id);
-                                deliver_reply(message, reply, channel_manager);
+                                const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
+                                auto reply = format_channel_approval_prompt(call, decision, pending->request_id, include_allow_always);
+                                try {
+                                    const auto target = resolve_reply_target(message);
+                                    if (is_qq_channel_target(target)) {
+                                        channel_manager.send_keyboard(target, reply, channel::qq::build_approval_keyboard(pending->request_id, include_allow_always),
+                                                                     message.message_id, message.message_id);
+                                    } else {
+                                        deliver_reply(message, reply, channel_manager);
+                                    }
+                                } catch (const std::exception &e) {
+                                    spdlog::warn("Falling back to text approval prompt for jid '{}': {}", message.jid, e.what());
+                                    deliver_reply(message, reply, channel_manager);
+                                }
 
                                 auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
                                 std::unique_lock lock(pending->mutex);
@@ -681,19 +748,28 @@ namespace orangutan::bootstrap {
                                 });
                                 const bool cancelled = resolved && pending->cancelled;
                                 const bool approved = resolved && !cancelled && pending->approved;
+                                const bool always_allow = resolved && !cancelled && pending->always_allow;
                                 return WaitOutcome{
                                     .pending = std::move(pending),
                                     .resolved = resolved,
                                     .cancelled = cancelled,
                                     .approved = approved,
+                                    .always_allow = always_allow,
                                 };
                             }) |
-                            stdexec::then([this, &message, &channel_manager](const WaitOutcome &outcome) {
+                            stdexec::then([this, &message, &channel_manager, &call, permission_rule_mutator](const WaitOutcome &outcome) {
                                 if (outcome.pending == nullptr) {
                                     return false;
                                 }
 
                                 clear_pending(outcome.pending);
+                                if (outcome.approved && outcome.always_allow) {
+                                    if (const auto rule = permissions::make_session_allow_rule(call); rule.has_value()) {
+                                        if (permission_rule_mutator) {
+                                            permission_rule_mutator(*rule);
+                                        }
+                                    }
+                                }
                                 if (!outcome.resolved && !outcome.cancelled) {
                                     deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
                                 }
@@ -740,14 +816,16 @@ namespace orangutan::bootstrap {
         }
 
         if (parsed.decision == channel_approval_decision::invalid) {
-            deliver_reply(message, "Shell approval is pending. Reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.", channel_manager);
+            deliver_reply(message, "Tool approval is pending. Use the QQ buttons, or reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.",
+                          channel_manager);
             return true;
         }
 
         {
             std::scoped_lock lock(pending->mutex);
             pending->resolved = true;
-            pending->approved = parsed.decision == channel_approval_decision::approve;
+            pending->approved = parsed.decision == channel_approval_decision::approve_once || parsed.decision == channel_approval_decision::approve_always;
+            pending->always_allow = parsed.decision == channel_approval_decision::approve_always;
         }
         pending->cv.notify_all();
         return true;
@@ -968,7 +1046,18 @@ namespace orangutan::bootstrap {
                         runtime.agent().clear_history();
                     }
 
-                    tool_context.approval_callback = approval_coordinator.make_callback(message, channel_manager, &task_runner);
+                    tool_context.approval_callback = approval_coordinator.make_callback(
+                        message,
+                        channel_manager,
+                        &task_runner,
+                        [&session_store, current_session_id = &runtime.current_session_id, base_mutator = tool_context.permission_rule_mutator](PermissionRule rule) {
+                            if (base_mutator) {
+                                base_mutator(rule);
+                            }
+                            if (current_session_id != nullptr && !current_session_id->empty()) {
+                                session_store.save_session_permission_rule(*current_session_id, std::move(rule));
+                            }
+                        });
                     channel_manager.start_typing(message.jid, message.message_id);
 
                     // Stream relay: sends thinking/tool blocks to QQ as they arrive

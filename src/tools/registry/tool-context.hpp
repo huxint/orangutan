@@ -29,6 +29,7 @@ namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
     using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
     using AttachmentDownloadCallback = std::function<Attachment(const Attachment &attachment, const std::string &destination_path)>;
+    using PermissionRuleMutationCallback = std::function<void(PermissionRule rule)>;
     using RuntimeAbortChecker = std::function<bool()>;
 
     class BackgroundCompletionRuntimeBindings {
@@ -90,7 +91,8 @@ namespace orangutan::tools {
         automation::Runtime *automation_runtime = nullptr;
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
-        const ToolPermissionContext *permission_context = nullptr;
+        PermissionRuleMutationCallback permission_rule_mutator;
+        ToolPermissionContext *permission_context = nullptr;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
         std::vector<Attachment> current_message_attachments;
         AttachmentDownloadCallback attachment_download_callback;
@@ -105,6 +107,7 @@ namespace orangutan {
     using tools::BackgroundCompletionResumeCallback;
     using tools::BackgroundCompletionRuntimeBindings;
     using tools::make_background_completion_runtime_bindings;
+    using tools::PermissionRuleMutationCallback;
     using tools::RuntimeAbortChecker;
     using tools::ToolRuntimeContext;
 
