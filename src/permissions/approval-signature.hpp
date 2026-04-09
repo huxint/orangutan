@@ -30,8 +30,8 @@ namespace orangutan::permissions {
 
 namespace orangutan {
 
-    using permissions::ApprovalSignature;
     using permissions::approval_match_content;
+    using permissions::ApprovalSignature;
     using permissions::derive_approval_signature;
     using permissions::make_session_allow_rule;
 
