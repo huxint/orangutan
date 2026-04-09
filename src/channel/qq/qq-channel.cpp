@@ -409,13 +409,12 @@ namespace orangutan::channel::qq {
                 },
                 [this, &post_payload, &message](const KeyboardPayload &payload) {
                     const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id);
-                    const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
                     post_payload(QqMessageBuilder{}
                                      .markdown(payload.markdown)
                                      .keyboard(payload.keyboard_payload)
                                      .msg_seq(next_msg_seq())
                                      .reply_to(passive_reply_message_id)
-                                     .reference(effective_reference)
+                                     // QQ inline keyboards render reliably with msg_id only; quoting via message_reference can suppress buttons.
                                      .build());
                 },
                 [this, &post_payload, &message](const ArkPayload &payload) {
@@ -1312,8 +1311,7 @@ namespace orangutan::channel::qq {
             remember_known_user("group", user_openid);
         }
         emit_inbound({
-            .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id)
-                            : (is_group ? make_qq_jid(bot_name_, "group", group_openid) : make_qq_jid(bot_name_, "c2c", user_openid)),
+            .jid = is_guild ? make_qq_jid(bot_name_, "guild", channel_id) : (is_group ? make_qq_jid(bot_name_, "group", group_openid) : make_qq_jid(bot_name_, "c2c", user_openid)),
             .sender = user_openid,
             .sender_name = user_openid,
             .content = button_data,

@@ -164,7 +164,171 @@ namespace orangutan::bootstrap {
             return target.starts_with("qqbot:");
         }
 
-        std::string format_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id, bool include_allow_always) {
+        [[nodiscard]]
+        std::string qq_keyboard_capability_key(std::string_view target) {
+            const auto bot_name = extract_qq_bot_name(std::string(target));
+            return bot_name.empty() ? std::string{"legacy:default"} : "named:" + bot_name;
+        }
+
+        [[nodiscard]]
+        bool is_qq_custom_keyboard_blocked_error(std::string_view message) {
+            std::string lowered;
+            lowered.reserve(message.size());
+            for (const auto ch : message) {
+                lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+            }
+            return lowered.contains("biz_code=304057") || lowered.contains("not allowd custom keyborad") || lowered.contains("not allowed custom keyboard");
+        }
+
+        [[nodiscard]]
+        std::string trim_ascii_copy(std::string_view value) {
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
+                value.remove_prefix(1);
+            }
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+                value.remove_suffix(1);
+            }
+            return std::string(value);
+        }
+
+        [[nodiscard]]
+        std::optional<std::string> json_scalar_as_string(const nlohmann::json &value) {
+            if (value.is_string()) {
+                auto text = trim_ascii_copy(value.get_ref<const std::string &>());
+                return text.empty() ? std::nullopt : std::optional<std::string>{std::move(text)};
+            }
+            if (value.is_number_integer()) {
+                return std::to_string(value.get<long long>());
+            }
+            if (value.is_number_unsigned()) {
+                return std::to_string(value.get<unsigned long long>());
+            }
+            if (value.is_boolean()) {
+                return value.get<bool>() ? std::string{"true"} : std::string{"false"};
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]]
+        std::optional<std::string> first_scalar_input_value(const nlohmann::json &input, std::initializer_list<std::string_view> keys) {
+            if (!input.is_object()) {
+                return std::nullopt;
+            }
+
+            for (const auto key : keys) {
+                const auto it = input.find(static_cast<std::string>(key));
+                if (it == input.end()) {
+                    continue;
+                }
+                if (const auto value = json_scalar_as_string(*it); value.has_value()) {
+                    return value;
+                }
+            }
+            return std::nullopt;
+        }
+
+        void append_qq_card_field(std::string &markdown, std::string_view icon, std::string_view label, std::string_view value, bool inline_code = true) {
+            if (value.empty()) {
+                return;
+            }
+            markdown += "- ";
+            markdown += icon;
+            markdown += " ";
+            markdown += label;
+            markdown += ": ";
+            if (inline_code) {
+                markdown.push_back('`');
+                markdown += value;
+                markdown.push_back('`');
+            } else {
+                markdown += value;
+            }
+            markdown.push_back('\n');
+        }
+
+        void append_qq_decision_detail(std::string &markdown, std::string_view line) {
+            const auto separator = line.find(':');
+            if (separator == std::string_view::npos) {
+                append_qq_card_field(markdown, "ℹ️", "Detail", trim_ascii_copy(line), false);
+                return;
+            }
+
+            const auto label = trim_ascii_copy(line.substr(0, separator));
+            const auto value = trim_ascii_copy(line.substr(separator + 1));
+            if (label.empty() || value.empty() || label == "Behavior") {
+                return;
+            }
+
+            std::string_view icon = "ℹ️";
+            if (label == "Reason") {
+                icon = "📝";
+            } else if (label == "Rule") {
+                icon = "📏";
+            } else if (label == "Mode") {
+                icon = "⚙️";
+            } else if (label == "Path") {
+                icon = "📂";
+            } else if (label == "Detail") {
+                icon = "📌";
+            }
+            append_qq_card_field(markdown, icon, label, value);
+        }
+
+        [[nodiscard]]
+        std::string format_channel_approval_text_reply(std::string_view request_id, bool include_allow_always) {
+            if (include_allow_always) {
+                return "reply with `" + std::string(request_id) + " yes`, `" + std::string(request_id) + " always`, or `" + std::string(request_id) + " no`.";
+            }
+            return "reply with `" + std::string(request_id) + " yes` or `" + std::string(request_id) + " no`.";
+        }
+
+        [[nodiscard]]
+        std::string format_qq_channel_approval_card_markdown(const ToolUse &call, const PermissionDecision &decision) {
+            std::string markdown = call.name == "shell" ? "## 🔐 Command Execution Approval" : "## 🔐 Tool Approval";
+            const auto prompt = permissions::approval_prompt_message(decision);
+            if (!prompt.empty()) {
+                markdown += "\n> ";
+                markdown += prompt;
+            }
+
+            if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
+                markdown += "\n\n```bash\n";
+                markdown += *command;
+                markdown += "\n```";
+            } else if (const auto preview = first_scalar_input_value(call.input, {"path", "file_path", "query", "prompt", "url"}); preview.has_value()) {
+                markdown += "\n\n> `";
+                markdown += *preview;
+                markdown += '`';
+            } else if (call.input.is_object() && !call.input.empty()) {
+                markdown += "\n\n```json\n";
+                markdown += call.input.dump(2);
+                markdown += "\n```";
+            }
+
+            markdown += "\n\n";
+            append_qq_card_field(markdown, "🧰", "Tool", call.name);
+            if (const auto directory = first_scalar_input_value(call.input, {"working_dir", "cwd"}); directory.has_value()) {
+                append_qq_card_field(markdown, "📁", "Directory", *directory);
+            }
+            if (const auto agent = first_scalar_input_value(call.input, {"agent", "agent_key"}); agent.has_value()) {
+                append_qq_card_field(markdown, "🤖", "Agent", *agent);
+            }
+            if (const auto timeout_seconds = first_scalar_input_value(call.input, {"timeout_seconds", "timeout_secs"}); timeout_seconds.has_value()) {
+                append_qq_card_field(markdown, "⏱", "Timeout", *timeout_seconds + "s");
+            } else if (const auto timeout = first_scalar_input_value(call.input, {"timeout"}); timeout.has_value()) {
+                append_qq_card_field(markdown, "⏱", "Timeout", *timeout);
+            } else if (const auto timeout_ms = first_scalar_input_value(call.input, {"timeout_ms"}); timeout_ms.has_value()) {
+                append_qq_card_field(markdown, "⏱", "Timeout", *timeout_ms + "ms");
+            }
+
+            for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
+                append_qq_decision_detail(markdown, line);
+            }
+            return markdown;
+        }
+
+        [[nodiscard]]
+        std::string format_text_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id, bool include_allow_always) {
             std::string prompt = permissions::approval_prompt_message(decision);
             prompt += "\nTool: " + call.name;
             if (call.input.is_object()) {
@@ -176,10 +340,21 @@ namespace orangutan::bootstrap {
                 prompt += "\n" + line;
             }
             prompt += "\nRequest: " + request_id;
-            prompt += "\nButtons: ";
-            prompt += include_allow_always ? "allow once / always allow / deny" : "allow once / deny";
-            prompt += "\nIf the QQ buttons fail, reply with `" + request_id + " yes` or `" + request_id + " no`.";
+            prompt += "\nPlease ";
+            prompt += format_channel_approval_text_reply(request_id, include_allow_always);
             return prompt;
+        }
+
+        [[nodiscard]]
+        std::string format_qq_approval_delivery_failure(const ToolUse &call, const PermissionDecision &decision, bool keyboard_unavailable) {
+            std::string message = permissions::approval_prompt_message(decision);
+            message += keyboard_unavailable ? "\nQQ approval buttons are unavailable for this bot account, so the tool call was rejected."
+                                            : "\nFailed to deliver the QQ approval card, so the tool call was rejected.";
+            message += "\nTool: " + call.name;
+            if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
+                message += "\nCommand: " + *command;
+            }
+            return message;
         }
 
         std::string normalize_channel_approval_token(std::string_view content) {
@@ -280,6 +455,9 @@ namespace orangutan::bootstrap {
                 return channel_approval_decision::invalid;
             }
 
+            if (normalized == "always" || normalized == "alwaysallow" || normalized == "always-allow" || normalized == "allowalways" || normalized == "allow-always") {
+                return channel_approval_decision::approve_always;
+            }
             if (normalized == "y" || normalized == "yes" || normalized == "approve" || normalized == "approved" || normalized == "allow") {
                 return channel_approval_decision::approve_once;
             }
@@ -289,7 +467,7 @@ namespace orangutan::bootstrap {
             return channel_approval_decision::invalid;
         }
 
-        ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content) {
+        ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content, bool allow_text_reply) {
             ParsedChannelApprovalReply parsed;
             if (const auto callback = channel::qq::parse_approval_callback_data(content); callback.has_value()) {
                 parsed.request_id = callback->request_id;
@@ -307,6 +485,10 @@ namespace orangutan::bootstrap {
                 return parsed;
             }
 
+            if (!allow_text_reply) {
+                return parsed;
+            }
+
             std::istringstream stream(content);
             for (std::string token; static_cast<bool>(stream >> token);) {
                 const auto normalized = normalize_channel_approval_token(token);
@@ -316,16 +498,26 @@ namespace orangutan::bootstrap {
                 }
 
                 const auto decision = parse_channel_approval_decision(normalized);
-                if (decision != channel_approval_decision::invalid) {
-                    parsed.decision = decision;
+                if (decision == channel_approval_decision::invalid) {
+                    continue;
                 }
+                if (parsed.decision == channel_approval_decision::approve_always && decision == channel_approval_decision::approve_once &&
+                    (normalized == "allow" || normalized == "approved")) {
+                    continue;
+                }
+                parsed.decision = decision;
             }
             return parsed;
         }
 
-        std::string format_pending_channel_approval_prompt(const std::vector<std::string> &request_ids) {
+        std::string format_pending_channel_approval_prompt(const std::vector<std::string> &request_ids, bool allow_text_reply) {
             if (request_ids.empty()) {
                 return "Tool approval is pending.";
+            }
+
+            if (!allow_text_reply) {
+                return request_ids.size() == 1 ? "Tool approval is pending. Use the buttons on the approval card."
+                                               : "Multiple tool approvals are pending. Use the buttons on the approval cards.";
             }
 
             if (request_ids.size() == 1) {
@@ -390,13 +582,12 @@ namespace orangutan::bootstrap {
                 .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
                 .automation_runtime = automation_runtime,
-                .background_completion_runtime = automation_runtime != nullptr
-                                                   ? make_background_completion_runtime_bindings(
-                                                         [automation_runtime](const automation::InboxItem &item) {
-                                                             static_cast<void>(automation_runtime->store().insert_inbox(item));
-                                                         },
-                                                         detail::make_channel_completion_resume_callback(completion_resume_state))
-                                                   : nullptr,
+                .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
+                                                                                     [automation_runtime](const automation::InboxItem &item) {
+                                                                                         static_cast<void>(automation_runtime->store().insert_inbox(item));
+                                                                                     },
+                                                                                     detail::make_channel_completion_resume_callback(completion_resume_state))
+                                                                               : nullptr,
             });
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
@@ -540,7 +731,8 @@ namespace orangutan::bootstrap {
                 }
 
                 auto identity = derive_channel_identity(cfg_it->second.workspace_root, jid, agent_key);
-                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, coordinator_manager, jid, hook_manager, automation_runtime, team_manager, mailbox);
+                auto runtime =
+                    make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, coordinator_manager, jid, hook_manager, automation_runtime, team_manager, mailbox);
                 if (!message.isolated) {
                     if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
                         try {
@@ -707,74 +899,132 @@ namespace orangutan::bootstrap {
                 bool always_allow = false;
             };
 
-            auto pipeline = stdexec::just() | stdexec::then([this, &message]() {
-                                auto pending = std::make_shared<PendingApproval>();
-                                {
-                                    std::scoped_lock lock(mutex_);
-                                    if (shutting_down_) {
-                                        return std::shared_ptr<PendingApproval>{};
-                                    }
-                                    pending->request_id = "tool-approval-" + std::to_string(++next_prompt_id_);
-                                    pending->jid = message.jid;
-                                    pending_by_request_id_[pending->request_id] = pending;
-                                    pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
-                                }
-                                return pending;
-                            }) |
-                            stdexec::then([this, &message, &channel_manager, task_runner, &call, &decision](std::shared_ptr<PendingApproval> pending) {
-                                if (pending == nullptr) {
-                                    return WaitOutcome{};
-                                }
+            auto pipeline =
+                stdexec::just() | stdexec::then([this, &message]() {
+                    auto pending = std::make_shared<PendingApproval>();
+                    {
+                        std::scoped_lock lock(mutex_);
+                        if (shutting_down_) {
+                            return std::shared_ptr<PendingApproval>{};
+                        }
+                        pending->request_id = "tool-approval-" + std::to_string(++next_prompt_id_);
+                        pending->jid = message.jid;
+                        pending_by_request_id_[pending->request_id] = pending;
+                        pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
+                    }
+                    return pending;
+                }) |
+                stdexec::then([this, &message, &channel_manager, task_runner, &call, &decision](std::shared_ptr<PendingApproval> pending) {
+                    if (pending == nullptr) {
+                        return WaitOutcome{};
+                    }
 
-                                const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
-                                auto reply = format_channel_approval_prompt(call, decision, pending->request_id, include_allow_always);
-                                try {
-                                    const auto target = resolve_reply_target(message);
-                                    if (is_qq_channel_target(target)) {
-                                        channel_manager.send_keyboard(target, reply, channel::qq::build_approval_keyboard(pending->request_id, include_allow_always),
-                                                                     message.message_id, message.message_id);
-                                    } else {
-                                        deliver_reply(message, reply, channel_manager);
-                                    }
-                                } catch (const std::exception &e) {
-                                    spdlog::warn("Falling back to text approval prompt for jid '{}': {}", message.jid, e.what());
-                                    deliver_reply(message, reply, channel_manager);
-                                }
+                    const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
+                    const auto target = resolve_reply_target(message);
+                    const bool is_qq_target = is_qq_channel_target(target);
+                    const auto qq_keyboard_key = is_qq_target ? qq_keyboard_capability_key(target) : std::string{};
+                    {
+                        std::scoped_lock lock(pending->mutex);
+                        pending->allow_always_eligible = include_allow_always;
+                        pending->allow_text_reply = !is_qq_target;
+                    }
+                    const auto qq_keyboard_disabled = [&] {
+                        if (qq_keyboard_key.empty()) {
+                            return false;
+                        }
+                        std::scoped_lock lock(mutex_);
+                        return qq_keyboard_disabled_keys_.contains(qq_keyboard_key);
+                    }();
+                    auto delivery_failure_reply = [&](bool keyboard_unavailable) {
+                        if (is_qq_target) {
+                            return format_qq_approval_delivery_failure(call, decision, keyboard_unavailable);
+                        }
 
-                                auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
-                                std::unique_lock lock(pending->mutex);
-                                const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
-                                    return pending->resolved;
-                                });
-                                const bool cancelled = resolved && pending->cancelled;
-                                const bool approved = resolved && !cancelled && pending->approved;
-                                const bool always_allow = resolved && !cancelled && pending->always_allow;
-                                return WaitOutcome{
-                                    .pending = std::move(pending),
-                                    .resolved = resolved,
-                                    .cancelled = cancelled,
-                                    .approved = approved,
-                                    .always_allow = always_allow,
-                                };
-                            }) |
-                            stdexec::then([this, &message, &channel_manager, &call, permission_rule_mutator](const WaitOutcome &outcome) {
-                                if (outcome.pending == nullptr) {
-                                    return false;
-                                }
+                        std::string message = permissions::approval_prompt_message(decision);
+                        message += "\nFailed to deliver the approval prompt, so the tool call was rejected.";
+                        message += "\nTool: " + call.name;
+                        return message;
+                    };
 
-                                clear_pending(outcome.pending);
-                                if (outcome.approved && outcome.always_allow) {
-                                    if (const auto rule = permissions::make_session_allow_rule(call); rule.has_value()) {
-                                        if (permission_rule_mutator) {
-                                            permission_rule_mutator(*rule);
-                                        }
-                                    }
-                                }
-                                if (!outcome.resolved && !outcome.cancelled) {
-                                    deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
-                                }
-                                return outcome.approved;
-                            });
+                    if (qq_keyboard_disabled) {
+                        clear_pending(pending);
+                        deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                        return WaitOutcome{
+                            .pending = std::move(pending),
+                            .resolved = true,
+                            .cancelled = true,
+                        };
+                    }
+
+                    try {
+                        if (is_qq_target) {
+                            // Match openclaw: QQ custom keyboards must be sent as a fresh message, not a passive reply carrying msg_id.
+                            channel_manager.send_keyboard(target, format_qq_channel_approval_card_markdown(call, decision),
+                                                          channel::qq::build_approval_keyboard(pending->request_id, include_allow_always), "", "");
+                        } else {
+                            deliver_reply(message, format_text_channel_approval_prompt(call, decision, pending->request_id, include_allow_always), channel_manager);
+                        }
+                    } catch (const std::exception &e) {
+                        if (!qq_keyboard_key.empty() && is_qq_custom_keyboard_blocked_error(e.what())) {
+                            {
+                                std::scoped_lock lock(mutex_);
+                                qq_keyboard_disabled_keys_.insert(qq_keyboard_key);
+                            }
+                            spdlog::warn("QQ custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}", qq_keyboard_key,
+                                         e.what());
+                            clear_pending(pending);
+                            deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                            return WaitOutcome{
+                                .pending = std::move(pending),
+                                .resolved = true,
+                                .cancelled = true,
+                            };
+                        } else {
+                            spdlog::warn("Failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
+                            clear_pending(pending);
+                            deliver_reply(message, delivery_failure_reply(false), channel_manager);
+                            return WaitOutcome{
+                                .pending = std::move(pending),
+                                .resolved = true,
+                                .cancelled = true,
+                            };
+                        }
+                    }
+
+                    auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
+                    std::unique_lock lock(pending->mutex);
+                    const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
+                        return pending->resolved;
+                    });
+                    const bool cancelled = resolved && pending->cancelled;
+                    const bool approved = resolved && !cancelled && pending->approved;
+                    const bool always_allow = resolved && !cancelled && pending->always_allow;
+                    return WaitOutcome{
+                        .pending = std::move(pending),
+                        .resolved = resolved,
+                        .cancelled = cancelled,
+                        .approved = approved,
+                        .always_allow = always_allow,
+                    };
+                }) |
+                stdexec::then([this, &message, &channel_manager, &call, permission_rule_mutator](const WaitOutcome &outcome) {
+                    if (outcome.pending == nullptr) {
+                        return false;
+                    }
+
+                    clear_pending(outcome.pending);
+                    if (outcome.approved && outcome.always_allow) {
+                        if (const auto rule = permissions::make_session_allow_rule(call); rule.has_value()) {
+                            if (permission_rule_mutator) {
+                                permission_rule_mutator(*rule);
+                            }
+                        }
+                    }
+                    if (!outcome.resolved && !outcome.cancelled) {
+                        deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
+                    }
+                    return outcome.approved;
+                });
 
             auto [approved] = execution::sync_wait_or_throw(pipeline, "channel approval callback pipeline");
             return approved;
@@ -795,14 +1045,33 @@ namespace orangutan::bootstrap {
             }
         }
 
-        const auto parsed = parse_channel_approval_reply(message.content);
+        std::shared_ptr<PendingApproval> pending;
+        bool allow_text_reply = true;
+        {
+            std::scoped_lock lock(mutex_);
+            for (const auto &request_id : pending_request_ids) {
+                const auto it = pending_by_request_id_.find(request_id);
+                if (it == pending_by_request_id_.end() || it->second->jid != message.jid) {
+                    continue;
+                }
+                pending = it->second;
+                break;
+            }
+        }
+
+        if (pending != nullptr) {
+            std::scoped_lock lock(pending->mutex);
+            allow_text_reply = pending->allow_text_reply;
+        }
+
+        const auto parsed = parse_channel_approval_reply(message.content, allow_text_reply);
         if (parsed.request_id.empty()) {
-            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids), channel_manager);
+            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, allow_text_reply), channel_manager);
             return true;
         }
 
-        std::shared_ptr<PendingApproval> pending;
-        {
+        if (pending == nullptr || pending->request_id != parsed.request_id) {
+            pending.reset();
             std::scoped_lock lock(mutex_);
             const auto it = pending_by_request_id_.find(parsed.request_id);
             if (it != pending_by_request_id_.end() && it->second->jid == message.jid) {
@@ -811,13 +1080,26 @@ namespace orangutan::bootstrap {
         }
 
         if (pending == nullptr) {
-            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids), channel_manager);
+            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, allow_text_reply), channel_manager);
+            return true;
+        }
+
+        const auto [allow_always_eligible, current_allow_text_reply] = [&pending] {
+            std::scoped_lock lock(pending->mutex);
+            return std::pair{pending->allow_always_eligible, pending->allow_text_reply};
+        }();
+
+        if (parsed.decision == channel_approval_decision::approve_always && !allow_always_eligible) {
+            if (current_allow_text_reply) {
+                deliver_reply(message, "Always allow is not available for this request. " + format_channel_approval_text_reply(pending->request_id, false), channel_manager);
+            } else {
+                deliver_reply(message, "Always allow is not available for this request. Use the remaining buttons on the approval card.", channel_manager);
+            }
             return true;
         }
 
         if (parsed.decision == channel_approval_decision::invalid) {
-            deliver_reply(message, "Tool approval is pending. Use the QQ buttons, or reply with `" + pending->request_id + " yes` or `" + pending->request_id + " no`.",
-                          channel_manager);
+            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, current_allow_text_reply), channel_manager);
             return true;
         }
 
@@ -944,10 +1226,11 @@ namespace orangutan::bootstrap {
 
         ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
                                                                    coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
-                                                                   HookManager *hook_manager, automation::Runtime *automation_runtime,
-                                                                   swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                                                                   HookManager *hook_manager, automation::Runtime *automation_runtime, swarm::TeamManager *team_manager,
+                                                                   swarm::AgentMailbox *mailbox) {
             const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
-            auto runtime = make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, raw_caller_id, hook_manager, automation_runtime, team_manager, mailbox);
+            auto runtime =
+                make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, raw_caller_id, hook_manager, automation_runtime, team_manager, mailbox);
 
             return ConversationRuntimeInspection{
                 .tool_definitions = runtime->tools().definitions(),
@@ -1047,9 +1330,7 @@ namespace orangutan::bootstrap {
                     }
 
                     tool_context.approval_callback = approval_coordinator.make_callback(
-                        message,
-                        channel_manager,
-                        &task_runner,
+                        message, channel_manager, &task_runner,
                         [&session_store, current_session_id = &runtime.current_session_id, base_mutator = tool_context.permission_rule_mutator](PermissionRule rule) {
                             if (base_mutator) {
                                 base_mutator(rule);
@@ -1161,8 +1442,7 @@ namespace orangutan::bootstrap {
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
-                          HookManager *hook_manager, automation::Runtime *automation_runtime,
-                          swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                          HookManager *hook_manager, automation::Runtime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
         std::mutex runtimes_mutex;
         ChannelApprovalCoordinator approval_coordinator;

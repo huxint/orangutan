@@ -20,6 +20,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace orangutan::agent {
@@ -41,7 +42,7 @@ namespace orangutan::coordinator {
 namespace orangutan::swarm {
     class AgentMailbox;
     class TeamManager;
-}
+} // namespace orangutan::swarm
 
 namespace orangutan::providers {
     class Provider;
@@ -102,6 +103,8 @@ namespace orangutan::bootstrap {
             bool resolved = false;
             bool approved = false;
             bool always_allow = false;
+            bool allow_always_eligible = false;
+            bool allow_text_reply = true;
             bool cancelled = false;
         };
 
@@ -109,6 +112,7 @@ namespace orangutan::bootstrap {
         std::mutex mutex_;
         std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
         std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
+        std::unordered_set<std::string> qq_keyboard_disabled_keys_;
         base::u64 next_prompt_id_ = 0;
         bool shutting_down_ = false;
 
@@ -166,7 +170,7 @@ namespace orangutan::bootstrap {
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
-                          hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr,
-                          swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr);
+                          hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr, swarm::TeamManager *team_manager = nullptr,
+                          swarm::AgentMailbox *mailbox = nullptr);
 
 } // namespace orangutan::bootstrap

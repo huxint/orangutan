@@ -1,4 +1,5 @@
 #include "channel/qq/qq-channel.hpp"
+#include "channel/qq/qq-approval-keyboard.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -201,6 +202,27 @@ namespace {
         CHECK(api->requests[1].body.at("message_reference").at("message_id").get<std::string>() == "message-ref-1");
     }
 
+    TEST_CASE("qq_channel_keyboard_send_preserves_keyboard_and_omits_message_reference") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+        qqtest::QqChannelTestAccess::remember_inbound_message(channel, "message-1");
+
+        const auto keyboard = channel::qq::build_approval_keyboard("shell-approval-1", true);
+        channel.send_keyboard_message("qqbot:bot:c2c:user-openid", "pick one", keyboard, "message-1", "message-ref-1");
+
+        REQUIRE(api->requests.size() == 1UL);
+        CHECK(api->requests[0].path == "/v2/users/user-openid/messages");
+        CHECK(api->requests[0].body.at("msg_type").get<int>() == 2);
+        CHECK(api->requests[0].body.at("markdown").at("content").get<std::string>() == "pick one");
+        CHECK(api->requests[0].body.at("msg_id").get<std::string>() == "message-1");
+        CHECK(api->requests[0].body.at("keyboard") == keyboard);
+        CHECK_FALSE(api->requests[0].body.contains("message_reference"));
+    }
+
     TEST_CASE("qq_channel_inbound_c2c_message_exposes_attachment_metadata_and_extracts_reference_index") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
@@ -311,17 +333,16 @@ namespace {
             called = true;
         });
 
-        qqtest::QqChannelTestAccess::handle_interaction(channel,
-                                                        nlohmann::json{
-                                                            {"id", "interaction-1"},
-                                                            {"timestamp", "2026-04-02T13:05:00Z"},
-                                                            {"user_openid", "user-openid"},
-                                                            {"group_openid", "group-openid"},
-                                                            {"data",
-                                                             {
-                                                                 {"resolved", {{"button_data", "approval:shell-approval-1:deny"}}},
-                                                             }},
-                                                        });
+        qqtest::QqChannelTestAccess::handle_interaction(channel, nlohmann::json{
+                                                                     {"id", "interaction-1"},
+                                                                     {"timestamp", "2026-04-02T13:05:00Z"},
+                                                                     {"user_openid", "user-openid"},
+                                                                     {"group_openid", "group-openid"},
+                                                                     {"data",
+                                                                      {
+                                                                          {"resolved", {{"button_data", "approval:shell-approval-1:deny"}}},
+                                                                      }},
+                                                                 });
 
         REQUIRE(called);
         CHECK(captured.jid == "qqbot:bot:group:group-openid");

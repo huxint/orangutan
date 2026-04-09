@@ -1,12 +1,17 @@
 #include "channel/qq/qq-approval-keyboard.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::channel::qq {
 
     namespace {
+
+        struct ApprovalButtonSpec {
+            std::string_view label;
+            std::string_view visited_label;
+            int style = 0;
+        };
 
         [[nodiscard]]
         std::string trim_ascii(std::string_view value) {
@@ -20,29 +25,50 @@ namespace orangutan::channel::qq {
         }
 
         [[nodiscard]]
-        std::string approval_action_label(approval_action action) {
-            std::string label{magic_enum::enum_name(action)};
-            std::ranges::replace(label, '_', ' ');
-            return label;
+        ApprovalButtonSpec approval_button_spec_for(approval_action action) {
+            switch (action) {
+                case approval_action::allow_once:
+                    return ApprovalButtonSpec{
+                        .label = "Allow once",
+                        .visited_label = "Approved",
+                        .style = 1,
+                    };
+                case approval_action::always_allow:
+                    return ApprovalButtonSpec{
+                        .label = "Always allow",
+                        .visited_label = "Always allowed",
+                        .style = 1,
+                    };
+                case approval_action::deny:
+                    return ApprovalButtonSpec{
+                        .label = "Deny",
+                        .visited_label = "Denied",
+                        .style = 0,
+                    };
+            }
+            return {};
         }
 
         [[nodiscard]]
         nlohmann::json build_approval_button(std::size_t index, std::string_view request_id, approval_action action) {
-            const auto label = approval_action_label(action);
+            const auto spec = approval_button_spec_for(action);
             return nlohmann::json{
                 {"id", std::to_string(index)},
                 {"render_data",
                  {
-                     {"label", label},
-                     {"visited_label", label},
+                     {"label", spec.label},
+                     {"visited_label", spec.visited_label},
+                     {"style", spec.style},
                  }},
                 {"action",
                  {
-                     {"type", 2},
+                     // QQ inline keyboard must use callback buttons here; command buttons degrade to plain text input.
+                     {"type", 1},
                      {"permission", {{"type", 2}}},
-                     {"enter", true},
+                     {"click_limit", 1},
                      {"data", build_approval_callback_data(request_id, action)},
                  }},
+                {"group_id", "approval"},
             };
         }
 
@@ -92,12 +118,11 @@ namespace orangutan::channel::qq {
         return nlohmann::json{
             {"content",
              {
-                 {"rows",
-                  nlohmann::json::array({
-                      {
-                          {"buttons", std::move(buttons)},
-                      },
-                  })},
+                 {"rows", nlohmann::json::array({
+                              {
+                                  {"buttons", std::move(buttons)},
+                              },
+                          })},
              }},
         };
     }
