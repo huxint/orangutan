@@ -218,7 +218,7 @@ namespace orangutan::bootstrap {
 
         std::string describe_inbound_event(const InboundMessage &message) {
             if (message.event_kind == inbound_event_kind::message) {
-                return message.content;
+                return {};
             }
 
             if (!message.reaction.has_value()) {
