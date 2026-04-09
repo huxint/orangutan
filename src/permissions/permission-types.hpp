@@ -37,10 +37,18 @@ namespace orangutan::permissions {
         bool is_passthrough = false;
         std::optional<std::string> message;
 
-        static PermissionResult passthrough() { return {.behavior = permission_behavior::ask, .is_passthrough = true}; }
-        static PermissionResult allow() { return {.behavior = permission_behavior::allow}; }
-        static PermissionResult deny(std::string msg) { return {.behavior = permission_behavior::deny, .is_passthrough = false, .message = std::move(msg)}; }
-        static PermissionResult ask(std::string msg) { return {.behavior = permission_behavior::ask, .is_passthrough = false, .message = std::move(msg)}; }
+        static PermissionResult passthrough() {
+            return {.behavior = permission_behavior::ask, .is_passthrough = true};
+        }
+        static PermissionResult allow() {
+            return {.behavior = permission_behavior::allow};
+        }
+        static PermissionResult deny(std::string msg) {
+            return {.behavior = permission_behavior::deny, .is_passthrough = false, .message = std::move(msg)};
+        }
+        static PermissionResult ask(std::string msg) {
+            return {.behavior = permission_behavior::ask, .is_passthrough = false, .message = std::move(msg)};
+        }
     };
 
     // ── Permission Rules ─────────────────────────────────────────────────
@@ -151,14 +159,14 @@ namespace orangutan {
     using permissions::HookDecisionReason;
     using permissions::ModeDecisionReason;
     using permissions::permission_behavior;
-    using permissions::PermissionDecision;
     using permissions::permission_mode;
+    using permissions::permission_rule_source;
+    using permissions::PermissionDecision;
     using permissions::PermissionResult;
     using permissions::PermissionRule;
-    using permissions::permission_rule_source;
+    using permissions::rule_match_type;
     using permissions::RuleContent;
     using permissions::RuleDecisionReason;
-    using permissions::rule_match_type;
     using permissions::SafetyCheckDecisionReason;
     using permissions::ToolPermissionContext;
     using permissions::ToolSpecificDecisionReason;

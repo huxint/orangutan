@@ -39,8 +39,8 @@ namespace orangutan::permissions {
 namespace orangutan {
 
     using permissions::CLIPermissionOptions;
-    using permissions::PermissionConfig;
     using permissions::initialize_permission_context;
     using permissions::load_rules_from_file;
+    using permissions::PermissionConfig;
 
 } // namespace orangutan

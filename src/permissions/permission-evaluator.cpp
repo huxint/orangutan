@@ -15,12 +15,7 @@ namespace orangutan::permissions {
     }
 
     bool is_file_tool_name(std::string_view name) {
-        return name == "read"
-            || name == "write"
-            || name == "edit"
-            || name.contains("file_read")
-            || name.contains("file_write")
-            || name.contains("file_edit");
+        return name == "read" || name == "write" || name == "edit" || name.contains("file_read") || name.contains("file_write") || name.contains("file_edit");
     }
 
     static bool is_mutating_file_tool_name(std::string_view name) {
@@ -35,8 +30,7 @@ namespace orangutan::permissions {
         return approval_match_content(call);
     }
 
-    std::optional<PermissionRule> find_matching_rule(std::string_view tool_name, std::string_view content,
-                                                     const std::vector<PermissionRule> &rules) {
+    std::optional<PermissionRule> find_matching_rule(std::string_view tool_name, std::string_view content, const std::vector<PermissionRule> &rules) {
         for (const auto &rule : rules) {
             if (matches_rule(rule, tool_name, content)) {
                 return rule;
@@ -53,8 +47,8 @@ namespace orangutan::permissions {
         return value;
     }
 
-    static std::optional<PermissionDecision> make_rule_decision(std::string_view tool_name, std::string_view content,
-                                                                 const std::vector<PermissionRule> &rules, permission_behavior behavior) {
+    static std::optional<PermissionDecision> make_rule_decision(std::string_view tool_name, std::string_view content, const std::vector<PermissionRule> &rules,
+                                                                permission_behavior behavior) {
         const auto rule = find_matching_rule(tool_name, content, rules);
         if (!rule.has_value()) {
             return std::nullopt;
@@ -62,43 +56,42 @@ namespace orangutan::permissions {
 
         auto value = rule_value_string(*rule);
         switch (behavior) {
-        case permission_behavior::deny:
-            return PermissionDecision::deny_by_rule(rule->source, std::move(value), "Blocked by deny rule");
-        case permission_behavior::ask:
-            return PermissionDecision::ask_by_rule(rule->source, std::move(value), "Requires approval per ask rule");
-        case permission_behavior::allow:
-            return PermissionDecision::allow_by_rule(rule->source, std::move(value));
+            case permission_behavior::deny:
+                return PermissionDecision::deny_by_rule(rule->source, std::move(value), "Blocked by deny rule");
+            case permission_behavior::ask:
+                return PermissionDecision::ask_by_rule(rule->source, std::move(value), "Requires approval per ask rule");
+            case permission_behavior::allow:
+                return PermissionDecision::allow_by_rule(rule->source, std::move(value));
         }
         return std::nullopt;
     }
 
-    std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call,
-                                                     bool is_read_only, bool is_file_tool_in_workspace) {
+    std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call, bool is_read_only, bool is_file_tool_in_workspace) {
         switch (mode) {
-        case permission_mode::bypass_permissions:
-            return PermissionDecision::allow_by_mode(mode);
+            case permission_mode::bypass_permissions:
+                return PermissionDecision::allow_by_mode(mode);
 
-        case permission_mode::accept_edits:
-            if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
-                return PermissionDecision::allow_by_mode(mode);
-            }
-            if (is_read_only) {
-                return PermissionDecision::allow_by_mode(mode);
-            }
-            return std::nullopt;
+            case permission_mode::accept_edits:
+                if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
+                    return PermissionDecision::allow_by_mode(mode);
+                }
+                if (is_read_only) {
+                    return PermissionDecision::allow_by_mode(mode);
+                }
+                return std::nullopt;
 
-        case permission_mode::plan:
-            if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
-                return PermissionDecision::allow_by_mode(mode);
-            }
-            if (is_read_only) {
-                return PermissionDecision::allow_by_mode(mode);
-            }
-            return PermissionDecision::deny_by_mode(mode, "Plan mode: write operations not allowed");
+            case permission_mode::plan:
+                if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
+                    return PermissionDecision::allow_by_mode(mode);
+                }
+                if (is_read_only) {
+                    return PermissionDecision::allow_by_mode(mode);
+                }
+                return PermissionDecision::deny_by_mode(mode, "Plan mode: write operations not allowed");
 
-        case permission_mode::dont_ask:
-        case permission_mode::default_mode:
-            return std::nullopt;
+            case permission_mode::dont_ask:
+            case permission_mode::default_mode:
+                return std::nullopt;
         }
         return std::nullopt;
     }
@@ -110,8 +103,7 @@ namespace orangutan::permissions {
         return decision;
     }
 
-    PermissionDecision evaluate_permission(const ToolUse &call, const ToolPermissionContext &ctx,
-                                           const ToolPermissionChecker &tool_checker,
+    PermissionDecision evaluate_permission(const ToolUse &call, const ToolPermissionContext &ctx, const ToolPermissionChecker &tool_checker,
                                            const IsReadOnlyChecker &is_read_only) {
         if (ctx.mode == permission_mode::bypass_permissions) {
             return PermissionDecision::allow_by_mode(ctx.mode);
@@ -132,9 +124,7 @@ namespace orangutan::permissions {
             auto result = tool_checker(call, ctx);
             if (!result.is_passthrough) {
                 auto detail = result.message.value_or("");
-                return {.behavior = result.behavior,
-                        .message = std::move(result.message),
-                        .reason = ToolSpecificDecisionReason{.detail = std::move(detail)}};
+                return {.behavior = result.behavior, .message = std::move(result.message), .reason = ToolSpecificDecisionReason{.detail = std::move(detail)}};
             }
             if (is_file_tool_name(call.name)) {
                 is_file_tool_in_workspace = true;
