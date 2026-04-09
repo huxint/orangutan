@@ -1,5 +1,6 @@
 #include "process/subprocess.hpp"
 #include "types/base.hpp"
+#include "utils/format.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/file.hpp"
 
@@ -46,11 +47,7 @@ namespace orangutan::process {
 
         void write_child_error(std::string_view operation, std::string_view path) {
             std::string message(operation);
-            message += '(';
-            message += path;
-            message += ") failed: ";
-            message += std::strerror(errno);
-            message += '\n';
+            utils::format_to(message, "({}) failed: {})\n", path, std::strerror(errno));
             write_all(STDERR_FILENO, message);
         }
 

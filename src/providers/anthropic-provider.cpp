@@ -108,12 +108,11 @@ namespace orangutan::providers {
             if (block_type == "tool_use") {
                 state.id = block.value("id", "");
                 state.name = block.value("name", "");
-                (*on_event_)("tool_call_start",
-                             {
-                                 {"id", state.id},
-                                 {"name", state.name},
-                                 {"input", nlohmann::json::object()},
-                             });
+                (*on_event_)("tool_call_start", {
+                                                    {"id", state.id},
+                                                    {"name", state.name},
+                                                    {"input", nlohmann::json::object()},
+                                                });
             }
             blocks_.push_back(std::move(state));
         }
@@ -190,8 +189,7 @@ namespace orangutan::providers {
         spdlog::debug("Request body: {}", request_body);
 
         auto headers = compose_headers(endpoint_.headers,
-                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
-                                        HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
+                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"}, HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
                                         HeaderFallback{.key = "anthropic-version", .fallback = "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";
@@ -223,8 +221,7 @@ namespace orangutan::providers {
         });
 
         auto headers = compose_headers(endpoint_.headers,
-                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
-                                        HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
+                                       {HeaderFallback{.key = "Content-Type", .fallback = "application/json"}, HeaderFallback{.key = "x-api-key", .fallback = endpoint_.api_key},
                                         HeaderFallback{.key = "anthropic-version", .fallback = "2023-06-01"}});
 
         std::string url = endpoint_.base_url + "/v1/messages";

@@ -123,13 +123,13 @@ namespace orangutan::process {
 
 namespace orangutan {
 
+    using process::background_process_terminal_status;
     using process::BackgroundProcessCompletionEvent;
     using process::BackgroundProcessCompletionPolicy;
     using process::BackgroundProcessManager;
     using process::BackgroundProcessOutputMetadata;
     using process::BackgroundProcessSnapshot;
     using process::BackgroundProcessSummary;
-    using process::background_process_terminal_status;
     using process::run_subprocess;
     using process::run_subprocess_sender;
     using process::SubprocessConfig;
