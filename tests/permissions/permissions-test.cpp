@@ -163,13 +163,13 @@ TEST_CASE("BypassModeAutoAllows") {
     REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
-TEST_CASE("BypassModeStillRespectsDenyRules") {
+TEST_CASE("BypassModeIgnoresDenyRules") {
     ToolPermissionContext ctx{.mode = permission_mode::bypass_permissions};
-    ctx.deny_rules.push_back(parse_permission_rule("shell(rm:*)", permission_behavior::deny, permission_rule_source::user_settings));
+    ctx.deny_rules.push_back(parse_permission_rule("shell(echo:*)", permission_behavior::deny, permission_rule_source::user_settings));
 
-    ToolUse call{"id1", "shell", {{"command", "rm -rf /"}}};
+    ToolUse call{"id1", "shell", {{"command", "echo hello"}}};
     auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == permission_behavior::deny);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("PlanModeAllowsReadOnly") {
@@ -177,6 +177,25 @@ TEST_CASE("PlanModeAllowsReadOnly") {
 
     ToolUse call{"id1", "file_read", {{"file_path", "test.txt"}}};
     auto decision = evaluate_permission(call, ctx, {}, [] { return true; });
+    REQUIRE(decision.behavior == permission_behavior::allow);
+}
+
+TEST_CASE("PlanModeAllowsWorkspaceWriteToolsWhenCheckerPasses") {
+    ToolPermissionContext ctx{.mode = permission_mode::plan};
+    bool checker_called = false;
+
+    ToolUse call{"id1", "write", {{"path", "test.txt"}, {"content", "hello"}}};
+    auto decision = evaluate_permission(
+        call, ctx,
+        [&checker_called](const ToolUse &, const ToolPermissionContext &) {
+            checker_called = true;
+            return PermissionResult::passthrough();
+        },
+        [] {
+            return false;
+        });
+
+    REQUIRE(checker_called);
     REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
@@ -197,7 +216,7 @@ TEST_CASE("DontAskModeConvertsAskToDeny") {
     REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
-TEST_CASE("DefaultModeAsksForUnknownTool") {
+TEST_CASE("DefaultModeAsksForShell") {
     ToolPermissionContext ctx{.mode = permission_mode::default_mode};
 
     ToolUse call{"id1", "shell", {{"command", "ls"}}};
@@ -205,6 +224,14 @@ TEST_CASE("DefaultModeAsksForUnknownTool") {
     REQUIRE(decision.behavior == permission_behavior::ask);
     REQUIRE(decision.message.has_value());
     CHECK(*decision.message == "Tool 'shell' requires approval");
+}
+
+TEST_CASE("DefaultModeAllowsNonSensitiveTools") {
+    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
+
+    ToolUse call{"id1", "task", {{"op", "add"}, {"name", "nightly-sync"}}};
+    auto decision = evaluate_permission(call, ctx);
+    REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
 TEST_CASE("AcceptEditsAllowsWorkspaceFileToolsWhenCheckerPasses") {
@@ -261,9 +288,6 @@ TEST_CASE("EditPatchAllowRuleMatchesCanonicalPathInsteadOfPatchBody") {
 }
 
 TEST_CASE("TaskAllowRuleMatchesCanonicalOperationAndName") {
-    ToolPermissionContext ctx{.mode = permission_mode::default_mode};
-    ctx.allow_rules.push_back(parse_permission_rule("task(op=add|name=nightly-sync)", permission_behavior::allow, permission_rule_source::session));
-
     ToolUse call{
         "task-1",
         "task",
@@ -276,8 +300,9 @@ TEST_CASE("TaskAllowRuleMatchesCanonicalOperationAndName") {
         },
     };
 
-    const auto decision = evaluate_permission(call, ctx);
-    REQUIRE(decision.behavior == permission_behavior::allow);
+    const auto signature = derive_approval_signature(call);
+    CHECK_FALSE(signature.always_allow_eligible);
+    CHECK_FALSE(signature.content.has_value());
 }
 
 TEST_CASE("ShellCompoundCommandsAreNotEligibleForSessionAlwaysAllow") {

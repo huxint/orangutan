@@ -1,13 +1,10 @@
 #include "tools/task/task-tool.hpp"
 
 #include <magic_enum/magic_enum.hpp>
-#include <ranges>
 
 #include "automation/cron-parser.hpp"
 #include "automation/planner.hpp"
 #include "automation/scheduler.hpp"
-#include "permissions/approval-signature.hpp"
-#include "permissions/rule-parser.hpp"
 #include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/op-tool-support.hpp"
@@ -141,20 +138,9 @@ namespace orangutan::tools {
         }
 
         PermissionResult check_task_permissions(const ToolUse &call, const ToolPermissionContext &ctx) {
-            const auto op = call.input.value("op", std::string{});
-            if (op == "list") {
-                return PermissionResult::allow();
-            }
-
-            const auto content = approval_match_content(call);
-            const auto allowed = std::ranges::any_of(ctx.allow_rules, [&](const PermissionRule &rule) {
-                return matches_rule(rule, call.name, content);
-            });
-            if (allowed) {
-                return PermissionResult::allow();
-            }
-
-            return PermissionResult::ask("Task mutations require approval");
+            static_cast<void>(call);
+            static_cast<void>(ctx);
+            return PermissionResult::passthrough();
         }
 
     } // namespace

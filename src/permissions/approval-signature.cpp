@@ -196,40 +196,6 @@ namespace orangutan::permissions {
             return unique_sorted(std::move(paths));
         }
 
-        std::vector<std::string> extract_read_paths(const nlohmann::json &input) {
-            std::vector<std::string> paths;
-            if (const auto path = first_path_field(input, {"path", "file_path"}); path.has_value()) {
-                paths.push_back(*path);
-            }
-
-            const auto it = input.find("paths");
-            if (it != input.end() && it->is_array()) {
-                for (const auto &entry : *it) {
-                    if (entry.is_string()) {
-                        paths.push_back(normalize_path(entry.get<std::string>()));
-                    }
-                }
-            }
-
-            return unique_sorted(std::move(paths));
-        }
-
-        std::string op_identity_signature(const nlohmann::json &input, std::initializer_list<std::string_view> identity_keys) {
-            std::vector<std::string> parts;
-            if (const auto op = get_string_field(input, "op"); op.has_value()) {
-                parts.push_back("op=" + *op);
-            }
-
-            for (const auto key : identity_keys) {
-                if (const auto value = get_string_field(input, key); value.has_value()) {
-                    parts.push_back(std::string(key) + "=" + *value);
-                    break;
-                }
-            }
-
-            return join_values(parts);
-        }
-
         ApprovalSignature derive_shell_signature(const ToolUse &call) {
             const auto command = get_string_field(call.input, "command").value_or("");
             const auto normalized = collapse_whitespace(command);
@@ -247,15 +213,11 @@ namespace orangutan::permissions {
             return signature;
         }
 
-        ApprovalSignature derive_file_signature(const ToolUse &call) {
-            if (call.name == "read" || call.name.contains("file_read")) {
-                return build_signature(call, exact_content(join_values(extract_read_paths(call.input))));
-            }
+        ApprovalSignature derive_write_signature(const ToolUse &call) {
+            return build_signature(call, exact_content(first_path_field(call.input, {"path", "file_path"}).value_or("")));
+        }
 
-            if (call.name == "write" || call.name.contains("file_write")) {
-                return build_signature(call, exact_content(first_path_field(call.input, {"path", "file_path"}).value_or("")));
-            }
-
+        ApprovalSignature derive_edit_signature(const ToolUse &call) {
             if (const auto path = first_path_field(call.input, {"path", "file_path"}); path.has_value()) {
                 return build_signature(call, exact_content(*path));
             }
@@ -264,131 +226,7 @@ namespace orangutan::permissions {
                 return build_signature(call, exact_content(join_values(extract_patch_paths(*patch))));
             }
 
-            return build_signature(call, std::nullopt, false, "no stable file target");
-        }
-
-        ApprovalSignature derive_memory_signature(const ToolUse &call) {
-            if (call.name == "remember" || call.name == "memory_store" || call.name == "memory_update" || call.name == "forget" || call.name == "memory_forget") {
-                return build_signature(call, exact_content("key=" + get_string_field(call.input, "key").value_or("")),
-                                       get_string_field(call.input, "key").has_value());
-            }
-
-            if (call.name == "recall" || call.name == "memory_recall") {
-                const auto mode = get_string_field(call.input, "mode").value_or("");
-                if (mode == "category") {
-                    return build_signature(call, exact_content("mode=category|value=" + get_string_field(call.input, "value").value_or("")));
-                }
-                return build_signature(call, exact_content("mode=" + mode), false, "free-text recall query");
-            }
-
-            if (call.name == "memory_list") {
-                if (const auto category = get_string_field(call.input, "category"); category.has_value()) {
-                    return build_signature(call, exact_content("category=" + *category));
-                }
-                return build_signature(call, exact_content("op=list"));
-            }
-
-            if (call.name == "memory_stats") {
-                return build_signature(call, exact_content("op=stats"));
-            }
-
-            return build_signature(call, std::nullopt, false, "unrecognized memory tool");
-        }
-
-        ApprovalSignature derive_tool_specific_signature(const ToolUse &call) {
-            if (call.name == "skill") {
-                return build_signature(call, exact_content("name=" + get_string_field(call.input, "name").value_or("")),
-                                       get_string_field(call.input, "name").has_value());
-            }
-
-            if (call.name == "tool_search") {
-                const auto query = get_string_field(call.input, "query").value_or("");
-                if (!query.starts_with("select:")) {
-                    return build_signature(call, exact_content("mode=search"), false, "free-form tool search query");
-                }
-
-                std::vector<std::string> names;
-                std::istringstream stream(query.substr(std::string("select:").size()));
-                for (std::string token; std::getline(stream, token, ',');) {
-                    auto trimmed = trim_copy(token);
-                    if (!trimmed.empty()) {
-                        names.push_back(trimmed);
-                    }
-                }
-                names = unique_sorted(std::move(names));
-                return build_signature(call, exact_content("select=" + join_values(names, ",")), !names.empty());
-            }
-
-            if (call.name == "task") {
-                return build_signature(call, exact_content(op_identity_signature(call.input, {"id", "name"})));
-            }
-
-            if (call.name == "heartbeat") {
-                return build_signature(call, exact_content(op_identity_signature(call.input, {"id", "name"})));
-            }
-
-            if (call.name == "inbox") {
-                return build_signature(call, exact_content(op_identity_signature(call.input, {"id"})));
-            }
-
-            if (call.name == "message_attachments") {
-                const auto op = get_string_field(call.input, "op").value_or("list");
-                if (op != "download") {
-                    return build_signature(call, exact_content("op=" + op));
-                }
-                const auto target_path = first_path_field(call.input, {"target_path"});
-                return build_signature(call,
-                                       exact_content(target_path.has_value() ? "op=download|target_path=" + *target_path : "op=download"),
-                                       false,
-                                       "attachment download is message-specific");
-            }
-
-            if (call.name == "process_list") {
-                return build_signature(call, exact_content("op=list"));
-            }
-
-            if (call.name == "process_poll" || call.name == "process_kill") {
-                return build_signature(call, exact_content("process_id=" + get_string_field(call.input, "process_id").value_or("")),
-                                       get_string_field(call.input, "process_id").has_value());
-            }
-
-            if (call.name == "agent_spawn") {
-                std::vector<std::string> parts;
-                if (const auto agent_key = get_string_field(call.input, "agent_key"); agent_key.has_value()) {
-                    parts.push_back("agent_key=" + *agent_key);
-                }
-                if (const auto team = get_string_field(call.input, "team"); team.has_value()) {
-                    parts.push_back("team=" + *team);
-                }
-                return build_signature(call, exact_content(join_values(parts)), !parts.empty());
-            }
-
-            if (call.name == "agent_send_message") {
-                if (const auto run_id = get_string_field(call.input, "run_id"); run_id.has_value()) {
-                    return build_signature(call, exact_content("run_id=" + *run_id));
-                }
-                if (const auto to = get_string_field(call.input, "to"); to.has_value()) {
-                    return build_signature(call, exact_content("to=" + *to));
-                }
-                return build_signature(call, std::nullopt, false, "no stable message recipient");
-            }
-
-            if (call.name == "agent_stop") {
-                return build_signature(call, exact_content("run_id=" + get_string_field(call.input, "run_id").value_or("")),
-                                       get_string_field(call.input, "run_id").has_value());
-            }
-
-            if (call.name == "team_create") {
-                return build_signature(call, exact_content("name=" + get_string_field(call.input, "name").value_or("")),
-                                       get_string_field(call.input, "name").has_value());
-            }
-
-            if (call.name == "team_delete") {
-                return build_signature(call, exact_content("team_id=" + get_string_field(call.input, "team_id").value_or("")),
-                                       get_string_field(call.input, "team_id").has_value());
-            }
-
-            return build_signature(call, std::nullopt, false, "no explicit canonical signature");
+            return build_signature(call, std::nullopt, false, "no stable edit target");
         }
 
     } // namespace
@@ -397,18 +235,14 @@ namespace orangutan::permissions {
         if (call.name == "shell") {
             return derive_shell_signature(call);
         }
-
-        if (call.name == "read" || call.name == "write" || call.name == "edit" || call.name.contains("file_read") || call.name.contains("file_write")
-            || call.name.contains("file_edit")) {
-            return derive_file_signature(call);
+        if (call.name == "write" || call.name.contains("file_write")) {
+            return derive_write_signature(call);
+        }
+        if (call.name == "edit" || call.name.contains("file_edit")) {
+            return derive_edit_signature(call);
         }
 
-        if (call.name == "remember" || call.name == "memory_store" || call.name == "memory_update" || call.name == "forget" || call.name == "memory_forget"
-            || call.name == "recall" || call.name == "memory_recall" || call.name == "memory_list" || call.name == "memory_stats") {
-            return derive_memory_signature(call);
-        }
-
-        return derive_tool_specific_signature(call);
+        return build_signature(call, std::nullopt, false, "tool does not use canonical approval signatures");
     }
 
     std::string approval_match_content(const ToolUse &call) {

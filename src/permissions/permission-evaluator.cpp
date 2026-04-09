@@ -23,6 +23,10 @@ namespace orangutan::permissions {
             || name.contains("file_edit");
     }
 
+    static bool requires_default_approval(std::string_view name) {
+        return is_shell_tool(name) || name == "write" || name == "edit" || name.contains("file_write") || name.contains("file_edit");
+    }
+
     static std::string extract_tool_content(const ToolUse &call) {
         if (auto content = approval_match_content(call); !content.empty()) {
             return content;
@@ -33,7 +37,7 @@ namespace orangutan::permissions {
                 return call.input["command"].get<std::string>();
             }
         }
-        if (is_file_tool(call.name)) {
+        if (call.name == "write" || call.name == "edit" || call.name.contains("file_write") || call.name.contains("file_edit")) {
             if (call.input.contains("path") && call.input["path"].is_string()) {
                 return call.input["path"].get<std::string>();
             }
@@ -97,6 +101,9 @@ namespace orangutan::permissions {
             return std::nullopt;
 
         case permission_mode::plan:
+            if (is_file_tool(call.name) && is_file_tool_in_workspace) {
+                return PermissionDecision::allow_by_mode(mode);
+            }
             if (is_read_only) {
                 return PermissionDecision::allow_by_mode(mode);
             }
@@ -119,6 +126,10 @@ namespace orangutan::permissions {
     PermissionDecision evaluate_permission(const ToolUse &call, const ToolPermissionContext &ctx,
                                            const ToolPermissionChecker &tool_checker,
                                            const IsReadOnlyChecker &is_read_only) {
+        if (ctx.mode == permission_mode::bypass_permissions) {
+            return PermissionDecision::allow_by_mode(ctx.mode);
+        }
+
         auto content = extract_tool_content(call);
         bool is_file_tool_in_workspace = false;
 
@@ -154,6 +165,10 @@ namespace orangutan::permissions {
 
         if (auto decision = make_rule_decision(call.name, content, ctx.allow_rules, permission_behavior::allow); decision.has_value()) {
             return *decision;
+        }
+
+        if (!requires_default_approval(call.name)) {
+            return PermissionDecision::allow_by_mode(ctx.mode);
         }
 
         return PermissionDecision::ask_default(default_tool_approval_message(call.name));

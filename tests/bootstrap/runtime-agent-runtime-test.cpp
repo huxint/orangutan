@@ -350,8 +350,8 @@ namespace {
 
         const auto result = moved_runtime.tools().execute(ToolUse("custom-echo", "custom_echo", nlohmann::json::object()));
 
-        CHECK(result.is_error);
-        CHECK(result.content.contains("Requires approval but interactive approval unavailable"));
+        CHECK_FALSE(result.is_error);
+        CHECK(result.content.contains("hello"));
     };
 
     TEST_CASE("shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed") {
