@@ -137,12 +137,6 @@ namespace orangutan::tools {
                                     routed_input_with_default_op(input, ""));
         }
 
-        PermissionResult check_task_permissions(const ToolUse &call, const ToolPermissionContext &ctx) {
-            static_cast<void>(call);
-            static_cast<void>(ctx);
-            return PermissionResult::passthrough();
-        }
-
     } // namespace
 
     void register_task_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
@@ -164,9 +158,6 @@ namespace orangutan::tools {
                              {"targets", schema_fragments::delivery_targets_field()},
                          },
                          {"op"}))
-                     .check_permissions([](const ToolUse &call, const ToolPermissionContext &ctx) {
-                         return check_task_permissions(call, ctx);
-                     })
                      .execute([tool_context](const nlohmann::json &input) {
                          return execute_task_tool(input, tool_context);
                      })

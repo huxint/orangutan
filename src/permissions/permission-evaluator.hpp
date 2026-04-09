@@ -8,6 +8,9 @@
 
 namespace orangutan::permissions {
 
+    [[nodiscard]]
+    bool is_file_tool_name(std::string_view name);
+
     using ToolPermissionChecker = std::function<PermissionResult(const ToolUse &call, const ToolPermissionContext &ctx)>;
 
     using IsReadOnlyChecker = std::function<bool()>;

@@ -10,11 +10,11 @@
 
 namespace orangutan::permissions {
 
-    static bool is_shell_tool(std::string_view name) {
+    static bool is_shell_tool_name(std::string_view name) {
         return name == "shell";
     }
 
-    static bool is_file_tool(std::string_view name) {
+    bool is_file_tool_name(std::string_view name) {
         return name == "read"
             || name == "write"
             || name == "edit"
@@ -23,29 +23,16 @@ namespace orangutan::permissions {
             || name.contains("file_edit");
     }
 
+    static bool is_mutating_file_tool_name(std::string_view name) {
+        return name == "write" || name == "edit" || name.contains("file_write") || name.contains("file_edit");
+    }
+
     static bool requires_default_approval(std::string_view name) {
-        return is_shell_tool(name) || name == "write" || name == "edit" || name.contains("file_write") || name.contains("file_edit");
+        return is_shell_tool_name(name) || is_mutating_file_tool_name(name);
     }
 
     static std::string extract_tool_content(const ToolUse &call) {
-        if (auto content = approval_match_content(call); !content.empty()) {
-            return content;
-        }
-
-        if (is_shell_tool(call.name)) {
-            if (call.input.contains("command") && call.input["command"].is_string()) {
-                return call.input["command"].get<std::string>();
-            }
-        }
-        if (call.name == "write" || call.name == "edit" || call.name.contains("file_write") || call.name.contains("file_edit")) {
-            if (call.input.contains("path") && call.input["path"].is_string()) {
-                return call.input["path"].get<std::string>();
-            }
-            if (call.input.contains("file_path") && call.input["file_path"].is_string()) {
-                return call.input["file_path"].get<std::string>();
-            }
-        }
-        return {};
+        return approval_match_content(call);
     }
 
     std::optional<PermissionRule> find_matching_rule(std::string_view tool_name, std::string_view content,
@@ -92,7 +79,7 @@ namespace orangutan::permissions {
             return PermissionDecision::allow_by_mode(mode);
 
         case permission_mode::accept_edits:
-            if (is_file_tool(call.name) && is_file_tool_in_workspace) {
+            if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
                 return PermissionDecision::allow_by_mode(mode);
             }
             if (is_read_only) {
@@ -101,7 +88,7 @@ namespace orangutan::permissions {
             return std::nullopt;
 
         case permission_mode::plan:
-            if (is_file_tool(call.name) && is_file_tool_in_workspace) {
+            if (is_file_tool_name(call.name) && is_file_tool_in_workspace) {
                 return PermissionDecision::allow_by_mode(mode);
             }
             if (is_read_only) {
@@ -149,7 +136,7 @@ namespace orangutan::permissions {
                         .message = std::move(result.message),
                         .reason = ToolSpecificDecisionReason{.detail = std::move(detail)}};
             }
-            if (is_file_tool(call.name)) {
+            if (is_file_tool_name(call.name)) {
                 is_file_tool_in_workspace = true;
             }
         }

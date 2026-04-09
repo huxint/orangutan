@@ -12,7 +12,6 @@ namespace orangutan {
 namespace orangutan::permissions {
 
     struct ApprovalSignature {
-        std::string tool_name;
         std::optional<RuleContent> content;
         bool always_allow_eligible = false;
         std::string downgrade_reason;

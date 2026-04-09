@@ -92,27 +92,6 @@ namespace orangutan::permissions {
             return normalize_path(*value);
         }
 
-        std::vector<std::string> unique_sorted(std::vector<std::string> values) {
-            values.erase(std::remove_if(values.begin(), values.end(), [](const std::string &value) {
-                return value.empty();
-            }),
-                         values.end());
-            std::sort(values.begin(), values.end());
-            values.erase(std::unique(values.begin(), values.end()), values.end());
-            return values;
-        }
-
-        std::string join_values(const std::vector<std::string> &values, std::string_view separator = "|") {
-            std::string joined;
-            for (const auto &value : values) {
-                if (!joined.empty()) {
-                    joined.append(separator);
-                }
-                joined.append(value);
-            }
-            return joined;
-        }
-
         std::optional<RuleContent> exact_content(std::string value) {
             if (value.empty()) {
                 return std::nullopt;
@@ -123,9 +102,8 @@ namespace orangutan::permissions {
             };
         }
 
-        ApprovalSignature build_signature(const ToolUse &call, std::optional<RuleContent> content, bool eligible = true, std::string downgrade_reason = {}) {
+        ApprovalSignature build_signature(std::optional<RuleContent> content, bool eligible = true, std::string downgrade_reason = {}) {
             return ApprovalSignature{
-                .tool_name = call.name,
                 .content = std::move(content),
                 .always_allow_eligible = eligible && content.has_value(),
                 .downgrade_reason = std::move(downgrade_reason),
@@ -177,7 +155,7 @@ namespace orangutan::permissions {
             return false;
         }
 
-        std::vector<std::string> extract_patch_paths(std::string_view patch) {
+        std::string extract_patch_paths_signature(std::string_view patch) {
             std::vector<std::string> paths;
             std::istringstream stream{std::string(patch)};
             std::string line;
@@ -193,14 +171,28 @@ namespace orangutan::permissions {
                 }
             }
 
-            return unique_sorted(std::move(paths));
+            paths.erase(std::remove_if(paths.begin(), paths.end(), [](const std::string &value) {
+                return value.empty();
+            }),
+                        paths.end());
+            std::sort(paths.begin(), paths.end());
+            paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+
+            std::string joined;
+            for (const auto &path : paths) {
+                if (!joined.empty()) {
+                    joined.push_back('|');
+                }
+                joined.append(path);
+            }
+            return joined;
         }
 
         ApprovalSignature derive_shell_signature(const ToolUse &call) {
             const auto command = get_string_field(call.input, "command").value_or("");
             const auto normalized = collapse_whitespace(command);
 
-            auto signature = build_signature(call, exact_content(normalized), !normalized.empty());
+            auto signature = build_signature(exact_content(normalized), !normalized.empty());
             if (normalized.empty()) {
                 signature.downgrade_reason = "missing shell command";
                 return signature;
@@ -214,19 +206,19 @@ namespace orangutan::permissions {
         }
 
         ApprovalSignature derive_write_signature(const ToolUse &call) {
-            return build_signature(call, exact_content(first_path_field(call.input, {"path", "file_path"}).value_or("")));
+            return build_signature(exact_content(first_path_field(call.input, {"path", "file_path"}).value_or("")));
         }
 
         ApprovalSignature derive_edit_signature(const ToolUse &call) {
             if (const auto path = first_path_field(call.input, {"path", "file_path"}); path.has_value()) {
-                return build_signature(call, exact_content(*path));
+                return build_signature(exact_content(*path));
             }
 
             if (const auto patch = get_string_field(call.input, "patch"); patch.has_value()) {
-                return build_signature(call, exact_content(join_values(extract_patch_paths(*patch))));
+                return build_signature(exact_content(extract_patch_paths_signature(*patch)));
             }
 
-            return build_signature(call, std::nullopt, false, "no stable edit target");
+            return build_signature(std::nullopt, false, "no stable edit target");
         }
 
     } // namespace
@@ -242,7 +234,7 @@ namespace orangutan::permissions {
             return derive_edit_signature(call);
         }
 
-        return build_signature(call, std::nullopt, false, "tool does not use canonical approval signatures");
+        return build_signature(std::nullopt, false, "tool does not use canonical approval signatures");
     }
 
     std::string approval_match_content(const ToolUse &call) {
@@ -259,7 +251,7 @@ namespace orangutan::permissions {
         return PermissionRule{
             .source = permission_rule_source::session,
             .behavior = permission_behavior::allow,
-            .tool_name = signature.tool_name,
+            .tool_name = call.name,
             .content = signature.content,
         };
     }

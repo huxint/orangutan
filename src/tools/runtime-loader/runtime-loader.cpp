@@ -13,10 +13,6 @@ namespace orangutan::tools {
 
     namespace {
 
-        bool is_plan_permitted_tool(std::string_view name) {
-            return name == "read" || name == "write" || name == "edit" || name.contains("file_read") || name.contains("file_write") || name.contains("file_edit");
-        }
-
         void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext &ctx, const ToolRuntimeContext *tool_context) {
             registry.set_definition_filter([ctx](const Tool &tool) {
                 for (const auto &rule : ctx.deny_rules) {
@@ -24,7 +20,7 @@ namespace orangutan::tools {
                         return false;
                     }
                 }
-                return ctx.mode != permission_mode::plan || tool.read_only || is_plan_permitted_tool(tool.definition.name);
+                return ctx.mode != permission_mode::plan || tool.read_only || permissions::is_file_tool_name(tool.definition.name);
             });
             registry.set_execution_guard([&registry, ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
                 if (tool_context != nullptr && tool_context->abort_checker && tool_context->abort_checker()) {
