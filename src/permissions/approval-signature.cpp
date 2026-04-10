@@ -7,6 +7,7 @@
 #include <cctype>
 #include <filesystem>
 #include <initializer_list>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,11 +42,11 @@ namespace orangutan::permissions {
                 return std::nullopt;
             }
 
-            auto value = utils::trim_copy(it->get<std::string>());
-            if (value.empty()) {
+            const auto trimmed = utils::trim_copy(it->get<std::string_view>());
+            if (trimmed.empty()) {
                 return std::nullopt;
             }
-            return static_cast<std::string>(value);
+            return std::string{trimmed};
         }
 
         std::string normalize_path(std::string_view raw) {
@@ -136,13 +137,16 @@ namespace orangutan::permissions {
                          std::views::filter([](const std::string &path) {
                              return !path.empty();
                          }) |
-                         std::ranges::to<std::vector<std::string_view>>();
+                         std::ranges::to<std::vector<std::string>>();
 
             std::ranges::sort(paths);
             auto [new_end, old_end] = std::ranges::unique(paths);
             paths.erase(new_end, old_end);
 
-            return paths | std::views::join_with('|') | std::ranges::to<std::string>();
+            return paths | std::views::transform([](const std::string &path) {
+                       return std::string_view{path};
+                   }) |
+                   std::views::join_with('|') | std::ranges::to<std::string>();
         }
 
         ApprovalSignature derive_shell_signature(const ToolUse &call) {

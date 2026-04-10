@@ -1,91 +1,89 @@
 #include "tools/tool-search/tool-search.hpp"
 
 #include "utils/format.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <ctre.hpp>
 #include <spdlog/spdlog.h>
+#include <string>
 #include <string_view>
 
 namespace orangutan::tools {
 
     namespace {
-
-        std::string to_lower(std::string s) {
-            std::ranges::transform(s, s.begin(), [](unsigned char ch) {
-                return std::tolower(ch);
-            });
-            return s;
-        }
+        constexpr std::string_view SELECT_PREFIX = "select:";
 
         std::string format_schema(const nlohmann::json &schema) {
             return schema.is_null() ? "{}" : schema.dump(2);
         }
 
         std::string execute_tool_search(const nlohmann::json &input, ToolRegistry &registry) {
-            const auto query = input.value("query", "");
+            const auto query = utils::trim_copy(input.value("query", std::string{}));
             if (query.empty()) {
-                return "Error: query is required.";
+                return "error: query is required.";
             }
 
-            // Direct selection: "select:tool1,tool2"
-            if (query.starts_with("select:")) {
-                const std::string_view names_sv = std::string_view(query).substr(7);
-                std::vector<std::string> names;
-                std::string_view remaining = names_sv;
-                while (!remaining.empty()) {
-                    auto comma = remaining.find(',');
-                    auto token = remaining.substr(0, comma);
-                    // Trim whitespace
-                    auto start = token.find_first_not_of(" \t");
-                    auto end = token.find_last_not_of(" \t");
-                    if (start != std::string_view::npos) {
-                        names.emplace_back(token.substr(start, end - start + 1));
-                    }
-                    remaining = (comma == std::string_view::npos) ? std::string_view{} : remaining.substr(comma + 1);
+            auto append_tool_details = [&](std::string &out, std::string_view name) -> bool {
+                const auto *def = registry.find_definition(static_cast<std::string>(name));
+                if (def == nullptr) {
+                    utils::format_to(out, "Tool '{}' not found.\n\n", name);
+                    return false;
                 }
 
+                registry.discover_tool(static_cast<std::string>(name));
+                utils::format_to(out, "## {}\n{}\n\nInput schema:\n```json\n{}\n```\n\n", def->name, def->description, format_schema(def->input_schema));
+                return true;
+            };
+
+            // Direct selection: "select:tool1,tool2"
+            if (query.starts_with(SELECT_PREFIX)) {
                 std::string out;
-                int found = 0;
-                for (const auto &n : names) {
-                    const auto *def = registry.find_definition(n);
-                    if (def == nullptr) {
-                        utils::format_to(out, "Tool '{}' not found.\n\n", n);
-                        continue;
-                    }
-                    registry.discover_tool(n);
-                    utils::format_to(out, "## {}\n{}\n\nInput schema:\n```json\n{}\n```\n\n", def->name, def->description, format_schema(def->input_schema));
-                    ++found;
+                std::size_t found{};
+
+                for (auto e : ctre::search_all<R"(\s*([^,\s](?:[^,]*[^,\s])?)\s*(?:,|$))">(query.substr(SELECT_PREFIX.size()))) {
+                    found += static_cast<std::size_t>(append_tool_details(out, e.template get<1>().to_view()));
                 }
                 utils::format_to(out, "Discovered {} tool(s). They are now available for use.", found);
                 return out;
             }
 
-            // Keyword search: match against deferred tool names and descriptions
+            // Keyword search: match against deferred tool names and
+            // descriptions
             const auto summaries = registry.deferred_tool_summaries();
             if (summaries.empty()) {
                 return "No deferred tools available to search.";
             }
 
-            auto max_results = input.value("max_results", 5);
+            auto max_results = input.value<std::size_t>("max_results", 5);
 
             struct ScoredMatch {
                 const DeferredToolSummary *summary = nullptr;
                 int score = 0;
             };
 
+            auto lower_copy = [](std::string_view sv) -> std::string {
+                return sv | std::views::transform([](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                       }) |
+                       std::ranges::to<std::string>();
+            };
+
             std::vector<ScoredMatch> matches;
-            const auto query_lower = to_lower(query);
+            const auto query_lower = lower_copy(query);
 
             for (const auto &s : summaries) {
                 int score = 0;
-                const auto name_lower = to_lower(std::string(s.name));
-                const auto desc_lower = to_lower(std::string(s.description));
+                const auto name_lower = lower_copy(s.name);
+                const auto desc_lower = lower_copy(s.description);
 
                 if (name_lower == query_lower) {
                     score += 100;
                 } else if (name_lower.contains(query_lower)) {
                     score += 50;
                 }
+
                 if (desc_lower.contains(query_lower)) {
                     score += 20;
                 }
@@ -95,27 +93,26 @@ namespace orangutan::tools {
                 }
             }
 
-            std::ranges::sort(matches, [](const ScoredMatch &a, const ScoredMatch &b) {
-                return a.score > b.score;
-            });
-            if (std::cmp_greater(matches.size(), max_results)) {
+            std::ranges::sort(matches, std::ranges::greater{}, &ScoredMatch::score);
+
+            if (matches.size() > max_results) {
                 matches.resize(static_cast<std::size_t>(max_results));
             }
 
+            std::string out;
+
             if (matches.empty()) {
-                std::string out = "No tools matching '" + query + "'. Available deferred tools:\n";
+                utils::format_to(out, "No tools matching '{}'. Available deferred tools:\n", query);
                 for (const auto &s : summaries) {
                     utils::format_to(out, "- {}: {}\n", s.name, s.description);
                 }
-                return out;
+            } else {
+                utils::format_to(out, "Found {} matching tool(s):\n\n", matches.size());
+                for (const auto &m : matches) {
+                    utils::format_to(out, "- **{}**: {}\n", m.summary->name, m.summary->description);
+                }
+                utils::format_to(out, "\nUse `select:<name>` to discover specific tools and get their full schemas.");
             }
-
-            std::string out;
-            utils::format_to(out, "Found {} matching tool(s):\n\n", matches.size());
-            for (const auto &m : matches) {
-                utils::format_to(out, "- **{}**: {}\n", m.summary->name, m.summary->description);
-            }
-            out += "\nUse `select:<name>` to discover specific tools and get their full schemas.";
             return out;
         }
 

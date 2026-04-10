@@ -176,7 +176,9 @@ TEST_CASE("PlanModeAllowsReadOnly") {
     ToolPermissionContext ctx{.mode = permission_mode::plan};
 
     ToolUse call{"id1", "file_read", {{"file_path", "test.txt"}}};
-    auto decision = evaluate_permission(call, ctx, {}, [] { return true; });
+    auto decision = evaluate_permission(call, ctx, {}, [] {
+        return true;
+    });
     REQUIRE(decision.behavior == permission_behavior::allow);
 }
 
@@ -203,7 +205,9 @@ TEST_CASE("PlanModeDeniesWrite") {
     ToolPermissionContext ctx{.mode = permission_mode::plan};
 
     ToolUse call{"id1", "shell", {{"command", "echo test"}}};
-    auto decision = evaluate_permission(call, ctx, {}, [] { return false; });
+    auto decision = evaluate_permission(call, ctx, {}, [] {
+        return false;
+    });
     REQUIRE(decision.behavior == permission_behavior::deny);
 }
 
@@ -409,8 +413,7 @@ TEST_CASE("PersistAndLoadRule") {
 }
 
 TEST_CASE("PermissionDecisionFormatsRuleReasonForDisplay") {
-    const auto decision =
-        PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required.");
+    const auto decision = PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required.");
 
     const auto lines = permission_decision_detail_lines(decision);
     REQUIRE(lines.size() >= 3);

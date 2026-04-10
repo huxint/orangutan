@@ -25,7 +25,7 @@ namespace orangutan::tools {
 
         ToolOutput() = default;
         ToolOutput(std::string t)
-        : text(std::move(t)) {} // NOLINT(google-explicit-constructor)
+        : text(std::move(t)) {}
         ToolOutput(std::string t, std::vector<ToolResult::ImageBlock> imgs)
         : text(std::move(t)),
           images(std::move(imgs)) {}
