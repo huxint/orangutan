@@ -23,19 +23,36 @@ namespace orangutan::fileio {
 
     std::string read_file(const std::filesystem::path &path) {
         std::error_code ec;
-        const auto size = std::filesystem::file_size(path, ec);
-        if (ec != std::error_code{}) {
-            throw std::runtime_error("failed to get file size: " + path.string());
-        }
+        const auto size_hint = std::filesystem::file_size(path, ec);
 
         File file(path, "rb");
-        std::string content(static_cast<std::size_t>(size), '\0');
-        if (!content.empty()) {
-            const auto bytes_read = std::fread(content.data(), sizeof(char), content.size(), file.get());
-            if (bytes_read != content.size()) {
-                throw std::runtime_error("failed to read file: " + path.string());
-            }
+        std::string content;
+        if (ec == std::error_code{}) {
+            content.reserve(static_cast<std::size_t>(size_hint));
         }
+
+        constexpr std::size_t READ_CHUNK_SIZE = 16384;
+        std::string chunk;
+
+        while (true) {
+            chunk.resize_and_overwrite(READ_CHUNK_SIZE, [&file](char *buffer, std::size_t size) {
+                return std::fread(buffer, sizeof(char), size, file.get());
+            });
+
+            if (chunk.empty()) {
+                if (std::ferror(file.get()) != 0) {
+                    throw std::runtime_error("failed to read file: " + path.string());
+                }
+                break;
+            }
+
+            content.append(chunk);
+        }
+
+        if (std::ferror(file.get()) != 0) {
+            throw std::runtime_error("failed to read file: " + path.string());
+        }
+
         file.close();
         return content;
     }
