@@ -6,25 +6,31 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <type_traits>
+#include <utility>
 
-#define private public
 #include "channel/qq/qq-api-client.hpp"
-#undef private
 
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 
+namespace orangutan::channel::qq::testing {
+
+    struct QqApiClientTestAccess {
+        using HttpRawResponse = QqApiClient::HttpRawResponse;
+
+        [[nodiscard]]
+        static QqApiResponse normalize_response(HttpRawResponse raw) {
+            return QqApiClient::normalize_response(std::move(raw));
+        }
+    };
+
+} // namespace orangutan::channel::qq::testing
+
 namespace {
 
-    using PerformHttpRequestPtr = QqApiClient::HttpRawResponse (QqApiClient::*)(std::string_view method, std::string_view url, const std::optional<nlohmann::json> &body,
-                                                                                bool with_auth) const;
-
-    static_assert(std::is_same_v<decltype(&QqApiClient::perform_http_request), PerformHttpRequestPtr>);
-
     TEST_CASE("normalize_response_preserves_non_json_body_without_throwing") {
-        const QqApiClient::HttpRawResponse raw{
+        const orangutan::channel::qq::testing::QqApiClientTestAccess::HttpRawResponse raw{
             .status = 502,
             .body = "gateway temporarily unavailable",
             .trace_id = "trace-123",
@@ -32,7 +38,7 @@ namespace {
         };
 
         CHECK_NOTHROW([&] {
-            const auto response = QqApiClient::normalize_response(raw);
+            const auto response = orangutan::channel::qq::testing::QqApiClientTestAccess::normalize_response(raw);
             CHECK(response.http_status == 502);
             CHECK(response.body == raw.body);
             CHECK(response.trace_id == "trace-123");

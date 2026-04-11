@@ -3,6 +3,7 @@
 #include "test-helpers.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -25,18 +26,25 @@ namespace {
 
     // ── Basic execution ─────────────────────────────
 
-    TEST_CASE("echo_command") {
-        auto result = run_subprocess({.command = "echo hello"});
-        CHECK(result.exit_code == 0);
-        CHECK(result.stdout_output == "hello\n");
-        CHECK(result.stderr_output.empty());
-        CHECK_FALSE(result.timed_out);
-    };
+    TEST_CASE("captures_stdout_for_single_and_multiline_commands") {
+        struct CaptureCase {
+            std::string command;
+            std::string expected_stdout;
+        };
 
-    TEST_CASE("captures_stdout") {
-        auto result = run_subprocess({.command = "printf 'line1\nline2\n'"});
-        CHECK(result.exit_code == 0);
-        CHECK(result.stdout_output == "line1\nline2\n");
+        const std::array<CaptureCase, 2> cases{{
+            {.command = "echo hello", .expected_stdout = "hello\n"},
+            {.command = "printf 'line1\nline2\n'", .expected_stdout = "line1\nline2\n"},
+        }};
+
+        for (const auto &test_case : cases) {
+            INFO("command=" << test_case.command);
+            const auto result = run_subprocess({.command = test_case.command});
+            CHECK(result.exit_code == 0);
+            CHECK(result.stdout_output == test_case.expected_stdout);
+            CHECK(result.stderr_output.empty());
+            CHECK_FALSE(result.timed_out);
+        }
     };
 
     TEST_CASE("captures_stderr") {

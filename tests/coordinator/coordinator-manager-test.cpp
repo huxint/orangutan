@@ -2,8 +2,25 @@
 #include "coordinator/coordinator-manager.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
+#include <string>
 #include <thread>
+
+namespace {
+
+    template <typename Predicate>
+    bool wait_for_condition(Predicate &&predicate, int attempts, std::chrono::milliseconds interval = std::chrono::milliseconds(10)) {
+        for (int i = 0; i < attempts; ++i) {
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(interval);
+        }
+        return predicate();
+    }
+
+} // namespace
 
 TEST_CASE("CoordinatorManager basic lifecycle", "[coordinator]") {
     orangutan::coordinator::CoordinatorManager manager(2);
@@ -53,10 +70,11 @@ TEST_CASE("CoordinatorManager stop requests the worker stop token", "[coordinato
     std::this_thread::sleep_for(std::chrono::milliseconds(40));
     manager.stop(result.run_id);
 
-    for (int i = 0; i < 50 && !saw_stop.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
+    CHECK(wait_for_condition(
+        [&] {
+            return saw_stop.load();
+        },
+        50));
     CHECK(saw_stop.load());
 
     const auto run = manager.get_run(result.run_id);
@@ -66,79 +84,81 @@ TEST_CASE("CoordinatorManager stop requests the worker stop token", "[coordinato
     manager.shutdown();
 }
 
-TEST_CASE("CoordinatorManager routes task notifications to parent runtime handler", "[coordinator]") {
-    orangutan::coordinator::CoordinatorManager manager(1);
-    std::string delivered;
+TEST_CASE("CoordinatorManager escapes xml-sensitive notification content", "[coordinator]") {
+    struct EscapeCase {
+        std::string task_prompt;
+        std::string worker_output;
+        std::string expected_escaped_prompt;
+        std::string expected_escaped_result;
+        std::string unescaped_prompt;
+        std::string unescaped_result;
+    };
 
-    manager.register_runtime_notification_handler("parent-runtime", [&delivered](const std::string &message) -> std::optional<std::string> {
-        delivered = message;
-        return std::nullopt;
-    });
+    const std::array<EscapeCase, 2> cases{{
+        {
+            .task_prompt = "notify parent <phase>",
+            .worker_output = "done <ok> & more",
+            .expected_escaped_prompt = "notify parent &lt;phase&gt;",
+            .expected_escaped_result = "done &lt;ok&gt; &amp; more",
+            .unescaped_prompt = "notify parent <phase>",
+            .unescaped_result = "done <ok> & more",
+        },
+        {
+            .task_prompt = "notify \"quotes\" and 'apostrophes'",
+            .worker_output = "done \"quoted\" & 'single'",
+            .expected_escaped_prompt = "notify &quot;quotes&quot; and &apos;apostrophes&apos;",
+            .expected_escaped_result = "done &quot;quoted&quot; &amp; &apos;single&apos;",
+            .unescaped_prompt = "notify \"quotes\" and 'apostrophes'",
+            .unescaped_result = "done \"quoted\" & 'single'",
+        },
+    }};
 
-    manager.set_worker_runtime_factory([](const orangutan::coordinator::AgentSpawnRequest &) {
-        struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
-            std::string run(const std::string &, std::stop_token) override {
-                return "done <ok> & more";
-            }
-        };
-        return std::make_unique<ImmediateWorker>();
-    });
+    for (const auto &test_case : cases) {
+        orangutan::coordinator::CoordinatorManager manager(1);
+        std::string delivered;
 
-    const auto result = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "notify parent <phase>",
-        .parent_runtime_key = "parent-runtime",
-    });
-    REQUIRE(result.accepted);
+        manager.register_runtime_notification_handler("parent-runtime", [&delivered](const std::string &message) -> std::optional<std::string> {
+            delivered = message;
+            return std::nullopt;
+        });
 
-    for (int i = 0; i < 50 && delivered.empty(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        manager.set_worker_runtime_factory([worker_output = test_case.worker_output](const orangutan::coordinator::AgentSpawnRequest &) {
+            struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
+                std::string result;
+
+                std::string run(const std::string &, std::stop_token) override {
+                    return result;
+                }
+            };
+
+            auto worker = std::make_unique<ImmediateWorker>();
+            worker->result = worker_output;
+            return worker;
+        });
+
+        const auto result = manager.spawn({
+            .agent_key = "general-purpose",
+            .task_prompt = test_case.task_prompt,
+            .parent_runtime_key = "parent-runtime",
+        });
+        INFO("task_prompt=" << test_case.task_prompt);
+        REQUIRE(result.accepted);
+
+        CHECK(wait_for_condition(
+            [&] {
+                return !delivered.empty();
+            },
+            50));
+
+        CHECK(delivered.contains("<task-notification>"));
+        CHECK(delivered.contains(result.run_id));
+        CHECK(delivered.contains(test_case.expected_escaped_prompt));
+        CHECK(delivered.contains(test_case.expected_escaped_result));
+        CHECK_FALSE(delivered.contains(test_case.unescaped_prompt));
+        CHECK_FALSE(delivered.contains(test_case.unescaped_result));
+
+        manager.shutdown();
     }
-
-    CHECK(delivered.contains("<task-notification>"));
-    CHECK(delivered.contains(result.run_id));
-    CHECK(delivered.contains("notify parent &lt;phase&gt;"));
-    CHECK(delivered.contains("done &lt;ok&gt; &amp; more"));
-    CHECK_FALSE(delivered.contains("<result>done <ok> & more</result>"));
-
-    manager.shutdown();
-}
-
-TEST_CASE("CoordinatorManager escapes quotes in task notifications", "[coordinator]") {
-    orangutan::coordinator::CoordinatorManager manager(1);
-    std::string delivered;
-
-    manager.register_runtime_notification_handler("parent-runtime", [&delivered](const std::string &message) -> std::optional<std::string> {
-        delivered = message;
-        return std::nullopt;
-    });
-
-    manager.set_worker_runtime_factory([](const orangutan::coordinator::AgentSpawnRequest &) {
-        struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
-            std::string run(const std::string &, std::stop_token) override {
-                return "done \"quoted\" & 'single'";
-            }
-        };
-        return std::make_unique<ImmediateWorker>();
-    });
-
-    const auto result = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "notify \"quotes\" and 'apostrophes'",
-        .parent_runtime_key = "parent-runtime",
-    });
-    REQUIRE(result.accepted);
-
-    for (int i = 0; i < 50 && delivered.empty(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
-    CHECK(delivered.contains("notify &quot;quotes&quot; and &apos;apostrophes&apos;"));
-    CHECK(delivered.contains("done &quot;quoted&quot; &amp; &apos;single&apos;"));
-    CHECK_FALSE(delivered.contains("notify \"quotes\" and 'apostrophes'"));
-    CHECK_FALSE(delivered.contains("done \"quoted\" & 'single'"));
-
-    manager.shutdown();
 }
 
 TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them later", "[coordinator]") {
@@ -177,9 +197,11 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
     });
     REQUIRE(first.accepted);
 
-    for (int i = 0; i < 50 && started.load() < 1; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    REQUIRE(wait_for_condition(
+        [&] {
+            return started.load() >= 1;
+        },
+        50));
     REQUIRE(started.load() == 1);
 
     const auto second = manager.spawn({
@@ -196,13 +218,12 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
 
     release_first.store(true);
 
-    for (int i = 0; i < 100; ++i) {
-        const auto run = manager.get_run(second.run_id);
-        if (run.has_value() && run->status == orangutan::coordinator::agent_run_status::succeeded) {
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    CHECK(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(second.run_id);
+            return run.has_value() && run->status == orangutan::coordinator::agent_run_status::succeeded;
+        },
+        100));
 
     CHECK(started.load() == 2);
     const auto completed_run = manager.get_run(second.run_id);
@@ -247,9 +268,11 @@ TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordin
     });
     REQUIRE(first.accepted);
 
-    for (int i = 0; i < 100 && !first_started.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    REQUIRE(wait_for_condition(
+        [&] {
+            return first_started.load();
+        },
+        100));
     REQUIRE(first_started.load());
 
     const auto second = manager.spawn({

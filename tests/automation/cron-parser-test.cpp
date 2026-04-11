@@ -1,6 +1,9 @@
 #include "automation/cron-parser.hpp"
 #include "utils/local-time.hpp"
+
 #include <catch2/catch_test_macros.hpp>
+
+#include <array>
 
 using namespace orangutan;
 
@@ -37,22 +40,26 @@ namespace {
         CHECK_FALSE(expr->day_of_week.values.contains(6));
     };
 
-    TEST_CASE("parses_step_expression") {
-        const auto expr = parse_cron("*/15 * * * *");
-        REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 4UL);
-        CHECK(expr->minute.values.contains(0));
-        CHECK(expr->minute.values.contains(15));
-        CHECK(expr->minute.values.contains(30));
-        CHECK(expr->minute.values.contains(45));
-    };
+    TEST_CASE("parses_minute_step_expressions") {
+        struct StepCase {
+            std::string expression;
+            std::size_t expected_size = 0;
+            int expected_last_minute = 0;
+        };
 
-    TEST_CASE("parses_every_five_minutes") {
-        const auto expr = parse_cron("*/5 * * * *");
-        REQUIRE(expr.has_value());
-        CHECK(expr->minute.values.size() == 12UL);
-        CHECK(expr->minute.values.contains(0));
-        CHECK(expr->minute.values.contains(55));
+        const std::array<StepCase, 2> cases{{
+            {.expression = "*/15 * * * *", .expected_size = 4, .expected_last_minute = 45},
+            {.expression = "*/5 * * * *", .expected_size = 12, .expected_last_minute = 55},
+        }};
+
+        for (const auto &test_case : cases) {
+            INFO("expression=" << test_case.expression);
+            const auto expr = parse_cron(test_case.expression);
+            REQUIRE(expr.has_value());
+            CHECK(expr->minute.values.size() == test_case.expected_size);
+            CHECK(expr->minute.values.contains(0));
+            CHECK(expr->minute.values.contains(test_case.expected_last_minute));
+        }
     };
 
     TEST_CASE("rejects_invalid_field_count") {

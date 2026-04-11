@@ -6,6 +6,7 @@
 #include "storage/session-store.hpp"
 #include "config/config.hpp"
 #include "test-helpers.hpp"
+#include "web/web-test-helpers.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -23,17 +24,8 @@ using orangutan::testing::ScopedEnvVar;
 
 namespace {
 
-    ProfileConfig make_profile(std::initializer_list<std::pair<const std::string, ModelConfig>> models, std::string api_key = "test-key",
-                               std::string base_url = "https://example.test") {
-        ProfileConfig profile{
-            .base_url = std::move(base_url),
-            .api_key = std::move(api_key),
-        };
-        for (const auto &[name, model] : models) {
-            profile.models.emplace(name, model);
-        }
-        return profile;
-    }
+    using orangutan::testing::web::make_profile;
+    using orangutan::testing::web::make_session_metadata;
 
     class WebRoutesHarness {
     public:
@@ -68,16 +60,6 @@ namespace {
         ScopedEnvVar home_env_;
         std::unique_ptr<orangutan::SessionStore> session_store_;
     };
-
-    orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key, std::string agent_key, std::string origin_kind, std::string origin_ref) {
-        return orangutan::SessionMetadata{
-            .model = std::move(model),
-            .scope_key = std::move(scope_key),
-            .agent_key = std::move(agent_key),
-            .origin_kind = std::move(origin_kind),
-            .origin_ref = std::move(origin_ref),
-        };
-    }
 
     orangutan::Config make_runtime_config(const std::filesystem::path &workspace_root) {
         orangutan::Config cfg;

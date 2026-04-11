@@ -867,7 +867,7 @@ TEST_CASE("TaskToolRunsWithoutPromptByDefault") {
     std::filesystem::remove(automation_db);
 };
 
-TEST_CASE("BlockedShellCommandsAreRejectedByPolicy") {
+TEST_CASE("BypassModeAllowsShellEvenWhenDenyRuleExists") {
     ToolRegistry registry;
     ToolPermissionContext permissions;
     permissions.mode = permission_mode::bypass_permissions;

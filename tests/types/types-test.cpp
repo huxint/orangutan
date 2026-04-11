@@ -1,30 +1,33 @@
 #include "types/types.hpp"
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <iterator>
+#include <string>
 
 using namespace orangutan;
 
-TEST_CASE("message_user_text_creates_correct_role") {
-    const auto msg = Message::user().text("hello");
+TEST_CASE("message_text_builders_create_correct_roles") {
+    struct RoleCase {
+        base::role role;
+        std::string text;
+    };
 
-    CHECK(msg.role() == base::role::user);
-    CHECK(std::distance(msg.begin(), msg.end()) == 1L);
+    const std::array<RoleCase, 2> cases{{
+        {.role = base::role::user, .text = "hello"},
+        {.role = base::role::assistant, .text = "hi there"},
+    }};
 
-    const auto *text = std::get_if<Text>(&*msg.begin());
-    REQUIRE(text != nullptr);
-    CHECK(text->text == "hello");
-};
+    for (const auto &test_case : cases) {
+        const auto msg = test_case.role == base::role::user ? Message::user().text(test_case.text) : Message::assistant().text(test_case.text);
 
-TEST_CASE("message_assistant_text_creates_correct_role") {
-    const auto msg = Message::assistant().text("hi there");
+        CHECK(msg.role() == test_case.role);
+        CHECK(std::distance(msg.begin(), msg.end()) == 1L);
 
-    CHECK(msg.role() == base::role::assistant);
-    CHECK(std::distance(msg.begin(), msg.end()) == 1L);
-
-    const auto *text = std::get_if<Text>(&*msg.begin());
-    REQUIRE(text != nullptr);
-    CHECK(text->text == "hi there");
+        const auto *text = std::get_if<Text>(&*msg.begin());
+        REQUIRE(text != nullptr);
+        CHECK(text->text == test_case.text);
+    }
 };
 
 TEST_CASE("message_empty_text_is_allowed") {

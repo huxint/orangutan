@@ -40,16 +40,6 @@ namespace {
         return loader.find_skill(name);
     }
 
-    TEST_CASE("find_skill_returns_matching_skill") {
-        SkillLoader loader;
-        loader.load_from_directories({fixtures_dir()});
-
-        const auto *skill = loader.find_skill("test-skill");
-        REQUIRE(skill != nullptr);
-        CHECK(skill->description == "A test skill for unit testing");
-        CHECK(skill->body.contains("test skill body"));
-    };
-
     TEST_CASE("resolve_skill_directories_returns_paths") {
         const auto workspace_root = orangutan::testing::unique_test_root("skill-loader-workspace-root");
         const auto directories = resolve_skill_directories({}, workspace_root);

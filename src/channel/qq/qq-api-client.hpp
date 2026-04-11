@@ -9,6 +9,10 @@
 
 namespace orangutan::channel::qq {
 
+    namespace testing {
+        struct QqApiClientTestAccess;
+    }
+
     struct QqApiResponse {
         int http_status = 0;
         std::string body;
@@ -57,6 +61,8 @@ namespace orangutan::channel::qq {
         static bool is_retryable_gateway_status(int status_code);
 
     private:
+        friend struct testing::QqApiClientTestAccess;
+
         struct HttpRawResponse {
             int status = 0;
             std::string body;

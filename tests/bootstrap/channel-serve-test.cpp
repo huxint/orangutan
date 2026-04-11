@@ -337,7 +337,7 @@ namespace {
         CHECK(bootstrap::resolve_agent_key_for_message(message, qq_bot_agents) == "assistant");
     };
 
-    TEST_CASE("delivers_cli_reply_without_calling_channel_send") {
+    TEST_CASE("delivers_cli_replies_without_calling_channel_send") {
         auto sink = std::make_shared<MemorySink>();
         ScopedDefaultLogger logger("channel-serve-test", sink);
         ChannelManager manager;
@@ -354,9 +354,11 @@ namespace {
         CHECK(bootstrap::resolve_reply_target(message) == "cli");
         CHECK(completes_without_throw([&] {
             bootstrap::deliver_reply(message, "done", manager);
+            bootstrap::deliver_command_reply(message, "Current agent: assistant", manager);
         }));
         CHECK(qq->sent_messages().empty());
         CHECK(ChannelServeHarness::contains_line(sink->lines(), "done"));
+        CHECK(ChannelServeHarness::contains_line(sink->lines(), "Current agent: assistant"));
     };
 
     TEST_CASE("empty_reply_target_falls_back_to_cli") {
@@ -491,27 +493,6 @@ namespace {
         CHECK(inspection.configured_model == "gpt-test");
         CHECK(inspection.fallback_models.size() == 1UL);
         CHECK(inspection.fallback_models.front() == "gpt-fallback");
-    };
-
-    TEST_CASE("delivers_command_reply_to_cli_without_calling_channel_send") {
-        auto sink = std::make_shared<MemorySink>();
-        ScopedDefaultLogger logger("channel-serve-test", sink);
-        ChannelManager manager;
-        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
-        auto *qq = qq_channel.get();
-        manager.add_channel(std::move(qq_channel));
-
-        const InboundMessage message{
-            .jid = "heartbeat:daily",
-            .content = "/agent",
-            .reply_target = "cli",
-        };
-
-        CHECK(completes_without_throw([&] {
-            bootstrap::deliver_command_reply(message, "Current agent: assistant", manager);
-        }));
-        CHECK(qq->sent_messages().empty());
-        CHECK(ChannelServeHarness::contains_line(sink->lines(), "Current agent: assistant"));
     };
 
     TEST_CASE("run_channel_loop_replies_when_runtime_creation_fails") {

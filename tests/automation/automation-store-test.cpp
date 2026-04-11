@@ -59,8 +59,11 @@ TEST_CASE("store_roundtrips_enum_backed_fields") {
     CHECK(runs.front().kind == kind::heartbeat);
 };
 
-TEST_CASE("constructs_with_explicit_path") {
-    orangutan::automation::Store store(orangutan::testing::unique_test_db_path("automation-store", "store.db").string());
-    static_cast<void>(store);
-    CHECK(true);
+TEST_CASE("constructs_with_explicit_path_and_initializes_empty_store") {
+    const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "store.db");
+    orangutan::automation::Store store(db_path);
+
+    CHECK(store.list_tasks().empty());
+    CHECK(store.list_heartbeats().empty());
+    CHECK(store.list_runs().empty());
 };
