@@ -103,17 +103,12 @@ namespace orangutan::bootstrap {
             }
 
             std::string normalized;
-            normalized.resize_and_overwrite(answer.size(), [&answer](char *buffer, std::size_t size) {
-                std::size_t out_index = 0;
-                for (std::size_t index = 0; index < size; ++index) {
-                    const auto ch = static_cast<unsigned char>(answer[index]);
-                    if (std::isspace(ch) == 0) {
-                        buffer[out_index] = utils::ascii_to_lower_char(ch);
-                        ++out_index;
-                    }
+            normalized.reserve(answer.size());
+            for (const auto ch : answer) {
+                if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
+                    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
                 }
-                return out_index;
-            });
+            }
             return normalized == "y" || normalized == "yes";
         };
     }

@@ -6,7 +6,6 @@
 #include "types/base.hpp"
 #include "types/types.hpp"
 #include "utils/format.hpp"
-#include "utils/string.hpp"
 
 #include <cctype>
 #include <cstdint>
@@ -66,12 +65,11 @@ namespace orangutan::bootstrap::detail {
 
     [[nodiscard]]
     inline bool is_qq_custom_keyboard_blocked_error(std::string_view message) {
-        const auto lowered = utils::overwrite_string(message.size(), [message](char *buffer, std::size_t size) {
-            for (std::size_t index = 0; index < size; ++index) {
-                buffer[index] = utils::ascii_to_lower_char(static_cast<unsigned char>(message[index]));
-            }
-            return size;
-        });
+        std::string lowered;
+        lowered.reserve(message.size());
+        for (const auto ch : message) {
+            lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        }
         return lowered.contains("biz_code=304057") || lowered.contains("not allowd custom keyborad") || lowered.contains("not allowed custom keyboard");
     }
 
