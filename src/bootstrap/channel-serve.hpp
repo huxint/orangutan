@@ -1,6 +1,8 @@
 #pragma once
 
 #include "types/types.hpp"
+#include "bootstrap/channel-serve-delivery.hpp"
+#include "bootstrap/channel-serve-runtime.hpp"
 #include "channel/channel.hpp"
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"
@@ -52,35 +54,6 @@ namespace orangutan::bootstrap {
 
     struct AgentRuntimeBundle;
 
-    struct AgentRuntimeConfig {
-        std::string agent_key;
-        std::string model;
-        std::vector<std::string> fallback_models;
-        providers::ProviderEndpoint primary_endpoint;
-        std::vector<providers::ProviderEndpoint> fallback_endpoints;
-        std::string workspace_root;
-        std::string edit_mode = "hashline";
-        int thinking_budget = 0;
-        std::string cli_runtime_key;
-        std::string cli_memory_scope;
-        Config::MemoryConfig memory;
-        ToolPermissionContext permission_context;
-        std::vector<std::string> team_agents;
-        bool coordinator_mode = false;
-        int max_concurrent_agents = 4;
-    };
-
-    struct ConversationRuntimeInspection {
-        std::vector<ToolDef> tool_definitions;
-        base::origin runtime_origin = base::origin::cli;
-        std::string raw_caller_id;
-        bool has_agent = false;
-        bool has_hook_manager = false;
-        std::string session_scope_key;
-        std::string configured_model;
-        std::vector<std::string> fallback_models;
-    };
-
     class ChannelApprovalCoordinator {
     public:
         explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
@@ -126,44 +99,7 @@ namespace orangutan::bootstrap {
     std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents);
 
     [[nodiscard]]
-    std::string resolve_reply_target(const InboundMessage &message);
-
-    void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
-
-    void deliver_command_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager);
-
-    [[nodiscard]]
     std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
-
-    namespace detail {
-
-        struct ChannelCompletionResumeState {
-            std::mutex mutex;
-            agent::AgentLoop *agent = nullptr;
-            AgentRuntimeBundle *runtime = nullptr;
-            providers::Provider *provider = nullptr;
-            hooks::HookManager *hook_manager = nullptr;
-            std::string *current_session_id = nullptr;
-            std::size_t *persisted_message_count = nullptr;
-            SessionStore *session_store = nullptr;
-            ChannelManager *channel_manager = nullptr;
-            std::string jid;
-            std::string agent_key;
-            std::string configured_model;
-            std::string session_scope_key;
-            automation::Runtime *automation_runtime = nullptr;
-        };
-
-        [[nodiscard]]
-        ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
-                                                                   coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
-                                                                   hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr,
-                                                                   swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr);
-
-        [[nodiscard]]
-        BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &state);
-
-    } // namespace detail
 
     void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
 

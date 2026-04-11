@@ -3,6 +3,7 @@
 #include "memory/runtime-memory.hpp"
 #include "test-helpers.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <catch2/catch_test_macros.hpp>
 using namespace orangutan;
@@ -78,6 +79,35 @@ namespace {
         std::string name() const override {
             return "empty-distilling-provider";
         }
+    };
+
+    class StaticDistillingProvider final : public Provider {
+    public:
+        explicit StaticDistillingProvider(std::string response_text)
+        : response_text_(std::move(response_text)) {}
+
+        LLMResponse chat(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int /*max_tokens*/, int = 0) override {
+            last_system_prompt_ = system_prompt;
+            last_messages_size_ = messages.size();
+            last_tool_count_ = tools.size();
+            return {
+                .stop_reason = "end_turn",
+                .content = {Text{response_text_}},
+            };
+        }
+
+        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            throw std::runtime_error("chat_stream should not be used in this test");
+        }
+
+        std::string name() const override {
+            return "static-distilling-provider";
+        }
+
+        std::string response_text_;
+        std::string last_system_prompt_;
+        std::size_t last_messages_size_ = 0;
+        std::size_t last_tool_count_ = 0;
     };
 
     class MalformedJournalProvider final : public Provider {
@@ -209,6 +239,13 @@ namespace {
         return checkpoints;
     }
 
+    const MemoryRecord *find_memory_by_key(const std::vector<MemoryRecord> &records, std::string_view key) {
+        const auto it = std::ranges::find_if(records, [key](const MemoryRecord &record) {
+            return record.key == key;
+        });
+        return it == records.end() ? nullptr : &*it;
+    }
+
     TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
         SummarizingProvider provider;
         ToolRegistry tools;
@@ -253,7 +290,10 @@ namespace {
         ToolRegistry tools;
         tools.register_tool({
             .definition = {.name = "noop", .description = "noop", .input_schema = {{"type", "object"}}},
-            .execute = [](const nlohmann::json &) { return std::string("ok"); },
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string("ok");
+                },
         });
 
         CheckpointingProvider provider({
@@ -285,8 +325,7 @@ namespace {
         bool saw_teammate_message = false;
         for (const auto &message : history) {
             for (const auto &block : message) {
-                if (const auto *text = std::get_if<Text>(&block); text != nullptr &&
-                    text->text.contains("<teammate-message from=\"worker-b\">status update</teammate-message>")) {
+                if (const auto *text = std::get_if<Text>(&block); text != nullptr && text->text.contains("<teammate-message from=\"worker-b\">status update</teammate-message>")) {
                     saw_teammate_message = true;
                 }
             }
@@ -298,7 +337,9 @@ namespace {
         CountingProvider provider;
         ToolRegistry tools;
         AgentLoop loop(provider, tools);
-        loop.set_stop_requested_callback([] { return true; });
+        loop.set_stop_requested_callback([] {
+            return true;
+        });
 
         const auto reply = loop.run("stop now");
 
@@ -513,6 +554,75 @@ namespace {
                              });
     };
 
+    TEST_CASE("run_stops_after_three_continuation_attempts") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "max_tokens",
+                .content = {Text{"Part one. "}},
+            },
+            {
+                .stop_reason = "max_tokens",
+                .content = {Text{"Part two. "}},
+            },
+            {
+                .stop_reason = "max_tokens",
+                .content = {Text{"Part three. "}},
+            },
+            {
+                .stop_reason = "max_tokens",
+                .content = {Text{"Part four."}},
+            },
+        });
+
+        ToolRegistry tools;
+        AgentLoop loop(provider, tools);
+
+        const auto reply = loop.run("continue please");
+
+        CHECK(reply == "Part one. Part two. Part three. Part four.");
+        CHECK(loop.history().size() == 8UL);
+        CHECK(describe_message(loop.history()[2]) == "user:text=Please continue from where you left off.");
+        CHECK(describe_message(loop.history().back()) == "assistant:text=Part four.");
+    };
+
+    TEST_CASE("run_executes_tool_calls_returned_by_continuation") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "max_tokens",
+                .content = {Text{"Need to check. "}},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-1", "lookup", nlohmann::json{{"query", "status"}})},
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {Text{"Done."}},
+            },
+        });
+
+        ToolRegistry tools;
+        int lookup_calls = 0;
+        tools.register_tool({
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
+            .execute =
+                [&lookup_calls](const nlohmann::json &) {
+                    ++lookup_calls;
+                    return "tool result";
+                },
+        });
+
+        AgentLoop loop(provider, tools);
+        const auto reply = loop.run("check status");
+
+        CHECK(reply == "Done.");
+        CHECK(lookup_calls == 1);
+        REQUIRE(loop.history().size() == 6UL);
+        CHECK(describe_message(loop.history()[3]) == "assistant:tool_use=lookup");
+        CHECK(describe_message(loop.history()[4]) == "user:tool_result=tool result");
+        CHECK(describe_message(loop.history().back()) == "assistant:text=Done.");
+    };
+
     TEST_CASE("run_checkpoints_loop_detection_correction_before_retry") {
         CheckpointingProvider provider({
             {
@@ -555,6 +665,136 @@ namespace {
         CHECK(checkpoints[6].back() == "user:tool_result=tool result");
         CHECK(checkpoints[7].back() == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or explain "
                                        "what you're trying to accomplish.");
+    };
+
+    TEST_CASE("run_aborts_after_fifth_identical_tool_call") {
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-1", "lookup", nlohmann::json{{"query", "status"}})},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-2", "lookup", nlohmann::json{{"query", "status"}})},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-3", "lookup", nlohmann::json{{"query", "status"}})},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-4", "lookup", nlohmann::json{{"query", "status"}})},
+            },
+            {
+                .stop_reason = "tool_use",
+                .content =
+                    {
+                        ToolUse("tool-5", "lookup", nlohmann::json{{"query", "status"}}),
+                        ToolUse("tool-6", "side_effect", nlohmann::json::object()),
+                    },
+            },
+        });
+
+        ToolRegistry tools;
+        int lookup_calls = 0;
+        int side_effect_calls = 0;
+        tools.register_tool({
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
+            .execute =
+                [&lookup_calls](const nlohmann::json &) {
+                    ++lookup_calls;
+                    return "tool result";
+                },
+        });
+        tools.register_tool({
+            .definition = ToolDef{.name = "side_effect", .description = "Side effect", .input_schema = nlohmann::json::object()},
+            .execute =
+                [&side_effect_calls](const nlohmann::json &) {
+                    ++side_effect_calls;
+                    return "should not run";
+                },
+        });
+
+        AgentLoop loop(provider, tools);
+        const auto reply = loop.run("check status");
+
+        CHECK(reply == "I got stuck in a loop repeating the same action. Please try rephrasing your request.");
+        CHECK(lookup_calls == 4);
+        CHECK(side_effect_calls == 0);
+        CHECK(describe_message(loop.history().back()) == "assistant:text=I got stuck in a loop repeating the same action. Please try rephrasing your request.");
+
+        const auto warning_count = std::ranges::count_if(loop.history(), [](const Message &message) {
+            return describe_message(message) == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or "
+                                                "explain what you're trying to accomplish.";
+        });
+        CHECK(warning_count == 2);
+    };
+
+    TEST_CASE("distill_session_memory_parses_bullets_legacy_lines_and_pipe_content") {
+        StaticDistillingProvider provider("- memory|preference|profile.editor|0.70|prefers concise responses\n"
+                                          "- memory|feedback|learning|learning.pipes|0.65|tool output may contain | separators\n"
+                                          "- journal|Reviewed distilled-session parsing");
+        ToolRegistry tools;
+
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-legacy-bullets", "memory.db");
+        MemoryStore store(db_path);
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+
+        AgentLoop loop(provider, tools, &runtime_memory);
+        loop.set_history({
+            Message::user().text("remember my communication preferences"),
+            Message::assistant().text("I will distill the durable parts."),
+        });
+
+        const auto result = loop.distill_session_memory();
+        const auto records = store.list("agent:default|jid:test", {}, 10);
+        const auto *profile = find_memory_by_key(records, "profile.editor");
+        const auto *pipes = find_memory_by_key(records, "learning.pipes");
+
+        CHECK(result.distilled);
+        CHECK(result.memories_stored == 2UL);
+        CHECK(result.journal_stored);
+        REQUIRE(profile != nullptr);
+        CHECK(profile->category == "preference");
+        CHECK(profile->type == memory_type::user);
+        CHECK(profile->content == "prefers concise responses");
+        REQUIRE(pipes != nullptr);
+        CHECK(pipes->category == "learning");
+        CHECK(pipes->type == memory_type::feedback);
+        CHECK(pipes->content == "tool output may contain | separators");
+
+        std::filesystem::remove_all(db_path.parent_path());
+    };
+
+    TEST_CASE("distill_session_memory_caps_distilled_memories_at_eight") {
+        std::string distilled;
+        for (int i = 0; i < 9; ++i) {
+            distilled += "memory|project|project.item-" + std::to_string(i) + "|0.9|memory item " + std::to_string(i) + "\n";
+        }
+
+        StaticDistillingProvider provider(std::move(distilled));
+        ToolRegistry tools;
+
+        const auto db_path = orangutan::testing::unique_test_db_path("agent-loop-distill-cap", "memory.db");
+        MemoryStore store(db_path);
+        auto runtime_memory = RuntimeMemory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
+
+        AgentLoop loop(provider, tools, &runtime_memory);
+        loop.set_history({
+            Message::user().text("capture the project context"),
+            Message::assistant().text("Understood"),
+        });
+
+        const auto result = loop.distill_session_memory();
+        const auto records = store.list("agent:default|jid:test", {}, 20);
+
+        CHECK(result.distilled);
+        CHECK(result.memories_stored == 8UL);
+        CHECK(records.size() == 8UL);
+        CHECK(find_memory_by_key(records, "project.item-7") != nullptr);
+        CHECK(find_memory_by_key(records, "project.item-8") == nullptr);
+
+        std::filesystem::remove_all(db_path.parent_path());
     };
 
 } // namespace

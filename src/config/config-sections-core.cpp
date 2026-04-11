@@ -1,9 +1,8 @@
 #include "config/config-detail.hpp"
 #include "config/json-access.hpp"
+#include "utils/string.hpp"
 
 #include <array>
-#include <cctype>
-#include <ranges>
 #include <utility>
 
 #include <magic_enum/magic_enum.hpp>
@@ -11,7 +10,6 @@
 
 namespace orangutan::config::detail {
     namespace {
-
 
         using config_string_field = string_member_field<Config>;
         constexpr auto ROOT_AGENT_STRING_FIELDS = std::to_array<config_string_field>({
@@ -72,13 +70,6 @@ namespace orangutan::config::detail {
                     target.push_back(item.get<std::string>());
                 }
             }
-        }
-
-        std::string normalize_enum_token(std::string_view value) {
-            return value | std::views::transform([](unsigned char ch) {
-                       return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));
-                   }) |
-                   std::ranges::to<std::string>();
         }
 
         void assign_fallback_array(const nlohmann::json &array, std::vector<FallbackModelRef> &target) {
@@ -260,7 +251,7 @@ namespace orangutan::config::detail {
 
     void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config) {
         if (const auto *value = find_member(permissions, "default_mode"); value != nullptr && value->is_string()) {
-            auto mode_opt = magic_enum::enum_cast<permission_mode>(normalize_enum_token(value->get<std::string>()));
+            auto mode_opt = magic_enum::enum_cast<permission_mode>(utils::normalize_enum_token(value->get<std::string>()));
             if (mode_opt.has_value()) {
                 config.default_mode = *mode_opt;
             } else {

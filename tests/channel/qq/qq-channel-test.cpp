@@ -1,11 +1,16 @@
 #include "channel/qq/qq-channel.hpp"
 #include "channel/qq/qq-approval-keyboard.hpp"
+#include "channel/qq/qq-channel-inbound.hpp"
+#include "channel/qq/qq-channel-outbound.hpp"
+#include "channel/qq/qq-channel-runtime.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -37,27 +42,66 @@ namespace orangutan::channel::qq {
 
         static void send_text_now(QqChannel &channel, const std::string &jid, const std::string &content, const std::string &reply_to_message_id,
                                   const std::string &reference_message_id) {
-            channel.send_outbound_now(jid, OutboundMessage{
-                                               .payload = TextPayload{.text = content},
-                                               .reply_to_message_id = reply_to_message_id,
-                                               .reference_message_id = reference_message_id,
-                                           });
+            const auto target = resolve_send_target(channel.bot_name_, jid);
+            const auto post_payload = [&channel, &target](const nlohmann::json &payload) {
+                const auto response = channel.api_client_->post(message_path(target), payload);
+                std::string content_text;
+                if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
+                    content_text = payload.at("markdown").at("content").get<std::string>();
+                } else if (payload.contains("content") && payload.at("content").is_string()) {
+                    content_text = payload.at("content").get<std::string>();
+                }
+                if (!content_text.empty()) {
+                    channel.capture_outbound_ref_index(response, content_text);
+                }
+            };
+            const auto upload_media_info = [&channel](const qq_send_target &upload_target, int file_type, const std::string &url) {
+                const auto response = channel.api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
+                const auto upload_payload = response.parse_json_body();
+                if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
+                    throw std::runtime_error("QQ upload media missing file_info");
+                }
+                return upload_payload.at("file_info").get<std::string>();
+            };
+
+            route_outbound_payload(
+                target,
+                OutboundMessage{
+                    .payload = TextPayload{.text = content},
+                    .reply_to_message_id = reply_to_message_id,
+                    .reference_message_id = reference_message_id,
+                },
+                post_payload, upload_media_info,
+                [&channel] {
+                    return channel.next_msg_seq();
+                },
+                [&channel](const std::string &message_id, int reply_units) {
+                    return channel.resolve_passive_reply_message_id(message_id, reply_units);
+                });
         }
 
-        static void handle_c2c_message(QqChannel &channel, const nlohmann::json &data) {
-            channel.handle_c2c_message(data);
-        }
-
-        static void handle_reaction_event(QqChannel &channel, const std::string &event_type, const nlohmann::json &data) {
-            channel.handle_reaction_event(event_type, data);
+        static void handle_dispatch(QqChannel &channel, const std::string &event_type, const nlohmann::json &data) {
+            channel.handle_dispatch(event_type, data);
         }
 
         static void handle_interaction(QqChannel &channel, const nlohmann::json &data) {
             channel.handle_interaction(data);
         }
+        static void start_debounce_loop(QqChannel &channel) {
+            channel.start_debounce_loop();
+        }
 
-        static std::string parse_message_scene_ext_value(const nlohmann::json &data, std::string_view key) {
-            return QqChannel::parse_message_scene_ext_value(data, key);
+        static void stop_debounce_loop(QqChannel &channel) {
+            channel.stop_debounce_loop();
+        }
+
+        static void set_connected(QqChannel &channel, bool connected) {
+            channel.connected_ = connected;
+        }
+
+        static std::size_t typing_state_count(const QqChannel &channel) {
+            std::scoped_lock lock(channel.runtime_->typing_mutex);
+            return channel.runtime_->typing_states.size();
         }
     };
 
@@ -102,10 +146,12 @@ namespace {
                     .body = R"({"file_info":"file-info-uploaded"})",
                 };
             }
-            return QqApiResponse{
-                .http_status = 200,
-                .body = "{}",
-            };
+            if (!post_responses.empty()) {
+                auto response = std::move(post_responses.front());
+                post_responses.erase(post_responses.begin());
+                return response;
+            }
+            return default_post_response;
         }
 
         [[nodiscard]]
@@ -135,6 +181,11 @@ namespace {
         }
 
         std::vector<Request> requests;
+        std::vector<QqApiResponse> post_responses;
+        QqApiResponse default_post_response{
+            .http_status = 200,
+            .body = "{}",
+        };
         QqApiResponse download_response{
             .http_status = 200,
             .body = "attachment-bytes",
@@ -261,7 +312,7 @@ namespace {
                             })},
         };
 
-        qqtest::QqChannelTestAccess::handle_c2c_message(channel, data);
+        qqtest::QqChannelTestAccess::handle_dispatch(channel, "C2C_MESSAGE_CREATE", data);
 
         REQUIRE(called);
         CHECK(captured.jid == "qqbot:bot:c2c:user-openid");
@@ -284,7 +335,102 @@ namespace {
         std::ifstream input(downloaded.local_path, std::ios::binary);
         std::string file_contents((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         CHECK(file_contents == "png-bytes");
-        CHECK(qqtest::QqChannelTestAccess::parse_message_scene_ext_value(data, "ref_msg_idx") == "REFIDX_123");
+        CHECK(qqtest::parse_message_scene_ext_value(data, "ref_msg_idx") == "REFIDX_123");
+    }
+
+    TEST_CASE("qq_channel_ref_index_roundtrips_outbound_content_into_inbound_reference_lookup") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        fake_api->post_responses.push_back(QqApiResponse{
+            .http_status = 200,
+            .body = R"({"ext_info":{"ref_idx":"REFIDX_REPLY_1"}})",
+        });
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+
+        InboundMessage captured;
+        bool called = false;
+        qqtest::QqChannelTestAccess::set_on_message(channel, [&](const InboundMessage &message) {
+            captured = message;
+            called = true;
+        });
+
+        qqtest::QqChannelTestAccess::send_text_now(channel, "qqbot:bot:c2c:user-openid", "stored outbound text", "", "");
+        REQUIRE(api->requests.size() == 1UL);
+
+        qqtest::QqChannelTestAccess::handle_dispatch(channel, "C2C_MESSAGE_CREATE",
+                                                     nlohmann::json{
+                                                         {"id", "message-ref-1"},
+                                                         {"content", "reply text"},
+                                                         {"timestamp", "2026-04-02T12:05:00Z"},
+                                                         {"author", {{"id", "user-1"}, {"user_openid", "user-openid"}}},
+                                                         {"message_scene", {{"ext", nlohmann::json::array({"ref_msg_idx=REFIDX_REPLY_1"})}}},
+                                                     });
+
+        REQUIRE(called);
+        CHECK(captured.reference_message_index == "REFIDX_REPLY_1");
+        CHECK(captured.referenced_content == "stored outbound text");
+    }
+
+    TEST_CASE("qq_channel_debounce_merges_text_messages_for_the_same_jid") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+        qqtest::QqChannelTestAccess::set_connected(channel, true);
+        qqtest::QqChannelTestAccess::start_debounce_loop(channel);
+
+        channel.send("qqbot:bot:c2c:user-openid", OutboundMessage{.payload = TextPayload{.text = "first chunk"}});
+        channel.send("qqbot:bot:c2c:user-openid", OutboundMessage{.payload = TextPayload{.text = "second chunk"}});
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1800));
+        qqtest::QqChannelTestAccess::stop_debounce_loop(channel);
+
+        REQUIRE(api->requests.size() == 1UL);
+        CHECK(api->requests[0].path == "/v2/users/user-openid/messages");
+        CHECK(api->requests[0].body.at("markdown").at("content").get<std::string>() == "first chunk\n\n---\n\nsecond chunk");
+    }
+
+    TEST_CASE("qq_channel_start_typing_sends_c2c_typing_indicator_and_skips_groups") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+
+        channel.start_typing("qqbot:bot:c2c:user-openid", "message-1");
+        channel.start_typing("qqbot:bot:group:group-openid", "message-2");
+
+        REQUIRE(api->requests.size() == 1UL);
+        CHECK(api->requests[0].path == "/v2/users/user-openid/messages");
+        CHECK(api->requests[0].body.at("msg_type").get<int>() == 6);
+        CHECK(api->requests[0].body.at("msg_id").get<std::string>() == "message-1");
+        CHECK(api->requests[0].body.at("input_notify").at("input_type").get<int>() == 1);
+        CHECK(api->requests[0].body.at("input_notify").at("input_second").get<int>() == 60);
+    }
+
+    TEST_CASE("qq_channel_start_typing_does_not_retain_unsupported_targets") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret");
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+
+        channel.start_typing("qqbot:bot:group:group-openid", "message-2");
+        channel.start_typing("not-a-qq-jid", "message-3");
+
+        CHECK(api->requests.empty());
+        CHECK(qqtest::QqChannelTestAccess::typing_state_count(channel) == 0UL);
     }
 
     TEST_CASE("qq_channel_reaction_events_are_emitted_as_structured_inbound_events") {
@@ -299,14 +445,14 @@ namespace {
             called = true;
         });
 
-        qqtest::QqChannelTestAccess::handle_reaction_event(channel, "MESSAGE_REACTION_ADD",
-                                                           nlohmann::json{
-                                                               {"channel_id", "guild-channel-1"},
-                                                               {"user_id", "user-1"},
-                                                               {"timestamp", "2026-04-02T13:00:00Z"},
-                                                               {"target", {{"id", "message-1"}, {"type", 0}}},
-                                                               {"emoji", {{"id", "128512"}, {"type", 1}}},
-                                                           });
+        qqtest::QqChannelTestAccess::handle_dispatch(channel, "MESSAGE_REACTION_ADD",
+                                                     nlohmann::json{
+                                                         {"channel_id", "guild-channel-1"},
+                                                         {"user_id", "user-1"},
+                                                         {"timestamp", "2026-04-02T13:00:00Z"},
+                                                         {"target", {{"id", "message-1"}, {"type", 0}}},
+                                                         {"emoji", {{"id", "128512"}, {"type", 1}}},
+                                                     });
 
         REQUIRE(called);
         CHECK(captured.event_kind == inbound_event_kind::reaction_added);

@@ -1,228 +1,18 @@
 #include "agent/agent-loop.hpp"
 
-#include "hooks/hook-manager.hpp"
-#include "memory/runtime-memory.hpp"
-#include "memory/memory-type.hpp"
-#include "memory/memory-age.hpp"
-#include "prompt/system-prompt-sections.hpp"
-#include "utils/string.hpp"
-#include "utils/sender-utils.hpp"
-
-#include <algorithm>
-#include <charconv>
 #include <cstdio>
-#include "utils/format.hpp"
-#include <functional>
-#include <optional>
-#include <spdlog/fmt/bundled/color.h>
-#include <spdlog/common.h>
-#include <spdlog/spdlog.h>
-#include <sstream>
 #include <string>
 
+#include <spdlog/fmt/bundled/color.h>
+#include <spdlog/spdlog.h>
+
+#include "agent/agent-loop-history.hpp"
+#include "agent/agent-loop-memory.hpp"
+#include "agent/agent-loop-tools.hpp"
+#include "hooks/hook-manager.hpp"
+#include "memory/runtime-memory.hpp"
+
 namespace orangutan::agent {
-
-    namespace {
-
-        void emit_history_checkpoint(const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint, const std::vector<Message> &history) {
-            if (on_history_checkpoint != nullptr) {
-                on_history_checkpoint(history);
-            }
-        }
-
-    } // namespace
-
-    // Creates a streaming callback that mirrors text deltas to either stdout
-    // (interactive CLI) or a structured observer (TUI/event-stream mode).
-    static StreamCallback make_stream_callback(bool &first_text, bool human_output, const StreamCallback &on_event) {
-        return [&first_text, human_output, &on_event](const std::string &event_type, const nlohmann::json &data) {
-            if (event_type == "thinking_delta") {
-                if (human_output && first_text) {
-                    spdlog::fmt_lib::print("\n{}", spdlog::fmt_lib::styled("orangutan> ", spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::green)));
-                    std::fflush(stdout);
-                    first_text = false;
-                }
-                if (human_output) {
-                    spdlog::fmt_lib::print("{}", spdlog::fmt_lib::styled(data["thinking"].get<std::string>(), spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::bright_black)));
-                    std::fflush(stdout);
-                }
-            }
-            if (event_type == "text_delta") {
-                if (human_output && first_text) {
-                    spdlog::fmt_lib::print("\n{}", spdlog::fmt_lib::styled("orangutan> ", spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::green)));
-                    std::fflush(stdout);
-                    first_text = false;
-                }
-                if (human_output) {
-                    spdlog::fmt_lib::print("{}", data["text"].get<std::string>());
-                    std::fflush(stdout);
-                }
-            }
-            if (on_event != nullptr && (event_type == "text_delta" || event_type == "tool_call_start" || event_type == "thinking_delta")) {
-                on_event(event_type, data);
-            }
-        };
-    }
-
-    // Separates response content into text and tool_use blocks
-    struct ResponseParts {
-        std::vector<Content> all_blocks;
-        std::vector<ToolUse> tool_calls;
-        std::string text;
-    };
-
-    struct DistilledMemoryEntry {
-        std::string category;
-        memory_type type = memory_type::user;
-        std::string key;
-        base::f64 importance = 0.5;
-        std::string content;
-    };
-
-    struct ParsedDistilledSession {
-        std::vector<DistilledMemoryEntry> memories;
-        std::optional<std::string> journal_summary;
-        bool journal_parse_failed = false;
-    };
-
-    std::string hash_key(std::string_view prefix, std::string_view value) {
-        return std::string(prefix) + std::to_string(std::hash<std::string_view>{}(value));
-    }
-
-    std::optional<DistilledMemoryEntry> parse_memory_line(std::string line) {
-        if (line.starts_with("memory|")) {
-            line = line.substr(7);
-        }
-
-        // Split by '|' into fields
-        std::vector<std::string_view> fields;
-        std::string_view sv = line;
-        while (true) {
-            auto pos = sv.find('|');
-            if (pos == std::string_view::npos) {
-                fields.push_back(sv);
-                break;
-            }
-            fields.push_back(sv.substr(0, pos));
-            sv = sv.substr(pos + 1);
-        }
-
-        if (fields.size() < 4) {
-            return std::nullopt;
-        }
-
-        std::string_view type_sv;
-        std::string_view category_sv;
-        std::string_view key_sv;
-        std::string_view importance_sv;
-        std::string content;
-
-        if (fields.size() == 4) {
-            // Legacy 4-field format: category|key|importance|content
-            category_sv = fields[0];
-            key_sv = fields[1];
-            importance_sv = fields[2];
-            content = std::string(utils::trim_copy(fields[3]));
-        } else {
-            // 5-field format: type|category|key|importance|content
-            // Content may contain '|', so rejoin everything from field 4 onwards.
-            type_sv = fields[0];
-            category_sv = fields[1];
-            key_sv = fields[2];
-            importance_sv = fields[3];
-            const auto content_offset = static_cast<std::size_t>(fields[4].data() - line.data());
-            content = std::string(utils::trim_copy(line.substr(content_offset)));
-        }
-
-        // Common post-processing
-        auto category = std::string(utils::trim_copy(category_sv));
-        auto key = std::string(utils::trim_copy(key_sv));
-        auto importance_text = utils::trim_copy(importance_sv);
-
-        if (content.empty()) {
-            return std::nullopt;
-        }
-        if (category.empty()) {
-            category = "general";
-        }
-
-        base::f64 importance = 0.5;
-        std::from_chars(importance_text.begin(), importance_text.end(), importance);
-        importance = std::clamp(importance, 0.0, 1.0);
-
-        if (key.empty()) {
-            key = hash_key("distilled.", content);
-        }
-
-        auto type = type_sv.empty() ? infer_memory_type(category) : magic_enum::enum_cast<memory_type>(type_sv, magic_enum::case_insensitive).value_or(memory_type::user);
-
-        return DistilledMemoryEntry{
-            .category = std::move(category),
-            .type = type,
-            .key = std::move(key),
-            .importance = importance,
-            .content = std::move(content),
-        };
-    }
-
-    ParsedDistilledSession parse_distilled_session(const std::string &text) {
-        ParsedDistilledSession parsed;
-        std::stringstream stream(text);
-        std::string line;
-
-        while (std::getline(stream, line)) {
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            line = utils::trim_copy(line);
-            if (line.empty()) {
-                continue;
-            }
-            if (line.starts_with("- ")) {
-                line = utils::trim_copy(line.substr(2));
-            }
-
-            if (line.starts_with("journal|")) {
-                auto summary = utils::trim_copy(line.substr(std::string{"journal|"}.size()));
-                if (summary.empty()) {
-                    parsed.journal_parse_failed = true;
-                } else {
-                    parsed.journal_summary = summary;
-                }
-                continue;
-            }
-            if (line == "journal") {
-                parsed.journal_parse_failed = true;
-                continue;
-            }
-            if (!line.starts_with("memory|")) {
-                continue;
-            }
-
-            if (auto memory = parse_memory_line(std::move(line)); memory.has_value()) {
-                parsed.memories.push_back(std::move(*memory));
-            }
-        }
-
-        constexpr std::size_t MAX_DISTILLED_MEMORIES = 8;
-        if (parsed.memories.size() > MAX_DISTILLED_MEMORIES) {
-            parsed.memories.resize(MAX_DISTILLED_MEMORIES);
-        }
-        return parsed;
-    }
-
-    static ResponseParts split_response(const LLMResponse &response) {
-        ResponseParts parts;
-        for (const auto &block : response.content) {
-            parts.all_blocks.push_back(block);
-            if (const auto *text = std::get_if<Text>(&block)) {
-                parts.text += text->text;
-            } else if (const auto *tool = std::get_if<ToolUse>(&block)) {
-                parts.tool_calls.push_back(*tool);
-            }
-        }
-        return parts;
-    }
 
     AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
     : provider_(&provider),
@@ -231,137 +21,17 @@ namespace orangutan::agent {
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager) {}
 
-    AgentLoop::loop_status AgentLoop::check_loop_detection(const ToolUse &call) {
-        auto input_hash = std::hash<std::string>{}(call.input.dump());
-        ToolCallSignature sig{.name = call.name, .input_hash = input_hash};
-
-        auto &count = call_counts_[sig];
-        ++count;
-
-        if (count >= LOOP_ABORT_THRESHOLD) {
-            spdlog::warn("Loop abort: tool '{}' called {} times with same input, forcing stop", call.name, count);
-            return loop_status::abort;
-        }
-        if (count >= LOOP_DETECTION_THRESHOLD) {
-            spdlog::warn("Loop detected: tool '{}' called {} times with same input", call.name, count);
-            return loop_status::warning;
-        }
-        return loop_status::ok;
-    }
-
-    std::string AgentLoop::handle_continuation(const std::string &system_prompt, bool &first_text, bool human_output, const StreamCallback &on_stream_event,
-                                               const ToolEventCallback &on_tool_event, const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
-        std::string continued_text;
-
-        for (int attempt = 0; attempt < MAX_CONTINUATIONS; ++attempt) {
-            spdlog::debug("Max-token continuation attempt {}", attempt + 1);
-
-            history_.push_back(Message::user().text("Please continue from where you left off."));
-            emit_history_checkpoint(on_history_checkpoint, history_);
-
-            auto tool_defs = tools_->definitions();
-            auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-            LLMResponse response = provider_->chat_stream(system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
-
-            auto parts = split_response(response);
-            continued_text += parts.text;
-            history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
-            emit_history_checkpoint(on_history_checkpoint, history_);
-
-            if (response.stop_reason != "max_tokens") {
-                break;
-            }
-        }
-
-        return continued_text;
-    }
-
-    std::pair<std::vector<Content>, AgentLoop::loop_status> AgentLoop::execute_tools(const std::vector<ToolUse> &calls, bool human_output, const ToolEventCallback &on_tool_event) {
-        struct ToolExecutionState {
-            ToolUse call;
-            loop_status status = loop_status::ok;
-            std::optional<ToolResult> result;
-        };
-
-        struct ToolExecutionOutcome {
-            ToolResult result;
-            loop_status status = loop_status::ok;
-        };
-
-        std::vector<Content> result_blocks;
-        loop_status worst_status = loop_status::ok;
-
-        for (const auto &call : calls) {
-            auto pipeline = stdexec::just(ToolExecutionState{.call = call}) | stdexec::then([this, human_output, &on_tool_event](ToolExecutionState state) {
-                                if (auto status = check_loop_detection(state.call); status != loop_status::ok) {
-                                    state.status = status;
-                                }
-                                if (human_output) {
-                                    spdlog::fmt_lib::println("  -> {}", spdlog::fmt_lib::styled(state.call.name, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::cyan)));
-                                }
-                                if (on_tool_event != nullptr) {
-                                    on_tool_event("tool_started", state.call, nullptr);
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([this](ToolExecutionState state) {
-                                if (hook_manager_ == nullptr) {
-                                    return state;
-                                }
-
-                                auto hook_ctx = build_before_tool_call_context(state.call.name, state.call.input);
-                                auto hook_result = hook_manager_->dispatch(hook_event::before_tool_call, hook_ctx);
-                                if (!hook_result.allowed) {
-                                    std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
-                                    if (!hook_result.block_reason.empty()) {
-                                        block_msg += ": " + hook_result.block_reason;
-                                    }
-                                    state.result = ToolResult{state.call.id, std::move(block_msg), true};
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([this](ToolExecutionState state) {
-                                if (state.result.has_value()) {
-                                    return state;
-                                }
-
-                                state.result = tools_->execute(state.call);
-                                if (hook_manager_ != nullptr) {
-                                    auto hook_ctx = build_after_tool_call_context(state.call.name, state.call.input, state.result->content, state.result->is_error);
-                                    static_cast<void>(hook_manager_->dispatch(hook_event::after_tool_call, hook_ctx));
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([&on_tool_event](ToolExecutionState state) {
-                                if (on_tool_event != nullptr) {
-                                    on_tool_event("tool_finished", state.call, &*state.result);
-                                }
-                                return ToolExecutionOutcome{
-                                    .result = std::move(*state.result),
-                                    .status = state.status,
-                                };
-                            });
-
-            auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
-            worst_status = std::max(outcome.status, worst_status);
-            result_blocks.emplace_back(std::move(outcome.result));
-        }
-
-        return {std::move(result_blocks), worst_status};
-    }
-
     std::string AgentLoop::run(const std::string &user_input, const StreamCallback &on_stream_event, const ToolEventCallback &on_tool_event,
                                const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
-        call_counts_.clear();
+        detail::ToolCallCounts call_counts;
 
-        // Dispatch message_received hook
         if (hook_manager_ != nullptr) {
-            auto ctx = build_message_context(hook_event::message_received, "user", user_input);
-            static_cast<void>(hook_manager_->dispatch(hook_event::message_received, ctx));
+            const auto context = build_message_context(hook_event::message_received, "user", user_input);
+            static_cast<void>(hook_manager_->dispatch(hook_event::message_received, context));
         }
 
         history_.push_back(Message::user().text(user_input));
-        emit_history_checkpoint(on_history_checkpoint, history_);
+        detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
         std::string final_text;
         const bool human_output = !on_stream_event && !on_tool_event;
@@ -375,33 +45,40 @@ namespace orangutan::agent {
                 break;
             }
 
-            // Refresh tool definitions and system prompt each iteration so newly discovered deferred tools are included
             auto tool_defs = tools_->definitions();
-            const auto effective_system_prompt = build_system_prompt(user_input);
+            const auto effective_system_prompt = detail::build_system_prompt(env_info_, user_input, skills_prompt_, *tools_, memory_);
 
             bool first_text = true;
-            auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-            LLMResponse response = provider_->chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
+            auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);
+            auto response = provider_->chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
 
-            auto parts = split_response(response);
+            auto parts = detail::split_response(response);
             final_text += parts.text;
             history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
-            emit_history_checkpoint(on_history_checkpoint, history_);
+            detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
-            // No tool calls — possibly done or truncated
             if (parts.tool_calls.empty() || response.stop_reason == "end_turn") {
+                bool continuation_produced_tool_calls = false;
                 if (response.stop_reason == "max_tokens" && parts.tool_calls.empty()) {
-                    final_text += handle_continuation(effective_system_prompt, first_text, human_output, on_stream_event, on_tool_event, on_history_checkpoint);
+                    auto continuation = detail::handle_continuation(*provider_, *tools_, history_, effective_system_prompt, first_text, human_output, on_stream_event,
+                                                                    thinking_budget_, on_history_checkpoint);
+                    final_text += continuation.appended_text;
+                    if (!continuation.tool_calls.empty()) {
+                        parts.tool_calls = std::move(continuation.tool_calls);
+                        continuation_produced_tool_calls = true;
+                    }
                 }
-                if (human_output && !first_text) {
-                    spdlog::fmt_lib::println("\n");
-                    std::fflush(stdout);
+                if (!continuation_produced_tool_calls) {
+                    if (human_output && !first_text) {
+                        static_cast<void>(std::fputs("\n\n", stdout));
+                        std::fflush(stdout);
+                    }
+                    break;
                 }
-                break;
             }
 
             if (human_output && !first_text) {
-                spdlog::fmt_lib::println("");
+                static_cast<void>(std::fputc('\n', stdout));
                 std::fflush(stdout);
             }
 
@@ -410,31 +87,29 @@ namespace orangutan::agent {
                 break;
             }
 
-            // Execute tools and check for loops
-            auto [result_blocks, loop_status] = execute_tools(parts.tool_calls, human_output, on_tool_event);
+            auto [result_blocks, status] = detail::execute_tools(parts.tool_calls, *tools_, call_counts, hook_manager_, human_output, on_tool_event);
             history_.emplace_back(base::role::user, std::move(result_blocks));
-            emit_history_checkpoint(on_history_checkpoint, history_);
+            detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
-            if (loop_status == loop_status::abort) {
+            if (status == detail::loop_status::abort) {
                 final_text = "I got stuck in a loop repeating the same action. Please try rephrasing your request.";
                 history_.push_back(Message::assistant().text(final_text));
-                emit_history_checkpoint(on_history_checkpoint, history_);
+                detail::emit_history_checkpoint(on_history_checkpoint, history_);
                 break;
             }
-            if (loop_status == loop_status::warning) {
+            if (status == detail::loop_status::warning) {
                 history_.push_back(Message::user().text("You are repeating the same tool call with the same arguments. "
                                                         "This is not making progress. Try a different approach or "
                                                         "explain what you're trying to accomplish."));
-                emit_history_checkpoint(on_history_checkpoint, history_);
+                detail::emit_history_checkpoint(on_history_checkpoint, history_);
             }
 
             final_text.clear();
         }
 
-        // Dispatch message_sending hook
         if (hook_manager_ != nullptr && !final_text.empty()) {
-            auto ctx = build_message_context(hook_event::message_sending, "assistant", final_text);
-            static_cast<void>(hook_manager_->dispatch(hook_event::message_sending, ctx));
+            const auto context = build_message_context(hook_event::message_sending, "assistant", final_text);
+            static_cast<void>(hook_manager_->dispatch(hook_event::message_sending, context));
         }
 
         return final_text;
@@ -452,7 +127,7 @@ namespace orangutan::agent {
 
         for (auto &message : messages) {
             history_.push_back(Message::user().text(message));
-            emit_history_checkpoint(on_history_checkpoint, history_);
+            detail::emit_history_checkpoint(on_history_checkpoint, history_);
         }
         return true;
     }
@@ -467,252 +142,11 @@ namespace orangutan::agent {
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compress_history() {
-        return compact_history(COMPACTION_KEEP_RECENT + 1);
-    }
-
-    AgentLoop::HistoryCompactionResult AgentLoop::compact_history(std::size_t minimum_history_size) {
-        HistoryCompactionResult result{
-            .compacted = false,
-            .messages_before = history_.size(),
-            .messages_after = history_.size(),
-        };
-        if (history_.size() < minimum_history_size) {
-            result.status = "Not enough history to compress yet.";
-            return result;
-        }
-
-        const auto keep_start = static_cast<int>(history_.size()) - COMPACTION_KEEP_RECENT;
-        if (keep_start <= 0) {
-            result.status = "Not enough history to compress yet.";
-            return result;
-        }
-
-        spdlog::info("Compacting history: {} messages -> summarizing first {}, keeping last {}", history_.size(), keep_start, COMPACTION_KEEP_RECENT);
-
-        // Build the older messages to summarize
-        std::vector<Message> older_messages(history_.begin(), history_.begin() + keep_start);
-
-        // Ask the LLM to summarize them (non-streaming, no tools)
-        const std::string summary_prompt = "You are a conversation summarizer. Summarize the following conversation "
-                                           "concisely, preserving key facts, decisions, and context that would be "
-                                           "needed to continue the conversation. Focus on what was discussed, what "
-                                           "tools were used, and what results were obtained.";
-
-        std::vector<ToolDef> no_tools;
-        try {
-            auto response = provider_->chat(summary_prompt, older_messages, no_tools, 1024);
-
-            // Extract summary text
-            std::string summary_text;
-            for (const auto &block : response.content) {
-                if (const auto *text = std::get_if<Text>(&block)) {
-                    summary_text += text->text;
-                }
-            }
-
-            if (summary_text.empty()) {
-                spdlog::warn("Compaction produced empty summary, skipping");
-                result.status = "Compaction produced an empty summary.";
-                return result;
-            }
-
-            // Replace old history: summary + recent messages
-            std::vector<Message> compacted;
-            compacted.push_back(Message::user().text("[Conversation summary]\n" + summary_text));
-            compacted.insert(compacted.end(), history_.begin() + keep_start, history_.end());
-            history_ = std::move(compacted);
-
-            spdlog::info("History compacted to {} messages", history_.size());
-            result.compacted = true;
-            result.messages_after = history_.size();
-            result.status = "History compressed.";
-        } catch (const std::exception &e) {
-            spdlog::warn("History compaction failed: {}", e.what());
-            result.status = std::string("History compaction failed: ") + e.what();
-        }
-        return result;
-    }
-
-    std::string AgentLoop::build_session_memory_transcript() const {
-        std::string transcript;
-
-        for (const auto &message : history_) {
-            utils::format_to(transcript, "{}:\n", magic_enum::enum_name(message.role()));
-            for (const auto &block : message) {
-                if (const auto *text = std::get_if<Text>(&block)) {
-                    if (!text->text.empty()) {
-                        transcript.append(text->text);
-                        transcript.push_back('\n');
-                    }
-                    continue;
-                }
-
-                if (const auto *tool = std::get_if<ToolUse>(&block)) {
-                    utils::format_to(transcript, "[tool_use] {}\n", tool->name);
-                    continue;
-                }
-
-                const auto *result = std::get_if<ToolResult>(&block);
-                if (result != nullptr && !result->content.empty()) {
-                    transcript.append("[tool_result] ");
-                    transcript.append(result->content);
-                    transcript.push_back('\n');
-                }
-            }
-            transcript.push_back('\n');
-        }
-
-        constexpr std::size_t MAX_SESSION_TRANSCRIPT_CHARS = 6000;
-        if (transcript.size() <= MAX_SESSION_TRANSCRIPT_CHARS) {
-            return transcript;
-        }
-
-        constexpr std::size_t RETAINED_SIDE_CHARS = 2800;
-        return transcript.substr(0, RETAINED_SIDE_CHARS) + "\n...\n" + transcript.substr(transcript.size() - RETAINED_SIDE_CHARS);
+        return detail::compact_history(*provider_, history_, detail::COMPACTION_KEEP_RECENT + 1);
     }
 
     AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
-        SessionMemoryDistillationResult result{
-            .distilled = false,
-            .memories_stored = 0,
-            .journal_stored = false,
-            .status = "No session memory distilled.",
-        };
-
-        if (memory_ == nullptr) {
-            result.status = "Long-term memory is disabled.";
-            return result;
-        }
-
-        if (history_.size() < 2) {
-            result.status = "Not enough session history to distill.";
-            return result;
-        }
-
-        const auto transcript = build_session_memory_transcript();
-        if (transcript.empty()) {
-            result.status = "Session transcript is empty.";
-            return result;
-        }
-
-        constexpr std::string_view DISTILLATION_PROMPT = "You are distilling long-term memory from a completed conversation. "
-                                                         "Extract only durable, reusable information that should help future sessions. "
-                                                         "Prefer stable facts, preferences, project context, decisions, and lessons learned. "
-                                                         "Ignore greetings, temporary chatter, and one-off execution details. "
-                                                         "Return at most 9 lines. Each line must use exactly one of these formats:\n"
-                                                         "memory|type|category|key|importance|content\n"
-                                                         "journal|summary\n"
-                                                         "- type: one of user (role/preferences/knowledge), feedback (corrections/approaches), "
-                                                         "project (work/decisions/deadlines), reference (external pointers/docs)\n"
-                                                         "- category: one of profile, preference, project, decision, learning, fact, task, general\n"
-                                                         "- key: lowercase stable identifier like project.current or decision.agent-routing\n"
-                                                         "- importance: decimal between 0 and 1\n"
-                                                         "- content: concise memory text\n"
-                                                         "- summary: one short session summary line, optional, at most once\n"
-                                                         "Return only lines in those formats, with no extra commentary.";
-
-        try {
-            std::vector<Message> messages;
-            messages.push_back(Message::user().text(transcript));
-            std::vector<ToolDef> no_tools;
-            const auto response = provider_->chat(std::string(DISTILLATION_PROMPT), messages, no_tools, 1024);
-
-            std::string distilled_text;
-            for (const auto &block : response.content) {
-                if (const auto *text = std::get_if<Text>(&block)) {
-                    distilled_text += text->text;
-                }
-            }
-
-            const auto parsed = parse_distilled_session(distilled_text);
-            for (const auto &memory : parsed.memories) {
-                memory_->update(memory.key, memory.content, memory.category, memory.type, true, "session:distilled", memory.importance);
-            }
-
-            result.distilled = !parsed.memories.empty();
-            result.memories_stored = parsed.memories.size();
-            if (parsed.journal_summary.has_value()) {
-                const auto journal_result = memory_->store_journal_summary(*parsed.journal_summary);
-                result.journal_stored = journal_result.stored;
-            }
-
-            if (result.distilled || result.journal_stored) {
-                result.status = "Session distilled into long-term memory.";
-            } else {
-                result.status = "Session distillation produced no durable memories.";
-            }
-            if (parsed.journal_parse_failed && !result.journal_stored) {
-                result.status += " journaling was skipped.";
-            }
-        } catch (const std::exception &e) {
-            spdlog::warn("Session memory distillation failed: {}", e.what());
-            result.status = std::string("Session distillation failed: ") + e.what();
-        }
-
-        return result;
-    }
-
-    std::string AgentLoop::build_system_prompt(const std::string &user_input) const {
-        std::string base = prompt::build_default_system_prompt(env_info_);
-
-        base += skills_prompt_;
-
-        // Append deferred tool index so the LLM knows what tools are available via tool_search
-        const auto deferred = tools_->deferred_tool_summaries();
-        if (!deferred.empty()) {
-            base += "\n\n<available-deferred-tools>\n";
-            base += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";
-            for (const auto &tool : deferred) {
-                base += tool.name;
-                base += '\n';
-            }
-            base += "</available-deferred-tools>";
-        }
-
-        if (memory_ == nullptr) {
-            return base;
-        }
-
-        const auto records = memory_->prompt_memories(user_input, 8);
-        if (records.empty()) {
-            return base;
-        }
-
-        std::string memory_block = "\n\n<relevant-memories>\n";
-        memory_block.append("Historical notes for context. Memories older than 1 day should be verified before acting on them.\n");
-
-        std::size_t used = std::string("<relevant-memories>\n</relevant-memories>").size();
-        bool wrote_any = false;
-
-        for (const auto &record : records) {
-            std::string candidate;
-            utils::format_to(candidate, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
-            const auto caveat = memory_freshness_caveat(record.updated_at);
-            if (!caveat.empty()) {
-                candidate.push_back(' ');
-                candidate.append(caveat);
-            }
-            if (used + candidate.size() + 1 > MAX_MEMORY_PROMPT_BYTES) {
-                if (wrote_any) {
-                    break;
-                }
-
-                const std::size_t remaining = MAX_MEMORY_PROMPT_BYTES > used + 4 ? MAX_MEMORY_PROMPT_BYTES - used - 4 : 0;
-                candidate = remaining == 0 ? "..." : candidate.substr(0, remaining) + "...";
-            }
-
-            memory_block.append(candidate);
-            memory_block.push_back('\n');
-            used += candidate.size() + 1;
-            wrote_any = true;
-        }
-
-        if (!wrote_any) {
-            return base;
-        }
-
-        memory_block.append("</relevant-memories>");
-        return base + memory_block;
+        return detail::distill_session_memory(*provider_, memory_, history_);
     }
 
 } // namespace orangutan::agent

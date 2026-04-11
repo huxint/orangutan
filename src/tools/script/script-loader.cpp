@@ -2,29 +2,13 @@
 
 #include "tools/shell/command-sandbox.hpp"
 #include "tools/internal.hpp"
-#include "utils/sender-utils.hpp"
 #include "process/subprocess.hpp"
+#include "utils/sender-utils.hpp"
 
 #include <ctre.hpp>
-#include <filesystem>
 #include <spdlog/spdlog.h>
 
 namespace orangutan::tools {
-
-    // ── Shell Escaping ──────────────────────────────
-
-    std::string shell_escape(const std::string &value) {
-        std::string escaped = "'";
-        for (char ch : value) {
-            if (ch == '\'') {
-                escaped += "'\\''";
-            } else {
-                escaped += ch;
-            }
-        }
-        escaped += '\'';
-        return escaped;
-    }
 
     // ── Parameter Substitution ──────────────────────
 
@@ -80,13 +64,13 @@ namespace orangutan::tools {
 
     // ── Script Tool Execution ───────────────────────
 
-    static SubprocessResult execute_script(const std::string &command, const std::string &workspace, const std::string &working_dir, int timeout_seconds,
+    static SubprocessResult execute_script(std::string_view command, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir, int timeout_seconds,
                                            tool_sandbox_mode sandbox_mode) {
-        const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
+        const auto sandboxed = prepare_sandboxed_command(command, workspace_root, working_dir, sandbox_mode);
         auto pipeline = run_subprocess_sender({
             .command = sandboxed.command,
             .timeout = std::chrono::seconds(timeout_seconds),
-            .working_dir = sandboxed.working_dir,
+            .working_dir = sandboxed.working_dir.empty() ? std::string{} : sandboxed.working_dir.string(),
         });
         auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "script tool subprocess pipeline");
         return result;
@@ -94,19 +78,18 @@ namespace orangutan::tools {
 
     // ── Tool Registration Helpers ───────────────────
 
-    static Tool make_script_tool(const ScriptToolConfig &config, const std::string &workspace, const ToolPermissionContext * /*permissions*/,
+    static Tool make_script_tool(const ScriptToolConfig &config, const std::filesystem::path &workspace_root, const ToolPermissionContext * /*permissions*/,
                                  const ToolRuntimeContext * /*tool_context*/, const ApprovalCallback & /*approval_callback*/) {
         return Tool{
             .definition = {.name = config.name, .description = config.description, .input_schema = generate_input_schema(config.input_schema)},
-            .execute = [config, workspace](const nlohmann::json &input) -> std::string {
+            .execute = [config, workspace_root](const nlohmann::json &input) -> std::string {
                 std::string command = substitute_params(config.command, input, config.input_schema);
-                const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, std::filesystem::path(workspace));
-                const auto work_dir = resolved_work_dir.empty() ? std::string{} : resolved_work_dir.string();
+                const auto resolved_work_dir = resolve_tool_working_dir(config.working_dir, workspace_root);
                 const auto sandbox_mode = tool_sandbox_mode::disabled;
 
                 spdlog::debug("  [script-tool] {}: {}", config.name, command);
 
-                auto result = execute_script(command, workspace, work_dir, config.timeout, sandbox_mode);
+                auto result = execute_script(command, workspace_root, resolved_work_dir, config.timeout, sandbox_mode);
 
                 if (!result.stderr_output.empty()) {
                     spdlog::debug("  [script-tool] {} stderr: {}", config.name, result.stderr_output);
@@ -136,8 +119,8 @@ namespace orangutan::tools {
 
     // ── User Script Tools ───────────────────────────
 
-    void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::string &workspace, const ToolPermissionContext *permissions,
-                               const ToolRuntimeContext *tool_context, const ApprovalCallback &approval_callback) {
+    void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::filesystem::path &workspace_root,
+                               const ToolPermissionContext *permissions, const ToolRuntimeContext *tool_context, const ApprovalCallback &approval_callback) {
         if (tools.empty()) {
             return;
         }
@@ -154,7 +137,7 @@ namespace orangutan::tools {
             }
 
             spdlog::info("Registering script tool '{}': {}", config.name, config.command);
-            registry.register_tool(make_script_tool(config, workspace, permissions, tool_context, approval_callback));
+            registry.register_tool(make_script_tool(config, workspace_root, permissions, tool_context, approval_callback));
             ++registered;
         }
 

@@ -19,12 +19,27 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include <type_traits>
 
 using namespace orangutan;
 using namespace orangutan::tools;
 using orangutan::testing::test_tmp_root;
 
 namespace {
+
+    static_assert(std::is_same_v<decltype(&register_builtin_tools), void (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
+                                                                             const ToolPermissionContext *, std::string_view)>);
+
+    using FindDefinitionSignature = const ToolDef *(ToolRegistry::*)(std::string_view) const;
+    using FindToolSignature = const Tool *(ToolRegistry::*)(std::string_view) const;
+
+    static_assert(std::is_same_v<decltype(&ToolRegistry::find_definition), FindDefinitionSignature>);
+    static_assert(std::is_same_v<decltype(&ToolRegistry::find_tool), FindToolSignature>);
+
+    static_assert(std::is_same_v<decltype(&register_runtime_tools),
+                                 RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
+                                                                const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
+                                                                const ToolPermissionContext *, std::string_view)>);
 
     nlohmann::json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
         nlohmann::json input = {
@@ -831,13 +846,14 @@ TEST_CASE("TaskToolRunsWithoutPromptByDefault") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
 
-    const auto result = registry.execute(ToolUse("task-default-allow", "task", {
-                                                                     {"op", "add"},
-                                                                     {"name", "nightly-sync"},
-                                                                     {"schedule_kind", "cron"},
-                                                                     {"schedule", "0 * * * *"},
-                                                                     {"prompt", "sync nightly"},
-                                                                 }));
+    const auto result = registry.execute(ToolUse("task-default-allow", "task",
+                                                 {
+                                                     {"op", "add"},
+                                                     {"name", "nightly-sync"},
+                                                     {"schedule_kind", "cron"},
+                                                     {"schedule", "0 * * * *"},
+                                                     {"prompt", "sync nightly"},
+                                                 }));
 
     CHECK_FALSE(result.is_error);
     CHECK_FALSE(prompted);
@@ -973,7 +989,7 @@ TEST_CASE("WriteToolRejectsPathsOutsidePermissionScope") {
     ToolPermissionContext permissions;
     permissions.mode = permission_mode::bypass_permissions;
 
-    static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
+    static_cast<void>(register_runtime_tools(registry, nullptr, workspace, nullptr, {}, {}, &permissions));
 
     const auto result = registry.execute(ToolUse("outside-write", "write", {{"path", (outside / "blocked.txt").string()}, {"content", "blocked"}}));
     CHECK(result.is_error);
@@ -994,7 +1010,7 @@ TEST_CASE("WriteToolAllowsConfiguredAdditionalDirectories") {
     permissions.mode = permission_mode::bypass_permissions;
     permissions.additional_directories.push_back(outside.string());
 
-    static_cast<void>(register_runtime_tools(registry, nullptr, workspace.string(), nullptr, {}, {}, &permissions));
+    static_cast<void>(register_runtime_tools(registry, nullptr, workspace, nullptr, {}, {}, &permissions));
 
     const auto target = outside / "allowed.txt";
     const auto result = registry.execute(ToolUse("outside-write-allowed", "write", {{"path", target.string()}, {"content", "allowed"}}));

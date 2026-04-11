@@ -8,11 +8,14 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace orangutan;
 
 namespace {
+
+    static_assert(std::is_same_v<decltype(&tools::register_message_attachments_tool), void (*)(ToolRegistry &, const std::filesystem::path &, const ToolRuntimeContext *)>);
 
     TEST_CASE("message_attachments_list_returns_current_message_metadata_without_downloading") {
         ToolRegistry registry;
@@ -39,7 +42,7 @@ namespace {
                 },
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
         const auto result = registry.execute(ToolUse("list-attachments", "message_attachments", {{"op", "list"}}));
 
         REQUIRE_FALSE(result.is_error);
@@ -73,7 +76,7 @@ namespace {
                 },
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
         const auto result = registry.execute(ToolUse("default-list-attachments", "message_attachments", nlohmann::json::object()));
 
         REQUIRE_FALSE(result.is_error);
@@ -110,7 +113,7 @@ namespace {
                 },
         };
 
-        tools::register_message_attachments_tool(registry, workspace.string(), &context);
+        tools::register_message_attachments_tool(registry, workspace, &context);
         const auto result = registry.execute(ToolUse("download-attachment", "message_attachments", {{"op", "download"}, {"index", 0}, {"target_path", "incoming/image.png"}}));
 
         REQUIRE_FALSE(result.is_error);
@@ -120,13 +123,56 @@ namespace {
         CHECK(payload.at("attachment").at("download_pending").get<bool>() == false);
     }
 
+    TEST_CASE("message_attachments_download_rejects_target_path_outside_workspace") {
+        const auto root = testing::unique_test_root("message-attachments-tool-outside");
+        const auto workspace = root / "workspace";
+        const auto outside = root / "outside";
+        std::filesystem::create_directories(workspace);
+        std::filesystem::create_directories(outside);
+
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+        bool download_called = false;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .raw_caller_id = "qqbot:bot:c2c:user-openid",
+            .current_message_attachments = attachments,
+            .attachment_download_callback =
+                [&download_called](const Attachment &attachment, const std::string &) {
+                    download_called = true;
+                    return attachment;
+                },
+        };
+
+        tools::register_message_attachments_tool(registry, workspace, &context);
+        const auto result = registry.execute(ToolUse("download-attachment-outside", "message_attachments",
+                                                     {
+                                                         {"op", "download"},
+                                                         {"index", 0},
+                                                         {"target_path", "../outside/image.png"},
+                                                     }));
+
+        CHECK(result.is_error);
+        CHECK(result.content.contains("workspace sandbox"));
+        CHECK_FALSE(download_called);
+
+        std::filesystem::remove_all(root);
+    }
+
     TEST_CASE("message_attachments_not_registered_for_non_channel_context") {
         ToolRegistry registry;
         ToolRuntimeContext context{
             .runtime_origin = base::origin::cli,
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
 
         CHECK(registry.find_definition("message_attachments") == nullptr);
     }
@@ -134,7 +180,7 @@ namespace {
     TEST_CASE("message_attachments_not_registered_when_context_is_null") {
         ToolRegistry registry;
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), nullptr);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), nullptr);
 
         CHECK(registry.find_definition("message_attachments") == nullptr);
     }
@@ -154,7 +200,7 @@ namespace {
                 },
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
 
         const auto *definition = registry.find_definition("message_attachments");
         REQUIRE(definition != nullptr);
@@ -191,7 +237,7 @@ namespace {
                 },
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
         const auto result = registry.execute(ToolUse("unknown-op", "message_attachments", {{"op", "noop"}}));
 
         CHECK_FALSE(result.is_error);
@@ -205,7 +251,7 @@ namespace {
             .runtime_origin = base::origin::channel,
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
         const auto result = registry.execute(ToolUse("list-empty", "message_attachments", {{"op", "list"}}));
 
         CHECK_FALSE(result.is_error);
@@ -228,7 +274,7 @@ namespace {
             .current_message_attachments = attachments,
         };
 
-        tools::register_message_attachments_tool(registry, testing::test_tmp_root().string(), &context);
+        tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
         const auto result = registry.execute(ToolUse("download-no-callback", "message_attachments", {{"op", "download"}, {"index", 0}}));
 
         CHECK_FALSE(result.is_error);

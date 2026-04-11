@@ -2,7 +2,9 @@
 
 #include "automation/scheduler.hpp"
 
+#include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/contextual-tool-group.hpp"
+#include "tools/registry/op-tool-support.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
@@ -17,12 +19,8 @@ namespace orangutan::tools {
                 return "Error: inbox tool is not available in this context.";
             }
 
-            const auto agent_key = ctx->agent_key.empty() ? std::string("default") : ctx->agent_key;
+            const auto agent_key = builtin::detail::resolve_agent_key(*ctx);
             auto &runtime = *ctx->automation_runtime;
-
-            const auto normalized_op = input.value("op", "");
-            auto routed_input = input;
-            routed_input["op"] = normalized_op;
 
             const auto result = tool_dispatch()
                                     .unknown_op_error("Error: unknown operation. Supported: list, ack, clear.")
@@ -48,13 +46,13 @@ namespace orangutan::tools {
                                         })
                                     .on("ack",
                                         [&runtime, &agent_key](const nlohmann::json &request) {
-                                            const auto id = request.value("id", "");
-                                            if (id.empty()) {
-                                                return tool_dispatch::response{.message = "Error: id is required.", .is_error = true};
+                                            if (const auto error = require_id(request); error.has_value()) {
+                                                return tool_dispatch::response{.message = *error, .is_error = true};
                                             }
-                                            return tool_dispatch::response{.message = runtime.ack_inbox(agent_key, id) ? "Inbox item acknowledged." : "Error: inbox item not found."};
+                                            return tool_dispatch::response{.message = runtime.ack_inbox(agent_key, request.value("id", "")) ? "Inbox item acknowledged."
+                                                                                                                                            : "Error: inbox item not found."};
                                         })
-                                    .run(routed_input);
+                                    .run(builtin::detail::normalize_automation_op_input(input));
 
             return result.message;
         }

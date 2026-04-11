@@ -1,3 +1,4 @@
+#include "bootstrap/channel-serve-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/identity.hpp"
 #include "agent/agent-loop.hpp"
@@ -84,6 +85,13 @@ namespace {
 
     class FakeChannel final : public Channel {
     public:
+        struct TextMessage {
+            std::string jid;
+            std::string text;
+            std::string reply_to_message_id;
+            std::string reference_message_id;
+        };
+
         struct KeyboardMessage {
             std::string jid;
             std::string markdown;
@@ -111,6 +119,12 @@ namespace {
                 [&]<typename T>(const T &payload) {
                     using Payload = std::decay_t<T>;
                     if constexpr (std::is_same_v<Payload, TextPayload>) {
+                        sent_text_messages_.push_back({
+                            .jid = jid,
+                            .text = payload.text,
+                            .reply_to_message_id = message.reply_to_message_id,
+                            .reference_message_id = message.reference_message_id,
+                        });
                         sent_messages_.emplace_back(jid, payload.text);
                     } else if constexpr (std::is_same_v<Payload, MarkdownPayload>) {
                         sent_markdown_messages_.emplace_back(jid, payload.markdown);
@@ -164,6 +178,12 @@ namespace {
         }
 
         [[nodiscard]]
+        std::vector<TextMessage> sent_text_messages() const {
+            std::scoped_lock lock(mutex_);
+            return sent_text_messages_;
+        }
+
+        [[nodiscard]]
         std::vector<std::string> sent_reply_to_ids() const {
             std::scoped_lock lock(mutex_);
             return sent_reply_to_ids_;
@@ -188,6 +208,7 @@ namespace {
         bool connected_ = false;
         mutable std::mutex mutex_;
         std::vector<std::pair<std::string, std::string>> sent_messages_;
+        std::vector<TextMessage> sent_text_messages_;
         std::vector<std::pair<std::string, std::string>> sent_markdown_messages_;
         std::vector<KeyboardMessage> sent_keyboard_messages_;
         std::vector<std::string> sent_reply_to_ids_;
@@ -382,6 +403,30 @@ namespace {
         CHECK(qq->sent_messages()[0].second == "sent");
         CHECK(qq->sent_reply_to_ids().size() == 1UL);
         CHECK(qq->sent_reply_to_ids()[0] == "inbound-message-42");
+    };
+
+    TEST_CASE("non_qq_reply_delivery_keeps_reply_to_without_reference") {
+        ChannelManager manager;
+        auto slack_channel = std::make_unique<FakeChannel>("slack", "slack:");
+        auto *slack = slack_channel.get();
+        manager.add_channel(std::move(slack_channel));
+
+        const InboundMessage message{
+            .jid = "slack:dm:42",
+            .content = "prompt",
+            .message_id = "slack-message-42",
+        };
+
+        CHECK(completes_without_throw([&] {
+            bootstrap::deliver_reply(message, "sent", manager);
+        }));
+
+        const auto sent_messages = slack->sent_text_messages();
+        REQUIRE(sent_messages.size() == 1UL);
+        CHECK(sent_messages[0].jid == "slack:dm:42");
+        CHECK(sent_messages[0].text == "sent");
+        CHECK(sent_messages[0].reply_to_message_id == "slack-message-42");
+        CHECK(sent_messages[0].reference_message_id.empty());
     };
 
     TEST_CASE("logs_unowned_outbound_jid_without_throwing") {
@@ -600,6 +645,90 @@ namespace {
         CHECK(coordinator.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::allow_once)}, manager));
         CHECK(future.get());
+    };
+
+    TEST_CASE("channel_approval_coordinator_formats_text_prompts_and_parses_text_always_replies") {
+        ChannelManager manager;
+        auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
+        auto *irc = irc_channel.get();
+        manager.add_channel(std::move(irc_channel));
+
+        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        const InboundMessage request{
+            .jid = "irc:dm:42",
+            .content = "run shell",
+            .message_id = "message-42",
+        };
+        auto callback = coordinator.make_callback(request, manager);
+        REQUIRE(callback != nullptr);
+
+        auto future = std::async(std::launch::async, [&callback] {
+            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
+        });
+
+        for (int attempt = 0; attempt < 20 && irc->sent_messages().empty(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        const auto sent_messages = irc->sent_text_messages();
+        REQUIRE(sent_messages.size() == 1UL);
+        CHECK(sent_messages[0].jid == "irc:dm:42");
+        CHECK(sent_messages[0].reply_to_message_id == "message-42");
+        CHECK(sent_messages[0].reference_message_id.empty());
+        CHECK(sent_messages[0].text.contains("Shell command approval required."));
+        CHECK(sent_messages[0].text.contains("Tool: shell"));
+        CHECK(sent_messages[0].text.contains("Command: echo hello"));
+        CHECK(sent_messages[0].text.contains("Please reply with `"));
+        CHECK(sent_messages[0].text.contains("yes`, `"));
+        CHECK(sent_messages[0].text.contains("always`, or `"));
+        CHECK(sent_messages[0].text.contains("no`."));
+
+        const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].text);
+        REQUIRE_FALSE(request_id.empty());
+
+        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "  " + request_id + " ALWAYS allow!!!  "}, manager));
+        CHECK(future.get());
+    };
+
+    TEST_CASE("channel_approval_coordinator_invalid_text_replies_do_not_reference_qq_buttons") {
+        ChannelManager manager;
+        auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
+        auto *irc = irc_channel.get();
+        manager.add_channel(std::move(irc_channel));
+
+        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        const InboundMessage request{
+            .jid = "irc:dm:42",
+            .content = "run shell",
+            .message_id = "message-42",
+        };
+        auto callback = coordinator.make_callback(request, manager);
+        REQUIRE(callback != nullptr);
+
+        auto future = std::async(std::launch::async, [&callback] {
+            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
+        });
+
+        for (int attempt = 0; attempt < 20 && irc->sent_messages().empty(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        const auto initial_messages = irc->sent_text_messages();
+        REQUIRE(initial_messages.size() == 1UL);
+        const auto request_id = ChannelServeHarness::extract_request_id(initial_messages[0].text);
+        REQUIRE_FALSE(request_id.empty());
+
+        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "what?"}, manager));
+        CHECK(future.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout);
+
+        const auto sent_messages = irc->sent_text_messages();
+        REQUIRE(sent_messages.size() >= 2UL);
+        CHECK_FALSE(sent_messages.back().text.contains("QQ buttons"));
+        CHECK(sent_messages.back().text.contains(request_id + " yes"));
+        CHECK(sent_messages.back().text.contains(request_id + " no"));
+
+        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = request_id + " no"}, manager));
+        CHECK_FALSE(future.get());
     };
 
     TEST_CASE("channel_approval_coordinator_rejects_when_qq_keyboard_is_unavailable") {
@@ -1320,6 +1449,19 @@ namespace {
         if (bound_session.has_value()) {
             CHECK(*bound_session == session_id);
         }
+    };
+
+    TEST_CASE("completion_resume_callback_reports_unavailable_runtime_after_state_expires") {
+        const auto callback = [&] {
+            auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
+            auto callback = bootstrap::detail::make_channel_completion_resume_callback(resume_state);
+            resume_state.reset();
+            return callback;
+        }();
+
+        const auto error = callback("ignored");
+        REQUIRE(error.has_value());
+        CHECK(*error == "channel runtime is no longer available");
     };
 
     TEST_CASE("run_channel_loop_replies_with_runtime_errors") {

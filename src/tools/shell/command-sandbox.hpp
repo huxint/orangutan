@@ -1,7 +1,10 @@
 #pragma once
 
-#include <string>
 #include "types/base.hpp"
+
+#include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace orangutan::tools {
 
@@ -13,10 +16,11 @@ namespace orangutan::tools {
 
     struct SandboxedCommand {
         std::string command;
-        std::string working_dir;
+        std::filesystem::path working_dir;
     };
 
     [[nodiscard]]
-    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, tool_sandbox_mode sandbox_mode);
+    SandboxedCommand prepare_sandboxed_command(std::string_view command, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir,
+                                               tool_sandbox_mode sandbox_mode);
 
 } // namespace orangutan::tools

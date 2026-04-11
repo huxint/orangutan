@@ -4,12 +4,13 @@
 
 #include <nlohmann/json.hpp>
 #include <string>
+#include <string_view>
 
 namespace orangutan::channel::qq {
 
     class QqMessageBuilder {
     public:
-        QqMessageBuilder &text(const std::string &content) {
+        QqMessageBuilder &text(std::string_view content) {
             payload_["content"] = content;
             payload_["msg_type"] = 0;
             payload_.erase("markdown");
@@ -19,7 +20,7 @@ namespace orangutan::channel::qq {
             return *this;
         }
 
-        QqMessageBuilder &markdown(const std::string &content) {
+        QqMessageBuilder &markdown(std::string_view content) {
             payload_["markdown"] = nlohmann::json{
                 {"content", content},
             };
@@ -31,7 +32,7 @@ namespace orangutan::channel::qq {
             return *this;
         }
 
-        QqMessageBuilder &media(const std::string &file_info, const std::string &content = "") {
+        QqMessageBuilder &media(std::string_view file_info, std::string_view content = {}) {
             payload_["media"] = nlohmann::json{
                 {"file_info", file_info},
             };
@@ -72,7 +73,7 @@ namespace orangutan::channel::qq {
             return *this;
         }
 
-        QqMessageBuilder &reply_to(const std::string &msg_id) {
+        QqMessageBuilder &reply_to(std::string_view msg_id) {
             if (!msg_id.empty()) {
                 payload_["msg_id"] = msg_id;
             } else {
@@ -81,7 +82,7 @@ namespace orangutan::channel::qq {
             return *this;
         }
 
-        QqMessageBuilder &reference(const std::string &message_id) {
+        QqMessageBuilder &reference(std::string_view message_id) {
             if (!message_id.empty()) {
                 payload_["message_reference"] = nlohmann::json{
                     {"message_id", message_id},

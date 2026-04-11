@@ -5,6 +5,7 @@
 #include "tools/mcp/mcp-manager.hpp"
 #include "tools/registry/tool.hpp"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -16,7 +17,7 @@ namespace orangutan::tools {
         std::size_t mcp_tool_count = 0;
     };
 
-    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::string &workspace,
+    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions = nullptr,
                                                       std::string_view edit_mode = "search_replace");

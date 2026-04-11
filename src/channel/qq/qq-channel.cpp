@@ -1,18 +1,18 @@
 #include "channel/qq/qq-channel.hpp"
 
+#include "channel/qq/qq-channel-inbound.hpp"
+#include "channel/qq/qq-channel-outbound.hpp"
+#include "channel/qq/qq-channel-runtime.hpp"
+#include "channel/qq/qq-channel-session.hpp"
 #include "channel/qq/qq-message-builder.hpp"
 #include "channel/qq/qq-transport.hpp"
 #include "utils/string.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
-#include <ctre.hpp>
-#include <deque>
 #include <filesystem>
 #include <fstream>
-#include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <spdlog/fmt/bundled/format.h>
@@ -42,111 +42,6 @@ namespace orangutan::channel::qq {
         constexpr base::u32 INTENT_DIRECT_MESSAGES = 1U << 12;
         constexpr std::chrono::seconds CONNECT_TIMEOUT{10};
 
-        std::string qq_jid_prefix(std::string_view bot_name, std::string_view kind) {
-            if (bot_name.empty()) {
-                return std::string("qqbot:") + std::string(kind) + ':';
-            }
-            return std::string("qqbot:") + std::string(bot_name) + ':' + std::string(kind) + ':';
-        }
-
-        std::string make_qq_jid(std::string_view bot_name, std::string_view kind, std::string_view openid) {
-            return qq_jid_prefix(bot_name, kind) + std::string(openid);
-        }
-
-        std::string require_openid(std::string_view jid, std::string_view prefix) {
-            if (!jid.starts_with(prefix)) {
-                throw std::runtime_error("Unsupported QQ jid: " + std::string(jid));
-            }
-            return std::string(jid.substr(prefix.size()));
-        }
-
-        std::string getenv_or_default(const char *name, const char *fallback) {
-            const char *value = std::getenv(name);
-            if (value == nullptr || *value == '\0') {
-                return fallback;
-            }
-            return value;
-        }
-
-        std::string sanitize_path_component(std::string input) {
-            for (auto &ch : input) {
-                if (std::isalnum(static_cast<unsigned char>(ch)) == 0 && ch != '-' && ch != '_') {
-                    ch = '_';
-                }
-            }
-            if (input.empty()) {
-                return "default";
-            }
-            return input;
-        }
-
-        std::filesystem::path qq_session_file_path(std::string_view bot_name) {
-            const auto home = getenv_or_default("HOME", ".");
-            const auto safe_name = sanitize_path_component(std::string(bot_name.empty() ? "default" : bot_name));
-            return std::filesystem::path(home) / ".orangutan" / "qq" / "sessions" / ("session-" + safe_name + ".json");
-        }
-
-        std::filesystem::path qq_known_users_file_path(std::string_view bot_name) {
-            const auto home = getenv_or_default("HOME", ".");
-            const auto safe_name = sanitize_path_component(std::string(bot_name.empty() ? "default" : bot_name));
-            return std::filesystem::path(home) / ".orangutan" / "qq" / "known-users" / ("known-users-" + safe_name + ".json");
-        }
-
-        std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
-            if (offset + width > value.size()) {
-                return std::nullopt;
-            }
-
-            int result = 0;
-            const auto token = value.substr(offset, width);
-            auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
-            if (ec != std::errc{} || ptr != token.end()) {
-                return std::nullopt;
-            }
-            return result;
-        }
-
-        std::string format_iso_utc(std::chrono::system_clock::time_point tp) {
-            const auto truncated = std::chrono::floor<std::chrono::seconds>(tp);
-            const auto day = std::chrono::floor<std::chrono::days>(truncated);
-            const auto ymd = std::chrono::year_month_day{day};
-            if (!ymd.ok()) {
-                return {};
-            }
-
-            const auto tod = std::chrono::hh_mm_ss{truncated - day};
-            return spdlog::fmt_lib::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()),
-                                           static_cast<unsigned>(ymd.day()), static_cast<int>(tod.hours().count()), static_cast<int>(tod.minutes().count()),
-                                           static_cast<int>(tod.seconds().count()));
-        }
-
-        std::optional<std::chrono::system_clock::time_point> parse_iso_utc(std::string_view iso) {
-            if (iso.size() != 20 || iso[4] != '-' || iso[7] != '-' || iso[10] != 'T' || iso[13] != ':' || iso[16] != ':' || iso[19] != 'Z') {
-                return std::nullopt;
-            }
-
-            const auto year = parse_fixed_int(iso, 0, 4);
-            const auto month = parse_fixed_int(iso, 5, 2);
-            const auto day = parse_fixed_int(iso, 8, 2);
-            const auto hour = parse_fixed_int(iso, 11, 2);
-            const auto minute = parse_fixed_int(iso, 14, 2);
-            const auto second = parse_fixed_int(iso, 17, 2);
-            if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() || !minute.has_value() || !second.has_value()) {
-                return std::nullopt;
-            }
-            if (*hour > 23 || *minute > 59 || *second > 59) {
-                return std::nullopt;
-            }
-
-            const auto ymd = std::chrono::year{*year} / std::chrono::month{static_cast<unsigned>(*month)} / std::chrono::day{static_cast<unsigned>(*day)};
-            if (!ymd.ok()) {
-                return std::nullopt;
-            }
-
-            const auto utc_time = std::chrono::sys_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
-            return std::chrono::time_point_cast<std::chrono::system_clock::duration>(utc_time);
-        }
-
         template <class... Ts>
         struct Overloaded : Ts... {
             using Ts::operator()...;
@@ -155,131 +50,16 @@ namespace orangutan::channel::qq {
         template <class... Ts>
         Overloaded(Ts...) -> Overloaded<Ts...>;
 
-        enum class qq_target_kind : base::u8 {
-            c2c,
-            group,
-            guild,
-        };
-
-        struct QqSendTarget {
-            qq_target_kind kind;
-            std::string id;
-        };
-
-        [[nodiscard]]
-        QqSendTarget resolve_send_target(std::string_view bot_name, std::string_view jid) {
-            const auto c2c_prefix = qq_jid_prefix(bot_name, "c2c");
-            const auto group_prefix = qq_jid_prefix(bot_name, "group");
-            const auto guild_prefix = qq_jid_prefix(bot_name, "guild");
-
-            if (jid.starts_with(c2c_prefix)) {
-                return QqSendTarget{.kind = qq_target_kind::c2c, .id = require_openid(jid, c2c_prefix)};
-            }
-            if (jid.starts_with(group_prefix)) {
-                return QqSendTarget{.kind = qq_target_kind::group, .id = require_openid(jid, group_prefix)};
-            }
-            if (jid.starts_with(guild_prefix)) {
-                return QqSendTarget{.kind = qq_target_kind::guild, .id = require_openid(jid, guild_prefix)};
-            }
-
-            throw std::runtime_error("Unsupported QQ jid: " + std::string(jid));
-        }
-
-        [[nodiscard]]
-        std::string message_path(const QqSendTarget &target) {
-            switch (target.kind) {
-                case qq_target_kind::c2c:
-                    return "/v2/users/" + target.id + "/messages";
-                case qq_target_kind::group:
-                    return "/v2/groups/" + target.id + "/messages";
-                case qq_target_kind::guild:
-                    return "/channels/" + target.id + "/messages";
-            }
-
-            throw std::runtime_error("Unsupported QQ send target kind");
-        }
-
-        [[nodiscard]]
-        std::string media_upload_path(const QqSendTarget &target) {
-            switch (target.kind) {
-                case qq_target_kind::c2c:
-                    return "/v2/users/" + target.id + "/files";
-                case qq_target_kind::group:
-                    return "/v2/groups/" + target.id + "/files";
-                case qq_target_kind::guild:
-                    throw std::runtime_error("QQ guild currently does not support msg_type=7 media direct send");
-            }
-
-            throw std::runtime_error("Unsupported QQ send target kind");
-        }
-
     } // namespace
 
-    struct QqChannel::RuntimeState {
-        struct PendingDebouncedMessage {
-            std::string text;
-            std::string reply_to_message_id;
-            std::string reference_message_id;
-            std::chrono::steady_clock::time_point first_enqueued_at;
-            std::chrono::steady_clock::time_point last_update_at;
-        };
-
-        struct KnownUser {
-            std::string kind;
-            std::string openid;
-            std::chrono::system_clock::time_point last_seen_at;
-        };
-
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::mutex heartbeat_mutex;
-        std::condition_variable_any heartbeat_cv;
-        bool ready = false;
-        bool hello_received = false;
-        bool close_requested = false;
-        std::string last_error;
-        base::u32 last_seq = 0;
-        std::string session_id;
-        std::chrono::milliseconds heartbeat_interval{0};
-        std::jthread heartbeat_thread;
-        std::mutex token_refresh_mutex;
-        std::condition_variable_any token_refresh_cv;
-        std::jthread token_refresh_thread;
-        std::mutex debounce_mutex;
-        std::condition_variable_any debounce_cv;
-        std::jthread debounce_thread;
-        std::unordered_map<std::string, PendingDebouncedMessage> pending_messages;
-        std::chrono::milliseconds debounce_window{1500};
-        std::chrono::milliseconds debounce_max_wait{8000};
-        std::string debounce_separator = "\n\n---\n\n";
-        std::mutex known_users_mutex;
-        std::unordered_map<std::string, KnownUser> known_users;
-        std::mutex group_history_mutex;
-        std::unordered_map<std::string, std::deque<std::string>> group_history;
-        std::size_t group_history_limit = 50;
-
-        std::mutex ref_index_mutex;
-        std::unordered_map<std::string, std::string> ref_index_cache;
-        static constexpr std::size_t REF_INDEX_MAX_ENTRIES = 50000;
-
-        struct TypingState {
-            std::string message_id;
-            std::chrono::steady_clock::time_point last_sent_at;
-        };
-        std::mutex typing_mutex;
-        std::condition_variable_any typing_cv;
-        std::jthread typing_thread;
-        std::unordered_map<std::string, TypingState> typing_states;
-
-        std::unique_ptr<qq::Transport> websocket;
-    };
+    using RuntimeState = qq_channel_runtime_state;
 
     QqChannel::QqChannel(std::string bot_name, std::string app_id, std::string client_secret)
     : bot_name_(std::move(bot_name)),
       app_id_(std::move(app_id)),
       client_secret_(std::move(client_secret)),
       api_client_(std::make_unique<QqApiClient>(app_id_, client_secret_)),
-      runtime_(std::make_unique<RuntimeState>()) {}
+      runtime_(std::make_unique<qq_channel_runtime_state>()) {}
 
     QqChannel::~QqChannel() {
         disconnect();
@@ -333,105 +113,55 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::send(const std::string &jid, const OutboundMessage &message) {
+        const auto send_immediately = [this, &jid](const OutboundMessage &outbound_message) {
+            const auto target = resolve_send_target(bot_name_, jid);
+            const auto post_payload = [this, &target](const nlohmann::json &payload) {
+                const auto response = api_client_->post(message_path(target), payload);
+                std::string content_text;
+                if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
+                    content_text = payload.at("markdown").at("content").get<std::string>();
+                } else if (payload.contains("content") && payload.at("content").is_string()) {
+                    content_text = payload.at("content").get<std::string>();
+                }
+                if (!content_text.empty()) {
+                    capture_outbound_ref_index(response, content_text);
+                }
+            };
+            const auto upload_media_info = [this](const qq_send_target &upload_target, int file_type, const std::string &url) {
+                const auto response = api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
+                const auto upload_payload = response.parse_json_body();
+                if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
+                    throw std::runtime_error("QQ upload media missing file_info");
+                }
+                return upload_payload.at("file_info").get<std::string>();
+            };
+
+            route_outbound_payload(
+                target, outbound_message, post_payload, upload_media_info,
+                [this] {
+                    return next_msg_seq();
+                },
+                [this](const std::string &reply_to_message_id, int reply_units) {
+                    return resolve_passive_reply_message_id(reply_to_message_id, reply_units);
+                });
+        };
+
         if (const auto *text = std::get_if<TextPayload>(&message.payload)) {
-            if (text->text.contains("<qq") || text->text.contains("![")) {
-                send_media_segments(jid, message);
+            if (text_contains_media_markup(text->text)) {
+                route_media_segments(jid, message, send_immediately,
+                                     [this, &jid](const std::string &text_value, const std::string &reply_to_message_id, const std::string &reference_message_id) {
+                                         enqueue_debounced_text(jid, text_value, reply_to_message_id, reference_message_id);
+                                     });
                 return;
             }
             enqueue_debounced_text(jid, text->text, message.reply_to_message_id, message.reference_message_id);
             return;
         }
 
-        send_outbound_now(jid, message);
+        send_immediately(message);
     }
 
-    void QqChannel::send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        send_outbound_now(jid, OutboundMessage{
-                                   .payload = TextPayload{.text = text},
-                                   .reply_to_message_id = reply_to_message_id,
-                                   .reference_message_id = reference_message_id,
-                               });
-    }
-
-    void QqChannel::send_outbound_now(const std::string &jid, const OutboundMessage &message) {
-        const auto target = resolve_send_target(bot_name_, jid);
-        const auto post_payload = [this, &target](const nlohmann::json &payload) {
-            const auto response = api_client_->post(message_path(target), payload);
-            std::string content_text;
-            if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
-                content_text = payload.at("markdown").at("content").get<std::string>();
-            } else if (payload.contains("content") && payload.at("content").is_string()) {
-                content_text = payload.at("content").get<std::string>();
-            }
-            if (!content_text.empty()) {
-                capture_outbound_ref_index(response, content_text);
-            }
-        };
-        const auto send_chunked = [this, &message, &post_payload](const std::string &content, std::size_t limit, auto &&builder_factory) {
-            const auto chunks = chunk_text(content, limit);
-            const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id, static_cast<int>(chunks.size()));
-            const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
-            for (const auto &chunk : chunks) {
-                post_payload(builder_factory(chunk, passive_reply_message_id, effective_reference));
-            }
-        };
-
-        std::visit(
-            Overloaded{
-                [this, &send_chunked](const TextPayload &payload) {
-                    send_chunked(payload.text, 5000, [this](const std::string &chunk, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-                        return QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(reply_to_message_id).reference(reference_message_id).build();
-                    });
-                },
-                [this, &send_chunked](const MarkdownPayload &payload) {
-                    send_chunked(payload.markdown, 5000, [this](const std::string &chunk, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-                        return QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(reply_to_message_id).reference(reference_message_id).build();
-                    });
-                },
-                [this, &target, &post_payload, &message](const MediaPayload &payload) {
-                    const auto response = api_client_->post(media_upload_path(target), nlohmann::json{
-                                                                                           {"file_type", payload.file_type},
-                                                                                           {"url", payload.url},
-                                                                                           {"srv_send_msg", false},
-                                                                                       });
-                    const auto upload_payload = response.parse_json_body();
-                    if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
-                        throw std::runtime_error("QQ upload media missing file_info");
-                    }
-                    const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id);
-                    const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
-                    post_payload(QqMessageBuilder{}
-                                     .media(upload_payload.at("file_info").get<std::string>(), payload.caption)
-                                     .msg_seq(next_msg_seq())
-                                     .reply_to(passive_reply_message_id)
-                                     .reference(effective_reference)
-                                     .build());
-                },
-                [this, &post_payload, &message](const KeyboardPayload &payload) {
-                    const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id);
-                    post_payload(QqMessageBuilder{}
-                                     .markdown(payload.markdown)
-                                     .keyboard(payload.keyboard_payload)
-                                     .msg_seq(next_msg_seq())
-                                     .reply_to(passive_reply_message_id)
-                                     // QQ inline keyboards render reliably with msg_id only; quoting via message_reference can suppress buttons.
-                                     .build());
-                },
-                [this, &post_payload, &message](const ArkPayload &payload) {
-                    const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id);
-                    const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
-                    post_payload(QqMessageBuilder{}.ark(payload.ark_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build());
-                },
-                [this, &post_payload, &message](const EmbedPayload &payload) {
-                    const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id);
-                    const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
-                    post_payload(QqMessageBuilder{}.embed(payload.embed_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build());
-                },
-            },
-            message.payload);
-    }
-
-    Attachment QqChannel::download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) {
+    Attachment QqChannel::download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path) {
         static_cast<void>(resolve_send_target(bot_name_, jid));
 
         auto downloaded = attachment;
@@ -445,21 +175,20 @@ namespace orangutan::channel::qq {
         }
 
         const auto response = api_client_->get(attachment.url);
-        const auto destination = std::filesystem::path(destination_path);
-        if (destination.empty()) {
+        if (destination_path.empty()) {
             throw std::runtime_error("attachment destination path must not be empty");
         }
-        if (!destination.parent_path().empty()) {
-            std::filesystem::create_directories(destination.parent_path());
+        if (!destination_path.parent_path().empty()) {
+            std::filesystem::create_directories(destination_path.parent_path());
         }
 
-        std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+        std::ofstream output(destination_path, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
             throw std::runtime_error("unable to open attachment destination for write");
         }
         output.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
         output.close();
-        downloaded.local_path = destination.string();
+        downloaded.local_path = destination_path.string();
         return downloaded;
     }
 
@@ -811,7 +540,7 @@ namespace orangutan::channel::qq {
             }
 
             if (it == runtime_->pending_messages.end()) {
-                runtime_->pending_messages[jid] = RuntimeState::PendingDebouncedMessage{
+                runtime_->pending_messages[jid] = RuntimeState::pending_debounced_message{
                     .text = text,
                     .reply_to_message_id = reply_to_message_id,
                     .reference_message_id = reference_message_id,
@@ -834,7 +563,42 @@ namespace orangutan::channel::qq {
 
     void QqChannel::flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id) {
         try {
-            send_message_now(jid, text, reply_to_message_id, reference_message_id);
+            const auto target = resolve_send_target(bot_name_, jid);
+            const auto post_payload = [this, &target](const nlohmann::json &payload) {
+                const auto response = api_client_->post(message_path(target), payload);
+                std::string content_text;
+                if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
+                    content_text = payload.at("markdown").at("content").get<std::string>();
+                } else if (payload.contains("content") && payload.at("content").is_string()) {
+                    content_text = payload.at("content").get<std::string>();
+                }
+                if (!content_text.empty()) {
+                    capture_outbound_ref_index(response, content_text);
+                }
+            };
+            const auto upload_media_info = [this](const qq_send_target &upload_target, int file_type, const std::string &url) {
+                const auto response = api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
+                const auto upload_payload = response.parse_json_body();
+                if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
+                    throw std::runtime_error("QQ upload media missing file_info");
+                }
+                return upload_payload.at("file_info").get<std::string>();
+            };
+
+            route_outbound_payload(
+                target,
+                OutboundMessage{
+                    .payload = TextPayload{.text = text},
+                    .reply_to_message_id = reply_to_message_id,
+                    .reference_message_id = reference_message_id,
+                },
+                post_payload, upload_media_info,
+                [this] {
+                    return next_msg_seq();
+                },
+                [this](const std::string &reply_id, int reply_units) {
+                    return resolve_passive_reply_message_id(reply_id, reply_units);
+                });
         } catch (const std::exception &e) {
             spdlog::error("QQ debounced send failed for jid '{}': {}", jid, e.what());
         }
@@ -931,7 +695,7 @@ namespace orangutan::channel::qq {
                 return;
             }
 
-            std::unordered_map<std::string, RuntimeState::KnownUser> loaded;
+            std::unordered_map<std::string, RuntimeState::known_user> loaded;
             for (const auto &item : payload) {
                 const auto kind = item.value("kind", std::string{});
                 const auto openid = item.value("openid", std::string{});
@@ -941,7 +705,7 @@ namespace orangutan::channel::qq {
 
                 const auto last_seen_text = item.value("last_seen", std::string{});
                 const auto last_seen = parse_iso_utc(last_seen_text).value_or(std::chrono::system_clock::now());
-                loaded.emplace(spdlog::fmt_lib::format("{}:{}", kind, openid), RuntimeState::KnownUser{
+                loaded.emplace(spdlog::fmt_lib::format("{}:{}", kind, openid), RuntimeState::known_user{
                                                                                    .kind = kind,
                                                                                    .openid = openid,
                                                                                    .last_seen_at = last_seen,
@@ -956,7 +720,7 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::persist_known_users() {
-        std::vector<RuntimeState::KnownUser> users;
+        std::vector<RuntimeState::known_user> users;
         {
             std::scoped_lock lock(runtime_->known_users_mutex);
             users.reserve(runtime_->known_users.size());
@@ -1152,17 +916,63 @@ namespace orangutan::channel::qq {
 
     void QqChannel::handle_dispatch(const std::string &event_type, const nlohmann::json &data) {
         if (event_type == "C2C_MESSAGE_CREATE") {
-            handle_c2c_message(data);
+            if (on_message_ == nullptr) {
+                return;
+            }
+            const auto author = data.value("author", nlohmann::json::object());
+            const auto openid = author.value("user_openid", author.value("id", std::string{}));
+            const auto sender_id = author.value("id", std::string{});
+            const auto message_id = data.value("id", std::string{});
+            remember_inbound_message(message_id);
+            remember_known_user("c2c", openid);
+            emit_inbound(make_c2c_inbound_message(bot_name_, openid, sender_id, data, lookup_ref_index(parse_message_scene_ext_value(data, "ref_msg_idx"))));
             return;
         }
 
         if (event_type == "GROUP_AT_MESSAGE_CREATE" || event_type == "GROUP_MESSAGE_CREATE") {
-            handle_group_message(data);
+            if (on_message_ == nullptr) {
+                return;
+            }
+            const auto author = data.value("author", nlohmann::json::object());
+            const auto group_openid = data.value("group_openid", std::string{});
+            const auto message_id = data.value("id", std::string{});
+            const auto mention_ids = parse_mention_ids(data);
+            const auto sender_openid = author.value("member_openid", author.value("user_openid", author.value("id", std::string{})));
+            const auto sender_name = author.value("member_openid", author.value("id", std::string{}));
+            const auto message_jid = make_qq_jid(bot_name_, "group", group_openid);
+            const auto content = strip_mentions(data.value("content", std::string{}));
+            const auto mentioned = is_bot_mentioned(app_id_, data, mention_ids);
+
+            remember_inbound_message(message_id);
+            remember_known_user("group", sender_openid);
+            remember_group_history(message_jid, sender_name, content);
+            if (!mentioned) {
+                return;
+            }
+
+            auto aggregated_content = consume_group_history(message_jid);
+            if (aggregated_content.empty()) {
+                aggregated_content = content;
+            }
+
+            emit_inbound(make_group_inbound_message(bot_name_, group_openid, author.value("id", std::string{}), sender_name, data, aggregated_content,
+                                                    lookup_ref_index(parse_message_scene_ext_value(data, "ref_msg_idx")), mention_ids, mentioned));
             return;
         }
 
         if (event_type == "AT_MESSAGE_CREATE" || event_type == "GUILD_MESSAGE_CREATE") {
-            handle_guild_message(data);
+            if (on_message_ == nullptr) {
+                return;
+            }
+            const auto author = data.value("author", nlohmann::json::object());
+            const auto channel_id = data.value("channel_id", std::string{});
+            const auto message_id = data.value("id", std::string{});
+            const auto mention_ids = parse_mention_ids(data);
+            const auto sender_id = author.value("id", std::string{});
+            remember_inbound_message(message_id);
+            emit_inbound(make_guild_inbound_message(bot_name_, channel_id, sender_id, author.value("username", sender_id), data,
+                                                    lookup_ref_index(parse_message_scene_ext_value(data, "ref_msg_idx")), mention_ids,
+                                                    is_bot_mentioned(app_id_, data, mention_ids)));
             return;
         }
 
@@ -1172,106 +982,10 @@ namespace orangutan::channel::qq {
         }
 
         if (event_type == "MESSAGE_REACTION_ADD" || event_type == "MESSAGE_REACTION_REMOVE") {
-            handle_reaction_event(event_type, data);
+            if (on_message_ != nullptr) {
+                emit_inbound(make_reaction_inbound_message(bot_name_, event_type, data));
+            }
         }
-    }
-
-    void QqChannel::handle_c2c_message(const nlohmann::json &data) {
-        if (on_message_ == nullptr) {
-            return;
-        }
-
-        const auto author = data.value("author", nlohmann::json::object());
-        const auto openid = author.value("user_openid", author.value("id", std::string{}));
-        const auto sender_id = author.value("id", std::string{});
-        const auto message_id = data.value("id", std::string{});
-        const auto ref_msg_idx = parse_message_scene_ext_value(data, "ref_msg_idx");
-        remember_inbound_message(message_id);
-        remember_known_user("c2c", openid);
-        emit_inbound({
-            .jid = make_qq_jid(bot_name_, "c2c", openid),
-            .sender = sender_id,
-            .sender_name = openid,
-            .content = data.value("content", std::string{}),
-            .timestamp = data.value("timestamp", std::string{}),
-            .message_id = message_id,
-            .reference_message_index = ref_msg_idx,
-            .referenced_content = lookup_ref_index(ref_msg_idx),
-            .attachments = parse_attachments(data),
-            .is_group = false,
-        });
-    }
-
-    void QqChannel::handle_group_message(const nlohmann::json &data) {
-        if (on_message_ == nullptr) {
-            return;
-        }
-
-        const auto author = data.value("author", nlohmann::json::object());
-        const auto group_openid = data.value("group_openid", std::string{});
-        const auto message_id = data.value("id", std::string{});
-        const auto ref_msg_idx = parse_message_scene_ext_value(data, "ref_msg_idx");
-        const auto mention_ids = parse_mention_ids(data);
-        const auto sender_openid = author.value("member_openid", author.value("user_openid", author.value("id", std::string{})));
-        const auto sender_name = author.value("member_openid", author.value("id", std::string{}));
-        const auto message_jid = make_qq_jid(bot_name_, "group", group_openid);
-        const auto content = strip_mentions(data.value("content", std::string{}));
-        const auto mentioned = is_bot_mentioned(data, mention_ids);
-
-        remember_inbound_message(message_id);
-        remember_known_user("group", sender_openid);
-        remember_group_history(message_jid, sender_name, content);
-        if (!mentioned) {
-            return;
-        }
-
-        auto aggregated_content = consume_group_history(message_jid);
-        if (aggregated_content.empty()) {
-            aggregated_content = content;
-        }
-
-        emit_inbound({
-            .jid = message_jid,
-            .sender = author.value("id", std::string{}),
-            .sender_name = sender_name,
-            .content = aggregated_content,
-            .timestamp = data.value("timestamp", std::string{}),
-            .message_id = message_id,
-            .reference_message_index = ref_msg_idx,
-            .referenced_content = lookup_ref_index(ref_msg_idx),
-            .attachments = parse_attachments(data),
-            .mentioned = mentioned,
-            .mention_ids = mention_ids,
-            .is_group = true,
-        });
-    }
-
-    void QqChannel::handle_guild_message(const nlohmann::json &data) {
-        if (on_message_ == nullptr) {
-            return;
-        }
-
-        const auto author = data.value("author", nlohmann::json::object());
-        const auto channel_id = data.value("channel_id", std::string{});
-        const auto message_id = data.value("id", std::string{});
-        const auto ref_msg_idx = parse_message_scene_ext_value(data, "ref_msg_idx");
-        const auto mention_ids = parse_mention_ids(data);
-        const auto sender_id = author.value("id", std::string{});
-        remember_inbound_message(message_id);
-        emit_inbound({
-            .jid = make_qq_jid(bot_name_, "guild", channel_id),
-            .sender = sender_id,
-            .sender_name = author.value("username", sender_id),
-            .content = strip_mentions(data.value("content", std::string{})),
-            .timestamp = data.value("timestamp", std::string{}),
-            .message_id = message_id,
-            .reference_message_index = ref_msg_idx,
-            .referenced_content = lookup_ref_index(ref_msg_idx),
-            .attachments = parse_attachments(data),
-            .mentioned = is_bot_mentioned(data, mention_ids),
-            .mention_ids = mention_ids,
-            .is_group = true,
-        });
     }
 
     void QqChannel::handle_interaction(const nlohmann::json &data) {
@@ -1318,34 +1032,6 @@ namespace orangutan::channel::qq {
             .timestamp = data.value("timestamp", std::string{}),
             .message_id = interaction_id,
             .is_group = is_guild || is_group,
-        });
-    }
-
-    void QqChannel::handle_reaction_event(const std::string &event_type, const nlohmann::json &data) const {
-        if (on_message_ == nullptr) {
-            return;
-        }
-
-        const auto target = data.value("target", nlohmann::json::object());
-        const auto emoji = data.value("emoji", nlohmann::json::object());
-        const auto channel_id = data.value("channel_id", std::string{});
-        const auto user_id = data.value("user_id", std::string{});
-        emit_inbound({
-            .event_kind = event_type == "MESSAGE_REACTION_ADD" ? inbound_event_kind::reaction_added : inbound_event_kind::reaction_removed,
-            .jid = make_qq_jid(bot_name_, "guild", channel_id),
-            .sender = user_id,
-            .sender_name = user_id,
-            .timestamp = data.value("timestamp", std::string{}),
-            .message_id = target.value("id", data.value("message_id", std::string{})),
-            .reaction =
-                ReactionInfo{
-                    .user_id = user_id,
-                    .target_id = target.value("id", std::string{}),
-                    .target_type = static_cast<int>(parse_integer_like(target, "type", 0)),
-                    .emoji_id = emoji.value("id", std::string{}),
-                    .emoji_type = static_cast<int>(parse_integer_like(emoji, "type", 0)),
-                },
-            .is_group = true,
         });
     }
 
@@ -1425,133 +1111,6 @@ namespace orangutan::channel::qq {
         return {};
     }
 
-    std::vector<Attachment> QqChannel::parse_attachments(const nlohmann::json &data) {
-        std::vector<Attachment> attachments;
-        if (!data.contains("attachments") || !data.at("attachments").is_array()) {
-            return attachments;
-        }
-
-        attachments.reserve(data.at("attachments").size());
-        for (const auto &item : data.at("attachments")) {
-            attachments.push_back(Attachment{
-                .content_type = item.value("content_type", std::string{}),
-                .url = item.value("url", std::string{}),
-                .filename = item.value("filename", std::string{}),
-                .width = static_cast<int>(parse_integer_like(item, "width", 0)),
-                .height = static_cast<int>(parse_integer_like(item, "height", 0)),
-                .size = static_cast<int>(parse_integer_like(item, "size", 0)),
-                .download_pending = item.contains("url") && item.at("url").is_string() && !item.at("url").get_ref<const std::string &>().empty(),
-            });
-        }
-
-        return attachments;
-    }
-
-    std::vector<std::string> QqChannel::parse_mention_ids(const nlohmann::json &data) {
-        std::vector<std::string> ids;
-        if (!data.contains("mentions") || !data.at("mentions").is_array()) {
-            return ids;
-        }
-
-        for (const auto &mention : data.at("mentions")) {
-            const auto mention_id = mention.value("member_openid", mention.value("user_openid", mention.value("id", std::string{})));
-            if (!mention_id.empty()) {
-                ids.push_back(mention_id);
-            }
-        }
-
-        return ids;
-    }
-
-    bool QqChannel::is_bot_mentioned(const nlohmann::json &data, const std::vector<std::string> &mention_ids) const {
-        if (mention_ids.empty()) {
-            return false;
-        }
-
-        if (data.contains("mentions") && data.at("mentions").is_array()) {
-            for (const auto &mention : data.at("mentions")) {
-                if (mention.value("bot", false)) {
-                    return true;
-                }
-                const auto mention_id = mention.value("id", std::string{});
-                if (!mention_id.empty() && mention_id == app_id_) {
-                    return true;
-                }
-            }
-        }
-
-        return data.value("content", std::string{}).contains("<@");
-    }
-
-    std::string QqChannel::strip_mentions(const std::string &content) {
-        std::string stripped;
-        stripped.reserve(content.size());
-        const auto content_view = std::string_view{content};
-        const char *cursor = content_view.data();
-        const char *end = cursor + content_view.size();
-
-        for (const auto match : ctre::search_all<R"(<@!?[^>]+>)">(content_view)) {
-            const auto full = match.get<0>().to_view();
-            stripped.append(cursor, full.data() - cursor);
-            cursor = full.data() + full.size();
-        }
-        stripped.append(cursor, static_cast<std::size_t>(end - cursor));
-        return std::string(trim_copy(stripped));
-    }
-
-    std::string QqChannel::parse_message_scene_ext_value(const nlohmann::json &data, std::string_view key) {
-        if (!data.contains("message_scene") || !data.at("message_scene").is_object()) {
-            return {};
-        }
-
-        const auto &scene = data.at("message_scene");
-        if (!scene.contains("ext") || !scene.at("ext").is_array()) {
-            return {};
-        }
-
-        const std::string prefix = std::string(key) + "=";
-        for (const auto &item : scene.at("ext")) {
-            if (!item.is_string()) {
-                continue;
-            }
-            const auto &value = item.get_ref<const std::string &>();
-            if (value.starts_with(prefix)) {
-                return value.substr(prefix.size());
-            }
-        }
-
-        return {};
-    }
-
-    std::vector<std::string> QqChannel::chunk_text(const std::string &text, std::size_t limit) {
-        if (text.empty() || text.size() <= limit) {
-            return {text};
-        }
-
-        std::vector<std::string> chunks;
-        std::string remaining = text;
-        while (!remaining.empty()) {
-            if (remaining.size() <= limit) {
-                chunks.push_back(std::move(remaining));
-                break;
-            }
-
-            std::size_t split_at = remaining.rfind('\n', limit);
-            if (split_at == std::string::npos || split_at < limit / 2) {
-                split_at = remaining.rfind(' ', limit);
-            }
-            if (split_at == std::string::npos || split_at < limit / 2) {
-                split_at = limit;
-            }
-
-            chunks.push_back(remaining.substr(0, split_at));
-            remaining.erase(0, split_at);
-            remaining.erase(0, remaining.find_first_not_of(" \n\r\t"));
-        }
-
-        return chunks;
-    }
-
     // ── Ref Index Store ────────────────────────────────────────────────
 
     void QqChannel::capture_outbound_ref_index(const QqApiResponse &response, const std::string &content) {
@@ -1598,9 +1157,7 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::load_ref_index() {
-        const auto home = getenv_or_default("HOME", ".");
-        const auto safe_name = sanitize_path_component(std::string(bot_name_.empty() ? "default" : bot_name_));
-        const auto file_path = std::filesystem::path(home) / ".orangutan" / "qq" / "ref-index" / ("ref-index-" + safe_name + ".jsonl");
+        const auto file_path = qq_ref_index_file_path(bot_name_);
         std::ifstream input(file_path);
         if (!input.is_open()) {
             return;
@@ -1627,9 +1184,7 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::append_ref_index_line(const std::string &ref_idx, const std::string &content) {
-        const auto home = getenv_or_default("HOME", ".");
-        const auto safe_name = sanitize_path_component(std::string(bot_name_.empty() ? "default" : bot_name_));
-        const auto file_path = std::filesystem::path(home) / ".orangutan" / "qq" / "ref-index" / ("ref-index-" + safe_name + ".jsonl");
+        const auto file_path = qq_ref_index_file_path(bot_name_);
         try {
             std::filesystem::create_directories(file_path.parent_path());
             std::ofstream output(file_path, std::ios::app);
@@ -1646,10 +1201,13 @@ namespace orangutan::channel::qq {
     // ── Typing Indicator ───────────────────────────────────────────────
 
     void QqChannel::start_typing(const std::string &jid, const std::string &message_id) {
+        if (!resolve_typing_target(bot_name_, jid).has_value()) {
+            return;
+        }
         send_typing_now(jid, message_id);
         {
             std::scoped_lock lock(runtime_->typing_mutex);
-            runtime_->typing_states[jid] = RuntimeState::TypingState{
+            runtime_->typing_states[jid] = RuntimeState::typing_state{
                 .message_id = message_id,
                 .last_sent_at = std::chrono::steady_clock::now(),
             };
@@ -1664,20 +1222,11 @@ namespace orangutan::channel::qq {
 
     void QqChannel::send_typing_now(const std::string &jid, const std::string &message_id) {
         try {
-            const auto target = resolve_send_target(bot_name_, jid);
-            if (target.kind != qq_target_kind::c2c) {
+            const auto target = resolve_typing_target(bot_name_, jid);
+            if (!target.has_value()) {
                 return;
             }
-            const nlohmann::json payload = {
-                {"msg_type", 6},
-                {"input_notify", {{"input_type", 1}, {"input_second", 60}}},
-                {"msg_seq", next_msg_seq()},
-            };
-            nlohmann::json body = payload;
-            if (!message_id.empty()) {
-                body["msg_id"] = message_id;
-            }
-            static_cast<void>(api_client_->post(message_path(target), body));
+            static_cast<void>(api_client_->post(message_path(*target), build_typing_payload(next_msg_seq(), message_id)));
         } catch (const std::exception &e) {
             spdlog::debug("QQ typing indicator failed for jid '{}': {}", jid, e.what());
         }
@@ -1719,145 +1268,6 @@ namespace orangutan::channel::qq {
             runtime_->typing_thread.request_stop();
             runtime_->typing_cv.notify_all();
             runtime_->typing_thread.join();
-        }
-    }
-
-    // ── Media Tag Parsing ──────────────────────────────────────────────
-
-    void QqChannel::send_media_segments(const std::string &jid, const OutboundMessage &message) {
-        const auto *text_payload = std::get_if<TextPayload>(&message.payload);
-        if (text_payload == nullptr) {
-            send_outbound_now(jid, message);
-            return;
-        }
-
-        const auto &text = text_payload->text;
-
-        struct Segment {
-            enum class segment_kind : base::u8 {
-                text_segment,
-                media_segment
-            };
-            segment_kind kind = segment_kind::text_segment;
-            std::string content;
-            int file_type = 1;
-        };
-
-        std::vector<Segment> segments;
-        std::string remaining = text;
-
-        auto flush_text = [&](const std::string &t) {
-            auto trimmed = std::string(trim_copy(t));
-            if (!trimmed.empty()) {
-                segments.push_back({.kind = Segment::segment_kind::text_segment, .content = std::move(trimmed)});
-            }
-        };
-
-        while (!remaining.empty()) {
-            // Try matching <qqimg>url</qqimg>, <qqvoice>url</qqvoice>, etc.
-            std::size_t best_pos = std::string::npos;
-            std::string best_tag;
-            int best_file_type = 1;
-
-            struct TagDef {
-                std::string_view open_tag;
-                std::string_view close_tag;
-                int file_type;
-            };
-
-            constexpr std::array<TagDef, 5> TAGS = {{
-                {.open_tag = "<qqimg>", .close_tag = "</qqimg>", .file_type = 1},
-                {.open_tag = "<qqimage>", .close_tag = "</qqimage>", .file_type = 1},
-                {.open_tag = "<qqvoice>", .close_tag = "</qqvoice>", .file_type = 3},
-                {.open_tag = "<qqvideo>", .close_tag = "</qqvideo>", .file_type = 2},
-                {.open_tag = "<qqfile>", .close_tag = "</qqfile>", .file_type = 4},
-            }};
-
-            for (const auto &tag : TAGS) {
-                const auto pos = remaining.find(tag.open_tag);
-                if (pos != std::string::npos && pos < best_pos) {
-                    const auto close_pos = remaining.find(tag.close_tag, pos + tag.open_tag.size());
-                    if (close_pos != std::string::npos) {
-                        best_pos = pos;
-                        best_tag = remaining.substr(pos + tag.open_tag.size(), close_pos - pos - tag.open_tag.size());
-                        best_file_type = tag.file_type;
-                    }
-                }
-            }
-
-            // Try matching ![alt](url) for image URLs
-            if (best_pos == std::string::npos) {
-                const auto md_pos = remaining.find("![");
-                if (md_pos != std::string::npos) {
-                    const auto bracket_close = remaining.find("](", md_pos + 2);
-                    if (bracket_close != std::string::npos) {
-                        const auto paren_close = remaining.find(')', bracket_close + 2);
-                        if (paren_close != std::string::npos) {
-                            const auto url = remaining.substr(bracket_close + 2, paren_close - bracket_close - 2);
-                            if (url.starts_with("http://") || url.starts_with("https://")) {
-                                flush_text(remaining.substr(0, md_pos));
-                                segments.push_back({.kind = Segment::segment_kind::media_segment, .content = std::string(trim_copy(url)), .file_type = 1});
-                                remaining.erase(0, paren_close + 1);
-                                continue;
-                            }
-                        }
-                    }
-                }
-                // No media found, treat everything as text
-                flush_text(remaining);
-                break;
-            }
-
-            // Extract text before the tag
-            flush_text(remaining.substr(0, best_pos));
-
-            // Find closing tag position to advance past it
-            for (const auto &tag : TAGS) {
-                if (tag.file_type == best_file_type) {
-                    const auto open_pos = remaining.find(tag.open_tag, best_pos);
-                    if (open_pos == best_pos) {
-                        const auto close_pos = remaining.find(tag.close_tag, open_pos + tag.open_tag.size());
-                        if (close_pos != std::string::npos) {
-                            remaining.erase(0, close_pos + tag.close_tag.size());
-                            break;
-                        }
-                    }
-                }
-            }
-
-            auto media_url = std::string(trim_copy(best_tag));
-            if (media_url.starts_with("http://") || media_url.starts_with("https://")) {
-                segments.push_back({.kind = Segment::segment_kind::media_segment, .content = std::move(media_url), .file_type = best_file_type});
-            }
-        }
-
-        // If no media segments were found, fall back to debounce
-        const bool has_media = std::ranges::any_of(segments, [](const Segment &s) {
-            return s.kind == Segment::segment_kind::media_segment;
-        });
-        if (!has_media) {
-            enqueue_debounced_text(jid, text, message.reply_to_message_id, message.reference_message_id);
-            return;
-        }
-
-        // Send each segment
-        for (const auto &segment : segments) {
-            try {
-                if (segment.kind == Segment::segment_kind::text_segment) {
-                    send_outbound_now(jid, OutboundMessage{
-                                               .payload = TextPayload{.text = segment.content},
-                                               .reply_to_message_id = message.reply_to_message_id,
-                                               .reference_message_id = message.reference_message_id,
-                                           });
-                } else {
-                    send_outbound_now(jid, OutboundMessage{
-                                               .payload = MediaPayload{.file_type = segment.file_type, .url = segment.content},
-                                               .reply_to_message_id = message.reply_to_message_id,
-                                           });
-                }
-            } catch (const std::exception &e) {
-                spdlog::error("QQ media segment send failed for jid '{}': {}", jid, e.what());
-            }
         }
     }
 

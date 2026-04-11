@@ -104,6 +104,43 @@ TEST_CASE("CoordinatorManager routes task notifications to parent runtime handle
     manager.shutdown();
 }
 
+TEST_CASE("CoordinatorManager escapes quotes in task notifications", "[coordinator]") {
+    orangutan::coordinator::CoordinatorManager manager(1);
+    std::string delivered;
+
+    manager.register_runtime_notification_handler("parent-runtime", [&delivered](const std::string &message) -> std::optional<std::string> {
+        delivered = message;
+        return std::nullopt;
+    });
+
+    manager.set_worker_runtime_factory([](const orangutan::coordinator::AgentSpawnRequest &) {
+        struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
+            std::string run(const std::string &, std::stop_token) override {
+                return "done \"quoted\" & 'single'";
+            }
+        };
+        return std::make_unique<ImmediateWorker>();
+    });
+
+    const auto result = manager.spawn({
+        .agent_key = "general-purpose",
+        .task_prompt = "notify \"quotes\" and 'apostrophes'",
+        .parent_runtime_key = "parent-runtime",
+    });
+    REQUIRE(result.accepted);
+
+    for (int i = 0; i < 50 && delivered.empty(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    CHECK(delivered.contains("notify &quot;quotes&quot; and &apos;apostrophes&apos;"));
+    CHECK(delivered.contains("done &quot;quoted&quot; &amp; &apos;single&apos;"));
+    CHECK_FALSE(delivered.contains("notify \"quotes\" and 'apostrophes'"));
+    CHECK_FALSE(delivered.contains("done \"quoted\" & 'single'"));
+
+    manager.shutdown();
+}
+
 TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them later", "[coordinator]") {
     orangutan::coordinator::CoordinatorManager manager(1);
     std::atomic<bool> release_first{false};

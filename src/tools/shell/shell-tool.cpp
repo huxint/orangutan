@@ -2,8 +2,9 @@
 #include "tools/background/background-completion.hpp"
 #include "tools/shell/command-sandbox.hpp"
 #include "permissions/permission-evaluator.hpp"
-#include "utils/sender-utils.hpp"
 #include "process/subprocess.hpp"
+#include "utils/sender-utils.hpp"
+#include "utils/string.hpp"
 #include "utils/utf8.hpp"
 
 #include <cctype>
@@ -15,20 +16,6 @@
 
 namespace orangutan::tools {
     namespace {
-
-        std::string trim_copy(std::string_view value) {
-            std::size_t start = 0;
-            while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start])) != 0) {
-                ++start;
-            }
-
-            std::size_t end = value.size();
-            while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
-                --end;
-            }
-
-            return std::string(value.substr(start, end - start));
-        }
 
         std::vector<std::string> split_compound_command(std::string_view command) {
             std::vector<std::string> parts;
@@ -66,7 +53,7 @@ namespace orangutan::tools {
                 if (!in_single_quotes && !in_double_quotes) {
                     const bool is_double_separator = (ch == '&' || ch == '|') && index + 1 < command.size() && command[index + 1] == ch;
                     if (ch == ';' || is_double_separator) {
-                        auto trimmed = trim_copy(current);
+                        auto trimmed = std::string(utils::trim_copy(current));
                         if (!trimmed.empty()) {
                             parts.push_back(std::move(trimmed));
                         }
@@ -81,7 +68,7 @@ namespace orangutan::tools {
                 current.push_back(ch);
             }
 
-            auto trimmed = trim_copy(current);
+            auto trimmed = std::string(utils::trim_copy(current));
             if (!trimmed.empty()) {
                 parts.push_back(std::move(trimmed));
             }
@@ -176,27 +163,23 @@ namespace orangutan::tools {
                 return true;
             }
 
-            return token == "~"
-                || token.starts_with("~/")
-                || token.starts_with('/')
-                || token.starts_with("./")
-                || token.starts_with("../");
+            return token == "~" || token.starts_with("~/") || token.starts_with('/') || token.starts_with("./") || token.starts_with("../");
         }
 
-        PermissionResult validate_shell_path_token(std::string_view token, const std::filesystem::path &workspace_root,
-                                                   const std::filesystem::path &working_dir, const ToolPermissionContext &ctx) {
+        PermissionResult validate_shell_path_token(std::string_view token, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir,
+                                                   const ToolPermissionContext &ctx) {
             if (token.empty()) {
                 return PermissionResult::passthrough();
             }
 
             try {
-                auto expanded = expand_tool_home_path(std::filesystem::path(token));
+                auto expanded = utils::expand_home_path(std::filesystem::path(token));
                 std::filesystem::path candidate;
                 if (expanded.is_absolute()) {
-                    candidate = normalize_tool_path(expanded);
+                    candidate = utils::normalize_path(expanded);
                 } else {
-                    const auto base = working_dir.empty() ? normalize_tool_path(workspace_root) : working_dir;
-                    candidate = normalize_tool_path(base / expanded);
+                    const auto base = working_dir.empty() ? utils::normalize_path(workspace_root) : working_dir;
+                    candidate = utils::resolve_relative_to(expanded, base);
                 }
 
                 if (!is_tool_path_allowed(candidate, workspace_root, &ctx)) {
@@ -223,7 +206,7 @@ namespace orangutan::tools {
                     return PermissionResult::deny(e.what());
                 }
             } else if (!workspace_root.empty()) {
-                resolved_working_dir = normalize_tool_path(workspace_root);
+                resolved_working_dir = utils::normalize_path(workspace_root);
             }
 
             for (const auto &subcommand : split_compound_command(command)) {
@@ -403,10 +386,9 @@ namespace orangutan::tools {
             const auto requested_working_dir = input.value("working_dir", std::string{});
             const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
             const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root, permissions);
-            const auto working_dir = resolved_working_dir.empty() ? std::string{} : resolved_working_dir.string();
             const auto sandbox_mode = tool_sandbox_mode::disabled;
-            const auto sandboxed = prepare_sandboxed_command(command, workspace, working_dir, sandbox_mode);
-            const auto effective_working_dir = sandboxed.working_dir.empty() ? working_dir : sandboxed.working_dir;
+            const auto sandboxed = prepare_sandboxed_command(command, workspace_root, resolved_working_dir, sandbox_mode);
+            const auto effective_working_dir = sandboxed.working_dir.empty() ? std::string{} : sandboxed.working_dir.string();
 
             if (!background) {
                 return run_foreground_shell(command, sandboxed.command, effective_working_dir);

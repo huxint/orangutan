@@ -1,13 +1,20 @@
 #include "tools/script/script-loader.hpp"
 #include "test-helpers.hpp"
+#include "utils/escape.hpp"
 
 #include <filesystem>
+#include <type_traits>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 using namespace orangutan::tools;
 
 namespace {
+
+    static_assert(std::is_same_v<decltype(&register_script_tools), void (*)(ToolRegistry &, const std::vector<ScriptToolConfig> &, const std::filesystem::path &,
+                                                                            const ToolPermissionContext *, const ToolRuntimeContext *, const ApprovalCallback &)>);
+
+    static_assert(std::is_same_v<decltype(&shell_escape), decltype(&utils::shell_single_quote_escape)>);
 
     TEST_CASE("shell_escape_simple_string") {
         CHECK(shell_escape("hello") == "'hello'");
@@ -76,6 +83,14 @@ namespace {
         const auto result = substitute_params("grep ${pattern} ${path}", input, {{"pattern", "string"}, {"path", "string"}});
         CHECK(result.contains("TODO"));
         CHECK(result.contains("src/"));
+    };
+
+    TEST_CASE("script substitution preserves current shell quoting for apostrophes") {
+        nlohmann::json input = {{"message", "it's time"}};
+
+        const auto result = substitute_params("printf %s ${message}", input, {{"message", "string"}});
+
+        CHECK(result == "printf %s 'it'\\''s time'");
     };
 
     TEST_CASE("register_user_script_tools_lets_config_choose_tool_names") {
@@ -206,7 +221,7 @@ namespace {
             .command = "pwd",
             .working_dir = "../outside",
         }};
-        register_script_tools(registry, tools, workspace.string());
+        register_script_tools(registry, tools, workspace);
 
         ToolUse call("id_ws_escape", "pwd-tool", nlohmann::json::object());
         const auto result = registry.execute(call);

@@ -18,14 +18,7 @@ namespace {
 
         configure_cli_app(app, options, resume_flag, protect_flag);
         std::array<const char *, 9> argv = {
-            "test",
-            "--cli",
-            "--permission-mode",
-            "accept-edits",
-            "--dangerously-skip-permissions",
-            "--allowed-tools",
-            "read,shell(git:*),task(list)",
-            "--disallowed-tools",
+            "test",       "--cli", "--permission-mode", "accept-edits", "--dangerously-skip-permissions", "--allowed-tools", "read,shell(git:*),task(list)", "--disallowed-tools",
             "write,edit",
         };
         app.parse(static_cast<int>(argv.size()), argv.data());
@@ -46,10 +39,44 @@ namespace {
         CHECK_FALSE(cli_permissions.mode_override.has_value());
     };
 
+    TEST_CASE("cli permission mode accepts dashed and underscored spellings") {
+        struct permission_case {
+            const char *spelling;
+            permission_mode expected;
+        };
+
+        constexpr std::array cases = {
+            permission_case{"accept-edits", permission_mode::accept_edits},
+            permission_case{"accept_edits", permission_mode::accept_edits},
+            permission_case{"bypass-permissions", permission_mode::bypass_permissions},
+            permission_case{"bypass_permissions", permission_mode::bypass_permissions},
+        };
+
+        for (const auto &test_case : cases) {
+            CliOptions options;
+            CLI::App app{"test"};
+            CLI::Option *resume_flag = nullptr;
+            CLI::Option *protect_flag = nullptr;
+
+            configure_cli_app(app, options, resume_flag, protect_flag);
+            std::array argv = {
+                "test",
+                "--cli",
+                "--permission-mode",
+                test_case.spelling,
+            };
+            app.parse(static_cast<int>(argv.size()), argv.data());
+
+            const auto cli_permissions = build_cli_permission_options(options);
+            REQUIRE(cli_permissions.mode_override.has_value());
+            CHECK(*cli_permissions.mode_override == test_case.expected);
+        }
+    };
+
     TEST_CASE("cli_permission_prompt_includes_decision_reason_details") {
-        const auto prompt = format_cli_permission_prompt(
-            ToolUse("approval-shell", "shell", nlohmann::json{{"command", "git push origin main"}}),
-            PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required."));
+        const auto prompt =
+            format_cli_permission_prompt(ToolUse("approval-shell", "shell", nlohmann::json{{"command", "git push origin main"}}),
+                                         PermissionDecision::ask_by_rule(permission_rule_source::project_settings, "shell(git push *)", "Shell command approval required."));
 
         CHECK(prompt.contains("Shell command approval required."));
         CHECK(prompt.contains("Tool: shell"));

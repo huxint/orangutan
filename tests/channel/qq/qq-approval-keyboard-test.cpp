@@ -29,6 +29,16 @@ TEST_CASE("qq_approval_keyboard_omits_always_allow_button_when_disabled") {
     REQUIRE(buttons.size() == 2UL);
     CHECK(buttons.at(0).at("render_data").at("label").get<std::string>() == "Allow once");
     CHECK(buttons.at(1).at("render_data").at("label").get<std::string>() == "Deny");
+
+    const auto allow_once = channel::qq::parse_approval_callback_data(buttons.at(0).at("action").at("data").get<std::string>());
+    REQUIRE(allow_once.has_value());
+    CHECK(allow_once->request_id == "shell-approval-2");
+    CHECK(allow_once->action == channel::qq::approval_action::allow_once);
+
+    const auto deny = channel::qq::parse_approval_callback_data(buttons.at(1).at("action").at("data").get<std::string>());
+    REQUIRE(deny.has_value());
+    CHECK(deny->request_id == "shell-approval-2");
+    CHECK(deny->action == channel::qq::approval_action::deny);
 }
 
 TEST_CASE("qq_approval_callback_parser_rejects_malformed_payloads") {

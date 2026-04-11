@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <csignal>
 #include <condition_variable>
 #include <cerrno>
 #include <cstring>
@@ -124,6 +125,22 @@ namespace orangutan::process {
             }
         }
 
+        void reset_child_signal_state_for_exec() {
+            sigset_t empty_mask{};
+            sigemptyset(&empty_mask);
+            static_cast<void>(sigprocmask(SIG_SETMASK, &empty_mask, nullptr));
+
+            constexpr std::array<int, 9> RESET_SIGNALS = {
+                SIGINT, SIGTERM, SIGQUIT, SIGPIPE, SIGABRT, SIGFPE, SIGILL, SIGBUS, SIGSEGV,
+            };
+            for (const auto signal_number : RESET_SIGNALS) {
+                struct sigaction action{};
+                action.sa_handler = SIG_DFL;
+                sigemptyset(&action.sa_mask);
+                static_cast<void>(sigaction(signal_number, &action, nullptr));
+            }
+        }
+
         [[nodiscard]]
         std::string make_process_token() {
             static std::atomic<base::u64> counter{0};
@@ -195,13 +212,24 @@ namespace orangutan::process {
                 throw std::runtime_error("background subprocesses do not support stdin data");
             }
 
+            std::array<int, 2> ready_pipe{};
+            if (pipe(ready_pipe.data()) == -1) {
+                throw std::runtime_error("pipe() failed: " + std::string(std::strerror(errno)));
+            }
+
             pid_t pid = fork();
             if (pid == -1) {
+                close(ready_pipe[0]);
+                close(ready_pipe[1]);
                 throw std::runtime_error("fork() failed: " + std::string(std::strerror(errno)));
             }
 
             if (pid == 0) {
+                close(ready_pipe[0]);
+                reset_child_signal_state_for_exec();
                 static_cast<void>(setpgid(0, 0));
+                static_cast<void>(write(ready_pipe[1], "1", 1));
+                close(ready_pipe[1]);
 
                 int devnull = open("/dev/null", O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
                 if (devnull >= 0) {
@@ -255,6 +283,20 @@ namespace orangutan::process {
                 execv(exec_path.c_str(), argv.data());
                 write_child_error("exec", config.command);
                 _exit(127);
+            }
+
+            close(ready_pipe[1]);
+            char ready = 0;
+            auto ready_read = read(ready_pipe[0], &ready, 1);
+            while (ready_read == -1 && errno == EINTR) {
+                ready_read = read(ready_pipe[0], &ready, 1);
+            }
+            close(ready_pipe[0]);
+            if (ready_read != 1) {
+                signal_process(pid, SIGKILL);
+                while (waitpid(pid, nullptr, 0) == -1 && errno == EINTR) {
+                }
+                throw std::runtime_error("background subprocess failed to initialize");
             }
 
             static_cast<void>(setpgid(pid, pid));

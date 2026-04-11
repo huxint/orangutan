@@ -1,5 +1,6 @@
 #include "bootstrap/channel-serve.hpp"
 
+#include "bootstrap/channel-serve-approval.hpp"
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
@@ -38,6 +39,26 @@
 
 namespace orangutan::bootstrap {
 
+    using detail::can_prompt_for_channel_approval;
+    using detail::channel_approval_decision;
+    using detail::ConversationRuntime;
+    using detail::extract_qq_bot_name;
+    using detail::format_channel_approval_request_id;
+    using detail::format_channel_approval_text_reply;
+    using detail::format_pending_channel_approval_prompt;
+    using detail::format_qq_approval_delivery_failure;
+    using detail::format_qq_channel_approval_card_markdown;
+    using detail::format_text_channel_approval_prompt;
+    using detail::is_qq_channel_target;
+    using detail::is_qq_custom_keyboard_blocked_error;
+    using detail::make_channel_session_metadata;
+    using detail::make_conversation_runtime;
+    using detail::parse_channel_approval_reply;
+    using detail::pending_request_ids_for_jid;
+    using detail::persist_channel_session;
+    using detail::qq_keyboard_capability_key;
+    using detail::rehydrate_session_permissions;
+
     namespace {
 
         namespace cli = orangutan::cli;
@@ -71,303 +92,6 @@ namespace orangutan::bootstrap {
 
         template <typename Fn>
         ScopeExit(Fn) -> ScopeExit<Fn>;
-
-        enum class channel_approval_decision : std::uint8_t {
-            approve_once,
-            approve_always,
-            deny,
-            invalid,
-        };
-
-        struct ParsedChannelApprovalReply {
-            std::string request_id;
-            channel_approval_decision decision = channel_approval_decision::invalid;
-        };
-
-        struct ConversationRuntime {
-            std::unique_ptr<AgentRuntimeBundle> runtime;
-            HookManager *hook_manager = nullptr;
-            std::shared_ptr<detail::ChannelCompletionResumeState> completion_resume_state;
-            std::string runtime_key;
-            std::string agent_key;
-            std::string configured_model;
-            std::vector<std::string> fallback_models;
-            std::string workspace;
-            std::string memory_scope;
-            std::string session_scope_key;
-            std::string current_session_id;
-            std::size_t persisted_message_count = 0;
-
-            [[nodiscard]]
-            Provider *provider() const {
-                return runtime != nullptr ? runtime->provider.get() : nullptr;
-            }
-
-            [[nodiscard]]
-            ToolRegistry &tools() const {
-                return runtime->tools();
-            }
-
-            [[nodiscard]]
-            ToolRuntimeContext &tool_context() const {
-                return runtime->tool_context();
-            }
-
-            [[nodiscard]]
-            AgentLoop &agent() const {
-                return *runtime->agent;
-            }
-
-            ~ConversationRuntime() {
-                if (completion_resume_state == nullptr) {
-                    return;
-                }
-                std::scoped_lock lock(completion_resume_state->mutex);
-                completion_resume_state->agent = nullptr;
-                completion_resume_state->runtime = nullptr;
-                completion_resume_state->provider = nullptr;
-                completion_resume_state->hook_manager = nullptr;
-                completion_resume_state->current_session_id = nullptr;
-                completion_resume_state->persisted_message_count = nullptr;
-                completion_resume_state->session_store = nullptr;
-                completion_resume_state->channel_manager = nullptr;
-                completion_resume_state->automation_runtime = nullptr;
-            }
-            ConversationRuntime() = default;
-            ConversationRuntime(const ConversationRuntime &) = delete;
-            ConversationRuntime &operator=(const ConversationRuntime &) = delete;
-            ConversationRuntime(ConversationRuntime &&) = delete;
-            ConversationRuntime &operator=(ConversationRuntime &&) = delete;
-        };
-
-        std::string extract_qq_bot_name(const std::string &jid) {
-            constexpr std::string_view PREFIX = "qqbot:";
-            if (!jid.starts_with(PREFIX)) {
-                return {};
-            }
-
-            const auto remainder = jid.substr(PREFIX.size());
-            const auto first_colon = remainder.find(':');
-            if (first_colon == std::string::npos) {
-                return {};
-            }
-
-            auto first_segment = remainder.substr(0, first_colon);
-            if (first_segment == "c2c" || first_segment == "group") {
-                return {};
-            }
-
-            return {first_segment};
-        }
-
-        bool is_qq_channel_target(std::string_view target) {
-            return target.starts_with("qqbot:");
-        }
-
-        [[nodiscard]]
-        std::string qq_keyboard_capability_key(std::string_view target) {
-            const auto bot_name = extract_qq_bot_name(std::string(target));
-            return bot_name.empty() ? std::string{"legacy:default"} : "named:" + bot_name;
-        }
-
-        [[nodiscard]]
-        bool is_qq_custom_keyboard_blocked_error(std::string_view message) {
-            std::string lowered;
-            lowered.reserve(message.size());
-            for (const auto ch : message) {
-                lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
-            return lowered.contains("biz_code=304057") || lowered.contains("not allowd custom keyborad") || lowered.contains("not allowed custom keyboard");
-        }
-
-        [[nodiscard]]
-        std::string trim_ascii_copy(std::string_view value) {
-            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-                value.remove_prefix(1);
-            }
-            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-                value.remove_suffix(1);
-            }
-            return std::string(value);
-        }
-
-        [[nodiscard]]
-        std::optional<std::string> json_scalar_as_string(const nlohmann::json &value) {
-            if (value.is_string()) {
-                auto text = trim_ascii_copy(value.get_ref<const std::string &>());
-                return text.empty() ? std::nullopt : std::optional<std::string>{std::move(text)};
-            }
-            if (value.is_number_integer()) {
-                return std::to_string(value.get<long long>());
-            }
-            if (value.is_number_unsigned()) {
-                return std::to_string(value.get<unsigned long long>());
-            }
-            if (value.is_boolean()) {
-                return value.get<bool>() ? std::string{"true"} : std::string{"false"};
-            }
-            return std::nullopt;
-        }
-
-        [[nodiscard]]
-        std::optional<std::string> first_scalar_input_value(const nlohmann::json &input, std::initializer_list<std::string_view> keys) {
-            if (!input.is_object()) {
-                return std::nullopt;
-            }
-
-            for (const auto key : keys) {
-                const auto it = input.find(static_cast<std::string>(key));
-                if (it == input.end()) {
-                    continue;
-                }
-                if (const auto value = json_scalar_as_string(*it); value.has_value()) {
-                    return value;
-                }
-            }
-            return std::nullopt;
-        }
-
-        void append_qq_card_field(std::string &markdown, std::string_view icon, std::string_view label, std::string_view value, bool inline_code = true) {
-            if (value.empty()) {
-                return;
-            }
-            markdown += "- ";
-            markdown += icon;
-            markdown += " ";
-            markdown += label;
-            markdown += ": ";
-            if (inline_code) {
-                markdown.push_back('`');
-                markdown += value;
-                markdown.push_back('`');
-            } else {
-                markdown += value;
-            }
-            markdown.push_back('\n');
-        }
-
-        void append_qq_decision_detail(std::string &markdown, std::string_view line) {
-            const auto separator = line.find(':');
-            if (separator == std::string_view::npos) {
-                append_qq_card_field(markdown, "ℹ️", "Detail", trim_ascii_copy(line), false);
-                return;
-            }
-
-            const auto label = trim_ascii_copy(line.substr(0, separator));
-            const auto value = trim_ascii_copy(line.substr(separator + 1));
-            if (label.empty() || value.empty() || label == "Behavior") {
-                return;
-            }
-
-            std::string_view icon = "ℹ️";
-            if (label == "Reason") {
-                icon = "📝";
-            } else if (label == "Rule") {
-                icon = "📏";
-            } else if (label == "Mode") {
-                icon = "⚙️";
-            } else if (label == "Path") {
-                icon = "📂";
-            } else if (label == "Detail") {
-                icon = "📌";
-            }
-            append_qq_card_field(markdown, icon, label, value);
-        }
-
-        [[nodiscard]]
-        std::string format_channel_approval_text_reply(std::string_view request_id, bool include_allow_always) {
-            if (include_allow_always) {
-                return "reply with `" + std::string(request_id) + " yes`, `" + std::string(request_id) + " always`, or `" + std::string(request_id) + " no`.";
-            }
-            return "reply with `" + std::string(request_id) + " yes` or `" + std::string(request_id) + " no`.";
-        }
-
-        [[nodiscard]]
-        std::string format_qq_channel_approval_card_markdown(const ToolUse &call, const PermissionDecision &decision) {
-            std::string markdown = call.name == "shell" ? "## 🔐 Command Execution Approval" : "## 🔐 Tool Approval";
-            const auto prompt = permissions::approval_prompt_message(decision);
-            if (!prompt.empty()) {
-                markdown += "\n> ";
-                markdown += prompt;
-            }
-
-            if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
-                markdown += "\n\n```bash\n";
-                markdown += *command;
-                markdown += "\n```";
-            } else if (const auto preview = first_scalar_input_value(call.input, {"path", "file_path", "query", "prompt", "url"}); preview.has_value()) {
-                markdown += "\n\n> `";
-                markdown += *preview;
-                markdown += '`';
-            } else if (call.input.is_object() && !call.input.empty()) {
-                markdown += "\n\n```json\n";
-                markdown += call.input.dump(2);
-                markdown += "\n```";
-            }
-
-            markdown += "\n\n";
-            append_qq_card_field(markdown, "🧰", "Tool", call.name);
-            if (const auto directory = first_scalar_input_value(call.input, {"working_dir", "cwd"}); directory.has_value()) {
-                append_qq_card_field(markdown, "📁", "Directory", *directory);
-            }
-            if (const auto agent = first_scalar_input_value(call.input, {"agent", "agent_key"}); agent.has_value()) {
-                append_qq_card_field(markdown, "🤖", "Agent", *agent);
-            }
-            if (const auto timeout_seconds = first_scalar_input_value(call.input, {"timeout_seconds", "timeout_secs"}); timeout_seconds.has_value()) {
-                append_qq_card_field(markdown, "⏱", "Timeout", *timeout_seconds + "s");
-            } else if (const auto timeout = first_scalar_input_value(call.input, {"timeout"}); timeout.has_value()) {
-                append_qq_card_field(markdown, "⏱", "Timeout", *timeout);
-            } else if (const auto timeout_ms = first_scalar_input_value(call.input, {"timeout_ms"}); timeout_ms.has_value()) {
-                append_qq_card_field(markdown, "⏱", "Timeout", *timeout_ms + "ms");
-            }
-
-            for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
-                append_qq_decision_detail(markdown, line);
-            }
-            return markdown;
-        }
-
-        [[nodiscard]]
-        std::string format_text_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id, bool include_allow_always) {
-            std::string prompt = permissions::approval_prompt_message(decision);
-            prompt += "\nTool: " + call.name;
-            if (call.input.is_object()) {
-                if (const auto it = call.input.find("command"); it != call.input.end() && it->is_string()) {
-                    prompt += "\nCommand: " + it->get<std::string>();
-                }
-            }
-            for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
-                prompt += "\n" + line;
-            }
-            prompt += "\nRequest: " + request_id;
-            prompt += "\nPlease ";
-            prompt += format_channel_approval_text_reply(request_id, include_allow_always);
-            return prompt;
-        }
-
-        [[nodiscard]]
-        std::string format_qq_approval_delivery_failure(const ToolUse &call, const PermissionDecision &decision, bool keyboard_unavailable) {
-            std::string message = permissions::approval_prompt_message(decision);
-            message += keyboard_unavailable ? "\nQQ approval buttons are unavailable for this bot account, so the tool call was rejected."
-                                            : "\nFailed to deliver the QQ approval card, so the tool call was rejected.";
-            message += "\nTool: " + call.name;
-            if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
-                message += "\nCommand: " + *command;
-            }
-            return message;
-        }
-
-        std::string normalize_channel_approval_token(std::string_view content) {
-            std::string normalized;
-            normalized.reserve(content.size());
-            for (const auto ch : content) {
-                const auto lowered = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-                if (std::isalnum(static_cast<unsigned char>(lowered)) != 0 || lowered == '-') {
-                    normalized.push_back(lowered);
-                }
-            }
-            return normalized;
-        }
 
         std::string describe_attachment_for_agent(const Attachment &attachment, std::size_t index) {
             std::string line = spdlog::fmt_lib::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
@@ -447,271 +171,6 @@ namespace orangutan::bootstrap {
                               "For audio/voice files, note the path for reference.");
             }
             return prompt;
-        }
-
-        channel_approval_decision parse_channel_approval_decision(std::string_view content) {
-            const auto normalized = normalize_channel_approval_token(content);
-            if (normalized.empty()) {
-                return channel_approval_decision::invalid;
-            }
-
-            if (normalized == "always" || normalized == "alwaysallow" || normalized == "always-allow" || normalized == "allowalways" || normalized == "allow-always") {
-                return channel_approval_decision::approve_always;
-            }
-            if (normalized == "y" || normalized == "yes" || normalized == "approve" || normalized == "approved" || normalized == "allow") {
-                return channel_approval_decision::approve_once;
-            }
-            if (normalized == "n" || normalized == "no" || normalized == "deny" || normalized == "denied" || normalized == "reject") {
-                return channel_approval_decision::deny;
-            }
-            return channel_approval_decision::invalid;
-        }
-
-        ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content, bool allow_text_reply) {
-            ParsedChannelApprovalReply parsed;
-            if (const auto callback = channel::qq::parse_approval_callback_data(content); callback.has_value()) {
-                parsed.request_id = callback->request_id;
-                switch (callback->action) {
-                    case channel::qq::approval_action::allow_once:
-                        parsed.decision = channel_approval_decision::approve_once;
-                        break;
-                    case channel::qq::approval_action::always_allow:
-                        parsed.decision = channel_approval_decision::approve_always;
-                        break;
-                    case channel::qq::approval_action::deny:
-                        parsed.decision = channel_approval_decision::deny;
-                        break;
-                }
-                return parsed;
-            }
-
-            if (!allow_text_reply) {
-                return parsed;
-            }
-
-            std::istringstream stream(content);
-            for (std::string token; static_cast<bool>(stream >> token);) {
-                const auto normalized = normalize_channel_approval_token(token);
-                if (normalized.starts_with("tool-approval-") || normalized.starts_with("shell-approval-")) {
-                    parsed.request_id = normalized;
-                    continue;
-                }
-
-                const auto decision = parse_channel_approval_decision(normalized);
-                if (decision == channel_approval_decision::invalid) {
-                    continue;
-                }
-                if (parsed.decision == channel_approval_decision::approve_always && decision == channel_approval_decision::approve_once &&
-                    (normalized == "allow" || normalized == "approved")) {
-                    continue;
-                }
-                parsed.decision = decision;
-            }
-            return parsed;
-        }
-
-        std::string format_pending_channel_approval_prompt(const std::vector<std::string> &request_ids, bool allow_text_reply) {
-            if (request_ids.empty()) {
-                return "Tool approval is pending.";
-            }
-
-            if (!allow_text_reply) {
-                return request_ids.size() == 1 ? "Tool approval is pending. Use the buttons on the approval card."
-                                               : "Multiple tool approvals are pending. Use the buttons on the approval cards.";
-            }
-
-            if (request_ids.size() == 1) {
-                return "Tool approval is pending. Use the QQ buttons, or reply with `" + request_ids.front() + " yes` or `" + request_ids.front() + " no`.";
-            }
-
-            std::string prompt = "Multiple tool approvals are pending. Use the QQ buttons, or reply with `<request-id> yes` or `<request-id> no`. Pending:";
-            for (const auto &request_id : request_ids) {
-                utils::format_to(prompt, " {}", request_id);
-            }
-            return prompt;
-        }
-
-        std::vector<std::string> pending_request_ids_for_jid(const std::unordered_map<std::string, std::vector<std::string>> &pending_request_ids_by_jid, const std::string &jid) {
-            const auto it = pending_request_ids_by_jid.find(jid);
-            if (it == pending_request_ids_by_jid.end()) {
-                return {};
-            }
-            return it->second;
-        }
-
-        bool can_prompt_for_channel_approval(const InboundMessage &message) {
-            if (message.jid.starts_with("heartbeat:")) {
-                return false;
-            }
-
-            const auto target = resolve_reply_target(message);
-            if (target == "cli") {
-                return false;
-            }
-
-            return target == message.jid;
-        }
-
-        std::unique_ptr<ConversationRuntime> make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store,
-                                                                       const RuntimeIdentity &identity, coordinator::CoordinatorManager *coordinator_manager,
-                                                                       const std::string &raw_caller_id, HookManager *hook_manager, automation::Runtime *automation_runtime,
-                                                                       swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr) {
-            auto runtime = std::make_unique<ConversationRuntime>();
-            auto completion_resume_state = std::make_shared<detail::ChannelCompletionResumeState>();
-            runtime->runtime_key = identity.runtime_key;
-            runtime->agent_key = cfg.agent_key;
-            runtime->configured_model = cfg.model;
-            runtime->fallback_models = cfg.fallback_models;
-            runtime->workspace = identity.workspace;
-            runtime->memory_scope = identity.memory_scope;
-            runtime->session_scope_key = identity.runtime_key.empty() ? cfg.cli_runtime_key : identity.runtime_key;
-            completion_resume_state->jid = raw_caller_id;
-            completion_resume_state->agent_key = cfg.agent_key;
-            completion_resume_state->configured_model = cfg.model;
-            completion_resume_state->session_scope_key = runtime->session_scope_key;
-            completion_resume_state->automation_runtime = automation_runtime;
-            auto input = make_runtime_build_input(RuntimeAssemblyRequest{
-                .runtime_config = &cfg,
-                .identity = &identity,
-                .app_config = &app_cfg,
-                .memory_store = memory_store,
-                .current_session_id = &runtime->current_session_id,
-                .coordinator_manager = coordinator_manager,
-                .team_manager = team_manager,
-                .mailbox = mailbox,
-                .runtime_origin = base::origin::channel,
-                .raw_caller_id = raw_caller_id,
-                .automation_runtime = automation_runtime,
-                .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
-                                                                                     [automation_runtime](const automation::InboxItem &item) {
-                                                                                         static_cast<void>(automation_runtime->store().insert_inbox(item));
-                                                                                     },
-                                                                                     detail::make_channel_completion_resume_callback(completion_resume_state))
-                                                                               : nullptr,
-            });
-            runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
-            if (hook_manager != nullptr) {
-                runtime->runtime->agent = std::make_unique<AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools(), runtime->runtime->memory.get(),
-                                                                      runtime->runtime->skills_prompt, hook_manager);
-                runtime->hook_manager = hook_manager;
-            } else {
-                runtime->hook_manager = runtime->runtime->hook_manager.get();
-            }
-            completion_resume_state->agent = runtime->runtime->agent.get();
-            completion_resume_state->runtime = runtime->runtime.get();
-            completion_resume_state->provider = runtime->runtime->provider.get();
-            completion_resume_state->hook_manager = runtime->hook_manager;
-            completion_resume_state->current_session_id = &runtime->current_session_id;
-            completion_resume_state->persisted_message_count = &runtime->persisted_message_count;
-            if (coordinator_manager != nullptr) {
-                coordinator_manager->register_runtime_notification_handler(runtime->runtime_key, detail::make_channel_completion_resume_callback(completion_resume_state));
-            }
-            runtime->completion_resume_state = std::move(completion_resume_state);
-            return runtime;
-        }
-
-        SessionMetadata make_channel_session_metadata(const ConversationRuntime &runtime, const std::string &jid, const std::string &model) {
-            return SessionMetadata{
-                .model = model,
-                .scope_key = runtime.session_scope_key,
-                .agent_key = runtime.agent_key,
-                .origin_kind = "channel",
-                .origin_ref = jid,
-            };
-        }
-
-        SessionMetadata make_channel_session_metadata(const detail::ChannelCompletionResumeState &state, const std::string &model) {
-            return SessionMetadata{
-                .model = model,
-                .scope_key = state.session_scope_key,
-                .agent_key = state.agent_key,
-                .origin_kind = "channel",
-                .origin_ref = state.jid,
-            };
-        }
-
-        void rehydrate_session_permissions(SessionStore &session_store, std::string_view session_id, AgentRuntimeBundle *runtime) {
-            if (runtime == nullptr) {
-                return;
-            }
-
-            runtime->replace_permissions(session_store.load_session_permission_context(session_id, runtime->permissions()));
-        }
-
-        void persist_session_permissions(SessionStore &session_store, std::string_view session_id, const AgentRuntimeBundle *runtime) {
-            if (runtime == nullptr || session_id.empty()) {
-                return;
-            }
-
-            session_store.replace_session_permission_rules(session_id, runtime->permissions());
-        }
-
-        void persist_channel_session(const std::string &jid, ConversationRuntime &runtime, SessionStore &session_store) {
-            const auto &history = runtime.agent().history();
-            if (history.empty()) {
-                session_store.clear_jid(jid, runtime.agent_key);
-                runtime.current_session_id.clear();
-                rehydrate_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
-                runtime.persisted_message_count = 0;
-                return;
-            }
-
-            const bool created_session = runtime.current_session_id.empty();
-            const auto active_model =
-                runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
-            const auto metadata = make_channel_session_metadata(runtime, jid, active_model);
-            if (runtime.current_session_id.empty()) {
-                runtime.current_session_id = session_store.save(history, metadata);
-                runtime.persisted_message_count = history.size();
-            } else if (history.size() > runtime.persisted_message_count) {
-                session_store.append(runtime.current_session_id, history, runtime.persisted_message_count, metadata);
-                runtime.persisted_message_count = history.size();
-            } else {
-                session_store.update(runtime.current_session_id, history, metadata);
-                runtime.persisted_message_count = history.size();
-            }
-
-            persist_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
-            session_store.bind_jid(jid, runtime.current_session_id, runtime.agent_key);
-            if (created_session) {
-                dispatch_session_start(runtime.hook_manager, runtime.current_session_id, history.size());
-            }
-        }
-
-        std::optional<std::string> persist_channel_session(detail::ChannelCompletionResumeState &state) {
-            if (state.agent == nullptr || state.current_session_id == nullptr || state.persisted_message_count == nullptr || state.session_store == nullptr) {
-                return "channel runtime is no longer available";
-            }
-
-            const auto &history = state.agent->history();
-            if (history.empty()) {
-                state.session_store->clear_jid(state.jid, state.agent_key);
-                state.current_session_id->clear();
-                rehydrate_session_permissions(*state.session_store, *state.current_session_id, state.runtime);
-                *state.persisted_message_count = 0;
-                return std::nullopt;
-            }
-
-            const bool created_session = state.current_session_id->empty();
-            const auto active_model = state.provider != nullptr && !state.provider->current_model().empty() ? state.provider->current_model() : state.configured_model;
-            const auto metadata = make_channel_session_metadata(state, active_model);
-            if (state.current_session_id->empty()) {
-                *state.current_session_id = state.session_store->save(history, metadata);
-                *state.persisted_message_count = history.size();
-            } else if (history.size() > *state.persisted_message_count) {
-                state.session_store->append(*state.current_session_id, history, *state.persisted_message_count, metadata);
-                *state.persisted_message_count = history.size();
-            } else {
-                state.session_store->update(*state.current_session_id, history, metadata);
-                *state.persisted_message_count = history.size();
-            }
-
-            persist_session_permissions(*state.session_store, *state.current_session_id, state.runtime);
-            state.session_store->bind_jid(state.jid, *state.current_session_id, state.agent_key);
-            if (created_session) {
-                dispatch_session_start(state.hook_manager, *state.current_session_id, history.size());
-            }
-            return std::nullopt;
         }
 
         ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
@@ -889,146 +348,145 @@ namespace orangutan::bootstrap {
             }
         }
 
-        return [this, message, &channel_manager, task_runner, permission_rule_mutator = std::move(permission_rule_mutator)](const ToolUse &call,
-                                                                                                                            const PermissionDecision &decision) {
-            struct WaitOutcome {
-                std::shared_ptr<PendingApproval> pending;
-                bool resolved = false;
-                bool cancelled = false;
-                bool approved = false;
-                bool always_allow = false;
+        return
+            [this, message, &channel_manager, task_runner, permission_rule_mutator = std::move(permission_rule_mutator)](const ToolUse &call, const PermissionDecision &decision) {
+                struct WaitOutcome {
+                    std::shared_ptr<PendingApproval> pending;
+                    bool resolved = false;
+                    bool cancelled = false;
+                    bool approved = false;
+                    bool always_allow = false;
+                };
+
+                auto pipeline = stdexec::just() | stdexec::then([this, &message]() {
+                                    auto pending = std::make_shared<PendingApproval>();
+                                    {
+                                        std::scoped_lock lock(mutex_);
+                                        if (shutting_down_) {
+                                            return std::shared_ptr<PendingApproval>{};
+                                        }
+                                        pending->request_id = format_channel_approval_request_id(++next_prompt_id_);
+                                        pending->jid = message.jid;
+                                        pending_by_request_id_[pending->request_id] = pending;
+                                        pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
+                                    }
+                                    return pending;
+                                }) |
+                                stdexec::then([this, &message, &channel_manager, task_runner, &call, &decision](std::shared_ptr<PendingApproval> pending) {
+                                    if (pending == nullptr) {
+                                        return WaitOutcome{};
+                                    }
+
+                                    const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
+                                    const auto target = resolve_reply_target(message);
+                                    const bool is_qq_target = is_qq_channel_target(target);
+                                    const auto qq_keyboard_key = is_qq_target ? qq_keyboard_capability_key(target) : std::string{};
+                                    {
+                                        std::scoped_lock lock(pending->mutex);
+                                        pending->allow_always_eligible = include_allow_always;
+                                        pending->allow_text_reply = !is_qq_target;
+                                    }
+                                    const auto qq_keyboard_disabled = [&] {
+                                        if (qq_keyboard_key.empty()) {
+                                            return false;
+                                        }
+                                        std::scoped_lock lock(mutex_);
+                                        return qq_keyboard_disabled_keys_.contains(qq_keyboard_key);
+                                    }();
+                                    auto delivery_failure_reply = [&](bool keyboard_unavailable) {
+                                        if (is_qq_target) {
+                                            return format_qq_approval_delivery_failure(call, decision, keyboard_unavailable);
+                                        }
+
+                                        std::string message = permissions::approval_prompt_message(decision);
+                                        message += "\nFailed to deliver the approval prompt, so the tool call was rejected.";
+                                        message += "\nTool: " + call.name;
+                                        return message;
+                                    };
+
+                                    if (qq_keyboard_disabled) {
+                                        clear_pending(pending);
+                                        deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                                        return WaitOutcome{
+                                            .pending = std::move(pending),
+                                            .resolved = true,
+                                            .cancelled = true,
+                                        };
+                                    }
+
+                                    try {
+                                        if (is_qq_target) {
+                                            // Match openclaw: QQ custom keyboards must be sent as a fresh message, not a passive reply carrying msg_id.
+                                            channel_manager.send_keyboard(target, format_qq_channel_approval_card_markdown(call, decision),
+                                                                          channel::qq::build_approval_keyboard(pending->request_id, include_allow_always), "", "");
+                                        } else {
+                                            deliver_reply(message, format_text_channel_approval_prompt(call, decision, pending->request_id, include_allow_always), channel_manager);
+                                        }
+                                    } catch (const std::exception &e) {
+                                        if (!qq_keyboard_key.empty() && is_qq_custom_keyboard_blocked_error(e.what())) {
+                                            {
+                                                std::scoped_lock lock(mutex_);
+                                                qq_keyboard_disabled_keys_.insert(qq_keyboard_key);
+                                            }
+                                            spdlog::warn("QQ custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}",
+                                                         qq_keyboard_key, e.what());
+                                            clear_pending(pending);
+                                            deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                                            return WaitOutcome{
+                                                .pending = std::move(pending),
+                                                .resolved = true,
+                                                .cancelled = true,
+                                            };
+                                        } else {
+                                            spdlog::warn("Failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
+                                            clear_pending(pending);
+                                            deliver_reply(message, delivery_failure_reply(false), channel_manager);
+                                            return WaitOutcome{
+                                                .pending = std::move(pending),
+                                                .resolved = true,
+                                                .cancelled = true,
+                                            };
+                                        }
+                                    }
+
+                                    auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
+                                    std::unique_lock lock(pending->mutex);
+                                    const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
+                                        return pending->resolved;
+                                    });
+                                    const bool cancelled = resolved && pending->cancelled;
+                                    const bool approved = resolved && !cancelled && pending->approved;
+                                    const bool always_allow = resolved && !cancelled && pending->always_allow;
+                                    return WaitOutcome{
+                                        .pending = std::move(pending),
+                                        .resolved = resolved,
+                                        .cancelled = cancelled,
+                                        .approved = approved,
+                                        .always_allow = always_allow,
+                                    };
+                                }) |
+                                stdexec::then([this, &message, &channel_manager, &call, permission_rule_mutator](const WaitOutcome &outcome) {
+                                    if (outcome.pending == nullptr) {
+                                        return false;
+                                    }
+
+                                    clear_pending(outcome.pending);
+                                    if (outcome.approved && outcome.always_allow) {
+                                        if (const auto rule = permissions::make_session_allow_rule(call); rule.has_value()) {
+                                            if (permission_rule_mutator) {
+                                                permission_rule_mutator(*rule);
+                                            }
+                                        }
+                                    }
+                                    if (!outcome.resolved && !outcome.cancelled) {
+                                        deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
+                                    }
+                                    return outcome.approved;
+                                });
+
+                auto [approved] = execution::sync_wait_or_throw(pipeline, "channel approval callback pipeline");
+                return approved;
             };
-
-            auto pipeline =
-                stdexec::just() | stdexec::then([this, &message]() {
-                    auto pending = std::make_shared<PendingApproval>();
-                    {
-                        std::scoped_lock lock(mutex_);
-                        if (shutting_down_) {
-                            return std::shared_ptr<PendingApproval>{};
-                        }
-                        pending->request_id = "tool-approval-" + std::to_string(++next_prompt_id_);
-                        pending->jid = message.jid;
-                        pending_by_request_id_[pending->request_id] = pending;
-                        pending_request_ids_by_jid_[message.jid].push_back(pending->request_id);
-                    }
-                    return pending;
-                }) |
-                stdexec::then([this, &message, &channel_manager, task_runner, &call, &decision](std::shared_ptr<PendingApproval> pending) {
-                    if (pending == nullptr) {
-                        return WaitOutcome{};
-                    }
-
-                    const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
-                    const auto target = resolve_reply_target(message);
-                    const bool is_qq_target = is_qq_channel_target(target);
-                    const auto qq_keyboard_key = is_qq_target ? qq_keyboard_capability_key(target) : std::string{};
-                    {
-                        std::scoped_lock lock(pending->mutex);
-                        pending->allow_always_eligible = include_allow_always;
-                        pending->allow_text_reply = !is_qq_target;
-                    }
-                    const auto qq_keyboard_disabled = [&] {
-                        if (qq_keyboard_key.empty()) {
-                            return false;
-                        }
-                        std::scoped_lock lock(mutex_);
-                        return qq_keyboard_disabled_keys_.contains(qq_keyboard_key);
-                    }();
-                    auto delivery_failure_reply = [&](bool keyboard_unavailable) {
-                        if (is_qq_target) {
-                            return format_qq_approval_delivery_failure(call, decision, keyboard_unavailable);
-                        }
-
-                        std::string message = permissions::approval_prompt_message(decision);
-                        message += "\nFailed to deliver the approval prompt, so the tool call was rejected.";
-                        message += "\nTool: " + call.name;
-                        return message;
-                    };
-
-                    if (qq_keyboard_disabled) {
-                        clear_pending(pending);
-                        deliver_reply(message, delivery_failure_reply(true), channel_manager);
-                        return WaitOutcome{
-                            .pending = std::move(pending),
-                            .resolved = true,
-                            .cancelled = true,
-                        };
-                    }
-
-                    try {
-                        if (is_qq_target) {
-                            // Match openclaw: QQ custom keyboards must be sent as a fresh message, not a passive reply carrying msg_id.
-                            channel_manager.send_keyboard(target, format_qq_channel_approval_card_markdown(call, decision),
-                                                          channel::qq::build_approval_keyboard(pending->request_id, include_allow_always), "", "");
-                        } else {
-                            deliver_reply(message, format_text_channel_approval_prompt(call, decision, pending->request_id, include_allow_always), channel_manager);
-                        }
-                    } catch (const std::exception &e) {
-                        if (!qq_keyboard_key.empty() && is_qq_custom_keyboard_blocked_error(e.what())) {
-                            {
-                                std::scoped_lock lock(mutex_);
-                                qq_keyboard_disabled_keys_.insert(qq_keyboard_key);
-                            }
-                            spdlog::warn("QQ custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}", qq_keyboard_key,
-                                         e.what());
-                            clear_pending(pending);
-                            deliver_reply(message, delivery_failure_reply(true), channel_manager);
-                            return WaitOutcome{
-                                .pending = std::move(pending),
-                                .resolved = true,
-                                .cancelled = true,
-                            };
-                        } else {
-                            spdlog::warn("Failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
-                            clear_pending(pending);
-                            deliver_reply(message, delivery_failure_reply(false), channel_manager);
-                            return WaitOutcome{
-                                .pending = std::move(pending),
-                                .resolved = true,
-                                .cancelled = true,
-                            };
-                        }
-                    }
-
-                    auto blocking_lease = task_runner != nullptr ? task_runner->acquire_blocking_lease() : JidTaskRunner::BlockingLease{};
-                    std::unique_lock lock(pending->mutex);
-                    const bool resolved = pending->cv.wait_for(lock, timeout_, [&pending] {
-                        return pending->resolved;
-                    });
-                    const bool cancelled = resolved && pending->cancelled;
-                    const bool approved = resolved && !cancelled && pending->approved;
-                    const bool always_allow = resolved && !cancelled && pending->always_allow;
-                    return WaitOutcome{
-                        .pending = std::move(pending),
-                        .resolved = resolved,
-                        .cancelled = cancelled,
-                        .approved = approved,
-                        .always_allow = always_allow,
-                    };
-                }) |
-                stdexec::then([this, &message, &channel_manager, &call, permission_rule_mutator](const WaitOutcome &outcome) {
-                    if (outcome.pending == nullptr) {
-                        return false;
-                    }
-
-                    clear_pending(outcome.pending);
-                    if (outcome.approved && outcome.always_allow) {
-                        if (const auto rule = permissions::make_session_allow_rule(call); rule.has_value()) {
-                            if (permission_rule_mutator) {
-                                permission_rule_mutator(*rule);
-                            }
-                        }
-                    }
-                    if (!outcome.resolved && !outcome.cancelled) {
-                        deliver_reply(message, "Approval timed out. The tool call was rejected.", channel_manager);
-                    }
-                    return outcome.approved;
-                });
-
-            auto [approved] = execution::sync_wait_or_throw(pipeline, "channel approval callback pipeline");
-            return approved;
-        };
     }
 
     bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager) {
@@ -1173,105 +631,11 @@ namespace orangutan::bootstrap {
         return "default";
     }
 
-    std::string resolve_reply_target(const InboundMessage &message) {
-        if (message.reply_target == "cli") {
-            return "cli";
-        }
-        if (message.reply_target.empty()) {
-            if (message.jid.starts_with("heartbeat:")) {
-                return "cli";
-            }
-            return message.jid;
-        }
-        return message.reply_target;
-    }
-
-    void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager) {
-        if (reply.empty()) {
-            return;
-        }
-
-        const auto target = resolve_reply_target(message);
-        if (target == "cli") {
-            spdlog::info("Heartbeat reply [{}]: {}", message.jid, reply);
-            return;
-        }
-
-        try {
-            if (target.starts_with("qqbot:")) {
-                channel_manager.send(target, OutboundMessage{
-                                                 .payload = TextPayload{.text = reply},
-                                                 .reply_to_message_id = message.message_id,
-                                                 .reference_message_id = message.message_id,
-                                             });
-            } else {
-                channel_manager.send(target, reply, message.message_id);
-            }
-        } catch (const std::exception &e) {
-            spdlog::error("Failed to deliver reply for jid '{}' to target '{}': {}", message.jid, target, e.what());
-        }
-    }
-
-    void deliver_command_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager) {
-        deliver_reply(message, reply, channel_manager);
-    }
-
     std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg) {
         SkillLoader skill_loader;
-        skill_loader.load_from_directories(resolve_skill_directories(cfg.skill_paths, runtime_cfg.workspace_root));
+        skill_loader.load_from_directories(resolve_skill_directories(cfg.skill_paths, std::filesystem::path{runtime_cfg.workspace_root}));
         return skill_loader.build_prompt_section();
     }
-
-    namespace detail {
-
-        ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
-                                                                   coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
-                                                                   HookManager *hook_manager, automation::Runtime *automation_runtime, swarm::TeamManager *team_manager,
-                                                                   swarm::AgentMailbox *mailbox) {
-            const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
-            auto runtime =
-                make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, raw_caller_id, hook_manager, automation_runtime, team_manager, mailbox);
-
-            return ConversationRuntimeInspection{
-                .tool_definitions = runtime->tools().definitions(),
-                .runtime_origin = runtime->tool_context().runtime_origin,
-                .raw_caller_id = runtime->tool_context().raw_caller_id,
-                .has_agent = runtime->runtime != nullptr && runtime->runtime->agent != nullptr,
-                .has_hook_manager = runtime->hook_manager != nullptr,
-                .session_scope_key = runtime->session_scope_key,
-                .configured_model = runtime->configured_model,
-                .fallback_models = runtime->fallback_models,
-            };
-        }
-
-        BackgroundCompletionResumeCallback make_channel_completion_resume_callback(const std::weak_ptr<ChannelCompletionResumeState> &weak_state) {
-            return [weak_state](const std::string &message) -> std::optional<std::string> {
-                const auto state = weak_state.lock();
-                if (!state) {
-                    return "channel runtime is no longer available";
-                }
-
-                std::scoped_lock lock(state->mutex);
-                if (state->agent == nullptr) {
-                    return "channel runtime is no longer available";
-                }
-
-                return cli::run_completion_resume_message(
-                    *state->agent, message, state->agent_key, state->automation_runtime,
-                    [state](const std::string &reply) -> std::optional<std::string> {
-                        if (const auto error = persist_channel_session(*state); error.has_value()) {
-                            return error;
-                        }
-                        if (state->channel_manager != nullptr) {
-                            deliver_reply(InboundMessage{.jid = state->jid}, reply, *state->channel_manager);
-                        }
-                        return std::nullopt;
-                    },
-                    true);
-            };
-        }
-
-    } // namespace detail
 
     namespace {
 

@@ -41,20 +41,20 @@ namespace orangutan::tools {
                 decision = apply_post_processing(decision, ctx.mode);
 
                 switch (decision.behavior) {
-                case permission_behavior::allow:
-                    return std::nullopt;
-                case permission_behavior::deny:
-                    return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
-                case permission_behavior::ask: {
-                    const auto &callback = (tool_context && tool_context->approval_callback) ? tool_context->approval_callback : ApprovalCallback{};
-                    if (!callback) {
-                        return ToolResult{call.id, "Requires approval but interactive approval unavailable", true};
+                    case permission_behavior::allow:
+                        return std::nullopt;
+                    case permission_behavior::deny:
+                        return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
+                    case permission_behavior::ask: {
+                        const auto &callback = (tool_context && tool_context->approval_callback) ? tool_context->approval_callback : ApprovalCallback{};
+                        if (!callback) {
+                            return ToolResult{call.id, "Requires approval but interactive approval unavailable", true};
+                        }
+                        if (!callback(call, decision)) {
+                            return ToolResult{call.id, "Rejected by user", true};
+                        }
+                        return std::nullopt;
                     }
-                    if (!callback(call, decision)) {
-                        return ToolResult{call.id, "Rejected by user", true};
-                    }
-                    return std::nullopt;
-                }
                 }
                 return std::nullopt;
             });
@@ -62,14 +62,14 @@ namespace orangutan::tools {
 
     } // namespace
 
-    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::string &workspace,
+    RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions,
                                                       std::string_view edit_mode) {
         const bool coordinator_only = coordinator::is_coordinator_mode(tool_context);
-        register_builtin_tools(registry, runtime_memory, workspace, tool_context, permissions, edit_mode);
+        register_builtin_tools(registry, runtime_memory, workspace_root, tool_context, permissions, edit_mode);
         if (!coordinator_only) {
-            register_script_tools(registry, custom_tools, workspace, permissions, tool_context);
+            register_script_tools(registry, custom_tools, workspace_root, permissions, tool_context);
         }
 
         if (permissions != nullptr) {

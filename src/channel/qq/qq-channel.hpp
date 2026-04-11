@@ -18,6 +18,8 @@ namespace orangutan::channel::qq {
     [[nodiscard]]
     base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value);
 
+    struct qq_channel_runtime_state;
+
     class QqChannel : public Channel {
     public:
         QqChannel(std::string bot_name, std::string app_id, std::string client_secret);
@@ -33,7 +35,7 @@ namespace orangutan::channel::qq {
         void connect(MessageCallback on_message) override;
         void send(const std::string &jid, const OutboundMessage &message) override;
         [[nodiscard]]
-        Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) override;
+        Attachment download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path) override;
         void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
         void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id) override;
         void start_typing(const std::string &jid, const std::string &message_id) override;
@@ -66,8 +68,6 @@ namespace orangutan::channel::qq {
 
         friend struct QqChannelTestAccess;
 
-        struct RuntimeState;
-
         std::string bot_name_;
         std::string app_id_;
         std::string client_secret_;
@@ -77,7 +77,7 @@ namespace orangutan::channel::qq {
         mutable std::mutex reply_trackers_mutex_;
         MessageCallback on_message_;
         std::atomic<bool> connected_{false};
-        std::unique_ptr<RuntimeState> runtime_;
+        std::unique_ptr<qq_channel_runtime_state> runtime_;
 
         void ensure_access_token();
 
@@ -87,8 +87,6 @@ namespace orangutan::channel::qq {
         void connect_websocket(const std::string &gateway_url);
         void send_gateway_identity_or_resume();
         void send_gateway_payload(const nlohmann::json &payload);
-        void send_message_now(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
-        void send_outbound_now(const std::string &jid, const OutboundMessage &message);
         void restart_heartbeat(std::chrono::milliseconds interval);
         void stop_heartbeat();
         void start_token_refresh_loop();
@@ -108,11 +106,7 @@ namespace orangutan::channel::qq {
         std::string consume_group_history(const std::string &jid);
         void handle_ws_message(const std::string &data);
         void handle_dispatch(const std::string &event_type, const nlohmann::json &data);
-        void handle_c2c_message(const nlohmann::json &data);
-        void handle_group_message(const nlohmann::json &data);
-        void handle_guild_message(const nlohmann::json &data);
         void handle_interaction(const nlohmann::json &data);
-        void handle_reaction_event(const std::string &event_type, const nlohmann::json &data) const;
         void emit_inbound(const InboundMessage &message) const;
         void clear_ready_state();
         [[nodiscard]]
@@ -123,24 +117,6 @@ namespace orangutan::channel::qq {
         [[nodiscard]]
         std::string resolve_passive_reply_message_id(const std::string &reply_to_message_id, int reply_units = 1);
 
-        [[nodiscard]]
-        static std::vector<Attachment> parse_attachments(const nlohmann::json &data);
-
-        [[nodiscard]]
-        static std::vector<std::string> parse_mention_ids(const nlohmann::json &data);
-
-        [[nodiscard]]
-        bool is_bot_mentioned(const nlohmann::json &data, const std::vector<std::string> &mention_ids) const;
-
-        [[nodiscard]]
-        static std::string strip_mentions(const std::string &content);
-
-        [[nodiscard]]
-        static std::string parse_message_scene_ext_value(const nlohmann::json &data, std::string_view key);
-
-        [[nodiscard]]
-        static std::vector<std::string> chunk_text(const std::string &text, std::size_t limit);
-
         void capture_outbound_ref_index(const QqApiResponse &response, const std::string &content);
         [[nodiscard]]
         std::string lookup_ref_index(const std::string &ref_idx) const;
@@ -150,8 +126,6 @@ namespace orangutan::channel::qq {
         void send_typing_now(const std::string &jid, const std::string &message_id);
         void start_typing_keepalive();
         void stop_typing_keepalive();
-
-        void send_media_segments(const std::string &jid, const OutboundMessage &message);
     };
 
 } // namespace orangutan::channel::qq

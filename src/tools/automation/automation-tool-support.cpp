@@ -4,6 +4,20 @@
 
 namespace orangutan::builtin::detail {
 
+    std::string resolve_agent_key(const ToolRuntimeContext &ctx) {
+        return ctx.agent_key.empty() ? std::string{"default"} : ctx.agent_key;
+    }
+
+    std::string id_or_name(const nlohmann::json &request) {
+        return request.value("id", request.value("name", ""));
+    }
+
+    nlohmann::json normalize_automation_op_input(const nlohmann::json &input) {
+        auto routed_input = input;
+        routed_input["op"] = input.value("op", "");
+        return routed_input;
+    }
+
     std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const nlohmann::json &input, const automation::DeliveryPolicy &base) {
         auto delivery = base;
 

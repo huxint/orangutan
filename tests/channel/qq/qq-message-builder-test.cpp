@@ -2,7 +2,24 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <string_view>
+#include <type_traits>
+
 using namespace orangutan;
+
+namespace {
+
+    using TextSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
+    using MarkdownSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
+    using ReplySignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
+    using ReferenceSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
+
+    static_assert(std::is_same_v<decltype(&QqMessageBuilder::text), TextSignature>);
+    static_assert(std::is_same_v<decltype(&QqMessageBuilder::markdown), MarkdownSignature>);
+    static_assert(std::is_same_v<decltype(&QqMessageBuilder::reply_to), ReplySignature>);
+    static_assert(std::is_same_v<decltype(&QqMessageBuilder::reference), ReferenceSignature>);
+
+} // namespace
 
 TEST_CASE("qq_message_builder_constructs_text_payload_with_reply_and_reference") {
     const auto payload = QqMessageBuilder{}.text("hello").msg_seq(42).reply_to("msg-1").reference("msg-1").build();

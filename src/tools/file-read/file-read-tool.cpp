@@ -3,6 +3,7 @@
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
+#include "utils/string.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -61,21 +62,13 @@ namespace orangutan::tools {
             if (ext.size() < 2) {
                 return false;
             }
-            std::string lower;
-            lower.reserve(ext.size());
-            for (char ch : ext) {
-                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
+            const auto lower = utils::ascii_to_lower_copy(ext);
             return lower == ".png" || lower == ".jpg" || lower == ".jpeg" || lower == ".gif" || lower == ".webp" || lower == ".bmp";
         }
 
         std::string guess_media_type(const std::filesystem::path &path) {
             const auto ext = path.extension().string();
-            std::string lower;
-            lower.reserve(ext.size());
-            for (char ch : ext) {
-                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-            }
+            const auto lower = utils::ascii_to_lower_copy(ext);
             if (lower == ".png") {
                 return "image/png";
             }
@@ -259,13 +252,15 @@ namespace orangutan::tools {
                            {"description", "Array of file paths confined to the workspace or ~/.orangutan configuration area (use instead of 'path' for multi-file reads)"}}},
                          {"offset", {{"type", "integer"}, {"description", "1-based starting line number (default: 1)"}}},
                          {"limit", {{"type", "integer"}, {"description", "Maximum lines to return (default: 2000)"}}}}}}},
-             .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
-                 return validate_read_permissions(call, ctx, workspace_root);
-             },
+             .check_permissions =
+                 [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                     return validate_read_permissions(call, ctx, workspace_root);
+                 },
              .read_only = true,
-             .execute_rich = [workspace_root, permissions, mode = std::string(edit_mode)](const nlohmann::json &input) {
-                 return read_file(input, workspace_root, permissions, mode);
-             }});
+             .execute_rich =
+                 [workspace_root, permissions, mode = std::string(edit_mode)](const nlohmann::json &input) {
+                     return read_file(input, workspace_root, permissions, mode);
+                 }});
     }
 
 } // namespace orangutan::tools

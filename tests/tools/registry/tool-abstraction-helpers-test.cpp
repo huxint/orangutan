@@ -12,6 +12,7 @@
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
+#include "tools/automation/automation-tool-support.hpp"
 
 using namespace orangutan;
 using namespace orangutan::tools;
@@ -200,6 +201,20 @@ TEST_CASE("op_tool_support: require_id returns exact compatibility text", "[tool
 
     REQUIRE(result.has_value());
     CHECK(*result == "Error: id is required.");
+}
+
+TEST_CASE("op_tool_support: id_or_name prefers id then falls back to name", "[tools][registry][abstractions]") {
+    CHECK(orangutan::builtin::detail::id_or_name(nlohmann::json{{"id", "task-1"}, {"name", "daily"}}) == "task-1");
+    CHECK(orangutan::builtin::detail::id_or_name(nlohmann::json{{"name", "daily"}}) == "daily");
+    CHECK(orangutan::builtin::detail::id_or_name(nlohmann::json::object()).empty());
+}
+
+TEST_CASE("automation_tool_support: resolve_agent_key falls back to default", "[tools][registry][abstractions]") {
+    auto context = make_context();
+    CHECK(orangutan::builtin::detail::resolve_agent_key(context) == "agent:test");
+
+    context.agent_key.clear();
+    CHECK(orangutan::builtin::detail::resolve_agent_key(context) == "default");
 }
 
 TEST_CASE("op_tool_support: dispatch_message returns tool_dispatch message unchanged", "[tools][registry][abstractions]") {

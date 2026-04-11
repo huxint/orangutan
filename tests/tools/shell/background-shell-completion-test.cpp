@@ -1,4 +1,5 @@
 #include "cli/single-shot.hpp"
+#include "tools/shell/command-sandbox.hpp"
 #include "tools/registry/tool.hpp"
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
@@ -16,12 +17,16 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 using namespace orangutan;
 using namespace orangutan::tools;
 
 namespace {
+
+    static_assert(std::is_same_v<decltype(&prepare_sandboxed_command),
+                                 SandboxedCommand (*)(std::string_view, const std::filesystem::path &, const std::filesystem::path &, tool_sandbox_mode)>);
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
@@ -105,7 +110,7 @@ namespace {
                 return std::optional<std::string>{};
             });
 
-            register_builtin_tools(registry_, nullptr, workspace_root_.string(), &tool_context_);
+            register_builtin_tools(registry_, nullptr, workspace_root_, &tool_context_);
         }
 
         ~BackgroundShellCompletionHarness() {
@@ -218,7 +223,7 @@ namespace {
         inbox_only_context.background_completion_runtime = make_test_background_completion_runtime_bindings(harness.store_);
 
         ToolRegistry inbox_only_registry;
-        register_builtin_tools(inbox_only_registry, nullptr, harness.workspace_root_.string(), &inbox_only_context);
+        register_builtin_tools(inbox_only_registry, nullptr, harness.workspace_root_, &inbox_only_context);
 
         const auto definitions = inbox_only_registry.definitions();
         const auto *shell = find_tool(definitions, "shell");
@@ -335,7 +340,7 @@ namespace {
         BackgroundShellCompletionHarness harness;
 
         ToolRegistry unsupported_registry;
-        register_builtin_tools(unsupported_registry, nullptr, harness.workspace_root_.string());
+        register_builtin_tools(unsupported_registry, nullptr, harness.workspace_root_);
 
         const auto definitions = unsupported_registry.definitions();
         const auto *shell = find_tool(definitions, "shell");

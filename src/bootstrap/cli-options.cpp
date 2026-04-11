@@ -4,13 +4,12 @@
 #include "config/secret-protection.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-types.hpp"
+#include "utils/string.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <ranges>
 #include <sstream>
 
 #include <magic_enum/magic_enum.hpp>
@@ -168,20 +167,15 @@ namespace orangutan::bootstrap {
     }
 
     namespace {
-        std::string normalize_enum_token(std::string_view value) {
-            return value | std::views::transform([](unsigned char ch) {
-                       return static_cast<char>(ch == '-' || ch == '_' ? '_' : std::tolower(ch));
-                   }) |
-                   std::ranges::to<std::string>();
-        }
-
         std::vector<std::string> split_comma_list(const std::string &input) {
             std::vector<std::string> result;
             std::istringstream stream(input);
             std::string token;
             while (std::getline(stream, token, ',')) {
                 auto trimmed = token;
-                std::erase_if(trimmed, [](unsigned char ch) { return std::isspace(ch) != 0; });
+                std::erase_if(trimmed, [](unsigned char ch) {
+                    return std::isspace(ch) != 0;
+                });
                 if (!trimmed.empty()) {
                     result.push_back(std::move(trimmed));
                 }
@@ -196,7 +190,7 @@ namespace orangutan::bootstrap {
         cli_perms.dangerously_skip_permissions = options.dangerously_skip_permissions;
 
         if (!options.permission_mode_str.empty()) {
-            auto mode_opt = magic_enum::enum_cast<permission_mode>(normalize_enum_token(options.permission_mode_str));
+            auto mode_opt = magic_enum::enum_cast<permission_mode>(utils::normalize_enum_token(options.permission_mode_str));
             if (mode_opt.has_value()) {
                 cli_perms.mode_override = mode_opt;
             } else {

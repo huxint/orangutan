@@ -70,8 +70,8 @@ namespace orangutan::tools {
 
                                                 const auto requested_index = request.value("index", -1);
                                                 if (requested_index < 0 || static_cast<std::size_t>(requested_index) >= attachments.size()) {
-                                                    return tool_dispatch::response{.message = R"({"error":"index is required and must refer to an attachment from the current message."})",
-                                                                                   .is_error = true};
+                                                    return tool_dispatch::response{
+                                                        .message = R"({"error":"index is required and must refer to an attachment from the current message."})", .is_error = true};
                                                 }
 
                                                 const auto attachment_index = static_cast<std::size_t>(requested_index);
@@ -90,9 +90,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_message_attachments_tool(ToolRegistry &registry, const std::string &workspace, const ToolRuntimeContext *tool_context) {
-        const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
-
+    void register_message_attachments_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolRuntimeContext *tool_context) {
         contextual_tool_group()
             .require_channel_origin(base::origin::channel)
             .add(make_tool_spec_builder("message_attachments")

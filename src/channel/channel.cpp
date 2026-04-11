@@ -10,14 +10,14 @@ namespace orangutan::channel {
 
     namespace {
 
-        Channel &require_channel_for_jid(const std::vector<std::unique_ptr<Channel>> &channels, const std::string &jid) {
+        Channel &require_channel_for_jid(const std::vector<std::unique_ptr<Channel>> &channels, std::string_view jid) {
             for (const auto &channel : channels) {
-                if (channel->owns_jid(jid)) {
+                if (channel->owns_jid(std::string{jid})) {
                     return *channel;
                 }
             }
 
-            throw std::runtime_error("No channel owns jid: " + jid);
+            throw std::runtime_error("No channel owns jid: " + std::string{jid});
         }
 
     } // namespace
@@ -48,65 +48,65 @@ namespace orangutan::channel {
         require_channel_for_jid(channels_, jid).send(jid, message);
     }
 
-    void ChannelManager::send(const std::string &jid, const std::string &text, const std::string &reply_to_message_id) {
-        send(jid, OutboundMessage{
-                      .payload = TextPayload{.text = text},
-                      .reply_to_message_id = reply_to_message_id,
-                  });
+    void ChannelManager::send(std::string_view jid, std::string_view text, std::string_view reply_to_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload = TextPayload{.text = std::string{text}},
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                               });
     }
 
-    void ChannelManager::send_markdown(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        send(jid, OutboundMessage{
-                      .payload = MarkdownPayload{.markdown = markdown},
-                      .reply_to_message_id = reply_to_message_id,
-                      .reference_message_id = reference_message_id,
-                  });
+    void ChannelManager::send_markdown(std::string_view jid, std::string_view markdown, std::string_view reply_to_message_id, std::string_view reference_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload = MarkdownPayload{.markdown = std::string{markdown}},
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                                   .reference_message_id = std::string{reference_message_id},
+                               });
     }
 
-    void ChannelManager::send_media(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id, const std::string &caption,
-                                    const std::string &reference_message_id) {
-        send(jid, OutboundMessage{
-                      .payload =
-                          MediaPayload{
-                              .file_type = file_type,
-                              .url = url,
-                              .caption = caption,
-                          },
-                      .reply_to_message_id = reply_to_message_id,
-                      .reference_message_id = reference_message_id,
-                  });
+    void ChannelManager::send_media(std::string_view jid, int file_type, std::string_view url, std::string_view reply_to_message_id, std::string_view caption,
+                                    std::string_view reference_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload =
+                                       MediaPayload{
+                                           .file_type = file_type,
+                                           .url = std::string{url},
+                                           .caption = std::string{caption},
+                                       },
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                                   .reference_message_id = std::string{reference_message_id},
+                               });
     }
 
-    void ChannelManager::send_keyboard(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id,
-                                       const std::string &reference_message_id) {
-        send(jid, OutboundMessage{
-                      .payload =
-                          KeyboardPayload{
-                              .markdown = markdown,
-                              .keyboard_payload = keyboard_payload,
-                          },
-                      .reply_to_message_id = reply_to_message_id,
-                      .reference_message_id = reference_message_id,
-                  });
+    void ChannelManager::send_keyboard(std::string_view jid, std::string_view markdown, const nlohmann::json &keyboard_payload, std::string_view reply_to_message_id,
+                                       std::string_view reference_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload =
+                                       KeyboardPayload{
+                                           .markdown = std::string{markdown},
+                                           .keyboard_payload = keyboard_payload,
+                                       },
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                                   .reference_message_id = std::string{reference_message_id},
+                               });
     }
 
-    void ChannelManager::send_ark(const std::string &jid, const nlohmann::json &ark_payload, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        send(jid, OutboundMessage{
-                      .payload = ArkPayload{.ark_payload = ark_payload},
-                      .reply_to_message_id = reply_to_message_id,
-                      .reference_message_id = reference_message_id,
-                  });
+    void ChannelManager::send_ark(std::string_view jid, const nlohmann::json &ark_payload, std::string_view reply_to_message_id, std::string_view reference_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload = ArkPayload{.ark_payload = ark_payload},
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                                   .reference_message_id = std::string{reference_message_id},
+                               });
     }
 
-    void ChannelManager::send_embed(const std::string &jid, const nlohmann::json &embed_payload, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        send(jid, OutboundMessage{
-                      .payload = EmbedPayload{.embed_payload = embed_payload},
-                      .reply_to_message_id = reply_to_message_id,
-                      .reference_message_id = reference_message_id,
-                  });
+    void ChannelManager::send_embed(std::string_view jid, const nlohmann::json &embed_payload, std::string_view reply_to_message_id, std::string_view reference_message_id) {
+        send(std::string{jid}, OutboundMessage{
+                                   .payload = EmbedPayload{.embed_payload = embed_payload},
+                                   .reply_to_message_id = std::string{reply_to_message_id},
+                                   .reference_message_id = std::string{reference_message_id},
+                               });
     }
 
-    Attachment ChannelManager::download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) {
+    Attachment ChannelManager::download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path) {
         return require_channel_for_jid(channels_, jid).download_attachment(jid, attachment, destination_path);
     }
 

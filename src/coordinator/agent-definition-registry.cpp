@@ -1,5 +1,7 @@
 #include "coordinator/agent-definition-registry.hpp"
 
+#include "utils/string.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <spdlog/spdlog.h>
@@ -10,34 +12,11 @@ namespace orangutan::coordinator {
 
     namespace {
 
-        std::string trim(const std::string &s) {
-            const auto start = s.find_first_not_of(" \t\r\n");
-            if (start == std::string::npos) {
-                return {};
-            }
-            const auto end = s.find_last_not_of(" \t\r\n");
-            return s.substr(start, end - start + 1);
-        }
-
-        std::vector<std::string> split_csv(const std::string &s) {
-            std::vector<std::string> result;
-            std::istringstream stream(s);
-            std::string token;
-            while (std::getline(stream, token, ',')) {
-                auto trimmed = trim(token);
-                if (!trimmed.empty()) {
-                    result.push_back(std::move(trimmed));
-                }
-            }
-            return result;
-        }
-
         // Parse a simple YAML-like frontmatter value from a "key: value" line.
         // Returns empty string if the line doesn't match the given key.
-        std::string parse_frontmatter_value(const std::string &line, const std::string &key) {
-            const auto prefix = key + ":";
-            if (line.size() > prefix.size() && line.starts_with(prefix)) {
-                return trim(line.substr(prefix.size()));
+        std::string_view parse_frontmatter_value(std::string_view line, std::string_view key) {
+            if (line.size() > key.size() && line.starts_with(key) && line[key.size()] == ':') {
+                return utils::trim_copy(line.substr(key.size() + 1));
             }
             return {};
         }
@@ -52,7 +31,7 @@ namespace orangutan::coordinator {
             std::string line;
 
             // Check for frontmatter start
-            if (!std::getline(file, line) || trim(line) != "---") {
+            if (!std::getline(file, line) || utils::trim_copy(line) != "---") {
                 spdlog::warn("Agent definition file missing frontmatter: {}", path.string());
                 return std::nullopt;
             }
@@ -63,22 +42,22 @@ namespace orangutan::coordinator {
 
             // Parse frontmatter
             while (std::getline(file, line)) {
-                auto trimmed = trim(line);
+                const auto trimmed = utils::trim_copy(line);
                 if (trimmed == "---") {
                     break;
                 }
 
                 if (auto val = parse_frontmatter_value(trimmed, "description"); !val.empty()) {
-                    def.description = val;
+                    def.description = std::string{val};
                 } else if (auto val = parse_frontmatter_value(trimmed, "tools"); !val.empty()) {
-                    def.tools = split_csv(val);
+                    def.tools = utils::split_csv_trimmed(val);
                 } else if (auto val = parse_frontmatter_value(trimmed, "disallowed_tools"); !val.empty()) {
-                    def.disallowed_tools = split_csv(val);
+                    def.disallowed_tools = utils::split_csv_trimmed(val);
                 } else if (auto val = parse_frontmatter_value(trimmed, "model"); !val.empty()) {
-                    def.model = val;
+                    def.model = std::string{val};
                 } else if (auto val = parse_frontmatter_value(trimmed, "max_turns"); !val.empty()) {
                     try {
-                        def.max_turns = std::stoi(val);
+                        def.max_turns = std::stoi(std::string{val});
                     } catch (...) {
                         spdlog::warn("Invalid max_turns in {}: {}", path.string(), val);
                     }
@@ -95,7 +74,8 @@ namespace orangutan::coordinator {
                 body << line;
                 first = false;
             }
-            def.prompt_addendum = trim(body.str());
+            const auto prompt_body = body.str();
+            def.prompt_addendum = std::string{utils::trim_copy(prompt_body)};
 
             return def;
         }
@@ -131,10 +111,10 @@ namespace orangutan::coordinator {
         });
     }
 
-    void AgentDefinitionRegistry::load_from_directory(const std::string &directory_path) {
+    void AgentDefinitionRegistry::load_from_directory(const std::filesystem::path &directory_path) {
         std::error_code ec;
         if (!std::filesystem::is_directory(directory_path, ec)) {
-            spdlog::debug("Agent definition directory does not exist: {}", directory_path);
+            spdlog::debug("Agent definition directory does not exist: {}", directory_path.string());
             return;
         }
 
@@ -154,8 +134,8 @@ namespace orangutan::coordinator {
         }
     }
 
-    std::optional<AgentDefinition> AgentDefinitionRegistry::find(const std::string &key) const {
-        auto it = definitions_.find(key);
+    std::optional<AgentDefinition> AgentDefinitionRegistry::find(std::string_view key) const {
+        auto it = definitions_.find(std::string{key});
         if (it == definitions_.end()) {
             return std::nullopt;
         }
@@ -171,8 +151,8 @@ namespace orangutan::coordinator {
         return result;
     }
 
-    bool AgentDefinitionRegistry::has(const std::string &key) const {
-        return definitions_.contains(key);
+    bool AgentDefinitionRegistry::has(std::string_view key) const {
+        return definitions_.contains(std::string{key});
     }
 
 } // namespace orangutan::coordinator

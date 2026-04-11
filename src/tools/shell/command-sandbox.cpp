@@ -1,6 +1,7 @@
 #include "tools/shell/command-sandbox.hpp"
 
 #include "tools/internal.hpp"
+#include "utils/escape.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -12,19 +13,6 @@
 
 namespace orangutan::tools {
     namespace {
-
-        std::string shell_escape(std::string_view value) {
-            std::string escaped = "'";
-            for (const auto ch : value) {
-                if (ch == '\'') {
-                    escaped += "'\\''";
-                    continue;
-                }
-                escaped.push_back(ch);
-            }
-            escaped += '\'';
-            return escaped;
-        }
 
         std::optional<std::string> find_bwrap_path() {
             const char *path_env = std::getenv("PATH");
@@ -55,28 +43,27 @@ namespace orangutan::tools {
                 return;
             }
             command += " --ro-bind ";
-            command += shell_escape(path);
+            command += utils::shell_single_quote_escape(path);
             command.push_back(' ');
-            command += shell_escape(path);
+            command += utils::shell_single_quote_escape(path);
         }
 
-        std::string sandbox_working_dir(const std::string &workspace_root, const std::string &working_dir) {
-            const auto normalized_workspace = normalize_tool_path(std::filesystem::path(workspace_root));
-            const auto normalized_working_dir = normalize_tool_path(std::filesystem::path(working_dir.empty() ? workspace_root : working_dir));
-            if (!is_path_within_workspace(normalized_working_dir, normalized_workspace)) {
+        std::filesystem::path sandbox_working_dir(const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir) {
+            const auto normalized_workspace = utils::normalize_path(workspace_root);
+            const auto normalized_working_dir = utils::normalize_path(working_dir.empty() ? workspace_root : working_dir);
+            if (!utils::path_has_prefix(normalized_working_dir, normalized_workspace)) {
                 throw std::runtime_error("working directory escapes workspace sandbox: " + normalized_working_dir.string());
             }
 
             auto relative = normalized_working_dir.lexically_relative(normalized_workspace);
-            std::string sandbox_dir = "/workspace";
+            auto sandbox_dir = std::filesystem::path{"/workspace"};
             if (!relative.empty() && relative != ".") {
-                sandbox_dir += "/";
-                sandbox_dir += relative.string();
+                sandbox_dir /= relative;
             }
             return sandbox_dir;
         }
 
-        SandboxedCommand prepare_isolated_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir) {
+        SandboxedCommand prepare_isolated_command(std::string_view command, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir) {
             if (workspace_root.empty()) {
                 throw std::runtime_error("isolated command execution requires a workspace");
             }
@@ -86,7 +73,7 @@ namespace orangutan::tools {
                 throw std::runtime_error("isolated sandbox mode requires bubblewrap ('bwrap') on PATH");
             }
 
-            std::string wrapped = shell_escape(*maybe_bwrap);
+            std::string wrapped = utils::shell_single_quote_escape(*maybe_bwrap);
             wrapped += " --die-with-parent --new-session --unshare-all";
             wrapped += " --proc /proc --dev /dev --tmpfs /tmp";
             wrapped += " --setenv HOME /tmp --setenv TMPDIR /tmp";
@@ -97,12 +84,12 @@ namespace orangutan::tools {
 
             wrapped += " --dir /workspace";
             wrapped += " --bind ";
-            wrapped += shell_escape(workspace_root);
+            wrapped += utils::shell_single_quote_escape(workspace_root.string());
             wrapped += " /workspace";
             wrapped += " --chdir ";
-            wrapped += shell_escape(sandbox_working_dir(workspace_root, working_dir));
+            wrapped += utils::shell_single_quote_escape(sandbox_working_dir(workspace_root, working_dir).string());
             wrapped += " /bin/sh -c ";
-            wrapped += shell_escape(command);
+            wrapped += utils::shell_single_quote_escape(command);
 
             return {
                 .command = wrapped,
@@ -112,11 +99,12 @@ namespace orangutan::tools {
 
     } // namespace
 
-    SandboxedCommand prepare_sandboxed_command(const std::string &command, const std::string &workspace_root, const std::string &working_dir, tool_sandbox_mode sandbox_mode) {
+    SandboxedCommand prepare_sandboxed_command(std::string_view command, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir,
+                                               tool_sandbox_mode sandbox_mode) {
         switch (sandbox_mode) {
             case tool_sandbox_mode::disabled:
                 return {
-                    .command = command,
+                    .command = std::string(command),
                     .working_dir = working_dir,
                 };
             case tool_sandbox_mode::workspace_write:
@@ -124,7 +112,7 @@ namespace orangutan::tools {
                     throw std::runtime_error("workspace-write sandbox mode requires a workspace");
                 }
                 return {
-                    .command = command,
+                    .command = std::string(command),
                     .working_dir = working_dir,
                 };
             case tool_sandbox_mode::isolated:
@@ -132,7 +120,7 @@ namespace orangutan::tools {
         }
 
         return {
-            .command = command,
+            .command = std::string(command),
             .working_dir = working_dir,
         };
     }

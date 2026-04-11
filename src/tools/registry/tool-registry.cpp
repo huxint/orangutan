@@ -150,8 +150,8 @@ namespace orangutan::tools {
         return summaries;
     }
 
-    const ToolDef *ToolRegistry::find_definition(const std::string &name) const {
-        auto it = tools_.find(name);
+    const ToolDef *ToolRegistry::find_definition(std::string_view name) const {
+        auto it = tools_.find(std::string{name});
         if (it == tools_.end()) {
             return nullptr;
         }
@@ -161,8 +161,8 @@ namespace orangutan::tools {
         return &it->second.definition;
     }
 
-    const Tool *ToolRegistry::find_tool(const std::string &name) const {
-        auto it = tools_.find(name);
+    const Tool *ToolRegistry::find_tool(std::string_view name) const {
+        auto it = tools_.find(std::string{name});
         if (it == tools_.end()) {
             return nullptr;
         }

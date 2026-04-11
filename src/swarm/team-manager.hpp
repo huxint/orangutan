@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -28,7 +29,7 @@ namespace orangutan::swarm {
 
     class TeamManager {
     public:
-        explicit TeamManager(const std::string &db_path);
+        explicit TeamManager(const std::filesystem::path &db_path);
         ~TeamManager();
 
         TeamManager(const TeamManager &) = delete;

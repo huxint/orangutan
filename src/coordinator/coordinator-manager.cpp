@@ -1,6 +1,7 @@
 #include "coordinator/coordinator-manager.hpp"
 #include "coordinator/agent-definition-registry.hpp"
 #include "swarm/mailbox.hpp"
+#include "utils/escape.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -13,34 +14,6 @@ namespace orangutan::coordinator {
 
         std::int64_t now_millis() {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        }
-
-        std::string escape_xml(std::string_view text) {
-            std::string escaped;
-            escaped.reserve(text.size());
-            for (const char ch : text) {
-                switch (ch) {
-                    case '&':
-                        escaped += "&amp;";
-                        break;
-                    case '<':
-                        escaped += "&lt;";
-                        break;
-                    case '>':
-                        escaped += "&gt;";
-                        break;
-                    case '"':
-                        escaped += "&quot;";
-                        break;
-                    case '\'':
-                        escaped += "&apos;";
-                        break;
-                    default:
-                        escaped.push_back(ch);
-                        break;
-                }
-            }
-            return escaped;
         }
 
         std::string format_task_notification(const AgentRunRecord &record) {
@@ -65,25 +38,25 @@ namespace orangutan::coordinator {
 
             return "<task-notification>\n"
                    "  <task-id>" +
-                   escape_xml(record.run_id) +
+                   utils::escape_xml(record.run_id) +
                    "</task-id>\n"
                    "  <agent-key>" +
-                   escape_xml(record.agent_key) +
+                   utils::escape_xml(record.agent_key) +
                    "</agent-key>\n"
                    "  <agent-name>" +
-                   escape_xml(record.agent_name) +
+                   utils::escape_xml(record.agent_name) +
                    "</agent-name>\n"
                    "  <status>" +
-                   escape_xml(status_str) +
+                   utils::escape_xml(status_str) +
                    "</status>\n"
                    "  <summary>" +
-                   escape_xml(record.task_summary) +
+                   utils::escape_xml(record.task_summary) +
                    "</summary>\n"
                    "  <result>" +
-                   escape_xml(record.final_output) +
+                   utils::escape_xml(record.final_output) +
                    "</result>\n"
                    "  <error>" +
-                   escape_xml(record.error) +
+                   utils::escape_xml(record.error) +
                    "</error>\n"
                    "</task-notification>";
         }

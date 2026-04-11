@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 
 #include <magic_enum/magic_enum.hpp>
 #include <spdlog/spdlog.h>
@@ -15,7 +16,7 @@
 namespace orangutan::bootstrap {
 
     void load_display_skills(skills::SkillLoader &skill_loader, const config::Config &cfg, const std::string &workspace_root) {
-        auto skill_dirs = skills::resolve_skill_directories(cfg.skill_paths, workspace_root);
+        auto skill_dirs = skills::resolve_skill_directories(cfg.skill_paths, std::filesystem::path{workspace_root});
         skill_loader.load_from_directories(skill_dirs);
         if (!skill_loader.active_skills().empty()) {
             spdlog::info("Loaded {} skill(s)", skill_loader.active_skills().size());

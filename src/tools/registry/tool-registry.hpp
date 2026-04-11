@@ -3,6 +3,7 @@
 #include "permissions/permission-types.hpp"
 #include "types/tool-def.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -67,9 +68,9 @@ namespace orangutan::tools {
         [[nodiscard]]
         std::vector<DeferredToolSummary> deferred_tool_summaries() const;
         [[nodiscard]]
-        const ToolDef *find_definition(const std::string &name) const;
+        const ToolDef *find_definition(std::string_view name) const;
         [[nodiscard]]
-        const Tool *find_tool(const std::string &name) const;
+        const Tool *find_tool(std::string_view name) const;
 
     private:
         std::unordered_map<std::string, Tool> tools_;
@@ -81,7 +82,7 @@ namespace orangutan::tools {
     [[nodiscard]]
     std::string scrub_tool_output(std::string_view text);
 
-    void register_builtin_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory = nullptr, const std::string &workspace = {},
+    void register_builtin_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory = nullptr, const std::filesystem::path &workspace_root = {},
                                 const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionContext *permissions = nullptr,
                                 std::string_view edit_mode = "search_replace");
 

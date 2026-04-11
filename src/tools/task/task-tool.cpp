@@ -36,20 +36,20 @@ namespace orangutan::tools {
                 return "Error: task tool is not available in this context.";
             }
 
-            const auto agent_key = ctx->agent_key.empty() ? std::string("default") : ctx->agent_key;
+            const auto agent_key = builtin::detail::resolve_agent_key(*ctx);
             auto &runtime = *ctx->automation_runtime;
 
-                const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
+            const auto run_add_or_update = [&runtime, &agent_key](const nlohmann::json &request, std::string_view op) {
                 if (op == "update") {
                     if (const auto error = require_id_or_name(request); error.has_value()) {
                         return tool_dispatch::response{.message = *error, .is_error = true};
                     }
                 }
-                const auto id_or_name = request.value("id", request.value("name", ""));
+                const auto entity_key = builtin::detail::id_or_name(request);
 
                 automation::TaskSpec task;
                 if (op == "update") {
-                    const auto existing = runtime.find_task(agent_key, id_or_name);
+                    const auto existing = runtime.find_task(agent_key, entity_key);
                     if (!existing.has_value()) {
                         return tool_dispatch::response{.message = "Error: task not found.", .is_error = true};
                     }
@@ -112,19 +112,16 @@ namespace orangutan::tools {
                                             })
                                         .on("remove",
                                             [&runtime, &agent_key](const nlohmann::json &request) {
-                                                if (const auto error = require_id_or_name(request); error.has_value()) {
-                                                    return tool_dispatch::response{.message = *error, .is_error = true};
-                                                }
-                                                const auto id_or_name = request.value("id", request.value("name", ""));
-                                                return tool_dispatch::response{.message = runtime.remove_task(agent_key, id_or_name) ? "Removed task." : "Error: task not found."};
+                                                return builtin::detail::require_named_entity(request, "Error: id or name is required.", [&](const std::string &entity_key) {
+                                                    return tool_dispatch::response{.message =
+                                                                                       runtime.remove_task(agent_key, entity_key) ? "Removed task." : "Error: task not found."};
+                                                });
                                             })
                                         .on("run",
                                             [&runtime, &agent_key](const nlohmann::json &request) {
-                                                if (const auto error = require_id_or_name(request); error.has_value()) {
-                                                    return tool_dispatch::response{.message = *error, .is_error = true};
-                                                }
-                                                const auto id_or_name = request.value("id", request.value("name", ""));
-                                                return tool_dispatch::response{.message = runtime.run_task_now(agent_key, id_or_name)};
+                                                return builtin::detail::require_named_entity(request, "Error: id or name is required.", [&](const std::string &entity_key) {
+                                                    return tool_dispatch::response{.message = runtime.run_task_now(agent_key, entity_key)};
+                                                });
                                             })
                                         .on("add",
                                             [&run_add_or_update](const nlohmann::json &request) {
@@ -134,7 +131,7 @@ namespace orangutan::tools {
                                             [&run_add_or_update](const nlohmann::json &request) {
                                                 return run_add_or_update(request, "update");
                                             }),
-                                    routed_input_with_default_op(input, ""));
+                                    builtin::detail::normalize_automation_op_input(input));
         }
 
     } // namespace

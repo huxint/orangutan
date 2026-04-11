@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -27,7 +28,7 @@ namespace orangutan::swarm {
 
     class AgentMailbox {
     public:
-        explicit AgentMailbox(const std::string &db_path);
+        explicit AgentMailbox(const std::filesystem::path &db_path);
         ~AgentMailbox();
 
         AgentMailbox(const AgentMailbox &) = delete;

@@ -3,9 +3,9 @@
 #include "permissions/permission-types.hpp"
 #include "process/subprocess.hpp"
 #include "tools/registry/tool-registry.hpp"
+#include "utils/path.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -18,56 +18,16 @@ namespace orangutan::tools {
 
     class BackgroundCompletionDispatcher;
 
-    inline std::filesystem::path normalize_tool_path(const std::filesystem::path &path) {
-        std::error_code ec;
-        auto normalized = std::filesystem::weakly_canonical(path, ec);
-        if (!ec) {
-            return normalized;
-        }
-
-        return path.lexically_normal();
-    }
-
-    inline bool is_path_within_workspace(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
-        auto path_it = path.begin();
-        auto root_it = workspace_root.begin();
-        for (; root_it != workspace_root.end(); ++root_it, ++path_it) {
-            if (path_it == path.end() || *path_it != *root_it) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    inline std::filesystem::path expand_tool_home_path(const std::filesystem::path &path) {
-        const auto raw = path.string();
-        if (raw != "~" && !raw.starts_with("~/")) {
-            return path;
-        }
-
-        const auto *home = std::getenv("HOME");
-        if (home == nullptr || std::string_view{home}.empty()) {
-            throw std::runtime_error("HOME is not set, cannot expand path: " + raw);
-        }
-
-        if (raw == "~") {
-            return {home};
-        }
-
-        return std::filesystem::path(home) / raw.substr(2);
-    }
-
     inline std::filesystem::path normalize_permission_root(const std::filesystem::path &path, const std::filesystem::path &workspace_root) {
         if (path.empty()) {
             return {};
         }
 
-        auto expanded = expand_tool_home_path(path);
+        auto expanded = utils::expand_home_path(path);
         if (!expanded.is_absolute() && !workspace_root.empty()) {
-            expanded = normalize_tool_path(workspace_root) / expanded;
+            expanded = utils::resolve_relative_to(expanded, workspace_root);
         }
-        return normalize_tool_path(expanded);
+        return utils::normalize_path(expanded);
     }
 
     inline std::filesystem::path orangutan_config_root() {
@@ -76,13 +36,13 @@ namespace orangutan::tools {
             return {};
         }
 
-        return normalize_tool_path(std::filesystem::path(home) / ".orangutan");
+        return utils::normalize_path(std::filesystem::path(home) / ".orangutan");
     }
 
     inline std::vector<std::filesystem::path> permission_roots(const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
         std::vector<std::filesystem::path> roots;
         if (!workspace_root.empty()) {
-            roots.push_back(normalize_tool_path(workspace_root));
+            roots.push_back(utils::normalize_path(workspace_root));
         }
 
         const auto config_root = orangutan_config_root();
@@ -104,7 +64,7 @@ namespace orangutan::tools {
 
     inline bool is_tool_path_allowed(const std::filesystem::path &path, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr) {
         return std::ranges::any_of(permission_roots(workspace_root, permissions), [&path](const auto &root) {
-            return is_path_within_workspace(path, root);
+            return utils::path_has_prefix(path, root);
         });
     }
 
@@ -114,14 +74,13 @@ namespace orangutan::tools {
             throw std::runtime_error("path is empty");
         }
 
-        auto expanded = expand_tool_home_path(path);
+        auto expanded = utils::expand_home_path(path);
         if (workspace_root.empty()) {
             return expanded;
         }
 
-        const auto normalized_workspace = normalize_tool_path(workspace_root);
-        const auto candidate = expanded.is_absolute() ? expanded : normalized_workspace / expanded;
-        const auto normalized_candidate = normalize_tool_path(candidate);
+        const auto normalized_workspace = utils::normalize_path(workspace_root);
+        const auto normalized_candidate = expanded.is_absolute() ? utils::normalize_path(expanded) : utils::resolve_relative_to(expanded, normalized_workspace);
         if (!is_tool_path_allowed(normalized_candidate, normalized_workspace, permissions)) {
             throw std::runtime_error("path escapes workspace sandbox: " + path.string());
         }
@@ -132,7 +91,7 @@ namespace orangutan::tools {
     inline std::filesystem::path resolve_tool_working_dir(std::string_view working_dir, const std::filesystem::path &workspace_root,
                                                           const ToolPermissionContext *permissions = nullptr) {
         if (working_dir.empty()) {
-            return workspace_root.empty() ? std::filesystem::path{} : normalize_tool_path(workspace_root);
+            return workspace_root.empty() ? std::filesystem::path{} : utils::normalize_path(workspace_root);
         }
 
         auto resolved = resolve_tool_path(std::filesystem::path(working_dir), workspace_root, permissions);

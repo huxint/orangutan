@@ -4,11 +4,13 @@
 
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <filesystem>
 #include <future>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -17,6 +19,24 @@
 using namespace orangutan;
 
 namespace {
+
+    using ChannelTextSendSignature = void (Channel::*)(std::string_view, std::string_view, std::string_view);
+    using ChannelMarkdownSendSignature = void (Channel::*)(std::string_view, std::string_view, std::string_view, std::string_view);
+    using ChannelMediaSendSignature = void (Channel::*)(std::string_view, int, std::string_view, std::string_view, std::string_view, std::string_view);
+    using ManagerTextSendSignature = void (ChannelManager::*)(std::string_view, std::string_view, std::string_view);
+    using ManagerMarkdownSendSignature = void (ChannelManager::*)(std::string_view, std::string_view, std::string_view, std::string_view);
+    using ManagerMediaSendSignature = void (ChannelManager::*)(std::string_view, int, std::string_view, std::string_view, std::string_view, std::string_view);
+    using ChannelDownloadSignature = Attachment (Channel::*)(std::string_view, const Attachment &, const std::filesystem::path &);
+    using ManagerDownloadSignature = Attachment (ChannelManager::*)(std::string_view, const Attachment &, const std::filesystem::path &);
+
+    static_assert(std::is_same_v<decltype(&Channel::send_message), ChannelTextSendSignature>);
+    static_assert(std::is_same_v<decltype(&Channel::send_markdown_message), ChannelMarkdownSendSignature>);
+    static_assert(std::is_same_v<decltype(&Channel::send_media_message), ChannelMediaSendSignature>);
+    static_assert(std::is_same_v<decltype(static_cast<ManagerTextSendSignature>(&ChannelManager::send)), ManagerTextSendSignature>);
+    static_assert(std::is_same_v<decltype(&ChannelManager::send_markdown), ManagerMarkdownSendSignature>);
+    static_assert(std::is_same_v<decltype(&ChannelManager::send_media), ManagerMediaSendSignature>);
+    static_assert(std::is_same_v<decltype(&Channel::download_attachment), ChannelDownloadSignature>);
+    static_assert(std::is_same_v<decltype(&ChannelManager::download_attachment), ManagerDownloadSignature>);
 
     class MockChannel final : public Channel {
     public:
@@ -362,6 +382,32 @@ namespace {
         REQUIRE(known_users.size() == 2UL);
         CHECK(known_users[0] == "qqbot:c2c:2");
         CHECK(known_users[1] == "qqbot:guild:1");
+    };
+
+    TEST_CASE("channel_manager_convenience_apis_accept_views_and_paths") {
+        ChannelManager manager;
+
+        auto cli_channel = std::make_unique<MockChannel>("cli", "cli:");
+        auto *cli = cli_channel.get();
+        manager.add_channel(std::move(cli_channel));
+
+        const auto destination = std::filesystem::path{"downloads/out.txt"};
+        Attachment attachment{
+            .filename = "out.txt",
+        };
+
+        CHECK_NOTHROW(manager.send(std::string_view{"cli:local"}, std::string_view{"hello"}, std::string_view{"reply-1"}));
+        CHECK_NOTHROW(manager.send_markdown(std::string_view{"cli:local"}, std::string_view{"# heading"}, std::string_view{"reply-2"}, std::string_view{"ref-2"}));
+        CHECK_NOTHROW(manager.send_media(std::string_view{"cli:local"}, 1, std::string_view{"https://example.test/a.png"}, std::string_view{"reply-3"}, std::string_view{"caption"},
+                                         std::string_view{"ref-3"}));
+        CHECK_THROWS(manager.download_attachment(std::string_view{"cli:local"}, attachment, destination));
+
+        REQUIRE(cli->sent_messages().size() == 1UL);
+        CHECK(cli->sent_messages().front().second == "hello");
+        REQUIRE(cli->sent_markdown_messages().size() == 1UL);
+        CHECK(cli->sent_markdown_messages().front().second == "# heading");
+        REQUIRE(cli->sent_media_messages().size() == 1UL);
+        CHECK(cli->sent_media_messages().front().caption == "caption");
     };
 
 } // namespace

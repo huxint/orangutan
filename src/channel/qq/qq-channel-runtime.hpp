@@ -1,0 +1,75 @@
+#pragma once
+
+#include "channel/qq/qq-transport.hpp"
+#include "types/base.hpp"
+
+#include <chrono>
+#include <cstddef>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+
+namespace orangutan::channel::qq {
+
+    struct qq_channel_runtime_state {
+        struct pending_debounced_message {
+            std::string text;
+            std::string reply_to_message_id;
+            std::string reference_message_id;
+            std::chrono::steady_clock::time_point first_enqueued_at;
+            std::chrono::steady_clock::time_point last_update_at;
+        };
+
+        struct known_user {
+            std::string kind;
+            std::string openid;
+            std::chrono::system_clock::time_point last_seen_at;
+        };
+
+        struct typing_state {
+            std::string message_id;
+            std::chrono::steady_clock::time_point last_sent_at;
+        };
+
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::mutex heartbeat_mutex;
+        std::condition_variable_any heartbeat_cv;
+        bool ready = false;
+        bool hello_received = false;
+        bool close_requested = false;
+        std::string last_error;
+        base::u32 last_seq = 0;
+        std::string session_id;
+        std::chrono::milliseconds heartbeat_interval{0};
+        std::jthread heartbeat_thread;
+        std::mutex token_refresh_mutex;
+        std::condition_variable_any token_refresh_cv;
+        std::jthread token_refresh_thread;
+        std::mutex debounce_mutex;
+        std::condition_variable_any debounce_cv;
+        std::jthread debounce_thread;
+        std::unordered_map<std::string, pending_debounced_message> pending_messages;
+        std::chrono::milliseconds debounce_window{1500};
+        std::chrono::milliseconds debounce_max_wait{8000};
+        std::string debounce_separator = "\n\n---\n\n";
+        std::mutex known_users_mutex;
+        std::unordered_map<std::string, known_user> known_users;
+        std::mutex group_history_mutex;
+        std::unordered_map<std::string, std::deque<std::string>> group_history;
+        std::size_t group_history_limit = 50;
+        std::mutex ref_index_mutex;
+        std::unordered_map<std::string, std::string> ref_index_cache;
+        static constexpr std::size_t REF_INDEX_MAX_ENTRIES = 50000;
+        std::mutex typing_mutex;
+        std::condition_variable_any typing_cv;
+        std::jthread typing_thread;
+        std::unordered_map<std::string, typing_state> typing_states;
+        std::unique_ptr<Transport> websocket;
+    };
+
+} // namespace orangutan::channel::qq

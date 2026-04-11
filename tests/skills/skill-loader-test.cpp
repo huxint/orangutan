@@ -6,11 +6,18 @@
 #include <fstream>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
 
 namespace {
+
+    using LoadDirectoriesSignature = void (SkillLoader::*)(const std::vector<std::filesystem::path> &);
+    using ResolveDirectoriesSignature = std::vector<std::filesystem::path> (*)(const std::vector<std::string> &, const std::filesystem::path &);
+
+    static_assert(std::is_same_v<decltype(&SkillLoader::load_from_directories), LoadDirectoriesSignature>);
+    static_assert(std::is_same_v<decltype(&resolve_skill_directories), ResolveDirectoriesSignature>);
 
     std::filesystem::path fixtures_dir() {
         return std::filesystem::path(SOURCE_DIR) / "tests/fixtures/skills";
@@ -35,12 +42,22 @@ namespace {
 
     TEST_CASE("find_skill_returns_matching_skill") {
         SkillLoader loader;
-        loader.load_from_directories({fixtures_dir().string()});
+        loader.load_from_directories({fixtures_dir()});
 
         const auto *skill = loader.find_skill("test-skill");
         REQUIRE(skill != nullptr);
         CHECK(skill->description == "A test skill for unit testing");
         CHECK(skill->body.contains("test skill body"));
+    };
+
+    TEST_CASE("resolve_skill_directories_returns_paths") {
+        const auto workspace_root = orangutan::testing::unique_test_root("skill-loader-workspace-root");
+        const auto directories = resolve_skill_directories({}, workspace_root);
+
+        REQUIRE(directories.size() >= 1UL);
+        CHECK(directories.back() == workspace_root / ".orangutan" / "skills");
+
+        std::filesystem::remove_all(workspace_root);
     };
 
     TEST_CASE("find_skill_returns_nullptr_for_unknown_name") {

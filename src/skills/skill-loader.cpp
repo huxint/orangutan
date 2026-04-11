@@ -215,29 +215,34 @@ namespace orangutan::skills {
 
     } // namespace
 
-    std::vector<std::string> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, std::string_view workspace_root) {
+    std::vector<std::filesystem::path> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::filesystem::path &workspace_root) {
         if (!configured_skill_paths.empty()) {
-            return configured_skill_paths;
+            std::vector<std::filesystem::path> configured_paths;
+            configured_paths.reserve(configured_skill_paths.size());
+            for (const auto &path : configured_skill_paths) {
+                configured_paths.emplace_back(path);
+            }
+            return configured_paths;
         }
 
-        std::vector<std::string> directories;
+        std::vector<std::filesystem::path> directories;
         if (const char *home = std::getenv("HOME")) {
-            directories.emplace_back(std::string(home) + "/.orangutan/skills");
+            directories.emplace_back(std::filesystem::path{home} / ".orangutan" / "skills");
         }
         if (!workspace_root.empty()) {
-            directories.emplace_back(bootstrap::workspace_skills_root(std::string(workspace_root)).string());
+            directories.emplace_back(bootstrap::workspace_skills_root(workspace_root.string()));
         }
         return directories;
     }
 
-    void SkillLoader::load_from_directories(const std::vector<std::string> &directories) {
+    void SkillLoader::load_from_directories(const std::vector<std::filesystem::path> &directories) {
         // Use a map for same-name shadowing: later directories override earlier ones
         std::unordered_map<std::string, SkillDef> by_name;
 
         for (const auto &dir_path : directories) {
             std::error_code ec;
             if (!std::filesystem::exists(dir_path, ec) || ec || !std::filesystem::is_directory(dir_path, ec) || ec) {
-                spdlog::debug("Skill directory does not exist, skipping: {}", dir_path);
+                spdlog::debug("Skill directory does not exist, skipping: {}", dir_path.string());
                 continue;
             }
 
@@ -251,7 +256,7 @@ namespace orangutan::skills {
             }
 
             if (ec) {
-                spdlog::warn("Error scanning skill directory {}: {}", dir_path, ec.message());
+                spdlog::warn("Error scanning skill directory {}: {}", dir_path.string(), ec.message());
                 continue;
             }
 

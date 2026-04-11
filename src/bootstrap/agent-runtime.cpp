@@ -118,18 +118,17 @@ namespace orangutan::bootstrap {
             }
             *permission_context = add_rule(*permission_context, std::move(rule));
         };
-        auto tool_bootstrap = register_runtime_tools(runtime.tools(), runtime.memory.get(), input.identity.workspace, runtime.tool_context_storage_.get(), input.custom_tools,
-                                                     input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);
+        auto tool_bootstrap = register_runtime_tools(runtime.tools(), runtime.memory.get(), std::filesystem::path(input.identity.workspace), runtime.tool_context_storage_.get(),
+                                                     input.custom_tools, input.mcp_servers, runtime.permissions_storage_.get(), input.edit_mode);
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
         runtime.skill_loader = std::make_unique<SkillLoader>();
-        runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, input.workspace_root));
+        runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, std::filesystem::path{input.workspace_root}));
         std::string prompt_guidance;
         if (input.coordinator_mode) {
             prompt_guidance = coordinator::get_coordinator_system_prompt(input.team_agents);
         } else if (input.is_child_run) {
-            const auto task_description =
-                input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
+            const auto task_description = input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
             prompt_guidance = coordinator::get_worker_system_prompt_addendum(input.agent_key, task_description);
         } else if (!input.team_agents.empty()) {
             prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, false);

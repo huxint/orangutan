@@ -1,9 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include "swarm/mailbox.hpp"
 
+#include <filesystem>
+#include <type_traits>
+
+namespace {
+
+    using MailboxSignature = void (orangutan::swarm::AgentMailbox::*)(const std::string &, const std::string &, const std::string &, const std::string &,
+                                                                      orangutan::swarm::message_type);
+
+    static_assert(std::is_constructible_v<orangutan::swarm::AgentMailbox, const std::filesystem::path &>);
+    static_assert(std::is_same_v<decltype(&orangutan::swarm::AgentMailbox::send), MailboxSignature>);
+
+} // namespace
+
 TEST_CASE("AgentMailbox basic operations", "[swarm]") {
     // Use in-memory SQLite
-    orangutan::swarm::AgentMailbox mailbox(":memory:");
+    orangutan::swarm::AgentMailbox mailbox(std::filesystem::path{":memory:"});
 
     SECTION("send and poll") {
         mailbox.send("team1", "coordinator", "worker1", "do the thing");

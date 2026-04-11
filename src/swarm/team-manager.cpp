@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
@@ -30,8 +31,9 @@ namespace orangutan::swarm {
         sqlite3 *db = nullptr;
         mutable std::mutex mutex;
 
-        explicit Impl(const std::string &db_path) {
-            int rc = sqlite3_open(db_path.c_str(), &db);
+        explicit Impl(const std::filesystem::path &db_path) {
+            const auto db_path_text = db_path.string();
+            int rc = sqlite3_open(db_path_text.c_str(), &db);
             if (rc != SQLITE_OK) {
                 std::string err = sqlite3_errmsg(db);
                 sqlite3_close(db);
@@ -88,7 +90,7 @@ namespace orangutan::swarm {
         }
     };
 
-    TeamManager::TeamManager(const std::string &db_path)
+    TeamManager::TeamManager(const std::filesystem::path &db_path)
     : impl_(std::make_unique<Impl>(db_path)) {}
 
     TeamManager::~TeamManager() = default;

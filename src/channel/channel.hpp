@@ -5,10 +5,12 @@
 
 #include <nlohmann/json.hpp>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -117,67 +119,65 @@ namespace orangutan::channel {
         virtual void connect(MessageCallback on_message) = 0;
         virtual void send(const std::string &jid, const OutboundMessage &message) = 0;
 
-        void send_message(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload = TextPayload{.text = text},
-                          .reply_to_message_id = reply_to_message_id,
-                      });
+        void send_message(std::string_view jid, std::string_view text, std::string_view reply_to_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload = TextPayload{.text = std::string{text}},
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                   });
         }
 
-        void send_markdown_message(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload = MarkdownPayload{.markdown = markdown},
-                          .reply_to_message_id = reply_to_message_id,
-                          .reference_message_id = reference_message_id,
-                      });
+        void send_markdown_message(std::string_view jid, std::string_view markdown, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload = MarkdownPayload{.markdown = std::string{markdown}},
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                       .reference_message_id = std::string{reference_message_id},
+                                   });
         }
 
-        void send_media_message(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id = "", const std::string &caption = "",
-                                const std::string &reference_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload =
-                              MediaPayload{
-                                  .file_type = file_type,
-                                  .url = url,
-                                  .caption = caption,
-                              },
-                          .reply_to_message_id = reply_to_message_id,
-                          .reference_message_id = reference_message_id,
-                      });
+        void send_media_message(std::string_view jid, int file_type, std::string_view url, std::string_view reply_to_message_id = {}, std::string_view caption = {},
+                                std::string_view reference_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload =
+                                           MediaPayload{
+                                               .file_type = file_type,
+                                               .url = std::string{url},
+                                               .caption = std::string{caption},
+                                           },
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                       .reference_message_id = std::string{reference_message_id},
+                                   });
         }
 
-        void send_keyboard_message(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id = "",
-                                   const std::string &reference_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload =
-                              KeyboardPayload{
-                                  .markdown = markdown,
-                                  .keyboard_payload = keyboard_payload,
-                              },
-                          .reply_to_message_id = reply_to_message_id,
-                          .reference_message_id = reference_message_id,
-                      });
+        void send_keyboard_message(std::string_view jid, std::string_view markdown, const nlohmann::json &keyboard_payload, std::string_view reply_to_message_id = {},
+                                   std::string_view reference_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload =
+                                           KeyboardPayload{
+                                               .markdown = std::string{markdown},
+                                               .keyboard_payload = keyboard_payload,
+                                           },
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                       .reference_message_id = std::string{reference_message_id},
+                                   });
         }
 
-        void send_ark_message(const std::string &jid, const nlohmann::json &ark_payload, const std::string &reply_to_message_id = "",
-                              const std::string &reference_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload = ArkPayload{.ark_payload = ark_payload},
-                          .reply_to_message_id = reply_to_message_id,
-                          .reference_message_id = reference_message_id,
-                      });
+        void send_ark_message(std::string_view jid, const nlohmann::json &ark_payload, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload = ArkPayload{.ark_payload = ark_payload},
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                       .reference_message_id = std::string{reference_message_id},
+                                   });
         }
 
-        void send_embed_message(const std::string &jid, const nlohmann::json &embed_payload, const std::string &reply_to_message_id = "",
-                                const std::string &reference_message_id = "") {
-            send(jid, OutboundMessage{
-                          .payload = EmbedPayload{.embed_payload = embed_payload},
-                          .reply_to_message_id = reply_to_message_id,
-                          .reference_message_id = reference_message_id,
-                      });
+        void send_embed_message(std::string_view jid, const nlohmann::json &embed_payload, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {}) {
+            send(std::string{jid}, OutboundMessage{
+                                       .payload = EmbedPayload{.embed_payload = embed_payload},
+                                       .reply_to_message_id = std::string{reply_to_message_id},
+                                       .reference_message_id = std::string{reference_message_id},
+                                   });
         }
 
-        virtual Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path) {
+        virtual Attachment download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path) {
             static_cast<void>(jid);
             static_cast<void>(attachment);
             static_cast<void>(destination_path);
@@ -228,16 +228,16 @@ namespace orangutan::channel {
         void add_channel(std::unique_ptr<Channel> ch);
         void connect_all(const MessageCallback &on_message);
         void send(const std::string &jid, const OutboundMessage &message);
-        void send(const std::string &jid, const std::string &text, const std::string &reply_to_message_id = "");
-        void send_markdown(const std::string &jid, const std::string &markdown, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
-        void send_media(const std::string &jid, int file_type, const std::string &url, const std::string &reply_to_message_id = "", const std::string &caption = "",
-                        const std::string &reference_message_id = "");
-        void send_keyboard(const std::string &jid, const std::string &markdown, const nlohmann::json &keyboard_payload, const std::string &reply_to_message_id = "",
-                           const std::string &reference_message_id = "");
-        void send_ark(const std::string &jid, const nlohmann::json &ark_payload, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
-        void send_embed(const std::string &jid, const nlohmann::json &embed_payload, const std::string &reply_to_message_id = "", const std::string &reference_message_id = "");
+        void send(std::string_view jid, std::string_view text, std::string_view reply_to_message_id = {});
+        void send_markdown(std::string_view jid, std::string_view markdown, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {});
+        void send_media(std::string_view jid, int file_type, std::string_view url, std::string_view reply_to_message_id = {}, std::string_view caption = {},
+                        std::string_view reference_message_id = {});
+        void send_keyboard(std::string_view jid, std::string_view markdown, const nlohmann::json &keyboard_payload, std::string_view reply_to_message_id = {},
+                           std::string_view reference_message_id = {});
+        void send_ark(std::string_view jid, const nlohmann::json &ark_payload, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {});
+        void send_embed(std::string_view jid, const nlohmann::json &embed_payload, std::string_view reply_to_message_id = {}, std::string_view reference_message_id = {});
         [[nodiscard]]
-        Attachment download_attachment(const std::string &jid, const Attachment &attachment, const std::string &destination_path);
+        Attachment download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path);
         void add_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id);
         void remove_reaction(const std::string &jid, const std::string &message_id, const std::string &type, const std::string &id);
         void start_typing(const std::string &jid, const std::string &message_id);
