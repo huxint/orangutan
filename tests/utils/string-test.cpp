@@ -20,6 +20,10 @@ TEST_CASE("normalize_enum_token lowercases and normalizes separators") {
     CHECK(utils::normalize_enum_token("Bypass-Permissions_mode") == "bypass_permissions_mode");
 }
 
-TEST_CASE("split_csv_trimmed trims fields and skips blanks") {
-    CHECK(utils::split_csv_trimmed(" read  , shell(git:*), , task(list)  ,   ") == std::vector<std::string>{"read", "shell(git:*)", "task(list)"});
+TEST_CASE("split_trimmed trims comma separated fields and skips blanks") {
+    CHECK(utils::split_trimmed(" read  , shell(git:*), , task(list)  ,   ") == std::vector<std::string>{"read", "shell(git:*)", "task(list)"});
+}
+
+TEST_CASE("split_trimmed ignores non-comma separators") {
+    CHECK(utils::split_trimmed(" read  ; shell(git:*); ; task(list)  ;   ") == std::vector<std::string>{"read  ; shell(git:*); ; task(list)  ;"});
 }

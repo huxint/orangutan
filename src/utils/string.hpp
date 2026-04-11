@@ -1,10 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <ctre.hpp>
 
 namespace orangutan::utils {
 
@@ -49,23 +50,11 @@ namespace orangutan::utils {
     }
 
     [[nodiscard]]
-    inline std::vector<std::string> split_csv_trimmed(std::string_view value) {
+    inline std::vector<std::string> split_trimmed(std::string_view value) {
         std::vector<std::string> values;
-        std::size_t start = 0;
-        while (start <= value.size()) {
-            const auto end = value.find(',', start);
-            const auto token = end == std::string_view::npos ? value.substr(start) : value.substr(start, end - start);
-            const auto trimmed = trim_copy(token);
-            if (!trimmed.empty()) {
-                values.emplace_back(trimmed);
-            }
-
-            if (end == std::string_view::npos) {
-                break;
-            }
-            start = end + 1;
+        for (const auto &match : ctre::search_all<R"(\s*([^,\s](?:[^,]*[^,\s])?)\s*(?:,|$))">(value)) {
+            values.emplace_back(match.template get<1>().to_view());
         }
-
         return values;
     }
 
@@ -75,7 +64,7 @@ namespace orangutan {
 
     using utils::ascii_to_lower_copy;
     using utils::normalize_enum_token;
-    using utils::split_csv_trimmed;
+    using utils::split_trimmed;
     using utils::trim_copy;
 
 } // namespace orangutan

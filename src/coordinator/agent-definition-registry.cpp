@@ -50,9 +50,9 @@ namespace orangutan::coordinator {
                 if (auto val = parse_frontmatter_value(trimmed, "description"); !val.empty()) {
                     def.description = std::string{val};
                 } else if (auto val = parse_frontmatter_value(trimmed, "tools"); !val.empty()) {
-                    def.tools = utils::split_csv_trimmed(val);
+                    def.tools = utils::split_trimmed(val);
                 } else if (auto val = parse_frontmatter_value(trimmed, "disallowed_tools"); !val.empty()) {
-                    def.disallowed_tools = utils::split_csv_trimmed(val);
+                    def.disallowed_tools = utils::split_trimmed(val);
                 } else if (auto val = parse_frontmatter_value(trimmed, "model"); !val.empty()) {
                     def.model = std::string{val};
                 } else if (auto val = parse_frontmatter_value(trimmed, "max_turns"); !val.empty()) {

@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <ctre.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
@@ -41,9 +40,10 @@ namespace orangutan::tools {
             if (query.starts_with(SELECT_PREFIX)) {
                 std::string out;
                 std::size_t found{};
+                const auto select_query = query.substr(SELECT_PREFIX.size());
 
-                for (auto e : ctre::search_all<R"(\s*([^,\s](?:[^,]*[^,\s])?)\s*(?:,|$))">(query.substr(SELECT_PREFIX.size()))) {
-                    found += static_cast<std::size_t>(append_tool_details(out, e.template get<1>().to_view()));
+                for (const auto &name : utils::split_trimmed(select_query)) {
+                    found += static_cast<std::size_t>(append_tool_details(out, name));
                 }
                 utils::format_to(out, "Discovered {} tool(s). They are now available for use.", found);
                 return out;
