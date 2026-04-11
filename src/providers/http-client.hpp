@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "utils/transparent-lookup.hpp"
 
@@ -83,9 +84,7 @@ namespace orangutan::providers {
         CurlHeaders(const CurlHeaders &) = delete;
         CurlHeaders &operator=(const CurlHeaders &) = delete;
         CurlHeaders(CurlHeaders &&other) noexcept
-        : list_(other.list_) {
-            other.list_ = nullptr;
-        }
+        : list_(std::exchange(other.list_, nullptr)) {}
         CurlHeaders &operator=(CurlHeaders &&other) noexcept {
             if (this == &other) {
                 return *this;
@@ -93,8 +92,7 @@ namespace orangutan::providers {
             if (list_ != nullptr) {
                 curl_slist_free_all(list_);
             }
-            list_ = other.list_;
-            other.list_ = nullptr;
+            list_ = std::exchange(other.list_, nullptr);
             return *this;
         }
 

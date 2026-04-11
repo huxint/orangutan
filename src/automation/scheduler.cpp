@@ -69,7 +69,7 @@ namespace orangutan::automation {
 
     Runtime::AgentExecutionLease::AgentExecutionLease(AgentExecutionLease &&other) noexcept
     : gate_(std::exchange(other.gate_, nullptr)),
-      owner_(other.owner_) {}
+      owner_(std::exchange(other.owner_, std::thread::id{})) {}
 
     Runtime::AgentExecutionLease &Runtime::AgentExecutionLease::operator=(AgentExecutionLease &&other) noexcept {
         if (this == &other) {
@@ -77,7 +77,7 @@ namespace orangutan::automation {
         }
         release();
         gate_ = std::exchange(other.gate_, nullptr);
-        owner_ = other.owner_;
+        owner_ = std::exchange(other.owner_, std::thread::id{});
         return *this;
     }
 
