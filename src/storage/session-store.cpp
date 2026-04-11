@@ -198,22 +198,23 @@ namespace orangutan::storage {
 
         void append_permission_rule(ToolPermissionContext &ctx, PermissionRule rule) {
             switch (rule.behavior) {
-            case permission_behavior::allow:
-                ctx.allow_rules.push_back(std::move(rule));
-                break;
-            case permission_behavior::deny:
-                ctx.deny_rules.push_back(std::move(rule));
-                break;
-            case permission_behavior::ask:
-                ctx.ask_rules.push_back(std::move(rule));
-                break;
+                case permission_behavior::allow:
+                    ctx.allow_rules.push_back(std::move(rule));
+                    break;
+                case permission_behavior::deny:
+                    ctx.deny_rules.push_back(std::move(rule));
+                    break;
+                case permission_behavior::ask:
+                    ctx.ask_rules.push_back(std::move(rule));
+                    break;
             }
         }
 
         void remove_session_rules(std::vector<PermissionRule> &rules) {
-            rules.erase(std::remove_if(rules.begin(), rules.end(), [](const PermissionRule &rule) {
-                           return rule.source == permission_rule_source::session;
-                       }),
+            rules.erase(std::remove_if(rules.begin(), rules.end(),
+                                       [](const PermissionRule &rule) {
+                                           return rule.source == permission_rule_source::session;
+                                       }),
                         rules.end());
         }
 
@@ -465,9 +466,9 @@ namespace orangutan::storage {
 
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
-                                   "FROM session_permission_rules "
-                                   "WHERE session_id = ? "
-                                   "ORDER BY created_at ASC, rowid ASC");
+                                    "FROM session_permission_rules "
+                                    "WHERE session_id = ? "
+                                    "ORDER BY created_at ASC, rowid ASC");
         stmt.bind_text(1, session_id);
 
         std::vector<PermissionRule> rules;

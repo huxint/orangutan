@@ -164,8 +164,7 @@ namespace orangutan::tools {
             return files;
         }
 
-        std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root,
-                                                  const ToolPermissionContext *permissions) {
+        std::vector<ValidatedFile> validate_hunks(const std::vector<FilePatch> &files, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
             std::vector<ValidatedFile> validated;
             validated.reserve(files.size());
 
@@ -380,20 +379,22 @@ namespace orangutan::tools {
                                                         {{"op", {{"type", "string"}, {"enum", nlohmann::json::array({"replace", "insert_after", "insert_before", "delete"})}}},
                                                          {"anchor", {{"type", "string"}, {"description", "Line anchor in LINE#HASH format"}}},
                                                          {"end_anchor", {{"type", "string"}, {"description", "End anchor for range operations (inclusive)"}}},
-                                                        {"content",
+                                                         {"content",
                                                           {{"oneOf", nlohmann::json::array({{{"type", "array"}, {"items", {{"type", "string"}}}}, {{"type", "string"}}})},
                                                            {"description", "Replacement/insertion lines. String content is split on newlines."}}}}},
                                                        {"required", nlohmann::json::array({"op"})}}}}}}},
                                                  {"required", nlohmann::json::array({"path", "edits"})}}},
-                 .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
-                     if (!call.input.contains("path") || !call.input["path"].is_string()) {
-                         return PermissionResult::deny("Edit path is required");
-                     }
-                     return deny_invalid_edit_path(call.input.at("path").get<std::string>(), ctx, workspace_root);
-                 },
-                 .execute = [workspace_root, permissions](const nlohmann::json &input) {
-                     return execute_hashline_edit(input, workspace_root, permissions);
-                 }});
+                 .check_permissions =
+                     [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                         if (!call.input.contains("path") || !call.input["path"].is_string()) {
+                             return PermissionResult::deny("Edit path is required");
+                         }
+                         return deny_invalid_edit_path(call.input.at("path").get<std::string>(), ctx, workspace_root);
+                     },
+                 .execute =
+                     [workspace_root, permissions](const nlohmann::json &input) {
+                         return execute_hashline_edit(input, workspace_root, permissions);
+                     }});
         } else {
             registry.register_tool(
                 {.definition = {.name = "edit",
@@ -410,28 +411,30 @@ namespace orangutan::tools {
                                                      {"description", "Patch text with *** <path> file headers and <<<<<<< SEARCH / ======= / >>>>>>> REPLACE hunk "
                                                                      "markers; paths must stay inside the workspace or ~/.orangutan configuration area"}}}}},
                                                  {"required", nlohmann::json::array({"patch"})}}},
-                 .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
-                     if (!call.input.contains("patch") || !call.input["patch"].is_string()) {
-                         return PermissionResult::deny("Edit patch is required");
-                     }
-
-                     try {
-                         const auto files = parse_patch(call.input.at("patch").get<std::string>());
-                         for (const auto &file : files) {
-                             auto result = deny_invalid_edit_path(file.path, ctx, workspace_root);
-                             if (!result.is_passthrough) {
-                                 return result;
-                             }
+                 .check_permissions =
+                     [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                         if (!call.input.contains("patch") || !call.input["patch"].is_string()) {
+                             return PermissionResult::deny("Edit patch is required");
                          }
-                     } catch (const std::exception &e) {
-                         return PermissionResult::deny(e.what());
-                     }
 
-                     return PermissionResult::passthrough();
-                 },
-                 .execute = [workspace_root, permissions](const nlohmann::json &input) {
-                     return execute_edit_tool(input, workspace_root, permissions);
-                 }});
+                         try {
+                             const auto files = parse_patch(call.input.at("patch").get<std::string>());
+                             for (const auto &file : files) {
+                                 auto result = deny_invalid_edit_path(file.path, ctx, workspace_root);
+                                 if (!result.is_passthrough) {
+                                     return result;
+                                 }
+                             }
+                         } catch (const std::exception &e) {
+                             return PermissionResult::deny(e.what());
+                         }
+
+                         return PermissionResult::passthrough();
+                     },
+                 .execute =
+                     [workspace_root, permissions](const nlohmann::json &input) {
+                         return execute_edit_tool(input, workspace_root, permissions);
+                     }});
         }
     }
 

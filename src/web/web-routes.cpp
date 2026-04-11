@@ -95,8 +95,7 @@ namespace orangutan::web {
 
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
-                                                                    ApprovalCallback approval_callback,
-                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+                                                                    ApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto maybe_endpoints = bootstrap::detail::resolve_agent_endpoints(config, agent, agent_key, "");
             if (!maybe_endpoints.has_value()) {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");

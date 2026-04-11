@@ -86,9 +86,8 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         CurlHeaders make_openai_headers(const ProviderEndpoint &endpoint) {
-            return compose_headers(endpoint.headers,
-                                   {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
-                                    HeaderFallback{.key = "Authorization", .fallback = std::string{"Bearer "} + endpoint.api_key}});
+            return compose_headers(endpoint.headers, {HeaderFallback{.key = "Content-Type", .fallback = "application/json"},
+                                                      HeaderFallback{.key = "Authorization", .fallback = std::string{"Bearer "} + endpoint.api_key}});
         }
 
         template <typename Converter>
@@ -433,7 +432,6 @@ namespace orangutan::providers {
     OpenAiProvider::OpenAiProvider(ProviderEndpoint endpoint)
     : endpoint_(std::move(endpoint)) {}
 
-
     nlohmann::json OpenAiProvider::build_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools, int max_tokens,
                                                       bool stream, int thinking_budget) const {
         const auto resolved_max_tokens = endpoint_.default_max_tokens.value_or(max_tokens);
@@ -445,7 +443,7 @@ namespace orangutan::providers {
     }
 
     nlohmann::json OpenAiProvider::build_responses_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
-                                                                 int resolved_max_tokens, bool stream) const {
+                                                                int resolved_max_tokens, bool stream) const {
         nlohmann::json body;
         body["model"] = endpoint_.model;
         body["max_output_tokens"] = resolved_max_tokens;
@@ -469,7 +467,7 @@ namespace orangutan::providers {
     }
 
     nlohmann::json OpenAiProvider::build_chat_completions_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
-                                                                        int resolved_max_tokens, bool stream) const {
+                                                                       int resolved_max_tokens, bool stream) const {
         nlohmann::json body;
         body["model"] = endpoint_.model;
         body["max_tokens"] = resolved_max_tokens;

@@ -14,7 +14,7 @@
 namespace orangutan::automation {
     class Runtime;
     struct InboxItem;
-}
+} // namespace orangutan::automation
 
 namespace orangutan::coordinator {
     class CoordinatorManager;
@@ -23,7 +23,7 @@ namespace orangutan::coordinator {
 namespace orangutan::swarm {
     class AgentMailbox;
     class TeamManager;
-}
+} // namespace orangutan::swarm
 
 namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;

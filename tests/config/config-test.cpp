@@ -217,7 +217,6 @@ namespace {
         CHECK(cfg.qq_bots[0].client_secret == "qq-bot-protected-secret");
     };
 
-
     TEST_CASE("invalid_thinking_value_rejects_config") {
         ConfigFileHarness harness;
         const auto path = harness.write_config(nlohmann::json::parse(R"json({

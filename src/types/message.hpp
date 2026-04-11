@@ -168,4 +168,4 @@ namespace orangutan {
             }
         }
     };
-}
+} // namespace orangutan

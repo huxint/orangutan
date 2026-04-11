@@ -76,9 +76,7 @@ namespace orangutan::permissions {
         }
 
         if (is_protected_path(path) && is_write_operation(call)) {
-            return PermissionDecision::ask_by_safety(
-                std::string(path),
-                "Protected path: " + path);
+            return PermissionDecision::ask_by_safety(std::string(path), "Protected path: " + path);
         }
 
         return std::nullopt;

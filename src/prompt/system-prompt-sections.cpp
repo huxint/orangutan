@@ -159,7 +159,7 @@ namespace orangutan::prompt {
             }
             return "unknown";
         }
-    }
+    } // namespace
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Dynamic sections

@@ -26,7 +26,7 @@ namespace orangutan::hooks {
 namespace orangutan::memory {
     class MemoryStore;
     class RuntimeMemory;
-}
+} // namespace orangutan::memory
 
 namespace orangutan::providers {
     class Provider;
@@ -39,7 +39,7 @@ namespace orangutan::coordinator {
 namespace orangutan::swarm {
     class AgentMailbox;
     class TeamManager;
-}
+} // namespace orangutan::swarm
 
 namespace orangutan::tools {
     class McpManager;

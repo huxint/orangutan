@@ -52,16 +52,18 @@ namespace orangutan::tools {
                             .input_schema = {{"type", "object"},
                                              {"properties",
                                               {{"path",
-                                               {{"type", "string"},
+                                                {{"type", "string"},
                                                  {"description", "Workspace-relative file path, or an absolute/~ path inside the workspace or ~/.orangutan configuration area"}}},
                                                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
                                              {"required", nlohmann::json::array({"path", "content"})}}},
-             .check_permissions = [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
-                 return validate_write_permissions(call, ctx, workspace_root);
-             },
-             .execute = [workspace_root, permissions](const nlohmann::json &input) {
-                 return write_file(input, workspace_root, permissions);
-             }});
+             .check_permissions =
+                 [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
+                     return validate_write_permissions(call, ctx, workspace_root);
+                 },
+             .execute =
+                 [workspace_root, permissions](const nlohmann::json &input) {
+                     return write_file(input, workspace_root, permissions);
+                 }});
     }
 
 } // namespace orangutan::tools

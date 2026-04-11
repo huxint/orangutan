@@ -87,8 +87,8 @@ namespace orangutan {
     using hooks::dispatch_session_end;
     using hooks::dispatch_session_start;
     using hooks::DispatchResult;
-    using hooks::HookDef;
     using hooks::hook_event;
+    using hooks::HookDef;
     using hooks::HookEventHash;
     using hooks::HookManager;
     using hooks::HookResult;

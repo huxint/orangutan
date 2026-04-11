@@ -38,11 +38,11 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         nlohmann::json build_responses_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
-                                                     int resolved_max_tokens, bool stream) const;
+                                                    int resolved_max_tokens, bool stream) const;
 
         [[nodiscard]]
         nlohmann::json build_chat_completions_request_body(std::string_view system_prompt, const std::vector<Message> &messages, const std::vector<ToolDef> &tools,
-                                                            int resolved_max_tokens, bool stream) const;
+                                                           int resolved_max_tokens, bool stream) const;
 
         // Parse OpenAI response into LLMResponse
         [[nodiscard]]

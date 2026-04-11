@@ -55,4 +55,4 @@ namespace orangutan {
         }
         return json;
     }
-}
+} // namespace orangutan

@@ -165,15 +165,16 @@ namespace orangutan::channel {
             return;
         }
 
-        auto pipeline = stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = std::string(jid)}) | stdexec::then([task = std::move(task), jid = std::string(jid)]() mutable {
-                            try {
-                                task();
-                            } catch (const std::exception &e) {
-                                spdlog::error("Unhandled exception in JidTaskRunner task for '{}': {}", jid, e.what());
-                            } catch (...) {
-                                spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
-                            }
-                        });
+        auto pipeline =
+            stdexec::schedule(SchedulerModel::Scheduler{.runner = this, .jid = std::string(jid)}) | stdexec::then([task = std::move(task), jid = std::string(jid)]() mutable {
+                try {
+                    task();
+                } catch (const std::exception &e) {
+                    spdlog::error("Unhandled exception in JidTaskRunner task for '{}': {}", jid, e.what());
+                } catch (...) {
+                    spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
+                }
+            });
         stdexec::start_detached(std::move(pipeline));
     }
 

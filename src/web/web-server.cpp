@@ -53,7 +53,9 @@ namespace orangutan::web {
 
         std::unique_lock lock(startup_mutex_);
         constexpr auto STARTUP_TIMEOUT = std::chrono::seconds(5);
-        if (!startup_cv_.wait_for(lock, STARTUP_TIMEOUT, [this] { return startup_complete_; })) {
+        if (!startup_cv_.wait_for(lock, STARTUP_TIMEOUT, [this] {
+                return startup_complete_;
+            })) {
             lock.unlock();
             server_.stop();
             server_thread_.join();
@@ -63,8 +65,7 @@ namespace orangutan::web {
         if (port_ <= 0) {
             lock.unlock();
             server_thread_.join();
-            throw std::runtime_error(port == 0 ? "failed to bind web server to any port on " + host
-                                               : "failed to bind web server to " + host + ":" + std::to_string(port));
+            throw std::runtime_error(port == 0 ? "failed to bind web server to any port on " + host : "failed to bind web server to " + host + ":" + std::to_string(port));
         }
 
         lock.unlock();

@@ -23,8 +23,7 @@ namespace {
         return fallback.profile + ":" + fallback.model;
     }
 
-    orangutan::ToolPermissionContext build_agent_permission_context(const orangutan::config::AgentConfig &agent_cfg,
-                                                                    const orangutan::CLIPermissionOptions &cli_permission_options,
+    orangutan::ToolPermissionContext build_agent_permission_context(const orangutan::config::AgentConfig &agent_cfg, const orangutan::CLIPermissionOptions &cli_permission_options,
                                                                     std::string_view workspace_root) {
         return orangutan::initialize_permission_context(agent_cfg.permissions_config, cli_permission_options, workspace_root);
     }
@@ -147,7 +146,7 @@ namespace orangutan::bootstrap::detail {
     }
 
     std::optional<std::unordered_map<std::string, AgentRuntimeConfig>> build_agent_runtime_configs(const Config &cfg, std::string_view cli_api_key_override,
-                                                                                                    const CLIPermissionOptions &cli_permission_options) {
+                                                                                                   const CLIPermissionOptions &cli_permission_options) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
             const auto maybe_endpoints = resolve_agent_endpoints(cfg, agent_cfg, agent_key, cli_api_key_override);

@@ -63,4 +63,4 @@ namespace orangutan {
     };
 
     using Content = std::variant<Text, Thinking, ToolUse, ToolResult>;
-}
+} // namespace orangutan

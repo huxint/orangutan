@@ -500,8 +500,7 @@ namespace {
         std::thread waiter([&] {
             approval_result.set_value(orangutan::web::detail::await_web_approval(
                 *session_ptr, sessions_mutex, orangutan::ToolUse("shell-approval", "shell", nlohmann::json{{"command", "echo hello"}}),
-                orangutan::PermissionDecision::ask_by_rule(orangutan::permission_rule_source::project_settings, "shell(echo hello)",
-                                                           "Shell command approval required."),
+                orangutan::PermissionDecision::ask_by_rule(orangutan::permission_rule_source::project_settings, "shell(echo hello)", "Shell command approval required."),
                 [&](std::string_view current_event_name, const nlohmann::json &payload) {
                     std::scoped_lock lock(event_mutex);
                     event_name = std::string(current_event_name);

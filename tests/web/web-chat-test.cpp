@@ -328,8 +328,7 @@ namespace orangutan {
         TEST_CASE("chat_handler_rejects_session_when_same_session_is_active") {
             WebChatStoreHarness store_harness;
             Config config = make_config();
-            const auto session_id =
-                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+            const auto session_id = store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
 
             std::mutex sessions_mutex;
             std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> sessions;
@@ -353,8 +352,7 @@ namespace orangutan {
             Config config = make_config();
             const auto workspace = orangutan::testing::unique_test_root("web-chat-guard-workspace");
             config.agents["default"].workspace = workspace.string();
-            const auto session_id =
-                store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
+            const auto session_id = store_harness.store().save({Message::user().text("hello")}, make_session_metadata("test", "agent:default|web", "default", "web", "web:local"));
 
             std::mutex sessions_mutex;
             std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> sessions;

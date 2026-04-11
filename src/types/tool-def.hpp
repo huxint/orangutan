@@ -20,4 +20,4 @@ namespace orangutan {
         std::string stop_reason; // "end_turn", "tool_use", etc.
         std::vector<Content> content;
     };
-}
+} // namespace orangutan

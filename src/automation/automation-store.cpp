@@ -287,8 +287,8 @@ namespace orangutan::automation {
         return db_.changes() > 0;
     }
 
-    void Store::update_heartbeat_run_state(std::string_view heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at,
-                                           std::string_view last_status, bool paused) {
+    void Store::update_heartbeat_run_state(std::string_view heartbeat_id, std::optional<base::i64> last_run_at, std::optional<base::i64> next_due_at, std::string_view last_status,
+                                           bool paused) {
         std::scoped_lock lock(mutex_);
         sqlite::Statement stmt(db_, "UPDATE heartbeats SET last_run_at = ?2, next_due_at = ?3, last_status = ?4, paused = ?5 WHERE id = ?1");
         stmt.bind_text(1, heartbeat_id);

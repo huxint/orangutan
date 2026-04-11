@@ -30,7 +30,7 @@ namespace orangutan::storage {
 namespace orangutan::swarm {
     class AgentMailbox;
     class TeamManager;
-}
+} // namespace orangutan::swarm
 
 namespace orangutan::coordinator {
 
@@ -168,9 +168,9 @@ namespace orangutan::coordinator {
 } // namespace orangutan::coordinator
 
 namespace orangutan {
+    using coordinator::agent_run_status;
     using coordinator::AgentExecutionEnvironment;
     using coordinator::AgentRunRecord;
-    using coordinator::agent_run_status;
     using coordinator::AgentSpawnRequest;
     using coordinator::AgentSpawnResult;
     using coordinator::CoordinatorManager;

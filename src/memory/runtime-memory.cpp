@@ -20,8 +20,7 @@ namespace orangutan::memory {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view source,
-                                 base::f64 importance) {
+    void RuntimeMemory::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view source, base::f64 importance) {
         store_->remember(key, content, category, type, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
