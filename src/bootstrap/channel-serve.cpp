@@ -29,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <scope>
 #include "utils/format.hpp"
 #include <stdexcept>
 #include <thread>
@@ -64,35 +65,6 @@ namespace orangutan::bootstrap {
         namespace cli = orangutan::cli;
 
         constexpr auto SERVE_POLL_INTERVAL = std::chrono::milliseconds(50);
-
-        template <typename Fn>
-        class ScopeExit {
-        public:
-            explicit ScopeExit(Fn fn)
-            : fn_(std::move(fn)) {}
-
-            ScopeExit(const ScopeExit &) = delete;
-            ScopeExit &operator=(const ScopeExit &) = delete;
-
-            ScopeExit(ScopeExit &&other) noexcept
-            : fn_(std::move(other.fn_)),
-              active_(std::exchange(other.active_, false)) {}
-            ScopeExit &operator=(ScopeExit &&) = delete;
-
-            ~ScopeExit() {
-                if (active_) {
-                    fn_();
-                }
-            }
-
-        private:
-            [[no_unique_address]]
-            Fn fn_;
-            bool active_ = true;
-        };
-
-        template <typename Fn>
-        ScopeExit(Fn) -> ScopeExit<Fn>;
 
         std::string describe_attachment_for_agent(const Attachment &attachment, std::size_t index) {
             std::string line = spdlog::fmt_lib::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
@@ -664,7 +636,7 @@ namespace orangutan::bootstrap {
                     tool_context.attachment_download_callback = [&channel_manager, jid = message.jid](const Attachment &attachment, const std::string &destination_path) {
                         return channel_manager.download_attachment(jid, attachment, destination_path);
                     };
-                    const auto restore_tool_context = ScopeExit([&tool_context] {
+                    const auto restore_tool_context = std::scope_exit([&tool_context] {
                         tool_context.current_message_attachments.clear();
                         tool_context.attachment_download_callback = {};
                     });
@@ -704,6 +676,9 @@ namespace orangutan::bootstrap {
                             }
                         });
                     channel_manager.start_typing(message.jid, message.message_id);
+                    const auto stop_typing = std::scope_exit([&channel_manager, &message] {
+                        channel_manager.stop_typing(message.jid);
+                    });
 
                     // Stream relay: sends thinking/tool blocks to QQ as they arrive
                     const auto reply_target = resolve_reply_target(message);
@@ -754,7 +729,6 @@ namespace orangutan::bootstrap {
                     }
 
                     const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb);
-                    channel_manager.stop_typing(message.jid);
                     flush_thinking();
 
                     // Skip session persistence for isolated heartbeat runs
