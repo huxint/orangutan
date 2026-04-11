@@ -332,7 +332,7 @@ namespace {
             .content = "ping",
             .agent_override = "assistant",
         };
-        const std::unordered_map<std::string, std::string> qq_bot_agents{{"bot-a", "qq-agent"}};
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents{{"bot-a", "qq-agent"}};
 
         CHECK(bootstrap::resolve_agent_key_for_message(message, qq_bot_agents) == "assistant");
     };
@@ -527,7 +527,7 @@ namespace {
         SessionStore session_store((harness.temp_root() / "sessions.db"));
 
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs;
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
@@ -567,7 +567,7 @@ namespace {
         SessionStore session_store((harness.temp_root() / "sessions.db"));
 
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs;
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
         Config cfg;
 
         auto loop = std::async(std::launch::async, [&] {
@@ -1149,7 +1149,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
@@ -1207,7 +1207,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
@@ -1265,7 +1265,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
@@ -1320,7 +1320,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
 
         auto loop = std::async(std::launch::async, [&] {
             bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr,
@@ -1482,7 +1482,7 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
-        const std::unordered_map<std::string, std::string> qq_bot_agents;
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
 
         MemoryStore memory_store((harness.temp_root() / "memory.db"));
         SessionStore session_store((harness.temp_root() / "sessions.db"));

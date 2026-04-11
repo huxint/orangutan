@@ -1,12 +1,12 @@
 #pragma once
 
 #include "coordinator/agent-definition.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace orangutan::coordinator {
@@ -29,7 +29,7 @@ namespace orangutan::coordinator {
         bool has(std::string_view key) const;
 
     private:
-        std::unordered_map<std::string, AgentDefinition> definitions_;
+        utils::transparent_string_unordered_map<AgentDefinition> definitions_;
     };
 
 } // namespace orangutan::coordinator

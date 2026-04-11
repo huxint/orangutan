@@ -1,5 +1,6 @@
 #include "config/config-detail.hpp"
 #include "config/secret-fields.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -207,7 +208,7 @@ namespace orangutan::config {
     }
 
     std::optional<AgentConfig> Config::find_agent(const std::string &key) const {
-        if (const auto it = agents.find(key); it != agents.end()) {
+        if (const auto it = utils::transparent_find(agents, key); it != agents.end()) {
             return it->second;
         }
         return std::nullopt;
@@ -335,8 +336,8 @@ namespace orangutan::config {
                 if (agent_cfg.thinking_budget != 0) {
                     agent_json["thinking_budget"] = agent_cfg.thinking_budget;
                 }
-                if (agent_cfg.permissions_config.default_mode != permission_mode::default_mode ||
-                    !agent_cfg.permissions_config.allow.empty() || !agent_cfg.permissions_config.deny.empty() || !agent_cfg.permissions_config.ask.empty()) {
+                if (agent_cfg.permissions_config.default_mode != permission_mode::default_mode || !agent_cfg.permissions_config.allow.empty() ||
+                    !agent_cfg.permissions_config.deny.empty() || !agent_cfg.permissions_config.ask.empty()) {
                     nlohmann::json permissions_json = nlohmann::json::object();
                     permissions_json["default_mode"] = std::string{magic_enum::enum_name(agent_cfg.permissions_config.default_mode)};
                     if (!agent_cfg.permissions_config.allow.empty()) {
@@ -355,8 +356,8 @@ namespace orangutan::config {
             root["agents"] = std::move(agents_json);
         }
 
-        if (permissions_config.default_mode != permission_mode::default_mode ||
-            !permissions_config.allow.empty() || !permissions_config.deny.empty() || !permissions_config.ask.empty()) {
+        if (permissions_config.default_mode != permission_mode::default_mode || !permissions_config.allow.empty() || !permissions_config.deny.empty() ||
+            !permissions_config.ask.empty()) {
             nlohmann::json permissions_json = nlohmann::json::object();
             permissions_json["default_mode"] = std::string{magic_enum::enum_name(permissions_config.default_mode)};
             if (!permissions_config.allow.empty()) {

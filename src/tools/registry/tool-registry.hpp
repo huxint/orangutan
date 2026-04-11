@@ -2,6 +2,7 @@
 
 #include "permissions/permission-types.hpp"
 #include "types/tool-def.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -73,7 +74,7 @@ namespace orangutan::tools {
         const Tool *find_tool(std::string_view name) const;
 
     private:
-        std::unordered_map<std::string, Tool> tools_;
+        utils::transparent_string_unordered_map<Tool> tools_;
         ExecutionGuard execution_guard_;
         DefinitionFilter definition_filter_;
         mutable std::unordered_set<std::string> discovered_tools_;

@@ -3,6 +3,7 @@
 #include "types/types.hpp"
 #include "config/secret-protection.hpp"
 #include "permissions/permission-state.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -28,7 +29,7 @@ namespace orangutan::config {
     struct ProfileConfig {
         std::string base_url;
         std::string api_key;
-        std::unordered_map<std::string, std::string> headers;
+        utils::transparent_string_unordered_map<std::string> headers;
         std::unordered_map<std::string, ModelConfig> models;
     };
 

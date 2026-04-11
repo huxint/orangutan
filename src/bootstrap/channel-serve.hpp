@@ -13,6 +13,7 @@
 #include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -21,7 +22,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -96,7 +96,7 @@ namespace orangutan::bootstrap {
     std::size_t default_serve_worker_count();
 
     [[nodiscard]]
-    std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents);
+    std::string resolve_agent_key_for_message(const InboundMessage &message, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents);
 
     [[nodiscard]]
     std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
@@ -104,7 +104,7 @@ namespace orangutan::bootstrap {
     void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
-                          const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
+                          const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
                           hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr, swarm::TeamManager *team_manager = nullptr,
                           swarm::AgentMailbox *mailbox = nullptr);

@@ -1,17 +1,17 @@
 #pragma once
 
 #include "bootstrap/cli-options.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace orangutan::config {
     struct AgentConfig;
     struct Config;
-}
+} // namespace orangutan::config
 
 namespace orangutan::hooks {
     class HookManager;
@@ -39,6 +39,6 @@ namespace orangutan::bootstrap {
     void apply_cli_edit_mode_override(config::Config &cfg, std::string_view edit_mode);
 
     [[nodiscard]]
-    std::unordered_map<std::string, std::string> build_qq_bot_agents(const config::Config &cfg);
+    utils::transparent_string_unordered_map<std::string> build_qq_bot_agents(const config::Config &cfg);
 
 } // namespace orangutan::bootstrap

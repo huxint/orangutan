@@ -10,7 +10,7 @@ namespace orangutan::tools::shell {
         const auto process_manager = std::make_shared<BackgroundProcessManager>([completion_dispatcher](const BackgroundProcessCompletionEvent &event) {
             completion_dispatcher->dispatch(event);
         });
-        register_shell_tool(registry, workspace_root.empty() ? std::string{} : workspace_root.string(), permissions, completion_dispatcher, process_manager);
+        register_shell_tool(registry, workspace_root, permissions, completion_dispatcher, process_manager);
         register_process_tools(registry, process_manager);
     }
 

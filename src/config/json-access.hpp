@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "utils/transparent-lookup.hpp"
+
 namespace orangutan::config::detail {
 
     [[nodiscard]]
@@ -17,8 +19,10 @@ namespace orangutan::config::detail {
             return nullptr;
         }
 
-        const auto it = object.find(std::string{key});
-        return it == object.end() ? nullptr : &*it;
+        using json_object_type = nlohmann::json::object_t;
+        const auto &object_ref = object.get_ref<const json_object_type &>();
+        const auto it = utils::transparent_find(object_ref, key);
+        return it == object_ref.end() ? nullptr : &it->second;
     }
 
     [[nodiscard]]
@@ -56,7 +60,7 @@ namespace orangutan::config::detail {
     }
 
     template <typename object_type, typename number_type>
-        requires ((!std::same_as<number_type, bool>) && (std::integral<number_type> || std::floating_point<number_type>))
+        requires((!std::same_as<number_type, bool>) && (std::integral<number_type> || std::floating_point<number_type>))
     [[nodiscard]]
     inline bool assign_number_member(const nlohmann::json &json_object, std::string_view key, object_type &target, number_type object_type::*member) {
         const auto *value = find_member(json_object, key);
@@ -79,10 +83,9 @@ namespace orangutan::config::detail {
     }
 
     template <typename object_type, typename number_type>
-        requires ((!std::same_as<number_type, bool>) && (std::integral<number_type> || std::floating_point<number_type>))
+        requires((!std::same_as<number_type, bool>) && (std::integral<number_type> || std::floating_point<number_type>))
     [[nodiscard]]
-    inline bool assign_optional_number_member(const nlohmann::json &json_object, std::string_view key, object_type &target,
-                                              std::optional<number_type> object_type::*member) {
+    inline bool assign_optional_number_member(const nlohmann::json &json_object, std::string_view key, object_type &target, std::optional<number_type> object_type::*member) {
         const auto *value = find_member(json_object, key);
         if (value == nullptr) {
             return false;

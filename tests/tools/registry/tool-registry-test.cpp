@@ -7,6 +7,7 @@
 #include "tools/registry/tool.hpp"
 #include "tools/script/script-loader.hpp"
 #include "tools/file-edit/hashline.hpp"
+#include "tools/internal.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
 #include "storage/session-store.hpp"
@@ -40,6 +41,11 @@ namespace {
                                  RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
                                                                 const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
                                                                 const ToolPermissionContext *, std::string_view)>);
+
+    using RegisterShellToolSignature = void (*)(ToolRegistry &, const std::filesystem::path &, const ToolPermissionContext *,
+                                                const std::shared_ptr<BackgroundCompletionDispatcher> &, const std::shared_ptr<BackgroundProcessManager> &);
+
+    static_assert(std::is_same_v<decltype(&register_shell_tool), RegisterShellToolSignature>);
 
     nlohmann::json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
         nlohmann::json input = {

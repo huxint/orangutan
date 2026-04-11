@@ -104,9 +104,10 @@ namespace {
 
     int run_channel_mode(orangutan::ChannelManager &channel_manager, orangutan::MessageQueue &message_queue,
                          const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs,
-                         const std::unordered_map<std::string, std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store, orangutan::SessionStore &session_store,
-                         orangutan::coordinator::CoordinatorManager *coordinator_manager, const orangutan::Config &cfg, orangutan::HookManager *hook_manager,
-                         orangutan::automation::Runtime *automation_runtime, orangutan::swarm::TeamManager *team_manager, orangutan::swarm::AgentMailbox *mailbox) {
+                         const orangutan::utils::transparent_string_unordered_map<std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store,
+                         orangutan::SessionStore &session_store, orangutan::coordinator::CoordinatorManager *coordinator_manager, const orangutan::Config &cfg,
+                         orangutan::HookManager *hook_manager, orangutan::automation::Runtime *automation_runtime, orangutan::swarm::TeamManager *team_manager,
+                         orangutan::swarm::AgentMailbox *mailbox) {
         auto &stop_requested = orangutan::bootstrap::signal_stop_requested();
         stop_requested.store(false);
         auto channel_task_runner = std::make_unique<orangutan::JidTaskRunner>(orangutan::bootstrap::default_serve_worker_count());

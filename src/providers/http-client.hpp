@@ -7,7 +7,8 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
+
+#include "utils/transparent-lookup.hpp"
 
 namespace orangutan::providers {
 
@@ -123,15 +124,15 @@ namespace orangutan::providers {
     }
 
     [[nodiscard]]
-    inline std::optional<std::string_view> find_header_value(const std::unordered_map<std::string, std::string> &custom_headers, std::string_view key) {
-        if (auto it = custom_headers.find(std::string{key}); it != custom_headers.end()) {
+    inline std::optional<std::string_view> find_header_value(const utils::transparent_string_unordered_map<std::string> &custom_headers, std::string_view key) {
+        if (auto it = utils::transparent_find(custom_headers, key); it != custom_headers.end()) {
             return it->second;
         }
         return std::nullopt;
     }
 
     [[nodiscard]]
-    inline CurlHeaders compose_headers(const std::unordered_map<std::string, std::string> &custom_headers, std::initializer_list<HeaderFallback> required_headers) {
+    inline CurlHeaders compose_headers(const utils::transparent_string_unordered_map<std::string> &custom_headers, std::initializer_list<HeaderFallback> required_headers) {
         CurlHeaders headers;
         for (const auto &required : required_headers) {
             const auto value = find_header_value(custom_headers, required.key).value_or(required.fallback);

@@ -379,12 +379,11 @@ namespace orangutan::tools {
             return output;
         }
 
-        std::string run_shell(const nlohmann::json &input, const std::string &workspace, const ToolPermissionContext *permissions,
+        std::string run_shell(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions,
                               const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
             const auto command = input.at("command").get<std::string>();
             const bool background = input.value("background", false);
             const auto requested_working_dir = input.value("working_dir", std::string{});
-            const auto workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace);
             const auto resolved_working_dir = resolve_tool_working_dir(requested_working_dir, workspace_root, permissions);
             const auto sandbox_mode = tool_sandbox_mode::disabled;
             const auto sandboxed = prepare_sandboxed_command(command, workspace_root, resolved_working_dir, sandbox_mode);
@@ -432,7 +431,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_shell_tool(ToolRegistry &registry, const std::string &workspace, const ToolPermissionContext *permissions,
+    void register_shell_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions,
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager) {
         const bool supports_completion_routing = completion_dispatcher != nullptr && completion_dispatcher->supports_completion_routing();
         const bool resume_supported = supports_resume_mode(completion_dispatcher);
@@ -494,12 +493,12 @@ namespace orangutan::tools {
                     .input_schema = input_schema,
                 },
             .check_permissions =
-                [workspace_root = workspace.empty() ? std::filesystem::path{} : std::filesystem::path(workspace)](const ToolUse &call, const ToolPermissionContext &ctx) {
+                [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
                     return check_shell_permissions(call, ctx, workspace_root);
                 },
             .execute =
-                [workspace, permissions, completion_dispatcher, process_manager](const nlohmann::json &input) {
-                    return run_shell(input, workspace, permissions, completion_dispatcher, process_manager);
+                [workspace_root, permissions, completion_dispatcher, process_manager](const nlohmann::json &input) {
+                    return run_shell(input, workspace_root, permissions, completion_dispatcher, process_manager);
                 },
         });
     }

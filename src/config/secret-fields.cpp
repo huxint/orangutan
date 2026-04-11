@@ -1,5 +1,7 @@
 #include "config/secret-fields.hpp"
 
+#include "utils/transparent-lookup.hpp"
+
 #include <array>
 
 #include <nlohmann/json.hpp>
@@ -7,10 +9,7 @@
 namespace orangutan::config {
     namespace {
 
-        constexpr auto secret(std::string_view field_kind,
-                              std::string_view key_name,
-                              std::string_view parent_key,
-                              std::string_view display_prefix,
+        constexpr auto secret(std::string_view field_kind, std::string_view key_name, std::string_view parent_key, std::string_view display_prefix,
                               config_secret_container_kind container_kind) -> ConfigSecretFieldSpec {
             return {
                 .field_kind = field_kind,
@@ -27,16 +26,13 @@ namespace orangutan::config {
             secret("qq_bots.client_secret", "client_secret", "qq_bots", "qq_bots", config_secret_container_kind::array_entries),
         });
 
-        void maybe_add_secret_value(std::vector<ConfigSecretJsonValue> &matches,
-                                    nlohmann::json &parent,
-                                    std::string_view key_name,
-                                    std::string_view field_kind,
+        void maybe_add_secret_value(std::vector<ConfigSecretJsonValue> &matches, nlohmann::json &parent, std::string_view key_name, std::string_view field_kind,
                                     std::string display_field) {
             if (!parent.is_object()) {
                 return;
             }
 
-            const auto it = parent.find(std::string{key_name});
+            const auto it = utils::transparent_find(parent, key_name);
             if (it == parent.end() || !it->is_string()) {
                 return;
             }
@@ -57,44 +53,34 @@ namespace orangutan::config {
     std::vector<ConfigSecretJsonValue> collect_config_secret_json_values(nlohmann::json &root) {
         std::vector<ConfigSecretJsonValue> matches;
         for (const auto &spec : config_secret_field_specs()) {
-            auto root_it = root.find(std::string{spec.parent_key});
+            auto root_it = utils::transparent_find(root, spec.parent_key);
             if (root_it == root.end()) {
                 continue;
             }
 
             switch (spec.container_kind) {
-            case config_secret_container_kind::object_entries:
-                if (!root_it->is_object()) {
+                case config_secret_container_kind::object_entries:
+                    if (!root_it->is_object()) {
+                        break;
+                    }
+                    for (auto profile_it = root_it->begin(); profile_it != root_it->end(); ++profile_it) {
+                        maybe_add_secret_value(matches, profile_it.value(), spec.key_name, spec.field_kind,
+                                               std::string{spec.display_prefix} + "." + profile_it.key() + "." + std::string{spec.key_name});
+                    }
                     break;
-                }
-                for (auto profile_it = root_it->begin(); profile_it != root_it->end(); ++profile_it) {
-                    maybe_add_secret_value(matches,
-                                           profile_it.value(),
-                                           spec.key_name,
-                                           spec.field_kind,
-                                           std::string{spec.display_prefix} + "." + profile_it.key() + "." + std::string{spec.key_name});
-                }
-                break;
-            case config_secret_container_kind::single_object:
-                maybe_add_secret_value(matches,
-                                       *root_it,
-                                       spec.key_name,
-                                       spec.field_kind,
-                                       std::string{spec.display_prefix} + "." + std::string{spec.key_name});
-                break;
-            case config_secret_container_kind::array_entries:
-                if (!root_it->is_array()) {
+                case config_secret_container_kind::single_object:
+                    maybe_add_secret_value(matches, *root_it, spec.key_name, spec.field_kind, std::string{spec.display_prefix} + "." + std::string{spec.key_name});
                     break;
-                }
-                for (std::size_t index = 0; index < root_it->size(); ++index) {
-                    auto &entry = (*root_it)[index];
-                    maybe_add_secret_value(matches,
-                                           entry,
-                                           spec.key_name,
-                                           spec.field_kind,
-                                           std::string{spec.display_prefix} + "[" + std::to_string(index) + "]." + std::string{spec.key_name});
-                }
-                break;
+                case config_secret_container_kind::array_entries:
+                    if (!root_it->is_array()) {
+                        break;
+                    }
+                    for (std::size_t index = 0; index < root_it->size(); ++index) {
+                        auto &entry = (*root_it)[index];
+                        maybe_add_secret_value(matches, entry, spec.key_name, spec.field_kind,
+                                               std::string{spec.display_prefix} + "[" + std::to_string(index) + "]." + std::string{spec.key_name});
+                    }
+                    break;
             }
         }
         return matches;

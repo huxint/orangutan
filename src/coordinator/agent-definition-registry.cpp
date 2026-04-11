@@ -135,7 +135,7 @@ namespace orangutan::coordinator {
     }
 
     std::optional<AgentDefinition> AgentDefinitionRegistry::find(std::string_view key) const {
-        auto it = definitions_.find(std::string{key});
+        auto it = utils::transparent_find(definitions_, key);
         if (it == definitions_.end()) {
             return std::nullopt;
         }
@@ -152,7 +152,7 @@ namespace orangutan::coordinator {
     }
 
     bool AgentDefinitionRegistry::has(std::string_view key) const {
-        return definitions_.contains(std::string{key});
+        return utils::transparent_contains(definitions_, key);
     }
 
 } // namespace orangutan::coordinator

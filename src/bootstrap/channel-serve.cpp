@@ -176,8 +176,8 @@ namespace orangutan::bootstrap {
         ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
                                                     std::mutex &runtimes_mutex, const InboundMessage &message,
                                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
-                                                    const std::unordered_map<std::string, std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                                                    coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager,
+                                                    const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store,
+                                                    SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager,
                                                     automation::Runtime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
             std::scoped_lock lock(runtimes_mutex);
             const auto agent_key = resolve_agent_key_for_message(message, qq_bot_agents);
@@ -615,7 +615,7 @@ namespace orangutan::bootstrap {
         }
     }
 
-    std::string resolve_agent_key_for_message(const InboundMessage &message, const std::unordered_map<std::string, std::string> &qq_bot_agents) {
+    std::string resolve_agent_key_for_message(const InboundMessage &message, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents) {
         if (!message.agent_override.empty()) {
             return message.agent_override;
         }
@@ -625,7 +625,7 @@ namespace orangutan::bootstrap {
             return "default";
         }
 
-        if (const auto it = qq_bot_agents.find(bot_name); it != qq_bot_agents.end()) {
+        if (const auto it = utils::transparent_find(qq_bot_agents, bot_name); it != qq_bot_agents.end()) {
             return it->second;
         }
         return "default";
@@ -641,10 +641,10 @@ namespace orangutan::bootstrap {
 
         void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager,
                                      std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
-                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
-                                     MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
-                                     HookManager *hook_manager, automation::Runtime *automation_runtime, ChannelApprovalCoordinator &approval_coordinator,
-                                     JidTaskRunner &task_runner, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
+                                     const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
+                                     coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager, automation::Runtime *automation_runtime,
+                                     ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
             try {
                 auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store,
                                                        coordinator_manager, cfg, hook_manager, automation_runtime, team_manager, mailbox);
@@ -804,7 +804,7 @@ namespace orangutan::bootstrap {
     }
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
-                          const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const std::unordered_map<std::string, std::string> &qq_bot_agents,
+                          const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
                           HookManager *hook_manager, automation::Runtime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;

@@ -9,8 +9,9 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
+
+#include "utils/transparent-lookup.hpp"
 
 namespace orangutan::providers {
 
@@ -30,7 +31,7 @@ namespace orangutan::providers {
         std::string api_key;
         std::string model;
         std::string base_url;
-        std::unordered_map<std::string, std::string> headers;
+        utils::transparent_string_unordered_map<std::string> headers;
         std::optional<int> default_max_tokens;
         std::string thinking = "none";
     };

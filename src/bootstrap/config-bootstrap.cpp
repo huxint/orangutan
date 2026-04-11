@@ -89,8 +89,8 @@ namespace orangutan::bootstrap {
         }
     }
 
-    std::unordered_map<std::string, std::string> build_qq_bot_agents(const config::Config &cfg) {
-        std::unordered_map<std::string, std::string> qq_bot_agents;
+    utils::transparent_string_unordered_map<std::string> build_qq_bot_agents(const config::Config &cfg) {
+        utils::transparent_string_unordered_map<std::string> qq_bot_agents;
         for (const auto &bot : cfg.qq_bots) {
             if (!bot.name.empty()) {
                 qq_bot_agents.insert_or_assign(bot.name, bot.agent);
