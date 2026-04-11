@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace orangutan::permissions {
@@ -34,7 +35,7 @@ namespace orangutan::permissions {
             case permission_rule_source::user_settings:
                 return "user settings";
         }
-        return "unknown";
+        std::unreachable();
     }
 
     inline std::string default_tool_approval_message(std::string_view tool_name) {

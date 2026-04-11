@@ -86,6 +86,7 @@ namespace orangutan::bootstrap {
             }
 
         private:
+            [[no_unique_address]]
             Fn fn_;
             bool active_ = true;
         };

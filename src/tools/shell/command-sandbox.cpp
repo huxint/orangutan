@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace orangutan::tools {
@@ -118,11 +119,7 @@ namespace orangutan::tools {
             case tool_sandbox_mode::isolated:
                 return prepare_isolated_command(command, workspace_root, working_dir);
         }
-
-        return {
-            .command = std::string(command),
-            .working_dir = working_dir,
-        };
+        std::unreachable();
     }
 
 } // namespace orangutan::tools

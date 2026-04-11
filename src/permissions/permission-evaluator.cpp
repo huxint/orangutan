@@ -7,6 +7,7 @@
 #include "types/content.hpp"
 
 #include <string>
+#include <utility>
 
 namespace orangutan::permissions {
 
@@ -63,7 +64,7 @@ namespace orangutan::permissions {
             case permission_behavior::allow:
                 return PermissionDecision::allow_by_rule(rule->source, std::move(value));
         }
-        return std::nullopt;
+        std::unreachable();
     }
 
     std::optional<PermissionDecision> evaluate_mode(permission_mode mode, const ToolUse &call, bool is_read_only, bool is_file_tool_in_workspace) {
@@ -93,7 +94,7 @@ namespace orangutan::permissions {
             case permission_mode::default_mode:
                 return std::nullopt;
         }
-        return std::nullopt;
+        std::unreachable();
     }
 
     PermissionDecision apply_post_processing(PermissionDecision decision, permission_mode mode) {

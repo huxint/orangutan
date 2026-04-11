@@ -7,6 +7,8 @@
 #include "tools/script/script-loader.hpp"
 #include "tools/tool-search/tool-search.hpp"
 
+#include <utility>
+
 #include <spdlog/spdlog.h>
 
 namespace orangutan::tools {
@@ -56,7 +58,7 @@ namespace orangutan::tools {
                         return std::nullopt;
                     }
                 }
-                return std::nullopt;
+                std::unreachable();
             });
         }
 
