@@ -39,7 +39,7 @@ namespace orangutan::config {
         using decode_table = std::array<int, 256>;
 
         class EntropyContext final {
-          public:
+        public:
             EntropyContext() {
                 mbedtls_entropy_init(&value_);
             }
@@ -58,12 +58,12 @@ namespace orangutan::config {
                 return &value_;
             }
 
-          private:
+        private:
             mbedtls_entropy_context value_{};
         };
 
         class CtrDrbgContext final {
-          public:
+        public:
             CtrDrbgContext() {
                 mbedtls_ctr_drbg_init(&value_);
             }
@@ -82,12 +82,12 @@ namespace orangutan::config {
                 return &value_;
             }
 
-          private:
+        private:
             mbedtls_ctr_drbg_context value_{};
         };
 
         class MdContext final {
-          public:
+        public:
             MdContext() {
                 mbedtls_md_init(&value_);
             }
@@ -106,12 +106,12 @@ namespace orangutan::config {
                 return &value_;
             }
 
-          private:
+        private:
             mbedtls_md_context_t value_{};
         };
 
         class GcmContext final {
-          public:
+        public:
             GcmContext() {
                 mbedtls_gcm_init(&value_);
             }
@@ -130,10 +130,9 @@ namespace orangutan::config {
                 return &value_;
             }
 
-          private:
+        private:
             mbedtls_gcm_context value_{};
         };
-
 
         struct ProtectedPayload {
             byte_array<SALT_SIZE> salt{};
@@ -188,18 +187,19 @@ namespace orangutan::config {
         [[nodiscard]]
         std::string string_from_bytes(const_byte_span bytes) {
             std::string text;
-            text.reserve(bytes.size());
-            std::ranges::transform(bytes, std::back_inserter(text), [](std::byte value) {
-                return static_cast<char>(std::to_integer<unsigned char>(value));
+            text.resize_and_overwrite(bytes.size(), [bytes](char *buffer, std::size_t size) {
+                for (std::size_t index = 0; index < size; ++index) {
+                    buffer[index] = static_cast<char>(std::to_integer<unsigned char>(bytes[index]));
+                }
+                return size;
             });
             return text;
         }
 
         [[nodiscard]]
         byte_vector bytes_from_string_view(std::string_view input) {
-            byte_vector bytes;
-            bytes.reserve(input.size());
-            std::ranges::transform(input, std::back_inserter(bytes), to_byte);
+            byte_vector bytes(input.size());
+            std::ranges::transform(input, bytes.begin(), to_byte);
             return bytes;
         }
 
@@ -300,7 +300,6 @@ namespace orangutan::config {
             return key;
         }
 
-
         [[nodiscard]]
         std::string aad_for_field(std::string_view field_kind) {
             return "orangutan-config-secret:v1:" + std::string(field_kind);
@@ -323,7 +322,6 @@ namespace orangutan::config {
             return ciphertext;
         }
 
-
         [[nodiscard]]
         byte_vector decrypt_aes_gcm(const_byte_span ciphertext, std::span<const std::byte, KEY_SIZE> key, std::span<const std::byte, IV_SIZE> iv,
                                     std::span<const std::byte, TAG_SIZE> tag, const_byte_span aad, std::string_view display_field) {
@@ -333,14 +331,13 @@ namespace orangutan::config {
             }
 
             byte_vector plaintext(ciphertext.size());
-            if (mbedtls_gcm_auth_decrypt(ctx.get(), ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag), tag.size(),
-                                         mbedtls_const_bytes(ciphertext), mbedtls_mutable_bytes(std::span{plaintext})) != 0) {
+            if (mbedtls_gcm_auth_decrypt(ctx.get(), ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag),
+                                         tag.size(), mbedtls_const_bytes(ciphertext), mbedtls_mutable_bytes(std::span{plaintext})) != 0) {
                 throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
             }
 
             return plaintext;
         }
-
 
         [[nodiscard]]
         byte_vector serialize_payload(const ProtectedPayload &payload) {

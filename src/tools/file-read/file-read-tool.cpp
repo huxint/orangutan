@@ -41,7 +41,7 @@ namespace orangutan::tools {
 
         constexpr std::string_view BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-        std::string encode_base64(const std::vector<char> &data) {
+        std::string encode_base64(std::string_view data) {
             std::string encoded;
             encoded.reserve(((data.size() + 2) / 3) * 4);
             for (std::size_t i = 0; i < data.size(); i += 3) {
@@ -94,9 +94,10 @@ namespace orangutan::tools {
             }
 
             fileio::File file(path, "rb");
-            std::vector<char> buf(size);
-            const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
-            buf.resize(bytes_read);
+            std::string buf;
+            buf.resize_and_overwrite(static_cast<std::size_t>(size), [&file](char *buffer, std::size_t buffer_size) {
+                return std::fread(buffer, sizeof(char), buffer_size, file.get());
+            });
 
             const auto media_type = guess_media_type(path);
             const auto b64 = encode_base64(buf);
@@ -109,12 +110,13 @@ namespace orangutan::tools {
                 fileio::File file(path, "rb");
 
                 constexpr std::size_t SAMPLE_SIZE = 8192;
-                std::vector<char> buf(SAMPLE_SIZE);
-                const auto bytes_read = std::fread(buf.data(), sizeof(char), buf.size(), file.get());
+                std::string buf;
+                buf.resize_and_overwrite(SAMPLE_SIZE, [&file](char *buffer, std::size_t buffer_size) {
+                    return std::fread(buffer, sizeof(char), buffer_size, file.get());
+                });
                 if (std::ferror(file.get()) != 0) {
                     return false;
                 }
-                buf.resize(bytes_read);
                 return std::ranges::any_of(buf, [](char ch) {
                     return ch == '\0';
                 });

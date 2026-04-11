@@ -173,16 +173,18 @@ namespace orangutan::process {
                     if (std::fseek(file.get(), -static_cast<long>(max_bytes), SEEK_END) != 0) {
                         return {};
                     }
-                    captured.text.resize(max_bytes);
-                } else {
-                    captured.text.resize(captured.total_bytes);
                 }
 
-                const auto bytes_read = std::fread(captured.text.data(), sizeof(char), captured.text.size(), file.get());
-                if (bytes_read == 0 && !captured.text.empty() && std::ferror(file.get()) != 0) {
+                const auto read_limit = captured.truncated ? max_bytes : captured.total_bytes;
+                bool read_error = false;
+                captured.text.resize_and_overwrite(read_limit, [&file, &read_error](char *buffer, std::size_t size) {
+                    const auto bytes_read = std::fread(buffer, sizeof(char), size, file.get());
+                    read_error = bytes_read == 0 && size > 0 && std::ferror(file.get()) != 0;
+                    return bytes_read;
+                });
+                if (read_error) {
                     return {};
                 }
-                captured.text.resize(bytes_read);
                 file.close();
                 return captured;
             } catch (const std::runtime_error &) {
