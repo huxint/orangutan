@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -20,15 +21,10 @@ namespace orangutan::utils {
 
     [[nodiscard]]
     inline std::string ascii_to_lower_copy(std::string_view value) {
-        std::string lowered;
-        lowered.reserve(value.size());
-        for (const unsigned char ch : value) {
-            if (ch >= 'A' && ch <= 'Z') {
-                lowered.push_back(static_cast<char>(ch - 'A' + 'a'));
-                continue;
-            }
-            lowered.push_back(static_cast<char>(ch));
-        }
+        std::string lowered(value.size(), '\0');
+        std::ranges::transform(value, lowered.begin(), [](unsigned char ch) {
+            return ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch - 'A' + 'a') : static_cast<char>(ch);
+        });
         return lowered;
     }
 

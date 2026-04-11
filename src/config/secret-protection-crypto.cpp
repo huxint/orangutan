@@ -30,14 +30,6 @@ namespace orangutan::config {
         constexpr int INVALID_BASE64URL_CHAR = -1;
         constexpr std::string_view RNG_PERSONALIZATION = "orangutan-config-secret";
 
-        template <std::size_t Size>
-        using byte_array = std::array<std::byte, Size>;
-
-        using byte_vector = std::vector<std::byte>;
-        using const_byte_span = std::span<const std::byte>;
-        using mutable_byte_span = std::span<std::byte>;
-        using decode_table = std::array<int, 256>;
-
         class EntropyContext final {
         public:
             EntropyContext() {
@@ -135,10 +127,10 @@ namespace orangutan::config {
         };
 
         struct ProtectedPayload {
-            byte_array<SALT_SIZE> salt{};
-            byte_array<IV_SIZE> iv{};
-            byte_array<TAG_SIZE> tag{};
-            byte_vector ciphertext;
+            std::array<std::byte, SALT_SIZE> salt{};
+            std::array<std::byte, IV_SIZE> iv{};
+            std::array<std::byte, TAG_SIZE> tag{};
+            std::vector<std::byte> ciphertext;
         };
 
         [[nodiscard]]
@@ -152,8 +144,8 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        constexpr decode_table make_base64url_decode_table() noexcept {
-            decode_table table{};
+        constexpr std::array<int, 256> make_base64url_decode_table() noexcept {
+            std::array<int, 256> table{};
             table.fill(INVALID_BASE64URL_CHAR);
 
             for (std::size_t index = 0; index < BASE64URL_ALPHABET.size(); ++index) {
@@ -170,12 +162,12 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        const unsigned char *mbedtls_const_bytes(const_byte_span bytes) noexcept {
+        const unsigned char *mbedtls_const_bytes(std::span<const std::byte> bytes) noexcept {
             return reinterpret_cast<const unsigned char *>(bytes.data());
         }
 
         [[nodiscard]]
-        unsigned char *mbedtls_mutable_bytes(mutable_byte_span bytes) noexcept {
+        unsigned char *mbedtls_mutable_bytes(std::span<std::byte> bytes) noexcept {
             return reinterpret_cast<unsigned char *>(bytes.data());
         }
 
@@ -185,7 +177,7 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        std::string string_from_bytes(const_byte_span bytes) {
+        std::string string_from_bytes(std::span<const std::byte> bytes) {
             std::string text;
             text.resize_and_overwrite(bytes.size(), [bytes](char *buffer, std::size_t size) {
                 for (std::size_t index = 0; index < size; ++index) {
@@ -197,19 +189,19 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_vector bytes_from_string_view(std::string_view input) {
-            byte_vector bytes(input.size());
+        std::vector<std::byte> bytes_from_string_view(std::string_view input) {
+            std::vector<std::byte> bytes(input.size());
             std::ranges::transform(input, bytes.begin(), to_byte);
             return bytes;
         }
 
         [[nodiscard]]
-        std::string encode_base64url(const_byte_span data) {
+        std::string encode_base64url(std::span<const std::byte> data) {
             std::string encoded;
             encoded.reserve(((data.size() * 4) + 2) / 3);
 
             for (const auto chunk : data | std::views::chunk(3)) {
-                byte_array<3> bytes{};
+                std::array<std::byte, 3> bytes{};
                 const auto copy_result = std::ranges::copy(chunk, bytes.begin());
                 const auto chunk_size = static_cast<std::size_t>(std::distance(bytes.begin(), copy_result.out));
 
@@ -237,12 +229,12 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_vector decode_base64url(std::string_view input) {
+        std::vector<std::byte> decode_base64url(std::string_view input) {
             if (input.empty()) {
                 return {};
             }
 
-            byte_vector decoded;
+            std::vector<std::byte> decoded;
             decoded.reserve((input.size() * 3) / 4);
 
             unsigned int accumulator = 0;
@@ -266,7 +258,7 @@ namespace orangutan::config {
             return decoded;
         }
 
-        void fill_random_bytes(mutable_byte_span output) {
+        void fill_random_bytes(std::span<std::byte> output) {
             EntropyContext entropy;
             CtrDrbgContext ctr_drbg;
 
@@ -280,7 +272,7 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_array<KEY_SIZE> derive_key(std::string_view password, std::span<const std::byte, SALT_SIZE> salt) {
+        std::array<std::byte, KEY_SIZE> derive_key(std::string_view password, std::span<const std::byte, SALT_SIZE> salt) {
             const auto *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
             if (md_info == nullptr) {
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
@@ -291,7 +283,7 @@ namespace orangutan::config {
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
             }
 
-            byte_array<KEY_SIZE> key{};
+            std::array<std::byte, KEY_SIZE> key{};
             if (mbedtls_pkcs5_pbkdf2_hmac(md_ctx.get(), mbedtls_const_chars(password), password.size(), mbedtls_const_bytes(salt), salt.size(), PBKDF2_ITERATIONS, key.size(),
                                           mbedtls_mutable_bytes(std::span{key})) != 0) {
                 throw ConfigSecretProtectionError("Failed to derive config secret protection key.");
@@ -306,14 +298,14 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_vector encrypt_aes_gcm(const_byte_span plaintext, std::span<const std::byte, KEY_SIZE> key, std::span<const std::byte, IV_SIZE> iv, const_byte_span aad,
-                                    byte_array<TAG_SIZE> &tag) {
+        std::vector<std::byte> encrypt_aes_gcm(std::span<const std::byte> plaintext, std::span<const std::byte, KEY_SIZE> key, std::span<const std::byte, IV_SIZE> iv,
+                                               std::span<const std::byte> aad, std::array<std::byte, TAG_SIZE> &tag) {
             GcmContext ctx;
             if (mbedtls_gcm_setkey(ctx.get(), MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
                 throw ConfigSecretProtectionError("Failed to initialize config secret encryption.");
             }
 
-            byte_vector ciphertext(plaintext.size());
+            std::vector<std::byte> ciphertext(plaintext.size());
             if (mbedtls_gcm_crypt_and_tag(ctx.get(), MBEDTLS_GCM_ENCRYPT, plaintext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(),
                                           mbedtls_const_bytes(plaintext), mbedtls_mutable_bytes(std::span{ciphertext}), tag.size(), mbedtls_mutable_bytes(std::span{tag})) != 0) {
                 throw ConfigSecretProtectionError("Failed to encrypt config secret.");
@@ -323,14 +315,14 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_vector decrypt_aes_gcm(const_byte_span ciphertext, std::span<const std::byte, KEY_SIZE> key, std::span<const std::byte, IV_SIZE> iv,
-                                    std::span<const std::byte, TAG_SIZE> tag, const_byte_span aad, std::string_view display_field) {
+        std::vector<std::byte> decrypt_aes_gcm(std::span<const std::byte> ciphertext, std::span<const std::byte, KEY_SIZE> key, std::span<const std::byte, IV_SIZE> iv,
+                                               std::span<const std::byte, TAG_SIZE> tag, std::span<const std::byte> aad, std::string_view display_field) {
             GcmContext ctx;
             if (mbedtls_gcm_setkey(ctx.get(), MBEDTLS_CIPHER_ID_AES, mbedtls_const_bytes(key), static_cast<unsigned int>(key.size() * 8U)) != 0) {
                 throw ConfigSecretProtectionError("Failed to initialize config secret decryption for '" + std::string(display_field) + "'.");
             }
 
-            byte_vector plaintext(ciphertext.size());
+            std::vector<std::byte> plaintext(ciphertext.size());
             if (mbedtls_gcm_auth_decrypt(ctx.get(), ciphertext.size(), mbedtls_const_bytes(iv), iv.size(), mbedtls_const_bytes(aad), aad.size(), mbedtls_const_bytes(tag),
                                          tag.size(), mbedtls_const_bytes(ciphertext), mbedtls_mutable_bytes(std::span{plaintext})) != 0) {
                 throw ConfigSecretProtectionError("Failed to decrypt protected config secret for '" + std::string(display_field) + "'.");
@@ -340,8 +332,8 @@ namespace orangutan::config {
         }
 
         [[nodiscard]]
-        byte_vector serialize_payload(const ProtectedPayload &payload) {
-            byte_vector serialized;
+        std::vector<std::byte> serialize_payload(const ProtectedPayload &payload) {
+            std::vector<std::byte> serialized;
             serialized.reserve(payload.salt.size() + payload.iv.size() + payload.tag.size() + payload.ciphertext.size());
             serialized.insert(serialized.end(), payload.salt.begin(), payload.salt.end());
             serialized.insert(serialized.end(), payload.iv.begin(), payload.iv.end());
@@ -357,7 +349,7 @@ namespace orangutan::config {
                 throw ConfigSecretProtectionError("Protected config secret payload is malformed for '" + std::string(display_field) + "'.");
             }
 
-            auto remaining = const_byte_span(decoded);
+            auto remaining = std::span<const std::byte>(decoded);
             ProtectedPayload payload;
 
             std::ranges::copy(remaining.first<SALT_SIZE>(), payload.salt.begin());
@@ -384,13 +376,13 @@ namespace orangutan::config {
             throw ConfigSecretProtectionError("Protected config secrets require a non-empty password.");
         }
 
-        byte_array<SALT_SIZE> salt{};
-        byte_array<IV_SIZE> iv{};
+        std::array<std::byte, SALT_SIZE> salt{};
+        std::array<std::byte, IV_SIZE> iv{};
         fill_random_bytes(std::span{salt});
         fill_random_bytes(std::span{iv});
 
         const auto key = derive_key(password, salt);
-        byte_array<TAG_SIZE> tag{};
+        std::array<std::byte, TAG_SIZE> tag{};
         const auto aad = aad_for_field(field_kind);
         auto ciphertext = encrypt_aes_gcm(bytes_from_string_view(plaintext), key, iv, bytes_from_string_view(aad), tag);
 
