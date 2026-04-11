@@ -19,6 +19,7 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 - Commit incrementally per module or logical step—avoid large bulk commits
 - Only compile when changes likely require it (large projects are slow to build)
 - Skip over-analysis for trivially correct changes
+- There are some important style codes; remember to update this document in a timely manner.
 
 ---
 
