@@ -156,3 +156,5 @@ Fallback to the legacy tools when not available.
 - WHY behind rules — Rationale enables judgment
 - Workflow-first — Task approach before reference tables
 - Environment awareness — Build system, tools, libraries with context
+
+** You have more than enough time to complete each task, please continue to improve your implementation. **
