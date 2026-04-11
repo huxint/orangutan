@@ -220,8 +220,7 @@ namespace orangutan::bootstrap {
                     spdlog::info("Using workspace '{}' for jid '{}'", runtime->workspace, jid);
                 }
 
-                auto inserted = runtimes.emplace(runtime_key, std::move(runtime));
-                it = inserted.first;
+                it = runtimes.try_emplace(runtime_key, std::move(runtime)).first;
             }
             return *it->second;
         }

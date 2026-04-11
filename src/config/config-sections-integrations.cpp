@@ -30,7 +30,6 @@ namespace orangutan::config::detail {
 
     } // namespace
 
-
     Config parse_security_section(const nlohmann::json &root, Config cfg) {
         const auto *security = find_object_member(root, "security");
         if (security == nullptr) {
@@ -99,7 +98,7 @@ namespace orangutan::config::detail {
             if (const auto *schema = find_object_member(item, "input_schema"); schema != nullptr) {
                 for (auto it = schema->begin(); it != schema->end(); ++it) {
                     if (it.value().is_string()) {
-                        tool_cfg.input_schema.emplace(it.key(), it.value().get<std::string>());
+                        tool_cfg.input_schema.try_emplace(it.key(), it.value().get<std::string>());
                     }
                 }
             }
@@ -150,7 +149,7 @@ namespace orangutan::config::detail {
             if (const auto *env = find_object_member(item, "env"); env != nullptr) {
                 for (auto it = env->begin(); it != env->end(); ++it) {
                     if (it.value().is_string()) {
-                        server_cfg.env.emplace(it.key(), expand_env_vars(it.value().get<std::string>()));
+                        server_cfg.env.try_emplace(it.key(), expand_env_vars(it.value().get<std::string>()));
                     }
                 }
             }

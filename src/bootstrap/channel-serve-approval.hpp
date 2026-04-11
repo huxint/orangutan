@@ -113,7 +113,10 @@ namespace orangutan::bootstrap::detail {
             if (it == input.end()) {
                 continue;
             }
-            if (const auto value = json_scalar_as_string(*it); value.has_value()) {
+            if (const auto value = json_scalar_as_string(*it).and_then([](std::string text) -> std::optional<std::string> {
+                    return text.empty() ? std::nullopt : std::optional<std::string>{std::move(text)};
+                });
+                value.has_value()) {
                 return value;
             }
         }

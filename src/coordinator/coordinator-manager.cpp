@@ -132,7 +132,7 @@ namespace orangutan::coordinator {
             .started_at = now_millis(),
         };
 
-        active_runs_.emplace(run_id, std::move(active_run));
+        active_runs_.try_emplace(run_id, std::move(active_run));
 
         auto run_it = active_runs_.find(run_id);
         if (count_running_locked() < max_concurrent_) {

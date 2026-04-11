@@ -805,8 +805,8 @@ namespace orangutan::channel::qq {
             if (it == runtime_->group_history.end() || it->second.empty()) {
                 return {};
             }
-            history = std::move(it->second);
-            runtime_->group_history.erase(it);
+            auto history_node = runtime_->group_history.extract(it);
+            history = std::move(history_node.mapped());
         }
 
         std::string merged;

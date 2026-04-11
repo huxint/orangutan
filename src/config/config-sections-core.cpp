@@ -3,6 +3,7 @@
 #include "utils/string.hpp"
 
 #include <array>
+#include <optional>
 #include <utility>
 
 #include <magic_enum/magic_enum.hpp>
@@ -211,7 +212,7 @@ namespace orangutan::config::detail {
             if (const auto *headers = find_object_member(profile, "headers"); headers != nullptr) {
                 for (auto header_it = headers->begin(); header_it != headers->end(); ++header_it) {
                     if (header_it.value().is_string()) {
-                        profile_cfg.headers.emplace(header_it.key(), header_it.value().get<std::string>());
+                        profile_cfg.headers.try_emplace(header_it.key(), header_it.value().get<std::string>());
                     }
                 }
             }
@@ -251,12 +252,15 @@ namespace orangutan::config::detail {
 
     void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config) {
         if (const auto *value = find_member(permissions, "default_mode"); value != nullptr && value->is_string()) {
-            auto mode_opt = magic_enum::enum_cast<permission_mode>(utils::normalize_enum_token(value->get<std::string>()));
-            if (mode_opt.has_value()) {
-                config.default_mode = *mode_opt;
-            } else {
-                spdlog::warn("Unknown permissions.default_mode '{}'", value->get<std::string>());
-            }
+            magic_enum::enum_cast<permission_mode>(utils::normalize_enum_token(value->get<std::string>()))
+                .transform([&config](permission_mode mode) {
+                    config.default_mode = mode;
+                    return mode;
+                })
+                .or_else([value] {
+                    spdlog::warn("Unknown permissions.default_mode '{}'", value->get<std::string>());
+                    return std::optional<permission_mode>{};
+                });
         }
         if (const auto *array = find_array_member(permissions, "allow"); array != nullptr) {
             assign_string_array(*array, config.allow);
