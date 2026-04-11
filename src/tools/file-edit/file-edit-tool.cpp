@@ -1,6 +1,7 @@
 #include "tools/internal.hpp"
 #include "tools/file-edit/hashline.hpp"
 #include "utils/file-io.hpp"
+#include "utils/format.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
@@ -343,7 +344,7 @@ namespace orangutan::tools {
                 if (!summary.empty()) {
                     summary += ", ";
                 }
-                summary += spdlog::fmt_lib::format("{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
+                utils::format_to(summary, "{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
             }
 
             return spdlog::fmt_lib::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files",

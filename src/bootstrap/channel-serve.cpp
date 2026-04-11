@@ -102,10 +102,10 @@ namespace orangutan::bootstrap {
                 line.push_back(')');
             }
             if (attachment.width > 0 && attachment.height > 0) {
-                line.append(spdlog::fmt_lib::format(" {}x{}", attachment.width, attachment.height));
+                utils::format_to(line, " {}x{}", attachment.width, attachment.height);
             }
             if (attachment.size > 0) {
-                line.append(spdlog::fmt_lib::format(" {} bytes", attachment.size));
+                utils::format_to(line, " {} bytes", attachment.size);
             }
             if (!attachment.local_path.empty()) {
                 line.append(" -> ");
