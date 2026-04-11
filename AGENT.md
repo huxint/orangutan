@@ -148,3 +148,11 @@ Modern Alternatives
 - sd not sed
 - pnpm not npm
 Fallback to the legacy tools when not available.
+
+# prompt engineering:
+- Layered priority — Critical rules first, style later
+- Action-oriented framing — "Do X" not "X is preferred"
+- Concrete DO/DON'T — Explicit good/bad patterns
+- WHY behind rules — Rationale enables judgment
+- Workflow-first — Task approach before reference tables
+- Environment awareness — Build system, tools, libraries with context

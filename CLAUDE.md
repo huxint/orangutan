@@ -19,6 +19,7 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 - Commit incrementally per module or logical step—avoid large bulk commits
 - Only compile when changes likely require it (large projects are slow to build)
 - Skip over-analysis for trivially correct changes
+- There are some important style codes; remember to update this document in a timely manner.
 
 ---
 
@@ -48,6 +49,18 @@ cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash,
 | `std::jthread` | `std::thread` | Auto-join, stop tokens |
 | `std::scoped_lock` | `std::lock_guard` | Lightweight |
 | PMR allocators | Default allocators | Runtime flexibility |
+
+
+| Feature                              | `const std::string&`                      | `std::string_view`                     |
+| ------------------------------------ | ----------------------------------------- | -------------------------------------- |
+| **Copy cost**                        | None (just passing an address)            | Copy two integers (16 bytes), very low |
+| **Indirection overhead**             | Dereference on each access (one extra level) | Direct pointer storage, one dereference |
+| **Construction from `char*`**        | **Heap allocation + O(N) copy**, expensive | **Zero overhead** (just record pointer and length) |
+| **Construction from `std::string`**  | Direct binding, no extra cost             | Zero‑overhead implicit conversion (O(1)) |
+| **Effect of modifying original string** | Reference reflects modification (but watch for iterator invalidation) | View becomes dangling (no awareness of modification) |
+| **Owns data?**                       | No (lifetime managed by `std::string`)    | No                                     |
+| **Guaranteed null‑terminated?**      | Yes (`std::string::c_str()` guarantees)   | No guarantee                          |
+| **Use cases**                        | Need `std::string`‑specific interface (e.g., `.c_str()` with null termination), or passing to APIs expecting `const std::string&` | Read‑only string access, especially when handling multiple string types (`char*`, `string`, substrings) without modification |
 
 ### Syntax & Style
 
