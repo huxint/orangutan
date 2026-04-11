@@ -18,6 +18,7 @@
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
+#include "utils/scope-exit.hpp"
 #include "utils/sender-utils.hpp"
 #include "bootstrap/identity.hpp"
 #include "skills/skill-loader.hpp"
@@ -29,7 +30,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <scope>
 #include "utils/format.hpp"
 #include <stdexcept>
 #include <thread>
@@ -636,7 +636,7 @@ namespace orangutan::bootstrap {
                     tool_context.attachment_download_callback = [&channel_manager, jid = message.jid](const Attachment &attachment, const std::string &destination_path) {
                         return channel_manager.download_attachment(jid, attachment, destination_path);
                     };
-                    const auto restore_tool_context = std::scope_exit([&tool_context] {
+                    const auto restore_tool_context = utils::scope_exit([&tool_context] {
                         tool_context.current_message_attachments.clear();
                         tool_context.attachment_download_callback = {};
                     });
@@ -676,7 +676,7 @@ namespace orangutan::bootstrap {
                             }
                         });
                     channel_manager.start_typing(message.jid, message.message_id);
-                    const auto stop_typing = std::scope_exit([&channel_manager, &message] {
+                    const auto stop_typing = utils::scope_exit([&channel_manager, &message] {
                         channel_manager.stop_typing(message.jid);
                     });
 

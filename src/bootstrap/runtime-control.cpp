@@ -177,13 +177,6 @@ namespace orangutan::bootstrap {
         state->automation_runtime = nullptr;
     }
 
-    RuntimeCompletionResumeStateGuard::RuntimeCompletionResumeStateGuard(std::shared_ptr<RuntimeCompletionResumeState> state_ptr)
-    : state_(std::move(state_ptr)) {}
-
-    RuntimeCompletionResumeStateGuard::~RuntimeCompletionResumeStateGuard() {
-        deactivate_runtime_completion_resume_state(state_);
-    }
-
     BackgroundCompletionResumeCallback make_runtime_completion_resume_callback(const std::weak_ptr<RuntimeCompletionResumeState> &weak_state) {
         return [weak_state](const std::string &message) -> std::optional<std::string> {
             const auto state = weak_state.lock();

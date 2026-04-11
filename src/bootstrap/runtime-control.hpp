@@ -107,20 +107,6 @@ namespace orangutan::bootstrap {
         bool suppress_human_output = false;
     };
 
-    class RuntimeCompletionResumeStateGuard {
-    public:
-        explicit RuntimeCompletionResumeStateGuard(std::shared_ptr<RuntimeCompletionResumeState> state_ptr);
-        ~RuntimeCompletionResumeStateGuard();
-
-        RuntimeCompletionResumeStateGuard(const RuntimeCompletionResumeStateGuard &) = delete;
-        RuntimeCompletionResumeStateGuard &operator=(const RuntimeCompletionResumeStateGuard &) = delete;
-        RuntimeCompletionResumeStateGuard(RuntimeCompletionResumeStateGuard &&) = delete;
-        RuntimeCompletionResumeStateGuard &operator=(RuntimeCompletionResumeStateGuard &&) = delete;
-
-    private:
-        std::shared_ptr<RuntimeCompletionResumeState> state_;
-    };
-
     std::atomic<bool> &signal_stop_requested();
 
     void handle_signal(int signum);

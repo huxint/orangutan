@@ -26,6 +26,7 @@
 #include "swarm/mailbox.hpp"
 #include "swarm/team-manager.hpp"
 #include "utils/escape.hpp"
+#include "utils/scope-exit.hpp"
 
 #include <CLI/CLI.hpp>
 #include <array>
@@ -385,7 +386,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .background_completion_runtime =
                     make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
             }));
-            RuntimeCompletionResumeStateGuard completion_resume_guard{completion_resume_state};
+            const auto completion_resume_guard = orangutan::utils::scope_exit([completion_resume_state] {
+                deactivate_runtime_completion_resume_state(completion_resume_state);
+            });
             completion_resume_state->agent = runtime.agent.get();
             completion_resume_state->provider = runtime.provider.get();
             result.reply = runtime.agent->run(trigger.prompt);
@@ -465,7 +468,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             }
         }
     }
-    RuntimeCompletionResumeStateGuard primary_completion_resume_guard{primary_completion_resume_state};
+    const auto primary_completion_resume_guard = orangutan::utils::scope_exit([primary_completion_resume_state] {
+        deactivate_runtime_completion_resume_state(primary_completion_resume_state);
+    });
 
     std::unique_ptr<orangutan::WebServer> web_server;
     if (options.web_mode) {

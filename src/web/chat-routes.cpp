@@ -4,6 +4,7 @@
 #include "providers/provider.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
+#include "utils/scope-exit.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -182,6 +183,17 @@ namespace orangutan::web {
                         };
                     }
 
+                    const auto restore_approval_stream_state = utils::scope_exit([session_ptr, approval_event_emitter, approval_stream_open] {
+                        session_ptr->running = false;
+                        detail::cancel_pending_approval(*session_ptr);
+                        if (approval_event_emitter != nullptr) {
+                            *approval_event_emitter = {};
+                        }
+                        if (approval_stream_open != nullptr) {
+                            *approval_stream_open = {};
+                        }
+                    });
+
                     internal::write_sse_event(sink, "session", {{"session_id", captured_session_id}});
 
                     session_ptr->running = true;
@@ -215,15 +227,6 @@ namespace orangutan::web {
                         internal::write_sse_event(sink, "done", nlohmann::json::object());
                     } catch (const std::exception &e) {
                         internal::write_sse_event(sink, "error", {{"error", e.what()}});
-                    }
-
-                    session_ptr->running = false;
-                    detail::cancel_pending_approval(*session_ptr);
-                    if (approval_event_emitter != nullptr) {
-                        *approval_event_emitter = {};
-                    }
-                    if (approval_stream_open != nullptr) {
-                        *approval_stream_open = {};
                     }
 
                     if (store_ptr != nullptr) {
