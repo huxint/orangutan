@@ -4,7 +4,7 @@
 #include "automation/scheduler.hpp"
 #include "automation/automation-store.hpp"
 #include "tools/background/background-completion.hpp"
-#include "utils/utf8.hpp"
+#include "utils/utf8-policy.hpp"
 #include "test-helpers.hpp"
 
 #include <algorithm>
@@ -176,22 +176,38 @@ namespace {
         std::shared_ptr<ResumeMessagesState> resume_state_;
     };
 
-    TEST_CASE("sanitize_and_truncate_valid_prefix_preserves_codepoint_boundary_with_ellipsis") {
-        CHECK(utf8::sanitize_and_truncate_valid_prefix("你好世界", 9, true) == std::string{"你好..."});
+    TEST_CASE("canonicalize_prefix_bound_preserves_codepoint_boundary_with_ellipsis") {
+        const auto output = utf8_policy::canonicalize("你好世界", utf8_policy::display_policy(9, true));
+        REQUIRE(output.has_value());
+        CHECK(output->value == std::string{"你好..."});
     };
 
-    TEST_CASE("sanitize_and_truncate_valid_prefix_sanitizes_before_bounding") {
+    TEST_CASE("canonicalize_prefix_bound_sanitizes_before_bounding") {
         const std::string malformed = std::string{"A"} + "\xFF" + "你好世界";
-        CHECK(utf8::sanitize_and_truncate_valid_prefix(malformed, 8, false) == std::string{"A你好"});
-        CHECK(utf8::sanitize_and_truncate_valid_prefix(malformed, 8, true) == std::string{"A你..."});
+        const auto without_ellipsis = utf8_policy::canonicalize(malformed, utf8_policy::display_policy(8, false));
+        REQUIRE(without_ellipsis.has_value());
+        CHECK(without_ellipsis->value == std::string{"A你好"});
+
+        const auto with_ellipsis = utf8_policy::canonicalize(malformed, utf8_policy::display_policy(8, true));
+        REQUIRE(with_ellipsis.has_value());
+        CHECK(with_ellipsis->value == std::string{"A你..."});
     };
 
-    TEST_CASE("sanitize_and_truncate_valid_prefix_skips_ellipsis_when_not_truncated") {
-        CHECK(utf8::sanitize_and_truncate_valid_prefix("ready", 16, true) == std::string{"ready"});
+    TEST_CASE("canonicalize_prefix_bound_skips_ellipsis_when_not_truncated") {
+        const auto output = utf8_policy::canonicalize("ready", utf8_policy::display_policy(16, true));
+        REQUIRE(output.has_value());
+        CHECK(output->value == std::string{"ready"});
+        CHECK_FALSE(output->truncated);
     };
 
-    TEST_CASE("truncate_valid_suffix_preserves_codepoint_boundary") {
-        CHECK(utf8::truncate_valid_suffix("ab你好", 4) == std::string{"好"});
+    TEST_CASE("canonicalize_suffix_bound_preserves_codepoint_boundary") {
+        auto policy = utf8_policy::display_policy();
+        policy.boundary = utf8_policy::bound_mode::suffix;
+        policy.max_bytes = 4;
+
+        const auto output = utf8_policy::canonicalize("ab你好", policy);
+        REQUIRE(output.has_value());
+        CHECK(output->value == std::string{"好"});
     };
 
     TEST_CASE("shell_tool_schema_documents_on_complete_policy") {

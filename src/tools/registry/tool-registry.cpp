@@ -1,6 +1,6 @@
 #include "tool-registry.hpp"
 
-#include "utils/utf8.hpp"
+#include "utils/utf8-policy.hpp"
 
 #include <algorithm>
 #include <ctre.hpp>
@@ -60,7 +60,8 @@ namespace orangutan::tools {
     } // namespace
 
     std::string scrub_tool_output(std::string_view text) {
-        std::string result = utf8::sanitize(text);
+        auto canonicalized = utf8_policy::canonicalize(text, utf8_policy::display_policy());
+        std::string result = canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         bool redacted = false;
 
         redacted |= redact_after_prefix<R"((sk-ant-api\d{2}-)[A-Za-z0-9_\-]{20,})">(result);

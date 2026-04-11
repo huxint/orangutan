@@ -3,7 +3,7 @@
 #include "automation/automation-types.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/sender-utils.hpp"
-#include "utils/utf8.hpp"
+#include "utils/utf8-policy.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace orangutan::tools {
     namespace {
@@ -46,18 +47,24 @@ namespace orangutan::tools {
         }
 
         std::string scrub_and_bound_title(std::string_view title) {
-            return utf8::truncate_valid_prefix(scrub_tool_output(utf8::sanitize(title)), MAX_INBOX_TITLE_CHARS, true);
+            const auto canonicalized = utf8_policy::canonicalize(scrub_tool_output(title), utf8_policy::display_policy(MAX_INBOX_TITLE_CHARS, true));
+            return canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         }
 
         std::string clip_command(std::string_view command) {
-            return utf8::sanitize_and_truncate_valid_prefix(command, MAX_TITLE_COMMAND_CHARS, true);
+            const auto canonicalized = utf8_policy::canonicalize(command, utf8_policy::display_policy(MAX_TITLE_COMMAND_CHARS, true));
+            return canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         }
 
         nlohmann::json summarize_output(const BackgroundProcessOutputMetadata &output) {
-            const std::string sanitized_tail = utf8::sanitize(output.tail);
-            std::string tail = utf8::truncate_valid_suffix(sanitized_tail, MAX_OUTPUT_SUMMARY_BYTES);
+            auto suffix_policy = utf8_policy::display_policy();
+            suffix_policy.boundary = utf8_policy::bound_mode::suffix;
+            suffix_policy.max_bytes = MAX_OUTPUT_SUMMARY_BYTES;
+
+            const auto canonicalized = utf8_policy::canonicalize(output.tail, suffix_policy);
+            std::string tail = canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
             bool truncated = output.truncated;
-            truncated = truncated || tail.size() < sanitized_tail.size();
+            truncated = truncated || (canonicalized.has_value() && canonicalized->truncated);
 
             return {
                 {"tail", std::move(tail)},
@@ -75,19 +82,29 @@ namespace orangutan::tools {
 
         std::optional<std::string> completion_prompt(const std::map<std::string, std::string> &metadata) {
             if (const auto it = metadata.find(std::string(BACKGROUND_COMPLETION_PROMPT_METADATA_KEY)); it != metadata.end()) {
-                return utf8::sanitize_and_truncate_valid_prefix(it->second, BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true);
+                const auto canonicalized = utf8_policy::canonicalize(it->second, utf8_policy::display_policy(BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true));
+                if (!canonicalized.has_value()) {
+                    return std::nullopt;
+                }
+                return std::optional<std::string>{std::move(canonicalized->value)};
             }
             return std::nullopt;
         }
 
         nlohmann::json build_completion_payload(const BackgroundProcessCompletionEvent &event, std::string_view runtime_key, std::string_view agent_key) {
+            const auto canonical_runtime_key = utf8_policy::canonicalize(runtime_key, utf8_policy::display_policy(MAX_RUNTIME_KEY_CHARS, true));
+            const auto canonical_agent_key = utf8_policy::canonicalize(agent_key, utf8_policy::display_policy(MAX_AGENT_KEY_CHARS, true));
+            const auto canonical_process_id = utf8_policy::canonicalize(event.process_id, utf8_policy::display_policy(MAX_PROCESS_ID_CHARS, true));
+            const auto canonical_command = utf8_policy::canonicalize(event.command, utf8_policy::display_policy(MAX_COMMAND_CHARS, true));
+            const auto canonical_working_dir = utf8_policy::canonicalize(event.working_dir, utf8_policy::display_policy(MAX_WORKING_DIR_CHARS, true));
+
             nlohmann::json payload = {
                 {"type", COMPLETION_MESSAGE_TYPE},
-                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key, MAX_RUNTIME_KEY_CHARS, true)},
-                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key, MAX_AGENT_KEY_CHARS, true)},
-                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, MAX_PROCESS_ID_CHARS, true)},
-                {"command", utf8::sanitize_and_truncate_valid_prefix(event.command, MAX_COMMAND_CHARS, true)},
-                {"working_dir", utf8::sanitize_and_truncate_valid_prefix(event.working_dir, MAX_WORKING_DIR_CHARS, true)},
+                {"runtime_key", canonical_runtime_key.has_value() ? std::move(canonical_runtime_key->value) : std::string{}},
+                {"agent_key", canonical_agent_key.has_value() ? std::move(canonical_agent_key->value) : std::string{}},
+                {"process_id", canonical_process_id.has_value() ? std::move(canonical_process_id->value) : std::string{}},
+                {"command", canonical_command.has_value() ? std::move(canonical_command->value) : std::string{}},
+                {"working_dir", canonical_working_dir.has_value() ? std::move(canonical_working_dir->value) : std::string{}},
                 {"pid", event.pid},
                 {"status", process_status(event)},
                 {"kill_requested", event.kill_requested},
@@ -111,7 +128,8 @@ namespace orangutan::tools {
             if (!reason.has_value() || reason->empty()) {
                 return "resume callback returned an unspecified failure";
             }
-            return utf8::sanitize_and_truncate_valid_prefix(*reason, MAX_FAILURE_REASON_CHARS, true);
+            const auto canonicalized = utf8_policy::canonicalize(*reason, utf8_policy::display_policy(MAX_FAILURE_REASON_CHARS, true));
+            return canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         }
 
         bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
@@ -174,12 +192,17 @@ namespace orangutan::tools {
         const auto requested_completion_mode = completion_mode(event.metadata);
 
         const auto insert_resume_failure_note = [&](std::string_view reason) {
+            const auto canonical_runtime_key = utf8_policy::canonicalize(runtime_key_, utf8_policy::display_policy(MAX_RUNTIME_KEY_CHARS, true));
+            const auto canonical_agent_key = utf8_policy::canonicalize(agent_key_, utf8_policy::display_policy(MAX_AGENT_KEY_CHARS, true));
+            const auto canonical_process_id = utf8_policy::canonicalize(event.process_id, utf8_policy::display_policy(MAX_PROCESS_ID_CHARS, true));
+            const auto canonical_reason = utf8_policy::canonicalize(reason, utf8_policy::display_policy(MAX_FAILURE_REASON_CHARS, true));
+
             const auto failure_payload = nlohmann::json{
                 {"type", COMPLETION_RESUME_FAILURE_TYPE},
-                {"runtime_key", utf8::sanitize_and_truncate_valid_prefix(runtime_key_, MAX_RUNTIME_KEY_CHARS, true)},
-                {"agent_key", utf8::sanitize_and_truncate_valid_prefix(agent_key_, MAX_AGENT_KEY_CHARS, true)},
-                {"process_id", utf8::sanitize_and_truncate_valid_prefix(event.process_id, MAX_PROCESS_ID_CHARS, true)},
-                {"reason", utf8::sanitize_and_truncate_valid_prefix(reason, MAX_FAILURE_REASON_CHARS, true)},
+                {"runtime_key", canonical_runtime_key.has_value() ? std::move(canonical_runtime_key->value) : std::string{}},
+                {"agent_key", canonical_agent_key.has_value() ? std::move(canonical_agent_key->value) : std::string{}},
+                {"process_id", canonical_process_id.has_value() ? std::move(canonical_process_id->value) : std::string{}},
+                {"reason", canonical_reason.has_value() ? std::move(canonical_reason->value) : std::string{}},
                 {"completion", persisted_payload},
             };
             const auto failure_body = scrub_tool_output(failure_payload.dump(2));

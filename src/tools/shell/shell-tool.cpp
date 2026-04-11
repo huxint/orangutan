@@ -5,7 +5,7 @@
 #include "process/subprocess.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/string.hpp"
-#include "utils/utf8.hpp"
+#include "utils/utf8-policy.hpp"
 
 #include <cctype>
 #include <chrono>
@@ -318,7 +318,9 @@ namespace orangutan::tools {
                         throw std::runtime_error("on_complete.prompt must be a string");
                     }
                     prompt_present = true;
-                    prompt = utf8::sanitize_and_truncate_valid_prefix(prompt_it->get_ref<const std::string &>(), BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true);
+                    const auto canonicalized =
+                        utf8_policy::canonicalize(prompt_it->get_ref<const std::string &>(), utf8_policy::display_policy(BACKGROUND_COMPLETION_PROMPT_MAX_CHARS, true));
+                    prompt = canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
                 }
             }
 
