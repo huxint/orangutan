@@ -1,10 +1,14 @@
 #include "agent/agent-loop.hpp"
+#include "agent/agent-loop-tools.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
+#include "skills/skill-loader.hpp"
 #include "test-helpers.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <catch2/catch_test_macros.hpp>
 using namespace orangutan;
 
@@ -175,6 +179,34 @@ namespace {
         std::size_t next_response_ = 0;
     };
 
+    class PromptRecordingProvider final : public Provider {
+    public:
+        explicit PromptRecordingProvider(std::vector<LLMResponse> responses)
+        : responses_(std::move(responses)) {}
+
+        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
+            throw std::runtime_error("chat should not be used in this test");
+        }
+
+        LLMResponse chat_stream(std::string_view system_prompt, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
+            prompts_.emplace_back(system_prompt);
+            if (next_response_ >= responses_.size()) {
+                throw std::runtime_error("no more responses queued");
+            }
+            return responses_[next_response_++];
+        }
+
+        std::string name() const override {
+            return "prompt-recording-provider";
+        }
+
+        std::vector<std::string> prompts_;
+
+    private:
+        std::vector<LLMResponse> responses_;
+        std::size_t next_response_ = 0;
+    };
+
     class CountingProvider final : public Provider {
     public:
         LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
@@ -244,6 +276,17 @@ namespace {
             return record.key == key;
         });
         return it == records.end() ? nullptr : &*it;
+    }
+
+    void write_skill_file(const std::filesystem::path &root, std::string_view dir_name, std::string_view frontmatter, std::string_view body) {
+        const auto skill_dir = root / std::filesystem::path(dir_name);
+        std::filesystem::create_directories(skill_dir);
+        std::ofstream out(skill_dir / "SKILL.md");
+        out << "---\n";
+        out << frontmatter;
+        out << "\n---\n\n";
+        out << body;
+        out << '\n';
     }
 
     TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
@@ -728,6 +771,110 @@ namespace {
                                                 "explain what you're trying to accomplish.";
         });
         CHECK(warning_count == 2);
+    };
+
+    TEST_CASE("run_activates_conditional_skills_after_file_tool_calls") {
+        const auto workspace = orangutan::testing::unique_test_root("agent-loop-skill-activation");
+        const auto skill_root = workspace / "skills";
+        std::filesystem::create_directories(workspace / "src");
+        {
+            std::ofstream out(workspace / "src" / "main.cpp");
+            out << "int main() { return 0; }\n";
+        }
+        write_skill_file(skill_root, "conditional", "name: conditional\ndescription: conditional skill\nscope: conditional\npaths_any: [src/*.cpp]", "conditional body");
+
+        SkillLoader loader;
+        loader.set_workspace_root(workspace);
+        loader.load_from_directories({skill_root});
+
+        const auto before = loader.invoke({
+            .name = "conditional",
+            .call_origin = skills::skill_call_origin::automatic,
+        });
+        CHECK(before.status == skills::skill_invoke_status::blocked);
+
+        ToolRegistry tools;
+        register_builtin_tools(tools, nullptr, workspace);
+
+        CheckpointingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-read", "read", nlohmann::json{{"path", "src/main.cpp"}})},
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {Text{"done"}},
+            },
+        });
+
+        AgentLoop loop(provider, tools, nullptr, {}, nullptr, &loader);
+        CHECK(loop.run("load file") == "done");
+
+        const auto after = loader.invoke({
+            .name = "conditional",
+            .call_origin = skills::skill_call_origin::automatic,
+        });
+        CHECK(after.status == skills::skill_invoke_status::ok);
+
+        std::filesystem::remove_all(workspace);
+    };
+
+    TEST_CASE("run_refreshes_prompt_skill_section_after_conditional_activation") {
+        const auto workspace = orangutan::testing::unique_test_root("agent-loop-skill-prompt-refresh");
+        const auto skill_root = workspace / "skills";
+        std::filesystem::create_directories(workspace / "src");
+        {
+            std::ofstream out(workspace / "src" / "main.cpp");
+            out << "int main() { return 0; }\n";
+        }
+        write_skill_file(skill_root, "conditional", "name: conditional\ndescription: conditional skill\nscope: conditional\npaths_any: [src/*.cpp]", "conditional body");
+
+        SkillLoader loader;
+        loader.set_workspace_root(workspace);
+        loader.load_from_directories({skill_root});
+
+        ToolRegistry tools;
+        register_builtin_tools(tools, nullptr, workspace);
+
+        PromptRecordingProvider provider({
+            {
+                .stop_reason = "tool_use",
+                .content = {ToolUse("tool-read", "read", nlohmann::json{{"path", "src/main.cpp"}})},
+            },
+            {
+                .stop_reason = "end_turn",
+                .content = {Text{"done"}},
+            },
+        });
+
+        AgentLoop loop(provider, tools, nullptr, skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false})), nullptr, &loader);
+        CHECK(loop.run("load file") == "done");
+
+        REQUIRE(provider.prompts_.size() == 2UL);
+        CHECK_FALSE(provider.prompts_[0].contains("**conditional**"));
+        CHECK(provider.prompts_[1].contains("**conditional**"));
+
+        std::filesystem::remove_all(workspace);
+    };
+
+    TEST_CASE("touched_paths_for_edit_patch_extracts_update_file_paths") {
+        const ToolUse call{
+            "tool-edit",
+            "edit",
+            nlohmann::json{{"patch", "*** Begin Patch\n"
+                                     "*** Update File: src/main.cpp\n"
+                                     "<<<<<<< SEARCH\n"
+                                     "return 0;\n"
+                                     "=======\n"
+                                     "return 1;\n"
+                                     ">>>>>>> REPLACE\n"
+                                     "*** End Patch\n"}},
+        };
+
+        const auto paths = agent::detail::touched_paths_for_tool_call(call);
+
+        REQUIRE(paths.size() == 1UL);
+        CHECK(paths[0].generic_string() == "src/main.cpp");
     };
 
     TEST_CASE("distill_session_memory_parses_bullets_legacy_lines_and_pipe_content") {

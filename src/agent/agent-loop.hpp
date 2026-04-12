@@ -19,6 +19,10 @@ namespace orangutan::memory {
     class RuntimeMemory;
 }
 
+namespace orangutan::skills {
+    class SkillLoader;
+}
+
 namespace orangutan::agent {
 
     class AgentLoop {
@@ -41,7 +45,8 @@ namespace orangutan::agent {
             std::string status;
         };
 
-        AgentLoop(Provider &provider, ToolRegistry &tools, memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {}, hooks::HookManager *hook_manager = nullptr);
+        AgentLoop(Provider &provider, ToolRegistry &tools, memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {}, hooks::HookManager *hook_manager = nullptr,
+                  skills::SkillLoader *skill_loader = nullptr);
 
         // Process one user message: run the ReAct loop until final text response
         std::string run(const std::string &user_input, const StreamCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},
@@ -91,6 +96,7 @@ namespace orangutan::agent {
         memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;
         hooks::HookManager *hook_manager_ = nullptr;
+        skills::SkillLoader *skill_loader_ = nullptr;
         int thinking_budget_ = 0;
         prompt::EnvironmentInfo env_info_;
         IncomingMessageFetcher incoming_message_fetcher_;

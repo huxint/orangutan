@@ -213,16 +213,28 @@ namespace orangutan::web {
             res.set_content(R"({"error":"skill loader not available"})", "application/json");
             return;
         }
+
         auto arr = nlohmann::json::array();
-        for (const auto &skill : loader->active_skills()) {
+        const auto catalog = loader->list(skills::skill_list_query{.include_inactive = true});
+        for (const auto &skill : catalog.skills) {
             arr.push_back({
+                {"id", skill.id},
                 {"name", skill.name},
                 {"description", skill.description},
                 {"tools", skill.tools},
+                {"source", std::string{magic_enum::enum_name(skill.source)}},
+                {"scope", std::string{magic_enum::enum_name(skill.scope)}},
+                {"active", skill.active},
+                {"diagnostic_count", skill.diagnostics.size()},
                 {"source_path", skill.source_path},
             });
         }
-        res.set_content(arr.dump(), "application/json");
+
+        nlohmann::json body = {
+            {"schema_version", 2},
+            {"skills", std::move(arr)},
+        };
+        res.set_content(body.dump(), "application/json");
     }
 
     void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {

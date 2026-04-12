@@ -1,5 +1,6 @@
 #include "cli/cli-ui.hpp"
 
+#include "skills/runtime.hpp"
 #include "tools/registry/tool.hpp"
 #include <catch2/catch_test_macros.hpp>
 
@@ -115,6 +116,47 @@ namespace {
         CHECK(compacted == "## Compression\n- Messages: `20 -> 8`");
         CHECK(orangutan::cli::format_history_compaction_result(orangutan::AgentLoop::HistoryCompactionResult{
                   .compacted = false, .status = "Not enough history to compress yet."}) == "## Compression\n- Not enough history to compress yet.");
+    };
+
+    TEST_CASE("format_skill_catalog_reports_empty_state") {
+        const orangutan::skills::skill_catalog_view catalog;
+
+        const auto text = orangutan::cli::format_skill_catalog(catalog);
+
+        CHECK(text == "## Skills\n- 💤 No skills loaded.");
+    };
+
+    TEST_CASE("format_skill_catalog_includes_scope_source_and_activity") {
+        orangutan::skills::skill_catalog_view catalog;
+        catalog.skills.push_back(orangutan::skills::skill_view{
+            .name = "beta",
+            .description = "inactive conditional skill",
+            .source = orangutan::skills::skill_source::workspace,
+            .scope = orangutan::skills::skill_scope::conditional,
+            .active = false,
+            .source_path = "/tmp/beta/SKILL.md",
+            .tools = {"read"},
+        });
+        catalog.skills.push_back(orangutan::skills::skill_view{
+            .name = "alpha",
+            .description = "active always skill",
+            .source = orangutan::skills::skill_source::user,
+            .scope = orangutan::skills::skill_scope::always,
+            .active = true,
+            .source_path = "/tmp/alpha/SKILL.md",
+            .tools = {"read", "edit"},
+        });
+
+        const auto text = orangutan::cli::format_skill_catalog(catalog);
+
+        CHECK(text.contains("## Skills"));
+        CHECK(text.contains("`alpha` — active always skill"));
+        CHECK(text.contains("`beta` — inactive conditional skill"));
+        CHECK(text.find("`alpha`") < text.find("`beta`"));
+        CHECK(text.contains("source: `user`, scope: `always`, active: `yes`"));
+        CHECK(text.contains("source: `workspace`, scope: `conditional`, active: `no`"));
+        CHECK(text.contains("tools: `read`, `edit`"));
+        CHECK(text.contains("path: `/tmp/alpha/SKILL.md`"));
     };
 
 } // namespace

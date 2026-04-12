@@ -176,7 +176,7 @@ namespace orangutan::bootstrap {
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
                 runtime->runtime->agent = std::make_unique<agent::AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools(), runtime->runtime->memory.get(),
-                                                                             runtime->runtime->skills_prompt, hook_manager);
+                                                                             runtime->runtime->skills_prompt, hook_manager, runtime->runtime->skill_loader.get());
                 runtime->hook_manager = hook_manager;
             } else {
                 runtime->hook_manager = runtime->runtime->hook_manager.get();

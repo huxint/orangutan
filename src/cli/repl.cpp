@@ -13,7 +13,6 @@
 #include <iostream>
 #include <optional>
 #include <spdlog/common.h>
-#include <ranges>
 #include <string_view>
 namespace orangutan::cli {
 
@@ -75,21 +74,10 @@ namespace orangutan::cli {
                 return true;
             }
             if (line == "/skills") {
-                if (skill_loader == nullptr || skill_loader->active_skills().empty()) {
+                if (skill_loader == nullptr) {
                     spdlog::fmt_lib::println("No skills loaded.\n");
                 } else {
-                    spdlog::fmt_lib::println("Loaded skills:");
-                    for (const auto &skill : skill_loader->active_skills()) {
-                        spdlog::fmt_lib::println("  {} — {}", skill.name, skill.description);
-                        spdlog::fmt_lib::println("    source: {}", skill.source_path);
-                        if (!skill.tools.empty()) {
-                            spdlog::fmt_lib::println("    tools: {}", skill.tools | std::views::transform([](const std::string &tool) -> std::string_view {
-                                                                          return tool;
-                                                                      }) | std::views::join_with(std::string_view{", "}) |
-                                                                          std::ranges::to<std::string>());
-                        }
-                    }
-                    spdlog::fmt_lib::println("");
+                    print_slash_reply(format_skill_catalog(skill_loader->list(skills::skill_list_query{.include_inactive = true})));
                 }
                 return true;
             }

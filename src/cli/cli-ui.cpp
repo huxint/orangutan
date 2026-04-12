@@ -3,6 +3,7 @@
 
 #include <spdlog/common.h>
 #include <algorithm>
+#include <magic_enum/magic_enum.hpp>
 #include "utils/format.hpp"
 
 namespace orangutan::cli {
@@ -100,6 +101,43 @@ namespace orangutan::cli {
             utils::format_to(out, "  {}  {}  {}  ({} messages)\n", session.id, session.created_at, session.model, session.message_count);
         }
         out.push_back('\n');
+        return out;
+    }
+
+    std::string format_skill_catalog(const skills::skill_catalog_view &catalog) {
+        if (catalog.skills.empty()) {
+            return "## Skills\n- 💤 No skills loaded.";
+        }
+
+        std::vector<const skills::skill_view *> ordered;
+        ordered.reserve(catalog.skills.size());
+        for (const auto &skill : catalog.skills) {
+            ordered.push_back(&skill);
+        }
+        std::ranges::sort(ordered, [](const skills::skill_view *left, const skills::skill_view *right) {
+            return left->name < right->name;
+        });
+
+        std::string out = "## Skills\n";
+        for (const auto *skill : ordered) {
+            utils::format_to(out, "- 🧠 `{}` — {}\n", skill->name, skill->description);
+            const auto source_name = magic_enum::enum_name(skill->source);
+            const auto scope_name = magic_enum::enum_name(skill->scope);
+            utils::format_to(out, "  source: `{}`, scope: `{}`, active: `{}`\n", source_name, scope_name, skill->active ? "yes" : "no");
+            if (!skill->tools.empty()) {
+                out += "  tools: ";
+                for (std::size_t index = 0; index < skill->tools.size(); ++index) {
+                    if (index > 0) {
+                        out += ", ";
+                    }
+                    utils::format_to(out, "`{}`", skill->tools[index]);
+                }
+                out.push_back('\n');
+            }
+            if (!skill->source_path.empty()) {
+                utils::format_to(out, "  path: `{}`\n", skill->source_path);
+            }
+        }
         return out;
     }
 

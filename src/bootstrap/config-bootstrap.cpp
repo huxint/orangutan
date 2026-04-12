@@ -16,10 +16,12 @@
 namespace orangutan::bootstrap {
 
     void load_display_skills(skills::SkillLoader &skill_loader, const config::Config &cfg, const std::string &workspace_root) {
+        skill_loader.set_workspace_root(std::filesystem::path{workspace_root});
         auto skill_dirs = skills::resolve_skill_directories(cfg.skill_paths, std::filesystem::path{workspace_root});
         skill_loader.load_from_directories(skill_dirs);
-        if (!skill_loader.active_skills().empty()) {
-            spdlog::info("Loaded {} skill(s)", skill_loader.active_skills().size());
+        const auto active_catalog = skill_loader.list(skills::skill_list_query{.include_inactive = false});
+        if (!active_catalog.skills.empty()) {
+            spdlog::info("Loaded {} skill(s)", active_catalog.skills.size());
         }
     }
 

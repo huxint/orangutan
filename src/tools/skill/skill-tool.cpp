@@ -1,7 +1,6 @@
 #include "tools/skill/skill-tool.hpp"
 
 #include "skills/skill-loader.hpp"
-#include "utils/format.hpp"
 
 namespace orangutan::tools {
 
@@ -13,10 +12,19 @@ namespace orangutan::tools {
                 return "Error: skill name is required.";
             }
 
-            const auto *skill = loader.find_skill(name);
-            if (skill == nullptr) {
+            const auto result = loader.invoke(skills::skill_invoke_request{
+                .name = name,
+                .call_origin = skills::skill_call_origin::automatic,
+            });
+
+            if (result.status == skills::skill_invoke_status::ok) {
+                return result.content;
+            }
+
+            if (result.status == skills::skill_invoke_status::not_found) {
                 std::string available;
-                for (const auto &s : loader.active_skills()) {
+                const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+                for (const auto &s : catalog.skills) {
                     if (!available.empty()) {
                         available += ", ";
                     }
@@ -25,15 +33,17 @@ namespace orangutan::tools {
                 return "Error: skill '" + name + "' not found. Available skills: " + available;
             }
 
-            std::string out;
-            utils::format_to(out, "# Skill: {}\n\n{}", skill->name, skill->body);
-            return out;
+            if (!result.diagnostics.empty()) {
+                return "Error: failed to load skill '" + name + "': " + result.diagnostics.front().message;
+            }
+            return "Error: failed to load skill '" + name + "'.";
         }
 
     } // namespace
 
     void register_skill_tool(ToolRegistry &registry, const skills::SkillLoader &skill_loader) {
-        if (skill_loader.active_skills().empty()) {
+        const auto catalog = skill_loader.list(skills::skill_list_query{.include_inactive = true});
+        if (catalog.skills.empty()) {
             return;
         }
 

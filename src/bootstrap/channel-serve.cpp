@@ -605,8 +605,9 @@ namespace orangutan::bootstrap {
 
     std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg) {
         SkillLoader skill_loader;
+        skill_loader.set_workspace_root(std::filesystem::path{runtime_cfg.workspace_root});
         skill_loader.load_from_directories(resolve_skill_directories(cfg.skill_paths, std::filesystem::path{runtime_cfg.workspace_root}));
-        return skill_loader.build_prompt_section();
+        return skills::render_skill_prompt_section(skill_loader.list(skills::skill_list_query{.include_inactive = false}));
     }
 
     namespace {

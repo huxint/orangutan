@@ -15,6 +15,7 @@
 
 #include "agent/agent-loop.hpp"
 #include "memory/memory-age.hpp"
+#include "prompt/prompt-compiler.hpp"
 #include "memory/runtime-memory.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "tools/registry/tool.hpp"
@@ -287,19 +288,51 @@ namespace orangutan::agent::detail {
     [[nodiscard]]
     inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view user_input, std::string_view skills_prompt, const ToolRegistry &tools,
                                            RuntimeMemory *memory) {
-        std::string prompt = prompt::build_default_system_prompt(env_info);
-        prompt += skills_prompt;
+        std::vector<prompt::PromptSection> sections;
+        sections.push_back(prompt::PromptSection{
+            .id = "system.default",
+            .kind = prompt::prompt_section_kind::static_section,
+            .classification = prompt::prompt_section_classification::must_keep,
+            .priority = 100,
+            .content = prompt::build_default_system_prompt(env_info),
+            .cache_key_part = "system.default",
+        });
+        if (!skills_prompt.empty()) {
+            sections.push_back(prompt::PromptSection{
+                .id = "system.skills",
+                .kind = prompt::prompt_section_kind::dynamic_section,
+                .classification = prompt::prompt_section_classification::important,
+                .priority = 90,
+                .content = std::string(skills_prompt),
+                .cache_key_part = "system.skills",
+            });
+        }
 
         const auto deferred = tools.deferred_tool_summaries();
         if (!deferred.empty()) {
-            prompt += "\n\n<available-deferred-tools>\n";
-            prompt += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";
+            std::string deferred_section = "<available-deferred-tools>\n";
+            deferred_section += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";
             for (const auto &tool : deferred) {
-                prompt += tool.name;
-                prompt.push_back('\n');
+                deferred_section += tool.name;
+                deferred_section.push_back('\n');
             }
-            prompt += "</available-deferred-tools>";
+            deferred_section += "</available-deferred-tools>";
+
+            sections.push_back(prompt::PromptSection{
+                .id = "system.deferred_tools",
+                .kind = prompt::prompt_section_kind::dynamic_section,
+                .classification = prompt::prompt_section_classification::important,
+                .priority = 80,
+                .content = std::move(deferred_section),
+                .cache_key_part = "system.deferred_tools",
+            });
         }
+
+        auto prompt = prompt::compile_prompt(prompt::PromptBuildInput{
+                                                 .sections = std::move(sections),
+                                                 .token_budget = 0,
+                                             })
+                          .full_prompt;
 
         if (memory == nullptr) {
             return prompt;

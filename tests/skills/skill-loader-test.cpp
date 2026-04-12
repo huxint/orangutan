@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
+
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
@@ -16,8 +17,20 @@ namespace {
     using LoadDirectoriesSignature = void (SkillLoader::*)(const std::vector<std::filesystem::path> &);
     using ResolveDirectoriesSignature = std::vector<std::filesystem::path> (*)(const std::vector<std::string> &, const std::filesystem::path &);
 
+    template <typename Loader>
+    concept has_active_skills_member = requires(const Loader &loader) { loader.active_skills(); };
+
+    template <typename Loader>
+    concept has_find_skill_member = requires(const Loader &loader) { loader.find_skill("test-skill"); };
+
+    template <typename Loader>
+    concept has_build_prompt_section_member = requires(const Loader &loader) { loader.build_prompt_section(); };
+
     static_assert(std::is_same_v<decltype(&SkillLoader::load_from_directories), LoadDirectoriesSignature>);
     static_assert(std::is_same_v<decltype(&resolve_skill_directories), ResolveDirectoriesSignature>);
+    static_assert(!has_active_skills_member<SkillLoader>);
+    static_assert(!has_find_skill_member<SkillLoader>);
+    static_assert(!has_build_prompt_section_member<SkillLoader>);
 
     std::filesystem::path fixtures_dir() {
         return std::filesystem::path(SOURCE_DIR) / "tests/fixtures/skills";
@@ -36,8 +49,14 @@ namespace {
         out << content;
     }
 
-    const SkillDef *find_skill(const SkillLoader &loader, std::string_view name) {
-        return loader.find_skill(name);
+    std::optional<skills::skill_view> find_skill_by_name(const skills::skill_catalog_view &catalog, std::string_view name) {
+        const auto it = std::ranges::find_if(catalog.skills, [name](const skills::skill_view &skill) {
+            return skill.name == name;
+        });
+        if (it == catalog.skills.end()) {
+            return std::nullopt;
+        }
+        return *it;
     }
 
     TEST_CASE("resolve_skill_directories_returns_paths") {
@@ -50,20 +69,22 @@ namespace {
         std::filesystem::remove_all(workspace_root);
     };
 
-    TEST_CASE("find_skill_returns_nullptr_for_unknown_name") {
+    TEST_CASE("list_excludes_unknown_skill_name") {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        CHECK(loader.find_skill("nonexistent-skill") == nullptr);
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        CHECK_FALSE(find_skill_by_name(catalog, "nonexistent-skill").has_value());
     };
 
     TEST_CASE("loads_valid_skill") {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        const auto *skill = find_skill(loader, "test-skill");
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto skill = find_skill_by_name(catalog, "test-skill");
         INFO("expected 'test-skill' to be loaded");
-        REQUIRE(skill != nullptr);
+        REQUIRE(skill.has_value());
         CHECK(skill->description == "A test skill for unit testing");
         CHECK(skill->tools.size() == 2UL);
         CHECK(skill->tools[0] == "read");
@@ -75,7 +96,8 @@ namespace {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        for (const auto &skill : loader.active_skills()) {
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        for (const auto &skill : catalog.skills) {
             INFO("skill with missing name should not be loaded");
             CHECK(skill.description != "Missing the name field");
         }
@@ -85,7 +107,8 @@ namespace {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        for (const auto &skill : loader.active_skills()) {
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        for (const auto &skill : catalog.skills) {
             INFO("skill with non-YAML frontmatter should not be loaded");
             CHECK(skill.name != "ignored-non-yaml");
         }
@@ -100,7 +123,7 @@ This skill file should be skipped.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().empty());
+        CHECK(loader.list(skills::skill_list_query{.include_inactive = true}).skills.empty());
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -116,7 +139,7 @@ Body line that should not be parsed.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().empty());
+        CHECK(loader.list(skills::skill_list_query{.include_inactive = true}).skills.empty());
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -127,10 +150,16 @@ Body line that should not be parsed.
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        for (const auto &skill : loader.active_skills()) {
-            INFO("skill with unmet env should not be loaded");
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        for (const auto &skill : active_catalog.skills) {
+            INFO("skill with unmet env should not be active");
             CHECK(skill.name != "env-skill");
         }
+
+        const auto all_catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto env_skill = find_skill_by_name(all_catalog, "env-skill");
+        REQUIRE(env_skill.has_value());
+        CHECK_FALSE(env_skill->active);
     };
 
     TEST_CASE("skips_missing_description_field") {
@@ -144,7 +173,8 @@ This skill should be skipped.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(find_skill(loader, "missing-description") == nullptr);
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        CHECK_FALSE(find_skill_by_name(catalog, "missing-description").has_value());
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -155,8 +185,9 @@ This skill should be skipped.
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        INFO("skill with met env should be loaded");
-        REQUIRE(find_skill(loader, "env-skill") != nullptr);
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        INFO("skill with met env should be active");
+        REQUIRE(find_skill_by_name(active_catalog, "env-skill").has_value());
     };
 
     TEST_CASE("scoped_env_var_restores_previous_value") {
@@ -181,9 +212,10 @@ This skill should be skipped.
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string(), override_dir().string()});
 
-        const auto *skill = find_skill(loader, "test-skill");
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto skill = find_skill_by_name(catalog, "test-skill");
         INFO("expected overridden skill to exist");
-        REQUIRE(skill != nullptr);
+        REQUIRE(skill.has_value());
         CHECK(skill->description == "Overridden version of test-skill");
         CHECK(skill->body.contains("workspace override"));
     };
@@ -191,24 +223,45 @@ This skill should be skipped.
     TEST_CASE("nonexistent_directory_is_skipped") {
         SkillLoader loader;
         loader.load_from_directories({"/nonexistent/path/that/does/not/exist"});
-        CHECK(loader.active_skills().empty());
+        CHECK(loader.list(skills::skill_list_query{.include_inactive = true}).skills.empty());
     };
 
-    TEST_CASE("build_prompt_section_empty") {
+    TEST_CASE("render_skill_prompt_section_empty") {
         SkillLoader loader;
         loader.load_from_directories({"/nonexistent"});
-        CHECK(loader.build_prompt_section().empty());
+        const auto section = skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false}));
+        CHECK(section.empty());
     };
 
-    TEST_CASE("build_prompt_section_contains_skills") {
+    TEST_CASE("render_skill_prompt_section_contains_skills") {
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        const auto section = loader.build_prompt_section();
+        const auto section = skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false}));
         CHECK(section.contains("## Available Skills"));
         CHECK(section.contains("**test-skill**"));
         CHECK(section.contains("A test skill for unit testing"));
         CHECK_FALSE(section.contains("test skill body"));
+    };
+
+    TEST_CASE("loader_preserves_configured_source_metadata") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_source_metadata");
+        write_skill(temp_dir, "source-metadata", R"md(---
+name: source-metadata
+description: source metadata skill
+---
+skill body
+)md");
+
+        SkillLoader loader;
+        loader.set_source(skills::skill_source::user);
+        loader.load_from_directories({temp_dir});
+
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        REQUIRE(catalog.skills.size() == 1UL);
+        CHECK(catalog.skills[0].source == skills::skill_source::user);
+
+        std::filesystem::remove_all(temp_dir);
     };
 
     TEST_CASE("loads_yaml_frontmatter_with_embedded_body_delimiter") {
@@ -226,10 +279,11 @@ Body continues here.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "embedded-delimiter");
-        CHECK(loader.active_skills()[0].body.contains("Body with delimiter-like content"));
-        CHECK(loader.active_skills()[0].body.contains("Body continues here."));
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        REQUIRE(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "embedded-delimiter");
+        CHECK(active_catalog.skills[0].body.contains("Body with delimiter-like content"));
+        CHECK(active_catalog.skills[0].body.contains("Body continues here."));
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -246,8 +300,9 @@ Body after BOM.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "bom-skill");
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        REQUIRE(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "bom-skill");
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -265,15 +320,15 @@ Body after leading blank line.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "blank-line-skill");
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        REQUIRE(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "blank-line-skill");
 
         std::filesystem::remove_all(temp_dir);
     };
 
     TEST_CASE("continues_loading_skills_after_non_regular_skill_md_path_is_encountered") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_non_regular_skill_path");
-        // A directory at SKILL.md is a portable proxy for a non-readable/non-regular skill file.
         std::filesystem::create_directories(temp_dir / "00-non-regular-skill" / "SKILL.md");
         write_skill(temp_dir, "10-readable-skill", R"md(---
 name: readable-skill
@@ -285,13 +340,14 @@ Readable skill body.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        REQUIRE(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "readable-skill");
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        REQUIRE(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "readable-skill");
 
         std::filesystem::remove_all(temp_dir);
     };
 
-    TEST_CASE("active_skills_are_sorted_by_name_after_shadowing") {
+    TEST_CASE("active_catalog_is_sorted_by_name_after_shadowing") {
         const auto base_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_order_base");
         const auto override_root = orangutan::testing::unique_test_root("orangutan_skill_loader_order_override");
 
@@ -317,10 +373,11 @@ alpha override body
         SkillLoader loader;
         loader.load_from_directories({base_dir.string(), override_root.string()});
 
-        CHECK(loader.active_skills().size() == 2UL);
-        CHECK(loader.active_skills()[0].name == "alpha");
-        CHECK(loader.active_skills()[0].description == "alpha override");
-        CHECK(loader.active_skills()[1].name == "zebra");
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        CHECK(active_catalog.skills.size() == 2UL);
+        CHECK(active_catalog.skills[0].name == "alpha");
+        CHECK(active_catalog.skills[0].description == "alpha override");
+        CHECK(active_catalog.skills[1].name == "zebra");
 
         std::filesystem::remove_all(base_dir);
         std::filesystem::remove_all(override_root);
@@ -330,9 +387,10 @@ alpha override body
         SkillLoader loader;
         loader.load_from_directories({fixtures_dir().string()});
 
-        const auto *skill = find_skill(loader, "yaml-skill");
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto skill = find_skill_by_name(catalog, "yaml-skill");
         INFO("expected 'yaml-skill' to be loaded");
-        REQUIRE(skill != nullptr);
+        REQUIRE(skill.has_value());
         CHECK(skill->description == "A skill using YAML frontmatter");
         CHECK(skill->tools.size() == 2UL);
         CHECK(skill->tools[0] == "read");
@@ -354,13 +412,14 @@ YAML body content here.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "my-yaml-skill");
-        CHECK(loader.active_skills()[0].description == "Skill with YAML frontmatter");
-        CHECK(loader.active_skills()[0].tools.size() == 2UL);
-        CHECK(loader.active_skills()[0].tools[0] == "shell");
-        CHECK(loader.active_skills()[0].tools[1] == "grep");
-        CHECK(loader.active_skills()[0].body.contains("YAML body content"));
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        CHECK(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "my-yaml-skill");
+        CHECK(active_catalog.skills[0].description == "Skill with YAML frontmatter");
+        CHECK(active_catalog.skills[0].tools.size() == 2UL);
+        CHECK(active_catalog.skills[0].tools[0] == "shell");
+        CHECK(active_catalog.skills[0].tools[1] == "grep");
+        CHECK(active_catalog.skills[0].body.contains("YAML body content"));
 
         std::filesystem::remove_all(temp_dir);
     };
@@ -378,15 +437,16 @@ Quoted values body.
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        CHECK(loader.active_skills().size() == 1UL);
-        CHECK(loader.active_skills()[0].name == "quoted-skill");
-        CHECK(loader.active_skills()[0].description == "Single-quoted description");
-        CHECK(loader.active_skills()[0].tools.size() == 2UL);
+        const auto active_catalog = loader.list(skills::skill_list_query{.include_inactive = false});
+        CHECK(active_catalog.skills.size() == 1UL);
+        CHECK(active_catalog.skills[0].name == "quoted-skill");
+        CHECK(active_catalog.skills[0].description == "Single-quoted description");
+        CHECK(active_catalog.skills[0].tools.size() == 2UL);
 
         std::filesystem::remove_all(temp_dir);
     };
 
-    TEST_CASE("build_prompt_section_uses_deterministic_skill_order") {
+    TEST_CASE("render_skill_prompt_section_uses_deterministic_skill_order") {
         const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_prompt_order");
 
         write_skill(temp_dir, "zebra-dir", R"md(---
@@ -405,7 +465,7 @@ alpha prompt body
         SkillLoader loader;
         loader.load_from_directories({temp_dir.string()});
 
-        const auto section = loader.build_prompt_section();
+        const auto section = skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false}));
         const auto alpha_pos = section.find("**alpha**");
         const auto zebra_pos = section.find("**zebra**");
         REQUIRE(alpha_pos != std::string::npos);

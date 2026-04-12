@@ -2,6 +2,7 @@
 
 #include "agent/agent-loop.hpp"
 #include "providers/provider.hpp"
+#include "skills/runtime.hpp"
 #include "tools/registry/tool.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
@@ -46,6 +47,8 @@ namespace orangutan::cli {
     std::string format_history_compaction_result(const AgentLoop::HistoryCompactionResult &result);
     [[nodiscard]]
     std::string render_saved_sessions(SessionStore &store, const std::string &scope_key = {});
+    [[nodiscard]]
+    std::string format_skill_catalog(const skills::skill_catalog_view &catalog);
     [[nodiscard]]
     RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
                                                  const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models = {},

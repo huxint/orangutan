@@ -11,15 +11,32 @@
 #include "agent/agent-loop-tools.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
+#include "skills/skill-loader.hpp"
 
 namespace orangutan::agent {
 
-    AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager)
+    namespace {
+
+        [[nodiscard]]
+        std::string merge_refreshed_skill_prompt(std::string_view base_prompt, std::string_view refreshed_skill_section) {
+            constexpr std::string_view SKILL_SECTION_MARKER = "\n\n## Available Skills\n";
+            const auto marker_pos = base_prompt.find(SKILL_SECTION_MARKER);
+            const auto prefix = marker_pos == std::string_view::npos ? base_prompt : base_prompt.substr(0, marker_pos);
+
+            std::string merged(prefix);
+            merged.append(refreshed_skill_section);
+            return merged;
+        }
+
+    } // namespace
+
+    AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager, skills::SkillLoader *skill_loader)
     : provider_(&provider),
       tools_(&tools),
       memory_(memory),
       skills_prompt_(std::move(skills_prompt)),
-      hook_manager_(hook_manager) {}
+      hook_manager_(hook_manager),
+      skill_loader_(skill_loader) {}
 
     std::string AgentLoop::run(const std::string &user_input, const StreamCallback &on_stream_event, const ToolEventCallback &on_tool_event,
                                const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
@@ -39,6 +56,10 @@ namespace orangutan::agent {
         for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
             spdlog::debug("Agent loop iteration {}", iteration + 1);
 
+            const auto refreshed_skill_section =
+                skill_loader_ == nullptr ? std::string{} : skills::render_skill_prompt_section(skill_loader_->list(skills::skill_list_query{.include_inactive = false}));
+            const auto effective_skills_prompt = skill_loader_ == nullptr ? skills_prompt_ : merge_refreshed_skill_prompt(skills_prompt_, refreshed_skill_section);
+
             static_cast<void>(inject_incoming_messages(on_history_checkpoint));
             if (stop_requested()) {
                 final_text = "Task terminated.";
@@ -46,7 +67,7 @@ namespace orangutan::agent {
             }
 
             auto tool_defs = tools_->definitions();
-            const auto effective_system_prompt = detail::build_system_prompt(env_info_, user_input, skills_prompt_, *tools_, memory_);
+            const auto effective_system_prompt = detail::build_system_prompt(env_info_, user_input, effective_skills_prompt, *tools_, memory_);
 
             bool first_text = true;
             auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);
@@ -87,7 +108,7 @@ namespace orangutan::agent {
                 break;
             }
 
-            auto [result_blocks, status] = detail::execute_tools(parts.tool_calls, *tools_, call_counts, hook_manager_, human_output, on_tool_event);
+            auto [result_blocks, status] = detail::execute_tools(parts.tool_calls, *tools_, call_counts, hook_manager_, human_output, on_tool_event, skill_loader_);
             history_.emplace_back(base::role::user, std::move(result_blocks));
             detail::emit_history_checkpoint(on_history_checkpoint, history_);
 

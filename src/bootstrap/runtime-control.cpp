@@ -96,9 +96,10 @@ namespace orangutan::bootstrap {
             return {};
         }
 
+        const auto catalog = skill_loader->list(skills::skill_list_query{.include_inactive = false});
         std::vector<std::string> skill_names;
-        skill_names.reserve(skill_loader->active_skills().size());
-        for (const auto &skill : skill_loader->active_skills()) {
+        skill_names.reserve(catalog.skills.size());
+        for (const auto &skill : catalog.skills) {
             skill_names.push_back(skill.name);
         }
         return skill_names;

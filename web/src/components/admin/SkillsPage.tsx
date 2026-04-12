@@ -18,10 +18,20 @@ import { apiFetch } from "../../api/client";
 import { cn } from "../../lib/utils";
 
 interface Skill {
+  id: string;
   name: string;
   description: string;
   tools: string[];
+  source: string;
+  scope: "always" | "conditional" | "manual_only";
+  active: boolean;
+  diagnostic_count: number;
   source_path: string;
+}
+
+interface SkillsResponse {
+  schema_version: number;
+  skills: Skill[];
 }
 
 // Map well-known skill name patterns to icons + colors
@@ -103,8 +113,8 @@ export function SkillsPage() {
   const load = () => {
     setError("");
     setLoading(true);
-    apiFetch<Skill[]>("/api/skills")
-      .then(setSkills)
+    apiFetch<SkillsResponse>("/api/skills")
+      .then((response) => setSkills(response.skills))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };

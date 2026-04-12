@@ -372,6 +372,102 @@ namespace {
         CHECK(runtime.hook_manager->hook_count(orangutan::hook_event::before_tool_call) == 1);
     };
 
+    TEST_CASE("list_skills_endpoint_returns_schema_v2_payload") {
+        WebRoutesHarness harness;
+        const auto workspace = harness.temp_root() / "skills-endpoint-workspace";
+        const auto skill_root = workspace / "skills";
+        std::filesystem::create_directories(skill_root / "endpoint-skill");
+
+        {
+            std::ofstream out(skill_root / "endpoint-skill" / "SKILL.md");
+            out << "---\n";
+            out << "name: endpoint-skill\n";
+            out << "description: endpoint skill description\n";
+            out << "tools: [read]\n";
+            out << "---\n\n";
+            out << "endpoint skill body\n";
+        }
+
+        orangutan::SkillLoader loader;
+        loader.load_from_directories({skill_root});
+
+        orangutan::WebServer server;
+        server.set_skill_loader(&loader);
+        server.start("127.0.0.1", 0);
+        httplib::Client cli("127.0.0.1", server.port());
+
+        const auto res = cli.Get("/api/skills");
+        REQUIRE(static_cast<bool>(res));
+        CHECK(res->status == 200);
+
+        const auto body = nlohmann::json::parse(res->body);
+        CHECK(body["schema_version"] == 2);
+        REQUIRE(body["skills"].is_array());
+        REQUIRE(body["skills"].size() == 1UL);
+        CHECK(body["skills"][0]["name"] == "endpoint-skill");
+        CHECK(body["skills"][0]["scope"] == "always");
+        CHECK(body["skills"][0]["active"] == true);
+        CHECK(body["skills"][0]["diagnostic_count"] == 0);
+        CHECK(body["skills"][0].contains("id"));
+        CHECK(body["skills"][0].contains("source"));
+        CHECK(body["skills"][0].contains("source_path"));
+
+        server.stop();
+    };
+
+    TEST_CASE("list_skills_endpoint_includes_inactive_conditional_skills") {
+        WebRoutesHarness harness;
+        const auto workspace = harness.temp_root() / "skills-endpoint-conditional-workspace";
+        const auto skill_root = workspace / "skills";
+        std::filesystem::create_directories(skill_root / "always-skill");
+        std::filesystem::create_directories(skill_root / "conditional-skill");
+
+        {
+            std::ofstream out(skill_root / "always-skill" / "SKILL.md");
+            out << "---\n";
+            out << "name: always-skill\n";
+            out << "description: always skill\n";
+            out << "---\n\n";
+            out << "always body\n";
+        }
+        {
+            std::ofstream out(skill_root / "conditional-skill" / "SKILL.md");
+            out << "---\n";
+            out << "name: conditional-skill\n";
+            out << "description: conditional skill\n";
+            out << "scope: conditional\n";
+            out << "paths_any: [src/*.cpp]\n";
+            out << "---\n\n";
+            out << "conditional body\n";
+        }
+
+        orangutan::SkillLoader loader;
+        loader.load_from_directories({skill_root});
+
+        orangutan::WebServer server;
+        server.set_skill_loader(&loader);
+        server.start("127.0.0.1", 0);
+        httplib::Client cli("127.0.0.1", server.port());
+
+        const auto res = cli.Get("/api/skills");
+        REQUIRE(static_cast<bool>(res));
+        CHECK(res->status == 200);
+
+        const auto body = nlohmann::json::parse(res->body);
+        CHECK(body["schema_version"] == 2);
+        REQUIRE(body["skills"].is_array());
+        REQUIRE(body["skills"].size() == 2UL);
+
+        const auto conditional = std::ranges::find_if(body["skills"], [](const nlohmann::json &skill) {
+            return skill["name"] == "conditional-skill";
+        });
+        REQUIRE(conditional != body["skills"].end());
+        CHECK((*conditional)["scope"] == "conditional");
+        CHECK((*conditional)["active"] == false);
+
+        server.stop();
+    };
+
     TEST_CASE("automation_endpoints_expose_shared_state") {
         WebRoutesHarness harness;
         orangutan::bootstrap::AppRuntime app_runtime((harness.temp_root() / "automation.db"));

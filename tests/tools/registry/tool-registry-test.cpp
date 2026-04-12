@@ -3,9 +3,11 @@
 #include "automation/scheduler.hpp"
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"
+#include "skills/skill-loader.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "tools/registry/tool.hpp"
 #include "tools/script/script-loader.hpp"
+#include "tools/skill/skill-tool.hpp"
 #include "tools/file-edit/hashline.hpp"
 #include "tools/internal.hpp"
 #include "memory/memory-store.hpp"
@@ -102,6 +104,17 @@ namespace {
     }
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
+
+    void write_skill_file(const std::filesystem::path &root, std::string_view dir_name, std::string_view frontmatter, std::string_view body) {
+        const auto skill_dir = root / std::filesystem::path(dir_name);
+        std::filesystem::create_directories(skill_dir);
+        std::ofstream out(skill_dir / "SKILL.md");
+        out << "---\n";
+        out << frontmatter;
+        out << "\n---\n\n";
+        out << body;
+        out << '\n';
+    }
 
 } // namespace
 
@@ -1941,4 +1954,43 @@ TEST_CASE("FindDefinitionReturnsDeferredTool") {
     CHECK(def->description == "An MCP tool");
 
     CHECK(registry.find_definition("nonexistent") == nullptr);
+};
+
+TEST_CASE("SkillToolBlocksManualOnlySkillsForAutomaticOrigin") {
+    const auto skill_root = test_tmp_root() / "skill-tool-manual-only";
+    std::filesystem::remove_all(skill_root);
+    write_skill_file(skill_root, "manual-only", "name: manual-only\ndescription: manual only skill\nscope: manual_only", "manual body");
+
+    SkillLoader loader;
+    loader.load_from_directories({skill_root});
+
+    ToolRegistry registry;
+    register_skill_tool(registry, loader);
+
+    const auto result = registry.execute(ToolUse("skill-manual-only", "skill", {{"name", "manual-only"}}));
+    CHECK_FALSE(result.is_error);
+    CHECK(result.content.contains("cannot be auto-invoked"));
+
+    std::filesystem::remove_all(skill_root);
+};
+
+TEST_CASE("SkillToolBlocksInactiveConditionalSkillsForAutomaticOrigin") {
+    const auto skill_root = test_tmp_root() / "skill-tool-inactive-conditional";
+    std::filesystem::remove_all(skill_root);
+    write_skill_file(skill_root, "conditional", "name: conditional\ndescription: conditional skill\nscope: conditional\npaths_any: [src/*.cpp]", "conditional body");
+
+    SkillLoader loader;
+    const auto workspace = test_tmp_root() / "skill-tool-inactive-conditional-workspace";
+    loader.set_workspace_root(workspace);
+    loader.load_from_directories({skill_root});
+
+    ToolRegistry registry;
+    register_skill_tool(registry, loader);
+
+    const auto result = registry.execute(ToolUse("skill-conditional", "skill", {{"name", "conditional"}}));
+    CHECK_FALSE(result.is_error);
+    CHECK(result.content.contains("inactive for current context"));
+
+    std::filesystem::remove_all(skill_root);
+    std::filesystem::remove_all(workspace);
 };

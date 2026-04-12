@@ -1,219 +1,12 @@
 #include "skills/skill-loader.hpp"
-#include "bootstrap/identity.hpp"
-#include "utils/file-io.hpp"
-#include "utils/string.hpp"
-#include "types/base.hpp"
 
-#include <algorithm>
-#include <cctype>
+#include "bootstrap/identity.hpp"
+
 #include <cstdlib>
-#include <expected>
 #include <filesystem>
 #include <spdlog/spdlog.h>
-#include "utils/format.hpp"
-#include <unordered_map>
 
 namespace orangutan::skills {
-
-    namespace {
-
-        constexpr std::string_view YAML_DELIMITER = "---";
-
-        enum class parse_error : base::u8 {
-            missing_frontmatter,
-            unclosed_frontmatter,
-            missing_required_name,
-            missing_required_description,
-        };
-
-        using ParsedSkillFile = std::expected<SkillDef, parse_error>;
-
-        std::string_view strip_cr(std::string_view line) {
-            if (!line.empty() && line.back() == '\r') {
-                line.remove_suffix(1);
-            }
-            return line;
-        }
-
-        bool is_yaml_delimiter(std::string_view line) {
-            return strip_cr(line) == YAML_DELIMITER;
-        }
-
-        bool is_blank_line(std::string_view line) {
-            return std::ranges::all_of(strip_cr(line), [](unsigned char ch) {
-                return std::isspace(ch) != 0;
-            });
-        }
-
-        std::vector<std::string> split_lines(const std::string &content) {
-            std::istringstream stream(content);
-            std::vector<std::string> lines;
-            std::string line;
-            while (std::getline(stream, line)) {
-                lines.push_back(line);
-            }
-            return lines;
-        }
-
-        void strip_utf8_bom(std::string &line) {
-            constexpr std::string_view BOM = "\xEF\xBB\xBF";
-            if (line.starts_with(BOM)) {
-                line.erase(0, BOM.size());
-            }
-        }
-
-        bool env_vars_satisfied(const std::vector<std::string> &env) {
-            return std::ranges::all_of(env, [](const std::string &var) {
-                if (std::getenv(var.c_str()) == nullptr) {
-                    spdlog::debug("Skill env dependency not met: {} is not set", var);
-                    return false;
-                }
-                return true;
-            });
-        }
-
-        // Strip surrounding quotes (single or double) from a YAML value
-        std::string strip_quotes(std::string_view sv) {
-            if (sv.size() >= 2) {
-                if ((sv.front() == '"' && sv.back() == '"') || (sv.front() == '\'' && sv.back() == '\'')) {
-                    sv.remove_prefix(1);
-                    sv.remove_suffix(1);
-                }
-            }
-            return std::string(sv);
-        }
-
-        // Parse simple YAML frontmatter: key: value, key: [a, b, c]
-        SkillDef parse_yaml_frontmatter(const std::string &yaml_text, const std::string &source_path) {
-            SkillDef skill;
-            skill.source_path = source_path;
-
-            auto lines = split_lines(yaml_text);
-            for (const auto &line : lines) {
-                auto trimmed = utils::trim_copy(line);
-                if (trimmed.empty() || trimmed.front() == '#') {
-                    continue;
-                }
-
-                auto colon_pos = trimmed.find(':');
-                if (colon_pos == std::string_view::npos) {
-                    continue;
-                }
-
-                auto key = utils::trim_copy(trimmed.substr(0, colon_pos));
-                auto raw_value = utils::trim_copy(trimmed.substr(colon_pos + 1));
-
-                // Check for inline YAML array: [item1, item2]
-                auto parse_yaml_array = [](std::string_view val) -> std::vector<std::string> {
-                    std::vector<std::string> result;
-                    if (val.size() >= 2 && val.front() == '[' && val.back() == ']') {
-                        val.remove_prefix(1);
-                        val.remove_suffix(1);
-                        auto str = std::string(val);
-                        std::istringstream items{str};
-                        std::string item;
-                        while (std::getline(items, item, ',')) {
-                            auto t = utils::trim_copy(item);
-                            if (!t.empty()) {
-                                result.push_back(strip_quotes(t));
-                            }
-                        }
-                    }
-                    return result;
-                };
-
-                if (key == "name") {
-                    skill.name = strip_quotes(raw_value);
-                } else if (key == "description") {
-                    skill.description = strip_quotes(raw_value);
-                } else if (key == "tools") {
-                    skill.tools = parse_yaml_array(raw_value);
-                } else if (key == "env") {
-                    skill.env = parse_yaml_array(raw_value);
-                }
-            }
-
-            return skill;
-        }
-
-        void log_parse_error(parse_error error, const std::string &source_path) {
-            switch (error) {
-                case parse_error::missing_frontmatter:
-                    spdlog::warn("Skill file has no frontmatter: {}", source_path);
-                    return;
-                case parse_error::unclosed_frontmatter:
-                    spdlog::warn("Skill file has unclosed frontmatter: {}", source_path);
-                    return;
-                case parse_error::missing_required_name:
-                case parse_error::missing_required_description:
-                    spdlog::warn("Skill file missing required 'name' or 'description': {}", source_path);
-                    return;
-            }
-        }
-
-        ParsedSkillFile parse_skill_file(const std::string &content, const std::string &source_path) {
-            auto lines = split_lines(content);
-            if (lines.empty()) {
-                return std::unexpected(parse_error::missing_frontmatter);
-            }
-
-            strip_utf8_bom(lines.front());
-
-            std::size_t open_index = 0;
-            while (open_index < lines.size() && is_blank_line(lines[open_index])) {
-                ++open_index;
-            }
-
-            if (open_index == lines.size()) {
-                return std::unexpected(parse_error::missing_frontmatter);
-            }
-
-            if (!is_yaml_delimiter(lines[open_index])) {
-                return std::unexpected(parse_error::missing_frontmatter);
-            }
-
-            // Extract frontmatter content and body
-            std::string fm_buf;
-            bool found_closing = false;
-            std::size_t body_start_index = lines.size();
-
-            // YAML: simple close on first ---
-            for (std::size_t index = open_index + 1; index < lines.size(); ++index) {
-                if (is_yaml_delimiter(lines[index])) {
-                    found_closing = true;
-                    body_start_index = index + 1;
-                    break;
-                }
-                fm_buf.append(lines[index]);
-                fm_buf.push_back('\n');
-            }
-
-            if (!found_closing) {
-                return std::unexpected(parse_error::unclosed_frontmatter);
-            }
-
-            // Build body
-            std::string body;
-            for (std::size_t index = body_start_index; index < lines.size(); ++index) {
-                if (index != body_start_index) {
-                    body.push_back('\n');
-                }
-                body.append(lines[index]);
-            }
-            auto skill = parse_yaml_frontmatter(fm_buf, source_path);
-            skill.body = body;
-            if (skill.name.empty()) {
-                return std::unexpected(parse_error::missing_required_name);
-            }
-
-            if (skill.description.empty()) {
-                return std::unexpected(parse_error::missing_required_description);
-            }
-
-            return std::move(skill);
-        }
-
-    } // namespace
 
     std::vector<std::filesystem::path> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::filesystem::path &workspace_root) {
         if (!configured_skill_paths.empty()) {
@@ -236,92 +29,37 @@ namespace orangutan::skills {
     }
 
     void SkillLoader::load_from_directories(const std::vector<std::filesystem::path> &directories) {
-        // Use a map for same-name shadowing: later directories override earlier ones
-        std::unordered_map<std::string, SkillDef> by_name;
+        runtime_.reload(skill_runtime_config{
+            .directories = directories,
+            .workspace_root = workspace_root_,
+            .source = source_,
+        });
 
-        for (const auto &dir_path : directories) {
-            std::error_code ec;
-            if (!std::filesystem::exists(dir_path, ec) || ec || !std::filesystem::is_directory(dir_path, ec) || ec) {
-                spdlog::debug("Skill directory does not exist, skipping: {}", dir_path.string());
-                continue;
-            }
-
-            std::vector<std::filesystem::directory_entry> entries;
-            for (std::filesystem::directory_iterator it(dir_path, ec), end; !ec && it != end; it.increment(ec)) {
-                const auto &entry = *it;
-                if (!entry.is_directory(ec) || ec) {
-                    continue;
-                }
-                entries.push_back(entry);
-            }
-
-            if (ec) {
-                spdlog::warn("Error scanning skill directory {}: {}", dir_path.string(), ec.message());
-                continue;
-            }
-
-            std::ranges::sort(entries, [](const std::filesystem::directory_entry &left, const std::filesystem::directory_entry &right) {
-                return left.path().lexically_normal().string() < right.path().lexically_normal().string();
-            });
-
-            for (const auto &entry : entries) {
-
-                auto skill_file = entry.path() / "SKILL.md";
-                if (!std::filesystem::exists(skill_file, ec) || ec) {
-                    continue;
-                }
-
-                auto content = fileio::try_read_file(skill_file).value_or(std::string{});
-                if (content.empty()) {
-                    continue;
-                }
-
-                auto parsed = parse_skill_file(content, skill_file.string());
-                if (!parsed.has_value()) {
-                    log_parse_error(parsed.error(), skill_file.string());
-                    continue;
-                }
-
-                auto skill = std::move(parsed).value();
-                if (!env_vars_satisfied(skill.env)) {
-                    spdlog::debug("Skipping skill '{}' — unmet env dependencies", skill.name);
-                    continue;
-                }
-
-                spdlog::debug("Loaded skill '{}' from {}", skill.name, skill.source_path);
-                auto skill_name = skill.name;
-                by_name.insert_or_assign(std::move(skill_name), std::move(skill));
+        for (const auto &diagnostic : runtime_.diagnostics()) {
+            if (diagnostic.code == "missing_frontmatter") {
+                spdlog::warn("Skill file has no frontmatter: {}", diagnostic.source_path);
+            } else if (diagnostic.code == "unclosed_frontmatter") {
+                spdlog::warn("Skill file has unclosed frontmatter: {}", diagnostic.source_path);
+            } else if (diagnostic.code == "missing_name" || diagnostic.code == "missing_description") {
+                spdlog::warn("Skill file missing required 'name' or 'description': {}", diagnostic.source_path);
             }
         }
-
-        skills_.clear();
-        skills_.reserve(by_name.size());
-        for (auto &[name, skill] : by_name) {
-            skills_.push_back(std::move(skill));
-        }
-        std::ranges::sort(skills_, {}, &SkillDef::name);
     }
 
-    std::string SkillLoader::build_prompt_section() const {
-        if (skills_.empty()) {
-            return {};
-        }
-
-        std::string out;
-        out.append("\n\n## Available Skills\n");
-        out.append("Use the `skill` tool with a skill name to load its full instructions before using it.\n");
-        for (const auto &skill : skills_) {
-            utils::format_to(out, "\n- **{}**: {}", skill.name, skill.description);
-        }
-        return out;
+    void SkillLoader::activate_for_paths(const std::vector<std::filesystem::path> &paths) {
+        runtime_.activate_for_paths(paths);
     }
 
-    const SkillDef *SkillLoader::find_skill(std::string_view name) const {
-        auto it = std::ranges::lower_bound(skills_, name, {}, &SkillDef::name);
-        if (it != skills_.end() && it->name == name) {
-            return &*it;
-        }
-        return nullptr;
+    skill_invoke_result SkillLoader::invoke(const skill_invoke_request &request) const {
+        return runtime_.invoke(request);
+    }
+
+    skill_catalog_view SkillLoader::list(const skill_list_query &query) const {
+        return runtime_.list(query);
+    }
+
+    const std::vector<skill_diagnostic> &SkillLoader::diagnostics() const {
+        return runtime_.diagnostics();
     }
 
 } // namespace orangutan::skills
