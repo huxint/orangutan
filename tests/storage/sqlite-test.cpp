@@ -250,7 +250,7 @@ namespace {
         orangutan::sqlite::Database db(db_path.path);
 
         std::optional<std::string> empty;
-        const auto result = db.query("SELECT (?1 IS NULL), (?1 = '')").bind(empty).one<std::tuple<int, int>>();
+        const auto result = db.query("SELECT (?1 IS NULL), COALESCE((?1 = ''), 0)").bind(empty).one<std::tuple<int, int>>();
 
         CHECK(std::get<0>(result) == 1);
         CHECK(std::get<1>(result) == 0);
