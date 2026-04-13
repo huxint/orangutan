@@ -99,7 +99,7 @@ namespace orangutan::storage {
         void ensure_column(sqlite::Database &db, std::string_view table_name, std::string_view column_name, std::string_view add_sql) {
             sqlite::Statement pragma(db, std::string("PRAGMA table_info(") + std::string(table_name) + ")");
             while (pragma.step()) {
-                if (pragma.column_text(1) == column_name) {
+                if (pragma.row().get<std::string>(1) == column_name) {
                     return;
                 }
             }
@@ -118,8 +118,9 @@ namespace orangutan::storage {
 
             ChannelBindingSchema schema;
             while (pragma.step()) {
-                const auto column_name = pragma.column_text(1);
-                const auto pk_position = pragma.column_int(5);
+                const auto row = pragma.row();
+                const auto column_name = row.get<std::string>(1);
+                const auto pk_position = row.get<int>(5);
 
                 if (column_name == "jid") {
                     schema.jid_pk_position = pk_position;

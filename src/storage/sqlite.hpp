@@ -377,10 +377,6 @@ namespace orangutan::sqlite {
         Statement(Statement &&other) noexcept;
         auto operator=(Statement &&other) noexcept -> Statement &;
 
-        void bind_text(int index, std::string_view value);
-        void bind_int(int index, int value);
-        void bind_double(int index, base::f64 value);
-
         template <typename T>
         auto bind(int index, T &&value) -> Statement & {
             detail::bind_value(stmt_, index, std::forward<T>(value));
@@ -400,15 +396,6 @@ namespace orangutan::sqlite {
 
         [[nodiscard]]
         auto row() const -> Row;
-
-        [[nodiscard]]
-        auto column_text(int index) const -> std::string;
-
-        [[nodiscard]]
-        auto column_int(int index) const -> int;
-
-        [[nodiscard]]
-        auto column_double(int index) const -> base::f64;
 
         void reset();
         void clear_bindings();
@@ -564,10 +551,6 @@ namespace orangutan::sqlite {
         [[nodiscard]]
         auto query(std::string_view sql) const -> Query;
 
-        void exec(std::string_view sql, std::string_view context) const;
-        [[nodiscard]]
-        auto try_exec(std::string_view sql) const -> bool;
-
         void exec_script(std::string_view sql, std::string_view context) const;
         [[nodiscard]]
         auto try_exec_script(std::string_view sql) const -> bool;
@@ -672,18 +655,6 @@ namespace orangutan::sqlite {
         return *this;
     }
 
-    inline void Statement::bind_text(int index, std::string_view value) {
-        static_cast<void>(bind(index, value));
-    }
-
-    inline void Statement::bind_int(int index, int value) {
-        static_cast<void>(bind(index, value));
-    }
-
-    inline void Statement::bind_double(int index, base::f64 value) {
-        static_cast<void>(bind(index, value));
-    }
-
     inline auto Statement::step() -> bool {
         const auto rc = sqlite3_step(stmt_);
         if (rc == SQLITE_ROW) {
@@ -703,21 +674,6 @@ namespace orangutan::sqlite {
             throw std::runtime_error("statement does not point at a row");
         }
         return Row(stmt_);
-    }
-
-    inline auto Statement::column_text(int index) const -> std::string {
-        detail::validate_column_index(stmt_, index);
-        return detail::copy_column_text(stmt_, index);
-    }
-
-    inline auto Statement::column_int(int index) const -> int {
-        detail::validate_column_index(stmt_, index);
-        return sqlite3_column_int(stmt_, index);
-    }
-
-    inline auto Statement::column_double(int index) const -> base::f64 {
-        detail::validate_column_index(stmt_, index);
-        return sqlite3_column_double(stmt_, index);
     }
 
     inline void Statement::reset() {
@@ -829,14 +785,6 @@ namespace orangutan::sqlite {
         return Query(*this, sql);
     }
 
-    inline void Database::exec(std::string_view sql, std::string_view context) const {
-        exec_script(sql, context);
-    }
-
-    inline auto Database::try_exec(std::string_view sql) const -> bool {
-        return try_exec_script(sql);
-    }
-
     inline void Database::exec_script(std::string_view sql, std::string_view context) const {
         char *err_msg = nullptr;
         const auto rc = sqlite3_exec(db_, std::string(sql).c_str(), nullptr, nullptr, &err_msg);
@@ -859,7 +807,7 @@ namespace orangutan::sqlite {
 
     inline auto Database::table_exists(std::string_view table_name) const -> bool {
         Statement stmt(*this, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1");
-        stmt.bind_text(1, table_name);
+        stmt.bind(1, table_name);
         return stmt.step();
     }
 
