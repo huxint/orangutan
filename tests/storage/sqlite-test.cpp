@@ -163,6 +163,31 @@ namespace {
                           Catch::Matchers::ContainsSubstring("expected one row, got multiple"));
     }
 
+    TEST_CASE("one maps returning rows without re-executing the statement", "[storage][sqlite]") {
+        const ScopedDbPath db_path("sqlite-one-returning");
+        orangutan::sqlite::Database db(db_path.path);
+        db.exec_script("CREATE TABLE sample (value TEXT NOT NULL);", "create sample");
+
+        const auto rowid = db.query("INSERT INTO sample (value) VALUES ('one') RETURNING rowid").one<orangutan::base::i64>();
+
+        CHECK(rowid == 1);
+        CHECK(db.query("SELECT COUNT(*) FROM sample").one<int>() == 1);
+        CHECK(db.query("SELECT value FROM sample LIMIT 1").one<std::string>() == "one");
+    }
+
+    TEST_CASE("optional maps returning rows without re-executing the statement", "[storage][sqlite]") {
+        const ScopedDbPath db_path("sqlite-optional-returning");
+        orangutan::sqlite::Database db(db_path.path);
+        db.exec_script("CREATE TABLE sample (value TEXT NOT NULL);", "create sample");
+
+        const auto rowid = db.query("INSERT INTO sample (value) VALUES ('optional') RETURNING rowid").optional<orangutan::base::i64>();
+
+        REQUIRE(rowid.has_value());
+        CHECK(*rowid == 1);
+        CHECK(db.query("SELECT COUNT(*) FROM sample").one<int>() == 1);
+        CHECK(db.query("SELECT value FROM sample LIMIT 1").one<std::string>() == "optional");
+    }
+
     TEST_CASE("mapping_failures_are_strict", "[storage][sqlite]") {
         const ScopedDbPath db_path("sqlite-mapping-failures");
         orangutan::sqlite::Database db(db_path.path);

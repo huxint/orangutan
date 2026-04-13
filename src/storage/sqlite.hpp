@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -49,28 +50,18 @@ namespace orangutan::sqlite {
         };
 
         template <typename T>
-        struct always_false : std::false_type {};
+        inline constexpr bool always_false_v = false;
 
         template <typename T>
-        constexpr bool always_false_v = always_false<T>::value;
+        inline constexpr bool is_optional_v = false;
 
         template <typename T>
-        struct is_optional : std::false_type {};
+        inline constexpr bool is_optional_v<std::optional<T>> = true;
 
         template <typename T>
-        struct is_optional<std::optional<T>> : std::true_type {};
-
-        template <typename T>
-        constexpr bool is_optional_v = is_optional<std::remove_cvref_t<T>>::value;
-
-        template <typename T, typename = void>
-        struct is_tuple_like : std::false_type {};
-
-        template <typename T>
-        struct is_tuple_like<T, std::void_t<decltype(std::tuple_size<T>::value)>> : std::true_type {};
-
-        template <typename T>
-        constexpr bool is_tuple_like_v = is_tuple_like<T>::value;
+        concept tuple_like = requires {
+            typename std::tuple_size<std::remove_cvref_t<T>>::type;
+        };
 
         inline auto sqlite_error(sqlite3 *db, std::string_view fallback = "unknown error") -> std::string {
             const auto *message = sqlite3_errmsg(db);
@@ -474,14 +465,20 @@ namespace orangutan::sqlite {
             if (!statement_.step()) {
                 throw std::runtime_error("expected one row, got none");
             }
+            auto mapping_error = std::exception_ptr{};
+            auto row_value = std::optional<T>{};
+            try {
+                row_value.emplace(detail::map_row<T>(statement_.row()));
+            } catch (...) {
+                mapping_error = std::current_exception();
+            }
             if (statement_.step()) {
                 throw std::runtime_error("expected one row, got multiple");
             }
-            statement_.reset();
-            if (!statement_.step()) {
-                throw std::runtime_error("sqlite query lost its row while remapping");
+            if (mapping_error != nullptr) {
+                std::rethrow_exception(mapping_error);
             }
-            return detail::map_row<T>(statement_.row());
+            return std::move(*row_value);
         }
 
         template <typename T>
@@ -491,14 +488,20 @@ namespace orangutan::sqlite {
             if (!statement_.step()) {
                 return std::nullopt;
             }
+            auto mapping_error = std::exception_ptr{};
+            auto row_value = std::optional<T>{};
+            try {
+                row_value.emplace(detail::map_row<T>(statement_.row()));
+            } catch (...) {
+                mapping_error = std::current_exception();
+            }
             if (statement_.step()) {
                 throw std::runtime_error("expected one row, got multiple");
             }
-            statement_.reset();
-            if (!statement_.step()) {
-                throw std::runtime_error("sqlite query lost its row while remapping");
+            if (mapping_error != nullptr) {
+                std::rethrow_exception(mapping_error);
             }
-            return detail::map_row<T>(statement_.row());
+            return row_value;
         }
 
         template <typename T>
@@ -613,7 +616,7 @@ namespace orangutan::sqlite {
         auto map_row(const Row &row) -> T {
             if constexpr (has_custom_row_mapper<T>) {
                 return RowMapper<T>::map(row);
-            } else if constexpr (is_tuple_like_v<T>) {
+            } else if constexpr (tuple_like<T>) {
                 return map_tuple<T>(row, std::make_index_sequence<std::tuple_size_v<T>>{});
             } else {
                 if (row.columns() != 1) {
