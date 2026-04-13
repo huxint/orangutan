@@ -5,11 +5,42 @@
 #include <filesystem>
 #include <mutex>
 #include <string>
-#include <tuple>
 
 #include <spdlog/spdlog.h>
 
 #include "storage/sqlite.hpp"
+
+namespace orangutan::sqlite {
+
+    template <>
+    struct RowMapper<orangutan::swarm::TeamRecord> {
+        static auto map(const Row &row) -> orangutan::swarm::TeamRecord {
+            return orangutan::swarm::TeamRecord{
+                .id = row.get<std::string>(0),
+                .name = row.get<std::string>(1),
+                .description = row.get<std::string>(2),
+                .lead_agent_id = row.get<std::string>(3),
+                .created_at = row.get<std::int64_t>(4),
+                .active = row.get<int>(5) != 0,
+            };
+        }
+    };
+
+    template <>
+    struct RowMapper<orangutan::swarm::TeamMemberRecord> {
+        static auto map(const Row &row) -> orangutan::swarm::TeamMemberRecord {
+            return orangutan::swarm::TeamMemberRecord{
+                .agent_id = row.get<std::string>(0),
+                .name = row.get<std::string>(1),
+                .agent_key = row.get<std::string>(2),
+                .team_id = row.get<std::string>(3),
+                .joined_at = row.get<std::int64_t>(4),
+                .active = row.get<int>(5) != 0,
+            };
+        }
+    };
+
+} // namespace orangutan::sqlite
 
 namespace orangutan::swarm {
 
@@ -25,31 +56,6 @@ namespace orangutan::swarm {
 
         std::int64_t now_millis() {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        }
-
-        using team_row = std::tuple<std::string, std::string, std::string, std::string, std::int64_t, int>;
-        using team_member_row = std::tuple<std::string, std::string, std::string, std::string, std::int64_t, int>;
-
-        auto read_team_record(const team_row &row) -> TeamRecord {
-            return TeamRecord{
-                .id = std::get<0>(row),
-                .name = std::get<1>(row),
-                .description = std::get<2>(row),
-                .lead_agent_id = std::get<3>(row),
-                .created_at = std::get<4>(row),
-                .active = std::get<5>(row) != 0,
-            };
-        }
-
-        auto read_team_member_record(const team_member_row &row) -> TeamMemberRecord {
-            return TeamMemberRecord{
-                .agent_id = std::get<0>(row),
-                .name = std::get<1>(row),
-                .agent_key = std::get<2>(row),
-                .team_id = std::get<3>(row),
-                .joined_at = std::get<4>(row),
-                .active = std::get<5>(row) != 0,
-            };
         }
 
     } // namespace
@@ -120,15 +126,12 @@ namespace orangutan::swarm {
         std::scoped_lock lock(impl_->mutex);
 
         try {
-            const auto row = impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
-                                             "FROM teams WHERE id = ?")
-                                 .bind(team_id)
-                                 .optional<team_row>();
-            if (!row.has_value()) {
-                return std::nullopt;
-            }
-            return read_team_record(*row);
-        } catch (const std::exception &) {
+            return impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
+                                   "FROM teams WHERE id = ?")
+                .bind(team_id)
+                .optional<TeamRecord>();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to find team {}: {}", team_id, ex.what());
             return std::nullopt;
         }
     }
@@ -137,15 +140,12 @@ namespace orangutan::swarm {
         std::scoped_lock lock(impl_->mutex);
 
         try {
-            const auto row = impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
-                                             "FROM teams WHERE name = ?")
-                                 .bind(name)
-                                 .optional<team_row>();
-            if (!row.has_value()) {
-                return std::nullopt;
-            }
-            return read_team_record(*row);
-        } catch (const std::exception &) {
+            return impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
+                                   "FROM teams WHERE name = ?")
+                .bind(name)
+                .optional<TeamRecord>();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to find team by name {}: {}", name, ex.what());
             return std::nullopt;
         }
     }
@@ -158,7 +158,8 @@ namespace orangutan::swarm {
                 tx.exec("DELETE FROM team_members WHERE team_id = ?").bind(team_id).run();
                 tx.exec("DELETE FROM teams WHERE id = ?").bind(team_id).run();
             });
-        } catch (const std::exception &) {
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to delete team {}: {}", team_id, ex.what());
         }
     }
 
@@ -178,15 +179,12 @@ namespace orangutan::swarm {
         std::scoped_lock lock(impl_->mutex);
 
         try {
-            std::vector<TeamMemberRecord> result;
-            for (const auto &row : impl_->db.query("SELECT agent_id, name, agent_key, team_id, joined_at, active "
-                                                   "FROM team_members WHERE team_id = ? AND active = 1")
-                                       .bind(team_id)
-                                       .all<team_member_row>()) {
-                result.push_back(read_team_member_record(row));
-            }
-            return result;
-        } catch (const std::exception &) {
+            return impl_->db.query("SELECT agent_id, name, agent_key, team_id, joined_at, active "
+                                   "FROM team_members WHERE team_id = ? AND active = 1")
+                .bind(team_id)
+                .all<TeamMemberRecord>();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to list team members for {}: {}", team_id, ex.what());
             return {};
         }
     }
@@ -206,7 +204,8 @@ namespace orangutan::swarm {
 
         try {
             impl_->db.exec("UPDATE team_members SET active = 0 WHERE team_id = ? AND agent_id = ?").bind(team_id, agent_id).run();
-        } catch (const std::exception &) {
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to deactivate team member {} in {}: {}", agent_id, team_id, ex.what());
         }
     }
 
@@ -215,7 +214,8 @@ namespace orangutan::swarm {
 
         try {
             impl_->db.exec("UPDATE team_members SET active = 0 WHERE team_id = ? AND active = 1").bind(team_id).run();
-        } catch (const std::exception &) {
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to abandon active team members for {}: {}", team_id, ex.what());
         }
     }
 
@@ -223,14 +223,11 @@ namespace orangutan::swarm {
         std::scoped_lock lock(impl_->mutex);
 
         try {
-            std::vector<TeamRecord> result;
-            for (const auto &row : impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
-                                                   "FROM teams WHERE active = 1")
-                                       .all<team_row>()) {
-                result.push_back(read_team_record(row));
-            }
-            return result;
-        } catch (const std::exception &) {
+            return impl_->db.query("SELECT id, name, description, lead_agent_id, created_at, active "
+                                   "FROM teams WHERE active = 1")
+                .all<TeamRecord>();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to list active teams: {}", ex.what());
             return {};
         }
     }
