@@ -373,4 +373,57 @@ namespace {
         manager.shutdown();
     }
 
+    TEST_CASE("coordinator tools can shutdown while runtime notification callback is active", "[tools][coordinator]") {
+        using namespace std::chrono_literals;
+
+        ToolRegistry registry;
+        coordinator::CoordinatorManager manager(1);
+        std::atomic<bool> callback_started{false};
+
+        manager.register_runtime_notification_handler("test-runtime", [&callback_started](const std::string &) -> std::optional<std::string> {
+            callback_started.store(true);
+            std::this_thread::sleep_for(300ms);
+            return std::nullopt;
+        });
+
+        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
+            struct ImmediateWorker final : coordinator::WorkerRuntime {
+                std::string run(const std::string &, std::stop_token) override {
+                    return "ok";
+                }
+            };
+
+            return std::make_unique<ImmediateWorker>();
+        });
+
+        ToolRuntimeContext context{
+            .runtime_key = "test-runtime",
+            .agent_key = "lead-agent",
+            .agent_name = "lead",
+            .coordinator_manager = &manager,
+            .coordinator_mode = true,
+        };
+
+        register_coordinator_tools(registry, &context);
+
+        auto result = registry.execute(ToolUse("spawn-race", "agent_spawn",
+                                               {
+                                                   {"agent_key", "general-purpose"},
+                                                   {"prompt", "trigger callback"},
+                                               }));
+        CHECK_FALSE(result.is_error);
+
+        bool observed_callback = false;
+        for (int i = 0; i < 100; ++i) {
+            if (callback_started.load()) {
+                observed_callback = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        REQUIRE(observed_callback);
+
+        manager.shutdown();
+    }
+
 } // namespace

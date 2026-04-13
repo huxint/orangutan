@@ -8,20 +8,31 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <random>
 #include <string>
 #include <string_view>
 #include <spdlog/spdlog.h>
 
 namespace orangutan::testing {
 
-    /// Returns a deterministic temporary root under <project>/tmp/tests, creating it if needed.
+    /// Returns a process-scoped temporary root under <project>/tmp/tests, creating it if needed.
     inline std::filesystem::path test_tmp_root() {
-        const auto root = std::filesystem::current_path() / "tmp" / "tests";
+        static const auto root = [] {
+            const auto base_root = std::filesystem::current_path() / "tmp" / "tests";
+            const auto now = std::to_string(static_cast<base::u64>(std::chrono::steady_clock::now().time_since_epoch().count()));
+
+            std::random_device random_device;
+            const auto high = static_cast<base::u64>(random_device()) << 32U;
+            const auto low = static_cast<base::u64>(random_device());
+            const auto entropy = std::to_string(high | low);
+
+            return base_root / std::filesystem::path(std::string{"proc-"} + now + "-" + entropy);
+        }();
         std::filesystem::create_directories(root);
         return root;
     }
 
-    /// Returns a unique temporary root under <project>/tmp/tests/<prefix>-<token> and creates it.
+    /// Returns a unique temporary root under the current process test root and creates it.
     inline std::filesystem::path unique_test_root(std::string_view prefix) {
         static std::atomic<base::u64> sequence{0};
         const auto token = std::to_string(static_cast<base::u64>(std::chrono::steady_clock::now().time_since_epoch().count())) + "-" +

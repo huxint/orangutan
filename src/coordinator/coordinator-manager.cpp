@@ -203,12 +203,14 @@ namespace orangutan::coordinator {
     }
 
     void CoordinatorManager::run_worker(const std::shared_ptr<ActiveRun> &run, const std::stop_token &stop_token) {
+        const auto run_id = run->record.run_id;
+
         {
             std::scoped_lock lock(run->mutex);
             run->record.status = agent_run_status::running;
         }
 
-        spdlog::info("Agent worker started: id={} key={}", run->record.run_id, run->record.agent_key);
+        spdlog::info("Agent worker started: id={} key={}", run_id, run->record.agent_key);
 
         if (stop_token.stop_requested()) {
             std::scoped_lock lock(run->mutex);
@@ -216,7 +218,7 @@ namespace orangutan::coordinator {
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
-            spdlog::info("Agent worker terminated before execution: id={}", run->record.run_id);
+            spdlog::info("Agent worker terminated before execution: id={}", run_id);
             return;
         }
 
@@ -233,7 +235,7 @@ namespace orangutan::coordinator {
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
-            spdlog::warn("Agent worker failed (no factory): id={}", run->record.run_id);
+            spdlog::warn("Agent worker failed (no factory): id={}", run_id);
         } else {
             try {
                 auto worker = factory(run->request);
@@ -255,7 +257,7 @@ namespace orangutan::coordinator {
             }
         }
 
-        spdlog::info("Agent worker completed: id={}", run->record.run_id);
+        spdlog::info("Agent worker completed: id={}", run_id);
 
         TaskNotificationCallback callback;
         RuntimeNotificationHandler runtime_handler;
@@ -429,6 +431,16 @@ namespace orangutan::coordinator {
                 run->record.status = agent_run_status::abandoned;
                 run->record.completed_at = now_millis();
                 run->completed = true;
+            }
+        }
+
+        for (auto &run : runs_to_stop) {
+            if (run->worker_thread.joinable()) {
+                if (run->worker_thread.get_id() == std::this_thread::get_id()) {
+                    run->worker_thread.detach();
+                } else {
+                    run->worker_thread.join();
+                }
             }
         }
 

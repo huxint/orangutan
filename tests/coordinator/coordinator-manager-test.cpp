@@ -291,3 +291,41 @@ TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordin
 
     CHECK(elapsed < 2s);
 }
+
+TEST_CASE("CoordinatorManager shutdown is safe while completion callback is still running", "[coordinator]") {
+    using namespace std::chrono_literals;
+
+    orangutan::coordinator::CoordinatorManager manager(1);
+    std::atomic<bool> callback_started{false};
+
+    manager.register_runtime_notification_handler("parent-runtime", [&callback_started](const std::string &) -> std::optional<std::string> {
+        callback_started.store(true);
+        std::this_thread::sleep_for(300ms);
+        return std::nullopt;
+    });
+
+    manager.set_worker_runtime_factory([](const orangutan::coordinator::AgentSpawnRequest &) {
+        struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
+            std::string run(const std::string &, std::stop_token) override {
+                return "done";
+            }
+        };
+
+        return std::make_unique<ImmediateWorker>();
+    });
+
+    const auto run = manager.spawn({
+        .agent_key = "general-purpose",
+        .task_prompt = "trigger notification callback",
+        .parent_runtime_key = "parent-runtime",
+    });
+    REQUIRE(run.accepted);
+
+    REQUIRE(wait_for_condition(
+        [&] {
+            return callback_started.load();
+        },
+        100, std::chrono::milliseconds(5)));
+
+    manager.shutdown();
+}
