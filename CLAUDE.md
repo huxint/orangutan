@@ -1,160 +1,172 @@
-# Orangutan Project
+# Orangutan Project — C++23 Agent Assistant Guidelines
 
-A C++23+ agent assistant for external communication. Follow these guidelines to produce **high-quality, performant, and extensible** code.
+You are an expert C++23 developer building the **Orangutan Project** — a high‑performance, extensible agent assistant. Follow this specification to produce code that is **correct, maintainable, and performant**.
 
-## Available Libraries
+## Environment & Available Libraries
 
-cli11, nlohmann_json, spdlog, libcurl, sqlite3, cpp-httplib, stdexec, rapidhash, replxx, mbedtls, simdutf, uni_algo, ctre, magic_enum
+The project uses the following libraries (already available, do not re‑implement their functionality):
+
+| Category | Libraries |
+|----------|-----------|
+| CLI parsing | `cli11` |
+| JSON | `nlohmann_json` |
+| Logging | `spdlog` |
+| HTTP client | `libcurl`, `cpp-httplib` |
+| Database | `sqlite3` |
+| Concurrency / Senders | `stdexec` |
+| Hashing | `rapidhash` |
+| Line editing | `replxx` |
+| TLS / Crypto | `mbedtls` |
+| Unicode / Text | `simdutf`, `uni_algo` |
+| Compile‑time regex | `ctre` |
+| Reflection utilities | `magic_enum` |
+
+## Workflow – *Always Follow This Order*
+
+1. **Create a new branch** before making any change.
+2. **Commit incrementally** — one logical change per commit. Avoid large, mixed commits.
+3. **Compile only when necessary.** The project is large and builds slowly; trust your code inspection for trivial, obviously correct changes.
+4. **Do not over‑analyze trivial changes.** Focus on correctness and clarity.
+5. **Keep this document updated** when important style or rule changes occur.
+
+## Critical Rules – Do Not Violate
+
+- **No macros.** Use `constexpr`, templates, or `inline` functions instead.
+- **No implicit bool conversions.** Write `ptr != nullptr` (explicit comparisons).
+- **Single‑argument constructors must be `explicit`.**
+- **Follow `.clang-tidy` and LSP diagnostics** — treat all warnings as errors.
+- **Do not pollute the global namespace** with `using namespace`. Use namespace aliases locally if depth exceeds 2 levels.
+
+## Design Principles – How to Structure Code
+
+| Principle | Implementation Requirement |
+|-----------|---------------------------|
+| **Integration** | Design every module to drop into the existing architecture without friction. |
+| **Composability** | Provide chainable APIs that can be combined without side‑effects. |
+| **Sender/Receiver** | Use `stdexec` patterns for asynchronous operations. Do not roll custom async primitives. |
+| **Thread Pool** | **Always** use `stdexec`'s built‑in thread pool. Do not use `std::thread` or custom pools. |
+| **Error Handling** | Use `try_do` / `value_or` patterns to flatten control flow. Avoid deeply nested `if` / `catch` blocks. |
+| **Wrapper APIs** | Wrap third‑party libraries that have unfriendly interfaces. Provide a clean, C++23‑style API on top. |
+
+## Modern C++ Idioms – *Prefer the Left Side*
+
+### Type & Memory Choices
+
+| ✅ **Prefer** | ❌ **Avoid** | **Reason** |
+|------------|----------|---------|
+| `std::string_view` | `const std::string&` | Zero‑copy, avoids allocation when passing literals / substrings. |
+| `std::span<T>` | `T* + size` or `const std::vector<T>&` | Bounds‑safe view over contiguous data. |
+| `std::array<T, N>` | C‑style arrays | Type‑safe, size is part of the type. |
+| `std::expected<T, E>` | Exceptions or `std::error_code` | Explicit, composable error handling without hidden control flow. |
+| `std::jthread` | `std::thread` | Automatic joining and stop‑token support. |
+| `std::scoped_lock` | `std::lock_guard` | C++17's `scoped_lock` handles multiple mutexes and deduces template arguments. |
+| PMR allocators | Default allocators | Enable runtime memory strategy tuning without changing container types. |
+
+#### `std::string_view` vs `const std::string&` – Know the Difference
+
+| Scenario | `const std::string&` | `std::string_view` |
+|----------|---------------------|-------------------|
+| Passing a string literal | **Allocates + copies (expensive)** | **Zero overhead** |
+| Passing an existing `std::string` | Cheap (no copy) | Cheap (no copy) |
+| Need null‑terminated string | **Yes** (`.c_str()` available) | **No guarantee** — do not pass to C APIs expecting `\0`. |
+| Original string may be modified | Safe (if lifetime managed) | **Dangerous** — view may dangle. |
+
+**Rule:** Use `std::string_view` for read‑only inspection. Use `const std::string&` only when the callee requires null termination or stores the string.
+
+### Syntax & Style Choices
+
+| ✅ **Write This** | ❌ **Not This** | **Why** |
+|----------------|-------------|------|
+| `static_cast<int>(x)` | `(int)x` | Type‑safe, greppable, explicit intent. |
+| `int x{42};` | `int x = 42;` | Uniform initialization prevents narrowing conversions. |
+| `std::ranges::sort(v);` | `std::sort(v.begin(), v.end());` | Cleaner, composable, works directly on containers. |
+| `if (map.contains(key))` | `if (map.find(key) != map.end())` | Clearer intent, less noise. |
+| Lambda `[&](int x) { ... }` | `std::bind(...)` | Readable, captures are explicit. |
+| `std::to_underlying(e)` | `static_cast<int>(e)` | Semantic: "I want the underlying value". |
+| `std::unreachable()` | `__builtin_unreachable()` | Portable and standard. |
+| Deducing `this` (C++23) | Separate const/non‑const overloads | Eliminates code duplication for member functions. |
+
+### C++23 Features – Use These Actively
+
+- `std::ranges::to<Container>()` – Convert views to concrete containers.
+- `std::views::zip`, `chunk`, `slide`, `join` – Compose data transformations without loops.
+- `std::generator<T>` – Implement lazy, coroutine‑based sequences.
+- Deducing `this` – Replace CRTP with self‑explicit object parameters.
+
+## Naming & Code Organization – *Strict Conventions*
+
+| Entity | Convention | Example |
+|--------|------------|---------|
+| Namespace | `snake_case` | `orangutan::network` |
+| Class / Struct | `CamelCase` | `HttpClient` |
+| Function | `snake_case` | `send_request` |
+| Variable | `snake_case` | `request_count` |
+| Enum type | `snake_case` | `error_code` |
+| Enum values | `snake_case` | `timeout` |
+| Private member variable | `snake_case_` | `socket_fd_` |
+| Constexpr / compile‑time constant | `UPPER_CASE` | `MAX_RETRIES` |
+
+### Header Include Order
+
+Group includes with a blank line between groups:
+
+1. Associated header (if any)
+2. C++ standard library headers
+3. C standard library headers (wrapped in `extern "C"` if needed)
+4. Third‑party library headers
+5. Project headers (`src/...`)
+
+## Performance & Safety – *Every Line Matters*
+
+- **Place larger struct members first** to minimize padding. Use `alignas` only when necessary.
+- **Avoid unnecessary copies** – pass views, move when ownership transfers.
+- **Prefer `std::string_view` and `std::span` for function parameters** unless you need to take ownership.
+- **Follow the Rule of Zero.** If you must define a destructor, copy constructor, or copy assignment, define all five (Rule of Five) and mark move operations `noexcept`.
+- **Mark everything `constexpr` that can be computed at compile time.**
+- **Use factory functions** (`static std::expected<MyClass, Error> create(...)`) when construction requires validation or complex setup.
+
+## Logging with `spdlog`
+
+- Log messages **must be all lowercase** (no capital first letters).
+- Example: `logger->info("connection established to {}", host);`
+
+## Testing
+
+- Write **meaningful, robust tests**. Do not write tests for trivially correct behavior (e.g., getter/setter pairs).
+- Focus on edge cases, error paths, and integration points.
+
+## Utility Code (`src/utils/`)
+
+- **Before implementing a new utility**, check `src/utils/` for an existing solution. Reuse, don't duplicate.
+- Prefer STL or library functions over custom implementations.
+
+## Command‑Line Tools – *Modern Alternatives First*
+
+When invoking external tools (e.g., for searching or file manipulation), prefer the modern equivalents. Fall back to legacy tools only if the modern version is not available.
+
+| Task | **Use This First** | Fallback |
+|------|-------------------|----------|
+| Search code | `rg` | `grep` |
+| Find files | `fd` | `find` |
+| List directory | `exa` | `ls` |
+| Replace text | `sd` | `sed` |
+| Package manager | `pnpm` | `npm` |
+
+## Comments & Documentation
+
+- Use **Doxygen‑style comments** for public APIs (`///` or `/** */`).
+- **Keep comments in sync with code.** Outdated comments are worse than no comments.
+- Let **good naming and structure** reduce the need for comments. Reserve comments for *why*, not *what*.
+- Include `// TODO(username): description` and `// FIXME(username): description` when necessary.
+
+## Suppressing Lint Warnings (`// NOLINT`)
+
+Use `// NOLINT` **only** when the warning is a confirmed false positive. **Always add a brief justification** on the same line:
+
+```cpp
+int legacy_flag = 0; // NOLINT: required by external C API
+```
 
 ---
 
-## Code Quality
-
-- Strictly follow `.clang-tidy` rules
-- Respect all LSP diagnostics and warnings
-
-## Workflow
-
-- Create a new branch before making changes
-- Commit incrementally per module or logical step—avoid large bulk commits
-- Only compile when changes likely require it (large projects are slow to build)
-- Skip over-analysis for trivially correct changes
-- There are some important style codes; remember to update this document in a timely manner.
-
----
-
-## Design Principles
-
-| Principle | Guideline |
-|-----------|-----------|
-| **Integration** | Design modules for seamless integration with existing architecture |
-| **Composability** | Favor composable, chainable APIs |
-| **Sender/Receiver** | Leverage `stdexec` patterns where appropriate |
-| **Thread Pool** | Use `stdexec`'s thread pool implementation over custom or std alternatives |
-| **Error Handling** | Use `try_do`/`value_or` patterns to reduce branching |
-| **Wrapper APIs** | Wrap third-party libraries with unfriendly interfaces |
-
----
-
-## Modern C++ Idioms
-
-### Type & Memory
-
-| Prefer | Over | Reason |
-|--------|------|--------|
-| `std::string_view` | `const std::string&` | Lightweight, zero-copy |
-| `std::span<T>` | `T* + size` / `const std::vector<T>&` | Bounds-safe view |
-| `std::array<T, N>` | C-style arrays | Type-safe, bounds-checked |
-| `std::expected<T, E>` | Exceptions / error codes | Explicit, composable |
-| `std::jthread` | `std::thread` | Auto-join, stop tokens |
-| `std::scoped_lock` | `std::lock_guard` | Lightweight |
-| PMR allocators | Default allocators | Runtime flexibility |
-
-
-| Feature                              | `const std::string&`                      | `std::string_view`                     |
-| ------------------------------------ | ----------------------------------------- | -------------------------------------- |
-| **Copy cost**                        | None (just passing an address)            | Copy two integers (16 bytes), very low |
-| **Indirection overhead**             | Dereference on each access (one extra level) | Direct pointer storage, one dereference |
-| **Construction from `char*`**        | **Heap allocation + O(N) copy**, expensive | **Zero overhead** (just record pointer and length) |
-| **Construction from `std::string`**  | Direct binding, no extra cost             | Zero‑overhead implicit conversion (O(1)) |
-| **Effect of modifying original string** | Reference reflects modification (but watch for iterator invalidation) | View becomes dangling (no awareness of modification) |
-| **Owns data?**                       | No (lifetime managed by `std::string`)    | No                                     |
-| **Guaranteed null‑terminated?**      | Yes (`std::string::c_str()` guarantees)   | No guarantee                          |
-| **Use cases**                        | Need `std::string`‑specific interface (e.g., `.c_str()` with null termination), or passing to APIs expecting `const std::string&` | Read‑only string access, especially when handling multiple string types (`char*`, `string`, substrings) without modification |
-
-### Syntax & Style
-
-| Prefer | Over | Reason |
-|--------|------|--------|
-| C++ casts (`static_cast`, etc.) | C-style casts | Type-safe, explicit |
-| Brace initialization `{}` | Other forms | Uniform, prevents narrowing |
-| `std::ranges` algorithms | Traditional loops | Composable, lazy evaluation |
-| `contains()` | `find() != end()` | Clearer intent |
-| Lambdas | `std::bind` | Readable, flexible |
-| `std::to_underlying(e)` | `static_cast<int>(e)` | Semantic clarity |
-| `std::unreachable()` | `__builtin_unreachable()` | Portable |
-| Deducing `this` (C++23) | Const/ref overloads | Eliminates duplication |
-
-### C++23 Features to Use
-
-- `std::ranges`: `zip`, `chunk`, `slide`, `join`, `to<Container>()`
-- `std::generator` for lazy sequences
-- Deducing `this` for CRTP-free mixins
-
----
-
-## Coding Standards
-
-### General Rules
-
-- **No macros**—use `constexpr`, templates, or `inline` functions
-- **No header/source split**—keep declarations and definitions together in `.hpp`
-- **Explicit comparisons**—write `ptr != nullptr`, not implicit bool (unless semantically obvious)
-- **Single-argument constructors must be `explicit`**
-- **Rule of Zero first**; when Rule of Five is needed, mark moves `noexcept`
-- **Constexpr everything possible**—prefer compile-time computation
-- **Cross-platform APIs**—avoid platform-specific code when portable alternatives exist
-- **Factory functions**—provide factory functions where construction is complex or requires validation
-- **`// NOLINT` suppression**—only use when the warning is a confirmed false positive; add a brief justification comment
-
-### Naming & Organization
-
-- Use meaningful names; avoid both cryptic abbreviations and excessive verbosity
-- Integer types: prefer semantic aliases from `base::` namespace in `types.hpp`
-- Type aliases: centralize complex types in `types.hpp` using `using`
-- Use auto when the type is verbose
-- **Use Doxygen-style comments. Comments must be kept in sync with the code; outdated comments are more harmful than no comments. Good naming and code structure reduce the need for comments, but necessary TODO/FIXME items should still be included**
-- Do not pollute the namespace with using namespace xxx
-- Namespaces: no aliases needed for ≤2 levels; alias deeper nesting locally (don't pollute global scope)
-- Namespace: all lowercase, words separated by underscores (lower_case)
-- Class name: CamelCase (CamelCase)
-- Function name: all lowercase, underscore-separated (lower_case)
-- Variable name: all lowercase, underscore-separated (lower_case)
-- Enum constant: all lowercase, underscore-separated (lower_case)
-- Enum type: all lowercase, underscore-separated (lower_case)
-- Private member variable: suffix with underscore (_)
-- Constexpr variable: all uppercase, underscore-separated (UPPER_CASE)
-- Include headers in this order: associated header (if any), C++ standard library, C standard library, third-party libraries, then project headers — each group separated by a blank line
-
-### Performance
-
-- Place larger struct members first to minimize padding
-- Minimize unnecessary copies and constructions
-- Use `std::string_view` / `std::span` for function parameters
-
-### Logging
-
-- Use lowercase for spdlog messages (no capitalized first letters)
-
-### Testing
-
-- Write meaningful, robust tests
-- Skip trivial tests that verify obvious behavior
-
----
-
-## Utilities (`src/utils/`)
-
-- Place reusable, extensible utilities in `src/utils/`
-- **Before implementing**: check if a utility already exists—reuse, don't duplicate
-- Prefer existing STL or third-party library functions over custom implementations
-
-## Agent Tools
-
-Modern Alternatives
-- rg not grep
-- fd not find
-- exa not ls
-- sd not sed
-- pnpm not npm
-Fallback to the legacy tools when not available.
-
-# prompt engineering:
-- Layered priority — Critical rules first, style later
-- Action-oriented framing — "Do X" not "X is preferred"
-- Concrete DO/DON'T — Explicit good/bad patterns
-- WHY behind rules — Rationale enables judgment
-- Workflow-first — Task approach before reference tables
-- Environment awareness — Build system, tools, libraries with context
-
-** You have more than enough time to complete each task, please continue to improve your implementation. **
+**Remember:** You have more than enough time to complete each task. Focus on quality over speed, and continue improving your implementation until it meets every requirement above.
