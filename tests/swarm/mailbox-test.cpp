@@ -24,6 +24,7 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
         REQUIRE(messages.size() == 1);
         REQUIRE(messages[0].text == "do the thing");
         REQUIRE(messages[0].from == "coordinator");
+        REQUIRE(messages[0].type == orangutan::swarm::message_type::message);
     }
 
     SECTION("broadcast") {
@@ -41,5 +42,20 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
         mailbox.mark_read({messages[0].id});
         auto after = mailbox.poll("team1", "worker1");
         REQUIRE(after.empty());
+    }
+
+    SECTION("clear team removes unread messages") {
+        mailbox.send("team1", "coordinator", "worker1", "task");
+        mailbox.send("team1", "coordinator", "worker2", "task");
+        mailbox.clear_team("team1");
+        CHECK(mailbox.poll("team1", "worker1").empty());
+        CHECK(mailbox.poll("team1", "worker2").empty());
+    }
+
+    SECTION("custom message type round trips") {
+        mailbox.send("team1", "coordinator", "worker1", "shutdown", orangutan::swarm::message_type::shutdown_request);
+        auto messages = mailbox.poll("team1", "worker1");
+        REQUIRE(messages.size() == 1);
+        CHECK(messages[0].type == orangutan::swarm::message_type::shutdown_request);
     }
 }

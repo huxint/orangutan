@@ -4,10 +4,12 @@
 #include <chrono>
 #include <filesystem>
 #include <mutex>
-#include <spdlog/spdlog.h>
-#include <sqlite3.h>
-#include <stdexcept>
 #include <string>
+#include <tuple>
+
+#include <spdlog/spdlog.h>
+
+#include "storage/sqlite.hpp"
 
 namespace orangutan::swarm {
 
@@ -47,43 +49,41 @@ namespace orangutan::swarm {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         }
 
+        using mailbox_row = std::tuple<std::string, std::string, std::string, std::string, std::string, std::int64_t, int, std::string>;
+
+        auto read_mailbox_message(const mailbox_row &row) -> MailboxMessage {
+            return MailboxMessage{
+                .id = std::get<0>(row),
+                .team_id = std::get<1>(row),
+                .from = std::get<2>(row),
+                .to = std::get<3>(row),
+                .text = std::get<4>(row),
+                .timestamp = std::get<5>(row),
+                .read = std::get<6>(row) != 0,
+                .type = string_to_message_type(std::get<7>(row)),
+            };
+        }
+
     } // namespace
 
     struct AgentMailbox::Impl {
-        sqlite3 *db = nullptr;
+        sqlite::Database db;
         std::mutex mutex;
 
-        explicit Impl(const std::filesystem::path &db_path) {
-            const auto db_path_text = db_path.string();
-            int rc = sqlite3_open(db_path_text.c_str(), &db);
-            if (rc != SQLITE_OK) {
-                std::string err = sqlite3_errmsg(db);
-                sqlite3_close(db);
-                db = nullptr;
-                throw std::runtime_error("Failed to open mailbox database: " + err);
-            }
-
-            // Enable WAL mode
-            sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
-
-            const char *create_sql = "CREATE TABLE IF NOT EXISTS agent_mailbox ("
-                                     "    id TEXT PRIMARY KEY,"
-                                     "    team_id TEXT NOT NULL,"
-                                     "    sender TEXT NOT NULL,"
-                                     "    recipient TEXT NOT NULL,"
-                                     "    body TEXT NOT NULL,"
-                                     "    timestamp INTEGER NOT NULL,"
-                                     "    is_read INTEGER NOT NULL DEFAULT 0,"
-                                     "    message_type TEXT NOT NULL DEFAULT 'message'"
-                                     ");";
-
-            char *err_msg = nullptr;
-            rc = sqlite3_exec(db, create_sql, nullptr, nullptr, &err_msg);
-            if (rc != SQLITE_OK) {
-                std::string err = err_msg != nullptr ? err_msg : "unknown error";
-                sqlite3_free(err_msg);
-                throw std::runtime_error("Failed to create mailbox table: " + err);
-            }
+        explicit Impl(const std::filesystem::path &db_path)
+        : db(db_path) {
+            db.exec_script("PRAGMA journal_mode=WAL;", "Failed to enable mailbox WAL mode");
+            db.exec_script("CREATE TABLE IF NOT EXISTS agent_mailbox ("
+                           "    id TEXT PRIMARY KEY,"
+                           "    team_id TEXT NOT NULL,"
+                           "    sender TEXT NOT NULL,"
+                           "    recipient TEXT NOT NULL,"
+                           "    body TEXT NOT NULL,"
+                           "    timestamp INTEGER NOT NULL,"
+                           "    is_read INTEGER NOT NULL DEFAULT 0,"
+                           "    message_type TEXT NOT NULL DEFAULT 'message'"
+                           ");",
+                           "Failed to create mailbox table");
         }
 
         Impl(const Impl &) = delete;
@@ -91,11 +91,7 @@ namespace orangutan::swarm {
         Impl(Impl &&) = delete;
         Impl &operator=(Impl &&) = delete;
 
-        ~Impl() {
-            if (db != nullptr) {
-                sqlite3_close(db);
-            }
-        }
+        ~Impl() = default;
     };
 
     AgentMailbox::AgentMailbox(const std::filesystem::path &db_path)
@@ -105,32 +101,17 @@ namespace orangutan::swarm {
 
     void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type) {
         std::scoped_lock lock(impl_->mutex);
+        try {
+            auto id = generate_id();
+            auto ts = now_millis();
+            auto type_str = message_type_to_string(type);
 
-        const char *sql = "INSERT INTO agent_mailbox (id, team_id, sender, recipient, body, timestamp, is_read, message_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?);";
-        sqlite3_stmt *stmt = nullptr;
-        int rc = sqlite3_prepare_v2(impl_->db, sql, -1, &stmt, nullptr);
-        if (rc != SQLITE_OK) {
-            spdlog::error("Failed to prepare mailbox insert: {}", sqlite3_errmsg(impl_->db));
-            return;
+            impl_->db.exec("INSERT INTO agent_mailbox (id, team_id, sender, recipient, body, timestamp, is_read, message_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")
+                .bind(id, team_id, from, to, text, ts, type_str)
+                .run();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to insert mailbox message: {}", ex.what());
         }
-
-        auto id = generate_id();
-        auto ts = now_millis();
-        auto type_str = message_type_to_string(type);
-
-        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, team_id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 3, from.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 4, to.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 5, text.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, 6, ts);
-        sqlite3_bind_text(stmt, 7, type_str.c_str(), -1, SQLITE_TRANSIENT);
-
-        rc = sqlite3_step(stmt);
-        if (rc != SQLITE_DONE) {
-            spdlog::error("Failed to insert mailbox message: {}", sqlite3_errmsg(impl_->db));
-        }
-        sqlite3_finalize(stmt);
     }
 
     void AgentMailbox::send_broadcast(const std::string &team_id, const std::string &from, const std::string &text, const std::vector<std::string> &team_members) {
@@ -143,37 +124,20 @@ namespace orangutan::swarm {
 
     std::vector<MailboxMessage> AgentMailbox::poll(const std::string &team_id, const std::string &agent_name) {
         std::scoped_lock lock(impl_->mutex);
-
-        const char *sql = "SELECT id, team_id, sender, recipient, body, timestamp, is_read, message_type "
-                          "FROM agent_mailbox WHERE team_id = ? AND recipient = ? AND is_read = 0 "
-                          "ORDER BY timestamp ASC;";
-
-        sqlite3_stmt *stmt = nullptr;
-        int rc = sqlite3_prepare_v2(impl_->db, sql, -1, &stmt, nullptr);
-        if (rc != SQLITE_OK) {
-            spdlog::error("Failed to prepare mailbox poll: {}", sqlite3_errmsg(impl_->db));
+        try {
+            std::vector<MailboxMessage> messages;
+            for (const auto &row : impl_->db.query("SELECT id, team_id, sender, recipient, body, timestamp, is_read, message_type "
+                                                   "FROM agent_mailbox WHERE team_id = ? AND recipient = ? AND is_read = 0 "
+                                                   "ORDER BY timestamp ASC")
+                                       .bind(team_id, agent_name)
+                                       .all<mailbox_row>()) {
+                messages.push_back(read_mailbox_message(row));
+            }
+            return messages;
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to poll mailbox: {}", ex.what());
             return {};
         }
-
-        sqlite3_bind_text(stmt, 1, team_id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, agent_name.c_str(), -1, SQLITE_TRANSIENT);
-
-        std::vector<MailboxMessage> messages;
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            MailboxMessage msg;
-            msg.id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-            msg.team_id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-            msg.from = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-            msg.to = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
-            msg.text = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-            msg.timestamp = sqlite3_column_int64(stmt, 5);
-            msg.read = sqlite3_column_int(stmt, 6) != 0;
-            msg.type = string_to_message_type(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7)));
-            messages.push_back(std::move(msg));
-        }
-
-        sqlite3_finalize(stmt);
-        return messages;
     }
 
     void AgentMailbox::mark_read(const std::vector<std::string> &message_ids) {
@@ -182,40 +146,31 @@ namespace orangutan::swarm {
         }
 
         std::scoped_lock lock(impl_->mutex);
-
-        for (const auto &id : message_ids) {
-            const char *sql = "UPDATE agent_mailbox SET is_read = 1 WHERE id = ?;";
-            sqlite3_stmt *stmt = nullptr;
-            int rc = sqlite3_prepare_v2(impl_->db, sql, -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                spdlog::error("Failed to prepare mark_read: {}", sqlite3_errmsg(impl_->db));
-                continue;
+        try {
+            sqlite::Statement stmt(impl_->db, "UPDATE agent_mailbox SET is_read = 1 WHERE id = ?");
+            for (const auto &id : message_ids) {
+                try {
+                    stmt.clear_bindings();
+                    stmt.bind(1, id);
+                    static_cast<void>(stmt.step());
+                    stmt.reset();
+                } catch (const std::exception &ex) {
+                    spdlog::error("failed to mark message read: {}", ex.what());
+                    stmt.reset();
+                }
             }
-            sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-            rc = sqlite3_step(stmt);
-            if (rc != SQLITE_DONE) {
-                spdlog::error("Failed to mark message read: {}", sqlite3_errmsg(impl_->db));
-            }
-            sqlite3_finalize(stmt);
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to prepare mark_read: {}", ex.what());
         }
     }
 
     void AgentMailbox::clear_team(const std::string &team_id) {
         std::scoped_lock lock(impl_->mutex);
-
-        const char *sql = "DELETE FROM agent_mailbox WHERE team_id = ?;";
-        sqlite3_stmt *stmt = nullptr;
-        int rc = sqlite3_prepare_v2(impl_->db, sql, -1, &stmt, nullptr);
-        if (rc != SQLITE_OK) {
-            spdlog::error("Failed to prepare clear_team: {}", sqlite3_errmsg(impl_->db));
-            return;
+        try {
+            impl_->db.exec("DELETE FROM agent_mailbox WHERE team_id = ?").bind(team_id).run();
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to clear team mailbox: {}", ex.what());
         }
-        sqlite3_bind_text(stmt, 1, team_id.c_str(), -1, SQLITE_TRANSIENT);
-        rc = sqlite3_step(stmt);
-        if (rc != SQLITE_DONE) {
-            spdlog::error("Failed to clear team mailbox: {}", sqlite3_errmsg(impl_->db));
-        }
-        sqlite3_finalize(stmt);
     }
 
 } // namespace orangutan::swarm
