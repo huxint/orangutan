@@ -28,9 +28,11 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
     }
 
     SECTION("broadcast") {
-        mailbox.send_broadcast("team1", "coordinator", "hello all", {"worker1", "worker2"});
-        auto msgs1 = mailbox.poll("team1", "worker1");
-        auto msgs2 = mailbox.poll("team1", "worker2");
+        mailbox.send_broadcast("team1", "worker1", "hello all", {"worker1", "worker2", "worker3"});
+        auto sender_messages = mailbox.poll("team1", "worker1");
+        auto msgs1 = mailbox.poll("team1", "worker2");
+        auto msgs2 = mailbox.poll("team1", "worker3");
+        REQUIRE(sender_messages.empty());
         REQUIRE(msgs1.size() == 1);
         REQUIRE(msgs2.size() == 1);
     }
@@ -42,6 +44,20 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
         mailbox.mark_read({messages[0].id});
         auto after = mailbox.poll("team1", "worker1");
         REQUIRE(after.empty());
+    }
+
+    SECTION("mark read updates multiple targeted messages") {
+        mailbox.send("team1", "coordinator", "worker1", "task-1");
+        mailbox.send("team1", "coordinator", "worker1", "task-2");
+        mailbox.send("team1", "coordinator", "worker2", "task-3");
+
+        const auto worker1_messages = mailbox.poll("team1", "worker1");
+        REQUIRE(worker1_messages.size() == 2);
+
+        mailbox.mark_read({worker1_messages[0].id, worker1_messages[1].id});
+
+        CHECK(mailbox.poll("team1", "worker1").empty());
+        CHECK(mailbox.poll("team1", "worker2").size() == 1);
     }
 
     SECTION("clear team removes unread messages") {
