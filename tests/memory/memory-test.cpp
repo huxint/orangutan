@@ -627,6 +627,20 @@ namespace {
         CHECK(results.front().key == "fact.algorithms");
     };
 
+    TEST_CASE("memory_store_constructs_when_fts_setup_is_best_effort") {
+        const auto db_path = orangutan::testing::unique_test_db_path("memory-store", "fts-best-effort.db");
+        {
+            orangutan::sqlite::Database db(db_path);
+            db.exec_script("CREATE TABLE memories_ai (placeholder TEXT);", "seed conflicting fts trigger name");
+        }
+
+        CHECK_NOTHROW(MemoryStore(db_path));
+
+        MemoryStore store(db_path);
+        store.remember("user_name", "Alice", "profile");
+        CHECK(store.recall("user_name").contains("Alice"));
+    };
+
     TEST_CASE("runtime_memory_mirror_refresh_is_scope_aware") {
         const auto workspace = orangutan::testing::unique_test_root("memory-scope-aware");
 

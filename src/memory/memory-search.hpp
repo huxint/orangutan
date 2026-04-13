@@ -31,7 +31,7 @@ namespace orangutan::memory::detail {
     [[nodiscard]]
     std::optional<std::string> build_fts_query(std::string_view query);
     [[nodiscard]]
-    std::vector<MemoryRecord> collect_records(sqlite::Statement &stmt);
+    MemoryRecord read_memory_record(const sqlite::Row &row);
     [[nodiscard]]
     std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, std::string_view scope, std::string_view key);
     void upsert_memory_record(sqlite::Database &db, std::string_view scope, std::string_view key, std::string_view content, std::string_view category, std::string_view type,

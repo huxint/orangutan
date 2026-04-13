@@ -67,3 +67,36 @@ TEST_CASE("constructs_with_explicit_path_and_initializes_empty_store") {
     CHECK(store.list_heartbeats().empty());
     CHECK(store.list_runs().empty());
 };
+
+TEST_CASE("store_filters_with_indexed_placeholders_after_wrapper_cutover") {
+    const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "indexed-placeholders.db");
+    Store store(db_path);
+
+    TaskSpec alpha_task{
+        .agent_key = "alpha",
+        .name = "shared-name",
+        .schedule = {.kind = task_schedule_kind::cron, .value = "0 * * * *"},
+        .prompt = "alpha prompt",
+    };
+    TaskSpec beta_task{
+        .agent_key = "beta",
+        .name = "shared-name",
+        .schedule = {.kind = task_schedule_kind::cron, .value = "0 * * * *"},
+        .prompt = "beta prompt",
+    };
+
+    const auto alpha_id = store.upsert_task(alpha_task);
+    const auto beta_id = store.upsert_task(beta_task);
+
+    const auto alpha_match = store.find_task("alpha", "shared-name");
+    REQUIRE(alpha_match.has_value());
+    CHECK(alpha_match->id == alpha_id);
+    CHECK(alpha_match->agent_key == "alpha");
+
+    const auto beta_match = store.find_task("beta", "shared-name");
+    REQUIRE(beta_match.has_value());
+    CHECK(beta_match->id == beta_id);
+    CHECK(beta_match->agent_key == "beta");
+
+    CHECK_FALSE(store.find_task("gamma", "shared-name").has_value());
+};

@@ -16,7 +16,7 @@ namespace orangutan::memory::detail {
     }
 
     void create_current_schema(sqlite::Database &db) {
-        db.exec(
+        db.exec_script(
             R"(
         CREATE TABLE IF NOT EXISTS memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +36,7 @@ namespace orangutan::memory::detail {
         )",
             "Failed to create memory schema");
 
-        db.exec(
+        db.exec_script(
             R"(
         CREATE INDEX IF NOT EXISTS idx_memories_scope_updated ON memories(scope, updated_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_memories_scope_category ON memories(scope, category, updated_at DESC, id DESC);
@@ -47,24 +47,24 @@ namespace orangutan::memory::detail {
     }
 
     bool enable_fts_if_available(sqlite::Database &db) {
-        if (!db.try_exec("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_key, content, category, type, scope UNINDEXED, tokenize='unicode61');")) {
+        if (!db.try_exec_script("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_key, content, category, type, scope UNINDEXED, tokenize='unicode61');")) {
             return false;
         }
 
-        if (!db.try_exec(
+        if (!db.try_exec_script(
                 "CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN "
                 "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
                 "END;")) {
             return false;
         }
 
-        if (!db.try_exec("CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN "
-                         "DELETE FROM memories_fts WHERE rowid = old.id; "
-                         "END;")) {
+        if (!db.try_exec_script("CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN "
+                                "DELETE FROM memories_fts WHERE rowid = old.id; "
+                                "END;")) {
             return false;
         }
 
-        if (!db.try_exec(
+        if (!db.try_exec_script(
                 "CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN "
                 "DELETE FROM memories_fts WHERE rowid = old.id; "
                 "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
@@ -72,11 +72,11 @@ namespace orangutan::memory::detail {
             return false;
         }
 
-        if (!db.try_exec("DELETE FROM memories_fts;")) {
+        if (!db.try_exec_script("DELETE FROM memories_fts;")) {
             return false;
         }
-        if (!db.try_exec("INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) "
-                         "SELECT id, memory_key, content, category, type, scope FROM memories;")) {
+        if (!db.try_exec_script("INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) "
+                                "SELECT id, memory_key, content, category, type, scope FROM memories;")) {
             return false;
         }
 
