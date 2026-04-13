@@ -1,3 +1,4 @@
+#include <concepts>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -63,9 +64,9 @@ namespace {
     }
 
     static_assert(
-        !std::is_invocable_v<decltype(&orangutan::sqlite::Database::transaction<void (*)(orangutan::sqlite::Database &)>),
-                             const orangutan::sqlite::Database *,
-                             void (*)(orangutan::sqlite::Database &)>);
+        !std::invocable<decltype(&orangutan::sqlite::Database::transaction<void (*)(orangutan::sqlite::Database &)>),
+                        const orangutan::sqlite::Database *,
+                        void (*)(orangutan::sqlite::Database &)>);
 
     TEST_CASE("exec_script runs multi-statement schema setup", "[storage][sqlite]") {
         const ScopedDbPath db_path("sqlite-script");

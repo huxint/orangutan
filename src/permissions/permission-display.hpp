@@ -2,6 +2,7 @@
 
 #include "permissions/permission-types.hpp"
 
+#include <concepts>
 #include <nlohmann/json.hpp>
 
 #include <magic_enum/magic_enum.hpp>
@@ -50,25 +51,25 @@ namespace orangutan::permissions {
         return std::visit(
             [](const auto &value) -> nlohmann::json {
                 using Value = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<Value, RuleDecisionReason>) {
+                if constexpr (std::same_as<Value, RuleDecisionReason>) {
                     return {
                         {"type", "rule"},
                         {"source", std::string{magic_enum::enum_name(value.source)}},
                         {"source_label", permission_rule_source_label(value.source)},
                         {"rule_value", value.rule_value},
                     };
-                } else if constexpr (std::is_same_v<Value, ModeDecisionReason>) {
+                } else if constexpr (std::same_as<Value, ModeDecisionReason>) {
                     return {
                         {"type", "mode"},
                         {"mode", std::string{magic_enum::enum_name(value.mode)}},
                         {"mode_label", permission_mode_label(value.mode)},
                     };
-                } else if constexpr (std::is_same_v<Value, SafetyCheckDecisionReason>) {
+                } else if constexpr (std::same_as<Value, SafetyCheckDecisionReason>) {
                     return {
                         {"type", "safety_check"},
                         {"path", value.path},
                     };
-                } else if constexpr (std::is_same_v<Value, ToolSpecificDecisionReason>) {
+                } else if constexpr (std::same_as<Value, ToolSpecificDecisionReason>) {
                     return {
                         {"type", "tool_specific"},
                         {"detail", value.detail},
@@ -105,16 +106,16 @@ namespace orangutan::permissions {
         std::visit(
             [&lines](const auto &value) {
                 using Value = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<Value, RuleDecisionReason>) {
+                if constexpr (std::same_as<Value, RuleDecisionReason>) {
                     lines.push_back("Reason: rule from " + permission_rule_source_label(value.source));
                     lines.push_back("Rule: " + value.rule_value);
-                } else if constexpr (std::is_same_v<Value, ModeDecisionReason>) {
+                } else if constexpr (std::same_as<Value, ModeDecisionReason>) {
                     lines.emplace_back("Reason: mode");
                     lines.push_back("Mode: " + permission_mode_label(value.mode));
-                } else if constexpr (std::is_same_v<Value, SafetyCheckDecisionReason>) {
+                } else if constexpr (std::same_as<Value, SafetyCheckDecisionReason>) {
                     lines.emplace_back("Reason: safety check");
                     lines.push_back("Path: " + value.path);
-                } else if constexpr (std::is_same_v<Value, ToolSpecificDecisionReason>) {
+                } else if constexpr (std::same_as<Value, ToolSpecificDecisionReason>) {
                     lines.emplace_back("Reason: tool-specific check");
                     lines.push_back("Detail: " + value.detail);
                 } else {

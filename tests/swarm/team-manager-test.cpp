@@ -1,12 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include "swarm/team-manager.hpp"
 
+#include <concepts>
 #include <filesystem>
 #include <type_traits>
 
 namespace {
 
-    static_assert(std::is_constructible_v<orangutan::swarm::TeamManager, const std::filesystem::path &>);
+    static_assert(std::constructible_from<orangutan::swarm::TeamManager, const std::filesystem::path &>);
 
 } // namespace
 

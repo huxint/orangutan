@@ -5,6 +5,7 @@
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <concepts>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -15,7 +16,7 @@ using namespace orangutan;
 
 namespace {
 
-    static_assert(std::is_same_v<decltype(&tools::register_message_attachments_tool), void (*)(ToolRegistry &, const std::filesystem::path &, const ToolRuntimeContext *)>);
+    static_assert(std::same_as<decltype(&tools::register_message_attachments_tool), void (*)(ToolRegistry &, const std::filesystem::path &, const ToolRuntimeContext *)>);
 
     TEST_CASE("message_attachments_list_returns_current_message_metadata_without_downloading") {
         ToolRegistry registry;

@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <concepts>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -36,7 +38,7 @@ namespace orangutan::sqlite {
 
         constexpr auto DEFAULT_BUSY_TIMEOUT_MS = 1000;
 
-        enum class placeholder_mode {
+        enum class placeholder_mode : base::u8 {
             none,
             anonymous,
             indexed,
@@ -48,15 +50,6 @@ namespace orangutan::sqlite {
             int expected_bind_count = 0;
             bool indexed_contiguous = true;
         };
-
-        template <typename T>
-        inline constexpr bool always_false_v = false;
-
-        template <typename T>
-        inline constexpr bool is_optional_v = false;
-
-        template <typename T>
-        inline constexpr bool is_optional_v<std::optional<T>> = true;
 
         template <typename T>
         concept tuple_like = requires {
@@ -114,7 +107,7 @@ namespace orangutan::sqlite {
             std::vector<int> indexed_ids;
             int anonymous_count = 0;
 
-            enum class parse_state {
+            enum class parse_state : base::u8 {
                 normal,
                 single_quote,
                 double_quote,
@@ -218,7 +211,7 @@ namespace orangutan::sqlite {
             } else if (!indexed_ids.empty()) {
                 info.mode = placeholder_mode::indexed;
                 std::ranges::sort(indexed_ids);
-                indexed_ids.erase(std::unique(indexed_ids.begin(), indexed_ids.end()), indexed_ids.end());
+                indexed_ids.erase(std::ranges::unique(indexed_ids).begin(), indexed_ids.end());
                 info.expected_bind_count = indexed_ids.back();
                 for (int expected = 1; expected <= info.expected_bind_count; ++expected) {
                     if (!std::ranges::binary_search(indexed_ids, expected)) {
@@ -254,44 +247,53 @@ namespace orangutan::sqlite {
                 return {};
             }
             const auto size = static_cast<std::size_t>(sqlite3_column_bytes(stmt, index));
-            return std::string(reinterpret_cast<const char *>(text), size); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+            return {reinterpret_cast<const char *>(text), size}; // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
         }
 
         template <typename T>
         void bind_value(sqlite3_stmt *stmt, int index, T &&value) {
             using value_type = std::remove_cvref_t<T>;
 
-            if constexpr (is_optional_v<value_type>) {
+            if constexpr (requires {
+                              typename value_type::value_type;
+                              requires std::same_as<value_type, std::optional<typename value_type::value_type>>;
+                          }) {
                 if (value.has_value()) {
                     bind_value(stmt, index, *std::forward<T>(value));
                 } else {
                     check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
                 }
-            } else if constexpr (std::is_same_v<value_type, std::nullptr_t>) {
+            } else if constexpr (std::same_as<value_type, std::nullptr_t>) {
                 check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
-            } else if constexpr (std::is_same_v<value_type, bool>) {
+            } else if constexpr (std::same_as<value_type, bool>) {
                 check_bind_ok(sqlite3_bind_int(stmt, index, value ? 1 : 0), stmt);
-            } else if constexpr (std::is_same_v<value_type, int>) {
+            } else if constexpr (std::same_as<value_type, int>) {
                 check_bind_ok(sqlite3_bind_int(stmt, index, value), stmt);
-            } else if constexpr (std::is_same_v<value_type, std::int64_t>) {
+            } else if constexpr (std::same_as<value_type, std::int64_t>) {
                 check_bind_ok(sqlite3_bind_int64(stmt, index, static_cast<sqlite3_int64>(value)), stmt);
-            } else if constexpr (std::is_same_v<value_type, double>) {
+            } else if constexpr (std::same_as<value_type, double>) {
                 check_bind_ok(sqlite3_bind_double(stmt, index, value), stmt);
-            } else if constexpr (std::is_pointer_v<value_type> && std::is_same_v<std::remove_cv_t<std::remove_pointer_t<value_type>>, char>) {
+            } else if constexpr (std::is_pointer_v<value_type> && std::same_as<std::remove_cv_t<std::remove_pointer_t<value_type>>, char>) {
                 if (value == nullptr) {
                     check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
                 } else {
                     check_bind_ok(sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT), stmt);
                 }
             } else if constexpr (std::is_convertible_v<T, std::string_view>) {
-                const auto text_value = std::string_view(std::forward<T>(value));
+                const auto text_value = [&value]() -> std::string_view {
+                    if constexpr (std::is_array_v<value_type>) {
+                        return {std::data(value)};
+                    } else {
+                        return {value};
+                    }
+                }();
                 const char *text = text_value.data();
                 if (text == nullptr) {
                     text = "";
                 }
                 check_bind_ok(sqlite3_bind_text(stmt, index, text, static_cast<int>(text_value.size()), SQLITE_TRANSIENT), stmt);
             } else {
-                static_assert(always_false_v<value_type>, "unsupported sqlite bind type");
+                static_assert(false, "unsupported sqlite bind type");
             }
         }
 
@@ -300,7 +302,10 @@ namespace orangutan::sqlite {
             validate_column_index(stmt, index);
             using value_type = std::remove_cvref_t<T>;
 
-            if constexpr (is_optional_v<value_type>) {
+            if constexpr (requires {
+                              typename value_type::value_type;
+                              requires std::same_as<value_type, std::optional<typename value_type::value_type>>;
+                          }) {
                 if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
                     return std::nullopt;
                 }
@@ -309,18 +314,18 @@ namespace orangutan::sqlite {
                 if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
                     throw std::runtime_error("column " + std::to_string(index) + " is null");
                 }
-                if constexpr (std::is_same_v<value_type, std::string>) {
+                if constexpr (std::same_as<value_type, std::string>) {
                     return copy_column_text(stmt, index);
-                } else if constexpr (std::is_same_v<value_type, int>) {
+                } else if constexpr (std::same_as<value_type, int>) {
                     return sqlite3_column_int(stmt, index);
-                } else if constexpr (std::is_same_v<value_type, std::int64_t> || std::is_same_v<value_type, base::i64>) {
+                } else if constexpr (std::same_as<value_type, std::int64_t> || std::same_as<value_type, base::i64>) {
                     return static_cast<value_type>(sqlite3_column_int64(stmt, index));
-                } else if constexpr (std::is_same_v<value_type, double> || std::is_same_v<value_type, base::f64>) {
+                } else if constexpr (std::same_as<value_type, double> || std::same_as<value_type, base::f64>) {
                     return static_cast<value_type>(sqlite3_column_double(stmt, index));
-                } else if constexpr (std::is_same_v<value_type, bool>) {
+                } else if constexpr (std::same_as<value_type, bool>) {
                     return sqlite3_column_int(stmt, index) != 0;
                 } else {
-                    static_assert(always_false_v<value_type>, "unsupported sqlite column type");
+                    static_assert(false, "unsupported sqlite column type");
                 }
             }
         }
@@ -414,6 +419,8 @@ namespace orangutan::sqlite {
 
     class Command {
     public:
+        ~Command() = default;
+
         Command(const Command &) = delete;
         auto operator=(const Command &) -> Command & = delete;
         Command(Command &&) noexcept = default;
@@ -433,7 +440,7 @@ namespace orangutan::sqlite {
         explicit Command(const Database &db, std::string_view sql)
         : statement_(db, sql) {}
 
-        void ensure_can_bind();
+        void ensure_can_bind() const;
         void ensure_ready();
 
         Statement statement_;
@@ -445,6 +452,8 @@ namespace orangutan::sqlite {
 
     class Query {
     public:
+        ~Query() = default;
+
         Query(const Query &) = delete;
         auto operator=(const Query &) -> Query & = delete;
         Query(Query &&) noexcept = default;
@@ -519,8 +528,15 @@ namespace orangutan::sqlite {
         void for_each(Fn &&fn) {
             ensure_ready();
             consumed_ = true;
+            auto callback = [&]() {
+                if constexpr (std::is_lvalue_reference_v<Fn &&>) {
+                    return std::ref(std::forward<Fn>(fn));
+                } else {
+                    return std::forward<Fn>(fn);
+                }
+            }();
             while (statement_.step()) {
-                std::invoke(std::forward<Fn>(fn), statement_.row());
+                std::invoke(callback, statement_.row());
             }
         }
 
@@ -528,7 +544,7 @@ namespace orangutan::sqlite {
         explicit Query(const Database &db, std::string_view sql)
         : statement_(db, sql) {}
 
-        void ensure_can_bind();
+        void ensure_can_bind() const;
         void ensure_ready();
 
         Statement statement_;
@@ -605,9 +621,9 @@ namespace orangutan::sqlite {
 
         template <typename T, std::size_t... Indices>
         auto map_tuple(const Row &row, std::index_sequence<Indices...>) -> T {
-            constexpr auto expected_columns = sizeof...(Indices);
-            if (row.columns() != static_cast<int>(expected_columns)) {
-                throw std::runtime_error(column_count_message(expected_columns, row.columns()));
+            constexpr auto EXPECTED_COLUMNS = sizeof...(Indices);
+            if (row.columns() != static_cast<int>(EXPECTED_COLUMNS)) {
+                throw std::runtime_error(column_count_message(EXPECTED_COLUMNS, row.columns()));
             }
             return T{row.template get<std::tuple_element_t<Indices, T>>(static_cast<int>(Indices))...};
         }
@@ -695,12 +711,12 @@ namespace orangutan::sqlite {
         if (placeholder_info_.mode == detail::placeholder_mode::indexed && !placeholder_info_.indexed_contiguous) {
             throw std::runtime_error("indexed placeholders must be contiguous");
         }
-        if (actual != static_cast<std::size_t>(placeholder_info_.expected_bind_count)) {
+        if (std::cmp_not_equal(actual, placeholder_info_.expected_bind_count)) {
             throw std::runtime_error(detail::bind_count_message(static_cast<std::size_t>(placeholder_info_.expected_bind_count), actual));
         }
     }
 
-    inline void Command::ensure_can_bind() {
+    inline void Command::ensure_can_bind() const {
         if (consumed_) {
             throw std::runtime_error("statement is already consumed");
         }
@@ -728,7 +744,7 @@ namespace orangutan::sqlite {
         }
     }
 
-    inline void Query::ensure_can_bind() {
+    inline void Query::ensure_can_bind() const {
         if (consumed_) {
             throw std::runtime_error("statement is already consumed");
         }

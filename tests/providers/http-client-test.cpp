@@ -4,7 +4,6 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 using Catch::Matchers::ContainsSubstring;
@@ -25,7 +24,7 @@ TEST_CASE("http_status_error_truncates_large_body") {
 }
 
 TEST_CASE("compose_headers_applies_required_fallbacks_and_preserves_custom_headers") {
-    const std::unordered_map<std::string, std::string> custom_headers{
+    const orangutan::utils::transparent_string_unordered_map<std::string> custom_headers{
         {"Authorization", "Bearer custom-token"},
         {"x-team", "infra"},
     };

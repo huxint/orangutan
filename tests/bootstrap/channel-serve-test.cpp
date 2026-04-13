@@ -11,6 +11,7 @@
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
 
+#include <concepts>
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -118,7 +119,7 @@ namespace {
             std::visit(
                 [&]<typename T>(const T &payload) {
                     using Payload = std::decay_t<T>;
-                    if constexpr (std::is_same_v<Payload, TextPayload>) {
+                    if constexpr (std::same_as<Payload, TextPayload>) {
                         sent_text_messages_.push_back({
                             .jid = jid,
                             .text = payload.text,
@@ -126,9 +127,9 @@ namespace {
                             .reference_message_id = message.reference_message_id,
                         });
                         sent_messages_.emplace_back(jid, payload.text);
-                    } else if constexpr (std::is_same_v<Payload, MarkdownPayload>) {
+                    } else if constexpr (std::same_as<Payload, MarkdownPayload>) {
                         sent_markdown_messages_.emplace_back(jid, payload.markdown);
-                    } else if constexpr (std::is_same_v<Payload, KeyboardPayload>) {
+                    } else if constexpr (std::same_as<Payload, KeyboardPayload>) {
                         ++keyboard_send_attempts_;
                         if (!keyboard_send_error_.empty()) {
                             throw std::runtime_error(keyboard_send_error_);

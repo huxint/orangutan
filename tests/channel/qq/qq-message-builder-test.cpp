@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <concepts>
 #include <string_view>
 #include <type_traits>
 
@@ -14,10 +15,10 @@ namespace {
     using ReplySignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
     using ReferenceSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
 
-    static_assert(std::is_same_v<decltype(&QqMessageBuilder::text), TextSignature>);
-    static_assert(std::is_same_v<decltype(&QqMessageBuilder::markdown), MarkdownSignature>);
-    static_assert(std::is_same_v<decltype(&QqMessageBuilder::reply_to), ReplySignature>);
-    static_assert(std::is_same_v<decltype(&QqMessageBuilder::reference), ReferenceSignature>);
+    static_assert(std::same_as<decltype(&QqMessageBuilder::text), TextSignature>);
+    static_assert(std::same_as<decltype(&QqMessageBuilder::markdown), MarkdownSignature>);
+    static_assert(std::same_as<decltype(&QqMessageBuilder::reply_to), ReplySignature>);
+    static_assert(std::same_as<decltype(&QqMessageBuilder::reference), ReferenceSignature>);
 
 } // namespace
 

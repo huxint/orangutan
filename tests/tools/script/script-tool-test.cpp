@@ -2,6 +2,7 @@
 #include "test-helpers.hpp"
 #include "utils/escape.hpp"
 
+#include <concepts>
 #include <filesystem>
 #include <type_traits>
 #include <catch2/catch_test_macros.hpp>
@@ -11,10 +12,10 @@ using namespace orangutan::tools;
 
 namespace {
 
-    static_assert(std::is_same_v<decltype(&register_script_tools), void (*)(ToolRegistry &, const std::vector<ScriptToolConfig> &, const std::filesystem::path &,
-                                                                            const ToolPermissionContext *, const ToolRuntimeContext *, const ApprovalCallback &)>);
+    static_assert(std::same_as<decltype(&register_script_tools), void (*)(ToolRegistry &, const std::vector<ScriptToolConfig> &, const std::filesystem::path &,
+                                                                          const ToolPermissionContext *, const ToolRuntimeContext *, const ApprovalCallback &)>);
 
-    static_assert(std::is_same_v<decltype(&shell_escape), decltype(&utils::shell_single_quote_escape)>);
+    static_assert(std::same_as<decltype(&shell_escape), decltype(&utils::shell_single_quote_escape)>);
 
     TEST_CASE("shell_escape_simple_string") {
         CHECK(shell_escape("hello") == "'hello'");

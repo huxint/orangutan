@@ -6,6 +6,7 @@
 #include "utils/string.hpp"
 
 #include <array>
+#include <concepts>
 #include <nlohmann/json.hpp>
 
 #include <optional>
@@ -274,29 +275,29 @@ namespace orangutan::channel::qq {
             [&]<typename Payload>(const Payload &payload) {
                 using payload_type = std::decay_t<Payload>;
 
-                if constexpr (std::is_same_v<payload_type, TextPayload>) {
+                if constexpr (std::same_as<payload_type, TextPayload>) {
                     send_chunked(payload.text, [&](const std::string &chunk, const std::string &reply_to_message_id, const std::string &reference_message_id) {
                         return QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(reply_to_message_id).reference(reference_message_id).build();
                     });
-                } else if constexpr (std::is_same_v<payload_type, MarkdownPayload>) {
+                } else if constexpr (std::same_as<payload_type, MarkdownPayload>) {
                     send_chunked(payload.markdown, [&](const std::string &chunk, const std::string &reply_to_message_id, const std::string &reference_message_id) {
                         return QqMessageBuilder{}.markdown(chunk).msg_seq(next_msg_seq()).reply_to(reply_to_message_id).reference(reference_message_id).build();
                     });
-                } else if constexpr (std::is_same_v<payload_type, MediaPayload>) {
+                } else if constexpr (std::same_as<payload_type, MediaPayload>) {
                     const auto file_info = upload_media_info(target, payload.file_type, payload.url);
                     const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id, 1);
                     const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
                     post_payload(
                         QqMessageBuilder{}.media(file_info, payload.caption).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build());
-                } else if constexpr (std::is_same_v<payload_type, KeyboardPayload>) {
+                } else if constexpr (std::same_as<payload_type, KeyboardPayload>) {
                     const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id, 1);
                     post_payload(
                         QqMessageBuilder{}.markdown(payload.markdown).keyboard(payload.keyboard_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).build());
-                } else if constexpr (std::is_same_v<payload_type, ArkPayload>) {
+                } else if constexpr (std::same_as<payload_type, ArkPayload>) {
                     const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id, 1);
                     const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
                     post_payload(QqMessageBuilder{}.ark(payload.ark_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build());
-                } else if constexpr (std::is_same_v<payload_type, EmbedPayload>) {
+                } else if constexpr (std::same_as<payload_type, EmbedPayload>) {
                     const auto passive_reply_message_id = resolve_passive_reply_message_id(message.reply_to_message_id, 1);
                     const auto effective_reference = passive_reply_message_id.empty() ? std::string{} : message.reference_message_id;
                     post_payload(QqMessageBuilder{}.embed(payload.embed_payload).msg_seq(next_msg_seq()).reply_to(passive_reply_message_id).reference(effective_reference).build());

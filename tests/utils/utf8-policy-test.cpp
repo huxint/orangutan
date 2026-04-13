@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <concepts>
 #include <string>
 #include <type_traits>
 
@@ -9,11 +10,11 @@
 
 using namespace orangutan;
 
-static_assert(std::is_same_v<std::underlying_type_t<utf8_policy::invalid_utf8_mode>, base::u8>);
-static_assert(std::is_same_v<std::underlying_type_t<utf8_policy::normalization_mode>, base::u8>);
-static_assert(std::is_same_v<std::underlying_type_t<utf8_policy::control_character_mode>, base::u8>);
-static_assert(std::is_same_v<std::underlying_type_t<utf8_policy::bound_mode>, base::u8>);
-static_assert(std::is_same_v<std::underlying_type_t<utf8_policy::canonicalize_error_code>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::invalid_utf8_mode>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::normalization_mode>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::control_character_mode>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::bound_mode>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::canonicalize_error_code>, base::u8>);
 
 TEST_CASE("drop_invalid_mode_keeps_valid_spans") {
     utf8_policy::CanonicalizePolicy policy{};

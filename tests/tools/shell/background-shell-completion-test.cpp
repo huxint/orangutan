@@ -7,6 +7,7 @@
 #include "utils/utf8-policy.hpp"
 #include "test-helpers.hpp"
 
+#include <concepts>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -25,8 +26,8 @@ using namespace orangutan::tools;
 
 namespace {
 
-    static_assert(std::is_same_v<decltype(&prepare_sandboxed_command),
-                                 SandboxedCommand (*)(std::string_view, const std::filesystem::path &, const std::filesystem::path &, tool_sandbox_mode)>);
+    static_assert(std::same_as<decltype(&prepare_sandboxed_command),
+                               SandboxedCommand (*)(std::string_view, const std::filesystem::path &, const std::filesystem::path &, tool_sandbox_mode)>);
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 

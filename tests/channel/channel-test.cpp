@@ -3,6 +3,7 @@
 #include "channel/message-queue.hpp"
 
 #include <nlohmann/json.hpp>
+#include <concepts>
 #include <chrono>
 #include <filesystem>
 #include <future>
@@ -29,14 +30,14 @@ namespace {
     using ChannelDownloadSignature = Attachment (Channel::*)(std::string_view, const Attachment &, const std::filesystem::path &);
     using ManagerDownloadSignature = Attachment (ChannelManager::*)(std::string_view, const Attachment &, const std::filesystem::path &);
 
-    static_assert(std::is_same_v<decltype(&Channel::send_message), ChannelTextSendSignature>);
-    static_assert(std::is_same_v<decltype(&Channel::send_markdown_message), ChannelMarkdownSendSignature>);
-    static_assert(std::is_same_v<decltype(&Channel::send_media_message), ChannelMediaSendSignature>);
-    static_assert(std::is_same_v<decltype(static_cast<ManagerTextSendSignature>(&ChannelManager::send)), ManagerTextSendSignature>);
-    static_assert(std::is_same_v<decltype(&ChannelManager::send_markdown), ManagerMarkdownSendSignature>);
-    static_assert(std::is_same_v<decltype(&ChannelManager::send_media), ManagerMediaSendSignature>);
-    static_assert(std::is_same_v<decltype(&Channel::download_attachment), ChannelDownloadSignature>);
-    static_assert(std::is_same_v<decltype(&ChannelManager::download_attachment), ManagerDownloadSignature>);
+    static_assert(std::same_as<decltype(&Channel::send_message), ChannelTextSendSignature>);
+    static_assert(std::same_as<decltype(&Channel::send_markdown_message), ChannelMarkdownSendSignature>);
+    static_assert(std::same_as<decltype(&Channel::send_media_message), ChannelMediaSendSignature>);
+    static_assert(std::same_as<decltype(static_cast<ManagerTextSendSignature>(&ChannelManager::send)), ManagerTextSendSignature>);
+    static_assert(std::same_as<decltype(&ChannelManager::send_markdown), ManagerMarkdownSendSignature>);
+    static_assert(std::same_as<decltype(&ChannelManager::send_media), ManagerMediaSendSignature>);
+    static_assert(std::same_as<decltype(&Channel::download_attachment), ChannelDownloadSignature>);
+    static_assert(std::same_as<decltype(&ChannelManager::download_attachment), ManagerDownloadSignature>);
 
     class MockChannel final : public Channel {
     public:
@@ -86,17 +87,17 @@ namespace {
             std::visit(
                 [&]<typename T>(const T &payload) {
                     using Payload = std::decay_t<T>;
-                    if constexpr (std::is_same_v<Payload, TextPayload>) {
+                    if constexpr (std::same_as<Payload, TextPayload>) {
                         sent_messages_.emplace_back(jid, payload.text);
-                    } else if constexpr (std::is_same_v<Payload, MarkdownPayload>) {
+                    } else if constexpr (std::same_as<Payload, MarkdownPayload>) {
                         sent_markdown_messages_.emplace_back(jid, payload.markdown);
-                    } else if constexpr (std::is_same_v<Payload, MediaPayload>) {
+                    } else if constexpr (std::same_as<Payload, MediaPayload>) {
                         sent_media_messages_.push_back({jid, payload.file_type, payload.url, message.reply_to_message_id, payload.caption});
-                    } else if constexpr (std::is_same_v<Payload, KeyboardPayload>) {
+                    } else if constexpr (std::same_as<Payload, KeyboardPayload>) {
                         sent_keyboard_messages_.push_back({jid, payload.markdown, payload.keyboard_payload, message.reply_to_message_id});
-                    } else if constexpr (std::is_same_v<Payload, ArkPayload>) {
+                    } else if constexpr (std::same_as<Payload, ArkPayload>) {
                         sent_ark_messages_.push_back({jid, payload.ark_payload, message.reply_to_message_id, message.reference_message_id});
-                    } else if constexpr (std::is_same_v<Payload, EmbedPayload>) {
+                    } else if constexpr (std::same_as<Payload, EmbedPayload>) {
                         sent_embed_messages_.push_back({jid, payload.embed_payload, message.reply_to_message_id, message.reference_message_id});
                     }
                 },

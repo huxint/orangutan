@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <concepts>
 #include "coordinator/agent-definition-registry.hpp"
 #include "test-helpers.hpp"
 
@@ -12,9 +13,9 @@ namespace {
     using Registry = orangutan::coordinator::AgentDefinitionRegistry;
     using FindSignature = std::optional<orangutan::coordinator::AgentDefinition> (Registry::*)(std::string_view) const;
 
-    static_assert(std::is_same_v<decltype(&Registry::load_from_directory), void (Registry::*)(const std::filesystem::path &)>);
-    static_assert(std::is_same_v<decltype(&Registry::find), FindSignature>);
-    static_assert(std::is_same_v<decltype(&Registry::has), bool (Registry::*)(std::string_view) const>);
+    static_assert(std::same_as<decltype(&Registry::load_from_directory), void (Registry::*)(const std::filesystem::path &)>);
+    static_assert(std::same_as<decltype(&Registry::find), FindSignature>);
+    static_assert(std::same_as<decltype(&Registry::has), bool (Registry::*)(std::string_view) const>);
 
 } // namespace
 

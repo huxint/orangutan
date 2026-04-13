@@ -16,6 +16,7 @@
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <concepts>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -30,24 +31,24 @@ using orangutan::testing::test_tmp_root;
 
 namespace {
 
-    static_assert(std::is_same_v<decltype(&register_builtin_tools), void (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
-                                                                             const ToolPermissionContext *, std::string_view)>);
+    static_assert(std::same_as<decltype(&register_builtin_tools), void (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
+                                                                           const ToolPermissionContext *, std::string_view)>);
 
     using FindDefinitionSignature = const ToolDef *(ToolRegistry::*)(std::string_view) const;
     using FindToolSignature = const Tool *(ToolRegistry::*)(std::string_view) const;
 
-    static_assert(std::is_same_v<decltype(&ToolRegistry::find_definition), FindDefinitionSignature>);
-    static_assert(std::is_same_v<decltype(&ToolRegistry::find_tool), FindToolSignature>);
+    static_assert(std::same_as<decltype(&ToolRegistry::find_definition), FindDefinitionSignature>);
+    static_assert(std::same_as<decltype(&ToolRegistry::find_tool), FindToolSignature>);
 
-    static_assert(std::is_same_v<decltype(&register_runtime_tools),
-                                 RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
-                                                                const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
-                                                                const ToolPermissionContext *, std::string_view)>);
+    static_assert(std::same_as<decltype(&register_runtime_tools),
+                               RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
+                                                              const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
+                                                              const ToolPermissionContext *, std::string_view)>);
 
     using RegisterShellToolSignature = void (*)(ToolRegistry &, const std::filesystem::path &, const ToolPermissionContext *,
                                                 const std::shared_ptr<BackgroundCompletionDispatcher> &, const std::shared_ptr<BackgroundProcessManager> &);
 
-    static_assert(std::is_same_v<decltype(&register_shell_tool), RegisterShellToolSignature>);
+    static_assert(std::same_as<decltype(&register_shell_tool), RegisterShellToolSignature>);
 
     nlohmann::json start_background_process(ToolRegistry &registry, const std::string &command, const std::string &working_dir = {}) {
         nlohmann::json input = {

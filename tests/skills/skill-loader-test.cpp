@@ -1,6 +1,7 @@
 #include "skills/skill-loader.hpp"
 #include "test-helpers.hpp"
 
+#include <concepts>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -26,8 +27,8 @@ namespace {
     template <typename Loader>
     concept has_build_prompt_section_member = requires(const Loader &loader) { loader.build_prompt_section(); };
 
-    static_assert(std::is_same_v<decltype(&SkillLoader::load_from_directories), LoadDirectoriesSignature>);
-    static_assert(std::is_same_v<decltype(&resolve_skill_directories), ResolveDirectoriesSignature>);
+    static_assert(std::same_as<decltype(&SkillLoader::load_from_directories), LoadDirectoriesSignature>);
+    static_assert(std::same_as<decltype(&resolve_skill_directories), ResolveDirectoriesSignature>);
     static_assert(!has_active_skills_member<SkillLoader>);
     static_assert(!has_find_skill_member<SkillLoader>);
     static_assert(!has_build_prompt_section_member<SkillLoader>);

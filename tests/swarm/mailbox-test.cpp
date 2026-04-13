@@ -2,6 +2,7 @@
 #include "swarm/mailbox.hpp"
 
 #include <filesystem>
+#include <concepts>
 #include <type_traits>
 
 namespace {
@@ -9,8 +10,8 @@ namespace {
     using MailboxSignature = void (orangutan::swarm::AgentMailbox::*)(const std::string &, const std::string &, const std::string &, const std::string &,
                                                                       orangutan::swarm::message_type);
 
-    static_assert(std::is_constructible_v<orangutan::swarm::AgentMailbox, const std::filesystem::path &>);
-    static_assert(std::is_same_v<decltype(&orangutan::swarm::AgentMailbox::send), MailboxSignature>);
+    static_assert(std::constructible_from<orangutan::swarm::AgentMailbox, const std::filesystem::path &>);
+    static_assert(std::same_as<decltype(&orangutan::swarm::AgentMailbox::send), MailboxSignature>);
 
 } // namespace
 
