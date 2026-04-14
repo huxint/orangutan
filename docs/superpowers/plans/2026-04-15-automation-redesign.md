@@ -305,13 +305,13 @@ public:
 };
 ```
 
-- [ ] **Step 4: Add tests for `clear_deliveries(DeliveryQuery)` bulk-ack behavior and one-shot persistence markers**
+- [ ] **Step 4: Add tests for `clear_deliveries(DeliveryQuery)` safety rules and one-shot persistence markers**
 
 Run: `xmake build test-automation`
 
 Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
-Expected: repository tests pass and prove agent-scoped uniqueness plus bulk-ack semantics.
+Expected: repository tests pass and prove agent-scoped uniqueness, `agent_key`-required bulk-ack semantics, and one-shot spent markers.
 
 - [ ] **Step 5: Commit the repository layer**
 
@@ -413,10 +413,15 @@ Add companion cases for:
 
 - `find`, `list`, and `remove`
 - `pause` and `resume`
+- disabling clears `paused` and `next_due_at`
+- enabling recomputes `next_due_at`
+- `enabled=false` with `paused=true` is rejected at validation or normalization boundaries
 - `list_runs`
 - `ack_delivery` and `clear_deliveries(const DeliveryQuery &query)`
+- `clear_deliveries` rejects queries that omit `agent_key`
 - per-agent lease serialization
 - silent versus notify delivery behavior
+- interval jitter persistence across restart
 
 - [ ] **Step 2: Run the automation target and confirm service/runtime symbols are missing**
 
@@ -499,6 +504,10 @@ Add companion tool cases for:
 - `list_runs`
 - `list_deliveries`, `ack_delivery`, and `clear_deliveries`
 - id-based and name-based selector resolution
+- selector ambiguity resolves to exact `id` before `name`
+- omitted top-level fields survive `update`
+- replacing `trigger` or `delivery` swaps the whole nested object
+- `clear_deliveries` fails when `agent_key` is absent from the effective query scope
 
 - [ ] **Step 2: Run tool tests and confirm the old three-tool registration still blocks the new contract**
 
@@ -581,6 +590,9 @@ Add companion route cases for:
 - `GET /automation/deliveries`
 - `POST /automation/deliveries/{delivery_id}/ack`
 - `DELETE /automation/deliveries`
+- omitted top-level fields survive `PATCH /automation/{id}`
+- `PATCH /automation/{id}` uses the same replace-on-write semantics for `trigger` and `delivery`
+- `DELETE /automation/deliveries` rejects requests that do not resolve to a `DeliveryQuery` with `agent_key`
 
 - [ ] **Step 2: Run web, tool, and bootstrap tests and verify the old task/heartbeat/inbox handlers fail**
 
