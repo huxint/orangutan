@@ -168,6 +168,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     } catch (const orangutan::ConfigSecretProtectionError &e) {
         spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
         return 1;
+    } catch (const std::exception &e) {
+        spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+        return 1;
     }
     apply_cli_edit_mode_override(cfg, options.edit_mode);
     const auto cli_permission_options = build_cli_permission_options(options);

@@ -237,8 +237,78 @@ namespace {
           }
         })json"));
 
-        const auto cfg = Config::load_from(path);
-        CHECK(cfg.profiles.empty());
+        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
+    };
+
+    TEST_CASE("missing_provider_rejects_config") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "profiles": {
+            "gateway-a": {
+              "base_url": "https://gateway.example.com",
+              "models": {
+                "gpt-4.1": {
+                  "protocol": "responses"
+                }
+              }
+            }
+          }
+        })json"));
+
+        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
+    };
+
+    TEST_CASE("missing_protocol_rejects_config") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "profiles": {
+            "gateway-a": {
+              "base_url": "https://gateway.example.com",
+              "models": {
+                "gpt-4.1": {
+                  "provider": "openai"
+                }
+              }
+            }
+          }
+        })json"));
+
+        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
+    };
+
+    TEST_CASE("invalid_provider_or_protocol_rejects_config") {
+        ConfigFileHarness harness;
+        const auto invalid_provider_path = harness.write_config(nlohmann::json::parse(R"json({
+          "profiles": {
+            "gateway-a": {
+              "base_url": "https://gateway.example.com",
+              "models": {
+                "gpt-4.1": {
+                  "provider": "made-up",
+                  "protocol": "responses"
+                }
+              }
+            }
+          }
+        })json"));
+
+        CHECK_THROWS_AS(Config::load_from(invalid_provider_path), std::runtime_error);
+
+        const auto invalid_protocol_path = harness.write_config(nlohmann::json::parse(R"json({
+          "profiles": {
+            "gateway-a": {
+              "base_url": "https://gateway.example.com",
+              "models": {
+                "gpt-4.1": {
+                  "provider": "openai",
+                  "protocol": "made-up"
+                }
+              }
+            }
+          }
+        })json"));
+
+        CHECK_THROWS_AS(Config::load_from(invalid_protocol_path), std::runtime_error);
     };
 
     TEST_CASE("save_round_trips_profiles_and_agents") {

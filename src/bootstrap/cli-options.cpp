@@ -163,6 +163,9 @@ namespace orangutan::bootstrap {
         } catch (const config::ConfigSecretProtectionError &e) {
             spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
             return 1;
+        } catch (const std::exception &e) {
+            spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+            return 1;
         }
     }
 

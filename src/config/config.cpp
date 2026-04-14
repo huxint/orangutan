@@ -14,6 +14,15 @@
 
 namespace orangutan::config {
 
+    namespace {
+
+        [[nodiscard]]
+        std::runtime_error invalid_config_error(const std::filesystem::path &path, std::string_view message) {
+            return std::runtime_error("invalid config file " + path.string() + ": " + std::string(message));
+        }
+
+    } // namespace
+
     std::string expand_env_vars(const std::string &input) {
         std::string result;
         result.reserve(input.size());
@@ -196,14 +205,11 @@ namespace orangutan::config {
         } catch (const ConfigSecretProtectionError &) {
             throw;
         } catch (const nlohmann::json::parse_error &e) {
-            spdlog::warn("Failed to parse config file {}: {}", path.string(), e.what());
-            return {};
+            throw invalid_config_error(path, e.what());
         } catch (const nlohmann::json::type_error &e) {
-            spdlog::warn("Invalid config file {}: {}", path.string(), e.what());
-            return {};
+            throw invalid_config_error(path, e.what());
         } catch (const std::runtime_error &e) {
-            spdlog::warn("Invalid config file {}: {}", path.string(), e.what());
-            return {};
+            throw invalid_config_error(path, e.what());
         }
     }
 
