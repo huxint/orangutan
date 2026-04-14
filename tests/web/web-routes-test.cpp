@@ -65,8 +65,8 @@ namespace {
         orangutan::Config cfg;
         cfg.profile = "shared";
         cfg.model = "gpt-test";
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                     {"gpt-coder-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                     {"gpt-coder-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.custom_tools.push_back(orangutan::Config::ScriptToolConfig{
             .name = "custom_echo",
             .description = "Custom echo tool",
@@ -195,8 +195,8 @@ namespace {
         orangutan::Config cfg;
         cfg.profile = "shared";
         cfg.model = "default-model";
-        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                     {"helper-model", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                     {"helper-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model", .team_agents = {"helper"}};
         cfg.agents["helper"] = orangutan::AgentConfig{.profile = "shared", .model = "helper-model"};
         orangutan::WebServer server;
@@ -229,8 +229,8 @@ namespace {
         WebRoutesHarness harness;
         orangutan::Config cfg;
         cfg.profile = "shared";
-        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                     {"coder-model", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                     {"coder-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model"};
         cfg.agents["coder"] = orangutan::AgentConfig{.profile = "shared", .model = "coder-model"};
 

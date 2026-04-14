@@ -287,7 +287,8 @@ namespace {
             out << R"(      "api_key": ")" << api_key << "\",\n";
             out << "      \"models\": {\n";
             out << "        \"gpt-test\": {\n";
-            out << "          \"endpoint_style\": \"openai-chat-completions\"\n";
+            out << "          \"provider\": \"openai\",\n";
+            out << "          \"protocol\": \"chat-completions\"\n";
             out << "        }\n";
             out << "      }\n";
             out << "    }\n";
@@ -464,8 +465,8 @@ namespace {
         BootstrapHarness harness;
         Config cfg;
         cfg.edit_mode = "hashline";
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                     {"gpt-coder", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                     {"gpt-coder", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "shared",
                                           .model = "gpt-test",
@@ -529,7 +530,7 @@ namespace {
         cfg.profile = "shared";
         cfg.model = "gpt-test";
         cfg.workspace = harness.workspace_root().string();
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
 
         const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
         REQUIRE(runtime_configs.has_value());
@@ -541,7 +542,7 @@ namespace {
         ScopedEnvVar home_env("HOME", harness.home_root().string());
 
         Config cfg;
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "shared",
                                           .model = "gpt-test",
@@ -561,8 +562,8 @@ namespace {
     TEST_CASE("build_agent_runtime_configs_preserves_default_team_agents") {
         BootstrapHarness harness;
         Config cfg;
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                     {"gpt-coder", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                     {"gpt-coder", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "shared",
                                           .model = "gpt-test",
@@ -586,8 +587,10 @@ namespace {
     TEST_CASE("build_agent_runtime_configs_resolves_cross_profile_fallbacks") {
         BootstrapHarness harness;
         Config cfg;
-        cfg.profiles.emplace("openai", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-responses"}}}, "openai-key", "https://openai.example.test"));
-        cfg.profiles.emplace("anthropic", make_profile({{"claude-test", ModelConfig{.endpoint_style = "anthropic-messages"}}}, "anthropic-key", "https://anthropic.example.test"));
+        cfg.profiles.emplace("openai", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "responses"}}}, "openai-key",
+                                                    "https://openai.example.test"));
+        cfg.profiles.emplace("anthropic", make_profile({{"claude-test", ModelConfig{.provider = "anthropic", .protocol = "messages"}}}, "anthropic-key",
+                                                       "https://anthropic.example.test"));
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "openai",
                                           .model = "gpt-test",
@@ -599,13 +602,14 @@ namespace {
         REQUIRE(runtime_configs.has_value());
         const auto it = runtime_configs->find("default");
         REQUIRE(it != runtime_configs->end());
-        REQUIRE(it->second.fallback_endpoints.size() == 1UL);
+        REQUIRE(it->second.provider_route.fallbacks.size() == 1UL);
         CHECK(it->second.fallback_models == std::vector<std::string>{"anthropic:claude-test"});
-        CHECK(it->second.fallback_endpoints[0].profile_name == "anthropic");
-        CHECK(it->second.fallback_endpoints[0].endpoint_style == "anthropic-messages");
-        CHECK(it->second.fallback_endpoints[0].model == "claude-test");
-        CHECK(it->second.fallback_endpoints[0].base_url == "https://anthropic.example.test");
-        CHECK(it->second.fallback_endpoints[0].api_key == "anthropic-key");
+        CHECK(it->second.provider_route.fallbacks[0].profile_name == "anthropic");
+        CHECK(it->second.provider_route.fallbacks[0].provider == providers::provider_kind::anthropic);
+        CHECK(it->second.provider_route.fallbacks[0].protocol == providers::protocol_kind::messages);
+        CHECK(it->second.provider_route.fallbacks[0].model == "claude-test");
+        CHECK(it->second.provider_route.fallbacks[0].base_url == "https://anthropic.example.test");
+        CHECK(it->second.provider_route.fallbacks[0].api_key == "anthropic-key");
     };
 
     TEST_CASE("build_agent_runtime_configs_constructs_permission_contexts") {
@@ -615,7 +619,7 @@ namespace {
             .default_mode = permission_mode::accept_edits,
             .allow = {"read"},
         };
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
         cfg.agents.emplace("default", AgentConfig{
                                           .profile = "shared",
                                           .model = "gpt-test",
@@ -654,8 +658,7 @@ namespace {
         const auto identity = bootstrap::derive_cli_identity(runtime_it->second.workspace_root, runtime_it->second.agent_key);
         bootstrap::AppRuntime app_runtime((harness.workspace_root() / ".orangutan" / "automation.db"));
         auto runtime = bootstrap::build_agent_runtime(bootstrap::AgentRuntimeBuildInput{
-            .primary_endpoint = runtime_it->second.primary_endpoint,
-            .fallback_endpoints = runtime_it->second.fallback_endpoints,
+            .provider_route = runtime_it->second.provider_route,
             .agent_key = runtime_it->second.agent_key,
             .workspace_root = runtime_it->second.workspace_root,
             .edit_mode = runtime_it->second.edit_mode,

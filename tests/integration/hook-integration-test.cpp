@@ -1,7 +1,8 @@
 #include "agent/agent-loop.hpp"
 #include "hooks/hook-manager.hpp"
-#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -52,36 +53,42 @@ namespace {
 
     using ScopedDefaultLogger = orangutan::testing::ScopedDefaultLogger<MemorySink>;
 
-    class ToolCallingProvider final : public Provider {
+    class ToolCallingProvider {
     public:
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            throw std::runtime_error("chat should not be used");
+        ToolCallingProvider()
+        : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &,
+                                                              const providers::ProviderEventSink &) {
+              if (response_index_ == 0) {
+                  ++response_index_;
+                  return providers::ProviderResult{
+                      .response =
+                          LLMResponse{
+                              .stop_reason = response_stop_reason::tool_use,
+                              .content = {ToolUse("tool-1", "demo", nlohmann::json{{"value", "from-provider"}})},
+                          },
+                      .usage_snapshot = {},
+                      .active_target = route.primary,
+                  };
+              }
+              if (response_index_ == 1) {
+                  ++response_index_;
+                  return providers::ProviderResult{
+                      .response = testing::make_text_response("final reply"),
+                      .usage_snapshot = {},
+                      .active_target = route.primary,
+                  };
+              }
+              throw std::runtime_error("no more responses queued");
+          })),
+          system(backend_),
+          route(testing::make_test_route("test-model")) {
+            backend_->set_label("hook-integration-provider");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-            if (response_index_ == 0) {
-                ++response_index_;
-                return {
-                    .stop_reason = "tool_use",
-                    .content = {ToolUse("tool-1", "demo", nlohmann::json{{"value", "from-provider"}})},
-                };
-            }
-            if (response_index_ == 1) {
-                ++response_index_;
-                return {
-                    .stop_reason = "end_turn",
-                    .content = {Text{"final reply"}},
-                };
-            }
-            throw std::runtime_error("no more responses queued");
-        }
-
-        std::string name() const override {
-            return "hook-integration-provider";
-        }
-
-    private:
+        std::shared_ptr<testing::FakeProviderBackend> backend_;
         std::size_t response_index_ = 0;
+        providers::ProviderSystem system;
+        providers::ProviderRoute route;
     };
 
     struct AgentRunResult {
@@ -142,7 +149,7 @@ namespace {
                     },
             });
 
-            AgentLoop loop(provider, tools, nullptr, {}, &manager);
+            AgentLoop loop(provider.system, provider.route, tools, nullptr, {}, &manager);
 
             std::optional<ToolResult> tool_result;
             const auto reply = loop.run("please run the demo tool", {}, [&tool_result](const std::string &event_type, const ToolUse &, const ToolResult *result) {

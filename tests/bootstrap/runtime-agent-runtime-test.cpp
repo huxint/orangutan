@@ -63,12 +63,16 @@ namespace {
         [[nodiscard]]
         AgentRuntimeBuildInput make_input() {
             AgentRuntimeBuildInput input;
-            input.primary_endpoint = providers::ProviderEndpoint{
-                .profile_name = "test-profile",
-                .endpoint_style = "openai-chat-completions",
-                .api_key = "test-key",
-                .model = "gpt-test",
-                .base_url = "https://example.test",
+            input.provider_route = providers::ProviderRoute{
+                .primary =
+                    {
+                        .profile_name = "test-profile",
+                        .model = "gpt-test",
+                        .base_url = "https://example.test",
+                        .api_key = "test-key",
+                        .provider = providers::provider_kind::openai,
+                        .protocol = providers::protocol_kind::chat_completions,
+                    },
             };
             input.agent_key = "assistant";
             input.workspace_root = workspace_root_.string();

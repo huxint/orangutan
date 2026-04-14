@@ -64,7 +64,8 @@ namespace {
               "api_key": "plain-profile-key",
               "models": {
                 "gpt-4.1": {
-                  "endpoint_style": "openai-responses",
+                  "provider": "openai",
+                  "protocol": "responses",
                   "max_tokens": 32000
                 }
               }

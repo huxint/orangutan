@@ -10,6 +10,7 @@
 #include "memory/memory-store.hpp"
 #include "storage/session-store.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
 #include "web/web-test-helpers.hpp"
 
 #include <algorithm>
@@ -33,8 +34,8 @@ namespace orangutan {
             Config config;
             config.profile = "shared";
             config.model = "test";
-            config.profiles.emplace("shared", make_profile({{"test", ModelConfig{.endpoint_style = "openai-chat-completions"}},
-                                                            {"coder-test", ModelConfig{.endpoint_style = "openai-chat-completions"}}}));
+            config.profiles.emplace("shared", make_profile({{"test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
+                                                            {"coder-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
             config.agents["default"] = AgentConfig{
                 .profile = "shared",
                 .model = "test",
@@ -69,31 +70,33 @@ namespace orangutan {
             return nlohmann::json::parse(std::string(body.substr(payload_start, payload_end - payload_start)));
         }
 
-        class ScriptedProvider final : public Provider {
+        class ScriptedProvider {
         public:
             using Step = std::function<LLMResponse(const std::vector<Message> &)>;
 
             explicit ScriptedProvider(std::vector<Step> steps)
-            : steps_(std::move(steps)) {}
-
-            LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-                throw std::runtime_error("chat should not be used in this test");
+            : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request,
+                                                                  const providers::ProviderEventSink &) {
+                  if (next_step_ >= steps_.size()) {
+                      throw std::runtime_error("no scripted response available");
+                  }
+                  return providers::ProviderResult{
+                      .response = steps_[next_step_++](request.messages),
+                      .usage_snapshot = {},
+                      .active_target = route.primary,
+                  };
+              })),
+              steps_(std::move(steps)),
+              system(backend_),
+              route(testing::make_test_route("test")) {
+                backend_->set_label("scripted-provider");
             }
 
-            LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-                if (next_step_ >= steps_.size()) {
-                    throw std::runtime_error("no scripted response available");
-                }
-                return steps_[next_step_++](messages);
-            }
-
-            std::string name() const override {
-                return "scripted-provider";
-            }
-
-        private:
+            std::shared_ptr<testing::FakeProviderBackend> backend_;
             std::vector<Step> steps_;
             std::size_t next_step_ = 0;
+            providers::ProviderSystem system;
+            providers::ProviderRoute route;
         };
 
         class WebChatStoreHarness {
@@ -204,7 +207,7 @@ namespace orangutan {
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
             const auto body = nlohmann::json::parse(res->body);
-            CHECK(body["error"] == "missing API key for agent 'default'");
+            CHECK(body["error"] == "missing api key for agent 'default'");
         };
 
         TEST_CASE("chat_handler_populates_completion_resume_state_for_active_session") {
@@ -547,12 +550,12 @@ namespace orangutan {
                 [&provider_calls](const std::vector<Message> &) {
                     ++provider_calls;
                     LLMResponse response;
-                    response.stop_reason = "end_turn";
+                    response.stop_reason = response_stop_reason::end_turn;
                     response.content.emplace_back(Text{"should not run"});
                     return response;
                 },
             });
-            AgentLoop agent(provider, tools);
+            AgentLoop agent(provider.system, provider.route, tools);
 
             auto resume_state = std::make_shared<orangutan::web::WebCompletionResumeState>();
             resume_state->agent = &agent;

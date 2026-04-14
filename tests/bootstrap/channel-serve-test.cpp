@@ -10,6 +10,7 @@
 #include "permissions/permission-types.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
 
 #include <concepts>
 #include <algorithm>
@@ -38,14 +39,24 @@ namespace {
 
     namespace bootstrap = orangutan::bootstrap;
 
-    providers::ProviderEndpoint make_runtime_endpoint(std::string endpoint_style, std::string model, std::string api_key = "test-key",
-                                                      std::string base_url = "https://example.test") {
-        return providers::ProviderEndpoint{
+    providers::ModelTarget make_runtime_target(std::string model, std::string api_key = "test-key", std::string base_url = "https://example.test",
+                                               providers::provider_kind provider = providers::provider_kind::openai,
+                                               providers::protocol_kind protocol = providers::protocol_kind::chat_completions) {
+        return providers::ModelTarget{
             .profile_name = "test-profile",
-            .endpoint_style = std::move(endpoint_style),
-            .api_key = std::move(api_key),
             .model = std::move(model),
             .base_url = std::move(base_url),
+            .api_key = std::move(api_key),
+            .provider = provider,
+            .protocol = protocol,
+        };
+    }
+
+    providers::ProviderRoute make_runtime_route(std::string model, std::string api_key = "test-key", std::string base_url = "https://example.test",
+                                                std::vector<providers::ModelTarget> fallbacks = {}) {
+        return providers::ProviderRoute{
+            .primary = make_runtime_target(std::move(model), std::move(api_key), std::move(base_url)),
+            .fallbacks = std::move(fallbacks),
         };
     }
 
@@ -217,31 +228,33 @@ namespace {
         std::size_t keyboard_send_attempts_ = 0;
     };
 
-    class ScriptedProvider final : public Provider {
+    class ScriptedProvider {
     public:
         using Step = std::function<LLMResponse(const std::vector<Message> &)>;
 
         explicit ScriptedProvider(std::vector<Step> steps)
-        : steps_(std::move(steps)) {}
-
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            throw std::runtime_error("chat should not be used in this test");
+        : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request,
+                                                              const providers::ProviderEventSink &) {
+              if (next_step_ >= steps_.size()) {
+                  throw std::runtime_error("no scripted response available");
+              }
+              return providers::ProviderResult{
+                  .response = steps_[next_step_++](request.messages),
+                  .usage_snapshot = {},
+                  .active_target = route.primary,
+              };
+          })),
+          steps_(std::move(steps)),
+          system(backend_),
+          route(testing::make_test_route("gpt-test")) {
+            backend_->set_label("scripted-provider");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-            if (next_step_ >= steps_.size()) {
-                throw std::runtime_error("no scripted response available");
-            }
-            return steps_[next_step_++](messages);
-        }
-
-        std::string name() const override {
-            return "scripted-provider";
-        }
-
-    private:
+        std::shared_ptr<testing::FakeProviderBackend> backend_;
         std::vector<Step> steps_;
         std::size_t next_step_ = 0;
+        providers::ProviderSystem system;
+        providers::ProviderRoute route;
     };
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
@@ -477,8 +490,7 @@ namespace {
             .agent_key = "default",
             .model = "gpt-test",
             .fallback_models = {"gpt-fallback"},
-            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
-            .fallback_endpoints = {make_runtime_endpoint("openai-chat-completions", "gpt-fallback")},
+            .provider_route = make_runtime_route("gpt-test", "test-key", "https://example.test", {make_runtime_target("gpt-fallback")}),
             .workspace_root = harness.workspace_root().string(),
         };
 
@@ -1127,7 +1139,7 @@ namespace {
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
             .model = "gpt-test",
-            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
+            .provider_route = make_runtime_route("gpt-test"),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -1185,7 +1197,7 @@ namespace {
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
             .model = "gpt-test",
-            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
+            .provider_route = make_runtime_route("gpt-test"),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -1243,7 +1255,7 @@ namespace {
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
             .model = "gpt-test",
-            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
+            .provider_route = make_runtime_route("gpt-test"),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -1298,7 +1310,7 @@ namespace {
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
             .model = "gpt-test",
-            .primary_endpoint = make_runtime_endpoint("openai-chat-completions", "gpt-test"),
+            .provider_route = make_runtime_route("gpt-test"),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -1362,17 +1374,17 @@ namespace {
                 }
 
                 LLMResponse response;
-                response.stop_reason = "end_turn";
+                response.stop_reason = response_stop_reason::end_turn;
                 response.content.emplace_back(Text{"Background reply"});
                 return response;
             },
         });
-        AgentLoop agent(provider, tools);
+        AgentLoop agent(provider.system, provider.route, tools);
         agent.set_history(history);
 
         auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
         resume_state->agent = &agent;
-        resume_state->provider = &provider;
+        resume_state->provider = &provider.system;
         std::size_t persisted_message_count = history.size();
         std::string current_session_id = session_id;
         resume_state->current_session_id = &current_session_id;
@@ -1460,7 +1472,7 @@ namespace {
         const bootstrap::AgentRuntimeConfig runtime_cfg{
             .agent_key = "default",
             .model = "broken-model",
-            .primary_endpoint = make_runtime_endpoint("unknown-style", "broken-model"),
+            .provider_route = make_runtime_route("broken-model", ""),
             .workspace_root = harness.workspace_root().string(),
         };
         const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
@@ -1492,7 +1504,7 @@ namespace {
         REQUIRE(not sent_messages.empty());
         CHECK(sent_messages.back().first == "qqbot:c2c:42");
         CHECK(sent_messages.back().second.contains("Error:"));
-        CHECK(sent_messages.back().second.contains("Unknown endpoint_style"));
+        CHECK(sent_messages.back().second.contains("missing api key"));
     };
 
 } // namespace

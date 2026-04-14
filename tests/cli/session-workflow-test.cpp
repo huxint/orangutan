@@ -2,8 +2,9 @@
 
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
-#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -13,24 +14,20 @@ using namespace orangutan;
 
 namespace {
 
-    class DistillingWorkflowProvider final : public Provider {
-    public:
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            return {
-                .stop_reason = "end_turn",
-                .content = {Text{"memory|project|project.current|0.8|orangutan refactor\n"
-                                 "journal|Reviewed session decisions"}},
-            };
-        }
-
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-            throw std::runtime_error("chat_stream should not be used");
-        }
-
-        std::string name() const override {
-            return "workflow-provider";
-        }
-    };
+    std::shared_ptr<orangutan::testing::FakeProviderBackend> make_distilling_backend() {
+        auto backend = orangutan::testing::make_fake_provider_backend(
+            [](const providers::ProviderRoute &route, const providers::ProviderRequest &, const providers::ProviderEventSink &) {
+                return providers::ProviderResult{
+                    .response =
+                        orangutan::testing::make_text_response("memory|project|project.current|0.8|orangutan refactor\n"
+                                                               "journal|Reviewed session decisions"),
+                    .usage_snapshot = {},
+                    .active_target = route.primary,
+                };
+            });
+        backend->set_label("workflow-provider");
+        return backend;
+    }
 
     class SessionWorkflowHarness {
     public:
@@ -65,12 +62,13 @@ namespace {
 
     TEST_CASE("start_new_session_distills_and_persists_previous_history") {
         SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
+        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
         RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "scope:test"});
         SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, &runtime_memory);
+        AgentLoop loop(provider, route, tools, &runtime_memory);
 
         loop.set_history({
             Message::user().text("we are working on orangutan refactor"),
@@ -97,10 +95,11 @@ namespace {
 
     TEST_CASE("load_session_into_agent_rejects_scope_mismatch") {
         SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
+        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools);
+        AgentLoop loop(provider, route, tools);
 
         const auto session_id = session_store.save({Message::user().text("hello")}, cli::make_cli_session_metadata("test-model", "scope:one", "scope-one"));
         std::string current_session_id;
@@ -142,7 +141,8 @@ namespace {
 
     TEST_CASE("start_new_session_writes_mirror_artifacts_when_enabled") {
         SessionWorkflowHarness harness;
-        DistillingWorkflowProvider provider;
+        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
         const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
@@ -152,7 +152,7 @@ namespace {
                                                        .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                                    });
         SessionStore session_store(harness.session_db_path());
-        AgentLoop loop(provider, tools, &runtime_memory);
+        AgentLoop loop(provider, route, tools, &runtime_memory);
 
         loop.set_history({
             Message::user().text("we are working on orangutan refactor"),

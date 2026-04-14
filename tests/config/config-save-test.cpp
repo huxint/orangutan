@@ -24,7 +24,8 @@ namespace {
                 {
                     {"gpt-4.1",
                      orangutan::ModelConfig{
-                         .endpoint_style = "openai-responses",
+                         .provider = "openai",
+                         .protocol = "responses",
                          .max_tokens = 32000,
                          .context_window = 128000,
                          .thinking = "medium",
@@ -54,7 +55,8 @@ namespace {
         const auto stored = nlohmann::json::parse(read_file(path));
         CHECK(stored["profiles"]["gateway-a"]["base_url"] == "https://gateway.example.com");
         CHECK(stored["profiles"]["gateway-a"]["api_key"] == "sk-test");
-        CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["endpoint_style"] == "openai-responses");
+        CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["provider"] == "openai");
+        CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["protocol"] == "responses");
         CHECK(stored["profiles"]["gateway-a"]["models"]["gpt-4.1"]["thinking"] == "medium");
         CHECK(stored["agents"]["default"]["profile"] == "gateway-a");
         CHECK(stored["agents"]["default"]["model"] == "gpt-4.1");
@@ -64,7 +66,8 @@ namespace {
 
         const auto loaded = orangutan::Config::load_from(path);
         CHECK(loaded.agents.at("default").profile == "gateway-a");
-        CHECK(loaded.profiles.at("gateway-a").models.at("gpt-4.1").endpoint_style == "openai-responses");
+        CHECK(loaded.profiles.at("gateway-a").models.at("gpt-4.1").provider == "openai");
+        CHECK(loaded.profiles.at("gateway-a").models.at("gpt-4.1").protocol == "responses");
 
         std::filesystem::remove_all(path.parent_path());
     };

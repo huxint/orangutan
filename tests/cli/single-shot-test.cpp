@@ -1,8 +1,9 @@
 #include "cli/single-shot.hpp"
 
 #include "storage/session-store.hpp"
-#include "tools/registry/tool.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
+#include "tools/registry/tool.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -12,61 +13,58 @@ using namespace orangutan;
 
 namespace {
 
-    class StreamingProvider final : public Provider {
-    public:
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            return {
-                .stop_reason = "end_turn",
-                .content = {Text{"hello"}},
-            };
-        }
-
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
-            on_event("text_delta", nlohmann::json{{"text", "hello"}});
-            return {
-                .stop_reason = "end_turn",
-                .content = {Text{"hello"}},
-            };
-        }
-
-        std::string name() const override {
-            return "streaming-provider";
-        }
-    };
-
-    class ToolStreamingProvider final : public Provider {
-    public:
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            return {
-                .stop_reason = "end_turn",
-                .content = {Text{"done"}},
-            };
-        }
-
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, const StreamCallback &on_event, int, int = 0) override {
-            if (!tool_round_completed_) {
-                on_event("tool_call_start", nlohmann::json{{"id", "tool-1"}, {"name", "fake_tool"}, {"input", nlohmann::json{{"value", 1}}}});
-                tool_round_completed_ = true;
-                return {
-                    .stop_reason = "tool_use",
-                    .content = {ToolUse("tool-1", "fake_tool", nlohmann::json{{"value", 1}})},
+    std::shared_ptr<orangutan::testing::FakeProviderBackend> make_streaming_backend() {
+        auto backend = orangutan::testing::make_fake_provider_backend(
+            [](const providers::ProviderRoute &route, const providers::ProviderRequest &, const providers::ProviderEventSink &sink) {
+                if (sink != nullptr) {
+                    sink(providers::TextDelta{.text = "hello"});
+                }
+                return providers::ProviderResult{
+                    .response = orangutan::testing::make_text_response("hello"),
+                    .usage_snapshot = {},
+                    .active_target = route.primary,
                 };
-            }
+            });
+        backend->set_label("streaming-provider");
+        return backend;
+    }
 
-            on_event("text_delta", nlohmann::json{{"text", "done"}});
-            return {
-                .stop_reason = "end_turn",
-                .content = {Text{"done"}},
-            };
-        }
+    std::shared_ptr<orangutan::testing::FakeProviderBackend> make_tool_streaming_backend() {
+        auto tool_round_completed = std::make_shared<bool>(false);
+        auto backend = orangutan::testing::make_fake_provider_backend(
+            [tool_round_completed](const providers::ProviderRoute &route, const providers::ProviderRequest &, const providers::ProviderEventSink &sink) {
+                if (!*tool_round_completed) {
+                    if (sink != nullptr) {
+                        sink(providers::ToolCallStarted{
+                            .id = "tool-1",
+                            .name = "fake_tool",
+                            .input = nlohmann::json{{"value", 1}},
+                        });
+                    }
+                    *tool_round_completed = true;
+                    return providers::ProviderResult{
+                        .response =
+                            LLMResponse{
+                                .stop_reason = response_stop_reason::tool_use,
+                                .content = {ToolUse("tool-1", "fake_tool", nlohmann::json{{"value", 1}})},
+                            },
+                        .usage_snapshot = {},
+                        .active_target = route.primary,
+                    };
+                }
 
-        std::string name() const override {
-            return "tool-streaming-provider";
-        }
-
-    private:
-        bool tool_round_completed_ = false;
-    };
+                if (sink != nullptr) {
+                    sink(providers::TextDelta{.text = "done"});
+                }
+                return providers::ProviderResult{
+                    .response = orangutan::testing::make_text_response("done"),
+                    .usage_snapshot = {},
+                    .active_target = route.primary,
+                };
+            });
+        backend->set_label("tool-streaming-provider");
+        return backend;
+    }
 
     class SingleShotHarness {
     public:
@@ -92,9 +90,11 @@ namespace {
 
     TEST_CASE("run_single_message_emits_events_and_autosaves_session") {
         SingleShotHarness harness;
-        StreamingProvider provider;
+        auto provider_backend = make_streaming_backend();
+        auto provider = orangutan::testing::make_provider_system(provider_backend);
+        const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
-        AgentLoop agent(provider, tools);
+        AgentLoop agent(provider, route, tools);
         SessionStore store(harness.session_db_path());
         Config cfg;
         cfg.auto_save = true;
@@ -125,7 +125,9 @@ namespace {
 
     TEST_CASE("run_single_message_uses_distinct_tool_call_and_tool_execution_events") {
         SingleShotHarness harness;
-        ToolStreamingProvider provider;
+        auto provider_backend = make_tool_streaming_backend();
+        auto provider = orangutan::testing::make_provider_system(provider_backend);
+        const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         tools.register_tool({
             .definition = {.name = "fake_tool", .description = "fake", .input_schema = nlohmann::json::object()},
@@ -134,7 +136,7 @@ namespace {
                     return std::string{"ok"};
                 },
         });
-        AgentLoop agent(provider, tools);
+        AgentLoop agent(provider, route, tools);
         SessionStore store(harness.session_db_path());
         Config cfg;
         cfg.auto_save = false;

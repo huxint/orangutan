@@ -1,39 +1,12 @@
 #include "cli/cli-ui.hpp"
 
 #include "skills/runtime.hpp"
+#include "test-provider-support.hpp"
 #include "tools/registry/tool.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace {
-
-    class StatusProvider final : public orangutan::Provider {
-    public:
-        orangutan::LLMResponse chat(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, int, int = 0) override {
-            return {};
-        }
-
-        orangutan::LLMResponse chat_stream(std::string_view, const std::vector<orangutan::Message> &, const std::vector<orangutan::ToolDef> &, const orangutan::StreamCallback &,
-                                           int, int = 0) override {
-            return {};
-        }
-
-        std::string name() const override {
-            return "openai";
-        }
-
-        std::string current_model() const override {
-            return "gpt-fallback";
-        }
-
-        orangutan::ProviderUsageStats usage() const override {
-            return orangutan::ProviderUsageStats{
-                .logical_requests = 4,
-                .attempt_count = 5,
-                .failed_attempts = 1,
-                .fallback_switches = 1,
-            };
-        }
-    };
 
     TEST_CASE("format_agent_list_marks_current_agent_and_team_agents") {
         orangutan::Config cfg;
@@ -48,7 +21,17 @@ namespace {
     };
 
     TEST_CASE("collect_and_format_runtime_status_reports_model_usage_and_tool_counts") {
-        StatusProvider provider;
+        auto backend = orangutan::testing::make_fake_provider_backend();
+        backend->set_label("openai");
+        backend->set_active_target(orangutan::testing::make_test_target("gpt-fallback"));
+        backend->set_usage(orangutan::providers::ProviderUsageStats{
+            .logical_requests = 4,
+            .attempt_count = 5,
+            .failed_attempts = 1,
+            .fallback_switches = 1,
+        });
+        auto provider = orangutan::testing::make_provider_system(backend);
+        const auto route = orangutan::testing::make_test_route("gpt-primary");
 
         orangutan::ToolRegistry tools;
         tools.register_tool({
@@ -59,7 +42,7 @@ namespace {
                 },
         });
 
-        orangutan::AgentLoop agent(provider, tools);
+        orangutan::AgentLoop agent(provider, route, tools);
         agent.set_history({
             orangutan::Message::user().text("hello"),
             orangutan::Message(orangutan::base::role::assistant, {orangutan::ToolUse("call-1", "shell", nlohmann::json{{"command", "pwd"}})}),

@@ -6,6 +6,7 @@
 #include "tools/background/background-completion.hpp"
 #include "utils/utf8-policy.hpp"
 #include "test-helpers.hpp"
+#include "test-provider-support.hpp"
 
 #include <concepts>
 #include <algorithm>
@@ -36,31 +37,33 @@ namespace {
         std::vector<std::string> messages;
     };
 
-    class ScriptedProvider final : public Provider {
+    class ScriptedProvider {
     public:
         using Step = std::function<LLMResponse(const std::vector<Message> &)>;
 
         explicit ScriptedProvider(std::vector<Step> steps)
-        : steps_(std::move(steps)) {}
-
-        LLMResponse chat(std::string_view, const std::vector<Message> &, const std::vector<ToolDef> &, int, int = 0) override {
-            throw std::runtime_error("chat should not be used in this test");
+        : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request,
+                                                              const providers::ProviderEventSink &) {
+              if (next_step_ >= steps_.size()) {
+                  throw std::runtime_error("no scripted response available");
+              }
+              return providers::ProviderResult{
+                  .response = steps_[next_step_++](request.messages),
+                  .usage_snapshot = {},
+                  .active_target = route.primary,
+              };
+          })),
+          steps_(std::move(steps)),
+          system(backend_),
+          route(testing::make_test_route("test-model")) {
+            backend_->set_label("scripted-provider");
         }
 
-        LLMResponse chat_stream(std::string_view, const std::vector<Message> &messages, const std::vector<ToolDef> &, const StreamCallback &, int, int = 0) override {
-            if (next_step_ >= steps_.size()) {
-                throw std::runtime_error("no scripted response available");
-            }
-            return steps_[next_step_++](messages);
-        }
-
-        std::string name() const override {
-            return "scripted-provider";
-        }
-
-    private:
+        std::shared_ptr<testing::FakeProviderBackend> backend_;
         std::vector<Step> steps_;
         std::size_t next_step_ = 0;
+        providers::ProviderSystem system;
+        providers::ProviderRoute route;
     };
 
     const ToolDef *find_tool(const std::vector<ToolDef> &definitions, const std::string &name) {
@@ -514,12 +517,12 @@ namespace {
                 }
 
                 LLMResponse response;
-                response.stop_reason = "end_turn";
+                response.stop_reason = response_stop_reason::end_turn;
                 response.content.emplace_back(Text{"resume complete"});
                 return response;
             },
         });
-        AgentLoop agent(provider, tools);
+        AgentLoop agent(provider.system, provider.route, tools);
 
         std::future<std::optional<std::string>> resume_result;
         {

@@ -68,7 +68,8 @@ namespace {
               },
               "models": {
                 "gpt-4.1": {
-                  "endpoint_style": "openai-responses",
+                  "provider": "openai",
+                  "protocol": "responses",
                   "max_tokens": 32000,
                   "context_window": 128000,
                   "thinking": "xhigh",
@@ -83,7 +84,8 @@ namespace {
               "base_url": "https://anthropic.example.com",
               "models": {
                 "claude-sonnet-4-20250514": {
-                  "endpoint_style": "anthropic-messages"
+                  "provider": "anthropic",
+                  "protocol": "messages"
                 }
               }
             }
@@ -110,7 +112,8 @@ namespace {
         CHECK(profile.headers.at("X-App-Id") == "orangutan");
         REQUIRE(profile.models.contains("gpt-4.1"));
         const auto &model = profile.models.at("gpt-4.1");
-        CHECK(model.endpoint_style == "openai-responses");
+        CHECK(model.provider == "openai");
+        CHECK(model.protocol == "responses");
         REQUIRE(model.max_tokens.has_value());
         CHECK(*model.max_tokens == 32000);
         REQUIRE(model.context_window.has_value());
@@ -171,7 +174,7 @@ namespace {
                   {
                       {"base_url", "https://gateway.example.com"},
                       {"api_key", protected_key},
-                      {"models", {{"gpt-4.1", {{"endpoint_style", "openai-responses"}}}}},
+                      {"models", {{"gpt-4.1", {{"provider", "openai"}, {"protocol", "responses"}}}}},
                   }},
              }},
         });
@@ -225,7 +228,8 @@ namespace {
               "base_url": "https://gateway.example.com",
               "models": {
                 "gpt-4.1": {
-                  "endpoint_style": "openai-responses",
+                  "provider": "openai",
+                  "protocol": "responses",
                   "thinking": "turbo"
                 }
               }
@@ -251,7 +255,8 @@ namespace {
                 {
                     {"gpt-4.1",
                      ModelConfig{
-                         .endpoint_style = "openai-responses",
+                         .provider = "openai",
+                         .protocol = "responses",
                          .max_tokens = 32000,
                          .context_window = 128000,
                          .thinking = "high",
