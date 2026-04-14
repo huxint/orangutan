@@ -8,6 +8,13 @@
 
 namespace orangutan {
 
+    enum class response_stop_reason {
+        end_turn,
+        tool_use,
+        max_tokens,
+        unknown,
+    };
+
     // Tool definition sent to the API
     struct ToolDef {
         std::string name;
@@ -17,7 +24,7 @@ namespace orangutan {
 
     // API response metadata
     struct LLMResponse {
-        std::string stop_reason; // "end_turn", "tool_use", etc.
+        response_stop_reason stop_reason = response_stop_reason::unknown;
         std::vector<Content> content;
     };
 } // namespace orangutan

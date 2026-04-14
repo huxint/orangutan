@@ -17,7 +17,7 @@ end
 
 add_test_target("test-types", rooted("tests/types/*.cpp"))
 
-add_test_target("test-providers", rooted("tests/providers/*.cpp"))
+add_test_target("test-providers", rooted("tests/providers/**/*.cpp"))
 
 add_test_target("test-tools", {
     rooted("tests/tools/**/*.cpp"),

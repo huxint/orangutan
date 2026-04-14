@@ -19,7 +19,8 @@ namespace orangutan::config {
     };
 
     struct ModelConfig {
-        std::string endpoint_style;
+        std::string provider;
+        std::string protocol;
         std::optional<int> max_tokens;
         std::optional<int> context_window;
         std::string thinking = "none";

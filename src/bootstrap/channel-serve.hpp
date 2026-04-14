@@ -46,10 +46,6 @@ namespace orangutan::swarm {
     class TeamManager;
 } // namespace orangutan::swarm
 
-namespace orangutan::providers {
-    class Provider;
-}
-
 namespace orangutan::bootstrap {
 
     struct AgentRuntimeBundle;

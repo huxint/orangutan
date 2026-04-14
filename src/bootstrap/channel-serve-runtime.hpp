@@ -32,8 +32,7 @@ namespace orangutan::bootstrap {
         std::string agent_key;
         std::string model;
         std::vector<std::string> fallback_models;
-        providers::ProviderEndpoint primary_endpoint;
-        std::vector<providers::ProviderEndpoint> fallback_endpoints;
+        providers::ProviderRoute provider_route;
         std::string workspace_root;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
@@ -63,7 +62,7 @@ namespace orangutan::bootstrap {
             std::mutex mutex;
             agent::AgentLoop *agent = nullptr;
             AgentRuntimeBundle *runtime = nullptr;
-            providers::Provider *provider = nullptr;
+            providers::ProviderSystem *provider = nullptr;
             hooks::HookManager *hook_manager = nullptr;
             std::string *current_session_id = nullptr;
             std::size_t *persisted_message_count = nullptr;
@@ -94,7 +93,7 @@ namespace orangutan::bootstrap {
             std::size_t persisted_message_count = 0;
 
             [[nodiscard]]
-            providers::Provider *provider() const {
+            providers::ProviderSystem *provider() const {
                 return runtime != nullptr ? runtime->provider.get() : nullptr;
             }
 
@@ -175,8 +174,9 @@ namespace orangutan::bootstrap {
             });
             runtime->runtime = std::make_unique<AgentRuntimeBundle>(build_agent_runtime(input));
             if (hook_manager != nullptr) {
-                runtime->runtime->agent = std::make_unique<agent::AgentLoop>(*runtime->runtime->provider, runtime->runtime->tools(), runtime->runtime->memory.get(),
-                                                                             runtime->runtime->skills_prompt, hook_manager, runtime->runtime->skill_loader.get());
+                runtime->runtime->agent = std::make_unique<agent::AgentLoop>(*runtime->runtime->provider, cfg.provider_route, runtime->runtime->tools(),
+                                                                             runtime->runtime->memory.get(), runtime->runtime->skills_prompt, hook_manager,
+                                                                             runtime->runtime->skill_loader.get());
                 runtime->hook_manager = hook_manager;
             } else {
                 runtime->hook_manager = runtime->runtime->hook_manager.get();
@@ -244,7 +244,7 @@ namespace orangutan::bootstrap {
 
             const bool created_session = runtime.current_session_id.empty();
             const auto active_model =
-                runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
+                runtime.provider() != nullptr && runtime.provider()->active_target().has_value() ? runtime.provider()->active_target()->model : runtime.configured_model;
             const auto metadata = make_channel_session_metadata(runtime, jid, active_model);
             if (runtime.current_session_id.empty()) {
                 runtime.current_session_id = session_store.save(history, metadata);
@@ -279,7 +279,7 @@ namespace orangutan::bootstrap {
             }
 
             const bool created_session = state.current_session_id->empty();
-            const auto active_model = state.provider != nullptr && !state.provider->current_model().empty() ? state.provider->current_model() : state.configured_model;
+            const auto active_model = state.provider != nullptr && state.provider->active_target().has_value() ? state.provider->active_target()->model : state.configured_model;
             const auto metadata = make_channel_session_metadata(state, active_model);
             if (state.current_session_id->empty()) {
                 *state.current_session_id = state.session_store->save(history, metadata);

@@ -711,13 +711,13 @@ namespace orangutan::bootstrap {
                         thinking_buffer.clear();
                     };
 
-                    StreamCallback stream_cb;
+                    AgentLoop::ProviderEventCallback stream_cb;
                     AgentLoop::ToolEventCallback tool_cb;
                     if (is_qq) {
-                        stream_cb = [&](const std::string &event_type, const nlohmann::json &data) {
-                            if (event_type == "thinking_delta") {
-                                thinking_buffer += data["thinking"].get<std::string>();
-                            } else if (event_type == "text_delta" || event_type == "tool_call_start") {
+                        stream_cb = [&](const ProviderEvent &event) {
+                            if (const auto *thinking = std::get_if<ThinkingDelta>(&event)) {
+                                thinking_buffer += thinking->thinking;
+                            } else if (std::get_if<TextDelta>(&event) != nullptr || std::get_if<ToolCallStarted>(&event) != nullptr) {
                                 flush_thinking();
                             }
                         };

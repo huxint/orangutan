@@ -44,9 +44,9 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline StreamCallback make_stream_callback(bool &first_text, bool human_output, const StreamCallback &on_event) {
-        return [&first_text, human_output, &on_event](const std::string &event_type, const nlohmann::json &data) {
-            if (event_type == "thinking_delta") {
+    inline AgentLoop::ProviderEventCallback make_stream_callback(bool &first_text, bool human_output, const AgentLoop::ProviderEventCallback &on_event) {
+        return [&first_text, human_output, &on_event](const ProviderEvent &event) {
+            if (const auto *thinking = std::get_if<ThinkingDelta>(&event)) {
                 if (human_output && first_text) {
                     std::string prompt;
                     utils::format_to(prompt, "\n");
@@ -55,12 +55,11 @@ namespace orangutan::agent::detail {
                     first_text = false;
                 }
                 if (human_output) {
-                    std::string thinking;
-                    utils::format_to(thinking, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::bright_black), "{}", data["thinking"].get<std::string>());
-                    write_stdout(thinking);
+                    std::string rendered_thinking;
+                    utils::format_to(rendered_thinking, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::bright_black), "{}", thinking->thinking);
+                    write_stdout(rendered_thinking);
                 }
-            }
-            if (event_type == "text_delta") {
+            } else if (const auto *text = std::get_if<TextDelta>(&event)) {
                 if (human_output && first_text) {
                     std::string prompt;
                     utils::format_to(prompt, "\n");
@@ -69,11 +68,11 @@ namespace orangutan::agent::detail {
                     first_text = false;
                 }
                 if (human_output) {
-                    write_stdout(data["text"].get<std::string>());
+                    write_stdout(text->text);
                 }
             }
-            if (on_event != nullptr && (event_type == "text_delta" || event_type == "tool_call_start" || event_type == "thinking_delta")) {
-                on_event(event_type, data);
+            if (on_event != nullptr) {
+                on_event(event);
             }
         };
     }
@@ -93,8 +92,9 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline ContinuationResult handle_continuation(Provider &provider, ToolRegistry &tools, std::vector<Message> &history, const std::string &system_prompt, bool &first_text,
-                                                  bool human_output, const StreamCallback &on_stream_event, int thinking_budget,
+    inline ContinuationResult handle_continuation(ProviderSystem &provider, const ProviderRoute &route, ToolRegistry &tools, std::vector<Message> &history,
+                                                  const std::string &system_prompt, bool &first_text, bool human_output,
+                                                  const AgentLoop::ProviderEventCallback &on_stream_event, int thinking_budget,
                                                   const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
         ContinuationResult result;
 
@@ -106,7 +106,9 @@ namespace orangutan::agent::detail {
 
             auto tool_defs = tools.definitions();
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
-            auto response = provider.chat_stream(system_prompt, history, tool_defs, callback, 4096, thinking_budget);
+            const auto provider_result =
+                provider.route(route).system(system_prompt).messages(history).tools(tool_defs).max_tokens(4096).thinking_budget(thinking_budget).stream().on_event(callback).send_blocking();
+            auto response = std::move(provider_result.response);
 
             auto parts = split_response(response);
             result.appended_text += parts.text;
@@ -118,7 +120,7 @@ namespace orangutan::agent::detail {
                 break;
             }
 
-            if (response.stop_reason != "max_tokens") {
+            if (response.stop_reason != response_stop_reason::max_tokens) {
                 break;
             }
         }
@@ -127,7 +129,8 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline AgentLoop::HistoryCompactionResult compact_history(Provider &provider, std::vector<Message> &history, std::size_t minimum_history_size) {
+    inline AgentLoop::HistoryCompactionResult compact_history(ProviderSystem &provider, const ProviderRoute &route, std::vector<Message> &history,
+                                                              std::size_t minimum_history_size) {
         AgentLoop::HistoryCompactionResult result{
             .compacted = false,
             .messages_before = history.size(),
@@ -154,7 +157,7 @@ namespace orangutan::agent::detail {
 
         std::vector<ToolDef> no_tools;
         try {
-            auto response = provider.chat(SUMMARY_PROMPT, older_messages, no_tools, 1024);
+            auto response = provider.route(route).system(SUMMARY_PROMPT).messages(older_messages).tools(no_tools).max_tokens(1024).send_blocking().response;
 
             std::string summary_text;
             for (const auto &block : response.content) {

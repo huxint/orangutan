@@ -30,15 +30,17 @@ namespace orangutan::agent {
 
     } // namespace
 
-    AgentLoop::AgentLoop(Provider &provider, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager, skills::SkillLoader *skill_loader)
+    AgentLoop::AgentLoop(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt,
+                         HookManager *hook_manager, skills::SkillLoader *skill_loader)
     : provider_(&provider),
+      provider_route_(std::move(route)),
       tools_(&tools),
       memory_(memory),
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager),
       skill_loader_(skill_loader) {}
 
-    std::string AgentLoop::run(const std::string &user_input, const StreamCallback &on_stream_event, const ToolEventCallback &on_tool_event,
+    std::string AgentLoop::run(const std::string &user_input, const ProviderEventCallback &on_stream_event, const ToolEventCallback &on_tool_event,
                                const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
         detail::ToolCallCounts call_counts;
 
@@ -71,18 +73,27 @@ namespace orangutan::agent {
 
             bool first_text = true;
             auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);
-            auto response = provider_->chat_stream(effective_system_prompt, history_, tool_defs, callback, 4096, thinking_budget_);
+            auto response = provider_->route(provider_route_)
+                                .system(effective_system_prompt)
+                                .messages(history_)
+                                .tools(tool_defs)
+                                .max_tokens(4096)
+                                .thinking_budget(thinking_budget_)
+                                .stream()
+                                .on_event(callback)
+                                .send_blocking()
+                                .response;
 
             auto parts = detail::split_response(response);
             final_text += parts.text;
             history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
             detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
-            if (parts.tool_calls.empty() || response.stop_reason == "end_turn") {
+            if (parts.tool_calls.empty() || response.stop_reason == response_stop_reason::end_turn) {
                 bool continuation_produced_tool_calls = false;
-                if (response.stop_reason == "max_tokens" && parts.tool_calls.empty()) {
-                    auto continuation = detail::handle_continuation(*provider_, *tools_, history_, effective_system_prompt, first_text, human_output, on_stream_event,
-                                                                    thinking_budget_, on_history_checkpoint);
+                if (response.stop_reason == response_stop_reason::max_tokens && parts.tool_calls.empty()) {
+                    auto continuation = detail::handle_continuation(*provider_, provider_route_, *tools_, history_, effective_system_prompt, first_text, human_output,
+                                                                    on_stream_event, thinking_budget_, on_history_checkpoint);
                     final_text += continuation.appended_text;
                     if (!continuation.tool_calls.empty()) {
                         parts.tool_calls = std::move(continuation.tool_calls);
@@ -163,11 +174,11 @@ namespace orangutan::agent {
     }
 
     AgentLoop::HistoryCompactionResult AgentLoop::compress_history() {
-        return detail::compact_history(*provider_, history_, detail::COMPACTION_KEEP_RECENT + 1);
+        return detail::compact_history(*provider_, provider_route_, history_, detail::COMPACTION_KEEP_RECENT + 1);
     }
 
     AgentLoop::SessionMemoryDistillationResult AgentLoop::distill_session_memory() {
-        return detail::distill_session_memory(*provider_, memory_, history_);
+        return detail::distill_session_memory(*provider_, provider_route_, memory_, history_);
     }
 
 } // namespace orangutan::agent

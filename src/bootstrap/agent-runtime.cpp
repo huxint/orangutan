@@ -83,7 +83,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
 
-        runtime.provider = create_provider_with_fallbacks(input.primary_endpoint, input.fallback_endpoints);
+        runtime.provider = std::make_unique<providers::ProviderSystem>();
 
         if (input.memory_store != nullptr) {
             runtime.memory = std::make_unique<RuntimeMemory>(*input.memory_store, make_runtime_memory_context(input.identity, input.memory));
@@ -149,11 +149,12 @@ namespace orangutan::bootstrap {
         runtime.hook_manager->load_from_directories(resolve_hook_directories(input));
 
         runtime.agent =
-            std::make_unique<AgentLoop>(*runtime.provider, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get(), runtime.skill_loader.get());
+            std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get(),
+                                        runtime.skill_loader.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
         runtime.agent->set_environment_info(prompt::EnvironmentInfo{
             .workspace_root = input.workspace_root,
-            .model_name = input.primary_endpoint.model,
+            .model_name = input.provider_route.primary.model,
             .agent_key = input.agent_key,
             .is_channel_mode = input.runtime_origin != base::origin::cli,
             .is_sandboxed = false,

@@ -1,5 +1,6 @@
 #include "config/config-detail.hpp"
 #include "config/json-access.hpp"
+#include "providers/provider.hpp"
 #include "utils/string.hpp"
 
 #include <array>
@@ -118,7 +119,8 @@ namespace orangutan::config::detail {
 
         ModelConfig parse_model_config(const nlohmann::json &model) {
             ModelConfig cfg;
-            static_cast<void>(assign_string_member(model, "endpoint_style", cfg, &ModelConfig::endpoint_style));
+            static_cast<void>(assign_string_member(model, "provider", cfg, &ModelConfig::provider));
+            static_cast<void>(assign_string_member(model, "protocol", cfg, &ModelConfig::protocol));
             static_cast<void>(assign_optional_number_member(model, "max_tokens", cfg, &ModelConfig::max_tokens));
             static_cast<void>(assign_optional_number_member(model, "context_window", cfg, &ModelConfig::context_window));
             if (assign_string_member(model, "thinking", cfg, &ModelConfig::thinking)) {
@@ -129,6 +131,14 @@ namespace orangutan::config::detail {
             if (const auto *value = find_member(model, "cost"); value != nullptr) {
                 cfg.cost = parse_model_cost(*value);
             }
+            if (cfg.provider.empty()) {
+                throw std::runtime_error("model config missing provider");
+            }
+            if (cfg.protocol.empty()) {
+                throw std::runtime_error("model config missing protocol");
+            }
+            static_cast<void>(providers::parse_provider_kind(cfg.provider));
+            static_cast<void>(providers::parse_protocol_kind(cfg.protocol));
             return cfg;
         }
 
@@ -171,7 +181,8 @@ namespace orangutan::config::detail {
         }
         for (auto &[model_name, model_cfg] : cfg.models) {
             static_cast<void>(model_name);
-            model_cfg.endpoint_style = expand_env_vars(model_cfg.endpoint_style);
+            model_cfg.provider = expand_env_vars(model_cfg.provider);
+            model_cfg.protocol = expand_env_vars(model_cfg.protocol);
             model_cfg.thinking = expand_env_vars(model_cfg.thinking);
         }
     }

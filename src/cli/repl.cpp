@@ -54,7 +54,7 @@ namespace orangutan::cli {
             spdlog::fmt_lib::println("{}\n", text);
         }
 
-        bool handle_slash_command(const std::string &line, AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model,
+        bool handle_slash_command(const std::string &line, AgentLoop &agent, const ProviderSystem &provider, SessionStore &store, const std::string &configured_model,
                                   const std::vector<std::string> &fallback_models, std::string &current_session_id, bool &quit, const Config &cfg, const std::string &agent_key,
                                   const std::string &scope_key, const std::string &workspace_root, const SkillLoader *skill_loader, const ToolRegistry *tool_registry,
                                   HookManager *hook_manager) {
@@ -179,7 +179,8 @@ namespace orangutan::cli {
 
     } // namespace
 
-    void run_repl(AgentLoop &agent, const Provider &provider, SessionStore &store, const std::string &configured_model, const std::vector<std::string> &fallback_models,
+    void run_repl(AgentLoop &agent, const ProviderSystem &provider, SessionStore &store, const std::string &configured_model,
+                  const std::vector<std::string> &fallback_models,
                   const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
                   const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
         spdlog::fmt_lib::println("Orangutan v0.1.0");

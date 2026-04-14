@@ -28,10 +28,6 @@ namespace orangutan::memory {
     class RuntimeMemory;
 } // namespace orangutan::memory
 
-namespace orangutan::providers {
-    class Provider;
-}
-
 namespace orangutan::coordinator {
     class CoordinatorManager;
 }
@@ -48,8 +44,7 @@ namespace orangutan::tools {
 namespace orangutan::bootstrap {
 
     struct AgentRuntimeBuildInput {
-        providers::ProviderEndpoint primary_endpoint;
-        std::vector<providers::ProviderEndpoint> fallback_endpoints;
+        providers::ProviderRoute provider_route;
         std::string agent_key;
         std::string agent_name;
         std::string workspace_root;
@@ -100,7 +95,7 @@ namespace orangutan::bootstrap {
 
         // This is a runtime bundle with intentionally exposed handles for assembly sites.
         // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
-        std::unique_ptr<providers::Provider> provider;
+        std::unique_ptr<providers::ProviderSystem> provider;
         std::unique_ptr<memory::RuntimeMemory> memory;
         std::unique_ptr<tools::McpManager> mcp_manager;
         std::string skills_prompt;

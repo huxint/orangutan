@@ -28,6 +28,7 @@ namespace orangutan::agent {
     class AgentLoop {
     public:
         using ToolEventCallback = std::function<void(const std::string &event_type, const ToolUse &call, const ToolResult *result)>;
+        using ProviderEventCallback = std::function<void(const ProviderEvent &)>;
         using HistoryCheckpointCallback = std::function<void(const std::vector<Message> &history)>;
         using IncomingMessageFetcher = std::function<std::vector<std::string>()>;
         using StopRequestedCallback = std::function<bool()>;
@@ -45,11 +46,12 @@ namespace orangutan::agent {
             std::string status;
         };
 
-        AgentLoop(Provider &provider, ToolRegistry &tools, memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {}, hooks::HookManager *hook_manager = nullptr,
+        AgentLoop(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools, memory::RuntimeMemory *memory = nullptr, std::string skills_prompt = {},
+                  hooks::HookManager *hook_manager = nullptr,
                   skills::SkillLoader *skill_loader = nullptr);
 
         // Process one user message: run the ReAct loop until final text response
-        std::string run(const std::string &user_input, const StreamCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},
+        std::string run(const std::string &user_input, const ProviderEventCallback &on_stream_event = {}, const ToolEventCallback &on_tool_event = {},
                         const HistoryCheckpointCallback &on_history_checkpoint = {});
 
         // Clear conversation history
@@ -90,7 +92,8 @@ namespace orangutan::agent {
         SessionMemoryDistillationResult distill_session_memory();
 
     private:
-        Provider *provider_ = nullptr;
+        ProviderSystem *provider_ = nullptr;
+        ProviderRoute provider_route_;
         ToolRegistry *tools_ = nullptr;
         std::vector<Message> history_;
         memory::RuntimeMemory *memory_ = nullptr;

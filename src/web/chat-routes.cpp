@@ -201,14 +201,14 @@ namespace orangutan::web {
                         automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
                             agent_ptr->run(
                                 message,
-                                [&sink, session_ptr](const std::string &event_type, const nlohmann::json &data) {
+                                [&sink, session_ptr](const ProviderEvent &event) {
                                     if (session_ptr->abort_requested) {
                                         return;
                                     }
-                                    if (event_type == "text_delta") {
-                                        internal::write_sse_event(sink, "text", {{"text", data["text"]}});
-                                    } else if (event_type == "thinking_delta") {
-                                        internal::write_sse_event(sink, "thinking", {{"thinking", data["thinking"]}});
+                                    if (const auto *text = std::get_if<TextDelta>(&event)) {
+                                        internal::write_sse_event(sink, "text", {{"text", text->text}});
+                                    } else if (const auto *thinking = std::get_if<ThinkingDelta>(&event)) {
+                                        internal::write_sse_event(sink, "thinking", {{"thinking", thinking->thinking}});
                                     }
                                 },
                                 [&sink, session_ptr](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
@@ -250,7 +250,10 @@ namespace orangutan::web {
                     sink.done();
                     return false;
                 });
-        } catch (const providers::MissingApiKeyError &e) {
+        } catch (const providers::ProviderError &e) {
+            if (e.category() != providers::error_category::configuration && e.category() != providers::error_category::authentication) {
+                throw;
+            }
             res.status = 400;
             res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
         } catch (const std::exception &e) {

@@ -82,8 +82,7 @@ namespace orangutan::bootstrap::detail {
         return effective_agents;
     }
 
-    std::optional<ResolvedAgentEndpoints> resolve_agent_endpoints(const Config &cfg, const AgentConfig &agent_cfg, std::string_view agent_key,
-                                                                  std::string_view cli_api_key_override) {
+    std::optional<ResolvedAgentRoute> resolve_agent_route(const Config &cfg, const AgentConfig &agent_cfg, std::string_view agent_key, std::string_view cli_api_key_override) {
         if (agent_cfg.profile.empty()) {
             spdlog::fmt_lib::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
             return std::nullopt;
@@ -100,19 +99,23 @@ namespace orangutan::bootstrap::detail {
             return std::nullopt;
         }
 
-        ResolvedAgentEndpoints resolved{
-            .primary_endpoint =
-                providers::ProviderEndpoint{
-                    .profile_name = agent_cfg.profile,
-                    .endpoint_style = model_it->second.endpoint_style,
-                    .api_key = resolve_api_key(cli_api_key_override, profile_cfg),
-                    .model = agent_cfg.model,
-                    .base_url = profile_cfg.base_url,
-                    .headers = profile_cfg.headers,
-                    .default_max_tokens = model_it->second.max_tokens,
-                    .thinking = model_it->second.thinking,
-                },
-        };
+        ResolvedAgentRoute resolved;
+        try {
+            resolved.route.primary = providers::ModelTarget{
+                .profile_name = agent_cfg.profile,
+                .model = agent_cfg.model,
+                .base_url = profile_cfg.base_url,
+                .api_key = resolve_api_key(cli_api_key_override, profile_cfg),
+                .headers = profile_cfg.headers,
+                .default_max_tokens = model_it->second.max_tokens,
+                .provider = providers::parse_provider_kind(model_it->second.provider),
+                .protocol = providers::parse_protocol_kind(model_it->second.protocol),
+                .thinking = model_it->second.thinking,
+            };
+        } catch (const providers::ProviderError &error) {
+            spdlog::fmt_lib::println(stderr, "Error: agent '{}' model '{}' has invalid provider config: {}", agent_key, agent_cfg.model, error.what());
+            return std::nullopt;
+        }
 
         for (const auto &fallback_model : agent_cfg.fallback_models) {
             const auto fallback_profile_name = fallback_model.profile.empty() ? agent_cfg.profile : fallback_model.profile;
@@ -130,16 +133,22 @@ namespace orangutan::bootstrap::detail {
                 spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model.model, fallback_profile_name);
                 return std::nullopt;
             }
-            resolved.fallback_endpoints.push_back(providers::ProviderEndpoint{
-                .profile_name = fallback_profile_name,
-                .endpoint_style = fallback_it->second.endpoint_style,
-                .api_key = resolve_api_key(cli_api_key_override, fallback_profile_cfg),
-                .model = fallback_model.model,
-                .base_url = fallback_profile_cfg.base_url,
-                .headers = fallback_profile_cfg.headers,
-                .default_max_tokens = fallback_it->second.max_tokens,
-                .thinking = fallback_it->second.thinking,
-            });
+            try {
+                resolved.route.fallbacks.push_back(providers::ModelTarget{
+                    .profile_name = fallback_profile_name,
+                    .model = fallback_model.model,
+                    .base_url = fallback_profile_cfg.base_url,
+                    .api_key = resolve_api_key(cli_api_key_override, fallback_profile_cfg),
+                    .headers = fallback_profile_cfg.headers,
+                    .default_max_tokens = fallback_it->second.max_tokens,
+                    .provider = providers::parse_provider_kind(fallback_it->second.provider),
+                    .protocol = providers::parse_protocol_kind(fallback_it->second.protocol),
+                    .thinking = fallback_it->second.thinking,
+                });
+            } catch (const providers::ProviderError &error) {
+                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' has invalid provider config: {}", agent_key, fallback_model.model, error.what());
+                return std::nullopt;
+            }
         }
 
         return resolved;
@@ -149,8 +158,8 @@ namespace orangutan::bootstrap::detail {
                                                                                                    const CLIPermissionOptions &cli_permission_options) {
         std::unordered_map<std::string, AgentRuntimeConfig> result;
         for (const auto &[agent_key, agent_cfg] : build_effective_agents(cfg)) {
-            const auto maybe_endpoints = resolve_agent_endpoints(cfg, agent_cfg, agent_key, cli_api_key_override);
-            if (!maybe_endpoints.has_value()) {
+            const auto maybe_route = resolve_agent_route(cfg, agent_cfg, agent_key, cli_api_key_override);
+            if (!maybe_route.has_value()) {
                 return std::nullopt;
             }
 
@@ -176,8 +185,7 @@ namespace orangutan::bootstrap::detail {
                                                   }
                                                   return labels;
                                               }(),
-                                          .primary_endpoint = maybe_endpoints->primary_endpoint,
-                                          .fallback_endpoints = maybe_endpoints->fallback_endpoints,
+                                          .provider_route = maybe_route->route,
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,
                                           .thinking_budget = agent_cfg.thinking_budget,

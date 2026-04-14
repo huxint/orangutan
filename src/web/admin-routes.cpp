@@ -40,7 +40,8 @@ namespace orangutan::web {
 
         nlohmann::json model_config_to_json(const config::ModelConfig &model_cfg) {
             nlohmann::json json = {
-                {"endpoint_style", model_cfg.endpoint_style},
+                {"provider", model_cfg.provider},
+                {"protocol", model_cfg.protocol},
             };
             if (model_cfg.max_tokens.has_value()) {
                 json["max_tokens"] = *model_cfg.max_tokens;

@@ -1,6 +1,6 @@
 #include "channel/qq/qq-api-client.hpp"
 
-#include "providers/http-client.hpp"
+#include "providers/transport/curl-primitives.hpp"
 #include "types/base.hpp"
 #include "utils/string.hpp"
 
@@ -20,6 +20,9 @@
 #include <utility>
 
 namespace orangutan::channel::qq {
+
+    using providers::transport::CurlHandle;
+    using providers::transport::CurlHeaders;
 
     constexpr std::string_view QQ_API_BASE = "https://api.sgroup.qq.com";
     constexpr std::string_view QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";

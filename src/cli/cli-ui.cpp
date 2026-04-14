@@ -141,12 +141,13 @@ namespace orangutan::cli {
         return out;
     }
 
-    RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const Provider &provider, const ToolRegistry *tool_registry, const std::string &current_session_id,
+    RuntimeStatusSnapshot collect_runtime_status(const AgentLoop &agent, const ProviderSystem &provider, const ToolRegistry *tool_registry,
+                                                 const std::string &current_session_id,
                                                  const std::string &agent_key, const std::string &configured_model, const std::vector<std::string> &fallback_models,
                                                  const std::string &scope_key) {
         RuntimeStatusSnapshot status{
             .agent_key = agent_key,
-            .provider_name = provider.name(),
+            .provider_name = provider.label(),
             .current_model = provider.current_model().empty() ? configured_model : provider.current_model(),
             .configured_model = configured_model,
             .fallback_models = fallback_models,

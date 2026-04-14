@@ -11,7 +11,7 @@ namespace orangutan::cli {
 
     namespace {
 
-        std::string resolve_active_model(const Provider &provider, const std::string &configured_model) {
+        std::string resolve_active_model(const ProviderSystem &provider, const std::string &configured_model) {
             const auto current_model = provider.current_model();
             return current_model.empty() ? configured_model : current_model;
         }
@@ -36,21 +36,21 @@ namespace orangutan::cli {
         }
 
         auto make_stream_event_emitter(const JsonEmitter &emit) {
-            return [&emit](const std::string &event_type, const nlohmann::json &data) {
-                if (event_type == "text_delta") {
+            return [&emit](const ProviderEvent &event) {
+                if (const auto *text = std::get_if<TextDelta>(&event)) {
                     emit({
                         {"type", "assistant_delta"},
-                        {"text", data.value("text", "")},
+                        {"text", text->text},
                     });
                     return;
                 }
 
-                if (event_type == "tool_call_start") {
+                if (const auto *tool_call = std::get_if<ToolCallStarted>(&event)) {
                     emit({
                         {"type", "tool_call_started"},
-                        {"id", data.value("id", "")},
-                        {"name", data.value("name", "")},
-                        {"input", data.value("input", nlohmann::json::object())},
+                        {"id", tool_call->id},
+                        {"name", tool_call->name},
+                        {"input", tool_call->input},
                     });
                 }
             };
@@ -89,7 +89,7 @@ namespace orangutan::cli {
             automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
                 std::string reply;
                 if (suppress_human_output) {
-                    reply = agent.run(message, [](const std::string &, const nlohmann::json &) {}, [](const std::string &, const ToolUse &, const ToolResult *) {});
+                    reply = agent.run(message, [](const ProviderEvent &) {}, [](const std::string &, const ToolUse &, const ToolResult *) {});
                 } else {
                     reply = agent.run(message);
                 }
@@ -118,7 +118,8 @@ namespace orangutan::cli {
             });
         }
 
-        void maybe_persist_single_message_session(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, std::string &current_session_id,
+        void maybe_persist_single_message_session(AgentLoop &agent, const ProviderSystem &provider, SessionStore &session_store, const Config &cfg,
+                                                  std::string &current_session_id,
                                                   const std::string &configured_model, const std::string &scope_key, const std::string &agent_key, bool event_stream,
                                                   const JsonEmitter &emit, std::ostream &error_stream) {
             if (!cfg.auto_save || agent.history().empty()) {
@@ -163,7 +164,7 @@ namespace orangutan::cli {
         emit(done_event(current_session_id));
     }
 
-    int run_single_message(AgentLoop &agent, const Provider &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
+    int run_single_message(AgentLoop &agent, const ProviderSystem &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
                            std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key,
                            const JsonEmitter &emit, std::ostream &error_stream, automation::Runtime *automation_runtime) {
         try {

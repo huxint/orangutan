@@ -96,14 +96,14 @@ namespace orangutan::web {
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
                                                                     ApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
-            const auto maybe_endpoints = bootstrap::detail::resolve_agent_endpoints(config, agent, agent_key, "");
-            if (!maybe_endpoints.has_value()) {
+            const auto maybe_route = bootstrap::detail::resolve_agent_route(config, agent, agent_key, "");
+            if (!maybe_route.has_value()) {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
             }
             const auto workspace_root = resolve_agent_workspace(agent, agent_key);
             const auto identity = derive_web_identity(workspace_root, agent_key);
-            if (maybe_endpoints->primary_endpoint.api_key.empty()) {
-                throw providers::MissingApiKeyError("missing API key for agent '" + agent_key + "'");
+            if (maybe_route->route.primary.api_key.empty()) {
+                throw providers::ProviderError(providers::error_category::configuration, "missing api key for agent '" + agent_key + "'");
             }
 
             auto effective_approval_callback = std::move(approval_callback);
@@ -115,8 +115,7 @@ namespace orangutan::web {
                 .agent_key = agent_key,
                 .model = agent.model,
                 .fallback_models = fallback_labels(agent.fallback_models),
-                .primary_endpoint = maybe_endpoints->primary_endpoint,
-                .fallback_endpoints = maybe_endpoints->fallback_endpoints,
+                .provider_route = maybe_route->route,
                 .workspace_root = workspace_root,
                 .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,
@@ -380,8 +379,7 @@ namespace orangutan::web {
                                  },
                              .status =
                                  [&] {
-                                     const auto active_model =
-                                         runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
+                const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
                                      return cli::SlashCommandReply{
                                          .handled = true,
                                          .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools(), current_session_id,

@@ -189,18 +189,17 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return 1;
         }
 
-        const auto maybe_endpoints = orangutan::bootstrap::detail::resolve_agent_endpoints(cfg, *maybe_selected_agent, options.cli_agent_key, options.api_key);
-        if (!maybe_endpoints.has_value()) {
+        const auto maybe_route = orangutan::bootstrap::detail::resolve_agent_route(cfg, *maybe_selected_agent, options.cli_agent_key, options.api_key);
+        if (!maybe_route.has_value()) {
             return 1;
         }
-        primary_api_key = maybe_endpoints->primary_endpoint.api_key;
+        primary_api_key = maybe_route->route.primary.api_key;
         maybe_primary_identity = orangutan::bootstrap::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
         maybe_primary_runtime_cfg = orangutan::bootstrap::AgentRuntimeConfig{
             .agent_key = options.cli_agent_key,
             .model = maybe_selected_agent->model,
             .fallback_models = fallback_labels(maybe_selected_agent->fallback_models),
-            .primary_endpoint = maybe_endpoints->primary_endpoint,
-            .fallback_endpoints = maybe_endpoints->fallback_endpoints,
+            .provider_route = maybe_route->route,
             .workspace_root = *maybe_workspace,
             .edit_mode = maybe_selected_agent->edit_mode,
             .thinking_budget = maybe_selected_agent->thinking_budget,

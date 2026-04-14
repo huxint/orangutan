@@ -204,7 +204,8 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline AgentLoop::SessionMemoryDistillationResult distill_session_memory(Provider &provider, RuntimeMemory *memory, const std::vector<Message> &history) {
+    inline AgentLoop::SessionMemoryDistillationResult distill_session_memory(ProviderSystem &provider, const ProviderRoute &route, RuntimeMemory *memory,
+                                                                             const std::vector<Message> &history) {
         AgentLoop::SessionMemoryDistillationResult result{
             .distilled = false,
             .memories_stored = 0,
@@ -248,7 +249,7 @@ namespace orangutan::agent::detail {
             std::vector<Message> messages;
             messages.push_back(Message::user().text(transcript));
             std::vector<ToolDef> no_tools;
-            const auto response = provider.chat(std::string{DISTILLATION_PROMPT}, messages, no_tools, 1024);
+            const auto response = provider.route(route).system(DISTILLATION_PROMPT).messages(messages).tools(no_tools).max_tokens(1024).send_blocking().response;
 
             std::string distilled_text;
             for (const auto &block : response.content) {

@@ -253,7 +253,8 @@ namespace orangutan::config {
                 nlohmann::json models_json = nlohmann::json::object();
                 for (const auto &[model_name, model_cfg] : profile_cfg.models) {
                     nlohmann::json model_json = nlohmann::json::object();
-                    model_json["endpoint_style"] = model_cfg.endpoint_style;
+                    model_json["provider"] = model_cfg.provider;
+                    model_json["protocol"] = model_cfg.protocol;
                     if (model_cfg.max_tokens.has_value()) {
                         model_json["max_tokens"] = *model_cfg.max_tokens;
                     }

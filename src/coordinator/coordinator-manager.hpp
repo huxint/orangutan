@@ -21,9 +21,6 @@ namespace orangutan::coordinator {
 namespace orangutan::memory {
     class MemoryStore;
 }
-namespace orangutan::providers {
-    struct ProviderEndpoint;
-}
 namespace orangutan::storage {
     class SessionStore;
 }

@@ -28,10 +28,6 @@ namespace orangutan::memory {
     class MemoryStore;
 }
 
-namespace orangutan::providers {
-    class Provider;
-}
-
 namespace orangutan::skills {
     class SkillLoader;
 }
@@ -95,7 +91,7 @@ namespace orangutan::bootstrap {
     struct RuntimeCompletionResumeState {
         std::mutex mutex;
         agent::AgentLoop *agent = nullptr;
-        providers::Provider *provider = nullptr;
+        providers::ProviderSystem *provider = nullptr;
         hooks::HookManager *hook_manager = nullptr;
         storage::SessionStore *session_store = nullptr;
         std::string *current_session_id = nullptr;

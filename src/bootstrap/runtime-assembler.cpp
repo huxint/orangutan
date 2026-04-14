@@ -24,8 +24,7 @@ namespace orangutan::bootstrap {
 
     AgentRuntimeBuildInput make_runtime_build_input(const RuntimeAssemblyRequest &request) {
         return AgentRuntimeBuildInput{
-            .primary_endpoint = request.runtime_config->primary_endpoint,
-            .fallback_endpoints = request.runtime_config->fallback_endpoints,
+            .provider_route = request.runtime_config->provider_route,
             .agent_key = request.runtime_config->agent_key,
             .agent_name = request.agent_name.empty() ? request.runtime_config->agent_key : request.agent_name,
             .workspace_root = request.runtime_config->workspace_root,

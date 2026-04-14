@@ -198,7 +198,8 @@ namespace orangutan::bootstrap {
                     }
 
                     const bool created_session = state->current_session_id->empty();
-                    const auto active_model = state->provider != nullptr && !state->provider->current_model().empty() ? state->provider->current_model() : state->configured_model;
+                    const auto active_model = state->provider != nullptr && !state->provider->current_model().empty() ? state->provider->current_model()
+                                                                                                                       : state->configured_model;
                     if (!cli::persist_session(*state->agent, *state->session_store, *state->current_session_id,
                                               cli::make_cli_session_metadata(active_model, state->scope_key, state->agent_key))) {
                         return std::nullopt;
