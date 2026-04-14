@@ -14,55 +14,78 @@ namespace orangutan::providers::protocols {
             return !target.thinking.empty() && target.thinking != "none";
         }
 
+        [[nodiscard]]
+        ProviderError make_openai_responses_protocol_error(std::string_view context, std::string_view detail) {
+            return ProviderError(error_category::parsing, "openai responses " + std::string(context) + ": " + std::string(detail));
+        }
+
+        [[nodiscard]]
+        nlohmann::json parse_openai_responses_payload(std::string_view payload, std::string_view context) {
+            try {
+                const auto event_data = nlohmann::json::parse(payload);
+                if (!event_data.is_object()) {
+                    throw make_openai_responses_protocol_error(context, "expected a json object");
+                }
+                return event_data;
+            } catch (const ProviderError &) {
+                throw;
+            } catch (const nlohmann::json::exception &error) {
+                throw make_openai_responses_protocol_error(context, error.what());
+            }
+        }
+
         class OpenAiResponsesStreamDecoder final : public StreamDecoder {
         public:
             explicit OpenAiResponsesStreamDecoder(ProviderEventSink sink)
             : sink_(std::move(sink)) {}
 
             void on_event(std::string_view event_name, std::string_view payload) override {
-                if (payload == "[DONE]") {
-                    return;
-                }
+                try {
+                    if (payload == "[DONE]") {
+                        return;
+                    }
 
-                const auto event_data = nlohmann::json::parse(payload, nullptr, false);
-                if (!event_data.is_object()) {
-                    return;
-                }
+                    const auto event_data = parse_openai_responses_payload(payload, "stream event");
 
-                if (event_name == "response.output_text.delta") {
-                    const auto delta = event_data.value("delta", std::string{});
-                    text_ += delta;
-                    emit(TextDelta{delta});
-                    return;
-                }
-                if (event_name == "response.reasoning_summary_text.delta" || event_name == "response.reasoning.delta") {
-                    const auto delta = event_data.value("delta", std::string{});
-                    thinking_ += delta;
-                    emit(ThinkingDelta{delta});
-                    return;
-                }
-                if (event_name == "response.output_item.added") {
-                    const auto item = event_data.contains("item") ? event_data["item"] : nlohmann::json::object();
-                    if (item.value("type", std::string{}) == "function_call") {
-                        auto &call = tool_calls_[item.value("id", item.value("call_id", std::string{}))];
-                        call.id = item.value("call_id", item.value("id", std::string{}));
-                        call.name = item.value("name", std::string{});
-                        if (!call.announced && !call.id.empty() && !call.name.empty()) {
-                            emit(ToolCallStarted{.id = call.id, .name = call.name});
-                            call.announced = true;
+                    if (event_name == "response.output_text.delta") {
+                        const auto delta = event_data.value("delta", std::string{});
+                        text_ += delta;
+                        emit(TextDelta{delta});
+                        return;
+                    }
+                    if (event_name == "response.reasoning_summary_text.delta" || event_name == "response.reasoning.delta") {
+                        const auto delta = event_data.value("delta", std::string{});
+                        thinking_ += delta;
+                        emit(ThinkingDelta{delta});
+                        return;
+                    }
+                    if (event_name == "response.output_item.added") {
+                        const auto item = event_data.contains("item") ? event_data["item"] : nlohmann::json::object();
+                        if (item.value("type", std::string{}) == "function_call") {
+                            auto &call = tool_calls_[item.value("id", item.value("call_id", std::string{}))];
+                            call.id = item.value("call_id", item.value("id", std::string{}));
+                            call.name = item.value("name", std::string{});
+                            if (!call.announced && !call.id.empty() && !call.name.empty()) {
+                                emit(ToolCallStarted{.id = call.id, .name = call.name});
+                                call.announced = true;
+                            }
                         }
+                        return;
                     }
-                    return;
-                }
-                if (event_name == "response.function_call_arguments.delta") {
-                    const auto item_id = event_data.value("item_id", event_data.value("call_id", std::string{}));
-                    if (!item_id.empty()) {
-                        tool_calls_[item_id].arguments += event_data.value("delta", std::string{});
+                    if (event_name == "response.function_call_arguments.delta") {
+                        const auto item_id = event_data.value("item_id", event_data.value("call_id", std::string{}));
+                        if (!item_id.empty()) {
+                            tool_calls_[item_id].arguments += event_data.value("delta", std::string{});
+                        }
+                        return;
                     }
-                    return;
-                }
-                if (event_name == "response.completed" && event_data.contains("response")) {
-                    stop_reason_ = map_stop_reason(event_data["response"].value("status", std::string{"completed"}));
+                    if (event_name == "response.completed" && event_data.contains("response")) {
+                        stop_reason_ = map_stop_reason(event_data["response"].value("status", std::string{"completed"}));
+                    }
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_openai_responses_protocol_error("stream event", error.what());
                 }
             }
 
@@ -138,58 +161,64 @@ namespace orangutan::providers::protocols {
 
             [[nodiscard]]
             LLMResponse parse_response(const transport::HttpResponse &response) const override {
-                const auto payload = nlohmann::json::parse(response.body);
-                LLMResponse result;
-                result.stop_reason = map_stop_reason(payload.value("status", std::string{"completed"}));
+                try {
+                    const auto payload = parse_openai_responses_payload(response.body, "response");
+                    LLMResponse result;
+                    result.stop_reason = map_stop_reason(payload.value("status", std::string{"completed"}));
 
-                if (payload.contains("output_text") && payload["output_text"].is_string() && !payload["output_text"].get<std::string>().empty()) {
-                    result.content.emplace_back(Text{payload["output_text"].get<std::string>()});
-                }
+                    if (payload.contains("output_text") && payload["output_text"].is_string() && !payload["output_text"].get<std::string>().empty()) {
+                        result.content.emplace_back(Text{payload["output_text"].get<std::string>()});
+                    }
 
-                if (!payload.contains("output") || !payload["output"].is_array()) {
+                    if (!payload.contains("output") || !payload["output"].is_array()) {
+                        return result;
+                    }
+
+                    for (const auto &item : payload["output"]) {
+                        const auto item_type = item.value("type", std::string{});
+                        if (item_type == "message" && item.contains("content")) {
+                            for (const auto &content : item["content"]) {
+                                const auto content_type = content.value("type", std::string{});
+                                if ((content_type == "output_text" || content_type == "text") && content.contains("text")) {
+                                    result.content.emplace_back(Text{content["text"].get<std::string>()});
+                                } else if ((content_type == "reasoning" || content_type == "reasoning_text") && content.contains("text")) {
+                                    result.content.emplace_back(Thinking{content["text"].get<std::string>()});
+                                }
+                            }
+                            continue;
+                        }
+
+                        if (item_type == "reasoning" && item.contains("summary") && item["summary"].is_array()) {
+                            std::string summary;
+                            for (const auto &entry : item["summary"]) {
+                                if (entry.contains("text")) {
+                                    summary += entry["text"].get<std::string>();
+                                }
+                            }
+                            if (!summary.empty()) {
+                                result.content.emplace_back(Thinking{summary});
+                            }
+                            continue;
+                        }
+
+                        if (item_type == "function_call") {
+                            openai::ToolCallState state{
+                                .id = item.value("call_id", item.value("id", std::string{})),
+                                .name = item.value("name", std::string{}),
+                                .arguments = item.value("arguments", std::string{}),
+                            };
+                            if (auto tool_use = openai::finalize_tool_call(state, "openai responses response"); tool_use.has_value()) {
+                                result.content.emplace_back(std::move(*tool_use));
+                            }
+                        }
+                    }
+
                     return result;
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_openai_responses_protocol_error("response", error.what());
                 }
-
-                for (const auto &item : payload["output"]) {
-                    const auto item_type = item.value("type", std::string{});
-                    if (item_type == "message" && item.contains("content")) {
-                        for (const auto &content : item["content"]) {
-                            const auto content_type = content.value("type", std::string{});
-                            if ((content_type == "output_text" || content_type == "text") && content.contains("text")) {
-                                result.content.emplace_back(Text{content["text"].get<std::string>()});
-                            } else if ((content_type == "reasoning" || content_type == "reasoning_text") && content.contains("text")) {
-                                result.content.emplace_back(Thinking{content["text"].get<std::string>()});
-                            }
-                        }
-                        continue;
-                    }
-
-                    if (item_type == "reasoning" && item.contains("summary") && item["summary"].is_array()) {
-                        std::string summary;
-                        for (const auto &entry : item["summary"]) {
-                            if (entry.contains("text")) {
-                                summary += entry["text"].get<std::string>();
-                            }
-                        }
-                        if (!summary.empty()) {
-                            result.content.emplace_back(Thinking{summary});
-                        }
-                        continue;
-                    }
-
-                    if (item_type == "function_call") {
-                        openai::ToolCallState state{
-                            .id = item.value("call_id", item.value("id", std::string{})),
-                            .name = item.value("name", std::string{}),
-                            .arguments = item.value("arguments", std::string{}),
-                        };
-                        if (auto tool_use = openai::finalize_tool_call(state, "openai responses response"); tool_use.has_value()) {
-                            result.content.emplace_back(std::move(*tool_use));
-                        }
-                    }
-                }
-
-                return result;
             }
 
             [[nodiscard]]

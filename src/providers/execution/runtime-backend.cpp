@@ -3,6 +3,7 @@
 #include <mutex>
 #include <unordered_set>
 
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
@@ -118,6 +119,27 @@ namespace orangutan::providers::execution {
                 for (std::size_t index = begin_index; index < targets.size(); ++index) {
                     auto target = targets[index];
                     bool emitted_stream_event = false;
+                    auto handle_failure = [&](const ProviderError &error) {
+                        {
+                            std::scoped_lock lock(mutex_);
+                            ++usage_.failed_attempts;
+                        }
+
+                        failures.push_back(target_label(target) + ": " + error.what());
+                        last_error = error;
+
+                        if (!error.retryable() || emitted_stream_event || index + 1 >= targets.size()) {
+                            return false;
+                        }
+
+                        {
+                            std::scoped_lock lock(mutex_);
+                            ++usage_.fallback_switches;
+                        }
+
+                        spdlog::warn("provider target '{}' failed, falling back: {}", target_label(target), error.what());
+                        return true;
+                    };
 
                     try {
                         {
@@ -152,10 +174,9 @@ namespace orangutan::providers::execution {
                         LLMResponse response;
                         if (effective_request.options.stream) {
                             auto decoder = assembly.adapter->make_stream_decoder(tracking_sink);
-                            static_cast<void>(transport_.post_sse(
-                                http_request, target, [&decoder](std::string_view event_name, std::string_view payload) {
+                            transport_.stream_sse(http_request, target, [&decoder](std::string_view event_name, std::string_view payload) {
                                     decoder->on_event(event_name, payload);
-                                }));
+                                });
                             response = decoder->finish();
                         } else {
                             const auto http_response = transport_.post(http_request, target);
@@ -176,24 +197,17 @@ namespace orangutan::providers::execution {
                             .active_target = std::move(target),
                         };
                     } catch (const ProviderError &error) {
-                        {
-                            std::scoped_lock lock(mutex_);
-                            ++usage_.failed_attempts;
-                        }
-
-                        failures.push_back(target_label(target) + ": " + error.what());
-                        last_error = error;
-
-                        if (!error.retryable() || emitted_stream_event || index + 1 >= targets.size()) {
+                        if (!handle_failure(error)) {
                             break;
                         }
-
-                        {
-                            std::scoped_lock lock(mutex_);
-                            ++usage_.fallback_switches;
+                    } catch (const nlohmann::json::exception &error) {
+                        if (!handle_failure(ProviderError(error_category::parsing, error.what(), target))) {
+                            break;
                         }
-
-                        spdlog::warn("provider target '{}' failed, falling back: {}", target_label(target), error.what());
+                    } catch (const std::exception &error) {
+                        if (!handle_failure(ProviderError(error_category::unknown, error.what(), target))) {
+                            break;
+                        }
                     }
                 }
 

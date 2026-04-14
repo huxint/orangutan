@@ -28,9 +28,10 @@ namespace {
         CHECK(orangutan::ProviderError(orangutan::error_category::network, "network").retryable());
         CHECK(orangutan::ProviderError(orangutan::error_category::rate_limit, "rate limit").retryable());
         CHECK(orangutan::ProviderError(orangutan::error_category::upstream, "upstream").retryable());
+        CHECK(orangutan::ProviderError(orangutan::error_category::parsing, "parsing").retryable());
         CHECK_FALSE(orangutan::ProviderError(orangutan::error_category::configuration, "configuration").retryable());
         CHECK_FALSE(orangutan::ProviderError(orangutan::error_category::authentication, "authentication").retryable());
-        CHECK_FALSE(orangutan::ProviderError(orangutan::error_category::parsing, "parsing").retryable());
+        CHECK_FALSE(orangutan::ProviderError(orangutan::error_category::unknown, "unknown").retryable());
     }
 
     TEST_CASE("provider_core_rejects_unknown_kind_tokens") {

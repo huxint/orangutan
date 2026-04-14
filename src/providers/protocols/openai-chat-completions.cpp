@@ -13,58 +13,84 @@ namespace orangutan::providers::protocols {
             return !target.thinking.empty() && target.thinking != "none";
         }
 
+        [[nodiscard]]
+        ProviderError make_openai_chat_protocol_error(std::string_view context, std::string_view detail) {
+            return ProviderError(error_category::parsing, "openai chat completions " + std::string(context) + ": " + std::string(detail));
+        }
+
+        [[nodiscard]]
+        nlohmann::json parse_openai_chat_payload(std::string_view payload, std::string_view context) {
+            try {
+                const auto event_data = nlohmann::json::parse(payload);
+                if (!event_data.is_object()) {
+                    throw make_openai_chat_protocol_error(context, "expected a json object");
+                }
+                return event_data;
+            } catch (const ProviderError &) {
+                throw;
+            } catch (const nlohmann::json::exception &error) {
+                throw make_openai_chat_protocol_error(context, error.what());
+            }
+        }
+
         class OpenAiChatStreamDecoder final : public StreamDecoder {
         public:
             explicit OpenAiChatStreamDecoder(ProviderEventSink sink)
             : sink_(std::move(sink)) {}
 
             void on_event(std::string_view /*event_name*/, std::string_view payload) override {
-                if (payload == "[DONE]") {
-                    return;
-                }
+                try {
+                    if (payload == "[DONE]") {
+                        return;
+                    }
 
-                const auto event_data = nlohmann::json::parse(payload, nullptr, false);
-                if (!event_data.is_object() || !event_data.contains("choices") || event_data["choices"].empty()) {
-                    return;
-                }
+                    const auto event_data = parse_openai_chat_payload(payload, "stream event");
+                    if (!event_data.contains("choices") || !event_data["choices"].is_array() || event_data["choices"].empty()) {
+                        return;
+                    }
 
-                const auto &choice = event_data["choices"][0];
-                if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
-                    stop_reason_ = map_stop_reason(choice["finish_reason"].get<std::string>());
-                }
+                    const auto &choice = event_data["choices"][0];
+                    if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+                        stop_reason_ = map_stop_reason(choice["finish_reason"].get<std::string>());
+                    }
 
-                if (!choice.contains("delta")) {
-                    return;
-                }
+                    if (!choice.contains("delta")) {
+                        return;
+                    }
 
-                const auto &delta = choice["delta"];
-                if (delta.contains("content") && !delta["content"].is_null()) {
-                    const auto text = delta["content"].get<std::string>();
-                    text_ += text;
-                    emit(TextDelta{text});
-                }
-                if (delta.contains("reasoning_content") && !delta["reasoning_content"].is_null()) {
-                    const auto thinking = delta["reasoning_content"].get<std::string>();
-                    thinking_ += thinking;
-                    emit(ThinkingDelta{thinking});
-                }
-                if (delta.contains("tool_calls")) {
-                    for (const auto &tool_call : delta["tool_calls"]) {
-                        if (!tool_call.contains("index") || !tool_call["index"].is_number_integer()) {
-                            continue;
-                        }
-                        const auto index = tool_call["index"].get<std::size_t>();
-                        while (tool_calls_.size() <= index) {
-                            tool_calls_.push_back({});
-                        }
+                    const auto &delta = choice["delta"];
+                    if (delta.contains("content") && !delta["content"].is_null()) {
+                        const auto text = delta["content"].get<std::string>();
+                        text_ += text;
+                        emit(TextDelta{text});
+                    }
+                    if (delta.contains("reasoning_content") && !delta["reasoning_content"].is_null()) {
+                        const auto thinking = delta["reasoning_content"].get<std::string>();
+                        thinking_ += thinking;
+                        emit(ThinkingDelta{thinking});
+                    }
+                    if (delta.contains("tool_calls")) {
+                        for (const auto &tool_call : delta["tool_calls"]) {
+                            if (!tool_call.contains("index") || !tool_call["index"].is_number_integer()) {
+                                continue;
+                            }
+                            const auto index = tool_call["index"].get<std::size_t>();
+                            while (tool_calls_.size() <= index) {
+                                tool_calls_.push_back({});
+                            }
 
-                        auto &state = tool_calls_[index];
-                        openai::merge_tool_call_delta(state, tool_call);
-                        if (!state.announced && !state.id.empty() && !state.name.empty()) {
-                            emit(ToolCallStarted{.id = state.id, .name = state.name});
-                            state.announced = true;
+                            auto &state = tool_calls_[index];
+                            openai::merge_tool_call_delta(state, tool_call);
+                            if (!state.announced && !state.id.empty() && !state.name.empty()) {
+                                emit(ToolCallStarted{.id = state.id, .name = state.name});
+                                state.announced = true;
+                            }
                         }
                     }
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_openai_chat_protocol_error("stream event", error.what());
                 }
             }
 
@@ -139,34 +165,40 @@ namespace orangutan::providers::protocols {
 
             [[nodiscard]]
             LLMResponse parse_response(const transport::HttpResponse &response) const override {
-                const auto payload = nlohmann::json::parse(response.body);
-                LLMResponse result;
-                if (!payload.contains("choices") || payload["choices"].empty()) {
-                    result.stop_reason = response_stop_reason::unknown;
-                    return result;
-                }
+                try {
+                    const auto payload = parse_openai_chat_payload(response.body, "response");
+                    LLMResponse result;
+                    if (!payload.contains("choices") || !payload["choices"].is_array() || payload["choices"].empty()) {
+                        result.stop_reason = response_stop_reason::unknown;
+                        return result;
+                    }
 
-                const auto &choice = payload["choices"][0];
-                result.stop_reason = map_stop_reason(choice.value("finish_reason", "stop"));
-                const auto &message = choice["message"];
+                    const auto &choice = payload["choices"][0];
+                    result.stop_reason = map_stop_reason(choice.value("finish_reason", "stop"));
+                    const auto &message = choice["message"];
 
-                if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
-                    result.content.emplace_back(Thinking{message["reasoning_content"].get<std::string>()});
-                }
-                if (message.contains("content") && !message["content"].is_null()) {
-                    result.content.emplace_back(Text{message["content"].get<std::string>()});
-                }
-                if (message.contains("tool_calls")) {
-                    for (const auto &tool_call : message["tool_calls"]) {
-                        openai::ToolCallState state;
-                        openai::merge_tool_call_delta(state, tool_call);
-                        if (auto tool_use = openai::finalize_tool_call(state, "openai chat completions response"); tool_use.has_value()) {
-                            result.content.emplace_back(std::move(*tool_use));
+                    if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
+                        result.content.emplace_back(Thinking{message["reasoning_content"].get<std::string>()});
+                    }
+                    if (message.contains("content") && !message["content"].is_null()) {
+                        result.content.emplace_back(Text{message["content"].get<std::string>()});
+                    }
+                    if (message.contains("tool_calls")) {
+                        for (const auto &tool_call : message["tool_calls"]) {
+                            openai::ToolCallState state;
+                            openai::merge_tool_call_delta(state, tool_call);
+                            if (auto tool_use = openai::finalize_tool_call(state, "openai chat completions response"); tool_use.has_value()) {
+                                result.content.emplace_back(std::move(*tool_use));
+                            }
                         }
                     }
-                }
 
-                return result;
+                    return result;
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_openai_chat_protocol_error("response", error.what());
+                }
             }
 
             [[nodiscard]]

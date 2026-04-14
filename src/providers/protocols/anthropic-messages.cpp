@@ -27,88 +27,116 @@ namespace orangutan::providers::protocols {
             return 0;
         }
 
+        [[nodiscard]]
+        ProviderError make_anthropic_messages_protocol_error(std::string_view context, std::string_view detail) {
+            return ProviderError(error_category::parsing, "anthropic messages " + std::string(context) + ": " + std::string(detail));
+        }
+
+        [[nodiscard]]
+        nlohmann::json parse_anthropic_messages_payload(std::string_view payload, std::string_view context) {
+            try {
+                const auto event_data = nlohmann::json::parse(payload);
+                if (!event_data.is_object()) {
+                    throw make_anthropic_messages_protocol_error(context, "expected a json object");
+                }
+                return event_data;
+            } catch (const ProviderError &) {
+                throw;
+            } catch (const nlohmann::json::exception &error) {
+                throw make_anthropic_messages_protocol_error(context, error.what());
+            }
+        }
+
         class AnthropicMessagesStreamDecoder final : public StreamDecoder {
         public:
             explicit AnthropicMessagesStreamDecoder(ProviderEventSink sink)
             : sink_(std::move(sink)) {}
 
             void on_event(std::string_view /*event_name*/, std::string_view payload) override {
-                if (payload == "[DONE]") {
-                    return;
-                }
-
-                const auto event_data = nlohmann::json::parse(payload, nullptr, false);
-                if (!event_data.is_object()) {
-                    return;
-                }
-
-                const auto type = event_data.value("type", std::string{});
-                if (type == "content_block_start") {
-                    auto block = event_data["content_block"];
-                    BlockState state;
-                    state.type = block.value("type", std::string{});
-                    if (state.type == "tool_use") {
-                        state.id = block.value("id", std::string{});
-                        state.name = block.value("name", std::string{});
-                        emit(ToolCallStarted{.id = state.id, .name = state.name});
-                    }
-                    blocks_.push_back(std::move(state));
-                    return;
-                }
-
-                if (type == "content_block_delta") {
-                    const auto index = event_data.value("index", std::size_t{0});
-                    if (index >= blocks_.size()) {
+                try {
+                    if (payload == "[DONE]") {
                         return;
                     }
 
-                    auto &block = blocks_[index];
-                    const auto &delta = event_data["delta"];
-                    const auto delta_type = delta.value("type", std::string{});
-                    if (delta_type == "text_delta") {
-                        const auto text = delta["text"].get<std::string>();
-                        block.text += text;
-                        emit(TextDelta{text});
-                    } else if (delta_type == "input_json_delta") {
-                        block.input_json += delta["partial_json"].get<std::string>();
-                    } else if (delta_type == "thinking_delta") {
-                        const auto thinking = delta["thinking"].get<std::string>();
-                        block.text += thinking;
-                        emit(ThinkingDelta{thinking});
-                    }
-                    return;
-                }
+                    const auto event_data = parse_anthropic_messages_payload(payload, "stream event");
 
-                if (type == "message_delta" && event_data.contains("delta") && event_data["delta"].contains("stop_reason")) {
-                    stop_reason_ = map_stop_reason(event_data["delta"]["stop_reason"].get<std::string>());
+                    const auto type = event_data.value("type", std::string{});
+                    if (type == "content_block_start") {
+                        auto block = event_data["content_block"];
+                        BlockState state;
+                        state.type = block.value("type", std::string{});
+                        if (state.type == "tool_use") {
+                            state.id = block.value("id", std::string{});
+                            state.name = block.value("name", std::string{});
+                            emit(ToolCallStarted{.id = state.id, .name = state.name});
+                        }
+                        blocks_.push_back(std::move(state));
+                        return;
+                    }
+
+                    if (type == "content_block_delta") {
+                        const auto index = event_data.value("index", std::size_t{0});
+                        if (index >= blocks_.size()) {
+                            return;
+                        }
+
+                        auto &block = blocks_[index];
+                        const auto &delta = event_data["delta"];
+                        const auto delta_type = delta.value("type", std::string{});
+                        if (delta_type == "text_delta") {
+                            const auto text = delta["text"].get<std::string>();
+                            block.text += text;
+                            emit(TextDelta{text});
+                        } else if (delta_type == "input_json_delta") {
+                            block.input_json += delta["partial_json"].get<std::string>();
+                        } else if (delta_type == "thinking_delta") {
+                            const auto thinking = delta["thinking"].get<std::string>();
+                            block.text += thinking;
+                            emit(ThinkingDelta{thinking});
+                        }
+                        return;
+                    }
+
+                    if (type == "message_delta" && event_data.contains("delta") && event_data["delta"].contains("stop_reason")) {
+                        stop_reason_ = map_stop_reason(event_data["delta"]["stop_reason"].get<std::string>());
+                    }
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_anthropic_messages_protocol_error("stream event", error.what());
                 }
             }
 
             [[nodiscard]]
             LLMResponse finish() const override {
-                LLMResponse response;
-                response.stop_reason = stop_reason_;
+                try {
+                    LLMResponse response;
+                    response.stop_reason = stop_reason_;
 
-                for (const auto &block : blocks_) {
-                    if (block.type == "text") {
-                        response.content.emplace_back(Text{block.text});
-                    } else if (block.type == "thinking") {
-                        response.content.emplace_back(Thinking{block.text});
-                    } else if (block.type == "tool_use") {
-                        nlohmann::json input = nlohmann::json::object();
-                        if (!block.input_json.empty()) {
-                            const auto parsed = nlohmann::json::parse(block.input_json, nullptr, false);
-                            if (parsed.is_object()) {
+                    for (const auto &block : blocks_) {
+                        if (block.type == "text") {
+                            response.content.emplace_back(Text{block.text});
+                        } else if (block.type == "thinking") {
+                            response.content.emplace_back(Thinking{block.text});
+                        } else if (block.type == "tool_use") {
+                            nlohmann::json input = nlohmann::json::object();
+                            if (!block.input_json.empty()) {
+                                const auto parsed = nlohmann::json::parse(block.input_json);
+                                if (!parsed.is_object()) {
+                                    throw make_anthropic_messages_protocol_error("tool input", "expected a json object");
+                                }
                                 input = parsed;
-                            } else {
-                                spdlog::warn("failed to parse anthropic tool input json");
                             }
+                            response.content.emplace_back(ToolUse(block.id, block.name, std::move(input)));
                         }
-                        response.content.emplace_back(ToolUse(block.id, block.name, std::move(input)));
                     }
-                }
 
-                return response;
+                    return response;
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_anthropic_messages_protocol_error("stream result", error.what());
+                }
             }
 
         private:
@@ -171,26 +199,32 @@ namespace orangutan::providers::protocols {
 
             [[nodiscard]]
             LLMResponse parse_response(const transport::HttpResponse &response) const override {
-                const auto payload = nlohmann::json::parse(response.body);
-                LLMResponse result;
-                result.stop_reason = map_stop_reason(payload.value("stop_reason", std::string{"end_turn"}));
+                try {
+                    const auto payload = parse_anthropic_messages_payload(response.body, "response");
+                    LLMResponse result;
+                    result.stop_reason = map_stop_reason(payload.value("stop_reason", std::string{"end_turn"}));
 
-                if (!payload.contains("content") || !payload["content"].is_array()) {
-                    return result;
-                }
-
-                for (const auto &block : payload["content"]) {
-                    const auto type = block.value("type", std::string{});
-                    if (type == "text") {
-                        result.content.emplace_back(Text{block["text"].get<std::string>()});
-                    } else if (type == "thinking") {
-                        result.content.emplace_back(Thinking{block["thinking"].get<std::string>()});
-                    } else if (type == "tool_use") {
-                        result.content.emplace_back(ToolUse(block["id"].get<std::string>(), block["name"].get<std::string>(), block["input"]));
+                    if (!payload.contains("content") || !payload["content"].is_array()) {
+                        return result;
                     }
-                }
 
-                return result;
+                    for (const auto &block : payload["content"]) {
+                        const auto type = block.value("type", std::string{});
+                        if (type == "text") {
+                            result.content.emplace_back(Text{block["text"].get<std::string>()});
+                        } else if (type == "thinking") {
+                            result.content.emplace_back(Thinking{block["thinking"].get<std::string>()});
+                        } else if (type == "tool_use") {
+                            result.content.emplace_back(ToolUse(block["id"].get<std::string>(), block["name"].get<std::string>(), block["input"]));
+                        }
+                    }
+
+                    return result;
+                } catch (const ProviderError &) {
+                    throw;
+                } catch (const nlohmann::json::exception &error) {
+                    throw make_anthropic_messages_protocol_error("response", error.what());
+                }
             }
 
             [[nodiscard]]

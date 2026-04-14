@@ -27,8 +27,7 @@ namespace orangutan::providers::transport {
         [[nodiscard]]
         HttpResponse post(const HttpRequest &request, const ModelTarget &target) const;
 
-        [[nodiscard]]
-        HttpResponse post_sse(const HttpRequest &request, const ModelTarget &target, const sse_event_callback &on_event) const;
+        void stream_sse(const HttpRequest &request, const ModelTarget &target, const sse_event_callback &on_event) const;
     };
 
 } // namespace orangutan::providers::transport

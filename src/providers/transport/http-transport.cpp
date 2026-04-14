@@ -118,6 +118,15 @@ namespace orangutan::providers::transport {
             return ProviderError(category_for_status(status_code), std::move(message), target);
         }
 
+        void append_bounded_preview(std::string &preview, std::string_view chunk, std::size_t max_chars = 1024) {
+            if (preview.size() >= max_chars) {
+                return;
+            }
+
+            const auto remaining = max_chars - preview.size();
+            preview.append(chunk.substr(0, remaining));
+        }
+
         void configure_request(CURL *handle, const HttpRequest &request, const CurlHeaders &headers) {
             curl_easy_setopt(handle, CURLOPT_URL, request.url.c_str());
             curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers.get());
@@ -166,9 +175,9 @@ namespace orangutan::providers::transport {
         return HttpResponse{.status_code = status_code, .body = std::move(response_body)};
     }
 
-    HttpResponse HttpTransport::post_sse(const HttpRequest &request, const ModelTarget &target, const sse_event_callback &on_event) const {
+    void HttpTransport::stream_sse(const HttpRequest &request, const ModelTarget &target, const sse_event_callback &on_event) const {
         CurlHandle handle;
-        std::string response_body;
+        std::string error_preview;
         const auto headers = make_headers(request.headers);
         SseParser parser([&](std::string_view event_name, std::string_view data) {
             if (on_event != nullptr) {
@@ -177,16 +186,23 @@ namespace orangutan::providers::transport {
         });
 
         configure_request(handle.get(), request, headers);
+        struct StreamState {
+            SseParser *parser = nullptr;
+            std::string *error_preview = nullptr;
+        };
         const auto write_callback = +[](char *ptr, std::size_t size, std::size_t nmemb, void *userdata) -> std::size_t {
-            auto *state = static_cast<std::pair<SseParser *, std::string *> *>(userdata);
+            auto *state = static_cast<StreamState *>(userdata);
             const auto total = size * nmemb;
             const auto chunk = std::string_view(ptr, total);
-            state->second->append(chunk);
-            state->first->feed(chunk);
+            append_bounded_preview(*state->error_preview, chunk);
+            state->parser->feed(chunk);
             return total;
         };
         curl_easy_setopt(handle.get(), CURLOPT_WRITEFUNCTION, write_callback);
-        auto state = std::pair<SseParser *, std::string *>{&parser, &response_body};
+        auto state = StreamState{
+            .parser = &parser,
+            .error_preview = &error_preview,
+        };
         curl_easy_setopt(handle.get(), CURLOPT_WRITEDATA, &state);
 
         const auto result_code = curl_easy_perform(handle.get());
@@ -197,11 +213,10 @@ namespace orangutan::providers::transport {
             throw ProviderError(error_category::network, std::string("http request failed: ") + curl_easy_strerror(result_code), target);
         }
         if (status_code < 200 || status_code >= 300) {
-            throw make_http_error(status_code, response_body, target);
+            throw make_http_error(status_code, error_preview, target);
         }
 
         spdlog::debug("http stream {} {} succeeded", request.url, status_code);
-        return HttpResponse{.status_code = status_code, .body = std::move(response_body)};
     }
 
 } // namespace orangutan::providers::transport

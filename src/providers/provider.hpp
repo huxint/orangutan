@@ -126,10 +126,10 @@ namespace orangutan::providers {
                 case error_category::network:
                 case error_category::rate_limit:
                 case error_category::upstream:
+                case error_category::parsing:
                     return true;
                 case error_category::configuration:
                 case error_category::authentication:
-                case error_category::parsing:
                 case error_category::invalid_request:
                 case error_category::interrupted:
                 case error_category::unknown:

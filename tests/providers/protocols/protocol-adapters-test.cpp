@@ -107,6 +107,13 @@ namespace {
         REQUIRE(streamed.content.size() == 3UL);
         CHECK(std::get<orangutan::Text>(streamed.content[1]).text == "hello");
         CHECK(std::get<orangutan::ToolUse>(streamed.content[2]).input.at("a") == 1);
+
+        CHECK_THROWS_AS(adapter->parse_response(orangutan::providers::transport::HttpResponse{
+                            .status_code = 200,
+                            .body = "{bad-json",
+                        }),
+                        orangutan::ProviderError);
+        CHECK_THROWS_AS(decoder->on_event("", "{bad-json"), orangutan::ProviderError);
     }
 
     TEST_CASE("openai_responses_adapter_handles_reasoning_and_function_calls") {
@@ -174,6 +181,14 @@ namespace {
         CHECK(std::get<orangutan::Thinking>(streamed.content[0]).thinking == "think");
         CHECK(std::get<orangutan::Text>(streamed.content[1]).text == "done");
         CHECK(std::get<orangutan::ToolUse>(streamed.content[2]).name == "lookup");
+
+        CHECK_THROWS_AS(adapter->parse_response(orangutan::providers::transport::HttpResponse{
+                            .status_code = 200,
+                            .body = "{bad-json",
+                        }),
+                        orangutan::ProviderError);
+        auto invalid_decoder = adapter->make_stream_decoder({});
+        CHECK_THROWS_AS(invalid_decoder->on_event("response.output_text.delta", "{bad-json"), orangutan::ProviderError);
     }
 
     TEST_CASE("anthropic_messages_adapter_builds_thinking_requests_and_parses_stream_blocks") {
@@ -236,6 +251,14 @@ namespace {
         REQUIRE(streamed.content.size() == 2UL);
         CHECK(std::get<orangutan::Thinking>(streamed.content[0]).thinking == "reason");
         CHECK(std::get<orangutan::ToolUse>(streamed.content[1]).name == "lookup");
+
+        CHECK_THROWS_AS(adapter->parse_response(orangutan::providers::transport::HttpResponse{
+                            .status_code = 200,
+                            .body = "{bad-json",
+                        }),
+                        orangutan::ProviderError);
+        auto invalid_decoder = adapter->make_stream_decoder({});
+        CHECK_THROWS_AS(invalid_decoder->on_event("", "{bad-json"), orangutan::ProviderError);
     }
 
 } // namespace
