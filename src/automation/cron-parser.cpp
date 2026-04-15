@@ -4,6 +4,7 @@
 #include <charconv>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <string>
 #include <vector>
 
 namespace orangutan::automation {
@@ -128,7 +129,7 @@ namespace orangutan::automation {
             auto tokens = split_whitespace(expr);
             if (tokens.size() != 5) {
                 if (emit_errors) {
-                    spdlog::error("Cron expression must have exactly 5 fields: '{}'", expr);
+                    spdlog::error("cron expression must have exactly 5 fields: '{}'", expr);
                 }
                 return std::nullopt;
             }
@@ -141,7 +142,7 @@ namespace orangutan::automation {
 
             if (!minute || !hour || !dom || !month || !dow) {
                 if (emit_errors) {
-                    spdlog::error("Failed to parse cron expression: '{}'", expr);
+                    spdlog::error("failed to parse cron expression: '{}'", expr);
                 }
                 return std::nullopt;
             }
@@ -156,6 +157,14 @@ namespace orangutan::automation {
         }
 
     } // namespace
+
+    std::expected<CronExpr, std::string> parse_cron_expression(std::string_view expr) {
+        const auto parsed = parse_cron_silent(expr);
+        if (!parsed.has_value()) {
+            return std::unexpected("cron expression is invalid");
+        }
+        return *parsed;
+    }
 
     std::optional<CronExpr> parse_cron(std::string_view expr) {
         return parse_cron_impl(expr, true);

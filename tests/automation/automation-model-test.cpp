@@ -9,6 +9,7 @@
 
 #include "automation/builder.hpp"
 #include "automation/model.hpp"
+#include "automation/parser.hpp"
 #include "test-helpers.hpp"
 
 namespace {
@@ -53,6 +54,28 @@ namespace {
         CHECK(automation.trigger.active_windows.front().end == std::chrono::hours{18});
         CHECK(automation.trigger.time_zone == "UTC");
         CHECK(automation.delivery.mode == orangutan::automation::delivery_mode::silent);
+    };
+
+    TEST_CASE("interval_trigger_json_uses_duration_strings_and_time_zone") {
+        const auto automation = orangutan::automation::Automation::named("pulse")
+                                    .for_agent("default")
+                                    .run_prompt("status check")
+                                    .every(std::chrono::minutes{15})
+                                    .jitter(std::chrono::seconds{30})
+                                    .time_zone("UTC")
+                                    .within_hours({std::chrono::hours{9}, std::chrono::hours{18}})
+                                    .deliver_silently()
+                                    .build();
+
+        const auto json = orangutan::automation::trigger_to_json(automation.trigger);
+        CHECK(json.at("type") == "interval");
+        CHECK(json.at("every") == "15m");
+        CHECK(json.at("jitter") == "30s");
+        CHECK(json.at("time_zone") == "UTC");
+        REQUIRE(json.at("active_windows").is_array());
+        REQUIRE(json.at("active_windows").size() == 1UL);
+        CHECK(json.at("active_windows").at(0).at("start") == "09:00");
+        CHECK(json.at("active_windows").at(0).at("end") == "18:00");
     };
 
     TEST_CASE("automation_builder_creates_once_definition") {

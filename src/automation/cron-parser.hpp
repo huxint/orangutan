@@ -1,8 +1,10 @@
 #pragma once
 
 #include <chrono>
+#include <expected>
 #include <optional>
 #include <set>
+#include <string>
 #include <string_view>
 
 namespace orangutan::automation {
@@ -26,6 +28,9 @@ namespace orangutan::automation {
     };
 
     using TimePoint = std::chrono::system_clock::time_point;
+
+    [[nodiscard]]
+    std::expected<CronExpr, std::string> parse_cron_expression(std::string_view expr);
 
     std::optional<CronExpr> parse_cron(std::string_view expr);
     std::optional<CronExpr> parse_cron_silent(std::string_view expr);
