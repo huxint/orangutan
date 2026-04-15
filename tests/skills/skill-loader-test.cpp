@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -68,6 +69,59 @@ namespace {
         CHECK(directories.back() == workspace_root / ".orangutan" / "skills");
 
         std::filesystem::remove_all(workspace_root);
+    };
+
+    TEST_CASE("builder_loads_resolved_directories_from_workspace_root") {
+        const auto home_root = orangutan::testing::unique_test_root("orangutan_skill_loader_builder_home");
+        const auto workspace_root = orangutan::testing::unique_test_root("orangutan_skill_loader_builder_workspace");
+        const auto workspace_skills = workspace_root / ".orangutan" / "skills";
+        ScopedEnvVar env("HOME", home_root.string());
+
+        write_skill(workspace_skills, "workspace-builder-skill", R"md(---
+name: workspace-builder-skill
+description: workspace builder skill
+---
+workspace builder body
+)md");
+
+        auto build_result = SkillLoader::create().with_workspace_root(workspace_root).build();
+        REQUIRE(build_result.has_value());
+
+        auto loader = std::move(build_result).value();
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto skill = find_skill_by_name(catalog, "workspace-builder-skill");
+        REQUIRE(skill.has_value());
+
+        const auto invoke = loader.invoke({.name = "workspace-builder-skill", .call_origin = skills::skill_call_origin::manual});
+        CHECK(invoke.status == skills::skill_invoke_status::ok);
+        CHECK(invoke.content.contains("workspace builder body"));
+
+        std::filesystem::remove_all(home_root);
+        std::filesystem::remove_all(workspace_root);
+    };
+
+    TEST_CASE("builder_accepts_explicit_directories_without_workspace_root") {
+        const auto temp_dir = orangutan::testing::unique_test_root("orangutan_skill_loader_builder_explicit");
+        write_skill(temp_dir, "explicit-builder-skill", R"md(---
+name: explicit-builder-skill
+description: explicit builder skill
+---
+explicit builder body
+)md");
+
+        auto build_result = SkillLoader::create().with_directories({temp_dir}).with_source(skills::skill_source::user).build();
+        REQUIRE(build_result.has_value());
+
+        auto loader = std::move(build_result).value();
+        const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+        const auto skill = find_skill_by_name(catalog, "explicit-builder-skill");
+        REQUIRE(skill.has_value());
+        CHECK(skill->source == skills::skill_source::user);
+
+        const auto invoke = loader.invoke({.name = "explicit-builder-skill", .call_origin = skills::skill_call_origin::manual});
+        CHECK(invoke.status == skills::skill_invoke_status::ok);
+
+        std::filesystem::remove_all(temp_dir);
     };
 
     TEST_CASE("list_excludes_unknown_skill_name") {

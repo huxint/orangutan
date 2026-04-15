@@ -5,6 +5,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace orangutan::skills {
@@ -65,15 +66,16 @@ namespace orangutan::skills {
 
         [[nodiscard]]
         auto build() const -> std::expected<SkillLoader, std::string> {
-            if (workspace_root_.empty()) {
-                return std::unexpected("workspace root is required");
-            }
             SkillLoader loader;
             loader.set_source(source_);
             loader.set_workspace_root(workspace_root_);
-            if (!directories_.empty()) {
-                loader.load_from_directories(directories_);
+
+            auto directories = directories_;
+            if (directories.empty()) {
+                directories = resolve_skill_directories({}, workspace_root_);
             }
+
+            loader.load_from_directories(directories);
             return loader;
         }
 
