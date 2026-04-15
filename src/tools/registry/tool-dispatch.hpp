@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -24,50 +25,47 @@ namespace orangutan::tools {
         using missing_op_error_formatter_fn = std::function<std::string(std::string_view)>;
         using unknown_op_error_formatter_fn = std::function<std::string(std::string_view)>;
 
-        ToolDispatch &op_field(std::string field_name) {
-            op_field_ = std::move(field_name);
-            return *this;
+        auto op_field(this auto &&self, std::string field_name) -> decltype(auto) {
+            self.op_field_ = std::move(field_name);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolDispatch &unknown_op_error(std::string message) {
-            unknown_op_error_ = std::move(message);
-            return *this;
+        auto unknown_op_error(this auto &&self, std::string message) -> decltype(auto) {
+            self.unknown_op_error_ = std::move(message);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolDispatch &unknown_op_error_formatter(unknown_op_error_formatter_fn formatter) {
-            unknown_op_error_formatter_ = std::move(formatter);
-            return *this;
+        auto unknown_op_error_formatter(this auto &&self, unknown_op_error_formatter_fn formatter) -> decltype(auto) {
+            self.unknown_op_error_formatter_ = std::move(formatter);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolDispatch &missing_op_error_formatter(missing_op_error_formatter_fn formatter) {
-            missing_op_error_formatter_ = std::move(formatter);
-            return *this;
+        auto missing_op_error_formatter(this auto &&self, missing_op_error_formatter_fn formatter) -> decltype(auto) {
+            self.missing_op_error_formatter_ = std::move(formatter);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolDispatch &on(std::string op, Handler fn) {
-            handlers_.insert_or_assign(std::move(op), std::move(fn));
-            return *this;
+        auto on(this auto &&self, std::string op, Handler fn) -> decltype(auto) {
+            self.handlers_.insert_or_assign(std::move(op), std::move(fn));
+            return std::forward<decltype(self)>(self);
         }
 
         [[nodiscard]]
-        Response run(const nlohmann::json &input) const {
+        auto run(const nlohmann::json &input) const -> std::expected<Response, std::string> {
             if (!input.contains(op_field_)) {
-                const auto message = missing_op_error_formatter_ != nullptr ? missing_op_error_formatter_(op_field_) : "missing required field: " + op_field_;
-                return {.message = message, .is_error = true};
+                return std::unexpected(missing_op_error_formatter_ != nullptr ? missing_op_error_formatter_(op_field_) : "missing required field: " + op_field_);
             }
 
             if (!input.at(op_field_).is_string()) {
-                return {.message = "invalid type for field: " + op_field_, .is_error = true};
+                return std::unexpected("invalid type for field: " + op_field_);
             }
 
             const auto op = input.at(op_field_).get<std::string>();
-            const auto it = handlers_.find(op);
-            if (it == handlers_.end()) {
-                const auto message = unknown_op_error_formatter_ != nullptr ? unknown_op_error_formatter_(op) : unknown_op_error_;
-                return {.message = message, .is_error = true};
+            if (!handlers_.contains(op)) {
+                return std::unexpected(unknown_op_error_formatter_ != nullptr ? unknown_op_error_formatter_(op) : unknown_op_error_);
             }
 
-            return it->second(input);
+            return handlers_.at(op)(input);
         }
 
     private:

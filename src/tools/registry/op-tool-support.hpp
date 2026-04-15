@@ -37,7 +37,11 @@ namespace orangutan::tools {
 
     [[nodiscard]]
     inline std::string dispatch_message(const ToolDispatch &dispatch, const nlohmann::json &input) {
-        return dispatch.run(input).message;
+        auto result = dispatch.run(input);
+        if (!result.has_value()) {
+            return result.error();
+        }
+        return result->message;
     }
 
 } // namespace orangutan::tools

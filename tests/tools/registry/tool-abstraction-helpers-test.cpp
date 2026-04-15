@@ -41,7 +41,9 @@ TEST_CASE("tool_spec_builder: builds executable tool with passthrough flags", "[
                         return std::string{"ok"};
                     });
 
-    registry.register_tool(spec.build());
+    auto build_result = spec.build();
+    REQUIRE(build_result.has_value());
+    registry.register_tool(std::move(*build_result));
 
     const auto *tool = registry.find_tool("demo_tool");
     REQUIRE(tool != nullptr);
@@ -54,8 +56,9 @@ TEST_CASE("tool_spec_builder: builds executable tool with passthrough flags", "[
 }
 
 TEST_CASE("tool_spec_builder: rejects missing execute endpoints", "[tools][registry][abstractions]") {
-    CHECK_THROWS_WITH(tool_spec_builder("missing_execute").description("should fail").input_schema(schema_fragments::empty_object()).build(),
-                      Catch::Matchers::ContainsSubstring("execute"));
+    auto result = tool_spec_builder("missing_execute").description("should fail").input_schema(schema_fragments::empty_object()).build();
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error().contains("execute"));
 }
 
 TEST_CASE("contextual_tool_group: skips registration when gate fails", "[tools][registry][abstractions]") {
@@ -87,13 +90,15 @@ TEST_CASE("contextual_tool_group: gate failure does not block unrelated registra
         }))
         .register_into(registry, &context);
 
-    registry.register_tool(tool_spec_builder("always_tool")
+    auto always_result = tool_spec_builder("always_tool")
                                .description("always available")
                                .input_schema(schema_fragments::empty_object())
                                .execute([](const nlohmann::json &) {
                                    return std::string{"always"};
                                })
-                               .build());
+                               .build();
+    REQUIRE(always_result.has_value());
+    registry.register_tool(std::move(*always_result));
 
     CHECK(registry.find_definition("blocked_tool") == nullptr);
     REQUIRE(registry.find_definition("always_tool") != nullptr);
@@ -131,8 +136,8 @@ TEST_CASE("tool_dispatch: returns configured unknown-op error", "[tools][registr
     auto dispatch = tool_dispatch().op_field("op").unknown_op_error("unsupported op");
 
     const auto result = dispatch.run(nlohmann::json{{"op", "nope"}, {"id", "u-1"}});
-    CHECK(result.is_error);
-    CHECK(result.message == "unsupported op");
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == "unsupported op");
 }
 
 TEST_CASE("tool_dispatch: routes known op to matching handler", "[tools][registry][abstractions]") {
@@ -141,8 +146,9 @@ TEST_CASE("tool_dispatch: routes known op to matching handler", "[tools][registr
     });
 
     const auto result = dispatch.run(nlohmann::json{{"op", "ping"}, {"id", "k-1"}});
-    CHECK_FALSE(result.is_error);
-    CHECK(result.message == "pong");
+    REQUIRE(result.has_value());
+    CHECK_FALSE(result->is_error);
+    CHECK(result->message == "pong");
 }
 
 TEST_CASE("tool_dispatch: handles missing op with formatter error", "[tools][registry][abstractions]") {
@@ -151,18 +157,16 @@ TEST_CASE("tool_dispatch: handles missing op with formatter error", "[tools][reg
     });
 
     const auto result = dispatch.run(nlohmann::json{{"id", "m-1"}});
-    CHECK(result.is_error);
-    CHECK(result.message == "missing required field: op");
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == "missing required field: op");
 }
 
 TEST_CASE("tool_dispatch: empty missing-op formatter falls back to structured default", "[tools][registry][abstractions]") {
     auto dispatch = tool_dispatch().op_field("op").missing_op_error_formatter({});
 
-    CHECK_NOTHROW([&dispatch] {
-        const auto result = dispatch.run(nlohmann::json{{"id", "m-2"}});
-        CHECK(result.is_error);
-        CHECK(result.message == "missing required field: op");
-    }());
+    const auto result = dispatch.run(nlohmann::json{{"id", "m-2"}});
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == "missing required field: op");
 }
 
 TEST_CASE("tool_dispatch: formats unknown op from formatter", "[tools][registry][abstractions]") {
@@ -171,8 +175,8 @@ TEST_CASE("tool_dispatch: formats unknown op from formatter", "[tools][registry]
     });
 
     const auto result = dispatch.run(nlohmann::json{{"op", "publish"}, {"id", "u-2"}});
-    CHECK(result.is_error);
-    CHECK(result.message == "unsupported operation: publish");
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == "unsupported operation: publish");
 }
 
 TEST_CASE("op_tool_support: routed_input_with_default_op preserves explicit op", "[tools][registry][abstractions]") {
