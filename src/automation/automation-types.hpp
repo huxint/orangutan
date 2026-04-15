@@ -83,6 +83,7 @@ namespace orangutan::automation {
         std::optional<base::i64> finished_at;
         std::string status;
         std::string summary;
+        std::string reply;
         std::string delivery_status;
         std::string log_path;
     };
