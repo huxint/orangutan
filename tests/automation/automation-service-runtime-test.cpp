@@ -1,0 +1,275 @@
+#include <chrono>
+#include <filesystem>
+#include <future>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "automation/builder.hpp"
+#include "automation/repository.hpp"
+#include "automation/runtime.hpp"
+#include "automation/service.hpp"
+#include "test-helpers.hpp"
+
+namespace {
+
+    struct NotificationCall {
+        std::string target;
+        std::string title;
+        std::string body;
+    };
+
+    struct ServiceHarness {
+        std::filesystem::path db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "automation.db");
+        orangutan::automation::Repository repository{db_path};
+        orangutan::automation::TimePoint current_time = orangutan::automation::from_unix_seconds(1'000);
+        orangutan::automation::AutomationService service{
+            repository,
+            [this] {
+                return current_time;
+            },
+        };
+        orangutan::automation::AutomationRuntime runtime{
+            service,
+            [this] {
+                return current_time;
+            },
+        };
+        std::vector<std::string> executed_ids;
+        std::vector<NotificationCall> notifications;
+
+        ServiceHarness() {
+            service.set_executor([this](const orangutan::automation::Automation &automation) {
+                executed_ids.push_back(automation.id);
+                return orangutan::automation::ExecutionResult{
+                    .success = true,
+                    .reply = "ok",
+                    .summary = "ok",
+                };
+            });
+
+            service.set_notifier([this](std::string_view target, std::string_view title, std::string_view body) -> std::optional<std::string> {
+                notifications.push_back({
+                    .target = std::string(target),
+                    .title = std::string(title),
+                    .body = std::string(body),
+                });
+                return std::nullopt;
+            });
+        }
+    };
+
+    [[nodiscard]]
+    orangutan::automation::Automation make_once_automation(std::string_view name, orangutan::automation::TimePoint scheduled_at) {
+        return orangutan::automation::Automation::named(name)
+            .for_agent("default")
+            .run_prompt("ship it")
+            .once_at(scheduled_at)
+            .build();
+    }
+
+    [[nodiscard]]
+    orangutan::automation::Automation make_interval_automation(std::string_view name, std::chrono::seconds jitter = std::chrono::seconds{0}) {
+        return orangutan::automation::Automation::named(name)
+            .for_agent("default")
+            .run_prompt("status check")
+            .every(std::chrono::seconds{30})
+            .jitter(jitter)
+            .build();
+    }
+
+    [[nodiscard]]
+    orangutan::automation::Automation make_notify_automation(std::string_view name) {
+        return orangutan::automation::Automation::named(name)
+            .for_agent("default")
+            .run_prompt("scan repo")
+            .cron("0 9 * * *")
+            .deliver_to("owner")
+            .deliver_to("pager")
+            .build();
+    }
+
+    TEST_CASE("service_lists_finds_and_removes_automations") {
+        ServiceHarness harness;
+
+        const auto repo_check_id = harness.service.save(make_notify_automation("repo-check"));
+        static_cast<void>(harness.service.save(
+            orangutan::automation::Automation::named("ops-check").for_agent("ops").run_prompt("scan ops").cron("0 10 * * *").build()));
+
+        const auto found = harness.service.find("default", repo_check_id);
+        REQUIRE(found.has_value());
+        CHECK(found->name == "repo-check");
+
+        const auto listed = harness.service.list(orangutan::automation::AutomationQuery{.agent_key = "default"});
+        REQUIRE(listed.size() == 1UL);
+        CHECK(listed.front().id == repo_check_id);
+
+        CHECK(harness.service.remove("default", repo_check_id));
+        CHECK_FALSE(harness.service.find("default", repo_check_id).has_value());
+    };
+
+    TEST_CASE("service_normalizes_disabled_state_and_resume_recomputes_next_due") {
+        ServiceHarness harness;
+
+        auto automation = make_interval_automation("pulse");
+        const auto automation_id = harness.service.save(automation);
+
+        auto stored = harness.service.find("default", automation_id);
+        REQUIRE(stored.has_value());
+        REQUIRE(stored->next_due_at.has_value());
+        CHECK(*stored->next_due_at == 1'030);
+
+        stored->enabled = false;
+        stored->paused = true;
+        stored->next_due_at = 1'030;
+        static_cast<void>(harness.service.save(*stored));
+
+        stored = harness.service.find("default", automation_id);
+        REQUIRE(stored.has_value());
+        CHECK_FALSE(stored->enabled);
+        CHECK_FALSE(stored->paused);
+        CHECK_FALSE(stored->next_due_at.has_value());
+
+        stored->enabled = true;
+        static_cast<void>(harness.service.save(*stored));
+        CHECK(harness.service.pause("default", automation_id));
+
+        harness.current_time = orangutan::automation::from_unix_seconds(1'200);
+        CHECK(harness.service.resume("default", automation_id));
+
+        stored = harness.service.find("default", automation_id);
+        REQUIRE(stored.has_value());
+        CHECK(stored->enabled);
+        CHECK_FALSE(stored->paused);
+        REQUIRE(stored->next_due_at.has_value());
+        CHECK(*stored->next_due_at >= 1'230);
+    };
+
+    TEST_CASE("service_run_now_executes_without_changing_disabled_state") {
+        ServiceHarness harness;
+        auto automation = make_once_automation("release-check", orangutan::automation::from_unix_seconds(900));
+        automation.enabled = false;
+
+        const auto automation_id = harness.service.save(automation);
+        const auto run_id = harness.service.run_now("default", automation_id);
+
+        CHECK_FALSE(run_id.empty());
+        REQUIRE(harness.executed_ids.size() == 1UL);
+
+        const auto stored = harness.service.find("default", automation_id);
+        REQUIRE(stored.has_value());
+        CHECK_FALSE(stored->enabled);
+        REQUIRE(stored->last_run_at.has_value());
+        CHECK(*stored->last_run_at == 1'000);
+        CHECK_FALSE(stored->next_due_at.has_value());
+    };
+
+    TEST_CASE("service_records_silent_runs_without_creating_deliveries") {
+        ServiceHarness harness;
+
+        const auto automation_id = harness.service.save(make_once_automation("silent-once", orangutan::automation::from_unix_seconds(900)));
+        static_cast<void>(harness.service.run_now("default", automation_id));
+
+        const auto runs = harness.service.list_runs(orangutan::automation::RunQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(runs.size() == 1UL);
+        CHECK(runs.front().delivery_status == "silent");
+
+        const auto deliveries = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default"});
+        CHECK(deliveries.empty());
+    };
+
+    TEST_CASE("service_records_notify_deliveries_and_supports_ack_and_clear") {
+        ServiceHarness harness;
+
+        const auto automation_id = harness.service.save(make_notify_automation("repo-check"));
+        static_cast<void>(harness.service.run_now("default", automation_id));
+
+        const auto runs = harness.service.list_runs(orangutan::automation::RunQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(runs.size() == 1UL);
+        CHECK(runs.front().delivery_status == "notified");
+
+        auto deliveries = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(deliveries.size() == 2UL);
+        CHECK(harness.notifications.size() == 2UL);
+
+        CHECK(harness.service.ack_delivery("default", deliveries.front().id));
+
+        auto unacked = harness.service.list_deliveries(
+            orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id, .only_unacked = true});
+        REQUIRE(unacked.size() == 1UL);
+
+        CHECK_THROWS_AS(harness.service.clear_deliveries(orangutan::automation::DeliveryQuery{}), std::invalid_argument);
+
+        harness.service.clear_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id});
+        deliveries = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(deliveries.size() == 2UL);
+        CHECK(deliveries.at(0).acked_at.has_value());
+        CHECK(deliveries.at(1).acked_at.has_value());
+    };
+
+    TEST_CASE("runtime_serializes_due_executions_per_agent") {
+        ServiceHarness harness;
+        const auto automation_id = harness.service.save(make_once_automation("lease-check", orangutan::automation::from_unix_seconds(900)));
+        static_cast<void>(automation_id);
+
+        std::promise<void> started;
+        auto started_future = started.get_future();
+        harness.service.set_executor([&started](const orangutan::automation::Automation &) {
+            started.set_value();
+            return orangutan::automation::ExecutionResult{
+                .success = true,
+                .reply = "ok",
+                .summary = "ok",
+            };
+        });
+
+        std::optional<orangutan::automation::AutomationRuntime::AgentExecutionLease> lease;
+        lease.emplace(harness.runtime.acquire_agent_execution_lease("default"));
+
+        std::thread worker([&harness] {
+            harness.runtime.run_pending(harness.current_time);
+        });
+
+        CHECK(started_future.wait_for(std::chrono::milliseconds{100}) == std::future_status::timeout);
+        lease.reset();
+        CHECK(started_future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        worker.join();
+    };
+
+    TEST_CASE("runtime_start_preserves_future_interval_due_across_restart") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "restart.db");
+        orangutan::automation::TimePoint current_time = orangutan::automation::from_unix_seconds(1'000);
+
+        orangutan::automation::Repository repository(db_path);
+        orangutan::automation::AutomationService service(repository, [&current_time] {
+            return current_time;
+        });
+        const auto automation_id = service.save(make_interval_automation("restart-safe", std::chrono::seconds{10}));
+
+        const auto initial = service.find("default", automation_id);
+        REQUIRE(initial.has_value());
+        REQUIRE(initial->next_due_at.has_value());
+        const auto initial_due = *initial->next_due_at;
+
+        orangutan::automation::Repository reopened_repository(db_path);
+        orangutan::automation::AutomationService reopened_service(reopened_repository, [&current_time] {
+            return current_time;
+        });
+        orangutan::automation::AutomationRuntime reopened_runtime(reopened_service, [&current_time] {
+            return current_time;
+        });
+
+        reopened_runtime.start();
+        reopened_runtime.stop();
+
+        const auto reopened = reopened_service.find("default", automation_id);
+        REQUIRE(reopened.has_value());
+        REQUIRE(reopened->next_due_at.has_value());
+        CHECK(*reopened->next_due_at == initial_due);
+    };
+
+} // namespace

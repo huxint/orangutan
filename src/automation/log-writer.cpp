@@ -40,4 +40,18 @@ namespace orangutan::automation {
         return log_path.string();
     }
 
+    std::string LogWriter::append_run(std::string_view workspace_root, const Automation &automation, const RunRecord &run) {
+        return append(workspace_root,
+                      {
+                          {"automation_id", automation.id},
+                          {"agent_key", automation.agent_key},
+                          {"name", automation.name},
+                          {"started_at", run.started_at},
+                          {"finished_at", run.finished_at},
+                          {"status", run.status},
+                          {"summary", run.summary},
+                          {"reply", run.reply},
+                      });
+    }
+
 } // namespace orangutan::automation
