@@ -6,6 +6,7 @@
 #include "utils/string.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -46,7 +47,7 @@ namespace orangutan::bootstrap {
         }
 
         [[nodiscard]]
-        automation::Automation build_heartbeat_automation(const Config::HeartbeatJobConfig &job) {
+        std::optional<automation::Automation> build_heartbeat_automation(const Config::HeartbeatJobConfig &job) {
             auto result = automation::Automation::named(job.name)
                 .for_agent(resolve_heartbeat_agent(job.agent))
                 .run_prompt(job.prompt)
@@ -58,7 +59,7 @@ namespace orangutan::bootstrap {
 
             if (!result.has_value()) {
                 spdlog::warn("failed to build heartbeat automation '{}': {}", job.name, result.error());
-                return {};
+                return std::nullopt;
             }
             return std::move(*result);
         }
@@ -89,7 +90,12 @@ namespace orangutan::bootstrap {
         std::unordered_set<std::string> desired_keys;
         std::unordered_set<std::string> kept_managed_ids;
         for (const auto &job : cfg.heartbeat_jobs) {
-            auto desired = build_heartbeat_automation(job);
+            auto desired_result = build_heartbeat_automation(job);
+            if (!desired_result.has_value()) {
+                continue;
+            }
+
+            auto desired = std::move(*desired_result);
             const auto key = make_heartbeat_key(desired.agent_key, desired.name);
             if (desired_keys.contains(key)) {
                 spdlog::warn("heartbeat job '{}' for agent '{}' appears more than once; skipping duplicate entry", desired.name, desired.agent_key);

@@ -133,4 +133,32 @@ namespace {
         CHECK(automations.front().delivery.targets.front() == "cli");
     };
 
+    TEST_CASE("reconcile_heartbeat_jobs_skips_invalid_entries_without_aborting") {
+        HeartbeatJobsHarness harness;
+        orangutan::Config cfg;
+        cfg.heartbeat_jobs.push_back({
+            .name = "invalid",
+            .cron = "0 9 * * *",
+            .prompt = "",
+            .agent = "default",
+            .channel = "cli",
+        });
+        cfg.heartbeat_jobs.push_back({
+            .name = "valid",
+            .cron = "0 10 * * *",
+            .prompt = "check repo health",
+            .agent = "default",
+            .channel = "pager",
+        });
+
+        CHECK_NOTHROW(orangutan::bootstrap::reconcile_heartbeat_jobs(cfg, harness.service));
+
+        const auto automations = harness.service.list(orangutan::automation::AutomationQuery{.agent_key = "default"});
+        REQUIRE(automations.size() == 1UL);
+        CHECK(automations.front().name == "valid");
+        CHECK(automations.front().prompt == "check repo health");
+        REQUIRE(automations.front().delivery.targets.size() == 1UL);
+        CHECK(automations.front().delivery.targets.front() == "pager");
+    };
+
 } // namespace
