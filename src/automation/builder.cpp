@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <expected>
-#include <ranges>
 
 #include "automation/cron-parser.hpp"
 
@@ -103,8 +102,8 @@ namespace orangutan::automation {
         }
 
         if (is_blank(time_zone_)) { return "time zone must not be blank"; }
-        if (const auto error = validate_time_zone_name(time_zone_); error.has_value()) {
-            return *error;
+        if (const auto error = validate_time_zone_name(time_zone_)) {
+            return error;
         }
 
         switch (*trigger_kind_) {

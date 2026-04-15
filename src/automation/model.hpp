@@ -81,7 +81,7 @@ namespace orangutan::automation {
         trigger_type type = trigger_type::cron;
         std::chrono::seconds every = std::chrono::seconds{0};
         std::chrono::seconds jitter = std::chrono::seconds{0};
-        TimePoint at{};
+        TimePoint at;
         std::string cron;
         std::string time_zone = "UTC";
         std::vector<ActiveWindow> active_windows;

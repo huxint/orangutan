@@ -120,7 +120,7 @@ namespace orangutan::automation {
         std::optional<trigger_type> trigger_kind_;
         std::chrono::seconds every_ = std::chrono::seconds{0};
         std::chrono::seconds jitter_ = std::chrono::seconds{0};
-        TimePoint at_{};
+        TimePoint at_;
         bool has_at_ = false;
         std::string cron_expression_;
         std::string time_zone_ = "UTC";

@@ -108,11 +108,11 @@ namespace orangutan::agent::detail {
             auto callback = make_stream_callback(first_text, human_output, on_stream_event);
             const auto provider_result =
                 provider.route(route).system(system_prompt).messages(history).tools(tool_defs).max_tokens(4096).thinking_budget(thinking_budget).stream().on_event(callback).send_blocking();
-            auto response = std::move(provider_result.response);
+            auto response = provider_result.response;
 
             auto parts = split_response(response);
             result.appended_text += parts.text;
-            history.emplace_back(base::role::assistant, std::move(parts.all_blocks));
+            history.emplace_back(base::role::assistant, parts.all_blocks);
             emit_history_checkpoint(on_history_checkpoint, history);
 
             if (!parts.tool_calls.empty()) {

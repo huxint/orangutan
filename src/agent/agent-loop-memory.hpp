@@ -18,7 +18,6 @@
 #include "prompt/prompt-compiler.hpp"
 #include "memory/runtime-memory.hpp"
 #include "prompt/system-prompt-sections.hpp"
-#include "tools/registry/tool.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 

@@ -4,7 +4,7 @@
 #include "channel/qq/qq-approval-keyboard.hpp"
 #include "permissions/permission-display.hpp"
 #include "types/base.hpp"
-#include "types/types.hpp"
+#include "types/content.hpp"
 #include "utils/format.hpp"
 
 #include <cctype>

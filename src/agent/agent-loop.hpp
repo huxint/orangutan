@@ -2,7 +2,7 @@
 
 #include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
-#include "tools/registry/tool.hpp"
+#include "tools/registry/tool-registry.hpp"
 
 #include <cstddef>
 #include <expected>
@@ -10,8 +10,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-#include "types/base.hpp"
 
 namespace orangutan::hooks {
     class HookManager;

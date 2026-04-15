@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <charconv>
-#include <cerrno>
 #include <filesystem>
 #include <functional>
 #include <optional>
