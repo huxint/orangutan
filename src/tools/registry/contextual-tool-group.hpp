@@ -45,32 +45,32 @@ namespace orangutan::tools {
     public:
         using Gate = std::function<bool(const ToolRuntimeContext &)>;
 
-        ContextualToolGroup &when(Gate gate) {
-            gates_.push_back(std::move(gate));
-            return *this;
+        auto when(this auto &&self, Gate gate) -> decltype(auto) {
+            self.gates_.push_back(std::move(gate));
+            return std::forward<decltype(self)>(self);
         }
 
-        ContextualToolGroup &require_automation_runtime() {
-            return when([](const ToolRuntimeContext &ctx) {
+        auto require_automation_runtime(this auto &&self) -> decltype(auto) {
+            return std::forward<decltype(self)>(self).when([](const ToolRuntimeContext &ctx) {
                 return detail::ContextGateEvaluator::evaluate(context_gate::automation_runtime, ctx);
             });
         }
 
-        ContextualToolGroup &require_automation_service() {
-            return when([](const ToolRuntimeContext &ctx) {
+        auto require_automation_service(this auto &&self) -> decltype(auto) {
+            return std::forward<decltype(self)>(self).when([](const ToolRuntimeContext &ctx) {
                 return detail::ContextGateEvaluator::evaluate(context_gate::automation_service, ctx);
             });
         }
 
-        ContextualToolGroup &require_channel_origin(base::origin origin) {
-            return when([origin](const ToolRuntimeContext &ctx) {
+        auto require_channel_origin(this auto &&self, base::origin origin) -> decltype(auto) {
+            return std::forward<decltype(self)>(self).when([origin](const ToolRuntimeContext &ctx) {
                 return detail::ContextGateEvaluator::evaluate(context_gate::channel_origin, ctx, origin);
             });
         }
 
-        ContextualToolGroup &add(ToolSpecBuilder spec) {
-            specs_.push_back(std::move(spec));
-            return *this;
+        auto add(this auto &&self, ToolSpecBuilder spec) -> decltype(auto) {
+            self.specs_.push_back(std::move(spec));
+            return std::forward<decltype(self)>(self);
         }
 
         void register_into(ToolRegistry &registry, const ToolRuntimeContext *tool_context) const {
