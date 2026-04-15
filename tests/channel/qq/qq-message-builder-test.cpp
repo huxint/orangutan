@@ -4,21 +4,15 @@
 
 #include <concepts>
 #include <string_view>
-#include <type_traits>
 
 using namespace orangutan;
 
 namespace {
 
-    using TextSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
-    using MarkdownSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
-    using ReplySignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
-    using ReferenceSignature = QqMessageBuilder &(QqMessageBuilder::*)(std::string_view);
-
-    static_assert(std::same_as<decltype(&QqMessageBuilder::text), TextSignature>);
-    static_assert(std::same_as<decltype(&QqMessageBuilder::markdown), MarkdownSignature>);
-    static_assert(std::same_as<decltype(&QqMessageBuilder::reply_to), ReplySignature>);
-    static_assert(std::same_as<decltype(&QqMessageBuilder::reference), ReferenceSignature>);
+    // Verify chainable API compiles with rvalue
+    static_assert(requires {
+        { QqMessageBuilder{}.text("x").markdown("y").msg_seq(1).build() } -> std::same_as<nlohmann::json>;
+    });
 
 } // namespace
 

@@ -10,93 +10,93 @@ namespace orangutan::channel::qq {
 
     class QqMessageBuilder {
     public:
-        QqMessageBuilder &text(std::string_view content) {
-            payload_["content"] = content;
-            payload_["msg_type"] = 0;
-            payload_.erase("markdown");
-            payload_.erase("media");
-            payload_.erase("ark");
-            payload_.erase("embed");
-            return *this;
+        auto text(this auto &&self, std::string_view content) -> decltype(auto) {
+            self.payload_["content"] = content;
+            self.payload_["msg_type"] = 0;
+            self.payload_.erase("markdown");
+            self.payload_.erase("media");
+            self.payload_.erase("ark");
+            self.payload_.erase("embed");
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &markdown(std::string_view content) {
-            payload_["markdown"] = nlohmann::json{
+        auto markdown(this auto &&self, std::string_view content) -> decltype(auto) {
+            self.payload_["markdown"] = nlohmann::json{
                 {"content", content},
             };
-            payload_["msg_type"] = 2;
-            payload_.erase("content");
-            payload_.erase("media");
-            payload_.erase("ark");
-            payload_.erase("embed");
-            return *this;
+            self.payload_["msg_type"] = 2;
+            self.payload_.erase("content");
+            self.payload_.erase("media");
+            self.payload_.erase("ark");
+            self.payload_.erase("embed");
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &media(std::string_view file_info, std::string_view content = {}) {
-            payload_["media"] = nlohmann::json{
+        auto media(this auto &&self, std::string_view file_info, std::string_view content = {}) -> decltype(auto) {
+            self.payload_["media"] = nlohmann::json{
                 {"file_info", file_info},
             };
-            payload_["msg_type"] = 7;
+            self.payload_["msg_type"] = 7;
             if (content.empty()) {
-                payload_.erase("content");
+                self.payload_.erase("content");
             } else {
-                payload_["content"] = content;
+                self.payload_["content"] = content;
             }
-            payload_.erase("markdown");
-            payload_.erase("ark");
-            payload_.erase("embed");
-            return *this;
+            self.payload_.erase("markdown");
+            self.payload_.erase("ark");
+            self.payload_.erase("embed");
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &ark(const nlohmann::json &ark_payload) {
-            payload_["ark"] = ark_payload;
-            payload_["msg_type"] = 3;
-            payload_.erase("content");
-            payload_.erase("markdown");
-            payload_.erase("media");
-            payload_.erase("embed");
-            return *this;
+        auto ark(this auto &&self, const nlohmann::json &ark_payload) -> decltype(auto) {
+            self.payload_["ark"] = ark_payload;
+            self.payload_["msg_type"] = 3;
+            self.payload_.erase("content");
+            self.payload_.erase("markdown");
+            self.payload_.erase("media");
+            self.payload_.erase("embed");
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &embed(const nlohmann::json &embed_payload) {
-            payload_["embed"] = embed_payload;
-            payload_["msg_type"] = 4;
-            payload_.erase("content");
-            payload_.erase("markdown");
-            payload_.erase("media");
-            payload_.erase("ark");
-            return *this;
+        auto embed(this auto &&self, const nlohmann::json &embed_payload) -> decltype(auto) {
+            self.payload_["embed"] = embed_payload;
+            self.payload_["msg_type"] = 4;
+            self.payload_.erase("content");
+            self.payload_.erase("markdown");
+            self.payload_.erase("media");
+            self.payload_.erase("ark");
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &msg_seq(base::u16 seq) {
-            payload_["msg_seq"] = seq;
-            return *this;
+        auto msg_seq(this auto &&self, base::u16 seq) -> decltype(auto) {
+            self.payload_["msg_seq"] = seq;
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &reply_to(std::string_view msg_id) {
+        auto reply_to(this auto &&self, std::string_view msg_id) -> decltype(auto) {
             if (!msg_id.empty()) {
-                payload_["msg_id"] = msg_id;
+                self.payload_["msg_id"] = msg_id;
             } else {
-                payload_.erase("msg_id");
+                self.payload_.erase("msg_id");
             }
-            return *this;
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &reference(std::string_view message_id) {
+        auto reference(this auto &&self, std::string_view message_id) -> decltype(auto) {
             if (!message_id.empty()) {
-                payload_["message_reference"] = nlohmann::json{
+                self.payload_["message_reference"] = nlohmann::json{
                     {"message_id", message_id},
                     {"ignore_get_message_error", true},
                 };
             } else {
-                payload_.erase("message_reference");
+                self.payload_.erase("message_reference");
             }
-            return *this;
+            return std::forward<decltype(self)>(self);
         }
 
-        QqMessageBuilder &keyboard(const nlohmann::json &keyboard_payload) {
-            payload_["keyboard"] = keyboard_payload;
-            return *this;
+        auto keyboard(this auto &&self, const nlohmann::json &keyboard_payload) -> decltype(auto) {
+            self.payload_["keyboard"] = keyboard_payload;
+            return std::forward<decltype(self)>(self);
         }
 
         [[nodiscard]]
