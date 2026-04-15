@@ -2,10 +2,12 @@
 
 #include <stdexcept>
 
+#include "automation/cron-parser.hpp"
+
 namespace orangutan::automation {
     namespace {
 
-        constexpr auto FULL_DAY = std::chrono::hours{24};
+        constexpr auto FULL_DAY_MINUTES = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::hours{24});
 
         void validate_non_empty(std::string_view value, std::string_view label) {
             if (value.empty()) {
@@ -174,6 +176,9 @@ namespace orangutan::automation {
         switch (*trigger_kind_) {
         case trigger_type::cron:
             validate_non_empty(cron_expression_, "cron expression");
+            if (!parse_cron(cron_expression_).has_value()) {
+                throw std::invalid_argument("cron expression is invalid");
+            }
             if (every_ != std::chrono::seconds{0}) {
                 throw std::invalid_argument("cron trigger does not accept interval cadence");
             }
@@ -201,7 +206,7 @@ namespace orangutan::automation {
                 throw std::invalid_argument("interval trigger does not accept once timestamp");
             }
             for (const auto &window : active_windows_) {
-                if (window.start < std::chrono::minutes{0} || window.end > std::chrono::duration_cast<std::chrono::minutes>(FULL_DAY) || window.start >= window.end) {
+                if (window.start < std::chrono::minutes{0} || window.end > FULL_DAY_MINUTES || window.start >= window.end) {
                     throw std::invalid_argument("active windows must be within one day and start before end");
                 }
             }

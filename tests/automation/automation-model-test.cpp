@@ -83,4 +83,112 @@ namespace {
                         std::invalid_argument);
     };
 
+    TEST_CASE("automation_builder_rejects_invalid_cron_expression") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("bad-cron")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("* * *")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_zero_or_negative_interval") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("zero-interval")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::seconds{0})
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("negative-interval")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::seconds{-1})
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_negative_jitter") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("negative-jitter")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::minutes{15})
+                            .jitter(std::chrono::seconds{-1})
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_invalid_active_windows") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("inverted-window")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::minutes{15})
+                            .within_hours({std::chrono::hours{18}, std::chrono::hours{9}})
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("out-of-range-window")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::minutes{15})
+                            .within_hours({std::chrono::hours{-1}, std::chrono::hours{9}})
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_notify_delivery_with_empty_target") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("empty-target")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .deliver_to("")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_empty_tag") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("empty-tag")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .tag("")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_resets_old_trigger_state_when_switching_to_cron") {
+        const auto automation = orangutan::automation::Automation::named("switch-to-cron")
+                                    .for_agent("default")
+                                    .run_prompt("check")
+                                    .every(std::chrono::minutes{15})
+                                    .jitter(std::chrono::seconds{30})
+                                    .within_hours({std::chrono::hours{9}, std::chrono::hours{18}})
+                                    .cron("0 9 * * *")
+                                    .build();
+
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::cron);
+        CHECK(automation.trigger.cron == "0 9 * * *");
+        CHECK(automation.trigger.every == std::chrono::seconds{0});
+        CHECK(automation.trigger.jitter == std::chrono::seconds{0});
+        CHECK(automation.trigger.active_windows.empty());
+    };
+
+    TEST_CASE("automation_builder_resets_old_trigger_state_when_switching_to_once") {
+        const auto scheduled_at = orangutan::automation::from_unix_seconds(1'776'249'600);
+
+        const auto automation = orangutan::automation::Automation::named("switch-to-once")
+                                    .for_agent("default")
+                                    .run_prompt("check")
+                                    .cron("0 9 * * *")
+                                    .once_at(scheduled_at)
+                                    .build();
+
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::once);
+        CHECK(automation.trigger.at == scheduled_at);
+        CHECK(automation.trigger.cron.empty());
+        CHECK(automation.trigger.every == std::chrono::seconds{0});
+        CHECK(automation.trigger.jitter == std::chrono::seconds{0});
+        CHECK(automation.trigger.active_windows.empty());
+    };
+
 } // namespace
