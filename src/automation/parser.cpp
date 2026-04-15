@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -62,6 +63,17 @@ namespace orangutan::automation {
             if (parsed.empty() || is_blank) {
                 return std::unexpected("time_zone must not be empty");
             }
+
+            if (parsed == "UTC") {
+                return parsed;
+            }
+
+            try {
+                static_cast<void>(std::chrono::locate_zone(parsed));
+            } catch (const std::runtime_error &) {
+                return std::unexpected("time_zone must be UTC or a valid IANA zone name");
+            }
+
             return parsed;
         }
 
@@ -277,18 +289,14 @@ namespace orangutan::automation {
                 return std::unexpected("every must be greater than zero");
             }
 
-            std::chrono::seconds jitter = std::chrono::seconds{0};
-            const auto jitter_field = value.find("jitter");
-            if (jitter_field != value.end()) {
-                if (!jitter_field->is_string()) {
-                    return std::unexpected("jitter must be a string");
-                }
+            const auto jitter_value = parse_required_string_field(value, "jitter");
+            if (!jitter_value.has_value()) {
+                return std::unexpected(jitter_value.error());
+            }
 
-                const auto parsed_jitter = parse_duration_string(jitter_field->get_ref<const std::string &>());
-                if (!parsed_jitter.has_value()) {
-                    return std::unexpected(parsed_jitter.error());
-                }
-                jitter = *parsed_jitter;
+            const auto jitter = parse_duration_string(*jitter_value);
+            if (!jitter.has_value()) {
+                return std::unexpected(jitter.error());
             }
 
             const auto time_zone = parse_time_zone_field(value);
@@ -315,7 +323,7 @@ namespace orangutan::automation {
             return TriggerDefinition{
                 .type = trigger_type::interval,
                 .every = *every,
-                .jitter = jitter,
+                .jitter = *jitter,
                 .time_zone = *time_zone,
                 .active_windows = std::move(active_windows),
             };

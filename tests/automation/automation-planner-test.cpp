@@ -66,6 +66,58 @@ namespace {
         CHECK(parsed->active_windows.at(1).end == std::chrono::hours{21} + std::chrono::minutes{45});
     };
 
+    TEST_CASE("trigger_from_json_requires_interval_jitter") {
+        const auto parsed = orangutan::automation::trigger_from_json({
+            {"type", "interval"},
+            {"every", "15m"},
+        });
+
+        CHECK_FALSE(parsed.has_value());
+        CHECK(parsed.error() == "jitter is required");
+    };
+
+    TEST_CASE("trigger_from_json_accepts_valid_iana_time_zones_for_cron_and_interval") {
+        const auto cron_trigger = orangutan::automation::trigger_from_json({
+            {"type", "cron"},
+            {"cron", "0 9 * * *"},
+            {"time_zone", "Etc/UTC"},
+        });
+
+        REQUIRE(cron_trigger.has_value());
+        CHECK(cron_trigger->time_zone == "Etc/UTC");
+
+        const auto interval_trigger = orangutan::automation::trigger_from_json({
+            {"type", "interval"},
+            {"every", "15m"},
+            {"jitter", "30s"},
+            {"time_zone", "Etc/UTC"},
+        });
+
+        REQUIRE(interval_trigger.has_value());
+        CHECK(interval_trigger->time_zone == "Etc/UTC");
+    };
+
+    TEST_CASE("trigger_from_json_rejects_invalid_time_zone_names_for_cron_and_interval") {
+        const auto cron_trigger = orangutan::automation::trigger_from_json({
+            {"type", "cron"},
+            {"cron", "0 9 * * *"},
+            {"time_zone", "Mars/Olympus"},
+        });
+
+        CHECK_FALSE(cron_trigger.has_value());
+        CHECK(cron_trigger.error() == "time_zone must be UTC or a valid IANA zone name");
+
+        const auto interval_trigger = orangutan::automation::trigger_from_json({
+            {"type", "interval"},
+            {"every", "15m"},
+            {"jitter", "30s"},
+            {"time_zone", "Mars/Olympus"},
+        });
+
+        CHECK_FALSE(interval_trigger.has_value());
+        CHECK(interval_trigger.error() == "time_zone must be UTC or a valid IANA zone name");
+    };
+
     TEST_CASE("parse_duration_string_accepts_canonical_suffixes") {
         CHECK(orangutan::automation::parse_duration_string("45s").value() == std::chrono::seconds{45});
         CHECK(orangutan::automation::parse_duration_string("15m").value() == std::chrono::minutes{15});
