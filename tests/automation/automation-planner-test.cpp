@@ -1,4 +1,6 @@
 #include <chrono>
+#include <limits>
+#include <string>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -118,10 +120,55 @@ namespace {
         CHECK(interval_trigger.error() == "time_zone must be UTC or a valid IANA zone name");
     };
 
+    TEST_CASE("trigger_from_json_rejects_mismatched_fields_for_each_trigger_type") {
+        const auto cron_trigger = orangutan::automation::trigger_from_json({
+            {"type", "cron"},
+            {"cron", "0 9 * * *"},
+            {"every", "15m"},
+        });
+        CHECK_FALSE(cron_trigger.has_value());
+        CHECK(cron_trigger.error() == "cron trigger does not accept field: every");
+
+        const auto interval_trigger = orangutan::automation::trigger_from_json({
+            {"type", "interval"},
+            {"every", "15m"},
+            {"jitter", "30s"},
+            {"at", "2026-04-15T00:00:00Z"},
+        });
+        CHECK_FALSE(interval_trigger.has_value());
+        CHECK(interval_trigger.error() == "interval trigger does not accept field: at");
+
+        const auto once_trigger = orangutan::automation::trigger_from_json({
+            {"type", "once"},
+            {"at", "2026-04-15T00:00:00Z"},
+            {"time_zone", "UTC"},
+        });
+        CHECK_FALSE(once_trigger.has_value());
+        CHECK(once_trigger.error() == "once trigger does not accept field: time_zone");
+    };
+
     TEST_CASE("parse_duration_string_accepts_canonical_suffixes") {
         CHECK(orangutan::automation::parse_duration_string("45s").value() == std::chrono::seconds{45});
         CHECK(orangutan::automation::parse_duration_string("15m").value() == std::chrono::minutes{15});
         CHECK(orangutan::automation::parse_duration_string("2h").value() == std::chrono::hours{2});
+    };
+
+    TEST_CASE("parse_duration_string_rejects_values_that_overflow_seconds") {
+        const auto overflow_minutes = std::to_string((std::numeric_limits<long long>::max() / 60) + 1) + "m";
+        const auto overflow_hours = std::to_string((std::numeric_limits<long long>::max() / 3600) + 1) + "h";
+        const auto overflow_days = std::to_string((std::numeric_limits<long long>::max() / 86400) + 1) + "d";
+
+        const auto minutes_result = orangutan::automation::parse_duration_string(overflow_minutes);
+        CHECK_FALSE(minutes_result.has_value());
+        CHECK(minutes_result.error() == "duration is too large");
+
+        const auto hours_result = orangutan::automation::parse_duration_string(overflow_hours);
+        CHECK_FALSE(hours_result.has_value());
+        CHECK(hours_result.error() == "duration is too large");
+
+        const auto days_result = orangutan::automation::parse_duration_string(overflow_days);
+        CHECK_FALSE(days_result.has_value());
+        CHECK(days_result.error() == "duration is too large");
     };
 
 } // namespace

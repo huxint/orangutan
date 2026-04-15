@@ -26,6 +26,21 @@ namespace orangutan::automation {
             }
         }
 
+        [[nodiscard]]
+        std::optional<std::string> validate_time_zone_name(std::string_view value) {
+            if (value == "UTC") {
+                return std::nullopt;
+            }
+
+            try {
+                static_cast<void>(std::chrono::locate_zone(std::string(value)));
+            } catch (const std::runtime_error &) {
+                return std::string("time_zone must be UTC or a valid IANA zone name");
+            }
+
+            return std::nullopt;
+        }
+
     } // namespace
 
     AutomationBuilder::AutomationBuilder(std::string_view name) {
@@ -136,19 +151,21 @@ namespace orangutan::automation {
     TriggerDefinition AutomationBuilder::build_trigger() const {
         TriggerDefinition trigger;
         trigger.type = *trigger_kind_;
-        trigger.time_zone = time_zone_.empty() ? "UTC" : time_zone_;
 
         switch (*trigger_kind_) {
         case trigger_type::cron:
             trigger.cron = cron_expression_;
+            trigger.time_zone = time_zone_;
             break;
         case trigger_type::interval:
             trigger.every = every_;
             trigger.jitter = jitter_;
+            trigger.time_zone = time_zone_;
             trigger.active_windows = active_windows_;
             break;
         case trigger_type::once:
             trigger.at = at_;
+            trigger.time_zone = "UTC";
             break;
         }
 
@@ -181,6 +198,9 @@ namespace orangutan::automation {
         }
 
         validate_non_blank(time_zone_, "time zone");
+        if (const auto error = validate_time_zone_name(time_zone_); error.has_value()) {
+            throw std::invalid_argument(*error);
+        }
 
         switch (*trigger_kind_) {
         case trigger_type::cron:
@@ -235,6 +255,9 @@ namespace orangutan::automation {
             }
             if (!active_windows_.empty()) {
                 throw std::invalid_argument("once trigger does not accept active windows");
+            }
+            if (time_zone_ != "UTC") {
+                throw std::invalid_argument("once trigger only supports UTC time zone");
             }
             break;
         }

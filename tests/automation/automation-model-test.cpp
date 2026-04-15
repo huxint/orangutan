@@ -89,6 +89,7 @@ namespace {
 
         CHECK(automation.trigger.type == orangutan::automation::trigger_type::once);
         CHECK(automation.trigger.at == scheduled_at);
+        CHECK(automation.trigger.time_zone == "UTC");
     };
 
     TEST_CASE("automation_builder_requires_agent_key_prompt_and_trigger") {
@@ -234,6 +235,37 @@ namespace {
                             .run_prompt("check")
                             .cron("0 9 * * *")
                             .time_zone(" \t ")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_invalid_time_zone_names_for_cron_and_interval") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("bad-cron-zone")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .time_zone("Mars/Olympus")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("bad-interval-zone")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .every(std::chrono::minutes{15})
+                            .jitter(std::chrono::seconds{30})
+                            .time_zone("Mars/Olympus")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_once_trigger_only_supports_utc_time_zone") {
+        const auto scheduled_at = orangutan::automation::from_unix_seconds(1'776'249'600);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("once-zone")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .once_at(scheduled_at)
+                            .time_zone("Asia/Shanghai")
                             .build(),
                         std::invalid_argument);
     };

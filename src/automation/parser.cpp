@@ -1,11 +1,13 @@
 #include "automation/parser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cctype>
 #include <expected>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -17,7 +19,49 @@
 namespace orangutan::automation {
     namespace {
 
+        [[nodiscard]]
+        std::expected<std::string, std::string> validate_time_zone_string(std::string_view value) {
+            if (value.empty()) {
+                return std::unexpected("time_zone must not be empty");
+            }
+
+            const auto is_blank = std::ranges::all_of(value, [](unsigned char ch) {
+                return std::isspace(ch) != 0;
+            });
+            if (is_blank) {
+                return std::unexpected("time_zone must not be empty");
+            }
+
+            if (value == "UTC") {
+                return std::string(value);
+            }
+
+            try {
+                static_cast<void>(std::chrono::locate_zone(std::string(value)));
+            } catch (const std::runtime_error &) {
+                return std::unexpected("time_zone must be UTC or a valid IANA zone name");
+            }
+
+            return std::string(value);
+        }
+
         constexpr auto FULL_DAY_MINUTES = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::hours{24});
+        constexpr std::array CRON_TRIGGER_FIELDS{
+            std::string_view{"type"},
+            std::string_view{"cron"},
+            std::string_view{"time_zone"},
+        };
+        constexpr std::array INTERVAL_TRIGGER_FIELDS{
+            std::string_view{"type"},
+            std::string_view{"every"},
+            std::string_view{"jitter"},
+            std::string_view{"time_zone"},
+            std::string_view{"active_windows"},
+        };
+        constexpr std::array ONCE_TRIGGER_FIELDS{
+            std::string_view{"type"},
+            std::string_view{"at"},
+        };
 
         [[nodiscard]]
         std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
@@ -56,25 +100,28 @@ namespace orangutan::automation {
                 return std::unexpected("time_zone must be a string");
             }
 
-            const auto parsed = field->get<std::string>();
-            const auto is_blank = std::ranges::all_of(parsed, [](unsigned char ch) {
-                return std::isspace(ch) != 0;
-            });
-            if (parsed.empty() || is_blank) {
-                return std::unexpected("time_zone must not be empty");
-            }
+            return validate_time_zone_string(field->get<std::string>());
+        }
 
-            if (parsed == "UTC") {
-                return parsed;
+        template <std::size_t N>
+        std::expected<void, std::string> validate_allowed_trigger_fields(const nlohmann::json &value, std::string_view trigger_name,
+                                                                         const std::array<std::string_view, N> &allowed_fields) {
+            for (const auto &entry : value.items()) {
+                const auto field_name = std::string_view(entry.key());
+                const auto allowed = std::ranges::find(allowed_fields, field_name) != allowed_fields.end();
+                if (!allowed) {
+                    return std::unexpected(std::string(trigger_name) + " trigger does not accept field: " + entry.key());
+                }
             }
+            return {};
+        }
 
-            try {
-                static_cast<void>(std::chrono::locate_zone(parsed));
-            } catch (const std::runtime_error &) {
-                return std::unexpected("time_zone must be UTC or a valid IANA zone name");
+        [[nodiscard]]
+        std::expected<std::chrono::seconds, std::string> seconds_from_numeric(long long numeric, long long multiplier) {
+            if (numeric > std::numeric_limits<long long>::max() / multiplier) {
+                return std::unexpected("duration is too large");
             }
-
-            return parsed;
+            return std::chrono::seconds{numeric * multiplier};
         }
 
         [[nodiscard]]
@@ -253,6 +300,11 @@ namespace orangutan::automation {
         }
 
         if (*type_value == "cron") {
+            const auto allowed_fields = validate_allowed_trigger_fields(value, "cron", CRON_TRIGGER_FIELDS);
+            if (!allowed_fields.has_value()) {
+                return std::unexpected(allowed_fields.error());
+            }
+
             const auto cron_value = parse_required_string_field(value, "cron");
             if (!cron_value.has_value()) {
                 return std::unexpected(cron_value.error());
@@ -276,6 +328,11 @@ namespace orangutan::automation {
         }
 
         if (*type_value == "interval") {
+            const auto allowed_fields = validate_allowed_trigger_fields(value, "interval", INTERVAL_TRIGGER_FIELDS);
+            if (!allowed_fields.has_value()) {
+                return std::unexpected(allowed_fields.error());
+            }
+
             const auto every_value = parse_required_string_field(value, "every");
             if (!every_value.has_value()) {
                 return std::unexpected(every_value.error());
@@ -330,6 +387,11 @@ namespace orangutan::automation {
         }
 
         if (*type_value == "once") {
+            const auto allowed_fields = validate_allowed_trigger_fields(value, "once", ONCE_TRIGGER_FIELDS);
+            if (!allowed_fields.has_value()) {
+                return std::unexpected(allowed_fields.error());
+            }
+
             const auto at_value = parse_required_string_field(value, "at");
             if (!at_value.has_value()) {
                 return std::unexpected(at_value.error());
@@ -364,13 +426,13 @@ namespace orangutan::automation {
 
         switch (value.back()) {
         case 's':
-            return std::chrono::seconds{numeric};
+            return seconds_from_numeric(numeric, 1);
         case 'm':
-            return std::chrono::minutes{numeric};
+            return seconds_from_numeric(numeric, 60);
         case 'h':
-            return std::chrono::hours{numeric};
+            return seconds_from_numeric(numeric, 60 * 60);
         case 'd':
-            return std::chrono::hours{numeric * 24};
+            return seconds_from_numeric(numeric, 24 * 60 * 60);
         default:
             return std::unexpected("duration must end with s, m, h, or d");
         }
