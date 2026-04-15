@@ -9,15 +9,22 @@
 #include <chrono>
 #include <functional>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace orangutan::automation {
     namespace {
 
+        constexpr int MAX_CRON_SCAN_MINUTES = 2 * 366 * 24 * 60;
+
+        [[nodiscard]]
         bool parse_integer(std::string_view value, base::i64 &out) {
-            auto result = std::from_chars(value.begin(), value.end(), out);
+            const auto result = std::from_chars(value.begin(), value.end(), out);
             return result.ec == std::errc{} && result.ptr == value.end();
         }
+
+        [[nodiscard]]
         std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
             if (offset + width > value.size()) {
                 return std::nullopt;
@@ -25,13 +32,14 @@ namespace orangutan::automation {
 
             int result = 0;
             const auto token = value.substr(offset, width);
-            auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
+            const auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
             if (ec != std::errc{} || ptr != token.end()) {
                 return std::nullopt;
             }
             return result;
         }
 
+        [[nodiscard]]
         std::optional<std::chrono::local_seconds> parse_local_date_time(std::string_view value) {
             const bool has_seconds = value.size() == 19;
             if (!has_seconds && value.size() != 16) {
@@ -60,6 +68,168 @@ namespace orangutan::automation {
             return std::chrono::local_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
         }
 
+        [[nodiscard]]
+        const std::chrono::time_zone *resolve_time_zone(std::string_view zone_name) {
+            if (zone_name.empty() || zone_name == "UTC") {
+                return std::chrono::locate_zone("UTC");
+            }
+            return std::chrono::locate_zone(std::string(zone_name));
+        }
+
+        [[nodiscard]]
+        std::chrono::local_seconds local_time_in_zone(TimePoint time_point, std::string_view zone_name) {
+            const auto zone = resolve_time_zone(zone_name);
+            return std::chrono::zoned_time{zone, std::chrono::floor<std::chrono::seconds>(time_point)}.get_local_time();
+        }
+
+        [[nodiscard]]
+        bool cron_matches_local_time(const CronExpr &expr, std::chrono::local_seconds local_time) {
+            const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+            const auto ymd = std::chrono::year_month_day{local_day};
+            const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+            const auto day_of_month_matches = expr.day_of_month.matches(static_cast<int>(static_cast<unsigned>(ymd.day())));
+            const auto day_of_week_matches = expr.day_of_week.matches(static_cast<int>(std::chrono::weekday{local_day}.c_encoding()));
+            const auto either_day_field_restricted = !expr.day_of_month.wildcard || !expr.day_of_week.wildcard;
+            const auto both_day_fields_restricted = !expr.day_of_month.wildcard && !expr.day_of_week.wildcard;
+
+            auto day_matches = true;
+            if (both_day_fields_restricted) {
+                day_matches = day_of_month_matches || day_of_week_matches;
+            } else if (either_day_field_restricted) {
+                day_matches = day_of_month_matches && day_of_week_matches;
+            }
+
+            return expr.minute.matches(static_cast<int>(tod.minutes().count())) && expr.hour.matches(static_cast<int>(tod.hours().count())) &&
+                   expr.month.matches(static_cast<int>(static_cast<unsigned>(ymd.month()))) && day_matches;
+        }
+
+        [[nodiscard]]
+        std::optional<TimePoint> next_cron_fire_time(const TriggerDefinition &trigger, TimePoint after) {
+            const auto parsed = parse_cron_silent(trigger.cron);
+            if (!parsed.has_value()) {
+                return std::nullopt;
+            }
+
+            auto candidate = std::chrono::ceil<std::chrono::minutes>(after + std::chrono::seconds{1});
+            for (int index = 0; index < MAX_CRON_SCAN_MINUTES; ++index) {
+                if (cron_matches_local_time(*parsed, local_time_in_zone(candidate, trigger.time_zone))) {
+                    return candidate;
+                }
+                candidate += std::chrono::minutes{1};
+            }
+
+            return std::nullopt;
+        }
+
+        [[nodiscard]]
+        base::i64 positive_jitter_offset(const Automation &automation, TimePoint base_time) {
+            if (automation.trigger.jitter <= std::chrono::seconds{0}) {
+                return 0;
+            }
+
+            const auto seed_material = automation.id + ":" + std::to_string(to_unix_seconds(base_time));
+            std::mt19937_64 generator(static_cast<base::u64>(std::hash<std::string>{}(seed_material)));
+            std::uniform_int_distribution<base::i64> distribution(0, automation.trigger.jitter.count());
+            return distribution(generator);
+        }
+
+        [[nodiscard]]
+        bool within_active_windows(const TriggerDefinition &trigger, TimePoint candidate) {
+            if (trigger.active_windows.empty()) {
+                return true;
+            }
+
+            const auto local_time = local_time_in_zone(candidate, trigger.time_zone);
+            const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
+            const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
+            const auto minute_of_day = std::chrono::minutes{tod.hours()} + std::chrono::minutes{tod.minutes()};
+
+            return std::ranges::any_of(trigger.active_windows, [minute_of_day](const ActiveWindow &window) {
+                return minute_of_day >= window.start && minute_of_day < window.end;
+            });
+        }
+
+        [[nodiscard]]
+        TimePoint clamp_to_active_windows(const TriggerDefinition &trigger, TimePoint candidate) {
+            if (trigger.active_windows.empty() || within_active_windows(trigger, candidate)) {
+                return candidate;
+            }
+
+            auto windows = trigger.active_windows;
+            std::ranges::sort(windows, [](const ActiveWindow &lhs, const ActiveWindow &rhs) {
+                return lhs.start < rhs.start;
+            });
+
+            const auto zone = resolve_time_zone(trigger.time_zone);
+            const auto local_candidate = local_time_in_zone(candidate, trigger.time_zone);
+            const auto local_day = std::chrono::floor<std::chrono::days>(local_candidate);
+            const auto tod = std::chrono::hh_mm_ss{local_candidate - local_day};
+            const auto minute_of_day = std::chrono::minutes{tod.hours()} + std::chrono::minutes{tod.minutes()};
+
+            for (int day_offset = 0; day_offset < 8; ++day_offset) {
+                const auto candidate_day = local_day + std::chrono::days{day_offset};
+                for (const auto &window : windows) {
+                    if (day_offset == 0 && minute_of_day < window.start) {
+                        const auto next_local = std::chrono::time_point_cast<std::chrono::seconds>(candidate_day + window.start);
+                        return std::chrono::time_point_cast<Clock::duration>(zone->to_sys(next_local, std::chrono::choose::latest));
+                    }
+                    if (day_offset > 0) {
+                        const auto next_local = std::chrono::time_point_cast<std::chrono::seconds>(candidate_day + window.start);
+                        return std::chrono::time_point_cast<Clock::duration>(zone->to_sys(next_local, std::chrono::choose::latest));
+                    }
+                }
+            }
+
+            return candidate;
+        }
+
+        [[nodiscard]]
+        std::optional<TimePoint> plan_interval_due_time(const Automation &automation, TimePoint from) {
+            if (automation.trigger.every <= std::chrono::seconds{0}) {
+                return std::nullopt;
+            }
+
+            auto candidate = from + automation.trigger.every + std::chrono::seconds{positive_jitter_offset(automation, from)};
+            candidate = clamp_to_active_windows(automation.trigger, candidate);
+            return candidate;
+        }
+
+        [[nodiscard]]
+        std::optional<TimePoint> plan_due_time(const Automation &automation, TimePoint from) {
+            switch (automation.trigger.type) {
+            case trigger_type::cron:
+                return next_cron_fire_time(automation.trigger, from);
+            case trigger_type::interval:
+                return plan_interval_due_time(automation, from);
+            case trigger_type::once:
+                if (automation.last_run_at.has_value()) {
+                    return std::nullopt;
+                }
+                return automation.trigger.at;
+            }
+
+            return std::nullopt;
+        }
+
+        [[nodiscard]]
+        base::i64 scheduled_for_time(const Automation &automation, TimePoint now) {
+            if (automation.next_due_at.has_value()) {
+                return *automation.next_due_at;
+            }
+
+            if (automation.trigger.type == trigger_type::once && !automation.last_run_at.has_value()) {
+                return to_unix_seconds(automation.trigger.at);
+            }
+
+            return to_unix_seconds(now);
+        }
+
+        [[nodiscard]]
+        bool parse_integer_time(std::string_view value, base::i64 &out) {
+            return parse_integer(value, out);
+        }
+
+        [[nodiscard]]
         bool within_active_hours(const HeartbeatSpec &heartbeat, base::i64 candidate) {
             if (heartbeat.active_hours.empty()) {
                 return true;
@@ -75,6 +245,7 @@ namespace orangutan::automation {
             });
         }
 
+        [[nodiscard]]
         base::i64 clamp_to_active_hours(const HeartbeatSpec &heartbeat, base::i64 candidate) {
             if (heartbeat.active_hours.empty()) {
                 return candidate;
@@ -101,6 +272,7 @@ namespace orangutan::automation {
             return candidate;
         }
 
+        [[nodiscard]]
         base::i64 stable_jitter_offset(const HeartbeatSpec &heartbeat, base::i64 base) {
             if (heartbeat.jitter_seconds <= 0) {
                 return 0;
@@ -114,13 +286,66 @@ namespace orangutan::automation {
 
     } // namespace
 
+    std::optional<base::i64> plan_next_due(const Automation &automation, TimePoint from) {
+        if (!automation.enabled || automation.paused) {
+            return std::nullopt;
+        }
+
+        const auto next_due = plan_due_time(automation, from);
+        if (!next_due.has_value()) {
+            return std::nullopt;
+        }
+        return to_unix_seconds(*next_due);
+    }
+
+    bool is_automation_due(const Automation &automation, TimePoint now) {
+        if (!automation.enabled || automation.paused) {
+            return false;
+        }
+
+        if (automation.next_due_at.has_value()) {
+            return *automation.next_due_at <= to_unix_seconds(now);
+        }
+
+        if (automation.trigger.type == trigger_type::once && !automation.last_run_at.has_value()) {
+            return automation.trigger.at <= now;
+        }
+
+        return false;
+    }
+
+    std::vector<DueAutomation> collect_due_automations(std::span<const Automation> automations, TimePoint now) {
+        std::vector<DueAutomation> due;
+        for (const auto &automation : automations) {
+            if (!is_automation_due(automation, now)) {
+                continue;
+            }
+
+            due.push_back({
+                .automation = automation,
+                .scheduled_for = scheduled_for_time(automation, now),
+            });
+        }
+
+        std::ranges::sort(due, [](const DueAutomation &lhs, const DueAutomation &rhs) {
+            if (lhs.scheduled_for != rhs.scheduled_for) {
+                return lhs.scheduled_for < rhs.scheduled_for;
+            }
+            if (lhs.automation.agent_key != rhs.automation.agent_key) {
+                return lhs.automation.agent_key < rhs.automation.agent_key;
+            }
+            return lhs.automation.id < rhs.automation.id;
+        });
+        return due;
+    }
+
     std::optional<int> parse_duration_seconds(std::string_view value) {
         if (value.empty()) {
             return std::nullopt;
         }
 
         base::i64 numeric = 0;
-        if (parse_integer(value, numeric)) {
+        if (parse_integer_time(value, numeric)) {
             if (numeric <= 0) {
                 return std::nullopt;
             }
@@ -128,28 +353,28 @@ namespace orangutan::automation {
         }
 
         const char suffix = value.back();
-        auto number_part = value.substr(0, value.size() - 1);
-        if (!parse_integer(number_part, numeric) || numeric <= 0) {
+        const auto number_part = value.substr(0, value.size() - 1);
+        if (!parse_integer_time(number_part, numeric) || numeric <= 0) {
             return std::nullopt;
         }
 
         switch (suffix) {
-            case 's':
-                return static_cast<int>(numeric);
-            case 'm':
-                return static_cast<int>(numeric * 60);
-            case 'h':
-                return static_cast<int>(numeric * 60 * 60);
-            case 'd':
-                return static_cast<int>(numeric * 24 * 60 * 60);
-            default:
-                return std::nullopt;
+        case 's':
+            return static_cast<int>(numeric);
+        case 'm':
+            return static_cast<int>(numeric * 60);
+        case 'h':
+            return static_cast<int>(numeric * 60 * 60);
+        case 'd':
+            return static_cast<int>(numeric * 24 * 60 * 60);
+        default:
+            return std::nullopt;
         }
     }
 
     std::optional<base::i64> parse_absolute_time(std::string_view value) {
         base::i64 numeric = 0;
-        if (parse_integer(value, numeric)) {
+        if (parse_integer_time(value, numeric)) {
             return numeric;
         }
 
