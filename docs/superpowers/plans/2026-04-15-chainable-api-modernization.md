@@ -119,16 +119,16 @@ After:
 ```cpp
 template <typename... Args>
 auto user(this auto &&self, Args &&...args) -> decltype(auto) {
-    return emplace(std::forward<decltype(self)>(self), base::role::user, std::forward<Args>(args)...);
+    return std::forward<decltype(self)>(self).emplace(base::role::user, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
 auto assistant(this auto &&self, Args &&...args) -> decltype(auto) {
-    return emplace(std::forward<decltype(self)>(self), base::role::assistant, std::forward<Args>(args)...);
+    return std::forward<decltype(self)>(self).emplace(base::role::assistant, std::forward<Args>(args)...);
 }
 ```
 
-- [ ] **Step 3: Convert the private `emplace()` helper to accept forwarded self**
+- [ ] **Step 3: Convert the private `emplace()` helper to deducing `this`**
 
 Before (`src/types/message.hpp` lines 148–154):
 
@@ -146,13 +146,15 @@ After:
 
 ```cpp
 template <typename... Args>
-static auto emplace(auto &&self, base::role role, Args &&...args) -> decltype(self) {
+auto emplace(this auto &&self, base::role role, Args &&...args) -> decltype(auto) {
     auto msg = Message(role);
     (emplace_one(msg, std::forward<Args>(args)), ...);
     self.messages_.push_back(std::move(msg));
     return std::forward<decltype(self)>(self);
 }
 ```
+
+**Note:** A `static` method cannot take a deducing `this` parameter. The correct C++23 syntax is `(this auto &&self, ...)`. The return type must be `decltype(auto)`, not `decltype(self)`, to properly deduce the forwarded reference type.
 
 - [ ] **Step 4: Build and test**
 
@@ -320,9 +322,13 @@ for (const auto &spec : specs_) {
     auto result = spec.build();
     if (result.has_value()) {
         registry.register_tool(std::move(result).value());
+    } else {
+        spdlog::warn("failed to register tool: {}", result.error());
     }
 }
 ```
+
+Add `#include <spdlog/spdlog.h>` to the includes in `contextual-tool-group.hpp`.
 
 - [ ] **Step 4: Update test callers that use `build()` directly**
 
@@ -350,6 +356,44 @@ CHECK_FALSE(result.has_value());
 CHECK(result.error().contains("requires execute"));
 ```
 
+- [ ] **Step 4b: Update production callers that call `build()` directly**
+
+Besides `ContextualToolGroup::register_into()` (fixed in Step 3), there are 5 production files that call `registry.register_tool(... .build())` directly:
+
+- `src/tools/coordinator/agent-spawn-tool.cpp` line 95
+- `src/tools/coordinator/agent-stop-tool.cpp` line 46
+- `src/tools/coordinator/agent-send-message-tool.cpp` line 78
+- `src/tools/swarm/team-create-tool.cpp` line 49
+- `src/tools/swarm/team-delete-tool.cpp` line 76
+
+Each follows the same pattern. Before:
+
+```cpp
+registry.register_tool(make_tool_spec_builder("agent_spawn")
+                           .description(...)
+                           .input_schema(...)
+                           .execute(...)
+                           .deferred()
+                           .build());
+```
+
+After:
+
+```cpp
+if (auto tool = make_tool_spec_builder("agent_spawn")
+                    .description(...)
+                    .input_schema(...)
+                    .execute(...)
+                    .deferred()
+                    .build(); tool.has_value()) {
+    registry.register_tool(std::move(*tool));
+} else {
+    spdlog::warn("failed to register tool: {}", tool.error());
+}
+```
+
+Add these files to the commit in Step 6.
+
 - [ ] **Step 5: Build and test**
 
 ```bash
@@ -371,6 +415,7 @@ git commit -m "refactor: migrate ToolSpecBuilder to deducing this with std::expe
 **Files:**
 
 - Modify: `src/tools/registry/tool-dispatch.hpp`
+- Modify: `src/tools/registry/op-tool-support.hpp` (production caller of `run()`)
 - Modify: `tests/tools/registry/tool-registry-test.cpp`
 
 - [ ] **Step 1: Add `#include <expected>` and convert all chainable methods to deducing `this`**
@@ -446,9 +491,41 @@ auto run(const nlohmann::json &input) const -> std::expected<Response, std::stri
 
 Note: also replace `handlers_.find(op)` / `it == handlers_.end()` with `handlers_.contains(op)` / `handlers_.at(op)`.
 
-- [ ] **Step 3: Update all callers of `run()` in tests and production code**
+- [ ] **Step 3: Update ALL production callers of `run()`**
 
-Before (caller pattern):
+There is exactly **one production caller** of `ToolDispatch::run()`, via the `dispatch_message()` helper:
+
+**File: `src/tools/registry/op-tool-support.hpp` line 39–41** (called by `src/tools/automation/automation-tool.cpp` and `src/tools/message-attachments/message-attachments-tool.cpp`):
+
+Before:
+
+```cpp
+[[nodiscard]]
+inline std::string dispatch_message(const ToolDispatch &dispatch, const nlohmann::json &input) {
+    return dispatch.run(input).message;
+}
+```
+
+After:
+
+```cpp
+[[nodiscard]]
+inline std::string dispatch_message(const ToolDispatch &dispatch, const nlohmann::json &input) {
+    auto result = dispatch.run(input);
+    if (!result.has_value()) {
+        return result.error();
+    }
+    return result->message;
+}
+```
+
+Add `op-tool-support.hpp` to the commit in Step 5.
+
+No other production code calls `ToolDispatch::run()` directly. The two indirect callers (`automation-tool.cpp` and `message-attachments-tool.cpp`) go through `dispatch_message()` and need no changes.
+
+- [ ] **Step 3b: Update test callers of `run()`**
+
+Before (test caller pattern):
 
 ```cpp
 auto result = dispatch.run(input);
@@ -475,7 +552,7 @@ ctest --test-dir build -R test-tool --output-on-failure
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tools/registry/tool-dispatch.hpp tests/tools/registry/tool-registry-test.cpp
+git add src/tools/registry/tool-dispatch.hpp src/tools/registry/op-tool-support.hpp tests/tools/registry/tool-registry-test.cpp
 git commit -m "refactor: migrate ToolDispatch to deducing this with std::expected"
 ```
 
@@ -729,29 +806,105 @@ private:
 
 Note: `validate()` changes from `void` (throwing) to `std::optional<std::string>` (returning first error). Add `#include <expected>` to the header.
 
-- [ ] **Step 2: Update `builder.cpp` — convert all method implementations**
+- [ ] **Step 2: Move ALL 14 chainable method bodies from `builder.cpp` to `builder.hpp` as inline templates**
 
-Since deducing `this` methods are templates, the chainable method bodies move into the header (inline). The `.cpp` file retains only `build()`, `build_trigger()`, and `validate()`.
+Since deducing `this` methods are templates, all chainable method bodies must move into the header as inline definitions. The `.cpp` file retains only `build()`, `build_trigger()`, and `validate()`.
 
-For each chainable method, move to header inline. Example for `for_agent`:
-
-Before (`src/automation/builder.cpp` lines 51–54):
-
-```cpp
-AutomationBuilder &AutomationBuilder::for_agent(std::string_view agent_key) {
-    automation_.agent_key = std::string(agent_key);
-    return *this;
-}
-```
-
-After (in `builder.hpp`, inline):
+Remove the following 14 method definitions from `builder.cpp` and replace each declaration in `builder.hpp` with the full inline body:
 
 ```cpp
 auto for_agent(this auto &&self, std::string_view agent_key) -> decltype(auto) {
     self.automation_.agent_key = std::string(agent_key);
     return std::forward<decltype(self)>(self);
 }
+
+auto run_prompt(this auto &&self, std::string_view prompt) -> decltype(auto) {
+    self.automation_.prompt = std::string(prompt);
+    return std::forward<decltype(self)>(self);
+}
+
+auto with_notes(this auto &&self, std::string_view notes) -> decltype(auto) {
+    self.automation_.notes = std::string(notes);
+    return std::forward<decltype(self)>(self);
+}
+
+auto cron(this auto &&self, std::string_view expression) -> decltype(auto) {
+    self.trigger_kind_ = trigger_type::cron;
+    self.cron_expression_ = std::string(expression);
+    self.every_ = std::chrono::seconds{0};
+    self.jitter_ = std::chrono::seconds{0};
+    self.active_windows_.clear();
+    self.has_at_ = false;
+    return std::forward<decltype(self)>(self);
+}
+
+auto every(this auto &&self, std::chrono::seconds cadence) -> decltype(auto) {
+    self.trigger_kind_ = trigger_type::interval;
+    self.cron_expression_.clear();
+    self.every_ = cadence;
+    self.has_at_ = false;
+    return std::forward<decltype(self)>(self);
+}
+
+auto jitter(this auto &&self, std::chrono::seconds amount) -> decltype(auto) {
+    self.jitter_ = amount;
+    return std::forward<decltype(self)>(self);
+}
+
+auto once_at(this auto &&self, TimePoint scheduled_at) -> decltype(auto) {
+    self.trigger_kind_ = trigger_type::once;
+    self.cron_expression_.clear();
+    self.every_ = std::chrono::seconds{0};
+    self.jitter_ = std::chrono::seconds{0};
+    self.active_windows_.clear();
+    self.time_zone_ = "UTC";
+    self.at_ = scheduled_at;
+    self.has_at_ = true;
+    return std::forward<decltype(self)>(self);
+}
+
+auto time_zone(this auto &&self, std::string_view zone_name) -> decltype(auto) {
+    self.time_zone_ = std::string(zone_name);
+    return std::forward<decltype(self)>(self);
+}
+
+auto within_hours(this auto &&self, ActiveWindow window) -> decltype(auto) {
+    self.active_windows_.emplace_back(window);
+    return std::forward<decltype(self)>(self);
+}
+
+auto deliver_to(this auto &&self, std::string_view target) -> decltype(auto) {
+    self.automation_.delivery.mode = delivery_mode::notify;
+    self.automation_.delivery.targets.emplace_back(target);
+    return std::forward<decltype(self)>(self);
+}
+
+auto deliver_silently(this auto &&self) -> decltype(auto) {
+    self.automation_.delivery.mode = delivery_mode::silent;
+    self.automation_.delivery.targets.clear();
+    return std::forward<decltype(self)>(self);
+}
+
+auto tag(this auto &&self, std::string_view value) -> decltype(auto) {
+    self.automation_.tags.emplace_back(value);
+    return std::forward<decltype(self)>(self);
+}
+
+auto enable(this auto &&self) -> decltype(auto) {
+    self.automation_.enabled = true;
+    self.automation_.paused = false;
+    return std::forward<decltype(self)>(self);
+}
+
+auto disable(this auto &&self) -> decltype(auto) {
+    self.automation_.enabled = false;
+    self.automation_.paused = false;
+    self.automation_.next_due_at.reset();
+    return std::forward<decltype(self)>(self);
+}
 ```
+
+Note: `push_back` calls are replaced with `emplace_back` where applicable (for `within_hours`, `deliver_to`, `tag`).
 
 - [ ] **Step 3: Convert `validate()` from throwing to returning errors**
 
@@ -937,6 +1090,17 @@ git commit -m "refactor: migrate AutomationBuilder to deducing this with std::ex
 
 - [ ] **Step 1: Add `AgentLoopBuilder` class to `agent-loop.hpp`**
 
+First, add the required includes. The header already includes `<cstddef>`, `<functional>`, `<string>`, `<vector>`, `"providers/provider.hpp"`, `"tools/registry/tool.hpp"`, `"prompt/system-prompt-sections.hpp"`, and `"types/base.hpp"`. It already forward-declares `hooks::HookManager`, `memory::RuntimeMemory`, and `skills::SkillLoader`.
+
+Add these additional includes:
+
+```cpp
+#include <expected>
+#include <optional>
+```
+
+No additional forward declarations are needed — `ToolRegistry` is already available through `"tools/registry/tool.hpp"`'s transitive includes, and `ProviderSystem`/`ProviderRoute` come from `"providers/provider.hpp"`.
+
 Add after the `AgentLoop` class, before the closing namespace:
 
 ```cpp
@@ -1030,7 +1194,9 @@ static AgentLoopBuilder configure(ProviderSystem &provider, ProviderRoute route,
 }
 ```
 
-- [ ] **Step 2: Add tests for AgentLoopBuilder**
+- [ ] **Step 2: Add tests for AgentLoopBuilder (alongside existing tests)**
+
+Existing tests in `tests/agent/agent-loop-test.cpp` must be **preserved unchanged**. The new `AgentLoopBuilder` tests are **added** to the same file alongside the existing tests.
 
 ```cpp
 TEST_CASE("agent_loop_builder_creates_loop_with_fluent_api") {
@@ -1088,6 +1254,10 @@ git commit -m "refactor: add AgentLoopBuilder with deducing this and std::expect
 - Modify: `src/skills/skill-loader.cpp`
 
 - [ ] **Step 1: Add `SkillLoaderBuilder` class or `create()` factory to `SkillLoader`**
+
+`SkillLoader` has an implicit default constructor (no user-declared constructors), and no deleted copy/move operations. Members have default values (`source_ = skill_source::workspace`, `workspace_root_` default-constructed). Therefore the builder can construct a `SkillLoader` by value and return it.
+
+Note: `load_from_directories()` performs disk I/O to load skills, so calling it in `build()` is an intentional initialization step.
 
 Add to `src/skills/skill-loader.hpp`:
 
@@ -1175,87 +1345,90 @@ git commit -m "refactor: add SkillLoader chainable builder with std::expected"
 
 - [ ] **Step 1: Add `WebServerBuilder` class to `web-server.hpp`**
 
+**IMPORTANT:** `WebServer` has deleted copy AND move operations:
+```cpp
+WebServer(const WebServer &) = delete;
+WebServer &operator=(const WebServer &) = delete;
+WebServer(WebServer &&) = delete;
+WebServer &operator=(WebServer &&) = delete;
+```
+
+This means `build()` **cannot return `WebServer` by value**. Since bootstrap code already constructs `WebServer` externally and configures it via setters (see `configure_web_server_runtime()` in `src/bootstrap/runtime-control.cpp`), the builder uses a **configure-in-place pattern**: it takes a reference to an externally-owned `WebServer` and applies settings to it.
+
 ```cpp
 class WebServerBuilder {
 public:
+    explicit WebServerBuilder(WebServer &server) : server_(server) {}
+
     auto with_static_dir(this auto &&self, std::filesystem::path path) -> decltype(auto) {
-        self.static_dir_ = std::move(path);
+        self.server_.set_static_dir(path);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_session_store(this auto &&self, storage::SessionStore *store) -> decltype(auto) {
-        self.session_store_ = store;
+        self.server_.set_session_store(store);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_memory_store(this auto &&self, memory::MemoryStore *store) -> decltype(auto) {
-        self.memory_store_ = store;
+        self.server_.set_memory_store(store);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_config(this auto &&self, config::Config *config) -> decltype(auto) {
-        self.config_ = config;
+        self.server_.set_config(config);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_config_save_path(this auto &&self, std::filesystem::path path) -> decltype(auto) {
-        self.config_save_path_ = std::move(path);
+        self.server_.set_config_save_path(path);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_tool_registry(this auto &&self, tools::ToolRegistry *registry) -> decltype(auto) {
-        self.tool_registry_ = registry;
+        self.server_.set_tool_registry(registry);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_skill_loader(this auto &&self, skills::SkillLoader *loader) -> decltype(auto) {
-        self.skill_loader_ = loader;
+        self.server_.set_skill_loader(loader);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_automation_service(this auto &&self, automation::AutomationService *service) -> decltype(auto) {
-        self.automation_service_ = service;
+        self.server_.set_automation_service(service);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_automation_runtime(this auto &&self, automation::AutomationRuntime *runtime) -> decltype(auto) {
-        self.automation_runtime_ = runtime;
+        self.server_.set_automation_runtime(runtime);
         return std::forward<decltype(self)>(self);
     }
 
+    /// Terminal: returns a reference to the configured server.
     [[nodiscard]]
-    auto build() -> std::expected<WebServer, std::string> {
-        WebServer server;
-        if (!static_dir_.empty()) { server.set_static_dir(static_dir_); }
-        if (session_store_ != nullptr) { server.set_session_store(session_store_); }
-        if (memory_store_ != nullptr) { server.set_memory_store(memory_store_); }
-        if (config_ != nullptr) { server.set_config(config_); }
-        if (!config_save_path_.empty()) { server.set_config_save_path(config_save_path_); }
-        if (tool_registry_ != nullptr) { server.set_tool_registry(tool_registry_); }
-        if (skill_loader_ != nullptr) { server.set_skill_loader(skill_loader_); }
-        if (automation_service_ != nullptr) { server.set_automation_service(automation_service_); }
-        if (automation_runtime_ != nullptr) { server.set_automation_runtime(automation_runtime_); }
-        return std::move(server);
-    }
+    WebServer &build() const { return server_; }
 
 private:
-    std::filesystem::path static_dir_;
-    storage::SessionStore *session_store_ = nullptr;
-    memory::MemoryStore *memory_store_ = nullptr;
-    config::Config *config_ = nullptr;
-    std::filesystem::path config_save_path_;
-    tools::ToolRegistry *tool_registry_ = nullptr;
-    skills::SkillLoader *skill_loader_ = nullptr;
-    automation::AutomationService *automation_service_ = nullptr;
-    automation::AutomationRuntime *automation_runtime_ = nullptr;
+    WebServer &server_;
 };
 ```
 
-Add `#include <expected>` to the header. Add static factory on `WebServer`:
+Add static factory on `WebServer`:
 
 ```cpp
 [[nodiscard]]
-static WebServerBuilder create() { return {}; }
+static WebServerBuilder configure(WebServer &server) { return WebServerBuilder(server); }
+```
+
+Usage example (mirrors existing bootstrap pattern):
+```cpp
+WebServer server;
+WebServer::configure(server)
+    .with_static_dir(options.web_dir)
+    .with_config(&cfg)
+    .with_session_store(session_store)
+    .build();
 ```
 
 Note: `start()` and `stop()` remain non-chainable runtime methods on `WebServer`.
@@ -1287,57 +1460,55 @@ git commit -m "refactor: add WebServer chainable builder with std::expected"
 
 - [ ] **Step 1: Add `CoordinatorManagerBuilder` class**
 
+**IMPORTANT:** `CoordinatorManager` has deleted copy AND move operations:
+```cpp
+CoordinatorManager(const CoordinatorManager &) = delete;
+CoordinatorManager &operator=(const CoordinatorManager &) = delete;
+CoordinatorManager(CoordinatorManager &&) = delete;
+CoordinatorManager &operator=(CoordinatorManager &&) = delete;
+```
+
+This means `build()` **cannot return `CoordinatorManager` by value**. Like `WebServer`, bootstrap code passes `CoordinatorManager*` around. The builder uses a **configure-in-place pattern**: it takes a reference to an externally-owned `CoordinatorManager`.
+
 ```cpp
 class CoordinatorManagerBuilder {
 public:
-    explicit CoordinatorManagerBuilder(int max_concurrent = 4)
-    : max_concurrent_(max_concurrent) {}
+    explicit CoordinatorManagerBuilder(CoordinatorManager &manager) : manager_(manager) {}
 
     auto with_environment(this auto &&self, AgentExecutionEnvironment env) -> decltype(auto) {
-        self.env_ = env;
+        self.manager_.set_environment(env);
         return std::forward<decltype(self)>(self);
     }
 
     auto with_notification_callback(this auto &&self, TaskNotificationCallback callback) -> decltype(auto) {
-        self.notification_callback_ = std::move(callback);
+        self.manager_.set_notification_callback(std::move(callback));
         return std::forward<decltype(self)>(self);
     }
 
     auto with_worker_runtime_factory(this auto &&self, WorkerRuntimeFactory factory) -> decltype(auto) {
-        self.worker_runtime_factory_ = std::move(factory);
+        self.manager_.set_worker_runtime_factory(std::move(factory));
         return std::forward<decltype(self)>(self);
     }
 
+    /// Terminal: returns a reference to the configured manager.
     [[nodiscard]]
-    auto build() -> std::expected<CoordinatorManager, std::string> {
-        if (!worker_runtime_factory_) {
-            return std::unexpected("worker runtime factory is required");
-        }
-        CoordinatorManager manager(max_concurrent_);
-        manager.set_environment(env_);
-        if (notification_callback_) { manager.set_notification_callback(std::move(notification_callback_)); }
-        manager.set_worker_runtime_factory(std::move(worker_runtime_factory_));
-        return std::move(manager);
-    }
+    CoordinatorManager &build() const { return manager_; }
 
 private:
-    int max_concurrent_ = 4;
-    AgentExecutionEnvironment env_;
-    TaskNotificationCallback notification_callback_;
-    WorkerRuntimeFactory worker_runtime_factory_;
+    CoordinatorManager &manager_;
 };
 ```
 
-Add `#include <expected>` to the header. Add static factory on `CoordinatorManager`:
+Add static factory on `CoordinatorManager`:
 
 ```cpp
 [[nodiscard]]
-static CoordinatorManagerBuilder configure(int max_concurrent = 4) {
-    return CoordinatorManagerBuilder(max_concurrent);
+static CoordinatorManagerBuilder configure(CoordinatorManager &manager) {
+    return CoordinatorManagerBuilder(manager);
 }
 ```
 
-Note: Runtime methods (`spawn()`, `stop()`, `shutdown()`, etc.) stay as-is on `CoordinatorManager`.
+Note: `build()` is `const` since it is a side-effect-free observation that returns the configured reference. Runtime methods (`spawn()`, `stop()`, `shutdown()`, etc.) stay as-is on `CoordinatorManager`.
 
 - [ ] **Step 2: Keep existing void setters for backward compatibility**
 

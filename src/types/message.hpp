@@ -106,20 +106,20 @@ namespace orangutan {
             return messages_.empty();
         }
 
-        auto append(Message msg) -> Conversation & {
-            messages_.push_back(std::move(msg));
-            return *this;
+        auto append(this auto &&self, Message msg) -> decltype(auto) {
+            self.messages_.push_back(std::move(msg));
+            return std::forward<decltype(self)>(self);
         }
 
         // conversation.user("hello", Thinking{"..."})
         template <typename... Args>
-        auto user(Args &&...args) -> Conversation & {
-            return emplace(base::role::user, std::forward<Args>(args)...);
+        auto user(this auto &&self, Args &&...args) -> decltype(auto) {
+            return std::forward<decltype(self)>(self).emplace(base::role::user, std::forward<Args>(args)...);
         }
 
         template <typename... Args>
-        auto assistant(Args &&...args) -> Conversation & {
-            return emplace(base::role::assistant, std::forward<Args>(args)...);
+        auto assistant(this auto &&self, Args &&...args) -> decltype(auto) {
+            return std::forward<decltype(self)>(self).emplace(base::role::assistant, std::forward<Args>(args)...);
         }
 
         [[nodiscard]]
@@ -146,11 +146,11 @@ namespace orangutan {
         std::vector<Message> messages_;
 
         template <typename... Args>
-        auto emplace(base::role role, Args &&...args) -> Conversation & {
+        auto emplace(this auto &&self, base::role role, Args &&...args) -> decltype(auto) {
             auto msg = Message(role);
             (emplace_one(msg, std::forward<Args>(args)), ...);
-            messages_.push_back(std::move(msg));
-            return *this;
+            self.messages_.push_back(std::move(msg));
+            return std::forward<decltype(self)>(self);
         }
 
         template <typename T>
