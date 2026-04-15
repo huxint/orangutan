@@ -28,6 +28,7 @@ namespace orangutan::automation {
     using TimePoint = std::chrono::system_clock::time_point;
 
     std::optional<CronExpr> parse_cron(std::string_view expr);
+    std::optional<CronExpr> parse_cron_silent(std::string_view expr);
 
     bool cron_matches(const CronExpr &expr, const TimePoint &time);
 
@@ -42,6 +43,7 @@ namespace orangutan {
     using automation::CronField;
     using automation::next_fire_time;
     using automation::parse_cron;
+    using automation::parse_cron_silent;
     using automation::TimePoint;
 
 } // namespace orangutan

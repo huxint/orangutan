@@ -1,42 +1,14 @@
 #include "automation/builder.hpp"
 
 #include <cctype>
-#include <memory>
 #include <stdexcept>
 
 #include "automation/cron-parser.hpp"
-#include <spdlog/spdlog.h>
 
 namespace orangutan::automation {
     namespace {
 
         constexpr auto FULL_DAY_MINUTES = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::hours{24});
-
-        class ScopedLoggerLevelOverride {
-        public:
-            explicit ScopedLoggerLevelOverride(spdlog::level::level_enum level)
-            : logger_(spdlog::default_logger()) {
-                if (logger_ != nullptr) {
-                    previous_level_ = logger_->level();
-                    logger_->set_level(level);
-                }
-            }
-
-            ~ScopedLoggerLevelOverride() {
-                if (logger_ != nullptr) {
-                    logger_->set_level(previous_level_);
-                }
-            }
-
-            ScopedLoggerLevelOverride(const ScopedLoggerLevelOverride &) = delete;
-            ScopedLoggerLevelOverride &operator=(const ScopedLoggerLevelOverride &) = delete;
-            ScopedLoggerLevelOverride(ScopedLoggerLevelOverride &&) = delete;
-            ScopedLoggerLevelOverride &operator=(ScopedLoggerLevelOverride &&) = delete;
-
-        private:
-            std::shared_ptr<spdlog::logger> logger_;
-            spdlog::level::level_enum previous_level_ = spdlog::level::info;
-        };
 
         [[nodiscard]]
         bool is_blank(std::string_view value) {
@@ -52,12 +24,6 @@ namespace orangutan::automation {
             if (is_blank(value)) {
                 throw std::invalid_argument(std::string(label) + " must not be blank");
             }
-        }
-
-        [[nodiscard]]
-        std::optional<CronExpr> parse_cron_quietly(std::string_view expression) {
-            const ScopedLoggerLevelOverride quiet_logging(spdlog::level::critical);
-            return parse_cron(expression);
         }
 
     } // namespace
@@ -219,7 +185,7 @@ namespace orangutan::automation {
         switch (*trigger_kind_) {
         case trigger_type::cron:
             validate_non_blank(cron_expression_, "cron expression");
-            if (!parse_cron_quietly(cron_expression_).has_value()) {
+            if (!parse_cron_silent(cron_expression_).has_value()) {
                 throw std::invalid_argument("cron expression is invalid");
             }
             if (every_ != std::chrono::seconds{0}) {

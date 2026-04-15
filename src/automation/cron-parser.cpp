@@ -124,33 +124,45 @@ namespace orangutan::automation {
             return tokens;
         }
 
+        std::optional<CronExpr> parse_cron_impl(std::string_view expr, bool emit_errors) {
+            auto tokens = split_whitespace(expr);
+            if (tokens.size() != 5) {
+                if (emit_errors) {
+                    spdlog::error("Cron expression must have exactly 5 fields: '{}'", expr);
+                }
+                return std::nullopt;
+            }
+
+            auto minute = parse_field(tokens[0], 0, 59);
+            auto hour = parse_field(tokens[1], 0, 23);
+            auto dom = parse_field(tokens[2], 1, 31);
+            auto month = parse_field(tokens[3], 1, 12);
+            auto dow = parse_field(tokens[4], 0, 6);
+
+            if (!minute || !hour || !dom || !month || !dow) {
+                if (emit_errors) {
+                    spdlog::error("Failed to parse cron expression: '{}'", expr);
+                }
+                return std::nullopt;
+            }
+
+            return CronExpr{
+                .minute = *minute,
+                .hour = *hour,
+                .day_of_month = *dom,
+                .month = *month,
+                .day_of_week = *dow,
+            };
+        }
+
     } // namespace
 
     std::optional<CronExpr> parse_cron(std::string_view expr) {
-        auto tokens = split_whitespace(expr);
-        if (tokens.size() != 5) {
-            spdlog::error("Cron expression must have exactly 5 fields: '{}'", expr);
-            return std::nullopt;
-        }
+        return parse_cron_impl(expr, true);
+    }
 
-        auto minute = parse_field(tokens[0], 0, 59);
-        auto hour = parse_field(tokens[1], 0, 23);
-        auto dom = parse_field(tokens[2], 1, 31);
-        auto month = parse_field(tokens[3], 1, 12);
-        auto dow = parse_field(tokens[4], 0, 6);
-
-        if (!minute || !hour || !dom || !month || !dow) {
-            spdlog::error("Failed to parse cron expression: '{}'", expr);
-            return std::nullopt;
-        }
-
-        return CronExpr{
-            .minute = *minute,
-            .hour = *hour,
-            .day_of_month = *dom,
-            .month = *month,
-            .day_of_week = *dow,
-        };
+    std::optional<CronExpr> parse_cron_silent(std::string_view expr) {
+        return parse_cron_impl(expr, false);
     }
 
     bool cron_matches(const CronExpr &expr, const TimePoint &time_point) {
