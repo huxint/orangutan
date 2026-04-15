@@ -17,6 +17,7 @@
 // Forward declarations
 namespace orangutan::coordinator {
     class AgentDefinitionRegistry;
+    class CoordinatorManagerBuilder;
 }
 namespace orangutan::memory {
     class MemoryStore;
@@ -111,6 +112,10 @@ namespace orangutan::coordinator {
         void unregister_runtime_notification_handler(const std::string &runtime_key);
         void set_worker_runtime_factory(WorkerRuntimeFactory factory);
 
+        /// Create a builder for fluent CoordinatorManager configuration.
+        [[nodiscard]]
+        static CoordinatorManagerBuilder configure(CoordinatorManager &manager);
+
         [[nodiscard]]
         AgentSpawnResult spawn(const AgentSpawnRequest &request);
 
@@ -160,6 +165,33 @@ namespace orangutan::coordinator {
         void remove_pending_run_locked(const std::string &run_id);
         void maybe_start_queued_runs();
         void run_worker(const std::shared_ptr<ActiveRun> &run, const std::stop_token &stop_token);
+    };
+
+    class CoordinatorManagerBuilder {
+    public:
+        explicit CoordinatorManagerBuilder(CoordinatorManager &manager) : manager_(manager) {}
+
+        auto with_environment(this auto &&self, AgentExecutionEnvironment env) -> decltype(auto) {
+            self.manager_.set_environment(env);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_notification_callback(this auto &&self, TaskNotificationCallback callback) -> decltype(auto) {
+            self.manager_.set_notification_callback(std::move(callback));
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_worker_runtime_factory(this auto &&self, WorkerRuntimeFactory factory) -> decltype(auto) {
+            self.manager_.set_worker_runtime_factory(std::move(factory));
+            return std::forward<decltype(self)>(self);
+        }
+
+        /// Terminal: returns a reference to the configured manager.
+        [[nodiscard]]
+        CoordinatorManager &build() const { return manager_; }
+
+    private:
+        CoordinatorManager &manager_;
     };
 
 } // namespace orangutan::coordinator

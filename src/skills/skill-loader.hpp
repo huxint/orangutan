@@ -2,6 +2,7 @@
 
 #include "skills/runtime.hpp"
 
+#include <expected>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -9,6 +10,8 @@
 namespace orangutan::skills {
 
     std::vector<std::filesystem::path> resolve_skill_directories(const std::vector<std::string> &configured_skill_paths, const std::filesystem::path &workspace_root);
+
+    class SkillLoaderBuilder;
 
     class SkillLoader {
     public:
@@ -21,6 +24,10 @@ namespace orangutan::skills {
         void set_workspace_root(const std::filesystem::path &workspace_root) {
             workspace_root_ = workspace_root;
         }
+
+        /// Create a builder for fluent SkillLoader configuration.
+        [[nodiscard]]
+        static SkillLoaderBuilder create();
 
         void activate_for_paths(const std::vector<std::filesystem::path> &paths);
 
@@ -37,6 +44,43 @@ namespace orangutan::skills {
         skill_runtime runtime_;
         std::filesystem::path workspace_root_;
         skill_source source_ = skill_source::workspace;
+    };
+
+    class SkillLoaderBuilder {
+    public:
+        auto with_source(this auto &&self, skill_source source) -> decltype(auto) {
+            self.source_ = source;
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_workspace_root(this auto &&self, std::filesystem::path root) -> decltype(auto) {
+            self.workspace_root_ = std::move(root);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_directories(this auto &&self, std::vector<std::filesystem::path> dirs) -> decltype(auto) {
+            self.directories_ = std::move(dirs);
+            return std::forward<decltype(self)>(self);
+        }
+
+        [[nodiscard]]
+        auto build() const -> std::expected<SkillLoader, std::string> {
+            if (workspace_root_.empty()) {
+                return std::unexpected("workspace root is required");
+            }
+            SkillLoader loader;
+            loader.set_source(source_);
+            loader.set_workspace_root(workspace_root_);
+            if (!directories_.empty()) {
+                loader.load_from_directories(directories_);
+            }
+            return loader;
+        }
+
+    private:
+        skill_source source_ = skill_source::workspace;
+        std::filesystem::path workspace_root_;
+        std::vector<std::filesystem::path> directories_;
     };
 
 } // namespace orangutan::skills

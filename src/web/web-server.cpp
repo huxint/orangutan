@@ -126,6 +126,10 @@ namespace orangutan::web {
         automation_runtime_ = runtime;
     }
 
+    WebServerBuilder WebServer::configure(WebServer &server) {
+        return WebServerBuilder(server);
+    }
+
     void WebServer::setup_routes() {
         server_.set_pre_routing_handler([this](const httplib::Request &req, httplib::Response &res) {
             if (!static_dir_.empty()) {

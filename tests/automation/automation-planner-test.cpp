@@ -16,7 +16,8 @@ namespace {
             .for_agent("default")
             .run_prompt("status check")
             .every(std::chrono::seconds{30})
-            .build();
+            .build()
+            .value();
     }
 
     [[nodiscard]]
@@ -25,7 +26,8 @@ namespace {
             .for_agent("default")
             .run_prompt("send summary")
             .once_at(scheduled_at)
-            .build();
+            .build()
+            .value();
     }
 
     [[nodiscard]]
@@ -35,7 +37,8 @@ namespace {
             .run_prompt("scan repo")
             .cron(expression)
             .time_zone(time_zone)
-            .build();
+            .build()
+            .value();
     }
 
     TEST_CASE("interval_uses_fixed_delay_from_completion_time") {
@@ -89,13 +92,15 @@ namespace {
     };
 
     TEST_CASE("interval_active_windows_clamp_to_next_open_window") {
-        const auto automation = orangutan::automation::Automation::named("windowed-pulse")
+        const auto result = orangutan::automation::Automation::named("windowed-pulse")
                                     .for_agent("default")
                                     .run_prompt("status check")
                                     .every(std::chrono::minutes{15})
                                     .time_zone("Asia/Shanghai")
                                     .within_hours({std::chrono::hours{9}, std::chrono::hours{18}})
                                     .build();
+        REQUIRE(result.has_value());
+        const auto &automation = *result;
 
         const auto completion = orangutan::automation::from_unix_seconds(1'776'247'500);
         const auto next_due = orangutan::automation::plan_next_due(automation, completion);

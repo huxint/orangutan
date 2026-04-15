@@ -62,7 +62,8 @@ namespace {
                             .deliver_to("cli")
                             .tag(orangutan::heartbeat::HEARTBEAT_AUTOMATION_TAG)
                             .tag(orangutan::heartbeat::MANAGED_HEARTBEAT_AUTOMATION_TAG)
-                            .build();
+                            .build()
+                            .value();
         existing.paused = true;
         existing.next_due_at = 1'234;
         const auto existing_id = harness.service.save(existing);
@@ -74,10 +75,11 @@ namespace {
                                                    .deliver_to("cli")
                                                    .tag(orangutan::heartbeat::HEARTBEAT_AUTOMATION_TAG)
                                                    .tag(orangutan::heartbeat::MANAGED_HEARTBEAT_AUTOMATION_TAG)
-                                                   .build()));
+                                                   .build()
+                                                   .value()));
 
         static_cast<void>(
-            harness.service.save(orangutan::automation::Automation::named("manual").for_agent("default").run_prompt("manual prompt").cron("0 7 * * *").deliver_to("ops").build()));
+            harness.service.save(orangutan::automation::Automation::named("manual").for_agent("default").run_prompt("manual prompt").cron("0 7 * * *").deliver_to("ops").build().value()));
 
         orangutan::Config cfg;
         cfg.heartbeat_jobs.push_back({

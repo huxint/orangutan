@@ -22,7 +22,8 @@ namespace {
             .cron("0 9 * * *")
             .deliver_to("owner")
             .tag("daily")
-            .build();
+            .build()
+            .value();
     }
 
     [[nodiscard]]
@@ -31,7 +32,8 @@ namespace {
             .for_agent(agent_key)
             .run_prompt("ship it")
             .once_at(orangutan::automation::from_unix_seconds(1'776'249'600))
-            .build();
+            .build()
+            .value();
     }
 
     [[nodiscard]]

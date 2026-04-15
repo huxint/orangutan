@@ -28,6 +28,10 @@ namespace orangutan::skills {
         return directories;
     }
 
+    SkillLoaderBuilder SkillLoader::create() {
+        return {};
+    }
+
     void SkillLoader::load_from_directories(const std::vector<std::filesystem::path> &directories) {
         runtime_.reload(skill_runtime_config{
             .directories = directories,

@@ -40,6 +40,10 @@ namespace orangutan::agent {
       hook_manager_(hook_manager),
       skill_loader_(skill_loader) {}
 
+    AgentLoopBuilder AgentLoop::configure(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools) {
+        return AgentLoopBuilder(provider, std::move(route), tools);
+    }
+
     std::string AgentLoop::run(const std::string &user_input, const ProviderEventCallback &on_stream_event, const ToolEventCallback &on_tool_event,
                                const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
         detail::ToolCallCounts call_counts;

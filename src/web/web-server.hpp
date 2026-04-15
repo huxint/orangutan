@@ -41,6 +41,7 @@ namespace orangutan::tools {
 namespace orangutan::web {
 
     struct WebSessionState;
+    class WebServerBuilder;
 
     class WebServer {
     public:
@@ -71,6 +72,10 @@ namespace orangutan::web {
         void set_automation_service(automation::AutomationService *service);
         void set_automation_runtime(automation::AutomationRuntime *runtime);
 
+        /// Create a builder for fluent WebServer configuration.
+        [[nodiscard]]
+        static WebServerBuilder configure(WebServer &server);
+
     private:
         httplib::Server server_;
         std::jthread server_thread_;
@@ -96,6 +101,63 @@ namespace orangutan::web {
         std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions_;
 
         void setup_routes();
+    };
+
+    class WebServerBuilder {
+    public:
+        explicit WebServerBuilder(WebServer &server) : server_(server) {}
+
+        auto with_static_dir(this auto &&self, const std::filesystem::path &path) -> decltype(auto) {
+            self.server_.set_static_dir(path);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_session_store(this auto &&self, storage::SessionStore *store) -> decltype(auto) {
+            self.server_.set_session_store(store);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_memory_store(this auto &&self, memory::MemoryStore *store) -> decltype(auto) {
+            self.server_.set_memory_store(store);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_config(this auto &&self, config::Config *config) -> decltype(auto) {
+            self.server_.set_config(config);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_config_save_path(this auto &&self, const std::filesystem::path &path) -> decltype(auto) {
+            self.server_.set_config_save_path(path);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_tool_registry(this auto &&self, tools::ToolRegistry *registry) -> decltype(auto) {
+            self.server_.set_tool_registry(registry);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_skill_loader(this auto &&self, skills::SkillLoader *loader) -> decltype(auto) {
+            self.server_.set_skill_loader(loader);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_automation_service(this auto &&self, automation::AutomationService *service) -> decltype(auto) {
+            self.server_.set_automation_service(service);
+            return std::forward<decltype(self)>(self);
+        }
+
+        auto with_automation_runtime(this auto &&self, automation::AutomationRuntime *runtime) -> decltype(auto) {
+            self.server_.set_automation_runtime(runtime);
+            return std::forward<decltype(self)>(self);
+        }
+
+        /// Terminal: returns a reference to the configured server.
+        [[nodiscard]]
+        WebServer &build() const { return server_; }
+
+    private:
+        WebServer &server_;
     };
 
 } // namespace orangutan::web

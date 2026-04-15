@@ -526,4 +526,30 @@ namespace {
         std::filesystem::remove_all(db_path.parent_path());
     }
 
+    TEST_CASE("agent_loop_builder_creates_loop_with_fluent_api") {
+        ScriptedProvider provider({testing::make_text_response("hello")});
+        ToolRegistry tools;
+
+        auto result = AgentLoop::configure(provider.system, provider.route, tools)
+                          .with_thinking_budget(512)
+                          .build();
+
+        REQUIRE(result.has_value());
+        auto reply = result->run("hi");
+        CHECK(reply == "hello");
+    }
+
+    TEST_CASE("agent_loop_builder_with_stop_callback") {
+        ScriptedProvider provider({testing::make_text_response("unused")});
+        ToolRegistry tools;
+
+        auto result = AgentLoop::configure(provider.system, provider.route, tools)
+                          .with_stop_requested_callback([] { return true; })
+                          .build();
+
+        REQUIRE(result.has_value());
+        auto reply = result->run("stop now");
+        CHECK(reply == "Task terminated.");
+    }
+
 } // namespace

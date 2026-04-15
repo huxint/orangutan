@@ -99,6 +99,10 @@ namespace orangutan::coordinator {
         worker_runtime_factory_ = std::move(factory);
     }
 
+    CoordinatorManagerBuilder CoordinatorManager::configure(CoordinatorManager &manager) {
+        return CoordinatorManagerBuilder(manager);
+    }
+
     std::string CoordinatorManager::make_run_id() {
         auto seq = next_run_id_++;
         return "run-" + std::to_string(now_millis()) + "-" + std::to_string(seq);

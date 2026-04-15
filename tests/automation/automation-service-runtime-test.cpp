@@ -66,17 +66,17 @@ namespace {
 
     [[nodiscard]]
     orangutan::automation::Automation make_once_automation(std::string_view name, orangutan::automation::TimePoint scheduled_at) {
-        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("ship it").once_at(scheduled_at).build();
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("ship it").once_at(scheduled_at).build().value();
     }
 
     [[nodiscard]]
     orangutan::automation::Automation make_interval_automation(std::string_view name, std::chrono::seconds jitter = std::chrono::seconds{0}) {
-        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("status check").every(std::chrono::seconds{30}).jitter(jitter).build();
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("status check").every(std::chrono::seconds{30}).jitter(jitter).build().value();
     }
 
     [[nodiscard]]
     orangutan::automation::Automation make_notify_automation(std::string_view name) {
-        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("scan repo").cron("0 9 * * *").deliver_to("owner").deliver_to("pager").build();
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("scan repo").cron("0 9 * * *").deliver_to("owner").deliver_to("pager").build().value();
     }
 
     [[nodiscard]]
@@ -88,14 +88,15 @@ namespace {
             .deliver_to(target)
             .tag(orangutan::heartbeat::HEARTBEAT_AUTOMATION_TAG)
             .tag(orangutan::heartbeat::MANAGED_HEARTBEAT_AUTOMATION_TAG)
-            .build();
+            .build()
+            .value();
     }
 
     TEST_CASE("service_lists_finds_and_removes_automations") {
         ServiceHarness harness;
 
         const auto repo_check_id = harness.service.save(make_notify_automation("repo-check"));
-        static_cast<void>(harness.service.save(orangutan::automation::Automation::named("ops-check").for_agent("ops").run_prompt("scan ops").cron("0 10 * * *").build()));
+        static_cast<void>(harness.service.save(orangutan::automation::Automation::named("ops-check").for_agent("ops").run_prompt("scan ops").cron("0 10 * * *").build().value()));
 
         const auto found = harness.service.find("default", repo_check_id);
         REQUIRE(found.has_value());

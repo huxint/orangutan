@@ -47,7 +47,7 @@ namespace orangutan::bootstrap {
 
         [[nodiscard]]
         automation::Automation build_heartbeat_automation(const Config::HeartbeatJobConfig &job) {
-            return automation::Automation::named(job.name)
+            auto result = automation::Automation::named(job.name)
                 .for_agent(resolve_heartbeat_agent(job.agent))
                 .run_prompt(job.prompt)
                 .cron(job.cron)
@@ -55,6 +55,12 @@ namespace orangutan::bootstrap {
                 .tag(heartbeat::HEARTBEAT_AUTOMATION_TAG)
                 .tag(heartbeat::MANAGED_HEARTBEAT_AUTOMATION_TAG)
                 .build();
+
+            if (!result.has_value()) {
+                spdlog::warn("failed to build heartbeat automation '{}': {}", job.name, result.error());
+                return {};
+            }
+            return std::move(*result);
         }
 
         void carry_runtime_state(const automation::Automation &existing, automation::Automation &desired) {
