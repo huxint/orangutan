@@ -2,13 +2,15 @@
 
 #include "types/content.hpp"
 
-#include <nlohmann/json.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 namespace orangutan {
 
-    enum class response_stop_reason {
+    enum class response_stop_reason : std::uint8_t {
         end_turn,
         tool_use,
         max_tokens,
