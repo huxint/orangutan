@@ -1,0 +1,86 @@
+#include <chrono>
+#include <stdexcept>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "automation/builder.hpp"
+#include "automation/model.hpp"
+
+namespace {
+
+    TEST_CASE("automation_builder_creates_cron_definition") {
+        const auto automation = orangutan::automation::Automation::named("repo-check")
+                                    .for_agent("default")
+                                    .run_prompt("scan repo and summarize changes")
+                                    .cron("0 9 * * *")
+                                    .time_zone("Asia/Shanghai")
+                                    .deliver_to("owner")
+                                    .tag("daily")
+                                    .build();
+
+        CHECK(automation.name == "repo-check");
+        CHECK(automation.agent_key == "default");
+        CHECK(automation.prompt == "scan repo and summarize changes");
+        CHECK(automation.tags.size() == 1UL);
+        CHECK(automation.tags.front() == "daily");
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::cron);
+        CHECK(automation.trigger.cron == "0 9 * * *");
+        CHECK(automation.trigger.time_zone == "Asia/Shanghai");
+        CHECK(automation.delivery.mode == orangutan::automation::delivery_mode::notify);
+        CHECK(automation.delivery.targets.size() == 1UL);
+        CHECK(automation.delivery.targets.front() == "owner");
+    };
+
+    TEST_CASE("automation_builder_creates_interval_definition") {
+        const auto automation = orangutan::automation::Automation::named("pulse")
+                                    .for_agent("default")
+                                    .run_prompt("status check")
+                                    .every(std::chrono::minutes{15})
+                                    .jitter(std::chrono::seconds{30})
+                                    .within_hours({std::chrono::hours{9}, std::chrono::hours{18}})
+                                    .build();
+
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::interval);
+        CHECK(automation.trigger.every == std::chrono::minutes{15});
+        CHECK(automation.trigger.jitter == std::chrono::seconds{30});
+        REQUIRE(automation.trigger.active_windows.size() == 1UL);
+        CHECK(automation.trigger.active_windows.front().start == std::chrono::hours{9});
+        CHECK(automation.trigger.active_windows.front().end == std::chrono::hours{18});
+        CHECK(automation.trigger.time_zone == "UTC");
+        CHECK(automation.delivery.mode == orangutan::automation::delivery_mode::silent);
+    };
+
+    TEST_CASE("automation_builder_creates_once_definition") {
+        const auto scheduled_at = orangutan::automation::from_unix_seconds(1'776'249'600);
+
+        const auto automation = orangutan::automation::Automation::named("release-check")
+                                    .for_agent("default")
+                                    .run_prompt("prepare release summary")
+                                    .once_at(scheduled_at)
+                                    .build();
+
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::once);
+        CHECK(automation.trigger.at == scheduled_at);
+    };
+
+    TEST_CASE("automation_builder_requires_agent_key_prompt_and_trigger") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("missing-agent")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("missing-prompt")
+                            .for_agent("default")
+                            .cron("0 9 * * *")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("missing-trigger")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+} // namespace
