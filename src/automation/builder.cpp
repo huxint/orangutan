@@ -92,6 +92,7 @@ namespace orangutan::automation {
         every_ = std::chrono::seconds{0};
         jitter_ = std::chrono::seconds{0};
         active_windows_.clear();
+        time_zone_ = "UTC";
         at_ = scheduled_at;
         has_at_ = true;
         return *this;

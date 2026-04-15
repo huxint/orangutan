@@ -305,4 +305,20 @@ namespace {
         CHECK(automation.trigger.active_windows.empty());
     };
 
+    TEST_CASE("automation_builder_resets_old_time_zone_when_switching_to_once") {
+        const auto scheduled_at = orangutan::automation::from_unix_seconds(1'776'249'600);
+
+        const auto automation = orangutan::automation::Automation::named("switch-once-zone")
+                                    .for_agent("default")
+                                    .run_prompt("check")
+                                    .cron("0 9 * * *")
+                                    .time_zone("Asia/Shanghai")
+                                    .once_at(scheduled_at)
+                                    .build();
+
+        CHECK(automation.trigger.type == orangutan::automation::trigger_type::once);
+        CHECK(automation.trigger.at == scheduled_at);
+        CHECK(automation.trigger.time_zone == "UTC");
+    };
+
 } // namespace
