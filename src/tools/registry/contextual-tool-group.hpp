@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 #include "tool-context.hpp"
 #include "tool-registry.hpp"
 #include "tool-spec-builder.hpp"
@@ -83,7 +85,12 @@ namespace orangutan::tools {
             }
 
             for (const auto &spec : specs_) {
-                registry.register_tool(spec.build());
+                auto result = spec.build();
+                if (result.has_value()) {
+                    registry.register_tool(std::move(result).value());
+                } else {
+                    spdlog::warn("failed to register tool: {}", result.error());
+                }
             }
         }
 

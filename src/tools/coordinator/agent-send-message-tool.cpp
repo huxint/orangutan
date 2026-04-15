@@ -63,19 +63,24 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_send_message_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(make_tool_spec_builder("agent_send_message")
-                                   .description("Send a message to a running agent. Can address by run_id or agent name.")
-                                   .input_schema({{"type", "object"},
-                                                  {"properties",
-                                                   {{"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
-                                                    {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
-                                                    {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
-                                                  {"required", nlohmann::json::array({"text"})}})
-                                   .execute([tool_context](const nlohmann::json &input) {
-                                       return agent_send_message_handler(input, *tool_context);
-                                   })
-                                   .deferred()
-                                   .build());
+        if (auto tool = make_tool_spec_builder("agent_send_message")
+                            .description("Send a message to a running agent. Can address by run_id or agent name.")
+                            .input_schema({{"type", "object"},
+                                           {"properties",
+                                            {{"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
+                                             {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
+                                             {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
+                                           {"required", nlohmann::json::array({"text"})}})
+                            .execute([tool_context](const nlohmann::json &input) {
+                                return agent_send_message_handler(input, *tool_context);
+                            })
+                            .deferred()
+                            .build();
+            tool.has_value()) {
+            registry.register_tool(std::move(*tool));
+        } else {
+            spdlog::warn("failed to register tool: {}", tool.error());
+        }
     }
 
 } // namespace orangutan::tools

@@ -1,7 +1,7 @@
 #pragma once
 
+#include <expected>
 #include <functional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -17,47 +17,47 @@ namespace orangutan::tools {
             tool_.definition.name = std::move(name);
         }
 
-        ToolSpecBuilder &description(std::string value) {
-            tool_.definition.description = std::move(value);
-            return *this;
+        auto description(this auto &&self, std::string value) -> decltype(auto) {
+            self.tool_.definition.description = std::move(value);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &input_schema(nlohmann::json schema) {
-            tool_.definition.input_schema = std::move(schema);
-            return *this;
+        auto input_schema(this auto &&self, nlohmann::json schema) -> decltype(auto) {
+            self.tool_.definition.input_schema = std::move(schema);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &read_only(bool value = true) {
-            tool_.read_only = value;
-            return *this;
+        auto read_only(this auto &&self, bool value = true) -> decltype(auto) {
+            self.tool_.read_only = value;
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &deferred(bool value = true) {
-            tool_.deferred = value;
-            return *this;
+        auto deferred(this auto &&self, bool value = true) -> decltype(auto) {
+            self.tool_.deferred = value;
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &check_permissions(std::function<PermissionResult(const ToolUse &, const ToolPermissionContext &)> fn) {
-            tool_.check_permissions = std::move(fn);
-            return *this;
+        auto check_permissions(this auto &&self, std::function<PermissionResult(const ToolUse &, const ToolPermissionContext &)> fn) -> decltype(auto) {
+            self.tool_.check_permissions = std::move(fn);
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &execute(std::function<std::string(const nlohmann::json &)> fn) {
-            tool_.execute = std::move(fn);
-            has_execute_ = tool_.execute != nullptr;
-            return *this;
+        auto execute(this auto &&self, std::function<std::string(const nlohmann::json &)> fn) -> decltype(auto) {
+            self.tool_.execute = std::move(fn);
+            self.has_execute_ = self.tool_.execute != nullptr;
+            return std::forward<decltype(self)>(self);
         }
 
-        ToolSpecBuilder &execute_rich(std::function<ToolOutput(const nlohmann::json &)> fn) {
-            tool_.execute_rich = std::move(fn);
-            has_execute_rich_ = tool_.execute_rich != nullptr;
-            return *this;
+        auto execute_rich(this auto &&self, std::function<ToolOutput(const nlohmann::json &)> fn) -> decltype(auto) {
+            self.tool_.execute_rich = std::move(fn);
+            self.has_execute_rich_ = self.tool_.execute_rich != nullptr;
+            return std::forward<decltype(self)>(self);
         }
 
         [[nodiscard]]
-        Tool build() const {
+        auto build() const -> std::expected<Tool, std::string> {
             if (!has_execute_ && !has_execute_rich_) {
-                throw std::invalid_argument("tool spec builder requires execute or execute_rich");
+                return std::unexpected("tool spec builder requires execute or execute_rich");
             }
             return tool_;
         }

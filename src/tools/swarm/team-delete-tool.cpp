@@ -61,19 +61,23 @@ namespace orangutan::tools {
     } // namespace
 
     void register_team_delete_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(
-            make_tool_spec_builder("team_delete")
-                .description("Delete a team and deactivate all its members.")
-                .input_schema({{"type", "object"},
-                               {"properties",
-                                {{"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
-                                 {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
-                               {"required", nlohmann::json::array({"team_id"})}})
-                .execute([tool_context](const nlohmann::json &input) {
-                    return team_delete_handler(input, *tool_context);
-                })
-                .deferred()
-                .build());
+        if (auto tool = make_tool_spec_builder("team_delete")
+                            .description("Delete a team and deactivate all its members.")
+                            .input_schema({{"type", "object"},
+                                           {"properties",
+                                            {{"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
+                                             {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
+                                           {"required", nlohmann::json::array({"team_id"})}})
+                            .execute([tool_context](const nlohmann::json &input) {
+                                return team_delete_handler(input, *tool_context);
+                            })
+                            .deferred()
+                            .build();
+            tool.has_value()) {
+            registry.register_tool(std::move(*tool));
+        } else {
+            spdlog::warn("failed to register tool: {}", tool.error());
+        }
     }
 
 } // namespace orangutan::tools

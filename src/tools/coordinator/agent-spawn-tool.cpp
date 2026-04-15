@@ -79,20 +79,25 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(make_tool_spec_builder("agent_spawn")
-                                   .description("Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.")
-                                   .input_schema({{"type", "object"},
-                                                  {"properties",
-                                                   {{"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
-                                                    {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
-                                                    {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
-                                                    {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}}}},
-                                                  {"required", nlohmann::json::array({"agent_key", "prompt"})}})
-                                   .execute([tool_context](const nlohmann::json &input) {
-                                       return agent_spawn_handler(input, *tool_context);
-                                   })
-                                   .deferred()
-                                   .build());
+        if (auto tool = make_tool_spec_builder("agent_spawn")
+                            .description("Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.")
+                            .input_schema({{"type", "object"},
+                                           {"properties",
+                                            {{"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
+                                             {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
+                                             {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
+                                             {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}}}},
+                                           {"required", nlohmann::json::array({"agent_key", "prompt"})}})
+                            .execute([tool_context](const nlohmann::json &input) {
+                                return agent_spawn_handler(input, *tool_context);
+                            })
+                            .deferred()
+                            .build();
+            tool.has_value()) {
+            registry.register_tool(std::move(*tool));
+        } else {
+            spdlog::warn("failed to register tool: {}", tool.error());
+        }
     }
 
 } // namespace orangutan::tools

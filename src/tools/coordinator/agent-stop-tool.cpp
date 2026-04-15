@@ -34,16 +34,21 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_stop_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        registry.register_tool(make_tool_spec_builder("agent_stop")
-                                   .description("Stop a running agent. The agent will be given a chance to clean up before being terminated.")
-                                   .input_schema({{"type", "object"},
-                                                  {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
-                                                  {"required", nlohmann::json::array({"run_id"})}})
-                                   .execute([tool_context](const nlohmann::json &input) {
-                                       return agent_stop_handler(input, *tool_context);
-                                   })
-                                   .deferred()
-                                   .build());
+        if (auto tool = make_tool_spec_builder("agent_stop")
+                            .description("Stop a running agent. The agent will be given a chance to clean up before being terminated.")
+                            .input_schema({{"type", "object"},
+                                           {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
+                                           {"required", nlohmann::json::array({"run_id"})}})
+                            .execute([tool_context](const nlohmann::json &input) {
+                                return agent_stop_handler(input, *tool_context);
+                            })
+                            .deferred()
+                            .build();
+            tool.has_value()) {
+            registry.register_tool(std::move(*tool));
+        } else {
+            spdlog::warn("failed to register tool: {}", tool.error());
+        }
     }
 
 } // namespace orangutan::tools
