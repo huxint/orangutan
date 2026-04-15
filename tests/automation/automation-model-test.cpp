@@ -1,10 +1,15 @@
 #include <chrono>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 
 #include <catch2/catch_test_macros.hpp>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include "automation/builder.hpp"
 #include "automation/model.hpp"
+#include "test-helpers.hpp"
 
 namespace {
 
@@ -84,12 +89,19 @@ namespace {
     };
 
     TEST_CASE("automation_builder_rejects_invalid_cron_expression") {
+        std::ostringstream logged_output;
+        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(logged_output, false);
+        orangutan::testing::ScopedDefaultLogger<spdlog::sinks::ostream_sink_mt> logger("automation-model-test", sink);
+
         CHECK_THROWS_AS(orangutan::automation::Automation::named("bad-cron")
                             .for_agent("default")
                             .run_prompt("check")
                             .cron("* * *")
                             .build(),
                         std::invalid_argument);
+
+        spdlog::default_logger()->flush();
+        CHECK(logged_output.str().empty());
     };
 
     TEST_CASE("automation_builder_rejects_zero_or_negative_interval") {
@@ -152,6 +164,53 @@ namespace {
                             .run_prompt("check")
                             .cron("0 9 * * *")
                             .tag("")
+                            .build(),
+                        std::invalid_argument);
+    };
+
+    TEST_CASE("automation_builder_rejects_blank_required_strings") {
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("   ")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("blank-agent")
+                            .for_agent(" \t ")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("blank-prompt")
+                            .for_agent("default")
+                            .run_prompt(" \n ")
+                            .cron("0 9 * * *")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("blank-target")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .deliver_to(" \t ")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("blank-tag")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .tag(" \n ")
+                            .build(),
+                        std::invalid_argument);
+
+        CHECK_THROWS_AS(orangutan::automation::Automation::named("blank-time-zone")
+                            .for_agent("default")
+                            .run_prompt("check")
+                            .cron("0 9 * * *")
+                            .time_zone(" \t ")
                             .build(),
                         std::invalid_argument);
     };

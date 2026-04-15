@@ -1,18 +1,63 @@
 #include "automation/builder.hpp"
 
+#include <cctype>
+#include <memory>
 #include <stdexcept>
 
 #include "automation/cron-parser.hpp"
+#include <spdlog/spdlog.h>
 
 namespace orangutan::automation {
     namespace {
 
         constexpr auto FULL_DAY_MINUTES = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::hours{24});
 
-        void validate_non_empty(std::string_view value, std::string_view label) {
-            if (value.empty()) {
-                throw std::invalid_argument(std::string(label) + " must not be empty");
+        class ScopedLoggerLevelOverride {
+        public:
+            explicit ScopedLoggerLevelOverride(spdlog::level::level_enum level)
+            : logger_(spdlog::default_logger()) {
+                if (logger_ != nullptr) {
+                    previous_level_ = logger_->level();
+                    logger_->set_level(level);
+                }
             }
+
+            ~ScopedLoggerLevelOverride() {
+                if (logger_ != nullptr) {
+                    logger_->set_level(previous_level_);
+                }
+            }
+
+            ScopedLoggerLevelOverride(const ScopedLoggerLevelOverride &) = delete;
+            ScopedLoggerLevelOverride &operator=(const ScopedLoggerLevelOverride &) = delete;
+            ScopedLoggerLevelOverride(ScopedLoggerLevelOverride &&) = delete;
+            ScopedLoggerLevelOverride &operator=(ScopedLoggerLevelOverride &&) = delete;
+
+        private:
+            std::shared_ptr<spdlog::logger> logger_;
+            spdlog::level::level_enum previous_level_ = spdlog::level::info;
+        };
+
+        [[nodiscard]]
+        bool is_blank(std::string_view value) {
+            for (const auto ch : value) {
+                if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void validate_non_blank(std::string_view value, std::string_view label) {
+            if (is_blank(value)) {
+                throw std::invalid_argument(std::string(label) + " must not be blank");
+            }
+        }
+
+        [[nodiscard]]
+        std::optional<CronExpr> parse_cron_quietly(std::string_view expression) {
+            const ScopedLoggerLevelOverride quiet_logging(spdlog::level::critical);
+            return parse_cron(expression);
         }
 
     } // namespace
@@ -145,9 +190,9 @@ namespace orangutan::automation {
     }
 
     void AutomationBuilder::validate() const {
-        validate_non_empty(automation_.name, "automation name");
-        validate_non_empty(automation_.agent_key, "agent key");
-        validate_non_empty(automation_.prompt, "prompt");
+        validate_non_blank(automation_.name, "automation name");
+        validate_non_blank(automation_.agent_key, "agent key");
+        validate_non_blank(automation_.prompt, "prompt");
 
         if (!trigger_kind_.has_value()) {
             throw std::invalid_argument("trigger must be configured");
@@ -162,21 +207,19 @@ namespace orangutan::automation {
         }
 
         for (const auto &target : automation_.delivery.targets) {
-            validate_non_empty(target, "delivery target");
+            validate_non_blank(target, "delivery target");
         }
 
         for (const auto &tag : automation_.tags) {
-            validate_non_empty(tag, "tag");
+            validate_non_blank(tag, "tag");
         }
 
-        if (time_zone_.empty()) {
-            throw std::invalid_argument("time zone must not be empty");
-        }
+        validate_non_blank(time_zone_, "time zone");
 
         switch (*trigger_kind_) {
         case trigger_type::cron:
-            validate_non_empty(cron_expression_, "cron expression");
-            if (!parse_cron(cron_expression_).has_value()) {
+            validate_non_blank(cron_expression_, "cron expression");
+            if (!parse_cron_quietly(cron_expression_).has_value()) {
                 throw std::invalid_argument("cron expression is invalid");
             }
             if (every_ != std::chrono::seconds{0}) {
