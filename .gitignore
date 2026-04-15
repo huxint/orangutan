@@ -19,3 +19,4 @@ xmake-requires.lock
 .omx/
 .snow
 .agent/
+.qoder/
