@@ -6,7 +6,7 @@
 #include "cli/session-workflow.hpp"
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/identity.hpp"
@@ -22,7 +22,6 @@
 #include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::web {
 
@@ -94,8 +93,10 @@ namespace orangutan::web {
         }
 
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
-                                                                    memory::MemoryStore *memory_store, std::string *current_session_id, automation::Runtime *automation_runtime,
-                                                                    ApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+                                                                    memory::MemoryStore *memory_store, std::string *current_session_id,
+                                                                    automation::AutomationService *automation_service,
+                                                                    automation::AutomationRuntime *automation_runtime, ApprovalCallback approval_callback,
+                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto maybe_route = bootstrap::detail::resolve_agent_route(config, agent, agent_key, "");
             if (!maybe_route.has_value()) {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
@@ -132,12 +133,13 @@ namespace orangutan::web {
                 .current_session_id = current_session_id,
                 .runtime_origin = base::origin::web,
                 .raw_caller_id = "web:local",
+                .automation_service = automation_service,
                 .automation_runtime = automation_runtime,
                 .approval_callback = effective_approval_callback,
-                .background_completion_runtime = (automation_runtime != nullptr && completion_resume_state != nullptr)
+                .background_completion_runtime = (automation_service != nullptr && completion_resume_state != nullptr)
                                                      ? make_background_completion_runtime_bindings(
-                                                           [automation_runtime](const automation::InboxItem &item) {
-                                                               static_cast<void>(automation_runtime->store().insert_inbox(item));
+                                                           [automation_service](const automation::DeliveryRecord &delivery) {
+                                                               static_cast<void>(automation_service->record_delivery(delivery));
                                                            },
                                                            detail::make_web_completion_resume_callback(completion_resume_state))
                                                      : nullptr,
@@ -208,56 +210,6 @@ namespace orangutan::web {
                 return req.get_param_value("agent_key");
             }
             return "default";
-        }
-
-        nlohmann::json unix_time_to_json(const std::optional<base::i64> &value) {
-            if (!value.has_value()) {
-                return nullptr;
-            }
-            return *value;
-        }
-
-        nlohmann::json task_to_json(const automation::TaskSpec &task) {
-            return {
-                {"id", task.id},
-                {"agent_key", task.agent_key},
-                {"name", task.name},
-                {"enabled", task.enabled},
-                {"schedule_kind", magic_enum::enum_name(task.schedule.kind)},
-                {"schedule", task.schedule.value},
-                {"prompt", task.prompt},
-                {"notes", task.notes},
-                {"delivery", automation::delivery_policy_to_json(task.delivery)},
-                {"last_run_at", unix_time_to_json(task.last_run_at)},
-                {"last_status", task.last_status},
-            };
-        }
-
-        nlohmann::json heartbeat_to_json(const automation::HeartbeatSpec &heartbeat) {
-            return {
-                {"id", heartbeat.id},
-                {"agent_key", heartbeat.agent_key},
-                {"name", heartbeat.name},
-                {"enabled", heartbeat.enabled},
-                {"paused", heartbeat.paused},
-                {"every_seconds", heartbeat.every_seconds},
-                {"jitter_seconds", heartbeat.jitter_seconds},
-                {"active_hours", automation::active_hours_to_json(heartbeat.active_hours)},
-                {"prompt", heartbeat.prompt},
-                {"notes", heartbeat.notes},
-                {"delivery", automation::delivery_policy_to_json(heartbeat.delivery)},
-                {"next_due_at", unix_time_to_json(heartbeat.next_due_at)},
-                {"last_run_at", unix_time_to_json(heartbeat.last_run_at)},
-                {"last_status", heartbeat.last_status},
-            };
-        }
-
-        nlohmann::json inbox_item_to_json(const automation::InboxItem &item) {
-            return {
-                {"id", item.id},         {"agent_key", item.agent_key}, {"source_kind", item.source_kind}, {"source_run_id", item.source_run_id},
-                {"title", item.title},   {"body", item.body},           {"created_at", item.created_at},   {"acked_at", unix_time_to_json(item.acked_at)},
-                {"status", item.status},
-            };
         }
 
         void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool cancelled) {
@@ -393,14 +345,15 @@ namespace orangutan::web {
     } // namespace internal
 
     bootstrap::AgentRuntimeBundle detail::build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
-                                                                   std::string *current_session_id, automation::Runtime *automation_runtime, ApprovalCallback approval_callback,
+                                                                   std::string *current_session_id, automation::AutomationService *automation_service,
+                                                                   automation::AutomationRuntime *automation_runtime, ApprovalCallback approval_callback,
                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
         const auto maybe_agent = internal::find_effective_agent(&config, agent_key);
         if (!maybe_agent.has_value()) {
             throw std::runtime_error("agent not found");
         }
-        return internal::build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, automation_runtime, std::move(approval_callback),
-                                                       completion_resume_state);
+        return internal::build_web_runtime_bundle_impl(config, *maybe_agent, agent_key, memory_store, current_session_id, automation_service, automation_runtime,
+                                                       std::move(approval_callback), completion_resume_state);
     }
 
     BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &weak_state) {

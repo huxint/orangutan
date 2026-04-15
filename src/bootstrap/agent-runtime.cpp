@@ -104,6 +104,7 @@ namespace orangutan::bootstrap {
             .coordinator_mode = input.coordinator_mode,
             .runtime_origin = input.runtime_origin,
             .raw_caller_id = input.raw_caller_id,
+            .automation_service = input.automation_service,
             .automation_runtime = input.automation_runtime,
             .abort_checker = input.abort_checker,
             .approval_callback = input.approval_callback,

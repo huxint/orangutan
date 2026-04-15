@@ -3,26 +3,36 @@
 namespace orangutan::bootstrap {
 
     AppRuntime::AppRuntime()
-    : automation_store_(std::make_unique<orangutan::automation::Store>()),
-      automation_runtime_(std::make_unique<orangutan::automation::Runtime>(*automation_store_)) {}
+    : automation_repository_(std::make_unique<orangutan::automation::Repository>()),
+      automation_service_(std::make_unique<orangutan::automation::AutomationService>(*automation_repository_)),
+      automation_runtime_(std::make_unique<orangutan::automation::AutomationRuntime>(*automation_service_)) {}
 
     AppRuntime::AppRuntime(const std::filesystem::path &automation_db_path)
-    : automation_store_(std::make_unique<orangutan::automation::Store>(automation_db_path)),
-      automation_runtime_(std::make_unique<orangutan::automation::Runtime>(*automation_store_)) {}
+    : automation_repository_(std::make_unique<orangutan::automation::Repository>(automation_db_path)),
+      automation_service_(std::make_unique<orangutan::automation::AutomationService>(*automation_repository_)),
+      automation_runtime_(std::make_unique<orangutan::automation::AutomationRuntime>(*automation_service_)) {}
 
-    orangutan::automation::Store &AppRuntime::automation_store() noexcept {
-        return *automation_store_;
+    orangutan::automation::Repository &AppRuntime::automation_repository() noexcept {
+        return *automation_repository_;
     }
 
-    const orangutan::automation::Store &AppRuntime::automation_store() const noexcept {
-        return *automation_store_;
+    const orangutan::automation::Repository &AppRuntime::automation_repository() const noexcept {
+        return *automation_repository_;
     }
 
-    orangutan::automation::Runtime &AppRuntime::automation_runtime() noexcept {
+    orangutan::automation::AutomationService &AppRuntime::automation_service() noexcept {
+        return *automation_service_;
+    }
+
+    const orangutan::automation::AutomationService &AppRuntime::automation_service() const noexcept {
+        return *automation_service_;
+    }
+
+    orangutan::automation::AutomationRuntime &AppRuntime::automation_runtime() noexcept {
         return *automation_runtime_;
     }
 
-    const orangutan::automation::Runtime &AppRuntime::automation_runtime() const noexcept {
+    const orangutan::automation::AutomationRuntime &AppRuntime::automation_runtime() const noexcept {
         return *automation_runtime_;
     }
 

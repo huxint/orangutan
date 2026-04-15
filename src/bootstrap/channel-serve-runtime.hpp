@@ -1,7 +1,7 @@
 #pragma once
 
 #include "agent/agent-loop.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/channel-serve-delivery.hpp"
 #include "bootstrap/identity.hpp"
@@ -72,7 +72,7 @@ namespace orangutan::bootstrap {
             std::string agent_key;
             std::string configured_model;
             std::string session_scope_key;
-            automation::Runtime *automation_runtime = nullptr;
+            automation::AutomationRuntime *automation_runtime = nullptr;
         };
 
         [[nodiscard]]
@@ -138,7 +138,8 @@ namespace orangutan::bootstrap {
         inline std::unique_ptr<ConversationRuntime>
         make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
                                   coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id, hooks::HookManager *hook_manager,
-                                  automation::Runtime *automation_runtime, swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr) {
+                                  automation::AutomationRuntime *automation_runtime, swarm::TeamManager *team_manager = nullptr,
+                                  swarm::AgentMailbox *mailbox = nullptr) {
             auto runtime = std::make_unique<ConversationRuntime>();
             auto completion_resume_state = std::make_shared<ChannelCompletionResumeState>();
             runtime->runtime_key = identity.runtime_key;
@@ -164,10 +165,11 @@ namespace orangutan::bootstrap {
                 .mailbox = mailbox,
                 .runtime_origin = base::origin::channel,
                 .raw_caller_id = raw_caller_id,
+                .automation_service = automation_runtime != nullptr ? &automation_runtime->service() : nullptr,
                 .automation_runtime = automation_runtime,
                 .background_completion_runtime = automation_runtime != nullptr ? make_background_completion_runtime_bindings(
-                                                                                     [automation_runtime](const automation::InboxItem &item) {
-                                                                                         static_cast<void>(automation_runtime->store().insert_inbox(item));
+                                                                                     [automation_runtime](const automation::DeliveryRecord &delivery) {
+                                                                                         static_cast<void>(automation_runtime->service().record_delivery(delivery));
                                                                                      },
                                                                                      make_channel_completion_resume_callback(completion_resume_state))
                                                                                : nullptr,
@@ -303,7 +305,8 @@ namespace orangutan::bootstrap {
         [[nodiscard]]
         inline ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
                                                                           coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
-                                                                          hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr,
+                                                                          hooks::HookManager *hook_manager = nullptr,
+                                                                          automation::AutomationRuntime *automation_runtime = nullptr,
                                                                           swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr) {
             const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
             auto runtime =

@@ -113,9 +113,10 @@ namespace orangutan::prompt {
         constexpr std::string_view AUTOMATION_SECTION =
             "# Automation\n"
             "The following automation mechanisms are available:\n"
-            " - Heartbeat: periodic polling. When you receive a heartbeat poll, respond with HEARTBEAT_OK if nothing needs attention, or respond with alert text if something "
+            " - Heartbeat: periodic checks. When you receive a heartbeat poll, respond with HEARTBEAT_OK if nothing needs attention, or respond with alert text if something "
             "requires the user's attention.\n"
-            " - Cron/Scheduled tasks: time-based jobs that can trigger agent actions on a schedule. Use the heartbeat tool to create, update, or manage scheduled tasks.";
+            " - Scheduled automations: cron, interval, and one-shot jobs can trigger agent actions on a schedule. Use the automation tool or configured automations "
+            "to create, update, or manage scheduled work.";
 
         constexpr std::array STATIC_SECTIONS = {
             IDENTITY_SECTION, SYSTEM_BEHAVIOR_SECTION, TASK_GUIDELINES_SECTION, SAFETY_SECTION, TOOL_USAGE_SECTION, OUTPUT_EFFICIENCY_SECTION,

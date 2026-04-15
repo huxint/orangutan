@@ -461,7 +461,7 @@ Suggested JSON shape:
 - `delivery.mode`
 - `delivery.targets`
 
-The protocol does not preserve `task` and `heartbeat` vocabulary. Interval automation is the replacement for heartbeat behavior.
+The protocol does not preserve the legacy `task` and `heartbeat` tool vocabulary. `heartbeat.jobs` remains as a legacy config input, reconciled into managed heartbeat automations at bootstrap. The `HEARTBEAT_OK` sentinel remains as a delivery-side compatibility rule so managed heartbeat automations can stay quiet when nothing needs attention.
 
 Web routes should mirror the same unified semantics:
 

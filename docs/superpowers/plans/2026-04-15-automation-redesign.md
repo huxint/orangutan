@@ -128,7 +128,7 @@ Web coverage:
 - Reference: `src/automation/automation-types.hpp`
 - Reference: `docs/superpowers/specs/2026-04-15-automation-redesign-design.md`
 
-- [ ] **Step 1: Write the failing model and builder tests**
+- [x] **Step 1: Write the failing model and builder tests**
 
 ```cpp
 TEST_CASE("automation_builder_creates_cron_definition") {
@@ -148,7 +148,7 @@ TEST_CASE("automation_builder_creates_cron_definition") {
 }
 ```
 
-- [ ] **Step 2: Run the automation test target and confirm the new types are missing**
+- [x] **Step 2: Run the automation test target and confirm the new types are missing**
 
 Run: `xmake build test-automation`
 
@@ -156,7 +156,7 @@ Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
 Expected: build or link failure mentioning missing `Automation`, builder methods, or trigger types.
 
-- [ ] **Step 3: Add the minimal unified value types and fluent builder skeleton**
+- [x] **Step 3: Add the minimal unified value types and fluent builder skeleton**
 
 ```cpp
 enum class trigger_type : base::u8 {
@@ -177,7 +177,7 @@ struct Automation {
 };
 ```
 
-- [ ] **Step 4: Fill in builder validation until the new model tests pass**
+- [x] **Step 4: Fill in builder validation until the new model tests pass**
 
 Run: `xmake build test-automation`
 
@@ -204,7 +204,7 @@ git commit -m "refactor: add unified automation model and builder"
 - Create: `tests/automation/automation-planner-test.cpp`
 - Reference: `docs/superpowers/specs/2026-04-15-automation-redesign-design.md`
 
-- [ ] **Step 1: Add failing tests for canonical trigger wire formats**
+- [x] **Step 1: Add failing tests for canonical trigger wire formats**
 
 ```cpp
 TEST_CASE("interval_trigger_json_uses_duration_strings_and_time_zone") {
@@ -225,7 +225,7 @@ TEST_CASE("interval_trigger_json_uses_duration_strings_and_time_zone") {
 }
 ```
 
-- [ ] **Step 2: Run the automation tests and verify the JSON helpers fail first**
+- [x] **Step 2: Run the automation tests and verify the JSON helpers fail first**
 
 Run: `xmake build test-automation`
 
@@ -233,7 +233,7 @@ Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
 Expected: failing assertions or missing-symbol errors for `trigger_to_json`, `trigger_from_json`, or duration parsing helpers.
 
-- [ ] **Step 3: Implement parser helpers and reuse the existing cron parser behind the new API**
+- [x] **Step 3: Implement parser helpers and reuse the existing cron parser behind the new API**
 
 ```cpp
 [[nodiscard]]
@@ -246,7 +246,7 @@ std::expected<Trigger, std::string> trigger_from_json(const nlohmann::json &valu
 std::expected<std::chrono::seconds, std::string> parse_duration_string(std::string_view value);
 ```
 
-- [ ] **Step 4: Extend tests for `once`, `cron`, time-zone defaults, and active-window formatting**
+- [x] **Step 4: Extend tests for `once`, `cron`, time-zone defaults, and active-window formatting**
 
 Run: `xmake build test-automation`
 
@@ -271,7 +271,7 @@ git commit -m "refactor: normalize automation trigger parsing"
 - Reference: `src/storage/sqlite.hpp`
 - Reference: `src/automation/automation-store.hpp`
 
-- [ ] **Step 1: Write failing repository tests for save, lookup, uniqueness, runs, and deliveries**
+- [x] **Step 1: Write failing repository tests for save, lookup, uniqueness, runs, and deliveries**
 
 ```cpp
 TEST_CASE("repository_enforces_agent_scoped_unique_names") {
@@ -283,7 +283,7 @@ TEST_CASE("repository_enforces_agent_scoped_unique_names") {
 }
 ```
 
-- [ ] **Step 2: Run the automation test target and confirm the repository is missing**
+- [x] **Step 2: Run the automation test target and confirm the repository is missing**
 
 Run: `xmake build test-automation`
 
@@ -291,7 +291,7 @@ Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
 Expected: compile failure for missing `Repository`, schema methods, or delivery query helpers.
 
-- [ ] **Step 3: Implement the `automations`, `automation_runs`, and `automation_deliveries` schema plus repository queries**
+- [x] **Step 3: Implement the `automations`, `automation_runs`, and `automation_deliveries` schema plus repository queries**
 
 ```cpp
 class Repository {
@@ -305,7 +305,7 @@ public:
 };
 ```
 
-- [ ] **Step 4: Add tests for `clear_deliveries(DeliveryQuery)` safety rules and one-shot persistence markers**
+- [x] **Step 4: Add tests for `clear_deliveries(DeliveryQuery)` safety rules and one-shot persistence markers**
 
 Run: `xmake build test-automation`
 
@@ -330,7 +330,7 @@ git commit -m "refactor: add unified automation repository"
 - Reference: `src/automation/model.hpp`
 - Reference: `src/automation/parser.hpp`
 
-- [ ] **Step 1: Add failing planner tests for due detection, fixed-delay interval cadence, and one-shot consumption**
+- [x] **Step 1: Add failing planner tests for due detection, fixed-delay interval cadence, and one-shot consumption**
 
 ```cpp
 TEST_CASE("interval_uses_fixed_delay_from_completion_time") {
@@ -345,7 +345,7 @@ TEST_CASE("interval_uses_fixed_delay_from_completion_time") {
 }
 ```
 
-- [ ] **Step 2: Run planner tests and confirm the old planner API no longer fits**
+- [x] **Step 2: Run planner tests and confirm the old planner API no longer fits**
 
 Run: `xmake build test-automation`
 
@@ -353,7 +353,7 @@ Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
 Expected: failing planner assertions or compile errors around legacy `TaskSpec` and `HeartbeatSpec`.
 
-- [ ] **Step 3: Replace the planner API with unified due-item calculations**
+- [x] **Step 3: Replace the planner API with unified due-item calculations**
 
 ```cpp
 struct DueAutomation {
@@ -365,7 +365,7 @@ struct DueAutomation {
 std::vector<DueAutomation> collect_due_automations(std::span<const Automation> automations, TimePoint now);
 ```
 
-- [ ] **Step 4: Add tests for active windows, cron time zones, startup behavior, and no catch-up interval backfill**
+- [x] **Step 4: Add tests for active windows, cron time zones, startup behavior, and no catch-up interval backfill**
 
 Run: `xmake build test-automation`
 
@@ -396,7 +396,7 @@ git commit -m "refactor: rebuild automation planner semantics"
 - Reference: `src/automation/repository.hpp`
 - Reference: `src/automation/planner.hpp`
 
-- [ ] **Step 1: Write failing service/runtime tests for the full service surface**
+- [x] **Step 1: Write failing service/runtime tests for the full service surface**
 
 ```cpp
 TEST_CASE("service_run_now_executes_without_changing_disabled_state") {
@@ -423,7 +423,7 @@ Add companion cases for:
 - silent versus notify delivery behavior
 - interval jitter persistence across restart
 
-- [ ] **Step 2: Run the automation target and confirm service/runtime symbols are missing**
+- [x] **Step 2: Run the automation target and confirm service/runtime symbols are missing**
 
 Run: `xmake build test-automation`
 
@@ -431,7 +431,7 @@ Run: `ctest --test-dir build -R test-automation --output-on-failure`
 
 Expected: compile failure for `AutomationService`, delivery record handling, or runtime lease orchestration.
 
-- [ ] **Step 3: Implement the service and runtime boundaries with `stdexec`-based execution flow**
+- [x] **Step 3: Implement the service and runtime boundaries with `stdexec`-based execution flow**
 
 ```cpp
 class AutomationService {
@@ -450,7 +450,7 @@ public:
 };
 ```
 
-- [ ] **Step 4: Make the service/runtime tests pass, including `notify` versus `silent` delivery behavior**
+- [x] **Step 4: Make the service/runtime tests pass, including `notify` versus `silent` delivery behavior**
 
 Run: `xmake build test-automation`
 
@@ -485,7 +485,7 @@ git commit -m "refactor: add automation service and runtime"
 - Delete later: `src/tools/inbox/inbox-tool.hpp`
 - Delete later: `src/tools/inbox/inbox-tool.cpp`
 
-- [ ] **Step 1: Add failing unified-tool tests for the full protocol surface**
+- [x] **Step 1: Add failing unified-tool tests for the full protocol surface**
 
 ```cpp
 TEST_CASE("automation_tool_updates_delivery_by_replacement") {
@@ -509,7 +509,7 @@ Add companion tool cases for:
 - replacing `trigger` or `delivery` swaps the whole nested object
 - `clear_deliveries` fails when `agent_key` is absent from the effective query scope
 
-- [ ] **Step 2: Run tool tests and confirm the old three-tool registration still blocks the new contract**
+- [x] **Step 2: Run tool tests and confirm the old three-tool registration still blocks the new contract**
 
 Run: `xmake build test-tools`
 
@@ -517,13 +517,13 @@ Run: `ctest --test-dir build -R test-tools --output-on-failure`
 
 Expected: missing registration or wrong-schema failures around the new `automation` tool.
 
-- [ ] **Step 3: Implement the unified tool and switch `ToolRuntimeContext` to the new service boundary**
+- [x] **Step 3: Implement the unified tool and switch `ToolRuntimeContext` to the new service boundary**
 
 ```cpp
 void register_automation_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 ```
 
-- [ ] **Step 4: Remove task, heartbeat, and inbox registration paths after the new tool tests pass**
+- [x] **Step 4: Remove task, heartbeat, and inbox registration paths after the new tool tests pass**
 
 Run: `xmake build test-tools`
 
@@ -566,7 +566,7 @@ git commit -m "refactor: unify automation tool surface"
 - Modify: `tests/bootstrap/runtime-agent-runtime-test.cpp`
 - Modify: `tests/tools/shell/background-shell-completion-test.cpp`
 
-- [ ] **Step 1: Add failing route and runtime-bundle tests for the full HTTP surface**
+- [x] **Step 1: Add failing route and runtime-bundle tests for the full HTTP surface**
 
 ```cpp
 TEST_CASE("web_server_lists_automations_from_unified_service") {
@@ -594,7 +594,7 @@ Add companion route cases for:
 - `PATCH /automation/{id}` uses the same replace-on-write semantics for `trigger` and `delivery`
 - `DELETE /automation/deliveries` rejects requests that do not resolve to a `DeliveryQuery` with `agent_key`
 
-- [ ] **Step 2: Run web, tool, and bootstrap tests and verify the old task/heartbeat/inbox handlers fail**
+- [x] **Step 2: Run web, tool, and bootstrap tests and verify the old task/heartbeat/inbox handlers fail**
 
 Run: `xmake build test-tools test-web test-bootstrap`
 
@@ -602,7 +602,7 @@ Run: `ctest --test-dir build -R "test-(tools|web|bootstrap)" --output-on-failure
 
 Expected: route or bundle failures tied to missing unified automation handlers.
 
-- [ ] **Step 3: Replace runtime bundle wiring, server setters, and admin/web routes with the new service API**
+- [x] **Step 3: Replace runtime bundle wiring, server setters, and admin/web routes with the new service API**
 
 ```cpp
 class WebServer {
@@ -611,7 +611,7 @@ public:
 };
 ```
 
-- [ ] **Step 4: Update chat, background completion, and channel-serve paths to write delivery records instead of inbox items**
+- [x] **Step 4: Update chat, background completion, and channel-serve paths to write delivery records instead of inbox items**
 
 Run: `xmake build test-tools test-web test-bootstrap`
 
@@ -653,7 +653,7 @@ git commit -m "refactor: integrate unified automation service into web and boots
 - Verify: `tests/automation/automation-service-runtime-test.cpp`
 - Verify: `tests/tools/shell/background-shell-completion-test.cpp`
 
-- [ ] **Step 1: Remove the old split-source and test files once all call sites are on the new stack**
+- [x] **Step 1: Remove the old split-source and test files once all call sites are on the new stack**
 
 ```bash
 git rm src/automation/automation-types.hpp src/automation/automation-types.cpp
@@ -666,34 +666,52 @@ git rm tests/automation/automation-runtime-test.cpp tests/automation/automation-
 git rm tests/tools/task/task-tool-test.cpp tests/tools/heartbeat/heartbeat-tool-test.cpp tests/tools/inbox/inbox-tool-test.cpp
 ```
 
-- [ ] **Step 2: Run focused regression targets for automation, tools, web, and bootstrap**
+- [x] **Step 2: Run focused regression targets for automation, tools, web, and bootstrap**
 
-Run: `xmake build test-automation test-tools test-web test-bootstrap`
+Run: `xmake build -r test-automation`
 
-Run: `ctest --test-dir build -R "test-(automation|tools|web|bootstrap)" --output-on-failure`
+Run: `xmake build -r test-tools`
+
+Run: `xmake build -r test-web`
+
+Run: `xmake build -r test-bootstrap`
+
+Run: `build/linux/x86_64/release/test-automation --reporter compact`
+
+Run: `build/linux/x86_64/release/test-tools --reporter compact`
+
+Run: `build/linux/x86_64/release/test-web --reporter compact`
+
+Run: `build/linux/x86_64/release/test-bootstrap --reporter compact`
 
 Expected: all focused targets pass without references to legacy task, heartbeat, inbox, store, or scheduler APIs.
 
-- [ ] **Step 3: Grep for legacy automation call sites before the final smoke pass**
+- [x] **Step 3: Grep for legacy automation call sites before the final smoke pass**
 
 Run: `rg -n "automation::Store|automation::Runtime|save_task|save_heartbeat|run_task_now|run_heartbeat_now|list_tasks\\(|list_heartbeats\\(|list_inbox\\(|ack_inbox|clear_inbox|register_task_tool|register_heartbeat_tool|register_inbox_tool" src tests`
 
 Expected: no matches in `src/` or `tests/` outside intentionally deleted paths or historical docs.
 
-- [ ] **Step 4: Run one broad smoke pass over the library and remaining tool routes**
+- [x] **Step 4: Run one broad smoke pass over the library and remaining tool routes**
 
-Run: `xmake build`
+Run: `xmake build -r orangutan`
 
-Run: `ctest --test-dir build -R "test-(automation|tools|web|bootstrap|cli)" --output-on-failure`
+Run: `xmake build -r test-cli`
+
+Run: `build/linux/x86_64/release/test-cli --reporter compact`
 
 Expected: build is green and no remaining compile references to deleted automation files exist.
 
-- [ ] **Step 5: Update the design and plan docs only if implementation diverged from the approved spec**
+- [x] **Step 5: Update the design and plan docs only if implementation diverged from the approved spec**
 
 ```markdown
 - if code matched the spec, leave docs unchanged
 - if implementation needed a justified deviation, document it before the final commit
 ```
+
+Deviation captured:
+- `heartbeat.jobs` is kept as a legacy config input and reconciled into managed heartbeat automations at bootstrap startup.
+- `HEARTBEAT_OK` suppression is applied through a unified automation delivery filter (`heartbeat_ok` delivery status) and retained on legacy inbound `heartbeat:` jid channel flows.
 
 - [ ] **Step 6: Commit the cleanup and regression pass**
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#include "automation/automation-types.hpp"
+#include "automation/model.hpp"
+#include "automation/parser.hpp"
+#include "automation/repository.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-dispatch.hpp"
 
@@ -17,6 +19,8 @@ namespace orangutan::builtin::detail {
     [[nodiscard]]
     std::string resolve_agent_key(const ToolRuntimeContext &ctx);
     [[nodiscard]]
+    std::string resolve_query_agent_key(const ToolRuntimeContext *ctx, const nlohmann::json &request);
+    [[nodiscard]]
     std::string id_or_name(const nlohmann::json &request);
     [[nodiscard]]
     nlohmann::json normalize_automation_op_input(const nlohmann::json &input);
@@ -32,6 +36,12 @@ namespace orangutan::builtin::detail {
     [[nodiscard]]
     std::expected<automation::DeliveryPolicy, ParseError> parse_delivery_overlay(const nlohmann::json &input, const automation::DeliveryPolicy &base);
     [[nodiscard]]
-    std::expected<std::optional<std::vector<automation::ActiveHourWindow>>, ParseError> parse_active_hours_overlay(const nlohmann::json &input);
+    std::expected<automation::TriggerDefinition, ParseError> parse_trigger_value(const nlohmann::json &input);
+    [[nodiscard]]
+    std::expected<std::vector<std::string>, ParseError> parse_tags_value(const nlohmann::json &input, const std::vector<std::string> &base);
+    [[nodiscard]]
+    std::expected<automation::Automation, ParseError> parse_create_request(const nlohmann::json &request, std::string_view agent_key);
+    [[nodiscard]]
+    std::expected<automation::Automation, ParseError> apply_update_request(const nlohmann::json &request, const automation::Automation &base, std::string_view agent_key);
 
 } // namespace orangutan::builtin::detail

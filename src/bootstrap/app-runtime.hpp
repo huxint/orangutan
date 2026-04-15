@@ -1,7 +1,8 @@
 #pragma once
 
-#include "automation/scheduler.hpp"
-#include "automation/automation-store.hpp"
+#include "automation/repository.hpp"
+#include "automation/runtime.hpp"
+#include "automation/service.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -19,14 +20,17 @@ namespace orangutan::bootstrap {
         AppRuntime(AppRuntime &&) = delete;
         AppRuntime &operator=(AppRuntime &&) = delete;
 
-        orangutan::automation::Store &automation_store() noexcept;
-        const orangutan::automation::Store &automation_store() const noexcept;
-        orangutan::automation::Runtime &automation_runtime() noexcept;
-        const orangutan::automation::Runtime &automation_runtime() const noexcept;
+        orangutan::automation::Repository &automation_repository() noexcept;
+        const orangutan::automation::Repository &automation_repository() const noexcept;
+        orangutan::automation::AutomationService &automation_service() noexcept;
+        const orangutan::automation::AutomationService &automation_service() const noexcept;
+        orangutan::automation::AutomationRuntime &automation_runtime() noexcept;
+        const orangutan::automation::AutomationRuntime &automation_runtime() const noexcept;
 
     private:
-        std::unique_ptr<orangutan::automation::Store> automation_store_;
-        std::unique_ptr<orangutan::automation::Runtime> automation_runtime_;
+        std::unique_ptr<orangutan::automation::Repository> automation_repository_;
+        std::unique_ptr<orangutan::automation::AutomationService> automation_service_;
+        std::unique_ptr<orangutan::automation::AutomationRuntime> automation_runtime_;
     };
 
 } // namespace orangutan::bootstrap

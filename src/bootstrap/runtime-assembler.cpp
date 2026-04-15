@@ -42,6 +42,7 @@ namespace orangutan::bootstrap {
             .mailbox = request.mailbox,
             .runtime_origin = request.runtime_origin,
             .raw_caller_id = request.raw_caller_id,
+            .automation_service = request.automation_service,
             .automation_runtime = request.automation_runtime,
             .is_child_run = request.is_child_run,
             .coordinator_mode = resolve_coordinator_mode(request),

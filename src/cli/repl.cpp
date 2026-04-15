@@ -5,7 +5,7 @@
 #include "cli/session-workflow.hpp"
 #include "cli/slash-commands.hpp"
 #include "providers/provider.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 #include "hooks/hook-manager.hpp"
 #include "storage/session-store.hpp"
 
@@ -182,7 +182,8 @@ namespace orangutan::cli {
     void run_repl(AgentLoop &agent, const ProviderSystem &provider, SessionStore &store, const std::string &configured_model,
                   const std::vector<std::string> &fallback_models,
                   const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
-                  const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager, automation::Runtime *automation_runtime) {
+                  const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager,
+                  automation::AutomationRuntime *automation_runtime) {
         spdlog::fmt_lib::println("Orangutan v0.1.0");
         spdlog::fmt_lib::println("Type /help for commands, Ctrl+D to quit\n");
         std::fflush(stdout);

@@ -4,6 +4,7 @@
 #include "config/config-detail.hpp"
 #include "config/secret-protection.hpp"
 #include "skills/skill-loader.hpp"
+#include "tools/automation/automation-tool-support.hpp"
 #include "tools/registry/tool-registry.hpp"
 
 #include <magic_enum/magic_enum.hpp>
@@ -130,6 +131,178 @@ namespace orangutan::web {
             return body;
         }
 
+        void set_json_error(httplib::Response &res, int status, std::string_view message) {
+            res.status = status;
+            res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
+        }
+
+        [[nodiscard]]
+        std::expected<nlohmann::json, std::string> parse_request_json(const httplib::Request &req) {
+            try {
+                return nlohmann::json::parse(req.body);
+            } catch (const nlohmann::json::parse_error &) {
+                return std::unexpected("invalid JSON");
+            }
+        }
+
+        [[nodiscard]]
+        std::expected<std::optional<bool>, std::string> parse_optional_bool_param(const httplib::Request &req, std::string_view key) {
+            if (!req.has_param(std::string(key))) {
+                return std::optional<bool>{};
+            }
+
+            const auto value = req.get_param_value(std::string(key));
+            if (value == "true" || value == "1") {
+                return std::optional<bool>{true};
+            }
+            if (value == "false" || value == "0") {
+                return std::optional<bool>{false};
+            }
+            return std::unexpected(std::string(key) + " must be true or false");
+        }
+
+        [[nodiscard]]
+        std::string resolve_optional_agent_key(const httplib::Request &req, const nlohmann::json *body = nullptr) {
+            if (body != nullptr) {
+                if (const auto it = body->find("agent_key"); it != body->end() && it->is_string()) {
+                    return it->get<std::string>();
+                }
+            }
+            if (req.has_param("agent_key")) {
+                return req.get_param_value("agent_key");
+            }
+            return {};
+        }
+
+        [[nodiscard]]
+        std::string resolve_agent_key_or_default(const httplib::Request &req, const nlohmann::json *body = nullptr) {
+            const auto agent_key = resolve_optional_agent_key(req, body);
+            return agent_key.empty() ? std::string{"default"} : agent_key;
+        }
+
+        [[nodiscard]]
+        nlohmann::json unix_time_to_json(const std::optional<base::i64> &value) {
+            if (!value.has_value()) {
+                return nullptr;
+            }
+            return *value;
+        }
+
+        [[nodiscard]]
+        nlohmann::json automation_to_json(const automation::Automation &automation) {
+            return {
+                {"id", automation.id},
+                {"agent_key", automation.agent_key},
+                {"name", automation.name},
+                {"prompt", automation.prompt},
+                {"notes", automation.notes},
+                {"enabled", automation.enabled},
+                {"paused", automation.paused},
+                {"trigger", automation::trigger_to_json(automation.trigger)},
+                {"delivery", automation::delivery_policy_to_json(automation.delivery)},
+                {"tags", automation.tags},
+                {"last_run_at", unix_time_to_json(automation.last_run_at)},
+                {"next_due_at", unix_time_to_json(automation.next_due_at)},
+                {"last_status", automation.last_status},
+            };
+        }
+
+        [[nodiscard]]
+        nlohmann::json run_to_json(const automation::RunRecord &run) {
+            return {
+                {"id", run.id},
+                {"automation_id", run.automation_id},
+                {"agent_key", run.agent_key},
+                {"automation_name", run.automation_name},
+                {"started_at", run.started_at},
+                {"finished_at", unix_time_to_json(run.finished_at)},
+                {"status", run.status},
+                {"summary", run.summary},
+                {"reply", run.reply},
+                {"delivery_status", run.delivery_status},
+                {"log_path", run.log_path},
+            };
+        }
+
+        [[nodiscard]]
+        nlohmann::json delivery_to_json(const automation::DeliveryRecord &delivery) {
+            return {
+                {"id", delivery.id},
+                {"run_id", delivery.run_id},
+                {"automation_id", delivery.automation_id},
+                {"agent_key", delivery.agent_key},
+                {"target", delivery.target},
+                {"status", delivery.status},
+                {"title", delivery.title},
+                {"body", delivery.body},
+                {"created_at", delivery.created_at},
+                {"acked_at", unix_time_to_json(delivery.acked_at)},
+            };
+        }
+
+        [[nodiscard]]
+        std::expected<automation::AutomationQuery, std::string> parse_automation_query(const httplib::Request &req) {
+            automation::AutomationQuery query;
+            query.agent_key = resolve_optional_agent_key(req);
+
+            const auto enabled = parse_optional_bool_param(req, "enabled");
+            if (!enabled.has_value()) {
+                return std::unexpected(enabled.error());
+            }
+            query.enabled = *enabled;
+
+            const auto paused = parse_optional_bool_param(req, "paused");
+            if (!paused.has_value()) {
+                return std::unexpected(paused.error());
+            }
+            query.paused = *paused;
+            return query;
+        }
+
+        [[nodiscard]]
+        std::expected<automation::RunQuery, std::string> parse_run_query(const httplib::Request &req) {
+            automation::RunQuery query;
+            query.agent_key = resolve_optional_agent_key(req);
+            if (req.has_param("automation_id")) {
+                query.automation_id = req.get_param_value("automation_id");
+            }
+            return query;
+        }
+
+        [[nodiscard]]
+        std::expected<automation::DeliveryQuery, std::string> parse_delivery_query(const httplib::Request &req, const nlohmann::json *body = nullptr) {
+            automation::DeliveryQuery query;
+            query.agent_key = resolve_optional_agent_key(req, body);
+            if (req.has_param("automation_id")) {
+                query.automation_id = req.get_param_value("automation_id");
+            } else if (body != nullptr) {
+                if (const auto it = body->find("automation_id"); it != body->end() && it->is_string()) {
+                    query.automation_id = it->get<std::string>();
+                }
+            }
+            if (req.has_param("run_id")) {
+                query.run_id = req.get_param_value("run_id");
+            } else if (body != nullptr) {
+                if (const auto it = body->find("run_id"); it != body->end() && it->is_string()) {
+                    query.run_id = it->get<std::string>();
+                }
+            }
+            if (req.has_param("target")) {
+                query.target = req.get_param_value("target");
+            } else if (body != nullptr) {
+                if (const auto it = body->find("target"); it != body->end() && it->is_string()) {
+                    query.target = it->get<std::string>();
+                }
+            }
+
+            const auto only_unacked = parse_optional_bool_param(req, "only_unacked");
+            if (!only_unacked.has_value()) {
+                return std::unexpected(only_unacked.error());
+            }
+            query.only_unacked = only_unacked->value_or(false);
+            return query;
+        }
+
     } // namespace
 
     void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res, config::Config *config) {
@@ -238,92 +411,257 @@ namespace orangutan::web {
         res.set_content(body.dump(), "application/json");
     }
 
-    void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+    void handle_list_automations(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        const auto query = parse_automation_query(req);
+        if (!query.has_value()) {
+            set_json_error(res, 400, query.error());
             return;
         }
 
         auto arr = nlohmann::json::array();
-        for (const auto &task : automation_runtime->list_tasks(internal::resolve_agent_key_param(req))) {
-            arr.push_back(internal::task_to_json(task));
+        for (const auto &automation : automation_service->list(*query)) {
+            arr.push_back(automation_to_json(automation));
         }
         res.set_content(arr.dump(), "application/json");
     }
 
-    void handle_list_heartbeats(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+    void handle_create_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        auto arr = nlohmann::json::array();
-        for (const auto &heartbeat : automation_runtime->list_heartbeats(internal::resolve_agent_key_param(req))) {
-            arr.push_back(internal::heartbeat_to_json(heartbeat));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_list_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        const auto body = parse_request_json(req);
+        if (!body.has_value()) {
+            set_json_error(res, 400, body.error());
             return;
         }
 
-        auto arr = nlohmann::json::array();
-        for (const auto &item : automation_runtime->list_inbox(internal::resolve_agent_key_param(req))) {
-            arr.push_back(internal::inbox_item_to_json(item));
-        }
-        res.set_content(arr.dump(), "application/json");
-    }
-
-    void handle_ack_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+        const auto automation = builtin::detail::parse_create_request(*body, resolve_agent_key_or_default(req, &*body));
+        if (!automation.has_value()) {
+            set_json_error(res, 400, automation.error());
             return;
         }
 
-        nlohmann::json input;
         try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
+            const auto id = automation_service->save(*automation);
+            const auto stored = automation_service->find(automation->agent_key, id);
+            res.status = 201;
+            res.set_content((stored.has_value() ? automation_to_json(*stored) : nlohmann::json{{"id", id}}).dump(), "application/json");
+        } catch (const std::exception &error) {
+            set_json_error(res, 400, error.what());
+        }
+    }
+
+    void handle_get_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        if (!input.contains("id") || !input["id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing or invalid 'id' field"})", "application/json");
+        const auto automation = automation_service->find(resolve_agent_key_or_default(req), std::string(req.matches[1]));
+        if (!automation.has_value()) {
+            set_json_error(res, 404, "automation not found");
+            return;
+        }
+        res.set_content(automation_to_json(*automation).dump(), "application/json");
+    }
+
+    void handle_patch_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        const auto agent_key = input.value("agent_key", std::string{"default"});
-        if (!automation_runtime->ack_inbox(agent_key, input["id"].get<std::string>())) {
-            res.status = 404;
-            res.set_content(R"({"error":"inbox item not found"})", "application/json");
+        const auto body = parse_request_json(req);
+        if (!body.has_value()) {
+            set_json_error(res, 400, body.error());
+            return;
+        }
+
+        const auto agent_key = resolve_agent_key_or_default(req, &*body);
+        const auto existing = automation_service->find(agent_key, std::string(req.matches[1]));
+        if (!existing.has_value()) {
+            set_json_error(res, 404, "automation not found");
+            return;
+        }
+
+        const auto updated = builtin::detail::apply_update_request(*body, *existing, agent_key);
+        if (!updated.has_value()) {
+            set_json_error(res, 400, updated.error());
+            return;
+        }
+
+        try {
+            const auto id = automation_service->save(*updated);
+            const auto stored = automation_service->find(agent_key, id);
+            res.set_content((stored.has_value() ? automation_to_json(*stored) : nlohmann::json{{"id", id}}).dump(), "application/json");
+        } catch (const std::exception &error) {
+            set_json_error(res, 400, error.what());
+        }
+    }
+
+    void handle_delete_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        if (!automation_service->remove(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+            set_json_error(res, 404, "automation not found");
+            return;
+        }
+        res.set_content(R"({"status":"deleted"})", "application/json");
+    }
+
+    void handle_run_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        try {
+            const auto run_id = automation_service->run_now(resolve_agent_key_or_default(req), std::string(req.matches[1]));
+            res.set_content(nlohmann::json{{"run_id", run_id}}.dump(), "application/json");
+        } catch (const std::exception &error) {
+            set_json_error(res, std::string_view(error.what()) == "automation not found" ? 404 : 400, error.what());
+        }
+    }
+
+    void handle_pause_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        if (!automation_service->pause(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+            set_json_error(res, 404, "automation not found");
+            return;
+        }
+        res.set_content(R"({"status":"paused"})", "application/json");
+    }
+
+    void handle_resume_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        if (!automation_service->resume(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+            set_json_error(res, 404, "automation not found");
+            return;
+        }
+        res.set_content(R"({"status":"resumed"})", "application/json");
+    }
+
+    void handle_list_automation_runs(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        const auto query = parse_run_query(req);
+        if (!query.has_value()) {
+            set_json_error(res, 400, query.error());
+            return;
+        }
+
+        auto arr = nlohmann::json::array();
+        for (const auto &run : automation_service->list_runs(*query)) {
+            arr.push_back(run_to_json(run));
+        }
+        res.set_content(arr.dump(), "application/json");
+    }
+
+    void handle_list_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        const auto query = parse_delivery_query(req);
+        if (!query.has_value()) {
+            set_json_error(res, 400, query.error());
+            return;
+        }
+
+        auto arr = nlohmann::json::array();
+        for (const auto &delivery : automation_service->list_deliveries(*query)) {
+            arr.push_back(delivery_to_json(delivery));
+        }
+        res.set_content(arr.dump(), "application/json");
+    }
+
+    void handle_ack_automation_delivery(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
+            return;
+        }
+
+        std::optional<nlohmann::json> body;
+        if (!req.body.empty()) {
+            const auto parsed = parse_request_json(req);
+            if (!parsed.has_value()) {
+                set_json_error(res, 400, parsed.error());
+                return;
+            }
+            body = *parsed;
+        }
+
+        const auto agent_key = resolve_optional_agent_key(req, body ? &*body : nullptr);
+        if (agent_key.empty()) {
+            set_json_error(res, 400, "agent_key is required");
+            return;
+        }
+
+        if (!automation_service->ack_delivery(agent_key, std::string(req.matches[1]))) {
+            set_json_error(res, 404, "delivery not found");
             return;
         }
         res.set_content(R"({"status":"acknowledged"})", "application/json");
     }
 
-    void handle_clear_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime) {
-        if (automation_runtime == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"automation runtime not available"})", "application/json");
+    void handle_clear_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
+        if (automation_service == nullptr) {
+            set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        automation_runtime->clear_inbox(internal::resolve_agent_key_param(req));
-        res.set_content(R"({"status":"cleared"})", "application/json");
+        std::optional<nlohmann::json> body;
+        if (!req.body.empty()) {
+            const auto parsed = parse_request_json(req);
+            if (!parsed.has_value()) {
+                set_json_error(res, 400, parsed.error());
+                return;
+            }
+            body = *parsed;
+        }
+
+        const auto query = parse_delivery_query(req, body ? &*body : nullptr);
+        if (!query.has_value()) {
+            set_json_error(res, 400, query.error());
+            return;
+        }
+        if (query->agent_key.empty()) {
+            set_json_error(res, 400, "agent_key is required");
+            return;
+        }
+
+        try {
+            automation_service->clear_deliveries(*query);
+            res.set_content(R"({"status":"cleared"})", "application/json");
+        } catch (const std::exception &error) {
+            set_json_error(res, 400, error.what());
+        }
     }
 
     void handle_system_status(const httplib::Request & /*req*/, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime) {
+                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::AutomationService *automation_service) {
         const auto now = std::chrono::steady_clock::now();
         const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
 
@@ -338,14 +676,12 @@ namespace orangutan::web {
             {"active_web_sessions", active_sessions},
             {"provider_health", nlohmann::json::object()},
         };
-        if (automation_runtime == nullptr) {
+        if (automation_service == nullptr) {
             body["automation"] = nullptr;
         } else {
-            const auto all_tasks = automation_runtime->list_tasks({});
-            const auto all_heartbeats = automation_runtime->list_heartbeats({});
+            const auto automations = automation_service->list();
             body["automation"] = {
-                {"task_count", all_tasks.size()},
-                {"heartbeat_count", all_heartbeats.size()},
+                {"automation_count", automations.size()},
             };
         }
         res.set_content(body.dump(), "application/json");

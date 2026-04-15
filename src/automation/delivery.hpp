@@ -15,7 +15,13 @@ namespace orangutan::automation {
         std::string body;
     };
 
+    struct DeliveryDisposition {
+        bool suppress = false;
+        std::string status;
+    };
+
     using AutomationExecutor = std::function<ExecutionResult(const Automation &)>;
+    using AutomationDeliveryFilter = std::function<std::optional<DeliveryDisposition>(const Automation &, const ExecutionResult &)>;
     using AutomationNotifier = std::function<std::optional<std::string>(std::string_view target, std::string_view title, std::string_view body)>;
 
     [[nodiscard]]

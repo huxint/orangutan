@@ -26,7 +26,8 @@ namespace orangutan::bootstrap {
         swarm::AgentMailbox *mailbox = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
-        automation::Runtime *automation_runtime = nullptr;
+        automation::AutomationService *automation_service = nullptr;
+        automation::AutomationRuntime *automation_runtime = nullptr;
         bool is_child_run = false;
         std::optional<bool> coordinator_mode;
         RuntimeAbortChecker abort_checker;

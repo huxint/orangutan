@@ -14,7 +14,8 @@
 #include <httplib.h>
 
 namespace orangutan::automation {
-    class Runtime;
+    class AutomationRuntime;
+    class AutomationService;
 }
 
 namespace orangutan::config {
@@ -67,7 +68,8 @@ namespace orangutan::web {
         void set_config_save_path(const std::filesystem::path &path);
         void set_tool_registry(tools::ToolRegistry *registry);
         void set_skill_loader(skills::SkillLoader *loader);
-        void set_automation_runtime(automation::Runtime *runtime);
+        void set_automation_service(automation::AutomationService *service);
+        void set_automation_runtime(automation::AutomationRuntime *runtime);
 
     private:
         httplib::Server server_;
@@ -86,7 +88,8 @@ namespace orangutan::web {
         std::filesystem::path config_save_path_;
         tools::ToolRegistry *tool_registry_ = nullptr;
         skills::SkillLoader *skill_loader_ = nullptr;
-        automation::Runtime *automation_runtime_ = nullptr;
+        automation::AutomationService *automation_service_ = nullptr;
+        automation::AutomationRuntime *automation_runtime_ = nullptr;
         std::chrono::steady_clock::time_point start_time_ = std::chrono::steady_clock::now();
 
         std::mutex sessions_mutex_;

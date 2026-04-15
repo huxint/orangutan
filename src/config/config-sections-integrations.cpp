@@ -204,9 +204,6 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (assign_string_member(*heartbeat, "heartbeat_md_path", cfg, &Config::heartbeat_md_path)) {
-            cfg.heartbeat_md_path = expand_home_path(expand_env_vars(cfg.heartbeat_md_path));
-        }
         static_cast<void>(assign_number_member(*heartbeat, "ack_max_chars", cfg, &Config::ack_max_chars));
         static_cast<void>(assign_bool_member(*heartbeat, "isolated_session", cfg, &Config::isolated_session));
         static_cast<void>(assign_bool_member(*heartbeat, "light_context", cfg, &Config::light_context));
@@ -225,7 +222,7 @@ namespace orangutan::config::detail {
             assign_string_members(item, job_cfg, HEARTBEAT_JOB_STRING_FIELDS);
 
             if (job_cfg.name.empty() || job_cfg.cron.empty() || job_cfg.prompt.empty()) {
-                spdlog::warn("Heartbeat job missing required fields (name, cron, prompt), skipping");
+                spdlog::warn("heartbeat.jobs entry is missing required fields (name, cron, prompt); skipping");
                 continue;
             }
 

@@ -12,8 +12,9 @@
 #include <vector>
 
 namespace orangutan::automation {
-    class Runtime;
-    struct InboxItem;
+    class AutomationService;
+    class AutomationRuntime;
+    struct DeliveryRecord;
 } // namespace orangutan::automation
 
 namespace orangutan::coordinator {
@@ -27,20 +28,20 @@ namespace orangutan::swarm {
 
 namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
-    using BackgroundCompletionInboxCallback = std::function<void(const automation::InboxItem &item)>;
+    using BackgroundCompletionDeliveryCallback = std::function<void(const automation::DeliveryRecord &delivery)>;
     using AttachmentDownloadCallback = std::function<Attachment(const Attachment &attachment, const std::string &destination_path)>;
     using PermissionRuleMutationCallback = std::function<void(PermissionRule rule)>;
     using RuntimeAbortChecker = std::function<bool()>;
 
     class BackgroundCompletionRuntimeBindings {
     public:
-        BackgroundCompletionRuntimeBindings(BackgroundCompletionInboxCallback inbox_callback, BackgroundCompletionResumeCallback resume_callback = {})
-        : inbox_callback_(std::move(inbox_callback)),
+        BackgroundCompletionRuntimeBindings(BackgroundCompletionDeliveryCallback delivery_callback, BackgroundCompletionResumeCallback resume_callback = {})
+        : delivery_callback_(std::move(delivery_callback)),
           resume_callback_(std::move(resume_callback)) {}
 
         [[nodiscard]]
         bool supports_completion_routing() const {
-            return inbox_callback_ != nullptr;
+            return delivery_callback_ != nullptr;
         }
 
         [[nodiscard]]
@@ -49,8 +50,8 @@ namespace orangutan::tools {
         }
 
         [[nodiscard]]
-        const BackgroundCompletionInboxCallback &inbox_callback() const {
-            return inbox_callback_;
+        const BackgroundCompletionDeliveryCallback &delivery_callback() const {
+            return delivery_callback_;
         }
 
         [[nodiscard]]
@@ -59,18 +60,18 @@ namespace orangutan::tools {
         }
 
     private:
-        BackgroundCompletionInboxCallback inbox_callback_;
+        BackgroundCompletionDeliveryCallback delivery_callback_;
         BackgroundCompletionResumeCallback resume_callback_;
     };
 
     [[nodiscard]]
-    inline std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionInboxCallback inbox_callback,
+    inline std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_background_completion_runtime_bindings(BackgroundCompletionDeliveryCallback delivery_callback,
                                                                                                                   BackgroundCompletionResumeCallback resume_callback = {}) {
-        if (inbox_callback == nullptr) {
+        if (delivery_callback == nullptr) {
             return nullptr;
         }
 
-        return std::make_shared<BackgroundCompletionRuntimeBindings>(std::move(inbox_callback), std::move(resume_callback));
+        return std::make_shared<BackgroundCompletionRuntimeBindings>(std::move(delivery_callback), std::move(resume_callback));
     }
 
     struct ToolRuntimeContext {
@@ -88,7 +89,8 @@ namespace orangutan::tools {
         bool coordinator_mode = false;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
-        automation::Runtime *automation_runtime = nullptr;
+        automation::AutomationService *automation_service = nullptr;
+        automation::AutomationRuntime *automation_runtime = nullptr;
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
         PermissionRuleMutationCallback permission_rule_mutator;
@@ -103,7 +105,7 @@ namespace orangutan::tools {
 namespace orangutan {
 
     using tools::AttachmentDownloadCallback;
-    using tools::BackgroundCompletionInboxCallback;
+    using tools::BackgroundCompletionDeliveryCallback;
     using tools::BackgroundCompletionResumeCallback;
     using tools::BackgroundCompletionRuntimeBindings;
     using tools::make_background_completion_runtime_bindings;

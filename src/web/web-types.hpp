@@ -16,7 +16,7 @@ namespace orangutan::web {
         std::mutex mutex;
         agent::AgentLoop *agent = nullptr;
         std::string agent_key;
-        automation::Runtime *automation_runtime = nullptr;
+        automation::AutomationRuntime *automation_runtime = nullptr;
     };
 
     struct WebPendingApproval {

@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace orangutan::automation {
-    class Runtime;
+    class AutomationRuntime;
 }
 
 namespace orangutan::config {
@@ -98,7 +98,7 @@ namespace orangutan::bootstrap {
         std::string agent_key;
         std::string configured_model;
         std::string scope_key;
-        automation::Runtime *automation_runtime = nullptr;
+        automation::AutomationRuntime *automation_runtime = nullptr;
         bool persist_session = false;
         bool suppress_human_output = false;
     };
@@ -121,7 +121,7 @@ namespace orangutan::bootstrap {
 
     [[nodiscard]]
     WebServerRuntimeAttachments configure_web_server_runtime(web::WebServer &web_server, const CliOptions &options, config::Config &cfg, storage::SessionStore *session_store,
-                                                             memory::MemoryStore *memory_store, automation::Runtime *automation_runtime = nullptr,
+                                                             memory::MemoryStore *memory_store, automation::AutomationRuntime *automation_runtime = nullptr,
                                                              tools::ToolRegistry *tool_registry = nullptr, skills::SkillLoader *skill_loader = nullptr);
 
     void warn_if_nonlocal_web_host(const std::string &web_host);
@@ -132,7 +132,7 @@ namespace orangutan::bootstrap {
     BackgroundCompletionResumeCallback make_runtime_completion_resume_callback(const std::weak_ptr<RuntimeCompletionResumeState> &weak_state);
 
     [[nodiscard]]
-    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_runtime_background_completion_bindings(automation::Runtime *automation_runtime,
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_runtime_background_completion_bindings(automation::AutomationRuntime *automation_runtime,
                                                                                                            BackgroundCompletionResumeCallback resume_callback);
 
 } // namespace orangutan::bootstrap

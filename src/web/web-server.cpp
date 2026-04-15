@@ -119,7 +119,10 @@ namespace orangutan::web {
     void WebServer::set_skill_loader(skills::SkillLoader *loader) {
         skill_loader_ = loader;
     }
-    void WebServer::set_automation_runtime(automation::Runtime *runtime) {
+    void WebServer::set_automation_service(automation::AutomationService *service) {
+        automation_service_ = service;
+    }
+    void WebServer::set_automation_runtime(automation::AutomationRuntime *runtime) {
         automation_runtime_ = runtime;
     }
 
@@ -193,32 +196,60 @@ namespace orangutan::web {
             web::handle_list_skills(req, res, skill_loader_);
         });
 
-        server_.Get("/api/tasks", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_tasks(req, res, automation_runtime_);
+        server_.Get("/api/automation", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_list_automations(req, res, automation_service_);
         });
 
-        server_.Get("/api/heartbeats", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_heartbeats(req, res, automation_runtime_);
+        server_.Post("/api/automation", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_create_automation(req, res, automation_service_);
         });
 
-        server_.Get("/api/inbox", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_inbox(req, res, automation_runtime_);
+        server_.Get("/api/automation/runs", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_list_automation_runs(req, res, automation_service_);
         });
 
-        server_.Post("/api/inbox/ack", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_ack_inbox(req, res, automation_runtime_);
+        server_.Get("/api/automation/deliveries", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_list_automation_deliveries(req, res, automation_service_);
         });
 
-        server_.Delete("/api/inbox", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_clear_inbox(req, res, automation_runtime_);
+        server_.Post(R"(/api/automation/deliveries/([^/]+)/ack)", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_ack_automation_delivery(req, res, automation_service_);
+        });
+
+        server_.Delete("/api/automation/deliveries", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_clear_automation_deliveries(req, res, automation_service_);
+        });
+
+        server_.Get(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_get_automation(req, res, automation_service_);
+        });
+
+        server_.Patch(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_patch_automation(req, res, automation_service_);
+        });
+
+        server_.Delete(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_delete_automation(req, res, automation_service_);
+        });
+
+        server_.Post(R"(/api/automation/([^/]+)/run)", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_run_automation(req, res, automation_service_);
+        });
+
+        server_.Post(R"(/api/automation/([^/]+)/pause)", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_pause_automation(req, res, automation_service_);
+        });
+
+        server_.Post(R"(/api/automation/([^/]+)/resume)", [this](const httplib::Request &req, httplib::Response &res) {
+            web::handle_resume_automation(req, res, automation_service_);
         });
 
         server_.Get("/api/system/status", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_runtime_);
+            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_service_);
         });
 
         server_.Get("/api/system", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_runtime_);
+            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_service_);
         });
 
         server_.Post("/api/chat", [this](const httplib::Request &req, httplib::Response &res) {

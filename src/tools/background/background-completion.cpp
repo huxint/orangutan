@@ -1,6 +1,6 @@
 #include "tools/background/background-completion.hpp"
 
-#include "automation/automation-types.hpp"
+#include "automation/repository.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/utf8-policy.hpp"
@@ -18,7 +18,8 @@ namespace orangutan::tools {
 
         constexpr std::string_view COMPLETION_MESSAGE_TYPE = "background_process_completion";
         constexpr std::string_view COMPLETION_RESUME_FAILURE_TYPE = "background_process_completion_resume_failure";
-        constexpr std::string_view INBOX_SOURCE_KIND = "background_process";
+        constexpr std::string_view BACKGROUND_COMPLETION_AUTOMATION_ID = "background-completion";
+        constexpr std::string_view BACKGROUND_COMPLETION_TARGET = "background";
         constexpr std::string_view DEFAULT_AGENT_KEY = "default";
         constexpr std::size_t MAX_OUTPUT_SUMMARY_BYTES = 2048;
         constexpr std::size_t MAX_RUNTIME_KEY_CHARS = 256;
@@ -29,7 +30,7 @@ namespace orangutan::tools {
         constexpr std::size_t MAX_FAILURE_REASON_CHARS = 512;
         constexpr std::size_t MAX_FAILURE_PAYLOAD_BYTES = BACKGROUND_COMPLETION_PAYLOAD_MAX_BYTES * 2;
         constexpr std::size_t MAX_TITLE_COMMAND_CHARS = 80;
-        constexpr std::size_t MAX_INBOX_TITLE_CHARS = 160;
+        constexpr std::size_t MAX_DELIVERY_TITLE_CHARS = 160;
 
         std::string process_status(const BackgroundProcessCompletionEvent &event) {
             switch (event.terminal_status) {
@@ -47,7 +48,7 @@ namespace orangutan::tools {
         }
 
         std::string scrub_and_bound_title(std::string_view title) {
-            const auto canonicalized = utf8_policy::canonicalize(scrub_tool_output(title), utf8_policy::display_policy(MAX_INBOX_TITLE_CHARS, true));
+            const auto canonicalized = utf8_policy::canonicalize(scrub_tool_output(title), utf8_policy::display_policy(MAX_DELIVERY_TITLE_CHARS, true));
             return canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         }
 
@@ -132,18 +133,18 @@ namespace orangutan::tools {
             return canonicalized.has_value() ? std::move(canonicalized->value) : std::string{};
         }
 
-        bool insert_inbox_item(const BackgroundCompletionRuntimeBindings &bindings, const automation::InboxItem &item, std::string_view process_id) {
+        bool insert_delivery_record(const BackgroundCompletionRuntimeBindings &bindings, const automation::DeliveryRecord &delivery, std::string_view process_id) {
             if (!bindings.supports_completion_routing()) {
                 return false;
             }
 
             try {
-                bindings.inbox_callback()(item);
+                bindings.delivery_callback()(delivery);
                 return true;
             } catch (const std::exception &ex) {
-                spdlog::warn("background completion inbox callback threw for process {}: {}", process_id, ex.what());
+                spdlog::warn("background completion delivery callback threw for process {}: {}", process_id, ex.what());
             } catch (...) {
-                spdlog::warn("background completion inbox callback threw for process {} with an unknown exception", process_id);
+                spdlog::warn("background completion delivery callback threw for process {} with an unknown exception", process_id);
             }
             return false;
         }
@@ -210,29 +211,33 @@ namespace orangutan::tools {
                 spdlog::warn("background completion failure payload exceeded bounded size for process {}", event.process_id);
                 return;
             }
-            static_cast<void>(insert_inbox_item(*bindings,
-                                                automation::InboxItem{
-                                                    .agent_key = agent_key_,
-                                                    .source_kind = std::string(INBOX_SOURCE_KIND),
-                                                    .source_run_id = event.process_id,
-                                                    .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
-                                                    .body = failure_body,
-                                                    .created_at = automation::to_unix_seconds(automation::Clock::now()),
-                                                },
-                                                event.process_id));
+            static_cast<void>(insert_delivery_record(*bindings,
+                                                     automation::DeliveryRecord{
+                                                         .run_id = event.process_id,
+                                                         .automation_id = std::string(BACKGROUND_COMPLETION_AUTOMATION_ID),
+                                                         .agent_key = agent_key_,
+                                                         .target = std::string(BACKGROUND_COMPLETION_TARGET),
+                                                         .status = "resume_failed",
+                                                         .title = scrub_and_bound_title("Background completion resume failed: " + clip_command(event.command)),
+                                                         .body = failure_body,
+                                                         .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                                                     },
+                                                     event.process_id));
         };
 
         auto pipeline = stdexec::just() | stdexec::then([&]() -> bool {
-                            return insert_inbox_item(*bindings,
-                                                     automation::InboxItem{
-                                                         .agent_key = agent_key_,
-                                                         .source_kind = std::string(INBOX_SOURCE_KIND),
-                                                         .source_run_id = event.process_id,
-                                                         .title = inbox_title_for_event(event),
-                                                         .body = payload_text,
-                                                         .created_at = automation::to_unix_seconds(automation::Clock::now()),
-                                                     },
-                                                     event.process_id);
+                            return insert_delivery_record(*bindings,
+                                                          automation::DeliveryRecord{
+                                                              .run_id = event.process_id,
+                                                              .automation_id = std::string(BACKGROUND_COMPLETION_AUTOMATION_ID),
+                                                              .agent_key = agent_key_,
+                                                              .target = std::string(BACKGROUND_COMPLETION_TARGET),
+                                                              .status = process_status(event),
+                                                              .title = inbox_title_for_event(event),
+                                                              .body = payload_text,
+                                                              .created_at = automation::to_unix_seconds(automation::Clock::now()),
+                                                          },
+                                                          event.process_id);
                         }) |
                         stdexec::then([&](bool inserted) {
                             if (!inserted || requested_completion_mode != "resume") {

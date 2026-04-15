@@ -61,24 +61,24 @@ namespace {
     TEST_CASE("registry_commands_dispatch_from_parsed_root_command") {
         ToolRegistry registry;
         registry.register_tool({
-            .definition = {.name = "task", .description = "Task tool"},
+            .definition = {.name = "automation", .description = "Automation tool"},
             .execute =
                 [](const nlohmann::json &input) {
                     if (input.at("op") == "run") {
-                        return std::string{"ran "} + input.at("id").get<std::string>();
+                        return std::string{"Ran automation ("} + input.at("id").get<std::string>() + ").";
                     }
-                    return std::string{"listed"};
+                    return std::string{R"([{"id":"abc","name":"repo-check","enabled":true,"paused":false,"trigger":{"type":"cron"}}])"};
                 },
         });
 
-        const auto list_reply = handle_registry_slash_command("/tasks", &registry);
+        const auto list_reply = handle_registry_slash_command("/automation", &registry);
         CHECK(list_reply.handled);
-        CHECK(list_reply.text.contains("## Tasks"));
-        CHECK(list_reply.text.contains("listed"));
+        CHECK(list_reply.text.contains("## Automation"));
+        CHECK(list_reply.text.contains("repo-check"));
 
-        const auto run_reply = handle_registry_slash_command("/tasks run   abc   ", &registry);
+        const auto run_reply = handle_registry_slash_command("/automation run   abc   ", &registry);
         CHECK(run_reply.handled);
-        CHECK(run_reply.text.contains("ran abc"));
+        CHECK(run_reply.text.contains("Ran automation (abc)."));
     };
 
 } // namespace

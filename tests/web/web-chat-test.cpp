@@ -1,8 +1,7 @@
 #include "web/web-server.hpp"
 #include "web/web-routes.hpp"
 #include "agent/agent-loop.hpp"
-#include "automation/scheduler.hpp"
-#include "automation/automation-store.hpp"
+#include "bootstrap/app-runtime.hpp"
 #include "bootstrap/identity.hpp"
 #include "tools/background/background-completion.hpp"
 #include "config/config.hpp"
@@ -47,11 +46,11 @@ namespace orangutan {
             return config;
         }
 
-        const automation::InboxItem *find_inbox_item_by_body_type(const std::vector<automation::InboxItem> &items, const std::string &type) {
-            const auto it = std::ranges::find_if(items, [&](const automation::InboxItem &item) {
-                return nlohmann::json::parse(item.body).value("type", "") == type;
+        const automation::DeliveryRecord *find_delivery_by_body_type(const std::vector<automation::DeliveryRecord> &deliveries, const std::string &type) {
+            const auto it = std::ranges::find_if(deliveries, [&](const automation::DeliveryRecord &delivery) {
+                return nlohmann::json::parse(delivery.body).value("type", "") == type;
             });
-            return it == items.end() ? nullptr : &(*it);
+            return it == deliveries.end() ? nullptr : &(*it);
         }
 
         std::optional<nlohmann::json> find_sse_event_payload(std::string_view body, std::string_view event_name) {
@@ -124,7 +123,7 @@ namespace orangutan {
 
         class WebChatServerHarness {
         public:
-            WebChatServerHarness(Config *config = nullptr, SessionStore *store = nullptr, automation::Runtime *automation_runtime = nullptr) {
+            WebChatServerHarness(Config *config = nullptr, SessionStore *store = nullptr, automation::AutomationRuntime *automation_runtime = nullptr) {
                 if (config != nullptr) {
                     server_.set_config(config);
                 }
@@ -132,6 +131,7 @@ namespace orangutan {
                     server_.set_session_store(store);
                 }
                 if (automation_runtime != nullptr) {
+                    server_.set_automation_service(&automation_runtime->service());
                     server_.set_automation_runtime(automation_runtime);
                 }
                 server_.start("127.0.0.1", 0);
@@ -256,7 +256,7 @@ namespace orangutan {
             CHECK(res->status == 200);
             const auto text_event = find_sse_event_payload(res->body, "text");
             REQUIRE(text_event.has_value());
-            CHECK(text_event->at("text").get<std::string>().contains("/tasks run <id>"));
+            CHECK(text_event->at("text").get<std::string>().contains("/automation run <id>"));
         };
 
         TEST_CASE("chat_endpoint_rejects_invalid_workspace_config") {
@@ -466,7 +466,8 @@ namespace orangutan {
             MemoryStore memory_store((workspace / "memory.db"));
             std::string session_id = "web-chat-runtime-session";
 
-            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, [](const ToolUse &, const PermissionDecision &) {
+            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, nullptr,
+                                                                 [](const ToolUse &, const PermissionDecision &) {
                 return false;
             });
 
@@ -485,19 +486,18 @@ namespace orangutan {
             CHECK((shell_result.content.contains("Requires approval") || shell_result.content.contains("Rejected by user")));
         };
 
-        TEST_CASE("tasks_slash_command_uses_runtime_tool_output") {
+        TEST_CASE("automation_slash_command_uses_runtime_tool_output") {
             Config config = make_config();
-            auto automation_store = std::make_shared<automation::Store>(orangutan::testing::unique_test_db_path("web-chat-tasks", "automation.db"));
-            automation::Runtime automation_runtime(*automation_store);
-            WebChatServerHarness harness(&config, nullptr, &automation_runtime);
+            bootstrap::AppRuntime app_runtime(orangutan::testing::unique_test_db_path("web-chat-tasks", "automation.db"));
+            WebChatServerHarness harness(&config, nullptr, &app_runtime.automation_runtime());
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"/tasks","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/chat", R"({"message":"/automation","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
             const auto text_event = find_sse_event_payload(res->body, "text");
             REQUIRE(text_event.has_value());
-            CHECK(text_event->at("text") == "## Tasks\n- 🗓️ No tasks configured.");
+            CHECK(text_event->at("text") == "## Automation\n- No automations configured.");
         };
 
         TEST_CASE("runtime_bundle_loads_skills_and_hooks_from_configured_paths") {
@@ -533,7 +533,7 @@ namespace orangutan {
             MemoryStore memory_store((workspace / "memory.db"));
             std::string session_id = "web-chat-skills-hooks";
 
-            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr);
+            auto runtime = web::detail::build_web_runtime_bundle(config, "default", &memory_store, &session_id, nullptr, nullptr);
 
             CHECK(runtime.skills_prompt.contains("web-chat-runtime-skill"));
             REQUIRE(runtime.hook_manager != nullptr);
@@ -542,8 +542,7 @@ namespace orangutan {
 
         TEST_CASE("completion_resume_after_session_shutdown_falls_back_to_inbox_notes") {
             const auto automation_db_path = orangutan::testing::unique_test_db_path("web-chat-automation", "automation.db");
-            auto automation_store = std::make_shared<automation::Store>(automation_db_path);
-            automation::Runtime automation_runtime(*automation_store);
+            bootstrap::AppRuntime app_runtime(automation_db_path);
             ToolRegistry tools;
             std::size_t provider_calls = 0;
             ScriptedProvider provider({
@@ -560,7 +559,7 @@ namespace orangutan {
             auto resume_state = std::make_shared<orangutan::web::WebCompletionResumeState>();
             resume_state->agent = &agent;
             resume_state->agent_key = "default";
-            resume_state->automation_runtime = &automation_runtime;
+            resume_state->automation_runtime = &app_runtime.automation_runtime();
             {
                 std::scoped_lock lock(resume_state->mutex);
                 resume_state->agent = nullptr;
@@ -570,10 +569,11 @@ namespace orangutan {
                 .runtime_key = "agent:default|web:local",
                 .agent_key = "default",
                 .scope_key = "agent:default|web",
-                .automation_runtime = &automation_runtime,
+                .automation_service = &app_runtime.automation_service(),
+                .automation_runtime = &app_runtime.automation_runtime(),
                 .background_completion_runtime = make_background_completion_runtime_bindings(
-                    [automation_store](const automation::InboxItem &item) {
-                        static_cast<void>(automation_store->insert_inbox(item));
+                    [&app_runtime](const automation::DeliveryRecord &delivery) {
+                        static_cast<void>(app_runtime.automation_service().record_delivery(delivery));
                     },
                     web::detail::make_web_completion_resume_callback(resume_state)),
             };
@@ -591,11 +591,11 @@ namespace orangutan {
             });
 
             CHECK(provider_calls == 0UL);
-            const auto inbox_items = automation_runtime.list_inbox("default");
-            REQUIRE(inbox_items.size() == 2UL);
+            const auto deliveries = app_runtime.automation_service().list_deliveries(automation::DeliveryQuery{.agent_key = "default"});
+            REQUIRE(deliveries.size() == 2UL);
 
-            const auto *completion_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion");
-            const auto *failure_item = find_inbox_item_by_body_type(inbox_items, "background_process_completion_resume_failure");
+            const auto *completion_item = find_delivery_by_body_type(deliveries, "background_process_completion");
+            const auto *failure_item = find_delivery_by_body_type(deliveries, "background_process_completion_resume_failure");
             REQUIRE(completion_item != nullptr);
             REQUIRE(failure_item != nullptr);
             CHECK(nlohmann::json::parse(failure_item->body).at("reason") == "web session is no longer live");

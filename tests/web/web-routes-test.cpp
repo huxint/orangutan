@@ -300,7 +300,8 @@ namespace {
         orangutan::MemoryStore memory_store((harness.temp_root() / "memory.db"));
         std::string session_id = "web-session";
 
-        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &app_runtime.automation_runtime(),
+        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, &app_runtime.automation_service(),
+                                                                        &app_runtime.automation_runtime(),
                                                                         [](const orangutan::ToolUse &, const orangutan::PermissionDecision &) {
                                                                             return false;
                                                                         });
@@ -317,6 +318,7 @@ namespace {
         CHECK(runtime.tool_context().raw_caller_id == "web:local");
         CHECK(runtime.tool_context().current_session_id == &session_id);
         CHECK(runtime.tool_context().team_agents == std::vector<std::string>({"coder"}));
+        CHECK(runtime.tool_context().automation_service == &app_runtime.automation_service());
         CHECK(runtime.tool_context().automation_runtime == &app_runtime.automation_runtime());
         CHECK(runtime.tool_context().approval_callback != nullptr);
         CHECK(runtime.agent != nullptr);
@@ -365,7 +367,7 @@ namespace {
         orangutan::MemoryStore memory_store((harness.temp_root() / "memory-skills.db"));
         std::string session_id = "web-session-skills";
 
-        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, nullptr);
+        auto runtime = orangutan::web::detail::build_web_runtime_bundle(cfg, "default", &memory_store, &session_id, nullptr, nullptr);
 
         CHECK(runtime.skills_prompt.contains("web-runtime-skill"));
         REQUIRE(runtime.hook_manager != nullptr);
@@ -471,78 +473,93 @@ namespace {
     TEST_CASE("automation_endpoints_expose_shared_state") {
         WebRoutesHarness harness;
         orangutan::bootstrap::AppRuntime app_runtime((harness.temp_root() / "automation.db"));
+        auto &automation_service = app_runtime.automation_service();
         auto &automation_runtime = app_runtime.automation_runtime();
-        orangutan::automation::TaskSpec task_spec;
-        task_spec.agent_key = "default";
-        task_spec.name = "repo-check";
-        task_spec.schedule.kind = orangutan::automation::task_schedule_kind::cron;
-        task_spec.schedule.value = "0 * * * *";
-        task_spec.prompt = "Check the repository state.";
-        const auto task_id = automation_runtime.save_task(task_spec);
-        const auto heartbeat_id = automation_runtime.save_heartbeat(orangutan::automation::HeartbeatSpec{
-            .agent_key = "default",
-            .name = "self-check",
-            .every_seconds = 1800,
-            .jitter_seconds = 300,
-            .prompt = "Wake up and inspect ongoing work.",
-        });
-        const auto inserted_inbox_id = automation_runtime.store().insert_inbox(orangutan::automation::InboxItem{
-            .agent_key = "default",
-            .source_kind = "task",
-            .source_run_id = "run-1",
-            .title = "Task notification",
-            .body = "Repository check found changes.",
-            .created_at = 123,
-        });
-        CHECK_FALSE(task_id.empty());
-        CHECK_FALSE(heartbeat_id.empty());
-        CHECK_FALSE(inserted_inbox_id.empty());
 
         orangutan::WebServer server;
+        server.set_automation_service(&automation_service);
         server.set_automation_runtime(&automation_runtime);
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto tasks_res = cli.Get("/api/tasks?agent_key=default");
-        REQUIRE(static_cast<bool>(tasks_res));
-        CHECK(tasks_res->status == 200);
-        const auto tasks = nlohmann::json::parse(tasks_res->body);
-        CHECK(tasks.size() == 1UL);
-        CHECK(tasks[0]["name"] == "repo-check");
-        CHECK(tasks[0]["schedule_kind"] == "cron");
+        const auto create_res = cli.Post("/api/automation",
+                                         nlohmann::json{
+                                             {"agent_key", "default"},
+                                             {"name", "repo-check"},
+                                             {"prompt", "Check the repository state."},
+                                             {"trigger", {{"type", "cron"}, {"cron", "0 * * * *"}}},
+                                             {"delivery", {{"mode", "notify"}, {"targets", {"owner"}}}},
+                                         }
+                                             .dump(),
+                                         "application/json");
+        REQUIRE(static_cast<bool>(create_res));
+        CHECK(create_res->status == 201);
+        const auto created = nlohmann::json::parse(create_res->body);
+        const auto automation_id = created.at("id").get<std::string>();
+        CHECK(created.at("name") == "repo-check");
 
-        const auto heartbeats_res = cli.Get("/api/heartbeats?agent_key=default");
-        REQUIRE(static_cast<bool>(heartbeats_res));
-        CHECK(heartbeats_res->status == 200);
-        const auto heartbeats = nlohmann::json::parse(heartbeats_res->body);
-        CHECK(heartbeats.size() == 1UL);
-        CHECK(heartbeats[0]["name"] == "self-check");
+        const auto list_res = cli.Get("/api/automation?agent_key=default");
+        REQUIRE(static_cast<bool>(list_res));
+        CHECK(list_res->status == 200);
+        const auto listed = nlohmann::json::parse(list_res->body);
+        REQUIRE(listed.size() == 1UL);
+        CHECK(listed.at(0).at("id") == automation_id);
 
-        const auto inbox_res = cli.Get("/api/inbox?agent_key=default");
-        REQUIRE(static_cast<bool>(inbox_res));
-        CHECK(inbox_res->status == 200);
-        const auto inbox = nlohmann::json::parse(inbox_res->body);
-        CHECK(inbox.size() == 1UL);
-        const auto inbox_id = inbox[0]["id"].get<std::string>();
-        CHECK(inbox[0]["title"] == "Task notification");
+        const auto get_res = cli.Get("/api/automation/" + automation_id + "?agent_key=default");
+        REQUIRE(static_cast<bool>(get_res));
+        CHECK(get_res->status == 200);
+        CHECK(nlohmann::json::parse(get_res->body).at("prompt") == "Check the repository state.");
 
-        const auto ack_res = cli.Post("/api/inbox/ack", nlohmann::json{{"agent_key", "default"}, {"id", inbox_id}}.dump(), "application/json");
+        const auto patch_silent_res = cli.Patch("/api/automation/" + automation_id + "?agent_key=default",
+                                                nlohmann::json{{"delivery", {{"mode", "silent"}, {"targets", nlohmann::json::array()}}}}.dump(),
+                                                "application/json");
+        REQUIRE(static_cast<bool>(patch_silent_res));
+        CHECK(patch_silent_res->status == 200);
+        CHECK(nlohmann::json::parse(patch_silent_res->body).at("delivery").at("mode") == "silent");
+
+        const auto patch_notify_res = cli.Patch("/api/automation/" + automation_id + "?agent_key=default",
+                                                nlohmann::json{{"delivery", {{"mode", "notify"}, {"targets", {"owner"}}}}}.dump(),
+                                                "application/json");
+        REQUIRE(static_cast<bool>(patch_notify_res));
+        CHECK(patch_notify_res->status == 200);
+
+        const auto run_res = cli.Post("/api/automation/" + automation_id + "/run?agent_key=default", "", "application/json");
+        REQUIRE(static_cast<bool>(run_res));
+        CHECK(run_res->status == 200);
+        CHECK_FALSE(nlohmann::json::parse(run_res->body).at("run_id").get<std::string>().empty());
+
+        const auto runs_res = cli.Get("/api/automation/runs?agent_key=default&automation_id=" + automation_id);
+        REQUIRE(static_cast<bool>(runs_res));
+        CHECK(runs_res->status == 200);
+        const auto runs = nlohmann::json::parse(runs_res->body);
+        REQUIRE(runs.is_array());
+        CHECK(runs.size() == 1UL);
+
+        const auto deliveries_res = cli.Get("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id);
+        REQUIRE(static_cast<bool>(deliveries_res));
+        CHECK(deliveries_res->status == 200);
+        const auto deliveries = nlohmann::json::parse(deliveries_res->body);
+        REQUIRE(deliveries.is_array());
+        REQUIRE(deliveries.size() == 1UL);
+        const auto delivery_id = deliveries.at(0).at("id").get<std::string>();
+
+        const auto ack_res = cli.Post("/api/automation/deliveries/" + delivery_id + "/ack?agent_key=default", "", "application/json");
         REQUIRE(static_cast<bool>(ack_res));
         CHECK(ack_res->status == 200);
 
-        const auto inbox_after_ack = cli.Get("/api/inbox?agent_key=default");
-        REQUIRE(static_cast<bool>(inbox_after_ack));
-        CHECK(inbox_after_ack->status == 200);
-        CHECK(nlohmann::json::parse(inbox_after_ack->body)[0]["status"] == "acked");
-
-        const auto clear_res = cli.Delete("/api/inbox?agent_key=default");
+        const auto clear_res = cli.Delete("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id);
         REQUIRE(static_cast<bool>(clear_res));
         CHECK(clear_res->status == 200);
 
-        const auto inbox_after_clear = cli.Get("/api/inbox?agent_key=default");
-        REQUIRE(static_cast<bool>(inbox_after_clear));
-        CHECK(inbox_after_clear->status == 200);
-        CHECK(nlohmann::json::parse(inbox_after_clear->body).empty());
+        const auto deliveries_after_clear = cli.Get("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id + "&only_unacked=true");
+        REQUIRE(static_cast<bool>(deliveries_after_clear));
+        CHECK(deliveries_after_clear->status == 200);
+        CHECK(nlohmann::json::parse(deliveries_after_clear->body).empty());
+
+        const auto delete_res = cli.Delete("/api/automation/" + automation_id + "?agent_key=default");
+        REQUIRE(static_cast<bool>(delete_res));
+        CHECK(delete_res->status == 200);
+
         server.stop();
     };
 

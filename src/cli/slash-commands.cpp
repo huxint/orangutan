@@ -273,131 +273,106 @@ namespace orangutan::cli {
                              invoke_required_arg<&SharedSlashCommandContext::resume>),
         };
 
-        SlashCommandReply handle_tasks_command(std::string_view args, const ToolRegistry *tool_registry) {
-            if (args.empty()) {
-                auto reply = execute_registry_command(tool_registry, "task", {{"op", "list"}}, "slash-task-list");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Tasks", "🗓️", reply.text);
-                }
-                return reply;
-            }
-
-            const auto remainder = utils::trim_copy(args);
-            if (remainder.starts_with("run ")) {
-                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(4)));
-                if (id.empty()) {
-                    return {.handled = true, .text = wrap_slash_reply("Tasks", "🗓️", "Usage: /tasks run <id>")};
-                }
-                auto reply = execute_registry_command(tool_registry, "task", {{"op", "run"}, {"id", id}}, "slash-task-run");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Tasks", "🗓️", reply.text);
-                }
-                return reply;
-            }
-            if (remainder.starts_with("remove ")) {
-                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(7)));
-                if (id.empty()) {
-                    return {.handled = true, .text = wrap_slash_reply("Tasks", "🗓️", "Usage: /tasks remove <id>")};
-                }
-                auto reply = execute_registry_command(tool_registry, "task", {{"op", "remove"}, {"id", id}}, "slash-task-remove");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Tasks", "🗓️", reply.text);
-                }
-                return reply;
-            }
-
-            return {.handled = true, .text = wrap_slash_reply("Tasks", "🗓️", "Usage: /tasks | /tasks run <id> | /tasks remove <id>")};
+        [[nodiscard]]
+        std::string automation_usage_text() {
+            return "Usage: /automation | /automation list | /automation run <id> | /automation pause <id> | /automation resume <id> | /automation remove <id>";
         }
 
-        SlashCommandReply handle_heartbeats_command(std::string_view args, const ToolRegistry *tool_registry) {
-            if (args.empty()) {
-                auto reply = execute_registry_command(tool_registry, "heartbeat", {{"op", "list"}}, "slash-heartbeat-list");
+        [[nodiscard]]
+        std::string format_automation_list_reply(std::string_view payload) {
+            const auto parsed = nlohmann::json::parse(payload, nullptr, false);
+            if (!parsed.is_array()) {
+                return wrap_slash_reply("Automation", "⚙️", std::string(payload));
+            }
+
+            std::string out = "## Automation\n";
+            if (parsed.empty()) {
+                out += "- No automations configured.";
+                return out;
+            }
+
+            for (const auto &entry : parsed) {
+                const auto name = entry.value("name", entry.value("id", "unnamed"));
+                const auto id = entry.value("id", "");
+                const auto enabled = entry.value("enabled", true);
+                const auto paused = entry.value("paused", false);
+                std::string state = enabled ? "enabled" : "disabled";
+                if (paused) {
+                    state = "paused";
+                }
+
+                out += "- ";
+                out += name;
+                if (!id.empty() && id != name) {
+                    utils::format_to(out, " ({})", id);
+                }
+                utils::format_to(out, " [{}]", state);
+
+                if (entry.contains("trigger") && entry.at("trigger").is_object()) {
+                    const auto trigger_type = entry.at("trigger").value("type", "");
+                    if (!trigger_type.empty()) {
+                        utils::format_to(out, " {}", trigger_type);
+                    }
+                }
+                out.push_back('\n');
+            }
+
+            if (!out.empty() && out.back() == '\n') {
+                out.pop_back();
+            }
+            return out;
+        }
+
+        SlashCommandReply handle_automation_command(std::string_view args, const ToolRegistry *tool_registry) {
+            const auto remainder = utils::trim_copy(args);
+            if (remainder.empty() || remainder == "list") {
+                auto reply = execute_registry_command(tool_registry, "automation", {{"op", "list"}}, "slash-automation-list");
                 if (reply.handled) {
-                    reply.text = wrap_slash_reply("Heartbeats", "💓", reply.text);
+                    reply.text = format_automation_list_reply(reply.text);
                 }
                 return reply;
             }
 
-            const auto remainder = utils::trim_copy(args);
-            const auto run_action = [&](std::string_view action, std::string_view op, std::string_view tool_use_id) -> SlashCommandReply {
+            const auto run_action =
+                [&](std::string_view action, std::string_view op, std::string_view tool_use_id) -> std::optional<SlashCommandReply> {
                 if (!remainder.starts_with(action)) {
-                    return {};
+                    return std::nullopt;
                 }
+
                 const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(action.size())));
                 if (id.empty()) {
-                    return {.handled = true, .text = wrap_slash_reply("Heartbeats", "💓", "Usage: /heartbeats " + std::string(op) + " <id>")};
+                    return SlashCommandReply{.handled = true, .text = wrap_slash_reply("Automation", "⚙️", "Usage: /automation " + std::string(op) + " <id>")};
                 }
-                auto reply = execute_registry_command(tool_registry, "heartbeat", {{"op", std::string(op)}, {"id", id}}, tool_use_id);
+
+                auto reply = execute_registry_command(tool_registry, "automation", {{"op", std::string(op)}, {"id", id}}, tool_use_id);
                 if (reply.handled) {
-                    reply.text = wrap_slash_reply("Heartbeats", "💓", reply.text);
+                    reply.text = wrap_slash_reply("Automation", "⚙️", reply.text);
                 }
                 return reply;
             };
 
-            if (auto reply = run_action("run ", "run", "slash-heartbeat-run"); reply.handled) {
-                return reply;
+            if (const auto reply = run_action("run ", "run", "slash-automation-run"); reply.has_value()) {
+                return *reply;
             }
-            if (auto reply = run_action("pause ", "pause", "slash-heartbeat-pause"); reply.handled) {
-                return reply;
+            if (const auto reply = run_action("pause ", "pause", "slash-automation-pause"); reply.has_value()) {
+                return *reply;
             }
-            if (auto reply = run_action("resume ", "resume", "slash-heartbeat-resume"); reply.handled) {
-                return reply;
+            if (const auto reply = run_action("resume ", "resume", "slash-automation-resume"); reply.has_value()) {
+                return *reply;
             }
-            if (auto reply = run_action("remove ", "remove", "slash-heartbeat-remove"); reply.handled) {
-                return reply;
-            }
-
-            return {.handled = true,
-                    .text = wrap_slash_reply("Heartbeats", "💓",
-                                             "Usage: /heartbeats | /heartbeats run <id> | /heartbeats pause <id> | /heartbeats resume <id> | /heartbeats remove <id>")};
-        }
-
-        SlashCommandReply handle_inbox_command(std::string_view args, const ToolRegistry *tool_registry) {
-            if (args.empty()) {
-                auto reply = execute_registry_command(tool_registry, "inbox", {{"op", "list"}}, "slash-inbox-list");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Inbox", "📥", reply.text);
-                }
-                return reply;
+            if (const auto reply = run_action("remove ", "remove", "slash-automation-remove"); reply.has_value()) {
+                return *reply;
             }
 
-            const auto remainder = utils::trim_copy(args);
-            if (remainder == "clear") {
-                auto reply = execute_registry_command(tool_registry, "inbox", {{"op", "clear"}}, "slash-inbox-clear");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Inbox", "📥", reply.text);
-                }
-                return reply;
-            }
-
-            if (remainder.starts_with("ack ")) {
-                const auto id = static_cast<std::string>(utils::trim_copy(remainder.substr(4)));
-                if (id.empty()) {
-                    return {.handled = true, .text = wrap_slash_reply("Inbox", "📥", "Usage: /inbox ack <id>")};
-                }
-                auto reply = execute_registry_command(tool_registry, "inbox", {{"op", "ack"}, {"id", id}}, "slash-inbox-ack");
-                if (reply.handled) {
-                    reply.text = wrap_slash_reply("Inbox", "📥", reply.text);
-                }
-                return reply;
-            }
-
-            return {.handled = true, .text = wrap_slash_reply("Inbox", "📥", "Usage: /inbox | /inbox ack <id> | /inbox clear")};
+            return {.handled = true, .text = wrap_slash_reply("Automation", "⚙️", automation_usage_text())};
         }
 
         constexpr auto REGISTRY_SLASH_COMMANDS = std::array{
-            make_registry_spec(make_definition("tasks", "/tasks", slash_argument_mode::optional, slash_command_surface_mask::all,
-                                               make_description("list tasks or run `/tasks run <id>`", "list tasks, `/tasks run <id>`, or `/tasks remove <id>`",
-                                                                "list tasks, `/tasks run <id>`, or `/tasks remove <id>`")),
-                               handle_tasks_command),
-            make_registry_spec(make_definition("heartbeats", "/heartbeats", slash_argument_mode::optional, slash_command_surface_mask::all,
-                                               make_description("list heartbeats or run `/heartbeats pause <id>`", "list heartbeats or run `/heartbeats pause <id>`",
-                                                                "list heartbeats or run `/heartbeats pause <id>`")),
-                               handle_heartbeats_command),
-            make_registry_spec(make_definition("inbox", "/inbox", slash_argument_mode::optional, slash_command_surface_mask::all,
-                                               make_description("list inbox items, `/inbox ack <id>`, or `/inbox clear`", "list inbox items, `/inbox ack <id>`, or `/inbox clear`",
-                                                                "list inbox items, `/inbox ack <id>`, or `/inbox clear`")),
-                               handle_inbox_command),
+            make_registry_spec(make_definition("automation", "/automation", slash_argument_mode::optional, slash_command_surface_mask::all,
+                                               make_description("list automations or run `/automation run <id>`",
+                                                                "list automations, `/automation run <id>`, or `/automation pause <id>`",
+                                                                "list automations, `/automation run <id>`, or `/automation pause <id>`")),
+                               handle_automation_command),
         };
 
         constexpr auto CLI_ONLY_HELP_COMMANDS = std::array{

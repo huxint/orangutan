@@ -7,11 +7,14 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 namespace orangutan::automation {
 
@@ -51,9 +54,18 @@ namespace orangutan::automation {
         void start();
         void stop();
         void run_pending(TimePoint now);
+        void set_executor(AutomationExecutor executor);
+        void set_delivery_filter(AutomationDeliveryFilter filter);
+        void set_notifier(AutomationNotifier notifier);
 
         [[nodiscard]]
         AgentExecutionLease acquire_agent_execution_lease(std::string_view agent_key);
+
+        [[nodiscard]]
+        AutomationService &service() noexcept;
+
+        [[nodiscard]]
+        const AutomationService &service() const noexcept;
 
     private:
         void scheduler_loop(std::stop_token stop_token);
@@ -73,5 +85,21 @@ namespace orangutan::automation {
         std::mutex agent_execution_gates_mutex_;
         std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
     };
+
+    template <typename Fn>
+    decltype(auto) with_agent_execution_lease(AutomationRuntime *runtime, std::string_view agent_key, Fn &&fn) {
+        using Result = std::invoke_result_t<Fn>;
+        std::optional<AutomationRuntime::AgentExecutionLease> lease;
+        if (runtime != nullptr) {
+            lease.emplace(runtime->acquire_agent_execution_lease(agent_key));
+        }
+
+        if constexpr (std::is_void_v<Result>) {
+            std::invoke(std::forward<Fn>(fn));
+            return;
+        } else {
+            return std::invoke(std::forward<Fn>(fn));
+        }
+    }
 
 } // namespace orangutan::automation

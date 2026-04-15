@@ -2,7 +2,7 @@
 
 #include "cli/history-events.hpp"
 #include "cli/session-workflow.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 
 #include <optional>
 #include <ostream>
@@ -83,7 +83,7 @@ namespace orangutan::cli {
         }
 
         std::optional<std::string> run_completion_resume_message_impl(AgentLoop &agent, const std::string &message, std::string_view agent_key,
-                                                                      automation::Runtime *automation_runtime, const CompletionResumePostRunCallback &post_run,
+                                                                      automation::AutomationRuntime *automation_runtime, const CompletionResumePostRunCallback &post_run,
                                                                       bool suppress_human_output) {
             std::optional<std::string> post_run_error;
             automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
@@ -101,7 +101,7 @@ namespace orangutan::cli {
         }
 
         void run_single_message_agent(AgentLoop &agent, const std::string &message, bool event_stream, const std::string &current_session_id, const JsonEmitter &emit,
-                                      const std::string &agent_key, automation::Runtime *automation_runtime) {
+                                      const std::string &agent_key, automation::AutomationRuntime *automation_runtime) {
             automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
                 if (!event_stream) {
                     static_cast<void>(agent.run(message));
@@ -145,7 +145,7 @@ namespace orangutan::cli {
 
     } // namespace
 
-    std::optional<std::string> run_completion_resume_message(AgentLoop &agent, const std::string &message, std::string_view agent_key, automation::Runtime *automation_runtime,
+    std::optional<std::string> run_completion_resume_message(AgentLoop &agent, const std::string &message, std::string_view agent_key, automation::AutomationRuntime *automation_runtime,
                                                              const CompletionResumePostRunCallback &post_run, bool suppress_human_output) {
         try {
             return run_completion_resume_message_impl(agent, message, agent_key, automation_runtime, post_run, suppress_human_output);
@@ -166,7 +166,7 @@ namespace orangutan::cli {
 
     int run_single_message(AgentLoop &agent, const ProviderSystem &provider, SessionStore &session_store, const Config &cfg, const std::string &message, bool event_stream,
                            std::string &current_session_id, const std::string &configured_model, const std::string &scope_key, const std::string &agent_key,
-                           const JsonEmitter &emit, std::ostream &error_stream, automation::Runtime *automation_runtime) {
+                           const JsonEmitter &emit, std::ostream &error_stream, automation::AutomationRuntime *automation_runtime) {
         try {
             run_single_message_agent(agent, message, event_stream, current_session_id, emit, agent_key, automation_runtime);
         } catch (const std::exception &e) {

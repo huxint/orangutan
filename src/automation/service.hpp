@@ -23,6 +23,7 @@ namespace orangutan::automation {
         explicit AutomationService(Repository &repository, ClockSource clock = {});
 
         void set_executor(AutomationExecutor executor);
+        void set_delivery_filter(AutomationDeliveryFilter filter);
         void set_notifier(AutomationNotifier notifier);
 
         [[nodiscard]]
@@ -55,6 +56,9 @@ namespace orangutan::automation {
         [[nodiscard]]
         bool ack_delivery(std::string_view agent_key, std::string_view delivery_id);
 
+        [[nodiscard]]
+        std::string record_delivery(DeliveryRecord delivery);
+
         void clear_deliveries(const DeliveryQuery &query);
 
     private:
@@ -62,6 +66,7 @@ namespace orangutan::automation {
 
         struct Callbacks {
             AutomationExecutor executor;
+            AutomationDeliveryFilter delivery_filter;
             AutomationNotifier notifier;
         };
 
@@ -89,6 +94,7 @@ namespace orangutan::automation {
         ClockSource clock_;
         mutable std::mutex mutex_;
         AutomationExecutor executor_;
+        AutomationDeliveryFilter delivery_filter_;
         AutomationNotifier notifier_;
     };
 

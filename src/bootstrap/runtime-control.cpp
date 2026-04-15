@@ -1,7 +1,7 @@
 #include "bootstrap/runtime-control.hpp"
 
 #include "agent/agent-loop.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 #include "cli/single-shot.hpp"
 #include "cli/session-workflow.hpp"
 #include "hooks/hook-manager.hpp"
@@ -131,7 +131,8 @@ namespace orangutan::bootstrap {
     }
 
     WebServerRuntimeAttachments configure_web_server_runtime(web::WebServer &web_server, const CliOptions &options, config::Config &cfg, storage::SessionStore *session_store,
-                                                             memory::MemoryStore *memory_store, automation::Runtime *automation_runtime, tools::ToolRegistry *tool_registry,
+                                                             memory::MemoryStore *memory_store, automation::AutomationRuntime *automation_runtime,
+                                                             tools::ToolRegistry *tool_registry,
                                                              skills::SkillLoader *skill_loader) {
         WebServerRuntimeAttachments attachments;
         web_server.set_static_dir(options.web_dir);
@@ -146,6 +147,7 @@ namespace orangutan::bootstrap {
             attachments.session_store_attached = true;
         }
         web_server.set_memory_store(memory_store);
+        web_server.set_automation_service(automation_runtime != nullptr ? &automation_runtime->service() : nullptr);
         web_server.set_automation_runtime(automation_runtime);
         if (tool_registry != nullptr) {
             web_server.set_tool_registry(tool_registry);
@@ -214,15 +216,15 @@ namespace orangutan::bootstrap {
         };
     }
 
-    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_runtime_background_completion_bindings(automation::Runtime *automation_runtime,
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_runtime_background_completion_bindings(automation::AutomationRuntime *automation_runtime,
                                                                                                            BackgroundCompletionResumeCallback resume_callback) {
         if (automation_runtime == nullptr) {
             return nullptr;
         }
 
         return make_background_completion_runtime_bindings(
-            [automation_runtime](const automation::InboxItem &item) {
-                static_cast<void>(automation_runtime->store().insert_inbox(item));
+            [automation_runtime](const automation::DeliveryRecord &delivery) {
+                static_cast<void>(automation_runtime->service().record_delivery(delivery));
             },
             std::move(resume_callback));
     }

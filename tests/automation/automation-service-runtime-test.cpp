@@ -13,6 +13,7 @@
 #include "automation/repository.hpp"
 #include "automation/runtime.hpp"
 #include "automation/service.hpp"
+#include "heartbeat/heartbeat-automation.hpp"
 #include "test-helpers.hpp"
 
 namespace {
@@ -65,31 +66,28 @@ namespace {
 
     [[nodiscard]]
     orangutan::automation::Automation make_once_automation(std::string_view name, orangutan::automation::TimePoint scheduled_at) {
-        return orangutan::automation::Automation::named(name)
-            .for_agent("default")
-            .run_prompt("ship it")
-            .once_at(scheduled_at)
-            .build();
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("ship it").once_at(scheduled_at).build();
     }
 
     [[nodiscard]]
     orangutan::automation::Automation make_interval_automation(std::string_view name, std::chrono::seconds jitter = std::chrono::seconds{0}) {
-        return orangutan::automation::Automation::named(name)
-            .for_agent("default")
-            .run_prompt("status check")
-            .every(std::chrono::seconds{30})
-            .jitter(jitter)
-            .build();
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("status check").every(std::chrono::seconds{30}).jitter(jitter).build();
     }
 
     [[nodiscard]]
     orangutan::automation::Automation make_notify_automation(std::string_view name) {
+        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("scan repo").cron("0 9 * * *").deliver_to("owner").deliver_to("pager").build();
+    }
+
+    [[nodiscard]]
+    orangutan::automation::Automation make_managed_heartbeat_automation(std::string_view name, std::string_view target = "cli") {
         return orangutan::automation::Automation::named(name)
             .for_agent("default")
-            .run_prompt("scan repo")
+            .run_prompt("heartbeat check")
             .cron("0 9 * * *")
-            .deliver_to("owner")
-            .deliver_to("pager")
+            .deliver_to(target)
+            .tag(orangutan::heartbeat::HEARTBEAT_AUTOMATION_TAG)
+            .tag(orangutan::heartbeat::MANAGED_HEARTBEAT_AUTOMATION_TAG)
             .build();
     }
 
@@ -97,8 +95,7 @@ namespace {
         ServiceHarness harness;
 
         const auto repo_check_id = harness.service.save(make_notify_automation("repo-check"));
-        static_cast<void>(harness.service.save(
-            orangutan::automation::Automation::named("ops-check").for_agent("ops").run_prompt("scan ops").cron("0 10 * * *").build()));
+        static_cast<void>(harness.service.save(orangutan::automation::Automation::named("ops-check").for_agent("ops").run_prompt("scan ops").cron("0 10 * * *").build()));
 
         const auto found = harness.service.find("default", repo_check_id);
         REQUIRE(found.has_value());
@@ -198,8 +195,7 @@ namespace {
 
         CHECK(harness.service.ack_delivery("default", deliveries.front().id));
 
-        auto unacked = harness.service.list_deliveries(
-            orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id, .only_unacked = true});
+        auto unacked = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id, .only_unacked = true});
         REQUIRE(unacked.size() == 1UL);
 
         CHECK_THROWS_AS(harness.service.clear_deliveries(orangutan::automation::DeliveryQuery{}), std::invalid_argument);
@@ -209,6 +205,31 @@ namespace {
         REQUIRE(deliveries.size() == 2UL);
         CHECK(deliveries.at(0).acked_at.has_value());
         CHECK(deliveries.at(1).acked_at.has_value());
+    };
+
+    TEST_CASE("service_suppresses_heartbeat_ok_deliveries_for_managed_heartbeat_automations") {
+        ServiceHarness harness;
+        harness.service.set_delivery_filter([](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {
+            return orangutan::heartbeat::heartbeat_delivery_disposition(automation, result, 300);
+        });
+        harness.service.set_executor([](const orangutan::automation::Automation &) {
+            return orangutan::automation::ExecutionResult{
+                .success = true,
+                .reply = "HEARTBEAT_OK all clear",
+                .summary = "HEARTBEAT_OK all clear",
+            };
+        });
+
+        const auto automation_id = harness.service.save(make_managed_heartbeat_automation("daily-heartbeat"));
+        static_cast<void>(harness.service.run_now("default", automation_id));
+
+        const auto runs = harness.service.list_runs(orangutan::automation::RunQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(runs.size() == 1UL);
+        CHECK(runs.front().delivery_status == "heartbeat_ok");
+
+        const auto deliveries = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id});
+        CHECK(deliveries.empty());
+        CHECK(harness.notifications.empty());
     };
 
     TEST_CASE("runtime_serializes_due_executions_per_agent") {

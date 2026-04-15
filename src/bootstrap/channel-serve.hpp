@@ -30,7 +30,7 @@ namespace orangutan::agent {
 }
 
 namespace orangutan::automation {
-    class Runtime;
+    class AutomationRuntime;
 }
 
 namespace orangutan::hooks {
@@ -102,7 +102,7 @@ namespace orangutan::bootstrap {
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
-                          hooks::HookManager *hook_manager = nullptr, automation::Runtime *automation_runtime = nullptr, swarm::TeamManager *team_manager = nullptr,
+                          hooks::HookManager *hook_manager = nullptr, automation::AutomationRuntime *automation_runtime = nullptr, swarm::TeamManager *team_manager = nullptr,
                           swarm::AgentMailbox *mailbox = nullptr);
 
 } // namespace orangutan::bootstrap

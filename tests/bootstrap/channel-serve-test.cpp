@@ -1,9 +1,8 @@
 #include "bootstrap/channel-serve-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
+#include "bootstrap/app-runtime.hpp"
 #include "bootstrap/identity.hpp"
 #include "agent/agent-loop.hpp"
-#include "automation/scheduler.hpp"
-#include "automation/automation-store.hpp"
 #include "channel/channel.hpp"
 #include "channel/qq/qq-approval-keyboard.hpp"
 #include "permissions/permission-state.hpp"
@@ -1292,7 +1291,7 @@ namespace {
         CHECK(qq->sent_messages().front().second == "🧵 Resumed session: " + session_id);
     };
 
-    TEST_CASE("tasks_command_replies_with_task_tool_output") {
+    TEST_CASE("automation_command_replies_with_automation_tool_output") {
         ChannelServeHarness harness;
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
@@ -1302,8 +1301,7 @@ namespace {
         MessageQueue queue;
         std::atomic<bool> stop_requested{false};
         JidTaskRunner task_runner(1);
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
-        automation::Runtime automation_runtime(*automation_store);
+        bootstrap::AppRuntime app_runtime(harness.temp_root() / "automation.db");
         SessionStore session_store((harness.temp_root() / "sessions.db"));
         Config cfg;
 
@@ -1318,12 +1316,12 @@ namespace {
 
         auto loop = std::async(std::launch::async, [&] {
             bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, nullptr, session_store, nullptr, cfg, nullptr,
-                                        &automation_runtime);
+                                        &app_runtime.automation_runtime());
         });
 
         queue.push(InboundMessage{
             .jid = "qqbot:c2c:42",
-            .content = "/tasks",
+            .content = "/automation",
         });
 
         for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
@@ -1335,7 +1333,7 @@ namespace {
 
         CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         REQUIRE(not qq->sent_messages().empty());
-        CHECK(qq->sent_messages().front().second == "## Tasks\n- 🗓️ No tasks configured.");
+        CHECK(qq->sent_messages().front().second == "## Automation\n- No automations configured.");
     };
 
     TEST_CASE("completion_resume_persists_bound_session_and_replies_through_channel") {
@@ -1345,8 +1343,7 @@ namespace {
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        auto automation_store = std::make_shared<automation::Store>((harness.temp_root() / "automation.db"));
-        automation::Runtime automation_runtime(*automation_store);
+        bootstrap::AppRuntime app_runtime(harness.temp_root() / "automation.db");
         SessionStore session_store((harness.temp_root() / "sessions.db"));
 
         const std::string jid = "qqbot:c2c:42";
@@ -1395,16 +1392,17 @@ namespace {
         resume_state->agent_key = "default";
         resume_state->configured_model = "gpt-test";
         resume_state->session_scope_key = identity.runtime_key;
-        resume_state->automation_runtime = &automation_runtime;
+        resume_state->automation_runtime = &app_runtime.automation_runtime();
 
         ToolRuntimeContext tool_context{
             .runtime_key = identity.runtime_key,
             .agent_key = "default",
             .scope_key = identity.runtime_key,
-            .automation_runtime = &automation_runtime,
+            .automation_service = &app_runtime.automation_service(),
+            .automation_runtime = &app_runtime.automation_runtime(),
             .background_completion_runtime = make_background_completion_runtime_bindings(
-                [automation_store](const automation::InboxItem &item) {
-                    static_cast<void>(automation_store->insert_inbox(item));
+                [&app_runtime](const automation::DeliveryRecord &delivery) {
+                    static_cast<void>(app_runtime.automation_service().record_delivery(delivery));
                 },
                 bootstrap::detail::make_channel_completion_resume_callback(resume_state)),
         };
@@ -1421,8 +1419,8 @@ namespace {
             .metadata = {{std::string(tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
-        const auto inbox_items = automation_runtime.list_inbox("default");
-        CHECK(inbox_items.size() == 1UL);
+        const auto deliveries = app_runtime.automation_service().list_deliveries(automation::DeliveryQuery{.agent_key = "default"});
+        CHECK(deliveries.size() == 1UL);
         REQUIRE(not qq->sent_messages().empty());
         CHECK(qq->sent_messages().front().first == jid);
         CHECK(qq->sent_messages().front().second == "Background reply");

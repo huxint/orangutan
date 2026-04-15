@@ -27,6 +27,11 @@ namespace orangutan::automation {
         executor_ = std::move(executor);
     }
 
+    void AutomationService::set_delivery_filter(AutomationDeliveryFilter filter) {
+        std::scoped_lock lock(mutex_);
+        delivery_filter_ = std::move(filter);
+    }
+
     void AutomationService::set_notifier(AutomationNotifier notifier) {
         std::scoped_lock lock(mutex_);
         notifier_ = std::move(notifier);
@@ -95,6 +100,13 @@ namespace orangutan::automation {
         return repository_->ack_delivery(agent_key, delivery_id).has_value();
     }
 
+    std::string AutomationService::record_delivery(DeliveryRecord delivery) {
+        if (delivery.created_at == 0) {
+            delivery.created_at = to_unix_seconds(current_time());
+        }
+        return repository_->insert_delivery(delivery);
+    }
+
     void AutomationService::clear_deliveries(const DeliveryQuery &query) {
         repository_->clear_deliveries(query);
     }
@@ -111,6 +123,7 @@ namespace orangutan::automation {
         std::scoped_lock lock(mutex_);
         return Callbacks{
             .executor = executor_,
+            .delivery_filter = delivery_filter_,
             .notifier = notifier_,
         };
     }
@@ -142,9 +155,9 @@ namespace orangutan::automation {
     }
 
     std::string AutomationService::execute(const Automation &automation, TimePoint started_at) {
+        const auto callbacks_snapshot = callbacks();
         auto result = ExecutionResult{};
         try {
-            const auto callbacks_snapshot = callbacks();
             if (callbacks_snapshot.executor != nullptr) {
                 result = callbacks_snapshot.executor(automation);
             } else {
@@ -178,11 +191,17 @@ namespace orangutan::automation {
             }
         }
 
-        if (automation.delivery.mode == delivery_mode::silent) {
+        std::optional<DeliveryDisposition> delivery_disposition;
+        if (callbacks_snapshot.delivery_filter != nullptr) {
+            delivery_disposition = callbacks_snapshot.delivery_filter(automation, result);
+        }
+
+        if (delivery_disposition.has_value() && delivery_disposition->suppress) {
+            run.delivery_status = delivery_disposition->status.empty() ? "suppressed" : delivery_disposition->status;
+        } else if (automation.delivery.mode == delivery_mode::silent) {
             run.delivery_status = "silent";
         } else {
             const auto message = make_delivery_message(automation, result);
-            auto callbacks_snapshot = callbacks();
             auto delivery_status = std::string("notified");
 
             for (const auto &target : automation.delivery.targets) {

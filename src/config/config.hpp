@@ -137,13 +137,12 @@ namespace orangutan::config {
         // hooks object
         std::vector<std::string> hook_paths;
 
-        // heartbeat object
-        std::string heartbeat_md_path;
+        // legacy heartbeat compatibility block
         int ack_max_chars = 300;
         bool isolated_session = false;
         bool light_context = false;
 
-        // heartbeat.jobs array
+        // legacy heartbeat.jobs config entries
         struct HeartbeatJobConfig {
             std::string name;
             std::string cron;

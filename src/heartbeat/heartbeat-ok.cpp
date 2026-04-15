@@ -10,8 +10,8 @@ namespace orangutan::heartbeat {
 
     } // namespace
 
-    bool detect_heartbeat_ok(const std::string &response, int ack_max_chars, std::string *out_stripped) {
-        auto trimmed = utils::trim_copy(response);
+    bool detect_heartbeat_ok(std::string_view response, int ack_max_chars, std::string *out_stripped) {
+        const auto trimmed = utils::trim_copy(response);
         if (trimmed.empty()) {
             return false;
         }
@@ -38,7 +38,7 @@ namespace orangutan::heartbeat {
         return false;
     }
 
-    bool should_suppress_heartbeat_reply(std::string_view jid, const std::string &response, int ack_max_chars) {
+    bool should_suppress_heartbeat_reply(std::string_view jid, std::string_view response, int ack_max_chars) {
         return jid.starts_with("heartbeat:") && detect_heartbeat_ok(response, ack_max_chars);
     }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "automation/scheduler.hpp"
 #include "cli/slash-commands.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
@@ -31,15 +30,6 @@ namespace orangutan::web::internal {
 
     [[nodiscard]]
     std::string resolve_agent_key_param(const httplib::Request &req);
-
-    [[nodiscard]]
-    nlohmann::json task_to_json(const automation::TaskSpec &task);
-
-    [[nodiscard]]
-    nlohmann::json heartbeat_to_json(const automation::HeartbeatSpec &heartbeat);
-
-    [[nodiscard]]
-    nlohmann::json inbox_item_to_json(const automation::InboxItem &item);
 
     void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const nlohmann::json &payload);
 

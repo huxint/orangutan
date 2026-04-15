@@ -1,6 +1,6 @@
 #include "types/types.hpp"
-#include "automation/automation-store.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/repository.hpp"
+#include "automation/service.hpp"
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"
 #include "skills/skill-loader.hpp"
@@ -845,18 +845,18 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     CHECK(shell_result.content.contains("hello"));
 };
 
-TEST_CASE("TaskToolRunsWithoutPromptByDefault") {
-    const auto automation_db = test_tmp_root() / "orangutan_task_rule_bypass.db";
+TEST_CASE("AutomationToolRunsWithoutPromptByDefault") {
+    const auto automation_db = test_tmp_root() / "orangutan_automation_rule_bypass.db";
     std::filesystem::remove(automation_db);
 
     ToolRegistry registry;
     ToolPermissionContext permissions;
     permissions.mode = permission_mode::default_mode;
 
-    automation::Store store(automation_db);
-    automation::Runtime runtime(store);
+    automation::Repository repository(automation_db);
+    automation::AutomationService service(repository);
     auto tool_context = make_runtime_tool_context();
-    tool_context.automation_runtime = &runtime;
+    tool_context.automation_service = &service;
 
     bool prompted = false;
     tool_context.approval_callback = [&prompted](const ToolUse &, const PermissionDecision &) {
@@ -866,18 +866,17 @@ TEST_CASE("TaskToolRunsWithoutPromptByDefault") {
 
     static_cast<void>(register_runtime_tools(registry, nullptr, {}, &tool_context, {}, {}, &permissions));
 
-    const auto result = registry.execute(ToolUse("task-default-allow", "task",
+    const auto result = registry.execute(ToolUse("automation-default-allow", "automation",
                                                  {
-                                                     {"op", "add"},
+                                                     {"op", "create"},
                                                      {"name", "nightly-sync"},
-                                                     {"schedule_kind", "cron"},
-                                                     {"schedule", "0 * * * *"},
                                                      {"prompt", "sync nightly"},
+                                                     {"trigger", {{"type", "cron"}, {"cron", "0 * * * *"}}},
                                                  }));
 
     CHECK_FALSE(result.is_error);
     CHECK_FALSE(prompted);
-    CHECK(result.content.contains("Added task 'nightly-sync'"));
+    CHECK(result.content.contains("Created automation 'nightly-sync'"));
     std::filesystem::remove(automation_db);
 };
 

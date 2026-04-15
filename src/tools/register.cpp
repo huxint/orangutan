@@ -1,15 +1,13 @@
 #include "tools/register.hpp"
 
+#include "tools/automation/automation-tool.hpp"
 #include "coordinator/coordinator-mode.hpp"
 #include "tools/coordinator/register.hpp"
-#include "tools/heartbeat/heartbeat-tool.hpp"
-#include "tools/inbox/inbox-tool.hpp"
 #include "tools/internal.hpp"
 #include "tools/message-attachments/message-attachments-tool.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/shell/register.hpp"
 #include "tools/swarm/register.hpp"
-#include "tools/task/task-tool.hpp"
 
 #include <filesystem>
 
@@ -32,9 +30,7 @@ namespace orangutan::tools {
         }
 
         register_builtin_core_tools(registry, workspace_root, tool_context, permissions, edit_mode);
-        register_task_tool(registry, tool_context);
-        register_heartbeat_tool(registry, tool_context);
-        register_inbox_tool(registry, tool_context);
+        register_automation_tool(registry, tool_context);
         register_message_attachments_tool(registry, workspace_root, tool_context);
 
         const bool can_register_collaboration_tools = tool_context != nullptr && tool_context->coordinator_manager != nullptr && !tool_context->is_child_run;

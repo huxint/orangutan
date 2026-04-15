@@ -1,8 +1,9 @@
 #include "cli/single-shot.hpp"
 #include "tools/shell/command-sandbox.hpp"
 #include "tools/registry/tool.hpp"
-#include "automation/scheduler.hpp"
-#include "automation/automation-store.hpp"
+#include "automation/repository.hpp"
+#include "automation/runtime.hpp"
+#include "automation/service.hpp"
 #include "tools/background/background-completion.hpp"
 #include "utils/utf8-policy.hpp"
 #include "test-helpers.hpp"
@@ -73,18 +74,19 @@ namespace {
         return it == definitions.end() ? nullptr : &(*it);
     }
 
-    const orangutan::automation::InboxItem *find_inbox_item_by_body_type(const std::vector<orangutan::automation::InboxItem> &items, const std::string &type) {
-        const auto it = std::ranges::find_if(items, [&](const orangutan::automation::InboxItem &item) {
-            return nlohmann::json::parse(item.body).value("type", "") == type;
+    const orangutan::automation::DeliveryRecord *find_delivery_by_body_type(const std::vector<orangutan::automation::DeliveryRecord> &deliveries, const std::string &type) {
+        const auto it = std::ranges::find_if(deliveries, [&](const orangutan::automation::DeliveryRecord &delivery) {
+            return nlohmann::json::parse(delivery.body).value("type", "") == type;
         });
-        return it == items.end() ? nullptr : &(*it);
+        return it == deliveries.end() ? nullptr : &(*it);
     }
 
-    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<orangutan::automation::Store> &store,
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(
+        const std::shared_ptr<orangutan::automation::AutomationService> &service,
                                                                                                                 BackgroundCompletionResumeCallback resume_callback = {}) {
         return make_background_completion_runtime_bindings(
-            [store](const orangutan::automation::InboxItem &item) {
-                static_cast<void>(store->insert_inbox(item));
+            [service](const orangutan::automation::DeliveryRecord &delivery) {
+                static_cast<void>(service->record_delivery(delivery));
             },
             std::move(resume_callback));
     }
@@ -99,16 +101,18 @@ namespace {
             std::filesystem::remove(db_path);
             std::filesystem::create_directories(workspace_root_);
 
-            store_ = std::make_shared<orangutan::automation::Store>(db_path);
-            runtime_ = std::make_unique<orangutan::automation::Runtime>(*store_);
+            repository_ = std::make_shared<orangutan::automation::Repository>(db_path);
+            service_ = std::make_shared<orangutan::automation::AutomationService>(*repository_);
+            runtime_ = std::make_unique<orangutan::automation::AutomationRuntime>(*service_);
             resume_state_ = std::make_shared<ResumeMessagesState>();
             tool_context_ = ToolRuntimeContext{
                 .runtime_key = "runtime:test:background-shell",
                 .agent_key = "assistant",
                 .scope_key = "scope:test",
+                .automation_service = service_.get(),
                 .automation_runtime = runtime_.get(),
             };
-            tool_context_.background_completion_runtime = make_test_background_completion_runtime_bindings(store_, [resume_state = resume_state_](const std::string &message) {
+            tool_context_.background_completion_runtime = make_test_background_completion_runtime_bindings(service_, [resume_state = resume_state_](const std::string &message) {
                 std::scoped_lock lock(resume_state->mutex);
                 resume_state->messages.push_back(message);
                 return std::optional<std::string>{};
@@ -119,7 +123,8 @@ namespace {
 
         ~BackgroundShellCompletionHarness() {
             runtime_.reset();
-            store_.reset();
+            service_.reset();
+            repository_.reset();
             resume_state_.reset();
             std::filesystem::remove_all(workspace_root_);
         }
@@ -140,18 +145,23 @@ namespace {
             return nlohmann::json::parse(result.content);
         }
 
-        std::vector<orangutan::automation::InboxItem> wait_for_inbox_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) const {
+        std::vector<orangutan::automation::DeliveryRecord> wait_for_delivery_size(std::size_t expected_size,
+                                                                                  std::chrono::milliseconds timeout = std::chrono::seconds(5)) const {
             const auto deadline = std::chrono::steady_clock::now() + timeout;
             while (std::chrono::steady_clock::now() < deadline) {
-                auto items = runtime_->list_inbox(tool_context_.agent_key);
-                if (items.size() >= expected_size) {
-                    return items;
+                auto deliveries = service_->list_deliveries(orangutan::automation::DeliveryQuery{
+                    .agent_key = tool_context_.agent_key,
+                });
+                if (deliveries.size() >= expected_size) {
+                    return deliveries;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
             }
 
-            FAIL("background completion inbox items did not arrive in time");
-            return runtime_->list_inbox(tool_context_.agent_key);
+            FAIL("background completion deliveries did not arrive in time");
+            return service_->list_deliveries(orangutan::automation::DeliveryQuery{
+                .agent_key = tool_context_.agent_key,
+            });
         }
 
         std::vector<std::string> wait_for_resume_messages_size(std::size_t expected_size, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
@@ -175,8 +185,9 @@ namespace {
         ToolRuntimeContext tool_context_;
         std::unique_ptr<ScopedEnvVar> tmp_env_;
         std::filesystem::path workspace_root_;
-        std::shared_ptr<orangutan::automation::Store> store_;
-        std::unique_ptr<orangutan::automation::Runtime> runtime_;
+        std::shared_ptr<orangutan::automation::Repository> repository_;
+        std::shared_ptr<orangutan::automation::AutomationService> service_;
+        std::unique_ptr<orangutan::automation::AutomationRuntime> runtime_;
         std::shared_ptr<ResumeMessagesState> resume_state_;
     };
 
@@ -240,7 +251,7 @@ namespace {
         BackgroundShellCompletionHarness harness;
 
         ToolRuntimeContext inbox_only_context = harness.tool_context_;
-        inbox_only_context.background_completion_runtime = make_test_background_completion_runtime_bindings(harness.store_);
+        inbox_only_context.background_completion_runtime = make_test_background_completion_runtime_bindings(harness.service_);
 
         ToolRegistry inbox_only_registry;
         register_builtin_tools(inbox_only_registry, nullptr, harness.workspace_root_, &inbox_only_context);
@@ -276,7 +287,7 @@ namespace {
             {"command", "printf 'done\\n'"},
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         {
             std::scoped_lock lock(harness.resume_state_->mutex);
@@ -301,7 +312,7 @@ namespace {
             {"on_complete", {{"mode", "resume"}, {"prompt", prompt}}},
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         const auto resume_messages = harness.wait_for_resume_messages_size(1);
         CHECK(resume_messages.size() == 1U);
@@ -333,7 +344,7 @@ namespace {
             {"on_complete", {{"mode", "resume"}, {"prompt", prompt}}},
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         const auto resume_messages = harness.wait_for_resume_messages_size(1);
         CHECK(resume_messages.size() == 1U);
@@ -402,7 +413,7 @@ namespace {
             .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         const auto resume_messages = harness.wait_for_resume_messages_size(1);
         CHECK(resume_messages.size() == 1U);
@@ -439,7 +450,7 @@ namespace {
             .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "inbox"}},
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         if (items.size() != 1U) {
             return;
@@ -472,7 +483,7 @@ namespace {
                 },
         });
 
-        const auto items = harness.wait_for_inbox_size(1);
+        const auto items = harness.wait_for_delivery_size(1);
         CHECK(items.size() == 1U);
         const auto resume_messages = harness.wait_for_resume_messages_size(1);
         CHECK(resume_messages.size() == 1U);
@@ -550,7 +561,7 @@ namespace {
 
         const std::string secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWX1234567890";
         ToolRuntimeContext failing_context = harness.tool_context_;
-        failing_context.background_completion_runtime = make_test_background_completion_runtime_bindings(harness.store_, [](const std::string &) {
+        failing_context.background_completion_runtime = make_test_background_completion_runtime_bindings(harness.service_, [](const std::string &) {
             return std::optional<std::string>{"resume callback failed"};
         });
 
@@ -566,14 +577,14 @@ namespace {
             .metadata = {{std::string(orangutan::tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
-        const auto items = harness.wait_for_inbox_size(2);
+        const auto items = harness.wait_for_delivery_size(2);
         CHECK(items.size() == 2U);
         if (items.size() != 2U) {
             return;
         }
 
-        const auto *completion_item = find_inbox_item_by_body_type(items, "background_process_completion");
-        const auto *failure_item = find_inbox_item_by_body_type(items, "background_process_completion_resume_failure");
+        const auto *completion_item = find_delivery_by_body_type(items, "background_process_completion");
+        const auto *failure_item = find_delivery_by_body_type(items, "background_process_completion_resume_failure");
         INFO("completion inbox item missing");
         CHECK(completion_item != nullptr);
         INFO("failure inbox item missing");

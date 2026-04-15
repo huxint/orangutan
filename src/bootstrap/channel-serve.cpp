@@ -8,7 +8,7 @@
 #include "permissions/approval-signature.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-state.hpp"
-#include "automation/scheduler.hpp"
+#include "automation/runtime.hpp"
 #include "agent/agent-loop.hpp"
 #include "cli/cli-ui.hpp"
 #include "cli/session-workflow.hpp"
@@ -151,7 +151,7 @@ namespace orangutan::bootstrap {
                                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                                     const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store,
                                                     SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager,
-                                                    automation::Runtime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                                                    automation::AutomationRuntime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
             std::scoped_lock lock(runtimes_mutex);
             const auto agent_key = resolve_agent_key_for_message(message, qq_bot_agents);
             const auto runtime_key = derive_channel_runtime_key(jid, agent_key);
@@ -616,8 +616,9 @@ namespace orangutan::bootstrap {
                                      std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
                                      const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                      const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
-                                     coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager, automation::Runtime *automation_runtime,
-                                     ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                                     coordinator::CoordinatorManager *coordinator_manager, const Config &cfg, HookManager *hook_manager,
+                                     automation::AutomationRuntime *automation_runtime, ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner,
+                                     swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
             try {
                 auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store,
                                                        coordinator_manager, cfg, hook_manager, automation_runtime, team_manager, mailbox);
@@ -732,14 +733,14 @@ namespace orangutan::bootstrap {
                     const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb);
                     flush_thinking();
 
-                    // Skip session persistence for isolated heartbeat runs
+                    // Skip session persistence for isolated heartbeat-style inbound runs.
                     if (!message.isolated) {
                         persist_channel_session(message.jid, runtime, session_store);
                     }
 
-                    // Suppress HEARTBEAT_OK responses from heartbeat jobs
+                    // Suppress quiet heartbeat acknowledgements on legacy heartbeat jid flows.
                     if (should_suppress_heartbeat_reply(message.jid, reply, cfg.ack_max_chars)) {
-                        spdlog::debug("Suppressing HEARTBEAT_OK response from '{}'", message.jid);
+                        spdlog::debug("suppressing heartbeat acknowledgement from '{}'", message.jid);
                         return;
                     }
 
@@ -781,7 +782,7 @@ namespace orangutan::bootstrap {
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, coordinator::CoordinatorManager *coordinator_manager, const Config &cfg,
-                          HookManager *hook_manager, automation::Runtime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
+                          HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, swarm::TeamManager *team_manager, swarm::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
         std::mutex runtimes_mutex;
         ChannelApprovalCoordinator approval_coordinator;

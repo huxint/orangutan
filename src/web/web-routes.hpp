@@ -4,7 +4,8 @@
 #include <httplib.h>
 
 namespace orangutan::automation {
-    class Runtime;
+    class AutomationRuntime;
+    class AutomationService;
 }
 
 namespace orangutan::config {
@@ -51,17 +52,24 @@ namespace orangutan::web {
     void handle_list_tools(const httplib::Request &req, httplib::Response &res, tools::ToolRegistry *registry);
     void handle_list_agents(const httplib::Request &req, httplib::Response &res, config::Config *config);
     void handle_list_skills(const httplib::Request &req, httplib::Response &res, skills::SkillLoader *loader);
-    void handle_list_tasks(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
-    void handle_list_heartbeats(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
-    void handle_list_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
-    void handle_ack_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
-    void handle_clear_inbox(const httplib::Request &req, httplib::Response &res, automation::Runtime *automation_runtime);
+    void handle_list_automations(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_create_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_get_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_patch_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_delete_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_run_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_pause_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_resume_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_list_automation_runs(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_list_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_ack_automation_delivery(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_clear_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
 
     void handle_system_status(const httplib::Request &req, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::Runtime *automation_runtime);
+                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::AutomationService *automation_service);
 
     void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     tools::ToolRegistry *tool_registry, automation::Runtime *automation_runtime, std::mutex &sessions_mutex,
+                     tools::ToolRegistry *tool_registry, automation::AutomationRuntime *automation_runtime, std::mutex &sessions_mutex,
                      std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
     void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
                               std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
@@ -74,7 +82,8 @@ namespace orangutan::web {
 
         [[nodiscard]]
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle(const config::Config &config, const std::string &agent_key, memory::MemoryStore *memory_store,
-                                                               std::string *current_session_id, automation::Runtime *automation_runtime = nullptr,
+                                                               std::string *current_session_id, automation::AutomationService *automation_service = nullptr,
+                                                               automation::AutomationRuntime *automation_runtime = nullptr,
                                                                ApprovalCallback approval_callback = {},
                                                                const std::shared_ptr<WebCompletionResumeState> &completion_resume_state = {});
 

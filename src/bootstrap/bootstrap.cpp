@@ -7,6 +7,7 @@
 #include "bootstrap/config-bootstrap.hpp"
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/heartbeat-jobs.hpp"
 #include "bootstrap/identity.hpp"
 #include "bootstrap/runtime-assembler.hpp"
 #include "bootstrap/runtime-control.hpp"
@@ -17,6 +18,7 @@
 #include "web/web-server.hpp"
 #include "channel/message-queue.hpp"
 #include "hooks/hook-manager.hpp"
+#include "heartbeat/heartbeat-automation.hpp"
 #include "memory/memory-store.hpp"
 #include "skills/skill-loader.hpp"
 #include "config/config.hpp"
@@ -107,7 +109,7 @@ namespace {
                          const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs,
                          const orangutan::utils::transparent_string_unordered_map<std::string> &qq_bot_agents, orangutan::MemoryStore *memory_store,
                          orangutan::SessionStore &session_store, orangutan::coordinator::CoordinatorManager *coordinator_manager, const orangutan::Config &cfg,
-                         orangutan::HookManager *hook_manager, orangutan::automation::Runtime *automation_runtime, orangutan::swarm::TeamManager *team_manager,
+                         orangutan::HookManager *hook_manager, orangutan::automation::AutomationRuntime *automation_runtime, orangutan::swarm::TeamManager *team_manager,
                          orangutan::swarm::AgentMailbox *mailbox) {
         auto &stop_requested = orangutan::bootstrap::signal_stop_requested();
         stop_requested.store(false);
@@ -348,13 +350,14 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     });
 
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
+    orangutan::bootstrap::reconcile_heartbeat_jobs(cfg, app_runtime.automation_service());
 
     app_runtime.automation_runtime().set_executor([&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &coordinator_manager, &team_manager,
-                                                   &agent_mailbox](const orangutan::automation::Trigger &trigger) {
+                                                   &agent_mailbox](const orangutan::automation::Automation &automation) {
         orangutan::automation::ExecutionResult result;
-        auto config_it = maybe_agent_runtime_configs->find(trigger.agent_key);
+        auto config_it = maybe_agent_runtime_configs->find(automation.agent_key);
         if (config_it == maybe_agent_runtime_configs->end()) {
-            result.summary = "No runtime configuration for agent '" + trigger.agent_key + "'.";
+            result.summary = "No runtime configuration for agent '" + automation.agent_key + "'.";
             return result;
         }
 
@@ -368,7 +371,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         completion_resume_state->suppress_human_output = true;
         orangutan::bootstrap::RuntimeIdentity identity{
             .workspace = runtime_cfg.workspace_root,
-            .runtime_key = "agent:" + runtime_cfg.agent_key + "|automation:" + trigger.automation_id,
+            .runtime_key = "agent:" + runtime_cfg.agent_key + "|automation:" + automation.id,
             .memory_scope = "agent:" + runtime_cfg.agent_key + "|automation",
         };
 
@@ -384,6 +387,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .mailbox = agent_mailbox.get(),
                 .runtime_origin = base::origin::cli,
                 .raw_caller_id = identity.runtime_key,
+                .automation_service = &app_runtime.automation_service(),
                 .automation_runtime = &app_runtime.automation_runtime(),
                 .background_completion_runtime =
                     make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
@@ -393,7 +397,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             });
             completion_resume_state->agent = runtime.agent.get();
             completion_resume_state->provider = runtime.provider.get();
-            result.reply = runtime.agent->run(trigger.prompt);
+            result.reply = runtime.agent->run(automation.prompt);
             result.summary = result.reply;
             result.workspace_root = runtime_cfg.workspace_root;
             result.success = true;
@@ -404,12 +408,30 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return result;
         }
     });
+    app_runtime.automation_runtime().set_delivery_filter(
+        [ack_max_chars = cfg.ack_max_chars](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {
+            return orangutan::heartbeat::heartbeat_delivery_disposition(automation, result, ack_max_chars);
+        });
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
     orangutan::bootstrap::add_configured_channels(channel_manager, cfg);
-    app_runtime.automation_runtime().set_notifier([&channel_manager](std::string_view target, std::string_view message) -> std::optional<std::string> {
+    app_runtime.automation_runtime().set_notifier([&channel_manager](std::string_view target, std::string_view title, std::string_view body) -> std::optional<std::string> {
         try {
-            channel_manager.send(std::string(target), std::string(message));
+            std::string message;
+            if (!title.empty()) {
+                message = std::string(title);
+                if (!body.empty()) {
+                    message.append("\n\n");
+                }
+            }
+            message.append(body);
+            if (target == "cli") {
+                if (!message.empty()) {
+                    spdlog::info("automation delivery [{}]: {}", title.empty() ? "notification" : std::string(title), message);
+                }
+                return std::nullopt;
+            }
+            channel_manager.send(std::string(target), std::move(message));
             return std::nullopt;
         } catch (const std::exception &e) {
             return e.what();
@@ -448,6 +470,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .mailbox = agent_mailbox.get(),
                 .runtime_origin = base::origin::cli,
                 .raw_caller_id = "cli:local",
+                .automation_service = &app_runtime.automation_service(),
                 .automation_runtime = &app_runtime.automation_runtime(),
                 .approval_callback = approval_callback,
                 .background_completion_runtime =

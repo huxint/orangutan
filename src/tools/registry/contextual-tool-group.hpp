@@ -13,6 +13,7 @@
 namespace orangutan::tools {
 
     enum class context_gate : std::uint8_t {
+        automation_service,
         automation_runtime,
         channel_origin,
     };
@@ -24,6 +25,8 @@ namespace orangutan::tools {
             [[nodiscard]]
             static bool evaluate(context_gate gate, const ToolRuntimeContext &context, base::origin required_origin = base::origin::cli) {
                 switch (gate) {
+                    case context_gate::automation_service:
+                        return context.automation_service != nullptr;
                     case context_gate::automation_runtime:
                         return context.automation_runtime != nullptr;
                     case context_gate::channel_origin:
@@ -48,6 +51,12 @@ namespace orangutan::tools {
         ContextualToolGroup &require_automation_runtime() {
             return when([](const ToolRuntimeContext &ctx) {
                 return detail::ContextGateEvaluator::evaluate(context_gate::automation_runtime, ctx);
+            });
+        }
+
+        ContextualToolGroup &require_automation_service() {
+            return when([](const ToolRuntimeContext &ctx) {
+                return detail::ContextGateEvaluator::evaluate(context_gate::automation_service, ctx);
             });
         }
 

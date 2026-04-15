@@ -1,7 +1,6 @@
 #include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/app-runtime.hpp"
 #include "bootstrap/identity.hpp"
-#include "automation/scheduler.hpp"
-#include "automation/automation-store.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "permissions/permission-state.hpp"
@@ -31,11 +30,13 @@ namespace {
         return it == definitions.end() ? nullptr : &(*it);
     }
 
-    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(const std::shared_ptr<automation::Store> &store,
+    std::shared_ptr<const BackgroundCompletionRuntimeBindings> make_test_background_completion_runtime_bindings(automation::AutomationService *service,
                                                                                                                 BackgroundCompletionResumeCallback resume_callback = {}) {
         return make_background_completion_runtime_bindings(
-            [store](const automation::InboxItem &item) {
-                static_cast<void>(store->insert_inbox(item));
+            [service](const automation::DeliveryRecord &delivery) {
+                if (service != nullptr) {
+                    static_cast<void>(service->record_delivery(delivery));
+                }
             },
             std::move(resume_callback));
     }
@@ -209,11 +210,11 @@ namespace {
 
     TEST_CASE("runtime_without_explicit_completion_bindings_does_not_enable_completion_routing") {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-no-owner.db"));
-        auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
+        bootstrap::AppRuntime app_runtime(harness.workspace_root() / "automation-no-owner.db");
 
         auto input = harness.make_input();
-        input.automation_runtime = automation_runtime.get();
+        input.automation_service = &app_runtime.automation_service();
+        input.automation_runtime = &app_runtime.automation_runtime();
 
         auto runtime = build_agent_runtime(input);
         const auto definitions = runtime.tools().definitions();
@@ -227,14 +228,14 @@ namespace {
 
     TEST_CASE("runtime_with_explicit_completion_bindings_enables_completion_routing") {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-with-owner.db"));
-        auto automation_runtime = std::make_unique<automation::Runtime>(*automation_store);
-        auto background_completion_runtime = make_test_background_completion_runtime_bindings(automation_store, [](const std::string &) {
+        bootstrap::AppRuntime app_runtime(harness.workspace_root() / "automation-with-owner.db");
+        auto background_completion_runtime = make_test_background_completion_runtime_bindings(&app_runtime.automation_service(), [](const std::string &) {
             return std::optional<std::string>{};
         });
 
         auto input = harness.make_input();
-        input.automation_runtime = automation_runtime.get();
+        input.automation_service = &app_runtime.automation_service();
+        input.automation_runtime = &app_runtime.automation_runtime();
         input.background_completion_runtime = background_completion_runtime;
 
         auto runtime = build_agent_runtime(input);
@@ -360,9 +361,9 @@ namespace {
 
     TEST_CASE("shared_completion_bindings_remain_usable_after_another_runtime_is_destroyed") {
         RuntimeAgentRuntimeHarness harness;
-        auto automation_store = std::make_shared<automation::Store>((harness.workspace_root() / "automation-shared.db"));
+        bootstrap::AppRuntime app_runtime(harness.workspace_root() / "automation-shared.db");
         std::size_t resume_callback_count = 0;
-        auto shared_bindings = make_test_background_completion_runtime_bindings(automation_store, [&resume_callback_count](const std::string &) {
+        auto shared_bindings = make_test_background_completion_runtime_bindings(&app_runtime.automation_service(), [&resume_callback_count](const std::string &) {
             ++resume_callback_count;
             return std::optional<std::string>{};
         });
@@ -398,9 +399,9 @@ namespace {
             .metadata = {{std::string(tools::BACKGROUND_COMPLETION_MODE_METADATA_KEY), "resume"}},
         });
 
-        const auto inbox_items = automation_store->list_inbox(second_input.agent_key);
-        CHECK(inbox_items.size() == 1UL);
-        CHECK(nlohmann::json::parse(inbox_items.front().body).at("process_id") == "proc-shared");
+        const auto deliveries = app_runtime.automation_service().list_deliveries(automation::DeliveryQuery{.agent_key = second_input.agent_key});
+        CHECK(deliveries.size() == 1UL);
+        CHECK(nlohmann::json::parse(deliveries.front().body).at("process_id") == "proc-shared");
         CHECK(resume_callback_count == 1UL);
     };
 

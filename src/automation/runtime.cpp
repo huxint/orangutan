@@ -72,6 +72,18 @@ namespace orangutan::automation {
         stop();
     }
 
+    void AutomationRuntime::set_executor(AutomationExecutor executor) {
+        service_->set_executor(std::move(executor));
+    }
+
+    void AutomationRuntime::set_delivery_filter(AutomationDeliveryFilter filter) {
+        service_->set_delivery_filter(std::move(filter));
+    }
+
+    void AutomationRuntime::set_notifier(AutomationNotifier notifier) {
+        service_->set_notifier(std::move(notifier));
+    }
+
     void AutomationRuntime::start() {
         if (running_.exchange(true)) {
             return;
@@ -110,6 +122,14 @@ namespace orangutan::automation {
 
     AutomationRuntime::AgentExecutionLease AutomationRuntime::acquire_agent_execution_lease(std::string_view agent_key) {
         return AgentExecutionLease(get_agent_execution_gate(agent_key));
+    }
+
+    AutomationService &AutomationRuntime::service() noexcept {
+        return *service_;
+    }
+
+    const AutomationService &AutomationRuntime::service() const noexcept {
+        return *service_;
     }
 
     void AutomationRuntime::scheduler_loop(std::stop_token stop_token) {
