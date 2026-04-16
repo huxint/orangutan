@@ -20,11 +20,6 @@ namespace {
         orangutan::automation::AutomationService service{repository};
     };
 
-    [[nodiscard]]
-    bool has_tag(const orangutan::automation::Automation &automation, std::string_view tag) {
-        return std::ranges::find(automation.tags, tag) != automation.tags.end();
-    }
-
     TEST_CASE("reconcile_heartbeat_jobs_creates_managed_heartbeat_automations") {
         HeartbeatJobsHarness harness;
         orangutan::Config cfg;
