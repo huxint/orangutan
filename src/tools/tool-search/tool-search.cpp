@@ -63,20 +63,13 @@ namespace orangutan::tools {
                 int score = 0;
             };
 
-            auto lower_copy = [](std::string_view sv) -> std::string {
-                return sv | std::views::transform([](unsigned char c) {
-                           return static_cast<char>(std::tolower(c));
-                       }) |
-                       std::ranges::to<std::string>();
-            };
-
             std::vector<ScoredMatch> matches;
-            const auto query_lower = lower_copy(query);
+            const auto query_lower = utils::ascii_to_lower_copy(query);
 
             for (const auto &s : summaries) {
                 int score = 0;
-                const auto name_lower = lower_copy(s.name);
-                const auto desc_lower = lower_copy(s.description);
+                const auto name_lower = utils::ascii_to_lower_copy(s.name);
+                const auto desc_lower = utils::ascii_to_lower_copy(s.description);
 
                 if (name_lower == query_lower) {
                     score += 100;
