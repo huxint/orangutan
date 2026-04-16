@@ -13,13 +13,7 @@ namespace orangutan::tools {
                 return PermissionResult::deny("Write path is required");
             }
 
-            try {
-                resolve_tool_path(std::filesystem::path(call.input.at("path").get<std::string>()), workspace_root, &ctx);
-            } catch (const std::exception &e) {
-                return PermissionResult::deny(e.what());
-            }
-
-            return PermissionResult::passthrough();
+            return validate_path_permission(call.input.at("path").get<std::string>(), workspace_root, ctx);
         }
 
         std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {

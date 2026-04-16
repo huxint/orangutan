@@ -16,21 +16,21 @@ namespace orangutan::tools {
     namespace {
 
         PermissionResult validate_read_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
-            try {
-                if (call.input.contains("path") && call.input["path"].is_string()) {
-                    resolve_tool_path(std::filesystem::path(call.input.at("path").get<std::string>()), workspace_root, &ctx);
+            if (call.input.contains("path") && call.input["path"].is_string()) {
+                if (auto result = validate_path_permission(call.input.at("path").get<std::string>(), workspace_root, ctx); !result.is_passthrough) {
+                    return result;
                 }
+            }
 
-                if (call.input.contains("paths") && call.input["paths"].is_array()) {
-                    for (const auto &item : call.input.at("paths")) {
-                        if (!item.is_string()) {
-                            return PermissionResult::deny("Read path must be a string");
-                        }
-                        resolve_tool_path(std::filesystem::path(item.get<std::string>()), workspace_root, &ctx);
+            if (call.input.contains("paths") && call.input["paths"].is_array()) {
+                for (const auto &item : call.input.at("paths")) {
+                    if (!item.is_string()) {
+                        return PermissionResult::deny("Read path must be a string");
+                    }
+                    if (auto result = validate_path_permission(item.get<std::string>(), workspace_root, ctx); !result.is_passthrough) {
+                        return result;
                     }
                 }
-            } catch (const std::exception &e) {
-                return PermissionResult::deny(e.what());
             }
 
             return PermissionResult::passthrough();

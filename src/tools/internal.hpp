@@ -110,6 +110,17 @@ namespace orangutan::tools {
         return resolved;
     }
 
+    /// Run resolve_tool_path and fold any exception into a PermissionResult::deny.
+    /// Returns passthrough() when the path is within the permitted sandbox.
+    inline PermissionResult validate_path_permission(std::string_view path, const std::filesystem::path &workspace_root, const ToolPermissionContext &ctx) {
+        try {
+            static_cast<void>(resolve_tool_path(std::filesystem::path(path), workspace_root, &ctx));
+        } catch (const std::exception &e) {
+            return PermissionResult::deny(e.what());
+        }
+        return PermissionResult::passthrough();
+    }
+
     void register_shell_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions,
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);

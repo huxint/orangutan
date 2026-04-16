@@ -36,16 +36,6 @@ namespace orangutan::tools {
             bool is_new_file = false;
         };
 
-        PermissionResult deny_invalid_edit_path(std::string path, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
-            try {
-                resolve_tool_path(std::filesystem::path(std::move(path)), workspace_root, &ctx);
-            } catch (const std::exception &e) {
-                return PermissionResult::deny(e.what());
-            }
-
-            return PermissionResult::passthrough();
-        }
-
         std::string render_lines(std::span<const std::string> lines, bool trailing_newline) {
             if (lines.empty()) {
                 return {};
@@ -383,7 +373,7 @@ namespace orangutan::tools {
                          if (!call.input.contains("path") || !call.input["path"].is_string()) {
                              return PermissionResult::deny("Edit path is required");
                          }
-                         return deny_invalid_edit_path(call.input.at("path").get<std::string>(), ctx, workspace_root);
+                         return validate_path_permission(call.input.at("path").get<std::string>(), workspace_root, ctx);
                      },
                  .execute =
                      [workspace_root, permissions](const nlohmann::json &input) {
@@ -414,7 +404,7 @@ namespace orangutan::tools {
                          try {
                              const auto files = parse_patch(call.input.at("patch").get<std::string>());
                              for (const auto &file : files) {
-                                 auto result = deny_invalid_edit_path(file.path, ctx, workspace_root);
+                                 auto result = validate_path_permission(file.path, workspace_root, ctx);
                                  if (!result.is_passthrough) {
                                      return result;
                                  }
