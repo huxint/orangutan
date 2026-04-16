@@ -117,7 +117,7 @@ namespace {
             {"properties",
              {{"key", {{"type", "string"}, {"description", "Stable lookup key for the memory"}}},
               {"content", {{"type", "string"}, {"description", "The memory value to store"}}},
-              {"category", {{"type", "string"}, {"description", "Granular category label"}}},
+              {"category", {{"type", "string"}, {"description", "Granular category label (e.g. profile, preference, project)"}}},
               {"type", {{"type", "string"}, {"enum", nlohmann::json::array({"user", "feedback", "project", "reference"})}, {"description", "Semantic memory type"}}},
               {"source", {{"type", "string"}, {"description", "Optional memory source label"}}},
               {"importance", {{"type", "number"}, {"description", "Optional importance score from 0 to 1"}}}}},
