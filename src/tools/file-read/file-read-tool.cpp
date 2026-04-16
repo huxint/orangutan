@@ -3,13 +3,17 @@
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
+#include "utils/format.hpp"
 #include "utils/string.hpp"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
-#include "utils/format.hpp"
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace orangutan::tools {
@@ -40,6 +44,25 @@ namespace orangutan::tools {
 
         constexpr std::string_view BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+        constexpr std::array<std::pair<std::string_view, std::string_view>, 6> IMAGE_MEDIA_TYPES{{
+            {".png", "image/png"},
+            {".jpg", "image/jpeg"},
+            {".jpeg", "image/jpeg"},
+            {".gif", "image/gif"},
+            {".webp", "image/webp"},
+            {".bmp", "image/bmp"},
+        }};
+
+        [[nodiscard]]
+        std::optional<std::string_view> lookup_image_media_type(const std::filesystem::path &path) {
+            const auto ext = utils::ascii_to_lower_copy(path.extension().string());
+            const auto it = std::ranges::find(IMAGE_MEDIA_TYPES, ext, &std::pair<std::string_view, std::string_view>::first);
+            if (it == IMAGE_MEDIA_TYPES.end()) {
+                return std::nullopt;
+            }
+            return it->second;
+        }
+
         std::string encode_base64(std::string_view data) {
             std::string encoded;
             encoded.reserve(((data.size() + 2) / 3) * 4);
@@ -56,37 +79,7 @@ namespace orangutan::tools {
             return encoded;
         }
 
-        bool is_image_extension(const std::filesystem::path &path) {
-            const auto ext = path.extension().string();
-            if (ext.size() < 2) {
-                return false;
-            }
-            const auto lower = utils::ascii_to_lower_copy(ext);
-            return lower == ".png" || lower == ".jpg" || lower == ".jpeg" || lower == ".gif" || lower == ".webp" || lower == ".bmp";
-        }
-
-        std::string guess_media_type(const std::filesystem::path &path) {
-            const auto ext = path.extension().string();
-            const auto lower = utils::ascii_to_lower_copy(ext);
-            if (lower == ".png") {
-                return "image/png";
-            }
-            if (lower == ".jpg" || lower == ".jpeg") {
-                return "image/jpeg";
-            }
-            if (lower == ".gif") {
-                return "image/gif";
-            }
-            if (lower == ".webp") {
-                return "image/webp";
-            }
-            if (lower == ".bmp") {
-                return "image/bmp";
-            }
-            return "application/octet-stream";
-        }
-
-        ToolOutput read_image_file(const std::filesystem::path &path) {
+        ToolOutput read_image_file(const std::filesystem::path &path, std::string_view media_type) {
             const auto size = std::filesystem::file_size(path);
             if (size > MAX_IMAGE_SIZE) {
                 return ToolOutput{utils::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, MAX_IMAGE_SIZE)};
@@ -98,10 +91,10 @@ namespace orangutan::tools {
                 return std::fread(buffer, sizeof(char), buffer_size, file.get());
             });
 
-            const auto media_type = guess_media_type(path);
+            auto media = std::string(media_type);
             const auto b64 = encode_base64(buf);
-            const auto description = utils::format("Image: {} ({} bytes, {})", path.string(), size, media_type);
-            return ToolOutput{description, {{.media_type = media_type, .data = b64}}};
+            const auto description = utils::format("Image: {} ({} bytes, {})", path.string(), size, media);
+            return ToolOutput{description, {{.media_type = std::move(media), .data = b64}}};
         }
 
         bool is_binary_file(const std::filesystem::path &path) {
@@ -131,8 +124,8 @@ namespace orangutan::tools {
                 throw std::runtime_error("File not found: " + path.string());
             }
 
-            if (is_image_extension(path)) {
-                return read_image_file(path);
+            if (const auto media_type = lookup_image_media_type(path); media_type.has_value()) {
+                return read_image_file(path, *media_type);
             }
 
             if (is_binary_file(path)) {
