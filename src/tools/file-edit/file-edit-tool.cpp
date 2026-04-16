@@ -2,15 +2,14 @@
 #include "tools/file-edit/hashline.hpp"
 #include "utils/file-io.hpp"
 #include "utils/format.hpp"
+#include "utils/string.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
 #include <filesystem>
-#include <spdlog/common.h>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
