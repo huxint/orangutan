@@ -15,6 +15,23 @@
 
 namespace orangutan::channel::qq {
 
+    // QQ gateway opcodes as defined by the bot protocol.
+    inline constexpr int GATEWAY_OP_DISPATCH = 0;
+    inline constexpr int GATEWAY_OP_HEARTBEAT = 1;
+    inline constexpr int GATEWAY_OP_IDENTIFY = 2;
+    inline constexpr int GATEWAY_OP_RESUME = 6;
+    inline constexpr int GATEWAY_OP_RECONNECT = 7;
+    inline constexpr int GATEWAY_OP_INVALID_SESSION = 9;
+    inline constexpr int GATEWAY_OP_HELLO = 10;
+    inline constexpr int GATEWAY_OP_HEARTBEAT_ACK = 11;
+
+    inline constexpr base::u32 INTENT_PUBLIC_GUILD_MESSAGES = 1U << 9;
+    inline constexpr base::u32 INTENT_GUILD_MESSAGE_REACTIONS = 1U << 10;
+    inline constexpr base::u32 INTENT_GROUP_MESSAGES = 1U << 25;
+    inline constexpr base::u32 INTENT_INTERACTION = 1U << 26;
+    inline constexpr base::u32 INTENT_GUILD_AT_MESSAGE = 1U << 30;
+    inline constexpr base::u32 INTENT_DIRECT_MESSAGES = 1U << 12;
+
     struct qq_channel_runtime_state {
         struct pending_debounced_message {
             std::string text;
