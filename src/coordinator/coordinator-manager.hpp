@@ -9,7 +9,6 @@
 #include <optional>
 #include <stop_token>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 #include "types/base.hpp"
@@ -137,11 +136,12 @@ namespace orangutan::coordinator {
             AgentSpawnRequest request;
             AgentRunRecord record;
             std::stop_source stop_source;
-            std::jthread worker_thread;
             mutable std::mutex mutex;
             std::condition_variable_any cv;
             bool completed = false;
         };
+
+        struct Impl;
 
         int max_concurrent_;
         AgentExecutionEnvironment env_;
@@ -154,6 +154,7 @@ namespace orangutan::coordinator {
         std::deque<std::string> pending_run_ids_;
         bool shutting_down_ = false;
         std::uint64_t next_run_id_ = 0;
+        std::unique_ptr<Impl> impl_;
 
         [[nodiscard]]
         std::string make_run_id();

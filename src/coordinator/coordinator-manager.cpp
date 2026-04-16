@@ -2,11 +2,16 @@
 #include "coordinator/agent-definition-registry.hpp"
 #include "swarm/mailbox.hpp"
 #include "utils/escape.hpp"
+#include "utils/task-pool.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <utility>
+
+#include <exec/async_scope.hpp>
+#include <stdexec/execution.hpp>
 
 namespace orangutan::coordinator {
 
@@ -63,8 +68,28 @@ namespace orangutan::coordinator {
 
     } // namespace
 
+    struct CoordinatorManager::Impl {
+        utils::TaskPool pool;
+        exec::async_scope scope;
+
+        explicit Impl(std::size_t pool_size)
+        : pool{pool_size} {}
+    };
+
+    namespace {
+
+        constexpr std::size_t MIN_POOL_SIZE = 2;
+
+        [[nodiscard]]
+        std::size_t resolve_pool_size(int max_concurrent) {
+            return std::max<std::size_t>(static_cast<std::size_t>(std::max(1, max_concurrent)), MIN_POOL_SIZE);
+        }
+
+    } // namespace
+
     CoordinatorManager::CoordinatorManager(int max_concurrent_agents)
-    : max_concurrent_(std::max(1, max_concurrent_agents)) {}
+    : max_concurrent_(std::max(1, max_concurrent_agents)),
+      impl_(std::make_unique<Impl>(resolve_pool_size(max_concurrent_agents))) {}
 
     CoordinatorManager::~CoordinatorManager() {
         shutdown();
@@ -170,9 +195,11 @@ namespace orangutan::coordinator {
             std::scoped_lock run_lock(run->mutex);
             run->record.status = agent_run_status::running;
         }
-        run->worker_thread = std::jthread([this, run](const std::stop_token &token) {
-            run_worker(run, token);
-        });
+        auto sender = stdexec::schedule(impl_->pool.scheduler())
+                    | stdexec::then([this, run] {
+                          run_worker(run, run->stop_source.get_token());
+                      });
+        impl_->scope.spawn(std::move(sender));
     }
 
     void CoordinatorManager::remove_pending_run_locked(const std::string &run_id) {
@@ -350,8 +377,8 @@ namespace orangutan::coordinator {
             return;
         }
 
-        // Request cooperative stop on the worker thread's stop source.
-        run->worker_thread.request_stop();
+        // Request cooperative stop on the worker's stop source.
+        run->stop_source.request_stop();
 
         // Wait briefly for completion
         {
@@ -422,7 +449,7 @@ namespace orangutan::coordinator {
         }
 
         for (auto &run : runs_to_stop) {
-            run->worker_thread.request_stop();
+            run->stop_source.request_stop();
         }
 
         // Wait for all to complete
@@ -438,23 +465,16 @@ namespace orangutan::coordinator {
             }
         }
 
-        for (auto &run : runs_to_stop) {
-            if (run->worker_thread.joinable()) {
-                if (run->worker_thread.get_id() == std::this_thread::get_id()) {
-                    run->worker_thread.detach();
-                } else {
-                    run->worker_thread.join();
-                }
-            }
+        if (impl_ != nullptr) {
+            static_cast<void>(stdexec::sync_wait(impl_->scope.on_empty()));
         }
 
-        // Join all threads (jthread destructor handles this, but we clear the map)
         {
             std::scoped_lock lock(mutex_);
             active_runs_.clear();
         }
 
-        spdlog::info("CoordinatorManager shutdown complete");
+        spdlog::info("coordinatormanager shutdown complete");
     }
 
 } // namespace orangutan::coordinator
