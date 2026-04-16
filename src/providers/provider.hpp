@@ -4,6 +4,7 @@
 #include "types/tool-def.hpp"
 
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -240,9 +241,15 @@ namespace orangutan::providers {
         provider_sender send() const;
 
         [[nodiscard]]
+        std::expected<ProviderResult, ProviderError> try_send_blocking() const;
+
+        [[nodiscard]]
         ProviderResult send_blocking() const {
-            auto [result] = execution::sync_wait_or_throw(send(), "provider sender");
-            return result;
+            auto result = try_send_blocking();
+            if (!result) {
+                throw std::move(result).error();
+            }
+            return std::move(*result);
         }
 
     private:

@@ -26,6 +26,17 @@ namespace orangutan::providers {
         return backend_->send(route_, request_, sink_);
     }
 
+    std::expected<ProviderResult, ProviderError> RequestBuilder::try_send_blocking() const {
+        try {
+            auto [result] = execution::sync_wait_or_throw(send(), "provider sender");
+            return result;
+        } catch (const ProviderError &error) {
+            return std::unexpected(error);
+        } catch (const std::exception &error) {
+            return std::unexpected(ProviderError(error_category::unknown, error.what()));
+        }
+    }
+
     ProviderSystem::ProviderSystem()
     : backend_(execution::make_runtime_backend()) {}
 
