@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -437,14 +436,7 @@ namespace orangutan::skills {
         [[nodiscard]]
         static std::expected<skill_view, skill_diagnostic> parse_skill_file(const std::string &content, const std::string &source_path, skill_source source,
                                                                             const std::filesystem::path &workspace_root) {
-            std::vector<std::string> lines;
-            {
-                std::istringstream stream(content);
-                std::string line;
-                while (std::getline(stream, line)) {
-                    lines.push_back(line);
-                }
-            }
+            auto lines = utils::split_lines(content);
 
             if (lines.empty()) {
                 return std::unexpected(skill_diagnostic{.code = "missing_frontmatter", .message = "skill file has no frontmatter", .source_path = source_path});

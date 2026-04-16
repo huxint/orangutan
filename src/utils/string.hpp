@@ -58,12 +58,32 @@ namespace orangutan::utils {
         return values;
     }
 
+    /// Split on '\n'. Matches std::getline semantics:
+    ///   - empty input yields an empty vector
+    ///   - trailing '\n' does not yield an empty final line
+    ///   - '\r' is preserved verbatim; strip it at the call site if DOS-compat is desired
+    [[nodiscard]]
+    inline std::vector<std::string> split_lines(std::string_view value) {
+        std::vector<std::string> lines;
+        for (std::size_t pos = 0; pos < value.size();) {
+            const auto next = value.find('\n', pos);
+            const auto end = next == std::string_view::npos ? value.size() : next;
+            lines.emplace_back(value.substr(pos, end - pos));
+            if (next == std::string_view::npos) {
+                break;
+            }
+            pos = next + 1;
+        }
+        return lines;
+    }
+
 } // namespace orangutan::utils
 
 namespace orangutan {
 
     using utils::ascii_to_lower_copy;
     using utils::normalize_enum_token;
+    using utils::split_lines;
     using utils::split_trimmed;
     using utils::trim_copy;
 

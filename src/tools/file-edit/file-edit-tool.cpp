@@ -76,8 +76,6 @@ namespace orangutan::tools {
             }
 
             std::vector<FilePatch> files;
-            std::istringstream stream{std::string(patch)};
-            std::string line;
 
             constexpr std::string_view FILE_HEADER = "*** ";
             constexpr std::string_view SEARCH_MARKER = "<<<<<<< SEARCH";
@@ -93,7 +91,7 @@ namespace orangutan::tools {
             std::string search_buf;
             std::string replace_buf;
 
-            while (std::getline(stream, line)) {
+            for (const auto &line : utils::split_lines(patch)) {
                 switch (parse_state) {
                     case state::idle:
                         if (line.starts_with(FILE_HEADER)) {
@@ -261,12 +259,7 @@ namespace orangutan::tools {
             {
                 const auto content = fileio::read_file(resolved_path);
                 had_trailing_newline = !content.empty() && content.back() == '\n';
-
-                std::istringstream line_stream(content);
-                std::string line;
-                while (std::getline(line_stream, line)) {
-                    lines.push_back(std::move(line));
-                }
+                lines = utils::split_lines(content);
             }
 
             // Convert JSON edits to HashlineEdit structs

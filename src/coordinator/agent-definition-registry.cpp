@@ -1,11 +1,11 @@
 #include "coordinator/agent-definition-registry.hpp"
 
+#include "utils/file-io.hpp"
 #include "utils/string.hpp"
 
 #include <filesystem>
-#include <fstream>
+#include <optional>
 #include <spdlog/spdlog.h>
-#include <sstream>
 #include <string>
 
 namespace orangutan::coordinator {
@@ -22,16 +22,14 @@ namespace orangutan::coordinator {
         }
 
         std::optional<AgentDefinition> parse_agent_file(const std::filesystem::path &path) {
-            std::ifstream file(path);
-            if (!file.is_open()) {
+            const auto content = fileio::try_read_file(path);
+            if (!content.has_value()) {
                 spdlog::warn("Could not open agent definition file: {}", path.string());
                 return std::nullopt;
             }
 
-            std::string line;
-
-            // Check for frontmatter start
-            if (!std::getline(file, line) || utils::trim_copy(line) != "---") {
+            const auto lines = utils::split_lines(*content);
+            if (lines.empty() || utils::trim_copy(lines.front()) != "---") {
                 spdlog::warn("Agent definition file missing frontmatter: {}", path.string());
                 return std::nullopt;
             }
@@ -40,10 +38,11 @@ namespace orangutan::coordinator {
             def.key = path.stem().string();
             def.source = "directory";
 
-            // Parse frontmatter
-            while (std::getline(file, line)) {
-                const auto trimmed = utils::trim_copy(line);
+            std::size_t index = 1;
+            for (; index < lines.size(); ++index) {
+                const auto trimmed = utils::trim_copy(lines[index]);
                 if (trimmed == "---") {
+                    ++index;
                     break;
                 }
 
@@ -64,18 +63,15 @@ namespace orangutan::coordinator {
                 }
             }
 
-            // Rest of file is the prompt addendum
-            std::ostringstream body;
-            bool first = true;
-            while (std::getline(file, line)) {
+            std::string body;
+            for (bool first = true; index < lines.size(); ++index) {
                 if (!first) {
-                    body << '\n';
+                    body.push_back('\n');
                 }
-                body << line;
+                body.append(lines[index]);
                 first = false;
             }
-            const auto prompt_body = body.str();
-            def.prompt_addendum = std::string{utils::trim_copy(prompt_body)};
+            def.prompt_addendum = std::string{utils::trim_copy(body)};
 
             return def;
         }

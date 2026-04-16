@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -119,19 +118,16 @@ namespace orangutan::agent::detail {
     [[nodiscard]]
     inline ParsedDistilledSession parse_distilled_session(const std::string &text) {
         ParsedDistilledSession parsed;
-        std::stringstream stream(text);
-        std::string line;
-
-        while (std::getline(stream, line)) {
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
+        for (auto raw_line : utils::split_lines(text)) {
+            if (!raw_line.empty() && raw_line.back() == '\r') {
+                raw_line.pop_back();
             }
-            line = utils::trim_copy(line);
+            auto line = std::string(utils::trim_copy(raw_line));
             if (line.empty()) {
                 continue;
             }
             if (line.starts_with("- ")) {
-                line = utils::trim_copy(line.substr(2));
+                line = std::string(utils::trim_copy(std::string_view{line}.substr(2)));
             }
 
             if (line.starts_with("journal|")) {

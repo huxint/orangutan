@@ -9,7 +9,6 @@
 #include <filesystem>
 #include "utils/format.hpp"
 #include <spdlog/spdlog.h>
-#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -147,12 +146,7 @@ namespace orangutan::tools {
 
             const auto content = fileio::read_file(path);
 
-            std::vector<std::string> lines;
-            std::istringstream input(content);
-            std::string line;
-            while (std::getline(input, line)) {
-                lines.push_back(std::move(line));
-            }
+            const auto lines = utils::split_lines(content);
 
             const auto total_lines = static_cast<int>(lines.size());
             if (offset > total_lines) {

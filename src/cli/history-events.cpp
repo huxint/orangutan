@@ -3,24 +3,19 @@
 #include <spdlog/common.h>
 #include <algorithm>
 #include "utils/format.hpp"
+#include "utils/string.hpp"
 #include <unordered_map>
 
 namespace orangutan::cli {
 
     namespace {
 
-        std::vector<std::string> split_lines(const std::string &text) {
-            std::vector<std::string> lines;
-            std::stringstream stream(text);
-            std::string line;
-            while (std::getline(stream, line)) {
+        std::vector<std::string> split_diff_lines(std::string_view text) {
+            auto lines = utils::split_lines(text);
+            for (auto &line : lines) {
                 if (!line.empty() && line.back() == '\r') {
                     line.pop_back();
                 }
-                lines.push_back(line);
-            }
-            if (lines.empty() && !text.empty()) {
-                lines.push_back(text);
             }
             return lines;
         }
@@ -58,8 +53,8 @@ namespace orangutan::cli {
         const auto old_text = call.input.value("old_text", std::string{});
         const auto new_text = call.input.value("new_text", std::string{});
         const auto path = call.input.value("path", std::string{});
-        const auto old_lines = split_lines(old_text);
-        const auto new_lines = split_lines(new_text);
+        const auto old_lines = split_diff_lines(old_text);
+        const auto new_lines = split_diff_lines(new_text);
 
         std::size_t prefix = 0;
         while (prefix < old_lines.size() && prefix < new_lines.size() && old_lines[prefix] == new_lines[prefix]) {

@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -77,9 +76,7 @@ namespace orangutan::agent::detail {
     [[nodiscard]]
     inline std::vector<std::filesystem::path> parse_patch_paths(std::string_view patch) {
         std::vector<std::filesystem::path> paths;
-        std::istringstream stream(std::string{patch});
-        std::string line;
-        while (std::getline(stream, line)) {
+        for (const auto &line : utils::split_lines(patch)) {
             constexpr std::string_view UPDATE_HEADER = "*** Update File: ";
             constexpr std::string_view ADD_HEADER = "*** Add File: ";
             constexpr std::string_view DELETE_HEADER = "*** Delete File: ";
