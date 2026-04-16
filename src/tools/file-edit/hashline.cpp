@@ -388,7 +388,7 @@ namespace orangutan::tools {
                 }
                 // Check overlap: ranges [a_start, a_end] and [b_start, b_end]
                 if (a_start <= b_end && b_start <= a_end) {
-                    return {.ok = false, .error = spdlog::fmt_lib::format("overlapping edits at lines {}-{} and {}-{}", a_start, a_end, b_start, b_end)};
+                    return {.ok = false, .error = utils::format("overlapping edits at lines {}-{} and {}-{}", a_start, a_end, b_start, b_end)};
                 }
             }
         }

@@ -1,10 +1,10 @@
 #include "bootstrap/identity.hpp"
 #include "types/base.hpp"
+#include "utils/format.hpp"
 
 #include <cstdlib>
 #include <cctype>
 #include <filesystem>
-#include <spdlog/common.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -63,7 +63,7 @@ namespace orangutan::bootstrap {
         }
 
         std::string make_identity_slug(const std::string &jid) {
-            return spdlog::fmt_lib::format("{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
+            return utils::format("{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
         }
 
         std::string normalize_path(const std::filesystem::path &path) {

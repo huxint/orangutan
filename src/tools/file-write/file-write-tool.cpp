@@ -1,8 +1,8 @@
 #include "tools/internal.hpp"
 #include "utils/file-io.hpp"
+#include "utils/format.hpp"
 
 #include <filesystem>
-#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 
 namespace orangutan::tools {
@@ -33,7 +33,7 @@ namespace orangutan::tools {
 
             fileio::write_file(path, content);
 
-            return spdlog::fmt_lib::format("Wrote {} bytes to {}", content.size(), path.string());
+            return utils::format("Wrote {} bytes to {}", content.size(), path.string());
         }
 
     } // namespace

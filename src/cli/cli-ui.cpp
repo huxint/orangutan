@@ -87,7 +87,7 @@ namespace orangutan::cli {
             return "## Compression\n- " + result.status;
         }
 
-        return spdlog::fmt_lib::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
+        return utils::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
     }
 
     std::string render_saved_sessions(SessionStore &store, const std::string &scope_key) {

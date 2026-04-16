@@ -22,4 +22,11 @@ namespace orangutan::utils {
         spdlog::fmt_lib::format_to(std::back_inserter(out), style, format_str, std::forward<Args>(args)...);
     }
 
+    /// Format text and return the result, without exposing spdlog::fmt_lib details.
+    template <typename... Args>
+    [[nodiscard]]
+    std::string format(spdlog::fmt_lib::format_string<Args...> format_str, Args &&...args) {
+        return spdlog::fmt_lib::format(format_str, std::forward<Args>(args)...);
+    }
+
 } // namespace orangutan::utils

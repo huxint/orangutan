@@ -138,7 +138,7 @@ namespace orangutan::tools {
 
         std::string stats_memory(RuntimeMemory &runtime_memory) {
             const auto stats = runtime_memory.stats();
-            return spdlog::fmt_lib::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
+            return utils::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
                                            stats.journal_entries);
         }
 

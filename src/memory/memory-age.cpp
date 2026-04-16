@@ -1,9 +1,10 @@
 #include "memory/memory-age.hpp"
 
+#include "utils/format.hpp"
+
 #include <charconv>
 #include <chrono>
 #include <optional>
-#include <spdlog/common.h>
 #include <system_error>
 
 namespace orangutan::memory {
@@ -75,18 +76,18 @@ namespace orangutan::memory {
             return "yesterday";
         }
         if (days < 7) {
-            return spdlog::fmt_lib::format("{} days ago", days);
+            return utils::format("{} days ago", days);
         }
         if (days < 14) {
             return "1 week ago";
         }
         if (days < 30) {
-            return spdlog::fmt_lib::format("{} weeks ago", days / 7);
+            return utils::format("{} weeks ago", days / 7);
         }
         if (days < 60) {
             return "1 month ago";
         }
-        return spdlog::fmt_lib::format("{} months ago", days / 30);
+        return utils::format("{} months ago", days / 30);
     }
 
     std::string memory_freshness_caveat(std::string_view updated_at) {
@@ -94,7 +95,7 @@ namespace orangutan::memory {
         if (days <= 1) {
             return {};
         }
-        return spdlog::fmt_lib::format("({} — verify before acting on this)", memory_age_text(updated_at));
+        return utils::format("({} — verify before acting on this)", memory_age_text(updated_at));
     }
 
 } // namespace orangutan::memory

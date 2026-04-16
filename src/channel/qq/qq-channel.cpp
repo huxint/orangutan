@@ -6,6 +6,7 @@
 #include "channel/qq/qq-channel-session.hpp"
 #include "channel/qq/qq-message-builder.hpp"
 #include "channel/qq/qq-transport.hpp"
+#include "utils/format.hpp"
 #include "utils/string.hpp"
 #include "types/base.hpp"
 
@@ -15,7 +16,6 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <spdlog/fmt/bundled/format.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
@@ -705,7 +705,7 @@ namespace orangutan::channel::qq {
 
                 const auto last_seen_text = item.value("last_seen", std::string{});
                 const auto last_seen = parse_iso_utc(last_seen_text).value_or(std::chrono::system_clock::now());
-                loaded.emplace(spdlog::fmt_lib::format("{}:{}", kind, openid), RuntimeState::known_user{
+                loaded.emplace(utils::format("{}:{}", kind, openid), RuntimeState::known_user{
                                                                                    .kind = kind,
                                                                                    .openid = openid,
                                                                                    .last_seen_at = last_seen,

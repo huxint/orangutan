@@ -1,10 +1,10 @@
 #include "storage/session-store.hpp"
 #include "types/base.hpp"
+#include "utils/format.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <spdlog/common.h>
 #include <iterator>
 #include <random>
 #include <stdexcept>
@@ -315,7 +315,7 @@ namespace orangutan::storage {
         static std::mt19937 gen(rd());
         static std::uniform_int_distribution<base::u32> dist;
 
-        return spdlog::fmt_lib::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
+        return utils::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
                                        dist(gen) & 0xFFFF);
     }
 

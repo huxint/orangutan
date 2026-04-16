@@ -146,7 +146,7 @@ namespace orangutan::process {
             static std::atomic<base::u64> counter{0};
             const auto now = std::chrono::steady_clock::now().time_since_epoch();
             const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-            return spdlog::fmt_lib::format("{}-{}", ticks, ++counter);
+            return utils::format("{}-{}", ticks, ++counter);
         }
 
         struct CapturedOutput {

@@ -1,13 +1,13 @@
 #pragma once
 
+#include "utils/format.hpp"
+
 #include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
-#include <spdlog/fmt/bundled/format.h>
-#include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
 
@@ -81,7 +81,7 @@ namespace orangutan::channel::qq {
         }
 
         const auto tod = std::chrono::hh_mm_ss{truncated - day};
-        return spdlog::fmt_lib::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()),
+        return utils::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", static_cast<int>(ymd.year()), static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()),
                                        static_cast<int>(tod.hours().count()), static_cast<int>(tod.minutes().count()), static_cast<int>(tod.seconds().count()));
     }
 
