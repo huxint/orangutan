@@ -3,6 +3,7 @@
 #include "providers/provider.hpp"
 #include "providers/transport/http-transport.hpp"
 
+#include <functional>
 #include <memory>
 
 namespace orangutan::providers::protocols {
@@ -50,24 +51,11 @@ namespace orangutan::providers::protocols {
         ProtocolAdapter() = default;
     };
 
-    class AuthStrategy {
-    public:
-        virtual ~AuthStrategy() = default;
-
-        AuthStrategy(const AuthStrategy &) = delete;
-        AuthStrategy &operator=(const AuthStrategy &) = delete;
-        AuthStrategy(AuthStrategy &&) = delete;
-        AuthStrategy &operator=(AuthStrategy &&) = delete;
-
-        virtual void apply(const ModelTarget &target, transport::header_map &headers) const = 0;
-
-    protected:
-        AuthStrategy() = default;
-    };
+    using AuthFn = std::function<void(const ModelTarget &, transport::header_map &)>;
 
     struct ProviderAssembly {
         std::shared_ptr<const ProtocolAdapter> adapter;
-        std::shared_ptr<const AuthStrategy> auth;
+        AuthFn auth;
     };
 
 } // namespace orangutan::providers::protocols

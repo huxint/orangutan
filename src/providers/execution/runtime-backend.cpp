@@ -162,7 +162,7 @@ namespace orangutan::providers::execution {
 
                         auto http_request = assembly.adapter->build_request(target, effective_request);
                         http_request.timeout_seconds = effective_request.options.timeout_seconds;
-                        assembly.auth->apply(target, http_request.headers);
+                        assembly.auth(target, http_request.headers);
 
                         auto tracking_sink = [&](const ProviderEvent &event) {
                             emitted_stream_event = true;
