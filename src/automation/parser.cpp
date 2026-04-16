@@ -5,6 +5,7 @@
 #include <charconv>
 #include <chrono>
 #include <cctype>
+#include <cstddef>
 #include <expected>
 #include <iomanip>
 #include <limits>
@@ -52,11 +53,7 @@ namespace orangutan::automation {
             std::string_view{"time_zone"},
         };
         constexpr std::array INTERVAL_TRIGGER_FIELDS{
-            std::string_view{"type"},
-            std::string_view{"every"},
-            std::string_view{"jitter"},
-            std::string_view{"time_zone"},
-            std::string_view{"active_windows"},
+            std::string_view{"type"}, std::string_view{"every"}, std::string_view{"jitter"}, std::string_view{"time_zone"}, std::string_view{"active_windows"},
         };
         constexpr std::array ONCE_TRIGGER_FIELDS{
             std::string_view{"type"},
@@ -256,34 +253,34 @@ namespace orangutan::automation {
 
     nlohmann::json trigger_to_json(const TriggerDefinition &trigger) {
         switch (trigger.type) {
-        case trigger_type::cron:
-            return {
-                {"type", "cron"},
-                {"cron", trigger.cron},
-                {"time_zone", trigger.time_zone.empty() ? "UTC" : trigger.time_zone},
-            };
-        case trigger_type::interval: {
-            nlohmann::json active_windows = nlohmann::json::array();
-            for (const auto &window : trigger.active_windows) {
-                active_windows.push_back({
-                    {"start", format_time_of_day(window.start)},
-                    {"end", format_time_of_day(window.end)},
-                });
-            }
+            case trigger_type::cron:
+                return {
+                    {"type", "cron"},
+                    {"cron", trigger.cron},
+                    {"time_zone", trigger.time_zone.empty() ? "UTC" : trigger.time_zone},
+                };
+            case trigger_type::interval: {
+                nlohmann::json active_windows = nlohmann::json::array();
+                for (const auto &window : trigger.active_windows) {
+                    active_windows.push_back({
+                        {"start", format_time_of_day(window.start)},
+                        {"end", format_time_of_day(window.end)},
+                    });
+                }
 
-            return {
-                {"type", "interval"},
-                {"every", format_duration_string(trigger.every)},
-                {"jitter", format_duration_string(trigger.jitter)},
-                {"time_zone", trigger.time_zone.empty() ? "UTC" : trigger.time_zone},
-                {"active_windows", std::move(active_windows)},
-            };
-        }
-        case trigger_type::once:
-            return {
-                {"type", "once"},
-                {"at", format_iso_utc(trigger.at)},
-            };
+                return {
+                    {"type", "interval"},
+                    {"every", format_duration_string(trigger.every)},
+                    {"jitter", format_duration_string(trigger.jitter)},
+                    {"time_zone", trigger.time_zone.empty() ? "UTC" : trigger.time_zone},
+                    {"active_windows", std::move(active_windows)},
+                };
+            }
+            case trigger_type::once:
+                return {
+                    {"type", "once"},
+                    {"at", format_iso_utc(trigger.at)},
+                };
         }
 
         return nlohmann::json::object();
@@ -425,16 +422,16 @@ namespace orangutan::automation {
         }
 
         switch (value.back()) {
-        case 's':
-            return seconds_from_numeric(numeric, 1);
-        case 'm':
-            return seconds_from_numeric(numeric, 60);
-        case 'h':
-            return seconds_from_numeric(numeric, 60 * 60);
-        case 'd':
-            return seconds_from_numeric(numeric, 24 * 60 * 60);
-        default:
-            return std::unexpected("duration must end with s, m, h, or d");
+            case 's':
+                return seconds_from_numeric(numeric, 1);
+            case 'm':
+                return seconds_from_numeric(numeric, 60);
+            case 'h':
+                return seconds_from_numeric(numeric, static_cast<long long>(60) * 60);
+            case 'd':
+                return seconds_from_numeric(numeric, static_cast<long long>(24) * 60 * 60);
+            default:
+                return std::unexpected("duration must end with s, m, h, or d");
         }
     }
 

@@ -8,7 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "types/types.hpp"
+#include "types/base.hpp"
 
 namespace orangutan::automation {
 
