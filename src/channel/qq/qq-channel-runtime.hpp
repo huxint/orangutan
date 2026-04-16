@@ -2,6 +2,7 @@
 
 #include "channel/qq/qq-transport.hpp"
 #include "types/base.hpp"
+#include "utils/periodic-task.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -10,7 +11,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
 namespace orangutan::channel::qq {
@@ -54,8 +54,6 @@ namespace orangutan::channel::qq {
 
         std::mutex mutex;
         std::condition_variable cv;
-        std::mutex heartbeat_mutex;
-        std::condition_variable_any heartbeat_cv;
         bool ready = false;
         bool hello_received = false;
         bool close_requested = false;
@@ -63,13 +61,10 @@ namespace orangutan::channel::qq {
         base::u32 last_seq = 0;
         std::string session_id;
         std::chrono::milliseconds heartbeat_interval{0};
-        std::jthread heartbeat_thread;
-        std::mutex token_refresh_mutex;
-        std::condition_variable_any token_refresh_cv;
-        std::jthread token_refresh_thread;
+        utils::PeriodicTask heartbeat_task;
+        utils::PeriodicTask token_refresh_task;
+        utils::PeriodicTask debounce_task;
         std::mutex debounce_mutex;
-        std::condition_variable_any debounce_cv;
-        std::jthread debounce_thread;
         std::unordered_map<std::string, pending_debounced_message> pending_messages;
         std::chrono::milliseconds debounce_window{1500};
         std::chrono::milliseconds debounce_max_wait{8000};
@@ -83,8 +78,7 @@ namespace orangutan::channel::qq {
         std::unordered_map<std::string, std::string> ref_index_cache;
         static constexpr std::size_t REF_INDEX_MAX_ENTRIES = 50000;
         std::mutex typing_mutex;
-        std::condition_variable_any typing_cv;
-        std::jthread typing_thread;
+        utils::PeriodicTask typing_task;
         std::unordered_map<std::string, typing_state> typing_states;
         std::unique_ptr<Transport> websocket;
     };

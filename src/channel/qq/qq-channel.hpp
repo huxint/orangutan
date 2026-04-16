@@ -14,6 +14,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace orangutan::utils {
+    class TaskPool;
+}
+
 namespace orangutan::channel::qq {
     [[nodiscard]]
     base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value);
@@ -22,7 +26,7 @@ namespace orangutan::channel::qq {
 
     class QqChannel : public Channel {
     public:
-        QqChannel(std::string bot_name, std::string app_id, std::string client_secret);
+        QqChannel(std::string bot_name, std::string app_id, std::string client_secret, utils::TaskPool &task_pool);
         ~QqChannel() override;
         QqChannel(const QqChannel &) = delete;
         QqChannel &operator=(const QqChannel &) = delete;
@@ -71,6 +75,7 @@ namespace orangutan::channel::qq {
         std::string bot_name_;
         std::string app_id_;
         std::string client_secret_;
+        utils::TaskPool *task_pool_ = nullptr;
         std::unique_ptr<QqApiClient> api_client_;
         std::atomic<base::u16> msg_seq_{0};
         std::unordered_map<std::string, MessageReplyTracker> reply_trackers_;

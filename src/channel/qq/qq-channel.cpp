@@ -8,6 +8,7 @@
 #include "channel/qq/qq-transport.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
+#include "utils/task-pool.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
@@ -19,7 +20,6 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
-#include <thread>
 #include <tuple>
 #include <utility>
 
@@ -40,10 +40,11 @@ namespace orangutan::channel::qq {
 
     using RuntimeState = qq_channel_runtime_state;
 
-    QqChannel::QqChannel(std::string bot_name, std::string app_id, std::string client_secret)
+    QqChannel::QqChannel(std::string bot_name, std::string app_id, std::string client_secret, utils::TaskPool &task_pool)
     : bot_name_(std::move(bot_name)),
       app_id_(std::move(app_id)),
       client_secret_(std::move(client_secret)),
+      task_pool_(&task_pool),
       api_client_(std::make_unique<QqApiClient>(app_id_, client_secret_)),
       runtime_(std::make_unique<qq_channel_runtime_state>()) {}
 
@@ -375,123 +376,81 @@ namespace orangutan::channel::qq {
         stop_heartbeat();
 
         runtime_->heartbeat_interval = interval;
-        runtime_->heartbeat_thread = std::jthread([this](std::stop_token token) {
-            while (!token.stop_requested()) {
-                std::unique_lock<std::mutex> wait_lock(runtime_->heartbeat_mutex);
-                const bool should_stop = runtime_->heartbeat_cv.wait_for(wait_lock, token, runtime_->heartbeat_interval, [&token] {
-                    return token.stop_requested();
-                });
-                wait_lock.unlock();
+        runtime_->heartbeat_task.start(*task_pool_, interval, [this] {
+            nlohmann::json heartbeat{
+                {"op", GATEWAY_OP_HEARTBEAT},
+            };
 
-                if (should_stop || token.stop_requested()) {
-                    break;
-                }
-
-                nlohmann::json heartbeat{
-                    {"op", GATEWAY_OP_HEARTBEAT},
-                };
-
-                {
-                    std::scoped_lock lock(runtime_->mutex);
-                    if (runtime_->last_seq == 0) {
-                        heartbeat["d"] = nullptr;
-                    } else {
-                        heartbeat["d"] = runtime_->last_seq;
-                    }
-                }
-
-                try {
-                    send_gateway_payload(heartbeat);
-                } catch (const std::exception &e) {
-                    spdlog::warn("QQ heartbeat send failed: {}", e.what());
-                    connected_ = false;
-                    return;
+            {
+                std::scoped_lock lock(runtime_->mutex);
+                if (runtime_->last_seq == 0) {
+                    heartbeat["d"] = nullptr;
+                } else {
+                    heartbeat["d"] = runtime_->last_seq;
                 }
             }
+
+            try {
+                send_gateway_payload(heartbeat);
+            } catch (const std::exception &e) {
+                spdlog::warn("QQ heartbeat send failed: {}", e.what());
+                connected_ = false;
+                return false;
+            }
+            return true;
         });
     }
 
     void QqChannel::stop_heartbeat() {
-        if (runtime_->heartbeat_thread.joinable()) {
-            runtime_->heartbeat_thread.request_stop();
-            runtime_->heartbeat_cv.notify_all();
-            runtime_->heartbeat_thread.join();
-        }
+        runtime_->heartbeat_task.stop();
     }
 
     void QqChannel::start_token_refresh_loop() {
         stop_token_refresh_loop();
 
-        runtime_->token_refresh_thread = std::jthread([this](std::stop_token token) {
-            while (!token.stop_requested()) {
-                std::unique_lock lock(runtime_->token_refresh_mutex);
-                const bool should_stop = runtime_->token_refresh_cv.wait_for(lock, token, std::chrono::minutes(1), [&token] {
-                    return token.stop_requested();
-                });
-                lock.unlock();
-
-                if (should_stop || token.stop_requested()) {
-                    break;
-                }
-
-                try {
-                    api_client_->refresh_access_token_if_due();
-                } catch (const std::exception &e) {
-                    spdlog::warn("QQ background token refresh failed: {}", e.what());
-                }
+        runtime_->token_refresh_task.start(*task_pool_, std::chrono::minutes(1), [this] {
+            try {
+                api_client_->refresh_access_token_if_due();
+            } catch (const std::exception &e) {
+                spdlog::warn("QQ background token refresh failed: {}", e.what());
             }
+            return true;
         });
     }
 
     void QqChannel::stop_token_refresh_loop() {
-        if (runtime_->token_refresh_thread.joinable()) {
-            runtime_->token_refresh_thread.request_stop();
-            runtime_->token_refresh_cv.notify_all();
-            runtime_->token_refresh_thread.join();
-        }
+        runtime_->token_refresh_task.stop();
     }
 
     void QqChannel::start_debounce_loop() {
         stop_debounce_loop();
 
-        runtime_->debounce_thread = std::jthread([this](std::stop_token token) {
-            while (!token.stop_requested()) {
-                std::vector<std::tuple<std::string, std::string, std::string, std::string>> ready_messages;
-                {
-                    std::unique_lock lock(runtime_->debounce_mutex);
-                    runtime_->debounce_cv.wait_for(lock, token, std::chrono::milliseconds(200), [this, &token] {
-                        return token.stop_requested() || !runtime_->pending_messages.empty();
-                    });
-                    if (token.stop_requested()) {
-                        break;
+        runtime_->debounce_task.start(*task_pool_, std::chrono::milliseconds(200), [this] {
+            std::vector<std::tuple<std::string, std::string, std::string, std::string>> ready_messages;
+            {
+                std::scoped_lock lock(runtime_->debounce_mutex);
+                const auto now = std::chrono::steady_clock::now();
+                for (auto it = runtime_->pending_messages.begin(); it != runtime_->pending_messages.end();) {
+                    const auto elapsed_since_update = now - it->second.last_update_at;
+                    const auto elapsed_since_first = now - it->second.first_enqueued_at;
+                    if (elapsed_since_update >= runtime_->debounce_window || elapsed_since_first >= runtime_->debounce_max_wait) {
+                        ready_messages.emplace_back(it->first, it->second.text, it->second.reply_to_message_id, it->second.reference_message_id);
+                        it = runtime_->pending_messages.erase(it);
+                    } else {
+                        ++it;
                     }
-
-                    const auto now = std::chrono::steady_clock::now();
-                    for (auto it = runtime_->pending_messages.begin(); it != runtime_->pending_messages.end();) {
-                        const auto elapsed_since_update = now - it->second.last_update_at;
-                        const auto elapsed_since_first = now - it->second.first_enqueued_at;
-                        if (elapsed_since_update >= runtime_->debounce_window || elapsed_since_first >= runtime_->debounce_max_wait) {
-                            ready_messages.emplace_back(it->first, it->second.text, it->second.reply_to_message_id, it->second.reference_message_id);
-                            it = runtime_->pending_messages.erase(it);
-                        } else {
-                            ++it;
-                        }
-                    }
-                }
-
-                for (const auto &[jid, text, reply_to, reference] : ready_messages) {
-                    flush_debounced_text(jid, text, reply_to, reference);
                 }
             }
+
+            for (const auto &[jid, text, reply_to, reference] : ready_messages) {
+                flush_debounced_text(jid, text, reply_to, reference);
+            }
+            return true;
         });
     }
 
     void QqChannel::stop_debounce_loop() {
-        if (runtime_->debounce_thread.joinable()) {
-            runtime_->debounce_thread.request_stop();
-            runtime_->debounce_cv.notify_all();
-            runtime_->debounce_thread.join();
-        }
+        runtime_->debounce_task.stop();
 
         std::vector<std::tuple<std::string, std::string, std::string, std::string>> remaining_messages;
         {
@@ -544,7 +503,6 @@ namespace orangutan::channel::qq {
             const auto &[flush_jid, flush_text, flush_reply_to, flush_reference] = *immediate_flush;
             flush_debounced_text(flush_jid, flush_text, flush_reply_to, flush_reference);
         }
-        runtime_->debounce_cv.notify_all();
     }
 
     void QqChannel::flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id) {
@@ -983,7 +941,6 @@ namespace orangutan::channel::qq {
                 .last_sent_at = std::chrono::steady_clock::now(),
             };
         }
-        runtime_->typing_cv.notify_all();
     }
 
     void QqChannel::stop_typing(const std::string &jid) {
@@ -1005,41 +962,29 @@ namespace orangutan::channel::qq {
 
     void QqChannel::start_typing_keepalive() {
         stop_typing_keepalive();
-        runtime_->typing_thread = std::jthread([this](std::stop_token token) {
+        runtime_->typing_task.start(*task_pool_, std::chrono::seconds(10), [this] {
             constexpr auto TYPING_INTERVAL = std::chrono::seconds(50);
-            while (!token.stop_requested()) {
-                std::vector<std::pair<std::string, std::string>> to_send;
-                {
-                    std::unique_lock lock(runtime_->typing_mutex);
-                    runtime_->typing_cv.wait_for(lock, token, std::chrono::seconds(10), [this, &token] {
-                        return token.stop_requested() || !runtime_->typing_states.empty();
-                    });
-                    if (token.stop_requested()) {
-                        break;
+            std::vector<std::pair<std::string, std::string>> to_send;
+            {
+                std::scoped_lock lock(runtime_->typing_mutex);
+                const auto now = std::chrono::steady_clock::now();
+                for (auto &[jid, state] : runtime_->typing_states) {
+                    if (now - state.last_sent_at >= TYPING_INTERVAL) {
+                        to_send.emplace_back(jid, state.message_id);
+                        state.last_sent_at = now;
                     }
-
-                    const auto now = std::chrono::steady_clock::now();
-                    for (auto &[jid, state] : runtime_->typing_states) {
-                        if (now - state.last_sent_at >= TYPING_INTERVAL) {
-                            to_send.emplace_back(jid, state.message_id);
-                            state.last_sent_at = now;
-                        }
-                    }
-                }
-
-                for (const auto &[jid, message_id] : to_send) {
-                    send_typing_now(jid, message_id);
                 }
             }
+
+            for (const auto &[jid, message_id] : to_send) {
+                send_typing_now(jid, message_id);
+            }
+            return true;
         });
     }
 
     void QqChannel::stop_typing_keepalive() {
-        if (runtime_->typing_thread.joinable()) {
-            runtime_->typing_thread.request_stop();
-            runtime_->typing_cv.notify_all();
-            runtime_->typing_thread.join();
-        }
+        runtime_->typing_task.stop();
     }
 
 } // namespace orangutan::channel::qq

@@ -826,7 +826,7 @@ namespace orangutan::bootstrap {
         }
     }
 
-    void add_configured_channels(ChannelManager &channel_manager, const Config &cfg) {
+    void add_configured_channels(ChannelManager &channel_manager, const Config &cfg, utils::TaskPool &task_pool) {
         for (const auto &bot : cfg.qq_bots) {
             const bool has_qq_app_id = !bot.app_id.empty();
             const bool has_qq_secret = !bot.client_secret.empty();
@@ -840,7 +840,7 @@ namespace orangutan::bootstrap {
             }
 
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-            channel_manager.add_channel(std::make_unique<QqChannel>(bot.name, bot.app_id, bot.client_secret));
+            channel_manager.add_channel(std::make_unique<QqChannel>(bot.name, bot.app_id, bot.client_secret, task_pool));
 #else
             spdlog::warn("QQ credentials are configured, but this build was compiled without QQ support. Rebuild with -DORANGUTAN_ENABLE_QQ_CHANNEL=ON");
 #endif

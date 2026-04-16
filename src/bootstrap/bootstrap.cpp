@@ -411,7 +411,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     app_runtime.automation_runtime().register_category(orangutan::heartbeat::make_heartbeat_category(cfg.ack_max_chars));
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
-    orangutan::bootstrap::add_configured_channels(channel_manager, cfg);
+    orangutan::bootstrap::add_configured_channels(channel_manager, cfg, app_runtime.task_pool());
     app_runtime.automation_runtime().set_notifier([&channel_manager](std::string_view target, std::string_view title, std::string_view body) -> std::optional<std::string> {
         try {
             std::string message;

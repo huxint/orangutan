@@ -3,6 +3,7 @@
 #include "channel/qq/qq-channel-inbound.hpp"
 #include "channel/qq/qq-channel-outbound.hpp"
 #include "channel/qq/qq-channel-runtime.hpp"
+#include "utils/task-pool.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -111,6 +112,11 @@ namespace {
 
     namespace qqtest = orangutan::channel::qq;
 
+    orangutan::utils::TaskPool &shared_test_task_pool() {
+        static orangutan::utils::TaskPool pool{1};
+        return pool;
+    }
+
     class FakeQqApiClient final : public QqApiClient {
     public:
         struct Request {
@@ -196,7 +202,7 @@ namespace {
     TEST_CASE("qq_channel_passive_reply_quota_requires_known_message_and_enforces_limit") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
 
         CHECK_FALSE(qqtest::QqChannelTestAccess::consume_passive_reply_quota(channel, "unknown"));
         CHECK(qqtest::QqChannelTestAccess::resolve_passive_reply_message_id(channel, "unknown").empty());
@@ -210,7 +216,7 @@ namespace {
     TEST_CASE("qq_channel_chunked_reply_falls_back_to_proactive_when_reply_quota_is_insufficient") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -231,7 +237,7 @@ namespace {
     TEST_CASE("qq_channel_media_send_supports_caption_text_and_reference") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -256,7 +262,7 @@ namespace {
     TEST_CASE("qq_channel_keyboard_send_preserves_keyboard_and_omits_message_reference") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -278,7 +284,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         fake_api->download_response = QqApiResponse{
@@ -342,7 +348,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         fake_api->post_responses.push_back(QqApiResponse{
@@ -379,7 +385,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -401,7 +407,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -421,7 +427,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
@@ -437,7 +443,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         InboundMessage captured;
         bool called = false;
         qqtest::QqChannelTestAccess::set_on_message(channel, [&](const InboundMessage &message) {
@@ -467,7 +473,7 @@ namespace {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
-        QqChannel channel("bot", "app-id", "client-secret");
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));

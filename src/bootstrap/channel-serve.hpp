@@ -13,6 +13,7 @@
 #include "storage/session-store.hpp"
 #include "tools/registry/tool.hpp"
 #include "tools/registry/tool-context.hpp"
+#include "utils/task-pool.hpp"
 #include "utils/transparent-lookup.hpp"
 
 #include <atomic>
@@ -97,7 +98,7 @@ namespace orangutan::bootstrap {
     [[nodiscard]]
     std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
 
-    void add_configured_channels(ChannelManager &channel_manager, const Config &cfg);
+    void add_configured_channels(ChannelManager &channel_manager, const Config &cfg, utils::TaskPool &task_pool);
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
