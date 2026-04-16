@@ -5,6 +5,8 @@
 #include <chrono>
 #include <utility>
 
+#include <exec/repeat_effect_until.hpp>
+#include <exec/timed_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 namespace orangutan::automation {
@@ -64,8 +66,9 @@ namespace orangutan::automation {
         }
     }
 
-    AutomationRuntime::AutomationRuntime(AutomationService &service, ClockSource clock)
+    AutomationRuntime::AutomationRuntime(AutomationService &service, utils::TaskPool &pool, ClockSource clock)
     : service_(&service),
+      pool_(&pool),
       clock_(std::move(clock)) {}
 
     AutomationRuntime::~AutomationRuntime() {
@@ -94,23 +97,35 @@ namespace orangutan::automation {
         }
 
         service_->normalize_state(current_time());
-        worker_ = std::jthread([this](std::stop_token stop_token) {
-            scheduler_loop(stop_token);
-        });
+
+        auto tick = stdexec::schedule(pool_->scheduler())
+                  | stdexec::then([this] {
+                        if (running_.load()) {
+                            try {
+                                run_pending(current_time());
+                            } catch (...) { // NOLINT(bugprone-empty-catch): next tick retries
+                            }
+                        }
+                    })
+                  | stdexec::let_value([this] {
+                        return exec::schedule_after(pool_->timed_scheduler(), std::chrono::seconds{1})
+                             | stdexec::then([this] {
+                                   return !running_.load();
+                               });
+                    })
+                  | exec::repeat_effect_until();
+
+        scope_.spawn(std::move(tick));
     }
 
     void AutomationRuntime::stop() {
-        const bool was_running = running_.exchange(false);
-        cv_.notify_all();
-
-        if (worker_.joinable()) {
-            worker_.request_stop();
-            worker_.join();
-        }
-
-        if (!was_running) {
+        if (!running_.exchange(false)) {
+            static_cast<void>(stdexec::sync_wait(scope_.on_empty()));
             return;
         }
+
+        scope_.request_stop();
+        static_cast<void>(stdexec::sync_wait(scope_.on_empty()));
     }
 
     void AutomationRuntime::run_pending(TimePoint now) {
@@ -134,16 +149,6 @@ namespace orangutan::automation {
 
     const AutomationService &AutomationRuntime::service() const noexcept {
         return *service_;
-    }
-
-    void AutomationRuntime::scheduler_loop(std::stop_token stop_token) {
-        while (running_.load() && !stop_token.stop_requested()) {
-            run_pending(current_time());
-            std::unique_lock lock(mutex_);
-            static_cast<void>(cv_.wait_for(lock, stop_token, std::chrono::seconds{1}, [this] {
-                return !running_.load();
-            }));
-        }
     }
 
     TimePoint AutomationRuntime::current_time() const {

@@ -5,6 +5,7 @@
 #include "automation/runtime.hpp"
 #include "automation/service.hpp"
 #include "tools/background/background-completion.hpp"
+#include "utils/task-pool.hpp"
 #include "utils/utf8-policy.hpp"
 #include "test-helpers.hpp"
 #include "test-provider-support.hpp"
@@ -103,7 +104,8 @@ namespace {
 
             repository_ = std::make_shared<orangutan::automation::Repository>(db_path);
             service_ = std::make_shared<orangutan::automation::AutomationService>(*repository_);
-            runtime_ = std::make_unique<orangutan::automation::AutomationRuntime>(*service_);
+            task_pool_ = std::make_unique<orangutan::utils::TaskPool>(1);
+            runtime_ = std::make_unique<orangutan::automation::AutomationRuntime>(*service_, *task_pool_);
             resume_state_ = std::make_shared<ResumeMessagesState>();
             tool_context_ = ToolRuntimeContext{
                 .runtime_key = "runtime:test:background-shell",
@@ -187,6 +189,7 @@ namespace {
         std::filesystem::path workspace_root_;
         std::shared_ptr<orangutan::automation::Repository> repository_;
         std::shared_ptr<orangutan::automation::AutomationService> service_;
+        std::unique_ptr<orangutan::utils::TaskPool> task_pool_;
         std::unique_ptr<orangutan::automation::AutomationRuntime> runtime_;
         std::shared_ptr<ResumeMessagesState> resume_state_;
     };

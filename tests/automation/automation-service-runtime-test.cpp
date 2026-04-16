@@ -15,6 +15,7 @@
 #include "automation/service.hpp"
 #include "heartbeat/heartbeat-automation.hpp"
 #include "test-helpers.hpp"
+#include "utils/task-pool.hpp"
 
 namespace {
 
@@ -28,6 +29,7 @@ namespace {
         std::filesystem::path db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "automation.db");
         orangutan::automation::Repository repository{db_path};
         orangutan::automation::TimePoint current_time = orangutan::automation::from_unix_seconds(1'000);
+        orangutan::utils::TaskPool task_pool{1};
         orangutan::automation::AutomationService service{
             repository,
             [this] {
@@ -36,6 +38,7 @@ namespace {
         };
         orangutan::automation::AutomationRuntime runtime{
             service,
+            task_pool,
             [this] {
                 return current_time;
             },
@@ -281,7 +284,8 @@ namespace {
         orangutan::automation::AutomationService reopened_service(reopened_repository, [&current_time] {
             return current_time;
         });
-        orangutan::automation::AutomationRuntime reopened_runtime(reopened_service, [&current_time] {
+        orangutan::utils::TaskPool reopened_pool{1};
+        orangutan::automation::AutomationRuntime reopened_runtime(reopened_service, reopened_pool, [&current_time] {
             return current_time;
         });
 

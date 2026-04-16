@@ -1,20 +1,21 @@
 #pragma once
 
 #include "automation/service.hpp"
+#include "utils/task-pool.hpp"
 
 #include <atomic>
-#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+
+#include <exec/async_scope.hpp>
 
 namespace orangutan::automation {
 
@@ -43,7 +44,7 @@ namespace orangutan::automation {
             std::thread::id owner_;
         };
 
-        explicit AutomationRuntime(AutomationService &service, ClockSource clock = {});
+        AutomationRuntime(AutomationService &service, utils::TaskPool &pool, ClockSource clock = {});
         ~AutomationRuntime();
 
         AutomationRuntime(const AutomationRuntime &) = delete;
@@ -69,8 +70,6 @@ namespace orangutan::automation {
         const AutomationService &service() const noexcept;
 
     private:
-        void scheduler_loop(std::stop_token stop_token);
-
         [[nodiscard]]
         TimePoint current_time() const;
 
@@ -78,11 +77,10 @@ namespace orangutan::automation {
         std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(std::string_view agent_key);
 
         AutomationService *service_ = nullptr;
+        utils::TaskPool *pool_ = nullptr;
         ClockSource clock_;
-        std::jthread worker_;
+        exec::async_scope scope_;
         std::atomic<bool> running_{false};
-        mutable std::mutex mutex_;
-        std::condition_variable_any cv_;
         std::mutex agent_execution_gates_mutex_;
         std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
     };
