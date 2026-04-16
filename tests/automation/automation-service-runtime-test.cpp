@@ -210,7 +210,7 @@ namespace {
 
     TEST_CASE("service_suppresses_heartbeat_ok_deliveries_for_managed_heartbeat_automations") {
         ServiceHarness harness;
-        harness.service.set_delivery_filter([](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {
+        harness.service.add_delivery_filter([](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {
             return orangutan::heartbeat::heartbeat_delivery_disposition(automation, result, 300);
         });
         harness.service.set_executor([](const orangutan::automation::Automation &) {

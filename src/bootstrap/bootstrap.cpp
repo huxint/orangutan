@@ -408,10 +408,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return result;
         }
     });
-    app_runtime.automation_runtime().set_delivery_filter(
-        [ack_max_chars = cfg.ack_max_chars](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {
-            return orangutan::heartbeat::heartbeat_delivery_disposition(automation, result, ack_max_chars);
-        });
+    app_runtime.automation_runtime().register_category(orangutan::heartbeat::make_heartbeat_category(cfg.ack_max_chars));
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
     orangutan::bootstrap::add_configured_channels(channel_manager, cfg);

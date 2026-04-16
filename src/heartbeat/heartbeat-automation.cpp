@@ -2,15 +2,8 @@
 
 #include "heartbeat/heartbeat-ok.hpp"
 
-#include <algorithm>
-
 namespace orangutan::heartbeat {
     namespace {
-
-        [[nodiscard]]
-        bool has_tag(const automation::Automation &automation, std::string_view tag) {
-            return std::ranges::find(automation.tags, tag) != automation.tags.end();
-        }
 
         [[nodiscard]]
         std::string_view result_body(const automation::ExecutionResult &result) {
@@ -24,11 +17,11 @@ namespace orangutan::heartbeat {
     } // namespace
 
     bool is_heartbeat_automation(const automation::Automation &automation) {
-        return has_tag(automation, HEARTBEAT_AUTOMATION_TAG);
+        return automation::has_tag(automation, HEARTBEAT_AUTOMATION_TAG);
     }
 
     bool is_managed_heartbeat_automation(const automation::Automation &automation) {
-        return has_tag(automation, MANAGED_HEARTBEAT_AUTOMATION_TAG);
+        return automation::has_tag(automation, MANAGED_HEARTBEAT_AUTOMATION_TAG);
     }
 
     std::optional<automation::DeliveryDisposition> heartbeat_delivery_disposition(const automation::Automation &automation, const automation::ExecutionResult &result,
@@ -44,6 +37,16 @@ namespace orangutan::heartbeat {
         return automation::DeliveryDisposition{
             .suppress = true,
             .status = "heartbeat_ok",
+        };
+    }
+
+    automation::AutomationCategory make_heartbeat_category(int ack_max_chars) {
+        return automation::AutomationCategory{
+            .tag = std::string(HEARTBEAT_AUTOMATION_TAG),
+            .managed_tag = std::string(MANAGED_HEARTBEAT_AUTOMATION_TAG),
+            .delivery_filter = [ack_max_chars](const automation::Automation &automation, const automation::ExecutionResult &result) {
+                return heartbeat_delivery_disposition(automation, result, ack_max_chars);
+            },
         };
     }
 

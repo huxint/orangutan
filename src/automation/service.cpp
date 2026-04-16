@@ -27,9 +27,15 @@ namespace orangutan::automation {
         executor_ = std::move(executor);
     }
 
-    void AutomationService::set_delivery_filter(AutomationDeliveryFilter filter) {
+    void AutomationService::add_delivery_filter(AutomationDeliveryFilter filter) {
         std::scoped_lock lock(mutex_);
-        delivery_filter_ = std::move(filter);
+        delivery_filters_.push_back(std::move(filter));
+    }
+
+    void AutomationService::register_category(AutomationCategory category) {
+        if (category.delivery_filter != nullptr) {
+            add_delivery_filter(std::move(category.delivery_filter));
+        }
     }
 
     void AutomationService::set_notifier(AutomationNotifier notifier) {
@@ -123,7 +129,7 @@ namespace orangutan::automation {
         std::scoped_lock lock(mutex_);
         return Callbacks{
             .executor = executor_,
-            .delivery_filter = delivery_filter_,
+            .delivery_filters = delivery_filters_,
             .notifier = notifier_,
         };
     }
@@ -192,8 +198,14 @@ namespace orangutan::automation {
         }
 
         std::optional<DeliveryDisposition> delivery_disposition;
-        if (callbacks_snapshot.delivery_filter != nullptr) {
-            delivery_disposition = callbacks_snapshot.delivery_filter(automation, result);
+        for (const auto &filter : callbacks_snapshot.delivery_filters) {
+            if (filter == nullptr) {
+                continue;
+            }
+            if (auto decision = filter(automation, result); decision.has_value()) {
+                delivery_disposition = std::move(decision);
+                break;
+            }
         }
 
         if (delivery_disposition.has_value() && delivery_disposition->suppress) {

@@ -76,8 +76,12 @@ namespace orangutan::automation {
         service_->set_executor(std::move(executor));
     }
 
-    void AutomationRuntime::set_delivery_filter(AutomationDeliveryFilter filter) {
-        service_->set_delivery_filter(std::move(filter));
+    void AutomationRuntime::add_delivery_filter(AutomationDeliveryFilter filter) {
+        service_->add_delivery_filter(std::move(filter));
+    }
+
+    void AutomationRuntime::register_category(AutomationCategory category) {
+        service_->register_category(std::move(category));
     }
 
     void AutomationRuntime::set_notifier(AutomationNotifier notifier) {

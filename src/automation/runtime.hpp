@@ -55,7 +55,8 @@ namespace orangutan::automation {
         void stop();
         void run_pending(TimePoint now);
         void set_executor(AutomationExecutor executor);
-        void set_delivery_filter(AutomationDeliveryFilter filter);
+        void add_delivery_filter(AutomationDeliveryFilter filter);
+        void register_category(AutomationCategory category);
         void set_notifier(AutomationNotifier notifier);
 
         [[nodiscard]]

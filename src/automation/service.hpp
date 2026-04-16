@@ -1,5 +1,6 @@
 #pragma once
 
+#include "automation/category.hpp"
 #include "automation/delivery.hpp"
 #include "automation/planner.hpp"
 #include "automation/repository.hpp"
@@ -23,7 +24,8 @@ namespace orangutan::automation {
         explicit AutomationService(Repository &repository, ClockSource clock = {});
 
         void set_executor(AutomationExecutor executor);
-        void set_delivery_filter(AutomationDeliveryFilter filter);
+        void add_delivery_filter(AutomationDeliveryFilter filter);
+        void register_category(AutomationCategory category);
         void set_notifier(AutomationNotifier notifier);
 
         [[nodiscard]]
@@ -66,7 +68,7 @@ namespace orangutan::automation {
 
         struct Callbacks {
             AutomationExecutor executor;
-            AutomationDeliveryFilter delivery_filter;
+            std::vector<AutomationDeliveryFilter> delivery_filters;
             AutomationNotifier notifier;
         };
 
@@ -94,7 +96,7 @@ namespace orangutan::automation {
         ClockSource clock_;
         mutable std::mutex mutex_;
         AutomationExecutor executor_;
-        AutomationDeliveryFilter delivery_filter_;
+        std::vector<AutomationDeliveryFilter> delivery_filters_;
         AutomationNotifier notifier_;
     };
 
