@@ -3,12 +3,14 @@
 namespace orangutan::bootstrap {
 
     AppRuntime::AppRuntime()
-    : automation_repository_(std::make_unique<orangutan::automation::Repository>()),
+    : task_pool_(std::make_unique<utils::TaskPool>()),
+      automation_repository_(std::make_unique<orangutan::automation::Repository>()),
       automation_service_(std::make_unique<orangutan::automation::AutomationService>(*automation_repository_)),
       automation_runtime_(std::make_unique<orangutan::automation::AutomationRuntime>(*automation_service_)) {}
 
     AppRuntime::AppRuntime(const std::filesystem::path &automation_db_path)
-    : automation_repository_(std::make_unique<orangutan::automation::Repository>(automation_db_path)),
+    : task_pool_(std::make_unique<utils::TaskPool>()),
+      automation_repository_(std::make_unique<orangutan::automation::Repository>(automation_db_path)),
       automation_service_(std::make_unique<orangutan::automation::AutomationService>(*automation_repository_)),
       automation_runtime_(std::make_unique<orangutan::automation::AutomationRuntime>(*automation_service_)) {}
 
@@ -34,6 +36,14 @@ namespace orangutan::bootstrap {
 
     const orangutan::automation::AutomationRuntime &AppRuntime::automation_runtime() const noexcept {
         return *automation_runtime_;
+    }
+
+    utils::TaskPool &AppRuntime::task_pool() noexcept {
+        return *task_pool_;
+    }
+
+    const utils::TaskPool &AppRuntime::task_pool() const noexcept {
+        return *task_pool_;
     }
 
 } // namespace orangutan::bootstrap
