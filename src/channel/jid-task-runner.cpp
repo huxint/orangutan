@@ -1,13 +1,18 @@
 #include "channel/jid-task-runner.hpp"
 
-#include <stdexec/execution.hpp>
+#include "utils/task-pool.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <vector>
+
+#include <exec/async_scope.hpp>
+#include <stdexec/execution.hpp>
 
 namespace orangutan::channel {
 
@@ -114,40 +119,30 @@ namespace orangutan::channel {
         };
     };
 
-    JidTaskRunner::BlockingLease::BlockingLease(JidTaskRunner *runner)
-    : runner_(runner) {}
+    struct JidTaskRunner::Impl {
+        utils::TaskPool pool;
+        exec::async_scope scope;
 
-    JidTaskRunner::BlockingLease::~BlockingLease() {
-        if (runner_ != nullptr) {
-            runner_->release_blocking_lease();
+        explicit Impl(std::size_t pool_size)
+        : pool{pool_size} {}
+    };
+
+    namespace {
+
+        constexpr std::size_t MIN_POOL_SIZE = 4;
+
+        [[nodiscard]]
+        std::size_t resolve_pool_size(std::size_t worker_count) {
+            return std::max<std::size_t>(worker_count, MIN_POOL_SIZE);
         }
-    }
 
-    JidTaskRunner::BlockingLease::BlockingLease(BlockingLease &&other) noexcept
-    : runner_(std::exchange(other.runner_, nullptr)) {}
-
-    JidTaskRunner::BlockingLease &JidTaskRunner::BlockingLease::operator=(BlockingLease &&other) noexcept {
-        if (this == &other) {
-            return *this;
-        }
-
-        if (runner_ != nullptr) {
-            runner_->release_blocking_lease();
-        }
-        runner_ = std::exchange(other.runner_, nullptr);
-        return *this;
-    }
+    } // namespace
 
     JidTaskRunner::JidTaskRunner(std::size_t worker_count)
-    : base_worker_count_(worker_count),
-      desired_worker_count_(worker_count) {
+    : worker_count_(worker_count),
+      impl_(std::make_unique<Impl>(resolve_pool_size(worker_count))) {
         if (worker_count == 0) {
             throw std::invalid_argument("JidTaskRunner requires at least one worker");
-        }
-
-        workers_.reserve(worker_count);
-        for (std::size_t i = 0; i < worker_count; ++i) {
-            spawn_worker_locked();
         }
     }
 
@@ -161,7 +156,7 @@ namespace orangutan::channel {
         }
 
         if (!task) {
-            spdlog::debug("Ignoring empty JidTaskRunner task for '{}'", jid);
+            spdlog::debug("ignoring empty jidtaskrunner task for '{}'", jid);
             return;
         }
 
@@ -170,9 +165,9 @@ namespace orangutan::channel {
                 try {
                     task();
                 } catch (const std::exception &e) {
-                    spdlog::error("Unhandled exception in JidTaskRunner task for '{}': {}", jid, e.what());
+                    spdlog::error("unhandled exception in jidtaskrunner task for '{}': {}", jid, e.what());
                 } catch (...) {
-                    spdlog::error("Unhandled non-standard exception in JidTaskRunner task for '{}'", jid);
+                    spdlog::error("unhandled non-standard exception in jidtaskrunner task for '{}'", jid);
                 }
             });
         stdexec::start_detached(std::move(pipeline));
@@ -188,6 +183,7 @@ namespace orangutan::channel {
             return;
         }
 
+        std::string activated_jid;
         {
             std::scoped_lock lock(mutex_);
             if (stopping_.load()) {
@@ -202,35 +198,101 @@ namespace orangutan::channel {
             }
 
             bucket.active = true;
-            ready_jids_.emplace(jid);
+            activated_jid.assign(jid);
         }
 
-        cv_.notify_one();
+        schedule_drain(std::move(activated_jid));
     }
 
-    void JidTaskRunner::shutdown(bool discard_pending) {
-        std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
-        {
-            discard_pending_.store(discard_pending);
-            stopping_.store(true);
+    void JidTaskRunner::schedule_drain(std::string jid) {
+        auto sender = stdexec::schedule(impl_->pool.scheduler())
+                    | stdexec::then([this, jid = std::move(jid)]() mutable {
+                          drain_step(jid);
+                      });
+        impl_->scope.spawn(std::move(sender));
+    }
 
+    void JidTaskRunner::drain_step(const std::string &jid) {
+        std::unique_ptr<QueuedTask> task;
+        {
             std::scoped_lock lock(mutex_);
-            if (workers_.empty()) {
+            auto it = buckets_.find(jid);
+            if (it == buckets_.end()) {
+                return;
+            }
+
+            if (stopping_.load() && discard_pending_.load()) {
+                for (auto &queued : it->second.tasks) {
+                    queued->cancel();
+                }
+                it->second.tasks.clear();
+                buckets_.erase(it);
+                return;
+            }
+
+            if (it->second.tasks.empty()) {
+                it->second.active = false;
+                buckets_.erase(it);
+                return;
+            }
+
+            task = std::move(it->second.tasks.front());
+            it->second.tasks.pop_front();
+        }
+
+        task->execute();
+
+        std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
+        bool more = false;
+        {
+            std::scoped_lock lock(mutex_);
+            auto it = buckets_.find(jid);
+            if (it == buckets_.end()) {
                 return;
             }
 
             if (discard_pending_.load()) {
-                ready_jids_ = {};
-                for (auto it = buckets_.begin(); it != buckets_.end();) {
-                    while (!it->second.tasks.empty()) {
-                        canceled_tasks.push_back(std::move(it->second.tasks.front()));
-                        it->second.tasks.pop_front();
+                for (auto &queued : it->second.tasks) {
+                    canceled_tasks.push_back(std::move(queued));
+                }
+                it->second.tasks.clear();
+            }
+
+            if (it->second.tasks.empty()) {
+                it->second.active = false;
+                buckets_.erase(it);
+            } else {
+                more = true;
+            }
+        }
+
+        for (auto &pending_task : canceled_tasks) {
+            pending_task->cancel();
+        }
+
+        if (more) {
+            schedule_drain(jid);
+        }
+    }
+
+    void JidTaskRunner::shutdown(bool discard_pending) {
+        discard_pending_.store(discard_pending);
+        if (stopping_.exchange(true)) {
+            if (impl_ != nullptr) {
+                static_cast<void>(stdexec::sync_wait(impl_->scope.on_empty()));
+            }
+            return;
+        }
+
+        std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
+        {
+            std::scoped_lock lock(mutex_);
+            if (discard_pending) {
+                for (auto &[jid, bucket] : buckets_) {
+                    while (!bucket.tasks.empty()) {
+                        canceled_tasks.push_back(std::move(bucket.tasks.front()));
+                        bucket.tasks.pop_front();
                     }
-                    if (!it->second.active) {
-                        it = buckets_.erase(it);
-                        continue;
-                    }
-                    ++it;
                 }
             }
         }
@@ -239,111 +301,20 @@ namespace orangutan::channel {
             task->cancel();
         }
 
-        cv_.notify_all();
-        for (auto &worker : workers_) {
-            if (worker.joinable()) {
-                worker.join();
+        if (impl_ != nullptr) {
+            if (discard_pending) {
+                impl_->scope.request_stop();
             }
+            static_cast<void>(stdexec::sync_wait(impl_->scope.on_empty()));
         }
-        workers_.clear();
     }
 
     JidTaskRunner::BlockingLease JidTaskRunner::acquire_blocking_lease() {
-        std::scoped_lock lock(mutex_);
-        if (stopping_.load()) {
-            return {};
-        }
-
-        ++desired_worker_count_;
-        if (live_worker_count_ < desired_worker_count_) {
-            spawn_worker_locked();
-        }
-        cv_.notify_one();
-        return BlockingLease(this);
+        return {};
     }
 
     std::size_t JidTaskRunner::worker_count() const {
-        return base_worker_count_;
-    }
-
-    void JidTaskRunner::spawn_worker_locked() {
-        ++live_worker_count_;
-        workers_.emplace_back([this] {
-            worker_loop();
-        });
-    }
-
-    void JidTaskRunner::release_blocking_lease() {
-        std::scoped_lock lock(mutex_);
-        if (desired_worker_count_ > base_worker_count_) {
-            --desired_worker_count_;
-        }
-        cv_.notify_all();
-    }
-
-    void JidTaskRunner::worker_loop() {
-        while (true) {
-            std::string jid;
-            std::unique_ptr<QueuedTask> task;
-
-            {
-                std::unique_lock<std::mutex> lock(mutex_);
-                cv_.wait(lock, [this] {
-                    return stopping_.load() || !ready_jids_.empty() || live_worker_count_ > desired_worker_count_;
-                });
-
-                if (ready_jids_.empty()) {
-                    if (stopping_.load() || live_worker_count_ > desired_worker_count_) {
-                        --live_worker_count_;
-                        cv_.notify_all();
-                        return;
-                    }
-                    continue;
-                }
-
-                jid = std::move(ready_jids_.front());
-                ready_jids_.pop();
-
-                auto it = buckets_.find(jid);
-                if (it == buckets_.end() || it->second.tasks.empty()) {
-                    continue;
-                }
-
-                task = std::move(it->second.tasks.front());
-                it->second.tasks.pop_front();
-            }
-
-            task->execute();
-
-            std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
-            {
-                std::scoped_lock lock(mutex_);
-                auto it = buckets_.find(jid);
-                if (it == buckets_.end()) {
-                    continue;
-                }
-
-                if (discard_pending_.load()) {
-                    while (!it->second.tasks.empty()) {
-                        canceled_tasks.push_back(std::move(it->second.tasks.front()));
-                        it->second.tasks.pop_front();
-                    }
-                }
-
-                if (it->second.tasks.empty()) {
-                    it->second.active = false;
-                    buckets_.erase(it);
-                    continue;
-                }
-
-                ready_jids_.push(jid);
-                cv_.notify_one();
-            }
-
-            for (auto &pending_task : canceled_tasks) {
-                pending_task->cancel();
-            }
-        }
+        return worker_count_;
     }
 
 } // namespace orangutan::channel
