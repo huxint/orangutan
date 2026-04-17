@@ -2,15 +2,12 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
 #include <functional>
-#include <iterator>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -20,6 +17,7 @@
 
 #include <sqlite3.h>
 
+#include "storage/sqlite-error.hpp"
 #include "types/base.hpp"
 
 namespace orangutan::sqlite {
@@ -56,52 +54,58 @@ namespace orangutan::sqlite {
             typename std::tuple_size<std::remove_cvref_t<T>>::type;
         };
 
-        inline auto sqlite_error(sqlite3 *db, std::string_view fallback = "unknown error") -> std::string {
-            const auto *message = sqlite3_errmsg(db);
-            return message != nullptr ? std::string(message) : std::string(fallback);
+        /// Canonical "prefix: sqlite3_errmsg" message without throwing.
+        [[nodiscard]]
+        inline auto format_sqlite_error(sqlite3 *db, std::string_view prefix) -> std::string {
+            const auto *errmsg = db != nullptr ? sqlite3_errmsg(db) : nullptr;
+            const auto tail = errmsg != nullptr ? std::string_view{errmsg} : std::string_view{"unknown error"};
+            return format_sqlite_message(prefix, tail);
         }
 
-        inline void throw_sqlite_error(std::string_view prefix, sqlite3 *db) {
-            throw std::runtime_error(std::string(prefix) + ": " + sqlite_error(db));
-        }
-
-        inline void check_sqlite_ok(int rc, sqlite3 *db, std::string_view context) {
-            if (rc != SQLITE_OK) {
-                throw_sqlite_error(context, db);
+        [[nodiscard]]
+        inline auto check_sqlite_ok(int rc, sqlite3 *db, std::string_view context) -> SqliteResult<void> {
+            if (rc == SQLITE_OK) {
+                return {};
             }
+            return fail(sqlite_error_kind::step_failed, format_sqlite_error(db, context), rc);
         }
 
-        inline void check_bind_ok(int rc, sqlite3_stmt *stmt) {
-            if (rc != SQLITE_OK) {
-                throw std::runtime_error("sqlite bind failed: " + sqlite_error(sqlite3_db_handle(stmt)));
+        [[nodiscard]]
+        inline auto check_bind_ok(int rc, sqlite3_stmt *stmt) -> SqliteResult<void> {
+            if (rc == SQLITE_OK) {
+                return {};
             }
+            return fail(sqlite_error_kind::bind_failed, format_sqlite_error(sqlite3_db_handle(stmt), "sqlite bind failed"), rc);
         }
 
+        [[nodiscard]]
         inline auto is_space(char ch) -> bool {
             return std::isspace(static_cast<unsigned char>(ch)) != 0;
         }
 
-        inline auto prepare_statement(sqlite3 *db, std::string_view sql) -> sqlite3_stmt * {
+        [[nodiscard]]
+        inline auto prepare_statement(sqlite3 *db, std::string_view sql) -> SqliteResult<sqlite3_stmt *> {
             auto sql_text = std::string(sql);
             sqlite3_stmt *stmt = nullptr;
             const char *tail = nullptr;
             const auto rc = sqlite3_prepare_v2(db, sql_text.c_str(), static_cast<int>(sql_text.size()), &stmt, &tail);
             if (rc != SQLITE_OK) {
-                throw std::runtime_error("sqlite prepare failed: " + sqlite_error(db));
+                return fail(sqlite_error_kind::prepare_failed, format_sqlite_error(db, "sqlite prepare failed"), rc);
             }
             if (stmt == nullptr) {
-                throw std::runtime_error("sqlite prepare failed: empty SQL");
+                return fail(sqlite_error_kind::prepare_failed, "sqlite prepare failed: empty sql");
             }
             while (tail != nullptr && *tail != '\0' && is_space(*tail)) {
                 ++tail;
             }
             if (tail != nullptr && *tail != '\0') {
                 sqlite3_finalize(stmt);
-                throw std::runtime_error("sqlite prepare failed: trailing SQL");
+                return fail(sqlite_error_kind::prepare_failed, "sqlite prepare failed: trailing sql");
             }
             return stmt;
         }
 
+        [[nodiscard]]
         inline auto analyze_placeholders(std::string_view sql) -> PlaceholderInfo {
             auto info = PlaceholderInfo{};
             std::vector<int> indexed_ids;
@@ -148,17 +152,17 @@ namespace orangutan::sqlite {
                         }
 
                         {
-                            auto tail = index + 1;
-                            while (tail < sql.size() && std::isdigit(static_cast<unsigned char>(sql[tail])) != 0) {
-                                ++tail;
+                            auto lookahead = index + 1;
+                            while (lookahead < sql.size() && std::isdigit(static_cast<unsigned char>(sql[lookahead])) != 0) {
+                                ++lookahead;
                             }
 
-                            if (tail == index + 1) {
+                            if (lookahead == index + 1) {
                                 ++anonymous_count;
                             } else {
-                                indexed_ids.push_back(std::stoi(std::string(sql.substr(index + 1, tail - index - 1))));
+                                indexed_ids.push_back(std::stoi(std::string(sql.substr(index + 1, lookahead - index - 1))));
                             }
-                            index = tail - 1;
+                            index = lookahead - 1;
                         }
                         break;
 
@@ -224,10 +228,12 @@ namespace orangutan::sqlite {
             return info;
         }
 
+        [[nodiscard]]
         inline auto bind_count_message(std::size_t expected, std::size_t actual) -> std::string {
             return "bind parameter count mismatch: expected " + std::to_string(expected) + ", got " + std::to_string(actual);
         }
 
+        [[nodiscard]]
         inline auto column_count_message(std::size_t expected, int actual) -> std::string {
             if (expected == 1U) {
                 return "expected one column, got " + std::to_string(actual);
@@ -235,12 +241,15 @@ namespace orangutan::sqlite {
             return "expected " + std::to_string(expected) + " columns, got " + std::to_string(actual);
         }
 
-        inline void validate_column_index(sqlite3_stmt *stmt, int index) {
+        [[nodiscard]]
+        inline auto validate_column_index(sqlite3_stmt *stmt, int index) -> SqliteResult<void> {
             if (index < 0 || index >= sqlite3_column_count(stmt)) {
-                throw std::runtime_error("column index out of range");
+                return fail(sqlite_error_kind::argument_error, "column index out of range");
             }
+            return {};
         }
 
+        [[nodiscard]]
         inline auto copy_column_text(sqlite3_stmt *stmt, int index) -> std::string {
             const auto *text = sqlite3_column_text(stmt, index);
             if (text == nullptr) {
@@ -251,7 +260,8 @@ namespace orangutan::sqlite {
         }
 
         template <typename T>
-        void bind_value(sqlite3_stmt *stmt, int index, T &&value) {
+        [[nodiscard]]
+        auto bind_value(sqlite3_stmt *stmt, int index, T &&value) -> SqliteResult<void> {
             using value_type = std::remove_cvref_t<T>;
 
             if constexpr (requires {
@@ -259,26 +269,24 @@ namespace orangutan::sqlite {
                               requires std::same_as<value_type, std::optional<typename value_type::value_type>>;
                           }) {
                 if (value.has_value()) {
-                    bind_value(stmt, index, *std::forward<T>(value));
-                } else {
-                    check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
+                    return bind_value(stmt, index, *std::forward<T>(value));
                 }
+                return check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
             } else if constexpr (std::same_as<value_type, std::nullptr_t>) {
-                check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
+                return check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
             } else if constexpr (std::same_as<value_type, bool>) {
-                check_bind_ok(sqlite3_bind_int(stmt, index, value ? 1 : 0), stmt);
+                return check_bind_ok(sqlite3_bind_int(stmt, index, value ? 1 : 0), stmt);
             } else if constexpr (std::same_as<value_type, int>) {
-                check_bind_ok(sqlite3_bind_int(stmt, index, value), stmt);
+                return check_bind_ok(sqlite3_bind_int(stmt, index, value), stmt);
             } else if constexpr (std::same_as<value_type, std::int64_t>) {
-                check_bind_ok(sqlite3_bind_int64(stmt, index, static_cast<sqlite3_int64>(value)), stmt);
+                return check_bind_ok(sqlite3_bind_int64(stmt, index, static_cast<sqlite3_int64>(value)), stmt);
             } else if constexpr (std::same_as<value_type, double>) {
-                check_bind_ok(sqlite3_bind_double(stmt, index, value), stmt);
+                return check_bind_ok(sqlite3_bind_double(stmt, index, value), stmt);
             } else if constexpr (std::is_pointer_v<value_type> && std::same_as<std::remove_cv_t<std::remove_pointer_t<value_type>>, char>) {
                 if (value == nullptr) {
-                    check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
-                } else {
-                    check_bind_ok(sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT), stmt);
+                    return check_bind_ok(sqlite3_bind_null(stmt, index), stmt);
                 }
+                return check_bind_ok(sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT), stmt);
             } else if constexpr (std::is_convertible_v<T, std::string_view>) {
                 const auto text_value = [&value]() -> std::string_view {
                     if constexpr (std::is_array_v<value_type>) {
@@ -291,15 +299,18 @@ namespace orangutan::sqlite {
                 if (text == nullptr) {
                     text = "";
                 }
-                check_bind_ok(sqlite3_bind_text(stmt, index, text, static_cast<int>(text_value.size()), SQLITE_TRANSIENT), stmt);
+                return check_bind_ok(sqlite3_bind_text(stmt, index, text, static_cast<int>(text_value.size()), SQLITE_TRANSIENT), stmt);
             } else {
                 static_assert(false, "unsupported sqlite bind type");
             }
         }
 
         template <typename T>
-        auto column_value(sqlite3_stmt *stmt, int index) -> T {
-            validate_column_index(stmt, index);
+        [[nodiscard]]
+        auto column_value(sqlite3_stmt *stmt, int index) -> SqliteResult<T> {
+            if (auto check = validate_column_index(stmt, index); !check) {
+                return std::unexpected(check.error());
+            }
             using value_type = std::remove_cvref_t<T>;
 
             if constexpr (requires {
@@ -307,12 +318,16 @@ namespace orangutan::sqlite {
                               requires std::same_as<value_type, std::optional<typename value_type::value_type>>;
                           }) {
                 if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
-                    return std::nullopt;
+                    return T{std::nullopt};
                 }
-                return std::optional<typename value_type::value_type>{column_value<typename value_type::value_type>(stmt, index)};
+                auto inner = column_value<typename value_type::value_type>(stmt, index);
+                if (!inner) {
+                    return std::unexpected(inner.error());
+                }
+                return T{std::move(*inner)};
             } else {
                 if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
-                    throw std::runtime_error("column " + std::to_string(index) + " is null");
+                    return fail(sqlite_error_kind::mapping_error, "column " + std::to_string(index) + " is null");
                 }
                 if constexpr (std::same_as<value_type, std::string>) {
                     return copy_column_text(stmt, index);
@@ -331,7 +346,7 @@ namespace orangutan::sqlite {
         }
 
         template <typename T>
-        auto map_row(const Row &row) -> T;
+        auto map_row(const Row &row) -> SqliteResult<T>;
 
     } // namespace detail
 
@@ -339,23 +354,25 @@ namespace orangutan::sqlite {
     public:
         template <typename T>
         [[nodiscard]]
-        auto get(int index) const -> T {
+        auto get(int index) const -> SqliteResult<T> {
             return detail::column_value<T>(stmt_, index);
         }
 
         [[nodiscard]]
-        auto is_null(int index) const -> bool {
-            detail::validate_column_index(stmt_, index);
+        auto is_null(int index) const -> SqliteResult<bool> {
+            if (auto check = detail::validate_column_index(stmt_, index); !check) {
+                return std::unexpected(check.error());
+            }
             return sqlite3_column_type(stmt_, index) == SQLITE_NULL;
         }
 
         [[nodiscard]]
-        auto columns() const -> int {
+        auto columns() const noexcept -> int {
             return sqlite3_column_count(stmt_);
         }
 
     private:
-        explicit Row(sqlite3_stmt *stmt)
+        explicit Row(sqlite3_stmt *stmt) noexcept
         : stmt_(stmt) {}
 
         sqlite3_stmt *stmt_ = nullptr;
@@ -365,53 +382,199 @@ namespace orangutan::sqlite {
 
     class Statement {
     public:
-        Statement(const Database &db, std::string_view sql);
-        ~Statement();
+        [[nodiscard]] static auto create(const Database &db, std::string_view sql) -> SqliteResult<Statement>;
+
+        ~Statement() {
+            finalize();
+        }
 
         Statement(const Statement &) = delete;
         auto operator=(const Statement &) -> Statement & = delete;
-        Statement(Statement &&other) noexcept;
-        auto operator=(Statement &&other) noexcept -> Statement &;
 
+        Statement(Statement &&other) noexcept
+        : stmt_(std::exchange(other.stmt_, nullptr)),
+          placeholder_info_(other.placeholder_info_),
+          has_row_(std::exchange(other.has_row_, false)),
+          pending_error_(std::move(other.pending_error_)) {
+            other.pending_error_.reset();
+        }
+
+        auto operator=(Statement &&other) noexcept -> Statement & {
+            if (this != &other) {
+                finalize();
+                stmt_ = std::exchange(other.stmt_, nullptr);
+                placeholder_info_ = other.placeholder_info_;
+                has_row_ = std::exchange(other.has_row_, false);
+                pending_error_ = std::move(other.pending_error_);
+                other.pending_error_.reset();
+            }
+            return *this;
+        }
+
+        /// Fluent bind: latches the first error and returns *this. The latched
+        /// error surfaces at step()/row()/reset().
         template <typename T>
         auto bind(int index, T &&value) -> Statement & {
-            detail::bind_value(stmt_, index, std::forward<T>(value));
+            if (pending_error_.has_value()) {
+                return *this;
+            }
+            if (auto result = detail::bind_value(stmt_, index, std::forward<T>(value)); !result) {
+                pending_error_ = result.error();
+            }
             return *this;
         }
 
         template <typename... Args>
         auto bind_all(Args &&...args) -> Statement & {
-            validate_bind_count(sizeof...(Args));
+            if (pending_error_.has_value()) {
+                return *this;
+            }
+            if (auto check = try_validate_bind_count(sizeof...(Args)); !check) {
+                pending_error_ = check.error();
+                return *this;
+            }
             int parameter_index = 1;
             (bind(parameter_index++, std::forward<Args>(args)), ...);
             return *this;
         }
 
+        template <typename T>
         [[nodiscard]]
-        auto step() -> bool;
+        auto try_bind(int index, T &&value) -> SqliteResult<void> {
+            if (pending_error_.has_value()) {
+                auto err = std::move(*pending_error_);
+                pending_error_.reset();
+                return std::unexpected(std::move(err));
+            }
+            return detail::bind_value(stmt_, index, std::forward<T>(value));
+        }
+
+        template <typename... Args>
+        [[nodiscard]]
+        auto try_bind_all(Args &&...args) -> SqliteResult<void> {
+            if (pending_error_.has_value()) {
+                auto err = std::move(*pending_error_);
+                pending_error_.reset();
+                return std::unexpected(std::move(err));
+            }
+            if (auto check = try_validate_bind_count(sizeof...(Args)); !check) {
+                return check;
+            }
+            SqliteResult<void> final_result{};
+            int parameter_index = 1;
+            (([&](auto &&arg) {
+                if (!final_result) {
+                    return;
+                }
+                if (auto r = detail::bind_value(stmt_, parameter_index, std::forward<decltype(arg)>(arg)); !r) {
+                    final_result = std::unexpected(r.error());
+                }
+                ++parameter_index;
+            }(std::forward<Args>(args))),
+             ...);
+            return final_result;
+        }
 
         [[nodiscard]]
-        auto row() const -> Row;
+        auto step() -> SqliteResult<bool> {
+            if (pending_error_.has_value()) {
+                auto err = std::move(*pending_error_);
+                pending_error_.reset();
+                return std::unexpected(std::move(err));
+            }
+            const auto rc = sqlite3_step(stmt_);
+            if (rc == SQLITE_ROW) {
+                has_row_ = true;
+                return true;
+            }
+            if (rc == SQLITE_DONE) {
+                has_row_ = false;
+                return false;
+            }
+            return fail(sqlite_error_kind::step_failed, detail::format_sqlite_error(sqlite3_db_handle(stmt_), "sqlite step failed"), rc);
+        }
 
-        void reset();
-        void clear_bindings();
+        [[nodiscard]]
+        auto row() const -> SqliteResult<Row> {
+            if (pending_error_.has_value()) {
+                return std::unexpected(*pending_error_);
+            }
+            if (!has_row_) {
+                return fail(sqlite_error_kind::state_error, "statement does not point at a row");
+            }
+            return Row(stmt_);
+        }
+
+        [[nodiscard]]
+        auto reset() -> SqliteResult<void> {
+            pending_error_.reset();
+            has_row_ = false;
+            const auto rc = sqlite3_reset(stmt_);
+            if (rc != SQLITE_OK) {
+                return fail(sqlite_error_kind::reset_failed, detail::format_sqlite_error(sqlite3_db_handle(stmt_), "sqlite reset failed"), rc);
+            }
+            return {};
+        }
+
+        [[nodiscard]]
+        auto clear_bindings() -> SqliteResult<void> {
+            const auto rc = sqlite3_clear_bindings(stmt_);
+            if (rc != SQLITE_OK) {
+                return fail(sqlite_error_kind::reset_failed, detail::format_sqlite_error(sqlite3_db_handle(stmt_), "sqlite clear bindings failed"), rc);
+            }
+            return {};
+        }
+
+        /// Reports any deferred error accumulated by fluent `bind()` calls.
+        /// Consumed (cleared) by this call.
+        [[nodiscard]]
+        auto take_pending_error() -> std::optional<SqliteError> {
+            auto err = std::move(pending_error_);
+            pending_error_.reset();
+            return err;
+        }
 
     private:
-        void validate_bind_count(std::size_t actual) const;
+        Statement(sqlite3_stmt *stmt, detail::PlaceholderInfo info) noexcept
+        : stmt_(stmt),
+          placeholder_info_(info) {}
+
+        void finalize() noexcept {
+            if (stmt_ != nullptr) {
+                sqlite3_finalize(stmt_);
+                stmt_ = nullptr;
+            }
+        }
 
         [[nodiscard]]
-        auto result_columns() const -> int {
+        auto try_validate_bind_count(std::size_t actual) const -> SqliteResult<void> {
+            if (placeholder_info_.mode == detail::placeholder_mode::mixed) {
+                return fail(sqlite_error_kind::argument_error, "mixed placeholder styles are not supported");
+            }
+            if (placeholder_info_.mode == detail::placeholder_mode::indexed && !placeholder_info_.indexed_contiguous) {
+                return fail(sqlite_error_kind::argument_error, "indexed placeholders must be contiguous");
+            }
+            if (std::cmp_not_equal(actual, placeholder_info_.expected_bind_count)) {
+                return fail(sqlite_error_kind::argument_error,
+                            detail::bind_count_message(static_cast<std::size_t>(placeholder_info_.expected_bind_count), actual));
+            }
+            return {};
+        }
+
+        [[nodiscard]]
+        auto result_columns() const noexcept -> int {
             return sqlite3_column_count(stmt_);
         }
 
         [[nodiscard]]
-        auto expected_bind_count() const -> int {
+        auto expected_bind_count() const noexcept -> int {
             return placeholder_info_.expected_bind_count;
         }
 
         sqlite3_stmt *stmt_ = nullptr;
         detail::PlaceholderInfo placeholder_info_{};
         bool has_row_ = false;
+        std::optional<SqliteError> pending_error_;
 
         friend class Command;
         friend class Query;
@@ -428,24 +591,64 @@ namespace orangutan::sqlite {
 
         template <typename... Args>
         auto bind(Args &&...args) -> Command & {
-            ensure_can_bind();
+            if (pending_error_.has_value()) {
+                return *this;
+            }
+            if (consumed_) {
+                pending_error_ = make_error(sqlite_error_kind::state_error, "statement is already consumed");
+                return *this;
+            }
+            if (bound_) {
+                pending_error_ = make_error(sqlite_error_kind::state_error, "statement is already bound");
+                return *this;
+            }
             statement_.bind_all(std::forward<Args>(args)...);
             bound_ = true;
             return *this;
         }
 
-        void run();
+        [[nodiscard]]
+        auto run() -> SqliteResult<void> {
+            if (pending_error_.has_value()) {
+                auto err = std::move(*pending_error_);
+                pending_error_.reset();
+                return std::unexpected(std::move(err));
+            }
+            if (auto latched = statement_.take_pending_error(); latched.has_value()) {
+                return std::unexpected(std::move(*latched));
+            }
+            if (consumed_) {
+                return fail(sqlite_error_kind::state_error, "statement is already consumed");
+            }
+            if (!bound_ && statement_.expected_bind_count() > 0) {
+                if (auto check = statement_.try_validate_bind_count(0U); !check) {
+                    return std::unexpected(check.error());
+                }
+            }
+            if (statement_.result_columns() > 0) {
+                return fail(sqlite_error_kind::state_error, "statement has result columns and must be executed as a query");
+            }
+            consumed_ = true;
+            while (true) {
+                auto stepped = statement_.step();
+                if (!stepped) {
+                    return std::unexpected(stepped.error());
+                }
+                if (!*stepped) {
+                    break;
+                }
+            }
+            return {};
+        }
 
     private:
-        explicit Command(const Database &db, std::string_view sql)
-        : statement_(db, sql) {}
-
-        void ensure_can_bind() const;
-        void ensure_ready();
+        explicit Command(Statement stmt) noexcept
+        : statement_(std::move(stmt)) {}
 
         Statement statement_;
         bool bound_ = false;
         bool consumed_ = false;
+        std::optional<SqliteError> pending_error_;
 
         friend class Database;
     };
@@ -461,182 +664,411 @@ namespace orangutan::sqlite {
 
         template <typename... Args>
         auto bind(Args &&...args) -> Query & {
-            ensure_can_bind();
+            if (pending_error_.has_value()) {
+                return *this;
+            }
+            if (consumed_) {
+                pending_error_ = make_error(sqlite_error_kind::state_error, "statement is already consumed");
+                return *this;
+            }
+            if (bound_) {
+                pending_error_ = make_error(sqlite_error_kind::state_error, "statement is already bound");
+                return *this;
+            }
             statement_.bind_all(std::forward<Args>(args)...);
             bound_ = true;
             return *this;
         }
 
         template <typename T>
-        auto one() -> T {
-            ensure_ready();
+        [[nodiscard]]
+        auto one() -> SqliteResult<T> {
+            if (auto ready = ensure_ready(); !ready) {
+                return std::unexpected(ready.error());
+            }
             consumed_ = true;
-            if (!statement_.step()) {
-                throw std::runtime_error("expected one row, got none");
+
+            auto first_step = statement_.step();
+            if (!first_step) {
+                return std::unexpected(first_step.error());
             }
-            auto mapping_error = std::exception_ptr{};
-            auto row_value = std::optional<T>{};
-            try {
-                row_value.emplace(detail::map_row<T>(statement_.row()));
-            } catch (...) {
-                mapping_error = std::current_exception();
+            if (!*first_step) {
+                return fail(sqlite_error_kind::row_count_mismatch, "expected one row, got none");
             }
-            if (statement_.step()) {
-                throw std::runtime_error("expected one row, got multiple");
+
+            auto row_or = statement_.row();
+            if (!row_or) {
+                return std::unexpected(row_or.error());
             }
-            if (mapping_error != nullptr) {
-                std::rethrow_exception(mapping_error);
+            auto mapped = detail::map_row<T>(*row_or);
+
+            auto second_step = statement_.step();
+            if (!second_step) {
+                return std::unexpected(second_step.error());
             }
-            return std::move(*row_value);
+            if (*second_step) {
+                return fail(sqlite_error_kind::row_count_mismatch, "expected one row, got multiple");
+            }
+
+            return mapped;
         }
 
         template <typename T>
-        auto optional() -> std::optional<T> {
-            ensure_ready();
+        [[nodiscard]]
+        auto optional() -> SqliteResult<std::optional<T>> {
+            if (auto ready = ensure_ready(); !ready) {
+                return std::unexpected(ready.error());
+            }
             consumed_ = true;
-            if (!statement_.step()) {
-                return std::nullopt;
+
+            auto first_step = statement_.step();
+            if (!first_step) {
+                return std::unexpected(first_step.error());
             }
-            auto mapping_error = std::exception_ptr{};
-            auto row_value = std::optional<T>{};
-            try {
-                row_value.emplace(detail::map_row<T>(statement_.row()));
-            } catch (...) {
-                mapping_error = std::current_exception();
+            if (!*first_step) {
+                return std::optional<T>{};
             }
-            if (statement_.step()) {
-                throw std::runtime_error("expected one row, got multiple");
+
+            auto row_or = statement_.row();
+            if (!row_or) {
+                return std::unexpected(row_or.error());
             }
-            if (mapping_error != nullptr) {
-                std::rethrow_exception(mapping_error);
+            auto mapped = detail::map_row<T>(*row_or);
+
+            auto second_step = statement_.step();
+            if (!second_step) {
+                return std::unexpected(second_step.error());
             }
-            return row_value;
+            if (*second_step) {
+                return fail(sqlite_error_kind::row_count_mismatch, "expected one row, got multiple");
+            }
+
+            if (!mapped) {
+                return std::unexpected(mapped.error());
+            }
+            return std::optional<T>{std::move(*mapped)};
         }
 
         template <typename T>
-        auto all() -> std::vector<T> {
-            ensure_ready();
+        [[nodiscard]]
+        auto all() -> SqliteResult<std::vector<T>> {
+            if (auto ready = ensure_ready(); !ready) {
+                return std::unexpected(ready.error());
+            }
             consumed_ = true;
+
             auto rows = std::vector<T>{};
-            while (statement_.step()) {
-                rows.push_back(detail::map_row<T>(statement_.row()));
+            while (true) {
+                auto stepped = statement_.step();
+                if (!stepped) {
+                    return std::unexpected(stepped.error());
+                }
+                if (!*stepped) {
+                    break;
+                }
+                auto row_or = statement_.row();
+                if (!row_or) {
+                    return std::unexpected(row_or.error());
+                }
+                auto mapped = detail::map_row<T>(*row_or);
+                if (!mapped) {
+                    return std::unexpected(mapped.error());
+                }
+                rows.push_back(std::move(*mapped));
             }
             return rows;
         }
 
         template <typename Fn>
-        void for_each(Fn &&fn) {
-            ensure_ready();
-            consumed_ = true;
-            auto callback = [&]() {
-                if constexpr (std::is_lvalue_reference_v<Fn &&>) {
-                    return std::ref(std::forward<Fn>(fn));
-                } else {
-                    return std::forward<Fn>(fn);
-                }
-            }();
-            while (statement_.step()) {
-                std::invoke(callback, statement_.row());
+        [[nodiscard]]
+        auto for_each(Fn fn) -> SqliteResult<void> {
+            if (auto ready = ensure_ready(); !ready) {
+                return ready;
             }
+            consumed_ = true;
+            while (true) {
+                auto stepped = statement_.step();
+                if (!stepped) {
+                    return std::unexpected(stepped.error());
+                }
+                if (!*stepped) {
+                    break;
+                }
+                auto row_or = statement_.row();
+                if (!row_or) {
+                    return std::unexpected(row_or.error());
+                }
+                std::invoke(fn, *row_or);
+            }
+            return {};
         }
 
     private:
-        explicit Query(const Database &db, std::string_view sql)
-        : statement_(db, sql) {}
+        explicit Query(Statement stmt) noexcept
+        : statement_(std::move(stmt)) {}
 
-        void ensure_can_bind() const;
-        void ensure_ready();
+        [[nodiscard]]
+        auto ensure_ready() -> SqliteResult<void> {
+            if (pending_error_.has_value()) {
+                auto err = std::move(*pending_error_);
+                pending_error_.reset();
+                return std::unexpected(std::move(err));
+            }
+            if (auto latched = statement_.take_pending_error(); latched.has_value()) {
+                return std::unexpected(std::move(*latched));
+            }
+            if (consumed_) {
+                return fail(sqlite_error_kind::state_error, "statement is already consumed");
+            }
+            if (!bound_ && statement_.expected_bind_count() > 0) {
+                if (auto check = statement_.try_validate_bind_count(0U); !check) {
+                    return check;
+                }
+            }
+            if (statement_.result_columns() == 0) {
+                return fail(sqlite_error_kind::state_error, "statement has zero result columns and must be executed as a command");
+            }
+            return {};
+        }
 
         Statement statement_;
         bool bound_ = false;
         bool consumed_ = false;
+        std::optional<SqliteError> pending_error_;
 
         friend class Database;
     };
 
     class Database {
     public:
-        explicit Database(const std::filesystem::path &path);
-        ~Database();
+        [[nodiscard]] static auto create(const std::filesystem::path &path) -> SqliteResult<Database>;
+
+        ~Database() {
+            close();
+        }
 
         Database(const Database &) = delete;
         auto operator=(const Database &) -> Database & = delete;
-        Database(Database &&) = delete;
-        auto operator=(Database &&) -> Database & = delete;
+
+        Database(Database &&other) noexcept
+        : db_(std::exchange(other.db_, nullptr)),
+          transaction_active_(std::exchange(other.transaction_active_, false)) {}
+
+        auto operator=(Database &&other) noexcept -> Database & {
+            if (this != &other) {
+                close();
+                db_ = std::exchange(other.db_, nullptr);
+                transaction_active_ = std::exchange(other.transaction_active_, false);
+            }
+            return *this;
+        }
 
         [[nodiscard]]
-        auto exec(std::string_view sql) const -> Command;
+        auto exec(std::string_view sql) const -> SqliteResult<Command> {
+            auto stmt_or = Statement::create(*this, sql);
+            if (!stmt_or) {
+                return std::unexpected(stmt_or.error());
+            }
+            return Command(std::move(*stmt_or));
+        }
 
         [[nodiscard]]
-        auto query(std::string_view sql) const -> Query;
+        auto query(std::string_view sql) const -> SqliteResult<Query> {
+            auto stmt_or = Statement::create(*this, sql);
+            if (!stmt_or) {
+                return std::unexpected(stmt_or.error());
+            }
+            return Query(std::move(*stmt_or));
+        }
 
-        void exec_script(std::string_view sql, std::string_view context) const;
         [[nodiscard]]
-        auto try_exec_script(std::string_view sql) const -> bool;
+        auto exec_script(std::string_view sql, std::string_view context = {}) const -> SqliteResult<void> {
+            char *err_msg = nullptr;
+            const auto sql_text = std::string(sql);
+            const auto rc = sqlite3_exec(db_, sql_text.c_str(), nullptr, nullptr, &err_msg);
+            if (rc == SQLITE_OK) {
+                sqlite3_free(err_msg);
+                return {};
+            }
+            std::string diagnostic;
+            if (err_msg != nullptr) {
+                diagnostic = err_msg;
+            } else if (db_ != nullptr) {
+                const auto *fallback = sqlite3_errmsg(db_);
+                if (fallback != nullptr) {
+                    diagnostic = fallback;
+                } else {
+                    diagnostic = "unknown error";
+                }
+            } else {
+                diagnostic = "unknown error";
+            }
+            sqlite3_free(err_msg);
+            const auto prefix = context.empty() ? std::string_view{"sqlite exec script failed"} : context;
+            return fail(sqlite_error_kind::step_failed, format_sqlite_message(prefix, diagnostic), rc);
+        }
+
         [[nodiscard]]
-        auto table_exists(std::string_view table_name) const -> bool;
+        auto try_exec_script(std::string_view sql) const noexcept -> bool {
+            char *err_msg = nullptr;
+            const auto sql_text = std::string(sql);
+            const auto rc = sqlite3_exec(db_, sql_text.c_str(), nullptr, nullptr, &err_msg);
+            sqlite3_free(err_msg);
+            return rc == SQLITE_OK;
+        }
+
+        [[nodiscard]]
+        auto table_exists(std::string_view table_name) const -> SqliteResult<bool> {
+            auto stmt_or = Statement::create(*this, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1");
+            if (!stmt_or) {
+                return std::unexpected(stmt_or.error());
+            }
+            auto &stmt = *stmt_or;
+            if (auto bind_r = stmt.try_bind(1, table_name); !bind_r) {
+                return std::unexpected(bind_r.error());
+            }
+            auto step_r = stmt.step();
+            if (!step_r) {
+                return std::unexpected(step_r.error());
+            }
+            return *step_r;
+        }
 
         template <typename Fn>
-        decltype(auto) transaction(Fn &&fn);
+        [[nodiscard]]
+        auto transaction(Fn &&fn);
 
         [[nodiscard]]
-        auto changes() const -> int;
+        auto changes() const noexcept -> int {
+            return db_ != nullptr ? sqlite3_changes(db_) : 0;
+        }
 
         [[nodiscard]]
-        auto handle() const noexcept -> sqlite3 *;
+        auto handle() const noexcept -> sqlite3 * {
+            return db_;
+        }
 
     private:
-        void begin_transaction_scope();
-        void end_transaction_scope() noexcept;
+        explicit Database(sqlite3 *db) noexcept
+        : db_(db) {}
+
+        void close() noexcept {
+            if (db_ != nullptr) {
+                sqlite3_close(db_);
+                db_ = nullptr;
+            }
+            transaction_active_ = false;
+        }
 
         sqlite3 *db_ = nullptr;
-        bool transaction_active_ = false;
+        mutable bool transaction_active_ = false;
 
         friend class Transaction;
     };
 
     class Transaction {
     public:
-        explicit Transaction(Database &db);
-        ~Transaction();
+        [[nodiscard]] static auto create(Database &db) -> SqliteResult<Transaction>;
+
+        ~Transaction() {
+            rollback_if_pending();
+        }
 
         Transaction(const Transaction &) = delete;
         auto operator=(const Transaction &) -> Transaction & = delete;
-        Transaction(Transaction &&) = delete;
-        auto operator=(Transaction &&) -> Transaction & = delete;
 
-        void commit();
+        Transaction(Transaction &&other) noexcept
+        : db_(std::exchange(other.db_, nullptr)),
+          committed_(std::exchange(other.committed_, true)) {}
+
+        auto operator=(Transaction &&other) noexcept -> Transaction & {
+            if (this != &other) {
+                rollback_if_pending();
+                db_ = std::exchange(other.db_, nullptr);
+                committed_ = std::exchange(other.committed_, true);
+            }
+            return *this;
+        }
+
+        [[nodiscard]]
+        auto commit() -> SqliteResult<void> {
+            if (committed_) {
+                return fail(sqlite_error_kind::state_error, "transaction already committed");
+            }
+            if (db_ == nullptr) {
+                return fail(sqlite_error_kind::state_error, "transaction is empty");
+            }
+            auto result = db_->exec_script("COMMIT;", "sqlite transaction commit failed");
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            committed_ = true;
+            db_->transaction_active_ = false;
+            return {};
+        }
 
     private:
+        explicit Transaction(Database *db) noexcept
+        : db_(db) {}
+
+        void rollback_if_pending() noexcept {
+            if (db_ == nullptr || committed_) {
+                return;
+            }
+            static_cast<void>(db_->try_exec_script("ROLLBACK;"));
+            db_->transaction_active_ = false;
+            db_ = nullptr;
+        }
+
         Database *db_ = nullptr;
         bool committed_ = false;
+
+        friend class Database;
     };
 
     namespace detail {
 
         template <typename T>
         concept has_custom_row_mapper = requires(const Row &row) {
-            RowMapper<T>::map(row);
+            { RowMapper<T>::map(row) } -> std::same_as<SqliteResult<T>>;
         };
 
         template <typename T, std::size_t... Indices>
-        auto map_tuple(const Row &row, std::index_sequence<Indices...>) -> T {
+        [[nodiscard]]
+        auto map_tuple(const Row &row, std::index_sequence<Indices...>) -> SqliteResult<T> {
             constexpr auto EXPECTED_COLUMNS = sizeof...(Indices);
             if (row.columns() != static_cast<int>(EXPECTED_COLUMNS)) {
-                throw std::runtime_error(column_count_message(EXPECTED_COLUMNS, row.columns()));
+                return fail(sqlite_error_kind::mapping_error, column_count_message(EXPECTED_COLUMNS, row.columns()));
             }
-            return T{row.template get<std::tuple_element_t<Indices, T>>(static_cast<int>(Indices))...};
+            std::optional<SqliteError> captured;
+            auto fetch = [&]<std::size_t I, typename Elem>() -> Elem {
+                if (captured.has_value()) {
+                    return Elem{};
+                }
+                auto value_or = row.template get<Elem>(static_cast<int>(I));
+                if (!value_or) {
+                    captured = value_or.error();
+                    return Elem{};
+                }
+                return std::move(*value_or);
+            };
+            T result{fetch.template operator()<Indices, std::tuple_element_t<Indices, T>>()...};
+            if (captured.has_value()) {
+                return std::unexpected(std::move(*captured));
+            }
+            return result;
         }
 
         template <typename T>
-        auto map_row(const Row &row) -> T {
+        [[nodiscard]]
+        auto map_row(const Row &row) -> SqliteResult<T> {
             if constexpr (has_custom_row_mapper<T>) {
                 return RowMapper<T>::map(row);
             } else if constexpr (tuple_like<T>) {
                 return map_tuple<T>(row, std::make_index_sequence<std::tuple_size_v<T>>{});
             } else {
                 if (row.columns() != 1) {
-                    throw std::runtime_error(column_count_message(1U, row.columns()));
+                    return fail(sqlite_error_kind::mapping_error, column_count_message(1U, row.columns()));
                 }
                 return row.template get<T>(0);
             }
@@ -644,252 +1076,118 @@ namespace orangutan::sqlite {
 
     } // namespace detail
 
-    inline Statement::Statement(const Database &db, std::string_view sql)
-    : stmt_(detail::prepare_statement(db.handle(), sql)),
-      placeholder_info_(detail::analyze_placeholders(sql)) {}
-
-    inline Statement::~Statement() {
-        if (stmt_ != nullptr) {
-            sqlite3_finalize(stmt_);
+    inline auto Statement::create(const Database &db, std::string_view sql) -> SqliteResult<Statement> {
+        auto stmt_or = detail::prepare_statement(db.handle(), sql);
+        if (!stmt_or) {
+            return std::unexpected(stmt_or.error());
         }
+        return Statement{*stmt_or, detail::analyze_placeholders(sql)};
     }
 
-    inline Statement::Statement(Statement &&other) noexcept
-    : stmt_(std::exchange(other.stmt_, nullptr)),
-      placeholder_info_(other.placeholder_info_),
-      has_row_(other.has_row_) {
-        other.has_row_ = false;
+    inline auto Transaction::create(Database &db) -> SqliteResult<Transaction> {
+        if (db.transaction_active_) {
+            return fail(sqlite_error_kind::state_error, "transaction already active");
+        }
+        db.transaction_active_ = true;
+        auto begin = db.exec_script("BEGIN IMMEDIATE TRANSACTION;", "sqlite transaction begin failed");
+        if (!begin) {
+            db.transaction_active_ = false;
+            return std::unexpected(begin.error());
+        }
+        return Transaction{&db};
     }
 
-    inline auto Statement::operator=(Statement &&other) noexcept -> Statement & {
-        if (this != &other) {
-            if (stmt_ != nullptr) {
-                sqlite3_finalize(stmt_);
-            }
-            stmt_ = std::exchange(other.stmt_, nullptr);
-            placeholder_info_ = other.placeholder_info_;
-            has_row_ = other.has_row_;
-            other.has_row_ = false;
-        }
-        return *this;
-    }
-
-    inline auto Statement::step() -> bool {
-        const auto rc = sqlite3_step(stmt_);
-        if (rc == SQLITE_ROW) {
-            has_row_ = true;
-            return true;
-        }
-        if (rc == SQLITE_DONE) {
-            has_row_ = false;
-            return false;
-        }
-        detail::throw_sqlite_error("sqlite step failed", sqlite3_db_handle(stmt_));
-        return false;
-    }
-
-    inline auto Statement::row() const -> Row {
-        if (!has_row_) {
-            throw std::runtime_error("statement does not point at a row");
-        }
-        return Row(stmt_);
-    }
-
-    inline void Statement::reset() {
-        static_cast<void>(sqlite3_reset(stmt_));
-        has_row_ = false;
-    }
-
-    inline void Statement::clear_bindings() {
-        detail::check_sqlite_ok(sqlite3_clear_bindings(stmt_), sqlite3_db_handle(stmt_), "sqlite clear bindings failed");
-    }
-
-    inline void Statement::validate_bind_count(std::size_t actual) const {
-        if (placeholder_info_.mode == detail::placeholder_mode::mixed) {
-            throw std::runtime_error("mixed placeholder styles are not supported");
-        }
-        if (placeholder_info_.mode == detail::placeholder_mode::indexed && !placeholder_info_.indexed_contiguous) {
-            throw std::runtime_error("indexed placeholders must be contiguous");
-        }
-        if (std::cmp_not_equal(actual, placeholder_info_.expected_bind_count)) {
-            throw std::runtime_error(detail::bind_count_message(static_cast<std::size_t>(placeholder_info_.expected_bind_count), actual));
-        }
-    }
-
-    inline void Command::ensure_can_bind() const {
-        if (consumed_) {
-            throw std::runtime_error("statement is already consumed");
-        }
-        if (bound_) {
-            throw std::runtime_error("statement is already bound");
-        }
-    }
-
-    inline void Command::ensure_ready() {
-        if (consumed_) {
-            throw std::runtime_error("statement is already consumed");
-        }
-        if (!bound_ && statement_.expected_bind_count() > 0) {
-            statement_.validate_bind_count(0U);
-        }
-        if (statement_.result_columns() > 0) {
-            throw std::runtime_error("statement has result columns and must be executed as a query");
-        }
-    }
-
-    inline void Command::run() {
-        ensure_ready();
-        consumed_ = true;
-        while (statement_.step()) {
-        }
-    }
-
-    inline void Query::ensure_can_bind() const {
-        if (consumed_) {
-            throw std::runtime_error("statement is already consumed");
-        }
-        if (bound_) {
-            throw std::runtime_error("statement is already bound");
-        }
-    }
-
-    inline void Query::ensure_ready() {
-        if (consumed_) {
-            throw std::runtime_error("statement is already consumed");
-        }
-        if (!bound_ && statement_.expected_bind_count() > 0) {
-            statement_.validate_bind_count(0U);
-        }
-        if (statement_.result_columns() == 0) {
-            throw std::runtime_error("statement has zero result columns and must be executed as a command");
-        }
-    }
-
-    inline Database::Database(const std::filesystem::path &path) {
-        const auto parent = path.parent_path();
-        if (!parent.empty()) {
-            std::filesystem::create_directories(parent);
-        }
-
-        const auto path_text = path.string();
-        if (sqlite3_open(path_text.c_str(), &db_) != SQLITE_OK) {
-            const auto message = detail::sqlite_error(db_);
-            if (db_ != nullptr) {
-                sqlite3_close(db_);
-                db_ = nullptr;
-            }
-            throw std::runtime_error("failed to open sqlite database: " + path_text + ": " + message);
-        }
-
+    inline auto Database::create(const std::filesystem::path &path) -> SqliteResult<Database> {
         try {
-            detail::check_sqlite_ok(sqlite3_busy_timeout(db_, detail::DEFAULT_BUSY_TIMEOUT_MS), db_, "failed to configure sqlite busy timeout");
-        } catch (...) {
-            sqlite3_close(db_);
-            db_ = nullptr;
-            throw;
-        }
-    }
-
-    inline Database::~Database() {
-        if (db_ != nullptr) {
-            sqlite3_close(db_);
-        }
-    }
-
-    inline auto Database::exec(std::string_view sql) const -> Command {
-        return Command(*this, sql);
-    }
-
-    inline auto Database::query(std::string_view sql) const -> Query {
-        return Query(*this, sql);
-    }
-
-    inline void Database::exec_script(std::string_view sql, std::string_view context) const {
-        char *err_msg = nullptr;
-        const auto rc = sqlite3_exec(db_, std::string(sql).c_str(), nullptr, nullptr, &err_msg);
-        if (rc != SQLITE_OK) {
-            const auto message = err_msg != nullptr ? std::string(err_msg) : detail::sqlite_error(db_);
-            sqlite3_free(err_msg);
-            if (context.empty()) {
-                throw std::runtime_error("sqlite exec script failed: " + message);
+            const auto parent = path.parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent);
             }
-            throw std::runtime_error(std::string(context) + ": " + message);
+        } catch (const std::filesystem::filesystem_error &e) {
+            return fail(sqlite_error_kind::open_failed,
+                        std::string("failed to create parent directory: ") + e.what());
         }
+
+        sqlite3 *handle = nullptr;
+        const auto path_text = path.string();
+        const auto open_rc = sqlite3_open(path_text.c_str(), &handle);
+        if (open_rc != SQLITE_OK) {
+            std::string message = "failed to open sqlite database: " + path_text;
+            if (handle != nullptr) {
+                message += ": ";
+                const auto *errmsg = sqlite3_errmsg(handle);
+                message += errmsg != nullptr ? errmsg : "unknown error";
+                sqlite3_close(handle);
+            }
+            return fail(sqlite_error_kind::open_failed, std::move(message), open_rc);
+        }
+
+        const auto timeout_rc = sqlite3_busy_timeout(handle, detail::DEFAULT_BUSY_TIMEOUT_MS);
+        if (timeout_rc != SQLITE_OK) {
+            std::string message = "failed to configure sqlite busy timeout";
+            const auto *errmsg = sqlite3_errmsg(handle);
+            if (errmsg != nullptr) {
+                message += ": ";
+                message += errmsg;
+            }
+            sqlite3_close(handle);
+            return fail(sqlite_error_kind::open_failed, std::move(message), timeout_rc);
+        }
+
+        return Database{handle};
     }
 
-    inline auto Database::try_exec_script(std::string_view sql) const -> bool {
-        char *err_msg = nullptr;
-        const auto rc = sqlite3_exec(db_, std::string(sql).c_str(), nullptr, nullptr, &err_msg);
-        sqlite3_free(err_msg);
-        return rc == SQLITE_OK;
-    }
+    namespace detail {
 
-    inline auto Database::table_exists(std::string_view table_name) const -> bool {
-        Statement stmt(*this, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1");
-        stmt.bind(1, table_name);
-        return stmt.step();
-    }
+        template <typename T>
+        concept is_sqlite_result = requires {
+            typename T::value_type;
+            typename T::error_type;
+            requires std::same_as<typename T::error_type, SqliteError>;
+            requires std::same_as<T, SqliteResult<typename T::value_type>>;
+        };
+
+    } // namespace detail
 
     template <typename Fn>
-    decltype(auto) Database::transaction(Fn &&fn) {
-        Transaction tx(*this);
-        if constexpr (std::is_void_v<std::invoke_result_t<Fn, Database &>>) {
+    [[nodiscard]]
+    inline auto Database::transaction(Fn &&fn) {
+        using raw_return = std::invoke_result_t<Fn, Database &>;
+
+        auto tx_or = Transaction::create(*this);
+
+        if constexpr (std::is_void_v<raw_return>) {
+            using final_result = SqliteResult<void>;
+            if (!tx_or) {
+                return final_result{std::unexpected(tx_or.error())};
+            }
             std::invoke(std::forward<Fn>(fn), *this);
-            tx.commit();
-            return;
+            return tx_or->commit();
+        } else if constexpr (detail::is_sqlite_result<raw_return>) {
+            if (!tx_or) {
+                return raw_return{std::unexpected(tx_or.error())};
+            }
+            auto body_result = std::invoke(std::forward<Fn>(fn), *this);
+            if (!body_result) {
+                return body_result;
+            }
+            auto commit_result = tx_or->commit();
+            if (!commit_result) {
+                return raw_return{std::unexpected(commit_result.error())};
+            }
+            return body_result;
         } else {
-            auto result = std::invoke(std::forward<Fn>(fn), *this);
-            tx.commit();
-            return result;
+            using final_result = SqliteResult<raw_return>;
+            if (!tx_or) {
+                return final_result{std::unexpected(tx_or.error())};
+            }
+            auto body_value = std::invoke(std::forward<Fn>(fn), *this);
+            auto commit_result = tx_or->commit();
+            if (!commit_result) {
+                return final_result{std::unexpected(commit_result.error())};
+            }
+            return final_result{std::move(body_value)};
         }
-    }
-
-    inline auto Database::changes() const -> int {
-        return sqlite3_changes(db_);
-    }
-
-    inline auto Database::handle() const noexcept -> sqlite3 * {
-        return db_;
-    }
-
-    inline void Database::begin_transaction_scope() {
-        if (transaction_active_) {
-            throw std::runtime_error("transaction already active");
-        }
-        transaction_active_ = true;
-    }
-
-    inline void Database::end_transaction_scope() noexcept {
-        transaction_active_ = false;
-    }
-
-    inline Transaction::Transaction(Database &db)
-    : db_(&db) {
-        db_->begin_transaction_scope();
-        try {
-            db_->exec_script("BEGIN IMMEDIATE TRANSACTION;", "sqlite transaction begin failed");
-        } catch (...) {
-            db_->end_transaction_scope();
-            throw;
-        }
-    }
-
-    inline Transaction::~Transaction() {
-        if (db_ == nullptr) {
-            return;
-        }
-        if (!committed_) {
-            static_cast<void>(db_->try_exec_script("ROLLBACK;"));
-        }
-        db_->end_transaction_scope();
-    }
-
-    inline void Transaction::commit() {
-        if (committed_) {
-            throw std::runtime_error("transaction already committed");
-        }
-        db_->exec_script("COMMIT;", "sqlite transaction commit failed");
-        committed_ = true;
     }
 
 } // namespace orangutan::sqlite
