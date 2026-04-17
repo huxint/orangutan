@@ -19,7 +19,6 @@ namespace orangutan::tools {
         register_read_tool(registry, workspace_root, permissions, edit_mode);
         register_write_tool(registry, workspace_root, permissions);
         register_edit_tool(registry, workspace_root, permissions, edit_mode);
-        register_fs_tools(registry, workspace_root, permissions);
         register_fd_tool(registry, workspace_root, permissions);
         register_rg_tool(registry, workspace_root, permissions);
     }
