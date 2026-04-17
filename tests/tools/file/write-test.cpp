@@ -109,6 +109,15 @@ TEST_CASE("write rejects batch entries missing path or content") {
     CHECK(result.content.contains("`path` and `content`"));
 }
 
+TEST_CASE("write rejects empty files batches") {
+    const auto workspace = testing::unique_test_root("write-empty-batch");
+    auto registry = make_write_registry(workspace);
+
+    const auto result = registry.execute(ToolUse("w", "write", {{"files", nlohmann::json::array()}}));
+    CHECK(result.is_error);
+    CHECK(result.content.contains("at least one entry"));
+}
+
 TEST_CASE("write denies paths that escape the workspace sandbox") {
     const auto workspace = testing::unique_test_root("write-escape");
     auto registry = make_write_registry(workspace);
@@ -142,5 +151,13 @@ TEST_CASE("write check_permissions validates every entry in the files array") {
                                                    {{"path", "/etc/evil.txt"}, {"content", "b"}}})}});
         const auto decision = tool->check_permissions(call, ctx);
         CHECK_FALSE(decision.is_passthrough);
+    }
+
+    SECTION("empty files array is rejected") {
+        const ToolUse call("w", "write", {{"files", nlohmann::json::array()}});
+        const auto decision = tool->check_permissions(call, ctx);
+        CHECK_FALSE(decision.is_passthrough);
+        REQUIRE(decision.message.has_value());
+        CHECK(decision.message->contains("at least one entry"));
     }
 }

@@ -41,6 +41,10 @@ namespace orangutan::tools {
                 return jobs;
             }
 
+            if (input.at("files").empty()) {
+                throw std::runtime_error("`files` must contain at least one entry");
+            }
+
             jobs.reserve(input.at("files").size());
             for (const auto &entry : input.at("files")) {
                 if (!entry.is_object() || !entry.contains("path") || !entry.contains("content")) {
@@ -53,6 +57,9 @@ namespace orangutan::tools {
 
         PermissionResult check_write_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
             if (call.input.contains("files") && call.input.at("files").is_array()) {
+                if (call.input.at("files").empty()) {
+                    return PermissionResult::deny("`files` must contain at least one entry");
+                }
                 for (const auto &entry : call.input.at("files")) {
                     if (!entry.is_object()) {
                         return PermissionResult::deny("each `files` entry must be an object");
