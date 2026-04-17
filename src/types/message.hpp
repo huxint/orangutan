@@ -34,8 +34,23 @@ namespace orangutan {
             return append(std::forward<decltype(self)>(self), std::move(value));
         }
 
+        /// Convenience overload: any string-constructible value is wrapped into Text implicitly
+        /// so call sites can write `.text("hello")` or `.text(std::string{"hi"})` without
+        /// naming Text explicitly at every site.
+        template <typename S>
+            requires (!std::same_as<std::remove_cvref_t<S>, Text> && std::constructible_from<std::string, S &&>)
+        auto text(this auto &&self, S &&value) -> decltype(auto) {
+            return append(std::forward<decltype(self)>(self), Text{std::forward<S>(value)});
+        }
+
         auto thinking(this auto &&self, Thinking value) -> decltype(auto) {
             return append(std::forward<decltype(self)>(self), std::move(value));
+        }
+
+        template <typename S>
+            requires (!std::same_as<std::remove_cvref_t<S>, Thinking> && std::constructible_from<std::string, S &&>)
+        auto thinking(this auto &&self, S &&value) -> decltype(auto) {
+            return append(std::forward<decltype(self)>(self), Thinking{std::forward<S>(value)});
         }
 
         auto tool_use(this auto &&self, ToolUse value) -> decltype(auto) {

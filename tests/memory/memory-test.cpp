@@ -2,6 +2,7 @@
 #include "memory/runtime-memory.hpp"
 #include "memory/memory-age.hpp"
 #include "bootstrap/memory-context.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "test-helpers.hpp"
 
@@ -630,8 +631,8 @@ namespace {
     TEST_CASE("memory_store_constructs_when_fts_setup_is_best_effort") {
         const auto db_path = orangutan::testing::unique_test_db_path("memory-store", "fts-best-effort.db");
         {
-            orangutan::sqlite::Database db(db_path);
-            db.exec_script("CREATE TABLE memories_ai (placeholder TEXT);", "seed conflicting fts trigger name");
+            auto db = orangutan::sqlite::open_or_throw(db_path);
+            orangutan::sqlite::exec_script(db, "CREATE TABLE memories_ai (placeholder TEXT);", "seed conflicting fts trigger name");
         }
 
         CHECK_NOTHROW(MemoryStore(db_path));
