@@ -298,4 +298,41 @@ namespace {
         CHECK(*reopened->next_due_at == initial_due);
     };
 
+    TEST_CASE("runtime_can_restart_the_same_instance_after_stop") {
+        ServiceHarness harness;
+
+        std::promise<void> first_run;
+        std::promise<void> second_run;
+        auto first_run_future = first_run.get_future();
+        auto second_run_future = second_run.get_future();
+        std::atomic<int> execution_count = 0;
+
+        harness.service.set_executor([&](const orangutan::automation::Automation &) {
+            const auto current_count = execution_count.fetch_add(1) + 1;
+            if (current_count == 1) {
+                first_run.set_value();
+            } else if (current_count == 2) {
+                second_run.set_value();
+            }
+
+            return orangutan::automation::ExecutionResult{
+                .success = true,
+                .reply = "ok",
+                .summary = "ok",
+            };
+        });
+
+        static_cast<void>(harness.service.save(make_once_automation("first-run", orangutan::automation::from_unix_seconds(900))));
+        harness.runtime.start();
+        REQUIRE(first_run_future.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+        harness.runtime.stop();
+
+        static_cast<void>(harness.service.save(make_once_automation("second-run", orangutan::automation::from_unix_seconds(900))));
+        harness.runtime.start();
+        REQUIRE(second_run_future.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+        harness.runtime.stop();
+
+        CHECK(execution_count.load() == 2);
+    };
+
 } // namespace

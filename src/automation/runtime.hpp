@@ -79,7 +79,7 @@ namespace orangutan::automation {
         AutomationService *service_ = nullptr;
         utils::TaskPool *pool_ = nullptr;
         ClockSource clock_;
-        exec::async_scope scope_;
+        std::optional<exec::async_scope> scope_;
         std::atomic<bool> running_{false};
         std::mutex agent_execution_gates_mutex_;
         std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;

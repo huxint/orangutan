@@ -96,6 +96,10 @@ namespace orangutan::automation {
             return;
         }
 
+        if (!scope_.has_value()) {
+            scope_.emplace();
+        }
+
         service_->normalize_state(current_time());
 
         auto tick = stdexec::schedule(pool_->scheduler())
@@ -115,17 +119,20 @@ namespace orangutan::automation {
                     })
                   | exec::repeat_effect_until();
 
-        scope_.spawn(std::move(tick));
+        scope_->spawn(std::move(tick));
     }
 
     void AutomationRuntime::stop() {
-        if (!running_.exchange(false)) {
-            static_cast<void>(stdexec::sync_wait(scope_.on_empty()));
+        if (!scope_.has_value()) {
+            running_.store(false);
             return;
         }
 
-        scope_.request_stop();
-        static_cast<void>(stdexec::sync_wait(scope_.on_empty()));
+        if (running_.exchange(false)) {
+            scope_->request_stop();
+        }
+        static_cast<void>(stdexec::sync_wait(scope_->on_empty()));
+        scope_.reset();
     }
 
     void AutomationRuntime::run_pending(TimePoint now) {
