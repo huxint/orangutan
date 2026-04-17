@@ -32,7 +32,7 @@ using orangutan::testing::test_tmp_root;
 namespace {
 
     static_assert(std::same_as<decltype(&register_builtin_tools), void (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
-                                                                           const ToolPermissionContext *, std::string_view)>);
+                                                                           const ToolPermissionContext *, tools::file::edit_mode)>);
 
     using FindDefinitionSignature = const ToolDef *(ToolRegistry::*)(std::string_view) const;
     using FindToolSignature = const Tool *(ToolRegistry::*)(std::string_view) const;
@@ -43,7 +43,7 @@ namespace {
     static_assert(std::same_as<decltype(&register_runtime_tools),
                                RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
                                                               const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
-                                                              const ToolPermissionContext *, std::string_view)>);
+                                                              const ToolPermissionContext *, tools::file::edit_mode)>);
 
     using RegisterShellToolSignature = void (*)(ToolRegistry &, const std::filesystem::path &, const ToolPermissionContext *,
                                                 const std::shared_ptr<BackgroundCompletionDispatcher> &, const std::shared_ptr<BackgroundProcessManager> &);
@@ -1625,8 +1625,8 @@ public:
         workspace_ = test_tmp_root() / "orangutan_hashline_test";
         std::filesystem::remove_all(workspace_);
         std::filesystem::create_directories(workspace_);
-        // Explicitly pass "hashline" — the default is "search_replace"
-        register_builtin_tools(registry_, nullptr, workspace_.string(), nullptr, nullptr, "hashline");
+        // Explicitly pass hashline — the default is search_replace
+        register_builtin_tools(registry_, nullptr, workspace_.string(), nullptr, nullptr, tools::file::edit_mode::hashline);
     }
 
     ~HashlineToolsTest() {
@@ -1811,7 +1811,7 @@ TEST_CASE("SearchReplaceEditToolDescriptionMentionsPatch") {
     ToolRegistry sr_registry;
     auto sr_workspace = orangutan::testing::test_tmp_root() / "orangutan_sr_mode_test";
     std::filesystem::create_directories(sr_workspace);
-    register_builtin_tools(sr_registry, nullptr, sr_workspace.string(), nullptr, nullptr, "search_replace");
+    register_builtin_tools(sr_registry, nullptr, sr_workspace.string(), nullptr, nullptr, tools::file::edit_mode::search_replace);
 
     const auto defs = sr_registry.definitions();
     for (const auto &def : defs) {

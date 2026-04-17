@@ -14,24 +14,24 @@
 namespace orangutan::tools {
 
     void register_builtin_core_tools(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolRuntimeContext *tool_context,
-                                     const ToolPermissionContext *permissions, std::string_view edit_mode) {
+                                     const ToolPermissionContext *permissions, file::edit_mode mode) {
         shell::register_tools(registry, workspace_root, tool_context, permissions);
-        register_read_tool(registry, workspace_root, permissions, edit_mode);
+        register_read_tool(registry, workspace_root, permissions, mode);
         register_write_tool(registry, workspace_root, permissions);
-        register_edit_tool(registry, workspace_root, permissions, edit_mode);
+        register_edit_tool(registry, workspace_root, permissions, mode);
         register_fd_tool(registry, workspace_root, permissions);
         register_rg_tool(registry, workspace_root, permissions);
     }
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
-                                const ToolRuntimeContext *tool_context, const ToolPermissionContext *permissions, std::string_view edit_mode) {
+                                const ToolRuntimeContext *tool_context, const ToolPermissionContext *permissions, file::edit_mode mode) {
         if (coordinator::is_coordinator_mode(tool_context)) {
             register_coordinator_tools(registry, tool_context);
             registry.discover_deferred_tools();
             return;
         }
 
-        register_builtin_core_tools(registry, workspace_root, tool_context, permissions, edit_mode);
+        register_builtin_core_tools(registry, workspace_root, tool_context, permissions, mode);
         register_automation_tool(registry, tool_context);
         register_message_attachments_tool(registry, workspace_root, tool_context);
 

@@ -2,6 +2,7 @@
 
 #include "permissions/permission-types.hpp"
 #include "process/subprocess.hpp"
+#include "tools/file/edit/edit-mode.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/path.hpp"
 
@@ -125,10 +126,10 @@ namespace orangutan::tools {
                              const std::shared_ptr<BackgroundCompletionDispatcher> &completion_dispatcher, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_process_tools(ToolRegistry &registry, const std::shared_ptr<BackgroundProcessManager> &process_manager);
     void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
-                            std::string_view edit_mode = "search_replace");
+                            file::edit_mode mode = file::DEFAULT_EDIT_MODE);
     void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
     void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
-                            std::string_view edit_mode = "search_replace");
+                            file::edit_mode mode = file::DEFAULT_EDIT_MODE);
     void register_fd_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
     void register_rg_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
 

@@ -104,7 +104,7 @@ namespace orangutan::tools {
             }
         }
 
-        ToolOutput read_single_file(const std::filesystem::path &path, int offset, int limit, std::string_view edit_mode) {
+        ToolOutput read_single_file(const std::filesystem::path &path, int offset, int limit, file::edit_mode mode) {
             spdlog::info("  [tool] read: {}", path.string());
 
             if (!std::filesystem::exists(path)) {
@@ -140,7 +140,7 @@ namespace orangutan::tools {
 
             std::string out;
             for (int i = start; i <= end; ++i) {
-                if (edit_mode == "hashline") {
+                if (mode == file::edit_mode::hashline) {
                     out += format_hashline(lines[static_cast<std::size_t>(i - 1)], static_cast<std::size_t>(i));
                     out.push_back('\n');
                 } else {
@@ -155,7 +155,7 @@ namespace orangutan::tools {
             return out;
         }
 
-        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
+        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, file::edit_mode mode) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
             const bool has_paths = input.contains("paths") && !input["paths"].is_null() && !(input["paths"].is_array() && input["paths"].empty());
 
@@ -177,7 +177,7 @@ namespace orangutan::tools {
 
             if (has_path) {
                 const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root, permissions);
-                return read_single_file(path, offset, limit, edit_mode);
+                return read_single_file(path, offset, limit, mode);
             }
 
             const auto &paths = input.at("paths");
@@ -190,7 +190,7 @@ namespace orangutan::tools {
                 utils::format_to(combined.text, "=== {} ===\n", path.string());
 
                 try {
-                    auto single = read_single_file(path, offset, limit, edit_mode);
+                    auto single = read_single_file(path, offset, limit, mode);
                     combined.text += single.text;
                     combined.images.insert(combined.images.end(), std::make_move_iterator(single.images.begin()), std::make_move_iterator(single.images.end()));
                 } catch (const std::exception &e) {
@@ -203,7 +203,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
+    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, file::edit_mode mode) {
         registry.register_tool(
             {.definition =
                  {.name = "read",
@@ -234,7 +234,7 @@ namespace orangutan::tools {
                  },
              .read_only = true,
              .execute_rich =
-                 [workspace_root, permissions, mode = std::string(edit_mode)](const nlohmann::json &input) {
+                 [workspace_root, permissions, mode](const nlohmann::json &input) {
                      return read_file(input, workspace_root, permissions, mode);
                  }});
     }

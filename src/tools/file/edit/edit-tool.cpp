@@ -335,8 +335,8 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, std::string_view edit_mode) {
-        if (edit_mode == "hashline") {
+    void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, file::edit_mode mode) {
+        if (mode == file::edit_mode::hashline) {
             registry.register_tool(
                 {.definition = {.name = "edit",
                                 .description = "Edit a file using hash-anchored line references.\n\n"

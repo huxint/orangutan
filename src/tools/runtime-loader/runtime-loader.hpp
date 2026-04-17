@@ -2,13 +2,13 @@
 
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"
+#include "tools/file/edit/edit-mode.hpp"
 #include "tools/mcp/mcp-manager.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <string_view>
 
 namespace orangutan::tools {
 
@@ -20,6 +20,6 @@ namespace orangutan::tools {
     RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions = nullptr,
-                                                      std::string_view edit_mode = "search_replace");
+                                                      file::edit_mode mode = file::DEFAULT_EDIT_MODE);
 
 } // namespace orangutan::tools

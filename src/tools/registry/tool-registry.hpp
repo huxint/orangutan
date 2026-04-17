@@ -1,6 +1,7 @@
 #pragma once
 
 #include "permissions/permission-types.hpp"
+#include "tools/file/edit/edit-mode.hpp"
 #include "types/tool-def.hpp"
 #include "utils/transparent-lookup.hpp"
 
@@ -85,7 +86,7 @@ namespace orangutan::tools {
 
     void register_builtin_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory = nullptr, const std::filesystem::path &workspace_root = {},
                                 const ToolRuntimeContext *tool_context = nullptr, const ToolPermissionContext *permissions = nullptr,
-                                std::string_view edit_mode = "search_replace");
+                                file::edit_mode mode = file::DEFAULT_EDIT_MODE);
 
 } // namespace orangutan::tools
 
