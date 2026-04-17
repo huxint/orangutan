@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "storage/sqlite-throwing.hpp"
+#include "utils/enum-string.hpp"
 #include "utils/scope-exit.hpp"
 
 namespace orangutan::swarm {
@@ -25,28 +26,6 @@ namespace orangutan::swarm {
             "ORDER BY timestamp ASC";
 
         constexpr auto MARK_READ_SQL = "UPDATE agent_mailbox SET is_read = 1 WHERE id = ?";
-
-        auto message_type_to_string(message_type type) -> std::string_view {
-            switch (type) {
-                case message_type::message:
-                    return "message";
-                case message_type::shutdown_request:
-                    return "shutdown_request";
-                case message_type::shutdown_response:
-                    return "shutdown_response";
-            }
-            return "message";
-        }
-
-        auto string_to_message_type(std::string_view value) -> message_type {
-            if (value == "shutdown_request") {
-                return message_type::shutdown_request;
-            }
-            if (value == "shutdown_response") {
-                return message_type::shutdown_response;
-            }
-            return message_type::message;
-        }
 
         auto generate_id() -> std::string {
             static std::atomic<std::uint64_t> counter{0};
@@ -69,7 +48,7 @@ namespace orangutan::swarm {
                 .text = sqlite::unwrap(row.get<std::string>(4)),
                 .timestamp = sqlite::unwrap(row.get<std::int64_t>(5)),
                 .read = sqlite::unwrap(row.get<int>(6)) != 0,
-                .type = string_to_message_type(sqlite::unwrap(row.get<std::string>(7))),
+                .type = utils::parse_enum_or(sqlite::unwrap(row.get<std::string>(7)), message_type::message),
             };
         }
 
@@ -88,7 +67,7 @@ namespace orangutan::swarm {
                                     std::string_view text,
                                     message_type type) {
             sqlite::unwrap(stmt.clear_bindings());
-            stmt.bind_all(generate_id(), team_id, from, to, text, now_millis(), message_type_to_string(type));
+            stmt.bind_all(generate_id(), team_id, from, to, text, now_millis(), utils::enum_name(type));
             run_statement(stmt);
         }
 
