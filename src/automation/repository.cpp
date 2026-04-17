@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "automation/parser.hpp"
+#include "storage/sqlite-throwing.hpp"
 
 namespace orangutan::automation {
     namespace {
@@ -164,33 +165,33 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         std::optional<automation_row> find_automation_row_by_id(const sqlite::Database &db, std::string_view agent_key, std::string_view id) {
-            return db.query("SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status "
-                            "FROM automations "
-                            "WHERE agent_key = ?1 AND id = ?2 "
-                            "LIMIT 1")
-                .bind(agent_key, id)
-                .optional<automation_row>();
+            return sqlite::query_optional<automation_row>(
+                db,
+                "SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status "
+                "FROM automations "
+                "WHERE agent_key = ?1 AND id = ?2 "
+                "LIMIT 1",
+                agent_key, id);
         }
 
         [[nodiscard]]
         std::optional<automation_row> find_automation_row_by_name(const sqlite::Database &db, std::string_view agent_key, std::string_view name) {
-            return db.query("SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status "
-                            "FROM automations "
-                            "WHERE agent_key = ?1 AND name = ?2 "
-                            "LIMIT 1")
-                .bind(agent_key, name)
-                .optional<automation_row>();
+            return sqlite::query_optional<automation_row>(
+                db,
+                "SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status "
+                "FROM automations "
+                "WHERE agent_key = ?1 AND name = ?2 "
+                "LIMIT 1",
+                agent_key, name);
         }
 
     } // namespace
 
     Repository::Repository()
-    : db_(default_db_path()) {
-        ensure_schema();
-    }
+    : Repository(default_db_path()) {}
 
     Repository::Repository(const std::filesystem::path &db_path)
-    : db_(db_path) {
+    : db_(sqlite::open_or_throw(db_path)) {
         ensure_schema();
     }
 
@@ -204,41 +205,41 @@ namespace orangutan::automation {
         }
 
         const auto now = to_unix_seconds(Clock::now());
-        db_.exec("INSERT INTO automations ("
-                 "id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status, created_at, updated_at"
-                 ") VALUES ("
-                 "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
-                 ") "
-                 "ON CONFLICT(id) DO UPDATE SET "
-                 "agent_key = excluded.agent_key, "
-                 "name = excluded.name, "
-                 "enabled = excluded.enabled, "
-                 "paused = excluded.paused, "
-                 "prompt = excluded.prompt, "
-                 "notes = excluded.notes, "
-                 "tags_json = excluded.tags_json, "
-                 "trigger_json = excluded.trigger_json, "
-                 "delivery_json = excluded.delivery_json, "
-                 "last_run_at = excluded.last_run_at, "
-                 "next_due_at = excluded.next_due_at, "
-                 "last_status = excluded.last_status, "
-                 "updated_at = excluded.updated_at")
-            .bind(automation.id,
-                  automation.agent_key,
-                  automation.name,
-                  automation.enabled ? 1 : 0,
-                  automation.paused ? 1 : 0,
-                  automation.prompt,
-                  automation.notes,
-                  nlohmann::json(automation.tags).dump(),
-                  trigger_to_json(automation.trigger).dump(),
-                  delivery_policy_to_json(automation.delivery).dump(),
-                  automation.last_run_at,
-                  automation.next_due_at,
-                  automation.last_status,
-                  now,
-                  now)
-            .run();
+        sqlite::exec_bind(db_,
+                          "INSERT INTO automations ("
+                          "id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status, created_at, updated_at"
+                          ") VALUES ("
+                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
+                          ") "
+                          "ON CONFLICT(id) DO UPDATE SET "
+                          "agent_key = excluded.agent_key, "
+                          "name = excluded.name, "
+                          "enabled = excluded.enabled, "
+                          "paused = excluded.paused, "
+                          "prompt = excluded.prompt, "
+                          "notes = excluded.notes, "
+                          "tags_json = excluded.tags_json, "
+                          "trigger_json = excluded.trigger_json, "
+                          "delivery_json = excluded.delivery_json, "
+                          "last_run_at = excluded.last_run_at, "
+                          "next_due_at = excluded.next_due_at, "
+                          "last_status = excluded.last_status, "
+                          "updated_at = excluded.updated_at",
+                          automation.id,
+                          automation.agent_key,
+                          automation.name,
+                          automation.enabled ? 1 : 0,
+                          automation.paused ? 1 : 0,
+                          automation.prompt,
+                          automation.notes,
+                          nlohmann::json(automation.tags).dump(),
+                          trigger_to_json(automation.trigger).dump(),
+                          delivery_policy_to_json(automation.delivery).dump(),
+                          automation.last_run_at,
+                          automation.next_due_at,
+                          automation.last_status,
+                          now,
+                          now);
 
         return automation.id;
     }
@@ -262,15 +263,17 @@ namespace orangutan::automation {
         const auto enabled_filter = to_optional_sqlite_bool(query.enabled);
         const auto paused_filter = to_optional_sqlite_bool(query.paused);
 
-        for (const auto &row : db_.query("SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, "
-                                         "last_status "
-                                         "FROM automations "
-                                         "WHERE (?1 = '' OR agent_key = ?1) "
-                                         "AND (?2 IS NULL OR enabled = ?2) "
-                                         "AND (?3 IS NULL OR paused = ?3) "
-                                         "ORDER BY agent_key, name")
-                                   .bind(query.agent_key, enabled_filter, paused_filter)
-                                   .all<automation_row>()) {
+        const auto rows = sqlite::query_all<automation_row>(
+            db_,
+            "SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, "
+            "last_status "
+            "FROM automations "
+            "WHERE (?1 = '' OR agent_key = ?1) "
+            "AND (?2 IS NULL OR enabled = ?2) "
+            "AND (?3 IS NULL OR paused = ?3) "
+            "ORDER BY agent_key, name",
+            query.agent_key, enabled_filter, paused_filter);
+        for (const auto &row : rows) {
             automations.push_back(read_automation(row));
         }
 
@@ -291,7 +294,7 @@ namespace orangutan::automation {
             return false;
         }
 
-        db_.exec("DELETE FROM automations WHERE id = ?1").bind(std::get<0>(*row)).run();
+        sqlite::exec_bind(db_, "DELETE FROM automations WHERE id = ?1", std::get<0>(*row));
         return db_.changes() > 0;
     }
 
@@ -306,23 +309,23 @@ namespace orangutan::automation {
             run.id = generate_id("run");
         }
 
-        db_.exec("INSERT INTO automation_runs ("
-                 "id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path"
-                 ") VALUES ("
-                 "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11"
-                 ")")
-            .bind(run.id,
-                  run.automation_id,
-                  run.agent_key,
-                  run.automation_name,
-                  run.started_at,
-                  run.finished_at,
-                  run.status,
-                  run.summary,
-                  run.reply,
-                  run.delivery_status,
-                  run.log_path)
-            .run();
+        sqlite::exec_bind(db_,
+                          "INSERT INTO automation_runs ("
+                          "id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path"
+                          ") VALUES ("
+                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11"
+                          ")",
+                          run.id,
+                          run.automation_id,
+                          run.agent_key,
+                          run.automation_name,
+                          run.started_at,
+                          run.finished_at,
+                          run.status,
+                          run.summary,
+                          run.reply,
+                          run.delivery_status,
+                          run.log_path);
 
         return run.id;
     }
@@ -331,13 +334,15 @@ namespace orangutan::automation {
         std::scoped_lock lock(mutex_);
         std::vector<RunRecord> runs;
 
-        for (const auto &row : db_.query("SELECT id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path "
-                                         "FROM automation_runs "
-                                         "WHERE (?1 = '' OR agent_key = ?1) "
-                                         "AND (?2 = '' OR automation_id = ?2) "
-                                         "ORDER BY started_at DESC")
-                                   .bind(query.agent_key, query.automation_id)
-                                   .all<run_row>()) {
+        const auto rows = sqlite::query_all<run_row>(
+            db_,
+            "SELECT id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path "
+            "FROM automation_runs "
+            "WHERE (?1 = '' OR agent_key = ?1) "
+            "AND (?2 = '' OR automation_id = ?2) "
+            "ORDER BY started_at DESC",
+            query.agent_key, query.automation_id);
+        for (const auto &row : rows) {
             runs.push_back(read_run(row));
         }
 
@@ -357,22 +362,22 @@ namespace orangutan::automation {
             delivery.id = generate_id("delivery");
         }
 
-        db_.exec("INSERT INTO automation_deliveries ("
-                 "id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at"
-                 ") VALUES ("
-                 "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10"
-                 ")")
-            .bind(delivery.id,
-                  delivery.run_id,
-                  delivery.automation_id,
-                  delivery.agent_key,
-                  delivery.target,
-                  delivery.status,
-                  delivery.title,
-                  delivery.body,
-                  delivery.created_at,
-                  delivery.acked_at)
-            .run();
+        sqlite::exec_bind(db_,
+                          "INSERT INTO automation_deliveries ("
+                          "id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at"
+                          ") VALUES ("
+                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10"
+                          ")",
+                          delivery.id,
+                          delivery.run_id,
+                          delivery.automation_id,
+                          delivery.agent_key,
+                          delivery.target,
+                          delivery.status,
+                          delivery.title,
+                          delivery.body,
+                          delivery.created_at,
+                          delivery.acked_at);
 
         return delivery.id;
     }
@@ -381,16 +386,18 @@ namespace orangutan::automation {
         std::scoped_lock lock(mutex_);
         std::vector<DeliveryRecord> deliveries;
 
-        for (const auto &row : db_.query("SELECT id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at "
-                                         "FROM automation_deliveries "
-                                         "WHERE (?1 = '' OR agent_key = ?1) "
-                                         "AND (?2 = '' OR automation_id = ?2) "
-                                         "AND (?3 = '' OR run_id = ?3) "
-                                         "AND (?4 = '' OR target = ?4) "
-                                         "AND (?5 = 0 OR acked_at IS NULL) "
-                                         "ORDER BY created_at DESC")
-                                   .bind(query.agent_key, query.automation_id, query.run_id, query.target, query.only_unacked ? 1 : 0)
-                                   .all<delivery_row>()) {
+        const auto rows = sqlite::query_all<delivery_row>(
+            db_,
+            "SELECT id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at "
+            "FROM automation_deliveries "
+            "WHERE (?1 = '' OR agent_key = ?1) "
+            "AND (?2 = '' OR automation_id = ?2) "
+            "AND (?3 = '' OR run_id = ?3) "
+            "AND (?4 = '' OR target = ?4) "
+            "AND (?5 = 0 OR acked_at IS NULL) "
+            "ORDER BY created_at DESC",
+            query.agent_key, query.automation_id, query.run_id, query.target, query.only_unacked ? 1 : 0);
+        for (const auto &row : rows) {
             deliveries.push_back(read_delivery(row));
         }
 
@@ -403,22 +410,23 @@ namespace orangutan::automation {
         validate_non_blank(delivery_id, "delivery id");
 
         const auto resolved_acked_at = acked_at.value_or(to_unix_seconds(Clock::now()));
-        db_.exec("UPDATE automation_deliveries "
-                 "SET acked_at = ?3 "
-                 "WHERE agent_key = ?1 AND id = ?2 AND acked_at IS NULL")
-            .bind(agent_key, delivery_id, resolved_acked_at)
-            .run();
+        sqlite::exec_bind(db_,
+                          "UPDATE automation_deliveries "
+                          "SET acked_at = ?3 "
+                          "WHERE agent_key = ?1 AND id = ?2 AND acked_at IS NULL",
+                          agent_key, delivery_id, resolved_acked_at);
 
         if (db_.changes() == 0) {
             return std::nullopt;
         }
 
-        const auto row = db_.query("SELECT id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at "
-                                   "FROM automation_deliveries "
-                                   "WHERE agent_key = ?1 AND id = ?2 "
-                                   "LIMIT 1")
-                             .bind(agent_key, delivery_id)
-                             .optional<delivery_row>();
+        const auto row = sqlite::query_optional<delivery_row>(
+            db_,
+            "SELECT id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at "
+            "FROM automation_deliveries "
+            "WHERE agent_key = ?1 AND id = ?2 "
+            "LIMIT 1",
+            agent_key, delivery_id);
         if (!row.has_value()) {
             return std::nullopt;
         }
@@ -433,72 +441,75 @@ namespace orangutan::automation {
         }
 
         const auto resolved_acked_at = acked_at.value_or(to_unix_seconds(Clock::now()));
-        db_.exec("UPDATE automation_deliveries "
-                 "SET acked_at = ?1 "
-                 "WHERE agent_key = ?2 "
-                 "AND (?3 = '' OR automation_id = ?3) "
-                 "AND (?4 = '' OR run_id = ?4) "
-                 "AND (?5 = '' OR target = ?5) "
-                 "AND acked_at IS NULL")
-            .bind(resolved_acked_at, query.agent_key, query.automation_id, query.run_id, query.target)
-            .run();
+        sqlite::exec_bind(db_,
+                          "UPDATE automation_deliveries "
+                          "SET acked_at = ?1 "
+                          "WHERE agent_key = ?2 "
+                          "AND (?3 = '' OR automation_id = ?3) "
+                          "AND (?4 = '' OR run_id = ?4) "
+                          "AND (?5 = '' OR target = ?5) "
+                          "AND acked_at IS NULL",
+                          resolved_acked_at, query.agent_key, query.automation_id, query.run_id, query.target);
     }
 
     void Repository::ensure_schema() {
-        db_.exec_script("CREATE TABLE IF NOT EXISTS automations ("
-                        "  id TEXT PRIMARY KEY,"
-                        "  agent_key TEXT NOT NULL,"
-                        "  name TEXT NOT NULL,"
-                        "  enabled INTEGER NOT NULL,"
-                        "  paused INTEGER NOT NULL DEFAULT 0,"
-                        "  prompt TEXT NOT NULL,"
-                        "  notes TEXT NOT NULL DEFAULT '',"
-                        "  tags_json TEXT NOT NULL,"
-                        "  trigger_json TEXT NOT NULL,"
-                        "  delivery_json TEXT NOT NULL,"
-                        "  last_run_at INTEGER,"
-                        "  next_due_at INTEGER,"
-                        "  last_status TEXT NOT NULL DEFAULT '',"
-                        "  created_at INTEGER NOT NULL,"
-                        "  updated_at INTEGER NOT NULL"
-                        ");",
-                        "create automations table");
-        db_.exec_script("CREATE UNIQUE INDEX IF NOT EXISTS idx_automations_agent_name ON automations(agent_key, name);", "create automations unique name index");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_automations_scheduler ON automations(agent_key, enabled, paused, next_due_at);", "create automations scheduler index");
+        sqlite::exec_script(db_,
+                            "CREATE TABLE IF NOT EXISTS automations ("
+                            "  id TEXT PRIMARY KEY,"
+                            "  agent_key TEXT NOT NULL,"
+                            "  name TEXT NOT NULL,"
+                            "  enabled INTEGER NOT NULL,"
+                            "  paused INTEGER NOT NULL DEFAULT 0,"
+                            "  prompt TEXT NOT NULL,"
+                            "  notes TEXT NOT NULL DEFAULT '',"
+                            "  tags_json TEXT NOT NULL,"
+                            "  trigger_json TEXT NOT NULL,"
+                            "  delivery_json TEXT NOT NULL,"
+                            "  last_run_at INTEGER,"
+                            "  next_due_at INTEGER,"
+                            "  last_status TEXT NOT NULL DEFAULT '',"
+                            "  created_at INTEGER NOT NULL,"
+                            "  updated_at INTEGER NOT NULL"
+                            ");",
+                            "create automations table");
+        sqlite::exec_script(db_, "CREATE UNIQUE INDEX IF NOT EXISTS idx_automations_agent_name ON automations(agent_key, name);", "create automations unique name index");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_automations_scheduler ON automations(agent_key, enabled, paused, next_due_at);", "create automations scheduler index");
 
-        db_.exec_script("CREATE TABLE IF NOT EXISTS automation_runs ("
-                        "  id TEXT PRIMARY KEY,"
-                        "  automation_id TEXT NOT NULL,"
-                        "  agent_key TEXT NOT NULL,"
-                        "  automation_name TEXT NOT NULL DEFAULT '',"
-                        "  started_at INTEGER NOT NULL,"
-                        "  finished_at INTEGER,"
-                        "  status TEXT NOT NULL DEFAULT '',"
-                        "  summary TEXT NOT NULL DEFAULT '',"
-                        "  reply TEXT NOT NULL DEFAULT '',"
-                        "  delivery_status TEXT NOT NULL DEFAULT '',"
-                        "  log_path TEXT NOT NULL DEFAULT ''"
-                        ");",
-                        "create automation_runs table");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_automation_runs_lookup ON automation_runs(agent_key, automation_id, started_at);", "create automation_runs index");
+        sqlite::exec_script(db_,
+                            "CREATE TABLE IF NOT EXISTS automation_runs ("
+                            "  id TEXT PRIMARY KEY,"
+                            "  automation_id TEXT NOT NULL,"
+                            "  agent_key TEXT NOT NULL,"
+                            "  automation_name TEXT NOT NULL DEFAULT '',"
+                            "  started_at INTEGER NOT NULL,"
+                            "  finished_at INTEGER,"
+                            "  status TEXT NOT NULL DEFAULT '',"
+                            "  summary TEXT NOT NULL DEFAULT '',"
+                            "  reply TEXT NOT NULL DEFAULT '',"
+                            "  delivery_status TEXT NOT NULL DEFAULT '',"
+                            "  log_path TEXT NOT NULL DEFAULT ''"
+                            ");",
+                            "create automation_runs table");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_automation_runs_lookup ON automation_runs(agent_key, automation_id, started_at);", "create automation_runs index");
 
-        db_.exec_script("CREATE TABLE IF NOT EXISTS automation_deliveries ("
-                        "  id TEXT PRIMARY KEY,"
-                        "  run_id TEXT NOT NULL,"
-                        "  automation_id TEXT NOT NULL,"
-                        "  agent_key TEXT NOT NULL,"
-                        "  target TEXT NOT NULL,"
-                        "  status TEXT NOT NULL DEFAULT '',"
-                        "  title TEXT NOT NULL DEFAULT '',"
-                        "  body TEXT NOT NULL DEFAULT '',"
-                        "  created_at INTEGER NOT NULL,"
-                        "  acked_at INTEGER"
-                        ");",
-                        "create automation_deliveries table");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_automation_deliveries_lookup ON automation_deliveries(agent_key, automation_id, run_id, created_at);",
-                        "create automation_deliveries lookup index");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_automation_deliveries_ack ON automation_deliveries(agent_key, acked_at, created_at);",
-                        "create automation_deliveries ack index");
+        sqlite::exec_script(db_,
+                            "CREATE TABLE IF NOT EXISTS automation_deliveries ("
+                            "  id TEXT PRIMARY KEY,"
+                            "  run_id TEXT NOT NULL,"
+                            "  automation_id TEXT NOT NULL,"
+                            "  agent_key TEXT NOT NULL,"
+                            "  target TEXT NOT NULL,"
+                            "  status TEXT NOT NULL DEFAULT '',"
+                            "  title TEXT NOT NULL DEFAULT '',"
+                            "  body TEXT NOT NULL DEFAULT '',"
+                            "  created_at INTEGER NOT NULL,"
+                            "  acked_at INTEGER"
+                            ");",
+                            "create automation_deliveries table");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_automation_deliveries_lookup ON automation_deliveries(agent_key, automation_id, run_id, created_at);",
+                            "create automation_deliveries lookup index");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_automation_deliveries_ack ON automation_deliveries(agent_key, acked_at, created_at);",
+                            "create automation_deliveries ack index");
     }
 
 } // namespace orangutan::automation
