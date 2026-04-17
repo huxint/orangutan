@@ -1,6 +1,7 @@
 #include "storage/session-store.hpp"
 #include "types/base.hpp"
 #include "utils/format.hpp"
+#include "utils/overloaded.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -398,17 +399,11 @@ namespace orangutan::storage {
             Message message{magic_enum::enum_cast<base::role>(role_text).value_or(base::role::user)};
             for (auto &block : deserialize_content(content_json)) {
                 std::visit(
-                    [&](auto &&item) {
-                        using T = std::decay_t<decltype(item)>;
-                        if constexpr (std::same_as<T, Text>) {
-                            message.text(std::forward<decltype(item)>(item));
-                        } else if constexpr (std::same_as<T, Thinking>) {
-                            message.thinking(std::forward<decltype(item)>(item));
-                        } else if constexpr (std::same_as<T, ToolUse>) {
-                            message.tool_use(std::forward<decltype(item)>(item));
-                        } else if constexpr (std::same_as<T, ToolResult>) {
-                            message.tool_result(std::forward<decltype(item)>(item));
-                        }
+                    utils::Overloaded{
+                        [&](Text &item) { message.text(std::move(item)); },
+                        [&](Thinking &item) { message.thinking(std::move(item)); },
+                        [&](ToolUse &item) { message.tool_use(std::move(item)); },
+                        [&](ToolResult &item) { message.tool_result(std::move(item)); },
                     },
                     block);
             }

@@ -2,6 +2,7 @@
 
 #include "types/content.hpp"
 #include "types/message.hpp"
+#include "utils/overloaded.hpp"
 
 #include <magic_enum/magic_enum.hpp>
 #include <nlohmann/json.hpp>
@@ -11,15 +12,17 @@ namespace orangutan {
     // Serialize content to JSON for API request
     inline nlohmann::json content_block_to_json(const Content &block) {
         return std::visit(
-            [](auto &&blk) -> nlohmann::json {
-                using T = std::decay_t<decltype(blk)>;
-                if constexpr (std::same_as<T, Text>) {
+            utils::Overloaded{
+                [](const Text &blk) -> nlohmann::json {
                     return {{"type", "text"}, {"text", blk.text}};
-                } else if constexpr (std::same_as<T, Thinking>) {
+                },
+                [](const Thinking &blk) -> nlohmann::json {
                     return {{"type", "thinking"}, {"thinking", blk.thinking}};
-                } else if constexpr (std::same_as<T, ToolUse>) {
+                },
+                [](const ToolUse &blk) -> nlohmann::json {
                     return {{"type", "tool_use"}, {"id", blk.id}, {"name", blk.name}, {"input", blk.input}};
-                } else if constexpr (std::same_as<T, ToolResult>) {
+                },
+                [](const ToolResult &blk) -> nlohmann::json {
                     nlohmann::json json = {{"type", "tool_result"}, {"tool_use_id", blk.tool_use_id}};
                     if (blk.is_error) {
                         json["is_error"] = true;
@@ -40,7 +43,7 @@ namespace orangutan {
                         json["content"] = content_array;
                     }
                     return json;
-                }
+                },
             },
             block);
     }

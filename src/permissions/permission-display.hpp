@@ -1,15 +1,14 @@
 #pragma once
 
 #include "permissions/permission-types.hpp"
+#include "utils/overloaded.hpp"
 
-#include <concepts>
 #include <nlohmann/json.hpp>
 
 #include <magic_enum/magic_enum.hpp>
 
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -49,36 +48,37 @@ namespace orangutan::permissions {
 
     inline nlohmann::json permission_reason_to_json(const DecisionReason &reason) {
         return std::visit(
-            [](const auto &value) -> nlohmann::json {
-                using Value = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<Value, RuleDecisionReason>) {
+            utils::Overloaded{
+                [](const RuleDecisionReason &value) -> nlohmann::json {
                     return {
                         {"type", "rule"},
                         {"source", std::string{magic_enum::enum_name(value.source)}},
                         {"source_label", permission_rule_source_label(value.source)},
                         {"rule_value", value.rule_value},
                     };
-                } else if constexpr (std::same_as<Value, ModeDecisionReason>) {
+                },
+                [](const ModeDecisionReason &value) -> nlohmann::json {
                     return {
                         {"type", "mode"},
                         {"mode", std::string{magic_enum::enum_name(value.mode)}},
                         {"mode_label", permission_mode_label(value.mode)},
                     };
-                } else if constexpr (std::same_as<Value, SafetyCheckDecisionReason>) {
+                },
+                [](const SafetyCheckDecisionReason &value) -> nlohmann::json {
                     return {
                         {"type", "safety_check"},
                         {"path", value.path},
                     };
-                } else if constexpr (std::same_as<Value, ToolSpecificDecisionReason>) {
+                },
+                [](const ToolSpecificDecisionReason &value) -> nlohmann::json {
                     return {
                         {"type", "tool_specific"},
                         {"detail", value.detail},
                     };
-                } else {
-                    return {
-                        {"type", "hook"},
-                    };
-                }
+                },
+                [](const HookDecisionReason &) -> nlohmann::json {
+                    return {{"type", "hook"}};
+                },
             },
             reason);
     }
@@ -104,23 +104,26 @@ namespace orangutan::permissions {
         }
 
         std::visit(
-            [&lines](const auto &value) {
-                using Value = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<Value, RuleDecisionReason>) {
+            utils::Overloaded{
+                [&lines](const RuleDecisionReason &value) {
                     lines.push_back("Reason: rule from " + permission_rule_source_label(value.source));
                     lines.push_back("Rule: " + value.rule_value);
-                } else if constexpr (std::same_as<Value, ModeDecisionReason>) {
+                },
+                [&lines](const ModeDecisionReason &value) {
                     lines.emplace_back("Reason: mode");
                     lines.push_back("Mode: " + permission_mode_label(value.mode));
-                } else if constexpr (std::same_as<Value, SafetyCheckDecisionReason>) {
+                },
+                [&lines](const SafetyCheckDecisionReason &value) {
                     lines.emplace_back("Reason: safety check");
                     lines.push_back("Path: " + value.path);
-                } else if constexpr (std::same_as<Value, ToolSpecificDecisionReason>) {
+                },
+                [&lines](const ToolSpecificDecisionReason &value) {
                     lines.emplace_back("Reason: tool-specific check");
                     lines.push_back("Detail: " + value.detail);
-                } else {
+                },
+                [&lines](const HookDecisionReason &) {
                     lines.emplace_back("Reason: hook");
-                }
+                },
             },
             *decision.reason);
         return lines;

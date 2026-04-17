@@ -27,15 +27,6 @@ namespace orangutan::channel::qq {
 
     namespace {
         constexpr std::chrono::seconds CONNECT_TIMEOUT{10};
-
-        template <class... Ts>
-        struct Overloaded : Ts... {
-            using Ts::operator()...;
-        };
-
-        template <class... Ts>
-        Overloaded(Ts...) -> Overloaded<Ts...>;
-
     } // namespace
 
     using RuntimeState = qq_channel_runtime_state;
