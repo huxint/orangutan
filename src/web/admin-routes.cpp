@@ -1,3 +1,5 @@
+#include "web/errors.hpp"
+#include "web/event-bus.hpp"
 #include "web/web-route-internal.hpp"
 
 #include "bootstrap/bootstrap.hpp"
@@ -133,70 +135,58 @@ namespace orangutan::web {
 
     } // namespace
 
-    void handle_get_config(const httplib::Request & /*req*/, httplib::Response &res, config::Config *config) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
+    void handle_get_config(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
+        if (ctx.config == nullptr) {
+            send_error(res, 503, "config_unavailable", "config not available");
             return;
         }
-        const nlohmann::json body = config_to_json(*config);
-        res.set_content(body.dump(), "application/json");
+        send_json(res, config_to_json(*ctx.config));
     }
 
-    void handle_put_config(const httplib::Request &req, httplib::Response &res, config::Config *config, const std::filesystem::path *config_save_path) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
+    void handle_put_config(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.config == nullptr) {
+            send_error(res, 503, "config_unavailable", "config not available");
             return;
         }
-        nlohmann::json input;
-        try {
-            input = nlohmann::json::parse(req.body);
-        } catch (const nlohmann::json::parse_error &) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
+        const auto input = parse_body(req, res);
+        if (!input.has_value()) {
             return;
         }
 
-        *config = config_detail::parse_json(input, {});
+        *ctx.config = config_detail::parse_json(*input, {});
 
-        const auto config_path = (config_save_path != nullptr && !config_save_path->empty()) ? *config_save_path : config::default_orangutan_config_path();
+        const auto config_path = !ctx.config_save_path.empty() ? ctx.config_save_path : config::default_orangutan_config_path();
         if (config_path.empty()) {
-            res.status = 500;
-            res.set_content(R"({"error":"unable to resolve config save path"})", "application/json");
+            send_error(res, 500, "save_path_unresolved", "unable to resolve config save path");
             return;
         }
-        config->save_to(config_path);
-
-        res.set_content(R"({"status":"saved"})", "application/json");
+        ctx.config->save_to(config_path);
+        send_json(res, {{"status", "saved"}, {"path", config_path.string()}});
     }
 
-    void handle_list_tools(const httplib::Request & /*req*/, httplib::Response &res, tools::ToolRegistry *registry) {
-        if (registry == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"tool registry not available"})", "application/json");
+    void handle_list_tools(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
+        if (ctx.tool_registry == nullptr) {
+            send_error(res, 503, "tools_unavailable", "tool registry not available");
             return;
         }
-        const auto definitions = registry->definitions();
         auto arr = nlohmann::json::array();
-        for (const auto &definition : definitions) {
+        for (const auto &definition : ctx.tool_registry->definitions()) {
             arr.push_back({
                 {"name", definition.name},
                 {"description", definition.description},
                 {"source", "builtin"},
             });
         }
-        res.set_content(arr.dump(), "application/json");
+        send_json(res, {{"items", std::move(arr)}});
     }
 
-    void handle_list_agents(const httplib::Request & /*req*/, httplib::Response &res, config::Config *config) {
-        if (config == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"config not available"})", "application/json");
+    void handle_list_agents(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
+        if (ctx.config == nullptr) {
+            send_error(res, 503, "config_unavailable", "config not available");
             return;
         }
         auto arr = nlohmann::json::array();
-        for (const auto &[key, agent] : bootstrap::detail::build_effective_agents(*config)) {
+        for (const auto &[key, agent] : bootstrap::detail::build_effective_agents(*ctx.config)) {
             arr.push_back({
                 {"key", key},
                 {"profile", agent.profile},
@@ -206,18 +196,67 @@ namespace orangutan::web {
                 {"team_agents", agent.team_agents},
             });
         }
-        res.set_content(arr.dump(), "application/json");
+        send_json(res, {{"items", std::move(arr)}});
     }
 
-    void handle_list_skills(const httplib::Request & /*req*/, httplib::Response &res, skills::SkillLoader *loader) {
-        if (loader == nullptr) {
-            res.status = 503;
-            res.set_content(R"({"error":"skill loader not available"})", "application/json");
+    void handle_agent_graph(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
+        if (ctx.config == nullptr) {
+            send_error(res, 503, "config_unavailable", "config not available");
+            return;
+        }
+        const auto effective = bootstrap::detail::build_effective_agents(*ctx.config);
+
+        // Snapshot currently-active sessions so the frontend can draw "live" halos
+        // around agents that have a runtime attached.
+        std::unordered_map<std::string, std::size_t> live_counts;
+        if (ctx.sessions != nullptr && ctx.sessions_mutex != nullptr) {
+            std::scoped_lock lock(*ctx.sessions_mutex);
+            for (const auto &[session_id, state] : *ctx.sessions) {
+                if (state == nullptr || state->runtime == nullptr) {
+                    continue;
+                }
+                ++live_counts[state->completion_resume_state != nullptr ? state->completion_resume_state->agent_key : std::string{}];
+            }
+        }
+
+        auto nodes = nlohmann::json::array();
+        auto edges = nlohmann::json::array();
+        for (const auto &[key, agent] : effective) {
+            auto live_it = live_counts.find(key);
+            nodes.push_back({
+                {"id", key},
+                {"model", agent.model},
+                {"profile", agent.profile},
+                {"workspace", agent.workspace},
+                {"edit_mode", agent.edit_mode},
+                {"coordinator_mode", agent.coordinator_mode},
+                {"team_size", agent.team_agents.size()},
+                {"live_sessions", live_it == live_counts.end() ? 0 : live_it->second},
+            });
+            for (const auto &peer : agent.team_agents) {
+                edges.push_back({
+                    {"source", key},
+                    {"target", peer},
+                    {"kind", "team"},
+                });
+            }
+        }
+
+        send_json(res, {
+                           {"nodes", std::move(nodes)},
+                           {"edges", std::move(edges)},
+                           {"generated_at", std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()},
+                       });
+    }
+
+    void handle_list_skills(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
+        if (ctx.skill_loader == nullptr) {
+            send_error(res, 503, "skills_unavailable", "skill loader not available");
             return;
         }
 
         auto arr = nlohmann::json::array();
-        const auto catalog = loader->list(skills::skill_list_query{.include_inactive = true});
+        const auto catalog = ctx.skill_loader->list(skills::skill_list_query{.include_inactive = true});
         for (const auto &skill : catalog.skills) {
             arr.push_back({
                 {"id", skill.id},
@@ -232,39 +271,47 @@ namespace orangutan::web {
             });
         }
 
-        nlohmann::json body = {
-            {"schema_version", 2},
-            {"skills", std::move(arr)},
-        };
-        res.set_content(body.dump(), "application/json");
+        send_json(res, {
+                           {"schema_version", 2},
+                           {"items", std::move(arr)},
+                       });
     }
 
-
-    void handle_system_status(const httplib::Request & /*req*/, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::AutomationService *automation_service) {
+    void handle_system_status(const WebContext &ctx, const httplib::Request & /*req*/, httplib::Response &res) {
         const auto now = std::chrono::steady_clock::now();
-        const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+        const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - ctx.start_time).count();
 
         std::size_t active_sessions = 0;
-        {
-            std::scoped_lock lock(sessions_mutex);
-            active_sessions = sessions.size();
+        if (ctx.sessions != nullptr && ctx.sessions_mutex != nullptr) {
+            std::scoped_lock lock(*ctx.sessions_mutex);
+            active_sessions = ctx.sessions->size();
         }
 
         nlohmann::json body = {
             {"uptime_seconds", uptime},
             {"active_web_sessions", active_sessions},
             {"provider_health", nlohmann::json::object()},
+            {"event_bus",
+             {
+                 {"latest_sequence", ctx.event_bus != nullptr ? ctx.event_bus->current_sequence() : 0},
+             }},
         };
-        if (automation_service == nullptr) {
+        if (ctx.automation_service == nullptr) {
             body["automation"] = nullptr;
         } else {
-            const auto automations = automation_service->list();
             body["automation"] = {
-                {"automation_count", automations.size()},
+                {"automation_count", ctx.automation_service->list().size()},
             };
         }
-        res.set_content(body.dump(), "application/json");
+        send_json(res, body);
+    }
+
+    void handle_server_info(const WebContext & /*ctx*/, const httplib::Request & /*req*/, httplib::Response &res) {
+        send_json(res, {
+                           {"name", "orangutan"},
+                           {"api_version", "v1"},
+                           {"capabilities", nlohmann::json::array({"sse", "events", "graph", "pagination", "approvals", "automation"})},
+                       });
     }
 
 } // namespace orangutan::web

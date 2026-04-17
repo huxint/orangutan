@@ -1,80 +1,58 @@
 #pragma once
 
 #include "bootstrap/agent-runtime.hpp"
+#include "web/context.hpp"
+
 #include <httplib.h>
 
-namespace orangutan::automation {
-    class AutomationRuntime;
-    class AutomationService;
-}
-
-namespace orangutan::config {
-    struct Config;
-}
-
-namespace orangutan::memory {
-    class MemoryStore;
-}
-
-namespace orangutan::skills {
-    class SkillLoader;
-}
-
-namespace orangutan::storage {
-    class SessionStore;
-}
-
-namespace orangutan::tools {
-    class ToolRegistry;
-}
-
 #include <chrono>
-#include <filesystem>
-#include <mutex>
+#include <functional>
 #include <string>
-#include <unordered_map>
 
 namespace orangutan::web {
 
     struct WebCompletionResumeState;
     struct WebSessionState;
 
-    void handle_list_sessions(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
-    void handle_get_session(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
-    void handle_delete_session(const httplib::Request &req, httplib::Response &res, storage::SessionStore *store);
-    void handle_list_agent_sessions(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
-    void handle_get_agent_session(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
-    void handle_delete_agent_session(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store);
+    // All v1 handlers share a uniform 3-argument signature: (context, request, response).
+    // Context aggregates every backing service, so handlers are easy to register and test.
 
-    void handle_get_config(const httplib::Request &req, httplib::Response &res, config::Config *config);
-    void handle_put_config(const httplib::Request &req, httplib::Response &res, config::Config *config, const std::filesystem::path *config_save_path = nullptr);
+    void handle_list_sessions(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_get_session(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_delete_session(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_list_agent_sessions(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_get_agent_session(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_delete_agent_session(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
 
-    void handle_list_tools(const httplib::Request &req, httplib::Response &res, tools::ToolRegistry *registry);
-    void handle_list_agents(const httplib::Request &req, httplib::Response &res, config::Config *config);
-    void handle_list_skills(const httplib::Request &req, httplib::Response &res, skills::SkillLoader *loader);
-    void handle_list_automations(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_create_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_get_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_patch_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_delete_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_run_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_pause_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_resume_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_list_automation_runs(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_list_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_ack_automation_delivery(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
-    void handle_clear_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service);
+    void handle_get_config(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_put_config(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
 
-    void handle_system_status(const httplib::Request &req, httplib::Response &res, std::chrono::steady_clock::time_point start_time, std::mutex &sessions_mutex,
-                              const std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions, automation::AutomationService *automation_service);
+    void handle_list_tools(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_list_agents(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_agent_graph(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_list_skills(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
 
-    void handle_chat(const httplib::Request &req, httplib::Response &res, config::Config *config, storage::SessionStore *store, memory::MemoryStore *memory_store,
-                     tools::ToolRegistry *tool_registry, automation::AutomationRuntime *automation_runtime, std::mutex &sessions_mutex,
-                     std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
-    void handle_chat_approval(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
-                              std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
-    void handle_chat_abort(const httplib::Request &req, httplib::Response &res, std::mutex &sessions_mutex,
-                           std::unordered_map<std::string, std::unique_ptr<WebSessionState>> &sessions);
+    void handle_list_automations(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_create_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_get_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_patch_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_delete_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_run_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_pause_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_resume_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_list_automation_runs(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_list_automation_deliveries(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_ack_automation_delivery(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_clear_automation_deliveries(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+
+    void handle_system_status(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_server_info(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+
+    void handle_event_stream(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+
+    void handle_chat(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_chat_approval(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
+    void handle_chat_abort(const WebContext &ctx, const httplib::Request &req, httplib::Response &res);
 
     namespace detail {
 

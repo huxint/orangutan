@@ -1,5 +1,6 @@
 #include "automation/service.hpp"
 #include "web/admin-routes-detail.hpp"
+#include "web/event-bus.hpp"
 #include "web/web-routes.hpp"
 
 #include "tools/automation/automation-tool-support.hpp"
@@ -142,10 +143,18 @@ namespace orangutan::web {
             return query;
         }
 
+        void publish_automation_event(const WebContext &ctx, std::string_view kind, const automation::Automation &automation) {
+            if (ctx.event_bus == nullptr) {
+                return;
+            }
+            ctx.event_bus->publish(kind, automation.agent_key,
+                                   {{"automation_id", automation.id}, {"agent_key", automation.agent_key}, {"name", automation.name}});
+        }
+
     } // namespace
 
-    void handle_list_automations(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_list_automations(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -157,14 +166,14 @@ namespace orangutan::web {
         }
 
         auto arr = nlohmann::json::array();
-        for (const auto &automation : automation_service->list(*query)) {
+        for (const auto &automation : ctx.automation_service->list(*query)) {
             arr.push_back(automation_to_json(automation));
         }
-        res.set_content(arr.dump(), "application/json");
+        send_json(res, {{"items", std::move(arr)}});
     }
 
-    void handle_create_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_create_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -182,8 +191,11 @@ namespace orangutan::web {
         }
 
         try {
-            const auto id = automation_service->save(*automation);
-            const auto stored = automation_service->find(automation->agent_key, id);
+            const auto id = ctx.automation_service->save(*automation);
+            const auto stored = ctx.automation_service->find(automation->agent_key, id);
+            if (stored.has_value()) {
+                publish_automation_event(ctx, "automation.created", *stored);
+            }
             res.status = 201;
             res.set_content((stored.has_value() ? automation_to_json(*stored) : nlohmann::json{{"id", id}}).dump(), "application/json");
         } catch (const std::exception &error) {
@@ -191,22 +203,22 @@ namespace orangutan::web {
         }
     }
 
-    void handle_get_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_get_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        const auto automation = automation_service->find(resolve_agent_key_or_default(req), std::string(req.matches[1]));
+        const auto automation = ctx.automation_service->find(resolve_agent_key_or_default(req), std::string(req.matches[1]));
         if (!automation.has_value()) {
             set_json_error(res, 404, "automation not found");
             return;
         }
-        res.set_content(automation_to_json(*automation).dump(), "application/json");
+        send_json(res, automation_to_json(*automation));
     }
 
-    void handle_patch_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_patch_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -218,7 +230,7 @@ namespace orangutan::web {
         }
 
         const auto agent_key = resolve_agent_key_or_default(req, &*body);
-        const auto existing = automation_service->find(agent_key, std::string(req.matches[1]));
+        const auto existing = ctx.automation_service->find(agent_key, std::string(req.matches[1]));
         if (!existing.has_value()) {
             set_json_error(res, 404, "automation not found");
             return;
@@ -231,69 +243,83 @@ namespace orangutan::web {
         }
 
         try {
-            const auto id = automation_service->save(*updated);
-            const auto stored = automation_service->find(agent_key, id);
-            res.set_content((stored.has_value() ? automation_to_json(*stored) : nlohmann::json{{"id", id}}).dump(), "application/json");
+            const auto id = ctx.automation_service->save(*updated);
+            const auto stored = ctx.automation_service->find(agent_key, id);
+            if (stored.has_value()) {
+                publish_automation_event(ctx, "automation.updated", *stored);
+            }
+            send_json(res, stored.has_value() ? automation_to_json(*stored) : nlohmann::json{{"id", id}});
         } catch (const std::exception &error) {
             set_json_error(res, 400, error.what());
         }
     }
 
-    void handle_delete_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_delete_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        if (!automation_service->remove(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+        const auto agent_key = resolve_agent_key_or_default(req);
+        const auto automation_id = std::string(req.matches[1]);
+        if (!ctx.automation_service->remove(agent_key, automation_id)) {
             set_json_error(res, 404, "automation not found");
             return;
         }
-        res.set_content(R"({"status":"deleted"})", "application/json");
+        if (ctx.event_bus != nullptr) {
+            ctx.event_bus->publish("automation.deleted", agent_key, {{"automation_id", automation_id}, {"agent_key", agent_key}});
+        }
+        send_json(res, {{"status", "deleted"}, {"id", automation_id}});
     }
 
-    void handle_run_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_run_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
 
+        const auto agent_key = resolve_agent_key_or_default(req);
+        const auto automation_id = std::string(req.matches[1]);
         try {
-            const auto run_id = automation_service->run_now(resolve_agent_key_or_default(req), std::string(req.matches[1]));
-            res.set_content(nlohmann::json{{"run_id", run_id}}.dump(), "application/json");
+            const auto run_id = ctx.automation_service->run_now(agent_key, automation_id);
+            if (ctx.event_bus != nullptr) {
+                ctx.event_bus->publish("automation.run_started", agent_key,
+                                       {{"automation_id", automation_id}, {"run_id", run_id}, {"agent_key", agent_key}});
+            }
+            send_json(res, {{"run_id", run_id}});
         } catch (const std::exception &error) {
             set_json_error(res, std::string_view(error.what()) == "automation not found" ? 404 : 400, error.what());
         }
     }
 
-    void handle_pause_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_pause_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        if (!automation_service->pause(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+        if (!ctx.automation_service->pause(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
             set_json_error(res, 404, "automation not found");
             return;
         }
-        res.set_content(R"({"status":"paused"})", "application/json");
+        send_json(res, {{"status", "paused"}});
     }
 
-    void handle_resume_automation(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_resume_automation(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
 
-        if (!automation_service->resume(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
+        if (!ctx.automation_service->resume(resolve_agent_key_or_default(req), std::string(req.matches[1]))) {
             set_json_error(res, 404, "automation not found");
             return;
         }
-        res.set_content(R"({"status":"resumed"})", "application/json");
+        send_json(res, {{"status", "resumed"}});
     }
 
-    void handle_list_automation_runs(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_list_automation_runs(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -305,14 +331,14 @@ namespace orangutan::web {
         }
 
         auto arr = nlohmann::json::array();
-        for (const auto &run : automation_service->list_runs(*query)) {
+        for (const auto &run : ctx.automation_service->list_runs(*query)) {
             arr.push_back(run_to_json(run));
         }
-        res.set_content(arr.dump(), "application/json");
+        send_json(res, {{"items", std::move(arr)}});
     }
 
-    void handle_list_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_list_automation_deliveries(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -324,14 +350,14 @@ namespace orangutan::web {
         }
 
         auto arr = nlohmann::json::array();
-        for (const auto &delivery : automation_service->list_deliveries(*query)) {
+        for (const auto &delivery : ctx.automation_service->list_deliveries(*query)) {
             arr.push_back(delivery_to_json(delivery));
         }
-        res.set_content(arr.dump(), "application/json");
+        send_json(res, {{"items", std::move(arr)}});
     }
 
-    void handle_ack_automation_delivery(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_ack_automation_delivery(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -352,15 +378,15 @@ namespace orangutan::web {
             return;
         }
 
-        if (!automation_service->ack_delivery(agent_key, std::string(req.matches[1]))) {
+        if (!ctx.automation_service->ack_delivery(agent_key, std::string(req.matches[1]))) {
             set_json_error(res, 404, "delivery not found");
             return;
         }
-        res.set_content(R"({"status":"acknowledged"})", "application/json");
+        send_json(res, {{"status", "acknowledged"}});
     }
 
-    void handle_clear_automation_deliveries(const httplib::Request &req, httplib::Response &res, automation::AutomationService *automation_service) {
-        if (automation_service == nullptr) {
+    void handle_clear_automation_deliveries(const WebContext &ctx, const httplib::Request &req, httplib::Response &res) {
+        if (ctx.automation_service == nullptr) {
             set_json_error(res, 503, "automation service not available");
             return;
         }
@@ -386,8 +412,8 @@ namespace orangutan::web {
         }
 
         try {
-            automation_service->clear_deliveries(*query);
-            res.set_content(R"({"status":"cleared"})", "application/json");
+            ctx.automation_service->clear_deliveries(*query);
+            send_json(res, {{"status", "cleared"}});
         } catch (const std::exception &error) {
             set_json_error(res, 400, error.what());
         }

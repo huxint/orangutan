@@ -1,5 +1,7 @@
 #pragma once
 
+#include "web/context.hpp"
+#include "web/event-bus.hpp"
 #include "web/web-types.hpp"
 
 #include <chrono>
@@ -40,7 +42,6 @@ namespace orangutan::tools {
 
 namespace orangutan::web {
 
-    struct WebSessionState;
     class WebServerBuilder;
 
     class WebServer {
@@ -87,18 +88,11 @@ namespace orangutan::web {
         std::condition_variable startup_cv_;
         bool startup_complete_ = false;
 
-        storage::SessionStore *session_store_ = nullptr;
-        memory::MemoryStore *memory_store_ = nullptr;
-        config::Config *config_ = nullptr;
-        std::filesystem::path config_save_path_;
-        tools::ToolRegistry *tool_registry_ = nullptr;
-        skills::SkillLoader *skill_loader_ = nullptr;
-        automation::AutomationService *automation_service_ = nullptr;
-        automation::AutomationRuntime *automation_runtime_ = nullptr;
-        std::chrono::steady_clock::time_point start_time_ = std::chrono::steady_clock::now();
-
         std::mutex sessions_mutex_;
         std::unordered_map<std::string, std::unique_ptr<WebSessionState>> sessions_;
+        EventBus event_bus_;
+
+        WebContext context_;
 
         void setup_routes();
     };

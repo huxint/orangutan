@@ -1,5 +1,7 @@
 #pragma once
 
+#include "web/errors.hpp"
+
 #include <expected>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -9,9 +11,22 @@
 
 namespace orangutan::web::admin_detail {
 
+    /// Legacy shim — routes through the unified error envelope. Kept because admin helpers
+    /// already accept `std::string_view` and we don't want to change call sites.
     inline void set_json_error(httplib::Response &res, int status, std::string_view message) {
-        res.status = status;
-        res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
+        // Map status codes to short machine-readable codes so the frontend can branch on them
+        // without parsing prose. Additional codes are added organically as needed.
+        std::string_view code = "error";
+        switch (status) {
+            case 400: code = "bad_request"; break;
+            case 401: code = "unauthorized"; break;
+            case 403: code = "forbidden"; break;
+            case 404: code = "not_found"; break;
+            case 409: code = "conflict"; break;
+            case 503: code = "service_unavailable"; break;
+            default: break;
+        }
+        send_error(res, status, code, message);
     }
 
     [[nodiscard]]

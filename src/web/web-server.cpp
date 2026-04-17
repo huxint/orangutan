@@ -1,10 +1,29 @@
 #include "web/web-server.hpp"
 #include "web/web-routes.hpp"
+
 #include <spdlog/spdlog.h>
 
 namespace orangutan::web {
 
-    WebServer::WebServer() = default;
+    namespace {
+
+        /// Bind a 3-arg v1 handler to httplib's (req, res) callback using the server's
+        /// WebContext. Keeps route registration readable instead of a wall of lambdas.
+        template <auto Handler>
+        auto bind_handler(const WebContext &ctx) {
+            return [&ctx](const httplib::Request &req, httplib::Response &res) {
+                Handler(ctx, req, res);
+            };
+        }
+
+    } // namespace
+
+    WebServer::WebServer() {
+        context_.sessions = &sessions_;
+        context_.sessions_mutex = &sessions_mutex_;
+        context_.event_bus = &event_bus_;
+        context_.start_time = std::chrono::steady_clock::now();
+    }
 
     WebServer::~WebServer() {
         stop();
@@ -102,28 +121,28 @@ namespace orangutan::web {
     }
 
     void WebServer::set_session_store(storage::SessionStore *store) {
-        session_store_ = store;
+        context_.session_store = store;
     }
     void WebServer::set_memory_store(memory::MemoryStore *store) {
-        memory_store_ = store;
+        context_.memory_store = store;
     }
     void WebServer::set_config(config::Config *config) {
-        config_ = config;
+        context_.config = config;
     }
     void WebServer::set_config_save_path(const std::filesystem::path &path) {
-        config_save_path_ = path;
+        context_.config_save_path = path;
     }
     void WebServer::set_tool_registry(tools::ToolRegistry *registry) {
-        tool_registry_ = registry;
+        context_.tool_registry = registry;
     }
     void WebServer::set_skill_loader(skills::SkillLoader *loader) {
-        skill_loader_ = loader;
+        context_.skill_loader = loader;
     }
     void WebServer::set_automation_service(automation::AutomationService *service) {
-        automation_service_ = service;
+        context_.automation_service = service;
     }
     void WebServer::set_automation_runtime(automation::AutomationRuntime *runtime) {
-        automation_runtime_ = runtime;
+        context_.automation_runtime = runtime;
     }
 
     WebServerBuilder WebServer::configure(WebServer &server) {
@@ -131,11 +150,13 @@ namespace orangutan::web {
     }
 
     void WebServer::setup_routes() {
+        const auto &ctx = context_;
+
         server_.set_pre_routing_handler([this](const httplib::Request &req, httplib::Response &res) {
             if (!static_dir_.empty()) {
                 res.set_header("Access-Control-Allow-Origin", req.get_header_value("Origin"));
-                res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                res.set_header("Access-Control-Allow-Headers", "Content-Type");
+                res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+                res.set_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
             }
             if (req.method == "OPTIONS") {
                 res.status = 204;
@@ -152,121 +173,63 @@ namespace orangutan::web {
             }
         });
 
+        // Unversioned health endpoint (operators don't want to track API versions).
         server_.Get("/api/health", [](const httplib::Request &, httplib::Response &res) {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        server_.Get(R"(/api/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_get_session(req, res, session_store_);
-        });
+        // Server metadata: name, version, capabilities. Frontend hits this on boot to
+        // discover what the backend supports (observatory, automation, etc.).
+        server_.Get("/api/v1/server", bind_handler<handle_server_info>(ctx));
 
-        server_.Delete(R"(/api/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_delete_session(req, res, session_store_);
-        });
+        // Sessions — flat, not scoped. Retained for operator tooling.
+        server_.Get("/api/v1/sessions", bind_handler<handle_list_sessions>(ctx));
+        server_.Get(R"(/api/v1/sessions/([^/]+))", bind_handler<handle_get_session>(ctx));
+        server_.Delete(R"(/api/v1/sessions/([^/]+))", bind_handler<handle_delete_session>(ctx));
 
-        server_.Get("/api/sessions", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_sessions(req, res, session_store_);
-        });
+        // Config
+        server_.Get("/api/v1/config", bind_handler<handle_get_config>(ctx));
+        server_.Put("/api/v1/config", bind_handler<handle_put_config>(ctx));
 
-        server_.Get("/api/config", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_get_config(req, res, config_);
-        });
+        // Agents + team graph
+        server_.Get("/api/v1/tools", bind_handler<handle_list_tools>(ctx));
+        server_.Get("/api/v1/agents", bind_handler<handle_list_agents>(ctx));
+        server_.Get("/api/v1/agents/graph", bind_handler<handle_agent_graph>(ctx));
 
-        server_.Put("/api/config", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_put_config(req, res, config_, config_save_path_.empty() ? nullptr : &config_save_path_);
-        });
+        // Agent-scoped sessions
+        server_.Get(R"(/api/v1/agents/([^/]+)/sessions)", bind_handler<handle_list_agent_sessions>(ctx));
+        server_.Get(R"(/api/v1/agents/([^/]+)/sessions/([^/]+))", bind_handler<handle_get_agent_session>(ctx));
+        server_.Delete(R"(/api/v1/agents/([^/]+)/sessions/([^/]+))", bind_handler<handle_delete_agent_session>(ctx));
 
-        server_.Get("/api/tools", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_tools(req, res, tool_registry_);
-        });
+        // Skills
+        server_.Get("/api/v1/skills", bind_handler<handle_list_skills>(ctx));
 
-        server_.Get("/api/agents", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_agents(req, res, config_);
-        });
+        // Automation — CRUD + runs + deliveries
+        server_.Get("/api/v1/automation", bind_handler<handle_list_automations>(ctx));
+        server_.Post("/api/v1/automation", bind_handler<handle_create_automation>(ctx));
+        server_.Get("/api/v1/automation/runs", bind_handler<handle_list_automation_runs>(ctx));
+        server_.Get("/api/v1/automation/deliveries", bind_handler<handle_list_automation_deliveries>(ctx));
+        server_.Post(R"(/api/v1/automation/deliveries/([^/]+)/ack)", bind_handler<handle_ack_automation_delivery>(ctx));
+        server_.Delete("/api/v1/automation/deliveries", bind_handler<handle_clear_automation_deliveries>(ctx));
+        server_.Get(R"(/api/v1/automation/([^/]+))", bind_handler<handle_get_automation>(ctx));
+        server_.Patch(R"(/api/v1/automation/([^/]+))", bind_handler<handle_patch_automation>(ctx));
+        server_.Delete(R"(/api/v1/automation/([^/]+))", bind_handler<handle_delete_automation>(ctx));
+        server_.Post(R"(/api/v1/automation/([^/]+)/run)", bind_handler<handle_run_automation>(ctx));
+        server_.Post(R"(/api/v1/automation/([^/]+)/pause)", bind_handler<handle_pause_automation>(ctx));
+        server_.Post(R"(/api/v1/automation/([^/]+)/resume)", bind_handler<handle_resume_automation>(ctx));
 
-        server_.Get(R"(/api/agents/([^/]+)/sessions)", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_agent_sessions(req, res, config_, session_store_);
-        });
+        // System status
+        server_.Get("/api/v1/system", bind_handler<handle_system_status>(ctx));
+        server_.Get("/api/v1/system/status", bind_handler<handle_system_status>(ctx));
 
-        server_.Get(R"(/api/agents/([^/]+)/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_get_agent_session(req, res, config_, session_store_);
-        });
+        // Global event stream (observatory). Long-lived SSE connection — every other
+        // part of the server publishes onto this bus.
+        server_.Get("/api/v1/events", bind_handler<handle_event_stream>(ctx));
 
-        server_.Delete(R"(/api/agents/([^/]+)/sessions/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_delete_agent_session(req, res, config_, session_store_);
-        });
-
-        server_.Get("/api/skills", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_skills(req, res, skill_loader_);
-        });
-
-        server_.Get("/api/automation", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_automations(req, res, automation_service_);
-        });
-
-        server_.Post("/api/automation", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_create_automation(req, res, automation_service_);
-        });
-
-        server_.Get("/api/automation/runs", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_automation_runs(req, res, automation_service_);
-        });
-
-        server_.Get("/api/automation/deliveries", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_list_automation_deliveries(req, res, automation_service_);
-        });
-
-        server_.Post(R"(/api/automation/deliveries/([^/]+)/ack)", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_ack_automation_delivery(req, res, automation_service_);
-        });
-
-        server_.Delete("/api/automation/deliveries", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_clear_automation_deliveries(req, res, automation_service_);
-        });
-
-        server_.Get(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_get_automation(req, res, automation_service_);
-        });
-
-        server_.Patch(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_patch_automation(req, res, automation_service_);
-        });
-
-        server_.Delete(R"(/api/automation/([^/]+))", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_delete_automation(req, res, automation_service_);
-        });
-
-        server_.Post(R"(/api/automation/([^/]+)/run)", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_run_automation(req, res, automation_service_);
-        });
-
-        server_.Post(R"(/api/automation/([^/]+)/pause)", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_pause_automation(req, res, automation_service_);
-        });
-
-        server_.Post(R"(/api/automation/([^/]+)/resume)", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_resume_automation(req, res, automation_service_);
-        });
-
-        server_.Get("/api/system/status", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_service_);
-        });
-
-        server_.Get("/api/system", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_system_status(req, res, start_time_, sessions_mutex_, sessions_, automation_service_);
-        });
-
-        server_.Post("/api/chat", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_chat(req, res, config_, session_store_, memory_store_, tool_registry_, automation_runtime_, sessions_mutex_, sessions_);
-        });
-
-        server_.Post("/api/chat/approval", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_chat_approval(req, res, sessions_mutex_, sessions_);
-        });
-
-        server_.Post("/api/chat/abort", [this](const httplib::Request &req, httplib::Response &res) {
-            web::handle_chat_abort(req, res, sessions_mutex_, sessions_);
-        });
+        // Chat
+        server_.Post("/api/v1/chat", bind_handler<handle_chat>(ctx));
+        server_.Post("/api/v1/chat/approval", bind_handler<handle_chat_approval>(ctx));
+        server_.Post("/api/v1/chat/abort", bind_handler<handle_chat_abort>(ctx));
 
         if (!static_dir_.empty()) {
             server_.set_mount_point("/", static_dir_.string());
