@@ -27,6 +27,31 @@ namespace orangutan::channel {
         virtual void cancel() noexcept = 0;
     };
 
+    JidTaskRunner::BlockingLease::BlockingLease(JidTaskRunner *runner)
+    : runner_(runner) {}
+
+    JidTaskRunner::BlockingLease::~BlockingLease() {
+        if (runner_ != nullptr) {
+            runner_->release_blocking_lease();
+        }
+    }
+
+    JidTaskRunner::BlockingLease::BlockingLease(BlockingLease &&other) noexcept
+    : runner_(std::exchange(other.runner_, nullptr)) {}
+
+    JidTaskRunner::BlockingLease &JidTaskRunner::BlockingLease::operator=(BlockingLease &&other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+
+        if (runner_ != nullptr) {
+            runner_->release_blocking_lease();
+        }
+
+        runner_ = std::exchange(other.runner_, nullptr);
+        return *this;
+    }
+
     struct JidTaskRunner::SchedulerModel {
         struct Scheduler;
 
@@ -120,11 +145,17 @@ namespace orangutan::channel {
     };
 
     struct JidTaskRunner::Impl {
-        utils::TaskPool pool;
+        utils::TaskPool base_pool;
+        /// Single-thread overflow pools, lazily created when blocking leases push
+        /// the desired drainer count past `base_pool` capacity. Pools are kept
+        /// alive for the runner's lifetime even after their lease releases — we
+        /// trade a bounded-by-high-water-mark thread footprint for stable
+        /// scheduler handles, since utils::TaskPool cannot be resized.
+        std::vector<std::unique_ptr<utils::TaskPool>> overflow_pools;
         exec::async_scope scope;
 
         explicit Impl(std::size_t pool_size)
-        : pool{pool_size} {}
+        : base_pool{pool_size} {}
     };
 
     namespace {
@@ -136,10 +167,24 @@ namespace orangutan::channel {
             return std::max<std::size_t>(worker_count, MIN_POOL_SIZE);
         }
 
+        [[nodiscard]]
+        std::vector<std::size_t> reserve_drain_slots(std::size_t active_jid_count, std::size_t base_worker_count, std::size_t blocking_leases,
+                                                     std::size_t &active_drainers) {
+            std::vector<std::size_t> slots;
+            const auto max_drainers = base_worker_count + blocking_leases;
+            const auto desired_drainers = std::min(active_jid_count, max_drainers);
+            while (active_drainers < desired_drainers) {
+                slots.push_back(active_drainers);
+                ++active_drainers;
+            }
+            return slots;
+        }
+
     } // namespace
 
     JidTaskRunner::JidTaskRunner(std::size_t worker_count)
-    : worker_count_(worker_count),
+    : base_worker_count_(resolve_pool_size(worker_count)),
+      worker_count_(worker_count),
       impl_(std::make_unique<Impl>(resolve_pool_size(worker_count))) {
         if (worker_count == 0) {
             throw std::invalid_argument("JidTaskRunner requires at least one worker");
@@ -183,7 +228,7 @@ namespace orangutan::channel {
             return;
         }
 
-        std::string activated_jid;
+        std::vector<std::size_t> slots;
         {
             std::scoped_lock lock(mutex_);
             if (stopping_.load()) {
@@ -191,87 +236,19 @@ namespace orangutan::channel {
                 return;
             }
 
-            auto &bucket = buckets_[std::string(jid)];
+            auto [it, inserted] = buckets_.try_emplace(std::string(jid));
+            auto &bucket = it->second;
             bucket.tasks.push_back(std::move(task));
-            if (bucket.active) {
+            if (!inserted) {
                 return;
             }
 
-            bucket.active = true;
-            activated_jid.assign(jid);
+            ready_jids_.emplace(jid);
+            slots = reserve_drain_slots(buckets_.size(), base_worker_count_, blocking_leases_, active_drainers_);
         }
 
-        schedule_drain(std::move(activated_jid));
-    }
-
-    void JidTaskRunner::schedule_drain(std::string jid) {
-        auto sender = stdexec::schedule(impl_->pool.scheduler())
-                    | stdexec::then([this, jid = std::move(jid)]() mutable {
-                          drain_step(jid);
-                      });
-        impl_->scope.spawn(std::move(sender));
-    }
-
-    void JidTaskRunner::drain_step(const std::string &jid) {
-        std::unique_ptr<QueuedTask> task;
-        {
-            std::scoped_lock lock(mutex_);
-            auto it = buckets_.find(jid);
-            if (it == buckets_.end()) {
-                return;
-            }
-
-            if (stopping_.load() && discard_pending_.load()) {
-                for (auto &queued : it->second.tasks) {
-                    queued->cancel();
-                }
-                it->second.tasks.clear();
-                buckets_.erase(it);
-                return;
-            }
-
-            if (it->second.tasks.empty()) {
-                it->second.active = false;
-                buckets_.erase(it);
-                return;
-            }
-
-            task = std::move(it->second.tasks.front());
-            it->second.tasks.pop_front();
-        }
-
-        task->execute();
-
-        std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
-        bool more = false;
-        {
-            std::scoped_lock lock(mutex_);
-            auto it = buckets_.find(jid);
-            if (it == buckets_.end()) {
-                return;
-            }
-
-            if (discard_pending_.load()) {
-                for (auto &queued : it->second.tasks) {
-                    canceled_tasks.push_back(std::move(queued));
-                }
-                it->second.tasks.clear();
-            }
-
-            if (it->second.tasks.empty()) {
-                it->second.active = false;
-                buckets_.erase(it);
-            } else {
-                more = true;
-            }
-        }
-
-        for (auto &pending_task : canceled_tasks) {
-            pending_task->cancel();
-        }
-
-        if (more) {
-            schedule_drain(jid);
+        for (const auto slot : slots) {
+            schedule_drain_slot(slot);
         }
     }
 
@@ -288,6 +265,7 @@ namespace orangutan::channel {
         {
             std::scoped_lock lock(mutex_);
             if (discard_pending) {
+                ready_jids_ = {};
                 for (auto &[jid, bucket] : buckets_) {
                     while (!bucket.tasks.empty()) {
                         canceled_tasks.push_back(std::move(bucket.tasks.front()));
@@ -310,7 +288,112 @@ namespace orangutan::channel {
     }
 
     JidTaskRunner::BlockingLease JidTaskRunner::acquire_blocking_lease() {
-        return {};
+        std::vector<std::size_t> slots;
+        {
+            std::scoped_lock lock(mutex_);
+            if (stopping_.load()) {
+                return {};
+            }
+
+            ++blocking_leases_;
+            slots = reserve_drain_slots(buckets_.size(), base_worker_count_, blocking_leases_, active_drainers_);
+        }
+
+        for (const auto slot : slots) {
+            schedule_drain_slot(slot);
+        }
+        return BlockingLease(this);
+    }
+
+    void JidTaskRunner::release_blocking_lease() {
+        std::scoped_lock lock(mutex_);
+        if (blocking_leases_ > 0) {
+            --blocking_leases_;
+        }
+    }
+
+    void JidTaskRunner::schedule_drain_slot(std::size_t slot_index) {
+        auto scheduler = impl_->base_pool.scheduler();
+        if (slot_index >= base_worker_count_) {
+            const auto overflow_index = slot_index - base_worker_count_;
+            std::scoped_lock lock(mutex_);
+            while (impl_->overflow_pools.size() <= overflow_index) {
+                impl_->overflow_pools.push_back(std::make_unique<utils::TaskPool>(1));
+            }
+            scheduler = impl_->overflow_pools[overflow_index]->scheduler();
+        }
+
+        auto sender = stdexec::schedule(scheduler) | stdexec::then([this] {
+                          drain_ready_tasks();
+                      });
+        impl_->scope.spawn(std::move(sender));
+    }
+
+    void JidTaskRunner::drain_ready_tasks() {
+        while (true) {
+            std::string jid;
+            std::unique_ptr<QueuedTask> task;
+
+            {
+                std::scoped_lock lock(mutex_);
+                if (ready_jids_.empty()) {
+                    if (active_drainers_ > 0) {
+                        --active_drainers_;
+                    }
+                    return;
+                }
+
+                jid = std::move(ready_jids_.front());
+                ready_jids_.pop();
+
+                auto it = buckets_.find(jid);
+                if (it == buckets_.end()) {
+                    continue;
+                }
+                if (it->second.tasks.empty()) {
+                    buckets_.erase(it);
+                    continue;
+                }
+
+                task = std::move(it->second.tasks.front());
+                it->second.tasks.pop_front();
+            }
+
+            task->execute();
+
+            std::vector<std::unique_ptr<QueuedTask>> canceled_tasks;
+            std::vector<std::size_t> slots;
+            {
+                std::scoped_lock lock(mutex_);
+                auto it = buckets_.find(jid);
+                if (it != buckets_.end()) {
+                    if (discard_pending_.load()) {
+                        while (!it->second.tasks.empty()) {
+                            canceled_tasks.push_back(std::move(it->second.tasks.front()));
+                            it->second.tasks.pop_front();
+                        }
+                    }
+
+                    if (it->second.tasks.empty()) {
+                        buckets_.erase(it);
+                    } else {
+                        ready_jids_.push(jid);
+                    }
+                }
+
+                if (!(stopping_.load() && discard_pending_.load())) {
+                    slots = reserve_drain_slots(buckets_.size(), base_worker_count_, blocking_leases_, active_drainers_);
+                }
+            }
+
+            for (auto &pending_task : canceled_tasks) {
+                pending_task->cancel();
+            }
+
+            for (const auto slot : slots) {
+                schedule_drain_slot(slot);
+            }
+        }
     }
 
     std::size_t JidTaskRunner::worker_count() const {

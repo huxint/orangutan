@@ -131,30 +131,37 @@ namespace {
         CHECK_FALSE(ran_second.load());
     };
 
-    TEST_CASE("blocking_lease_allows_other_jids_to_run_with_single_worker") {
-        JidTaskRunner runner(1);
+    TEST_CASE("blocking_leases_scale_capacity_beyond_the_base_pool") {
+        JidTaskRunner runner(4);
 
-        std::promise<void> alice_waiting;
-        std::promise<void> bob_started;
-        std::promise<void> release_alice;
-        auto alice_waiting_future = alice_waiting.get_future();
-        auto bob_started_future = bob_started.get_future();
-        auto release_alice_future = release_alice.get_future().share();
+        constexpr int WAITING_TASK_COUNT = 5;
+        std::atomic<int> waiting_tasks = 0;
+        std::promise<void> all_waiting;
+        std::promise<void> release_waiters;
+        std::promise<void> late_task_started;
+        auto all_waiting_future = all_waiting.get_future();
+        auto release_waiters_future = release_waiters.get_future().share();
+        auto late_task_started_future = late_task_started.get_future();
 
-        runner.submit("qqbot:c2c:alice", [&] {
-            auto blocking_lease = runner.acquire_blocking_lease();
-            alice_waiting.set_value();
-            release_alice_future.wait();
+        for (int i = 0; i < WAITING_TASK_COUNT; ++i) {
+            runner.submit("qqbot:c2c:waiter-" + std::to_string(i), [&] {
+                auto blocking_lease = runner.acquire_blocking_lease();
+                if (waiting_tasks.fetch_add(1) + 1 == WAITING_TASK_COUNT) {
+                    all_waiting.set_value();
+                }
+                release_waiters_future.wait();
+            });
+        }
+
+        REQUIRE(all_waiting_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+
+        runner.submit("qqbot:c2c:late", [&] {
+            late_task_started.set_value();
         });
 
-        runner.submit("qqbot:c2c:bob", [&] {
-            bob_started.set_value();
-        });
+        REQUIRE(late_task_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
 
-        REQUIRE(alice_waiting_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
-        REQUIRE(bob_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
-
-        release_alice.set_value();
+        release_waiters.set_value();
         runner.shutdown();
     };
 
