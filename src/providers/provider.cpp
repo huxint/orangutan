@@ -64,18 +64,6 @@ namespace orangutan::providers {
         return backend_->label();
     }
 
-    std::string_view to_string(provider_kind provider) noexcept {
-        return utils::enum_name(provider);
-    }
-
-    std::string_view to_string(protocol_kind protocol) noexcept {
-        return utils::enum_name_kebab(protocol);
-    }
-
-    std::string_view to_string(error_category category) noexcept {
-        return utils::enum_name(category);
-    }
-
     provider_kind parse_provider_kind(std::string_view token) {
         if (const auto parsed = utils::parse_enum<provider_kind>(token); parsed.has_value()) {
             return *parsed;
@@ -91,7 +79,7 @@ namespace orangutan::providers {
     }
 
     std::string target_label(const ModelTarget &target) {
-        return std::string(to_string(target.provider)) + ":" + std::string(to_string(target.protocol)) + ":" + target.model;
+        return std::string(utils::enum_name(target.provider)) + ":" + std::string(utils::enum_name_kebab(target.protocol)) + ":" + target.model;
     }
 
     response_stop_reason map_stop_reason(std::string_view token) {

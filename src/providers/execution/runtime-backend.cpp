@@ -12,6 +12,7 @@
 
 #include "providers/protocols/provider-registry.hpp"
 #include "providers/transport/http-transport.hpp"
+#include "utils/enum-string.hpp"
 #include "utils/sender-utils.hpp"
 
 namespace orangutan::providers::execution {
@@ -22,7 +23,8 @@ namespace orangutan::providers::execution {
 
         [[nodiscard]]
         std::string target_key(const ModelTarget &target) {
-            return target.profile_name + "|" + std::string(to_string(target.provider)) + "|" + std::string(to_string(target.protocol)) + "|" + target.model + "|" + target.base_url;
+            return target.profile_name + "|" + std::string(utils::enum_name(target.provider)) + "|" + std::string(utils::enum_name_kebab(target.protocol)) + "|" +
+                   target.model + "|" + target.base_url;
         }
 
         [[nodiscard]]
@@ -75,7 +77,7 @@ namespace orangutan::providers::execution {
             std::string label() const override {
                 std::scoped_lock lock(mutex_);
                 if (active_target_.has_value()) {
-                    return std::string(to_string(active_target_->provider));
+                    return std::string(utils::enum_name(active_target_->provider));
                 }
                 return "providers";
             }

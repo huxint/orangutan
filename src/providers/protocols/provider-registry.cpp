@@ -7,6 +7,7 @@
 #include "providers/protocols/anthropic-messages.hpp"
 #include "providers/protocols/openai-chat-completions.hpp"
 #include "providers/protocols/openai-responses.hpp"
+#include "utils/enum-string.hpp"
 
 namespace orangutan::providers::protocols {
     namespace {
@@ -56,7 +57,8 @@ namespace orangutan::providers::protocols {
         });
         if (it == descriptors_.end()) {
             throw ProviderError(error_category::configuration,
-                                "unsupported provider/protocol combination: " + std::string(to_string(provider)) + " + " + std::string(to_string(protocol)));
+                                "unsupported provider/protocol combination: " + std::string(utils::enum_name(provider)) + " + " +
+                                    std::string(utils::enum_name_kebab(protocol)));
         }
 
         return ProviderAssembly{.adapter = it->adapter, .auth = it->auth};

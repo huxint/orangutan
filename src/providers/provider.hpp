@@ -284,15 +284,6 @@ namespace orangutan::providers {
     };
 
     [[nodiscard]]
-    std::string_view to_string(provider_kind provider) noexcept;
-
-    [[nodiscard]]
-    std::string_view to_string(protocol_kind protocol) noexcept;
-
-    [[nodiscard]]
-    std::string_view to_string(error_category category) noexcept;
-
-    [[nodiscard]]
     provider_kind parse_provider_kind(std::string_view token);
 
     [[nodiscard]]
