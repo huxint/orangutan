@@ -17,14 +17,14 @@ namespace {
 
         const auto openai = registry.resolve(orangutan::provider_kind::openai, orangutan::protocol_kind::responses);
         orangutan::providers::transport::header_map openai_headers;
-        openai.auth->apply(orangutan::testing::make_test_target("gpt-5"), openai_headers);
+        openai.auth(orangutan::testing::make_test_target("gpt-5"), openai_headers);
         CHECK(openai.adapter->label() == "openai");
         CHECK(openai_headers.at("Authorization") == "Bearer test-key");
         CHECK(openai_headers.at("Content-Type") == "application/json");
 
         const auto anthropic = registry.resolve(orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages);
         orangutan::providers::transport::header_map anthropic_headers;
-        anthropic.auth->apply(
+        anthropic.auth(
             orangutan::testing::make_test_target("claude", orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages), anthropic_headers);
         CHECK(anthropic.adapter->label() == "anthropic");
         CHECK(anthropic_headers.at("x-api-key") == "test-key");
