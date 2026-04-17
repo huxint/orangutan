@@ -3,6 +3,7 @@
 #include "tools/file/common.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
+#include "utils/parallel.hpp"
 #include "utils/file.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
@@ -180,22 +181,41 @@ namespace orangutan::tools {
                 return read_single_file(path, offset, limit, mode);
             }
 
-            const auto &paths = input.at("paths");
+            const auto &paths_json = input.at("paths");
+            std::vector<std::filesystem::path> paths;
+            paths.reserve(paths_json.size());
+            for (const auto &entry : paths_json) {
+                paths.push_back(resolve_tool_path(std::filesystem::path(entry.get<std::string>()), workspace_root, permissions));
+            }
+
+            // Fan out reads across the shared IO pool. Each read is independent
+            // and exceptions are captured per-file so partial failures do not
+            // mask successful reads.
+            struct PerFile {
+                ToolOutput output;
+                std::string error;
+            };
+            auto results = utils::parallel_map(std::span<const std::filesystem::path>{paths}, [&](const std::filesystem::path &path) -> PerFile {
+                try {
+                    return {.output = read_single_file(path, offset, limit, mode), .error = {}};
+                } catch (const std::exception &e) {
+                    return {.output = {}, .error = e.what()};
+                }
+            });
+
             ToolOutput combined;
             for (std::size_t i = 0; i < paths.size(); ++i) {
-                const auto path = resolve_tool_path(std::filesystem::path(paths[i].get<std::string>()), workspace_root, permissions);
                 if (i > 0) {
                     combined.text.push_back('\n');
                 }
-                utils::format_to(combined.text, "=== {} ===\n", path.string());
-
-                try {
-                    auto single = read_single_file(path, offset, limit, mode);
-                    combined.text += single.text;
-                    combined.images.insert(combined.images.end(), std::make_move_iterator(single.images.begin()), std::make_move_iterator(single.images.end()));
-                } catch (const std::exception &e) {
-                    utils::format_to(combined.text, "Error: {}\n", e.what());
+                utils::format_to(combined.text, "=== {} ===\n", paths[i].string());
+                if (!results[i].error.empty()) {
+                    utils::format_to(combined.text, "Error: {}\n", results[i].error);
+                    continue;
                 }
+                combined.text += results[i].output.text;
+                combined.images.insert(combined.images.end(), std::make_move_iterator(results[i].output.images.begin()),
+                                       std::make_move_iterator(results[i].output.images.end()));
             }
 
             return combined;

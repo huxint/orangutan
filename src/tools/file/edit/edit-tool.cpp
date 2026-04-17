@@ -2,17 +2,20 @@
 #include "tools/file/edit/hashline.hpp"
 #include "utils/file-io.hpp"
 #include "utils/format.hpp"
+#include "utils/parallel.hpp"
 #include "utils/string.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
 #include <filesystem>
+#include <numeric>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <span>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace orangutan::tools {
@@ -199,7 +202,12 @@ namespace orangutan::tools {
         }
 
         void apply_hunks(std::vector<ValidatedFile> &validated, const std::vector<FilePatch> &files) {
-            for (std::size_t file_index = 0; file_index < validated.size(); ++file_index) {
+            // Each file lives on disk independently. Parallelise the apply step
+            // so patches touching many files write concurrently on the shared IO pool.
+            std::vector<std::size_t> indices(validated.size());
+            std::iota(indices.begin(), indices.end(), std::size_t{0});
+
+            utils::parallel_map(std::span<const std::size_t>{indices}, [&](std::size_t file_index) -> std::monostate {
                 auto &validated_file = validated[file_index];
                 const auto &file = files[file_index];
 
@@ -214,7 +222,7 @@ namespace orangutan::tools {
                     }
 
                     fileio::write_file(validated_file.resolved, content);
-                    continue;
+                    return {};
                 }
 
                 auto positions = validated_file.match_positions;
@@ -228,7 +236,8 @@ namespace orangutan::tools {
                 }
 
                 fileio::write_file(validated_file.resolved, validated_file.content);
-            }
+                return {};
+            });
         }
 
         std::string execute_hashline_edit(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {

@@ -2,9 +2,8 @@
 
 #include <memory>
 
-#include <magic_enum/magic_enum.hpp>
-
 #include "providers/execution/runtime-backend.hpp"
+#include "utils/enum-string.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 
@@ -66,17 +65,13 @@ namespace orangutan::providers {
     }
 
     std::string_view to_string(provider_kind provider) noexcept {
-        switch (provider) {
-            case provider_kind::openai:
-                return "openai";
-            case provider_kind::anthropic:
-                return "anthropic";
-        }
-
-        return "unknown";
+        return utils::enum_name(provider);
     }
 
     std::string_view to_string(protocol_kind protocol) noexcept {
+        // protocol tokens use dashes (e.g. `chat-completions`). Return a
+        // process-lifetime string per enumerator so the noexcept string_view
+        // contract is preserved without an extra kebab allocation per call.
         switch (protocol) {
             case protocol_kind::chat_completions:
                 return "chat-completions";
@@ -85,56 +80,23 @@ namespace orangutan::providers {
             case protocol_kind::messages:
                 return "messages";
         }
-
         return "unknown";
     }
 
     std::string_view to_string(error_category category) noexcept {
-        switch (category) {
-            case error_category::configuration:
-                return "configuration";
-            case error_category::authentication:
-                return "authentication";
-            case error_category::network:
-                return "network";
-            case error_category::rate_limit:
-                return "rate_limit";
-            case error_category::upstream:
-                return "upstream";
-            case error_category::parsing:
-                return "parsing";
-            case error_category::invalid_request:
-                return "invalid_request";
-            case error_category::interrupted:
-                return "interrupted";
-            case error_category::unknown:
-                return "unknown";
-        }
-
-        return "unknown";
+        return utils::enum_name(category);
     }
 
     provider_kind parse_provider_kind(std::string_view token) {
-        const auto normalized = normalize_enum_token(token);
-        if (normalized == "openai") {
-            return provider_kind::openai;
-        }
-        if (normalized == "anthropic") {
-            return provider_kind::anthropic;
+        if (const auto parsed = utils::parse_enum<provider_kind>(token); parsed.has_value()) {
+            return *parsed;
         }
         throw ProviderError(error_category::configuration, format_parse_error("provider", token));
     }
 
     protocol_kind parse_protocol_kind(std::string_view token) {
-        const auto normalized = normalize_enum_token(token);
-        if (normalized == "chat_completions") {
-            return protocol_kind::chat_completions;
-        }
-        if (normalized == "responses") {
-            return protocol_kind::responses;
-        }
-        if (normalized == "messages") {
-            return protocol_kind::messages;
+        if (const auto parsed = utils::parse_enum<protocol_kind>(token); parsed.has_value()) {
+            return *parsed;
         }
         throw ProviderError(error_category::configuration, format_parse_error("protocol", token));
     }
