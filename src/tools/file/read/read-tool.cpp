@@ -1,6 +1,6 @@
 #include "tools/internal.hpp"
-#include "tools/file-edit/hashline.hpp"
-#include "tools/file/file-common.hpp"
+#include "tools/file/edit/hashline.hpp"
+#include "tools/file/common.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"

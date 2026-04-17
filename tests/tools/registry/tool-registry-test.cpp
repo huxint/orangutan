@@ -8,7 +8,7 @@
 #include "tools/registry/tool.hpp"
 #include "tools/script/script-loader.hpp"
 #include "tools/skill/skill-tool.hpp"
-#include "tools/file-edit/hashline.hpp"
+#include "tools/file/edit/hashline.hpp"
 #include "tools/internal.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
