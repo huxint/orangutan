@@ -69,18 +69,7 @@ namespace orangutan::providers {
     }
 
     std::string_view to_string(protocol_kind protocol) noexcept {
-        // protocol tokens use dashes (e.g. `chat-completions`). Return a
-        // process-lifetime string per enumerator so the noexcept string_view
-        // contract is preserved without an extra kebab allocation per call.
-        switch (protocol) {
-            case protocol_kind::chat_completions:
-                return "chat-completions";
-            case protocol_kind::responses:
-                return "responses";
-            case protocol_kind::messages:
-                return "messages";
-        }
-        return "unknown";
+        return utils::enum_name_kebab(protocol);
     }
 
     std::string_view to_string(error_category category) noexcept {
