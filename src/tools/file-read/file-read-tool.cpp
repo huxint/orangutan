@@ -1,5 +1,6 @@
 #include "tools/internal.hpp"
 #include "tools/file-edit/hashline.hpp"
+#include "tools/file/file-common.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
@@ -20,24 +21,10 @@ namespace orangutan::tools {
     namespace {
 
         PermissionResult validate_read_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
-            if (call.input.contains("path") && call.input["path"].is_string()) {
-                if (auto result = validate_path_permission(call.input.at("path").get<std::string>(), workspace_root, ctx); !result.is_passthrough) {
-                    return result;
-                }
+            if (auto result = file::validate_optional_path(call.input, "path", workspace_root, ctx); !result.is_passthrough) {
+                return result;
             }
-
-            if (call.input.contains("paths") && call.input["paths"].is_array()) {
-                for (const auto &item : call.input.at("paths")) {
-                    if (!item.is_string()) {
-                        return PermissionResult::deny("Read path must be a string");
-                    }
-                    if (auto result = validate_path_permission(item.get<std::string>(), workspace_root, ctx); !result.is_passthrough) {
-                        return result;
-                    }
-                }
-            }
-
-            return PermissionResult::passthrough();
+            return file::validate_optional_paths(call.input, "paths", workspace_root, ctx);
         }
 
         constexpr std::size_t MAX_IMAGE_SIZE = std::size_t{5} * 1024 * 1024;

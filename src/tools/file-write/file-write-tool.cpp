@@ -1,4 +1,5 @@
 #include "tools/internal.hpp"
+#include "tools/file/file-common.hpp"
 #include "utils/file-io.hpp"
 #include "utils/format.hpp"
 
@@ -8,16 +9,8 @@
 namespace orangutan::tools {
     namespace {
 
-        PermissionResult validate_write_permissions(const ToolUse &call, const ToolPermissionContext &ctx, const std::filesystem::path &workspace_root) {
-            if (!call.input.contains("path") || !call.input["path"].is_string()) {
-                return PermissionResult::deny("Write path is required");
-            }
-
-            return validate_path_permission(call.input.at("path").get<std::string>(), workspace_root, ctx);
-        }
-
         std::string write_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
-            const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root, permissions);
+            const auto path = file::resolve_path_field(input, "path", workspace_root, permissions);
             const auto content = input.at("content").get<std::string>();
             spdlog::info("  [tool] write: {}", path.string());
 
@@ -52,7 +45,7 @@ namespace orangutan::tools {
                                              {"required", nlohmann::json::array({"path", "content"})}}},
              .check_permissions =
                  [workspace_root](const ToolUse &call, const ToolPermissionContext &ctx) {
-                     return validate_write_permissions(call, ctx, workspace_root);
+                     return file::validate_required_path(call.input, "path", workspace_root, ctx);
                  },
              .execute =
                  [workspace_root, permissions](const nlohmann::json &input) {

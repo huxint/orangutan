@@ -129,5 +129,6 @@ namespace orangutan::tools {
     void register_write_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
     void register_edit_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr,
                             std::string_view edit_mode = "search_replace");
+    void register_fs_tools(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions = nullptr);
 
 } // namespace orangutan::tools
