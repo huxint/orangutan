@@ -1,4 +1,5 @@
 #include "memory/memory-schema.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include <cstdlib>
 #include <filesystem>
 
@@ -16,7 +17,7 @@ namespace orangutan::memory::detail {
     }
 
     void create_current_schema(sqlite::Database &db) {
-        db.exec_script(
+        sqlite::exec_script(db,
             R"(
         CREATE TABLE IF NOT EXISTS memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +37,7 @@ namespace orangutan::memory::detail {
         )",
             "Failed to create memory schema");
 
-        db.exec_script(
+        sqlite::exec_script(db,
             R"(
         CREATE INDEX IF NOT EXISTS idx_memories_scope_updated ON memories(scope, updated_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_memories_scope_category ON memories(scope, category, updated_at DESC, id DESC);

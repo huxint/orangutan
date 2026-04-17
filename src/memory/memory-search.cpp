@@ -1,6 +1,7 @@
 #include "memory/memory-search.hpp"
 #include "memory/memory-age.hpp"
 #include "memory/memory-type.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 
@@ -189,26 +190,26 @@ namespace orangutan::memory::detail {
 
     MemoryRecord read_memory_record(const sqlite::Row &row) {
         return MemoryRecord{
-            .id = row.get<int>(0),
-            .key = row.get<std::string>(1),
-            .content = row.get<std::string>(2),
-            .category = row.get<std::string>(3),
-            .type = magic_enum::enum_cast<memory_type>(row.get<std::string>(4), magic_enum::case_insensitive).value_or(memory_type::user),
-            .scope = row.get<std::string>(5),
-            .source = row.get<std::string>(6),
-            .updated_at = row.get<std::string>(7),
-            .importance = row.get<base::f64>(8),
-            .access_count = row.get<int>(9),
+            .id = sqlite::unwrap(row.get<int>(0)),
+            .key = sqlite::unwrap(row.get<std::string>(1)),
+            .content = sqlite::unwrap(row.get<std::string>(2)),
+            .category = sqlite::unwrap(row.get<std::string>(3)),
+            .type = magic_enum::enum_cast<memory_type>(sqlite::unwrap(row.get<std::string>(4)), magic_enum::case_insensitive).value_or(memory_type::user),
+            .scope = sqlite::unwrap(row.get<std::string>(5)),
+            .source = sqlite::unwrap(row.get<std::string>(6)),
+            .updated_at = sqlite::unwrap(row.get<std::string>(7)),
+            .importance = sqlite::unwrap(row.get<base::f64>(8)),
+            .access_count = sqlite::unwrap(row.get<int>(9)),
         };
     }
 
     std::optional<MemoryRecord> fetch_memory_by_key(sqlite::Database &db, std::string_view scope, std::string_view key) {
         auto records = std::vector<MemoryRecord>{};
-        auto query = db.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
-                              "FROM memories WHERE scope = ? AND memory_key = ? LIMIT 1");
-        query.bind(scope, key).for_each([&](const sqlite::Row &row) {
+        auto query = sqlite::unwrap(db.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                             "FROM memories WHERE scope = ? AND memory_key = ? LIMIT 1"));
+        sqlite::unwrap(query.bind(scope, key).for_each([&](const sqlite::Row &row) {
             records.push_back(read_memory_record(row));
-        });
+        }));
         if (records.empty()) {
             return std::nullopt;
         }
@@ -217,32 +218,32 @@ namespace orangutan::memory::detail {
 
     void upsert_memory_record(sqlite::Database &db, std::string_view scope, std::string_view key, std::string_view content, std::string_view category, std::string_view type,
                               std::string_view source, base::f64 importance) {
-        db.exec("INSERT INTO memories (scope, memory_key, content, category, type, source, importance, created_at, updated_at, last_accessed_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "
-                "ON CONFLICT(scope, memory_key) DO UPDATE SET "
-                "content = excluded.content, "
-                "category = excluded.category, "
-                "type = excluded.type, "
-                "source = excluded.source, "
-                "importance = excluded.importance, "
-                "updated_at = datetime('now')")
-            .bind(scope,
-                  key,
-                  content,
-                  category.empty() ? std::string_view{"general"} : category,
-                  type.empty() ? std::string_view{"user"} : type,
-                  source.empty() ? std::string_view{"manual"} : source,
-                  importance)
-            .run();
+        sqlite::exec_bind(db,
+                          "INSERT INTO memories (scope, memory_key, content, category, type, source, importance, created_at, updated_at, last_accessed_at) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "
+                          "ON CONFLICT(scope, memory_key) DO UPDATE SET "
+                          "content = excluded.content, "
+                          "category = excluded.category, "
+                          "type = excluded.type, "
+                          "source = excluded.source, "
+                          "importance = excluded.importance, "
+                          "updated_at = datetime('now')",
+                          scope,
+                          key,
+                          content,
+                          category.empty() ? std::string_view{"general"} : category,
+                          type.empty() ? std::string_view{"user"} : type,
+                          source.empty() ? std::string_view{"manual"} : source,
+                          importance);
     }
 
     void touch_records(sqlite::Database &db, const std::vector<MemoryRecord> &records) {
-        sqlite::Statement stmt(db, "UPDATE memories SET access_count = access_count + 1, last_accessed_at = datetime('now') WHERE id = ?");
+        auto stmt = sqlite::prepare_or_throw(db, "UPDATE memories SET access_count = access_count + 1, last_accessed_at = datetime('now') WHERE id = ?");
         for (const auto &record : records) {
-            stmt.clear_bindings();
+            sqlite::unwrap(stmt.clear_bindings());
             stmt.bind(1, record.id);
-            static_cast<void>(stmt.step());
-            stmt.reset();
+            sqlite::unwrap(stmt.step());
+            sqlite::unwrap(stmt.reset());
         }
     }
 

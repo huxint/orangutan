@@ -3,6 +3,7 @@
 #include "memory/memory-schema.hpp"
 #include "memory/memory-search.hpp"
 #include "memory/memory-age.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "utils/string.hpp"
 
 #include <algorithm>
@@ -16,7 +17,7 @@ namespace orangutan::memory {
     : MemoryStore(memory_detail::default_db_path()) {}
 
     MemoryStore::MemoryStore(const std::filesystem::path &db_path)
-    : db_(db_path) {
+    : db_(sqlite::open_or_throw(db_path)) {
         ensure_schema();
     }
 
@@ -84,12 +85,12 @@ namespace orangutan::memory {
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
                 auto fts_records = std::vector<MemoryRecord>{};
-                auto fts_stmt = db_.query("SELECT m.id, m.memory_key, m.content, m.category, m.type, m.scope, m.source, m.updated_at, m.importance, m.access_count "
-                                          "FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid "
-                                          "WHERE memories_fts MATCH ? AND m.scope = ? ORDER BY rank LIMIT 64");
-                fts_stmt.bind(*fts_query, scope).for_each([&](const sqlite::Row &row) {
+                auto fts_stmt = sqlite::unwrap(db_.query("SELECT m.id, m.memory_key, m.content, m.category, m.type, m.scope, m.source, m.updated_at, m.importance, m.access_count "
+                                                         "FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid "
+                                                         "WHERE memories_fts MATCH ? AND m.scope = ? ORDER BY rank LIMIT 64"));
+                sqlite::unwrap(fts_stmt.bind(*fts_query, scope).for_each([&](const sqlite::Row &row) {
                     fts_records.push_back(memory_detail::read_memory_record(row));
-                });
+                }));
                 for (std::size_t index = 0; index < fts_records.size(); ++index) {
                     fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<base::f64>(index));
                 }
@@ -97,11 +98,11 @@ namespace orangutan::memory {
         }
 
         auto records = std::vector<MemoryRecord>{};
-        auto stmt = db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
-                              "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
-        stmt.bind(scope, static_cast<int>(memory_detail::SEARCH_SCAN_LIMIT)).for_each([&](const sqlite::Row &row) {
+        auto stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                             "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?"));
+        sqlite::unwrap(stmt.bind(scope, static_cast<int>(memory_detail::SEARCH_SCAN_LIMIT)).for_each([&](const sqlite::Row &row) {
             records.push_back(memory_detail::read_memory_record(row));
-        });
+        }));
         struct RankedRecord {
             MemoryRecord record;
             base::f64 score = 0.0;
@@ -186,31 +187,31 @@ namespace orangutan::memory {
 
         auto records = std::vector<MemoryRecord>{};
         if (category.empty()) {
-            auto stmt = db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
-                                  "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
-            stmt.bind(scope, capped_limit).for_each([&](const sqlite::Row &row) {
+            auto stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                                 "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?"));
+            sqlite::unwrap(stmt.bind(scope, capped_limit).for_each([&](const sqlite::Row &row) {
                 records.push_back(memory_detail::read_memory_record(row));
-            });
+            }));
         } else {
-            auto stmt = db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
-                                  "FROM memories WHERE scope = ? AND category = ? ORDER BY updated_at DESC, id DESC LIMIT ?");
-            stmt.bind(scope, category, capped_limit).for_each([&](const sqlite::Row &row) {
+            auto stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                                 "FROM memories WHERE scope = ? AND category = ? ORDER BY updated_at DESC, id DESC LIMIT ?"));
+            sqlite::unwrap(stmt.bind(scope, category, capped_limit).for_each([&](const sqlite::Row &row) {
                 records.push_back(memory_detail::read_memory_record(row));
-            });
+            }));
         }
         return records;
     }
 
     MemoryStats MemoryStore::stats(std::string_view scope) {
         std::scoped_lock lock(mutex_);
-        const auto [total, categories, auto_entries, manual_entries, journal_entries] = db_.query(
+        const auto [total, categories, auto_entries, manual_entries, journal_entries] = sqlite::query_one<std::tuple<int, int, int, int, int>>(
+            db_,
             "SELECT COUNT(*), COUNT(DISTINCT category), "
             "COALESCE(SUM(CASE WHEN source LIKE 'auto:%' THEN 1 ELSE 0 END), 0), "
             "COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0), "
             "COALESCE(SUM(CASE WHEN category = 'journal' THEN 1 ELSE 0 END), 0) "
-            "FROM memories WHERE scope = ?")
-                                                                                          .bind(scope)
-                                                                                          .one<std::tuple<int, int, int, int, int>>();
+            "FROM memories WHERE scope = ?",
+            scope);
 
         return MemoryStats{
             .total = total,
@@ -223,7 +224,7 @@ namespace orangutan::memory {
 
     bool MemoryStore::forget(std::string_view key, std::string_view scope) {
         std::scoped_lock lock(mutex_);
-        db_.exec("DELETE FROM memories WHERE scope = ? AND memory_key = ?").bind(scope, key).run();
+        sqlite::exec_bind(db_, "DELETE FROM memories WHERE scope = ? AND memory_key = ?", scope, key);
         return db_.changes() > 0;
     }
 
@@ -238,21 +239,21 @@ namespace orangutan::memory {
         std::size_t pruned = 0;
         {
             auto records = std::vector<MemoryRecord>{};
-            auto stmt = db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
-                                  "FROM memories WHERE scope = ? AND category != 'journal' "
-                                  "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT 500");
-            stmt.bind(scope).for_each([&](const sqlite::Row &row) {
+            auto stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                                 "FROM memories WHERE scope = ? AND category != 'journal' "
+                                                 "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT 500"));
+            sqlite::unwrap(stmt.bind(scope).for_each([&](const sqlite::Row &row) {
                 records.push_back(memory_detail::read_memory_record(row));
-            });
+            }));
 
-            sqlite::Statement del(db_, "DELETE FROM memories WHERE id = ?");
+            auto del = sqlite::prepare_or_throw(db_, "DELETE FROM memories WHERE id = ?");
             for (const auto &record : records) {
                 const auto age = memory_age_days(record.updated_at);
                 if (age >= stale_days && record.importance <= stale_importance_threshold && record.access_count <= 1) {
-                    del.clear_bindings();
+                    sqlite::unwrap(del.clear_bindings());
                     del.bind(1, record.id);
-                    static_cast<void>(del.step());
-                    del.reset();
+                    sqlite::unwrap(del.step());
+                    sqlite::unwrap(del.reset());
                     ++pruned;
                 }
             }
@@ -260,16 +261,15 @@ namespace orangutan::memory {
 
         // Phase 2: Enforce per-scope limit (keep most important/recent, drop the rest).
         {
-            const auto total = static_cast<std::size_t>(db_.query("SELECT COUNT(*) FROM memories WHERE scope = ? AND category != 'journal'")
-                                                            .bind(scope)
-                                                            .one<int>());
+            const auto total = static_cast<std::size_t>(sqlite::query_one<int>(
+                db_, "SELECT COUNT(*) FROM memories WHERE scope = ? AND category != 'journal'", scope));
             if (total > max_per_scope) {
                 const auto excess = static_cast<int>(total - max_per_scope);
-                db_.exec("DELETE FROM memories WHERE id IN ("
-                         "SELECT id FROM memories WHERE scope = ? AND category != 'journal' "
-                         "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT ?)")
-                    .bind(scope, excess)
-                    .run();
+                sqlite::exec_bind(db_,
+                                  "DELETE FROM memories WHERE id IN ("
+                                  "SELECT id FROM memories WHERE scope = ? AND category != 'journal' "
+                                  "ORDER BY importance ASC, access_count ASC, updated_at ASC LIMIT ?)",
+                                  scope, excess);
                 pruned += static_cast<std::size_t>(db_.changes());
             }
         }
