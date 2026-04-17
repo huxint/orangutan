@@ -5,6 +5,7 @@
 #include <magic_enum/magic_enum.hpp>
 
 #include "providers/execution/runtime-backend.hpp"
+#include "utils/format.hpp"
 #include "utils/string.hpp"
 
 namespace orangutan::providers {
@@ -13,7 +14,7 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         std::string format_parse_error(std::string_view kind, std::string_view token) {
-            return std::string("unsupported ") + std::string(kind) + ": " + std::string(token);
+            return utils::format("unsupported {}: {}", kind, token);
         }
 
     } // namespace
@@ -28,7 +29,7 @@ namespace orangutan::providers {
 
     std::expected<ProviderResult, ProviderError> RequestBuilder::try_send_blocking() const {
         try {
-            auto [result] = execution::sync_wait_or_throw(send(), "provider sender");
+            auto [result] = utils::sync_wait_or_throw(send(), "provider sender");
             return result;
         } catch (const ProviderError &error) {
             return std::unexpected(error);
@@ -44,7 +45,7 @@ namespace orangutan::providers {
     : backend_(std::move(backend)) {}
 
     RequestBuilder ProviderSystem::route(ProviderRoute route) const {
-        return RequestBuilder(backend_, std::move(route));
+        return {backend_, std::move(route)};
     }
 
     ProviderUsageStats ProviderSystem::usage() const {

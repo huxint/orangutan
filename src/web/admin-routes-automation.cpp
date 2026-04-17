@@ -1,3 +1,4 @@
+#include "automation/service.hpp"
 #include "web/admin-routes-detail.hpp"
 #include "web/web-routes.hpp"
 
