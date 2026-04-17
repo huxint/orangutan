@@ -9,7 +9,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "storage/sqlite.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "utils/scope-exit.hpp"
 
 namespace orangutan::swarm {
@@ -62,20 +62,22 @@ namespace orangutan::swarm {
 
         auto read_mailbox_message(const sqlite::Row &row) -> MailboxMessage {
             return MailboxMessage{
-                .id = row.get<std::string>(0),
-                .team_id = row.get<std::string>(1),
-                .from = row.get<std::string>(2),
-                .to = row.get<std::string>(3),
-                .text = row.get<std::string>(4),
-                .timestamp = row.get<std::int64_t>(5),
-                .read = row.get<int>(6) != 0,
-                .type = string_to_message_type(row.get<std::string>(7)),
+                .id = sqlite::unwrap(row.get<std::string>(0)),
+                .team_id = sqlite::unwrap(row.get<std::string>(1)),
+                .from = sqlite::unwrap(row.get<std::string>(2)),
+                .to = sqlite::unwrap(row.get<std::string>(3)),
+                .text = sqlite::unwrap(row.get<std::string>(4)),
+                .timestamp = sqlite::unwrap(row.get<std::int64_t>(5)),
+                .read = sqlite::unwrap(row.get<int>(6)) != 0,
+                .type = string_to_message_type(sqlite::unwrap(row.get<std::string>(7))),
             };
         }
 
         void run_statement(sqlite::Statement &stmt) {
-            const auto reset_stmt = utils::scope_exit([&stmt] { stmt.reset(); });
-            while (stmt.step()) {
+            const auto reset_stmt = utils::scope_exit([&stmt] {
+                static_cast<void>(stmt.reset()); // NOLINT(bugprone-unused-return-value): scope-exit cleanup must not throw
+            });
+            while (sqlite::unwrap(stmt.step())) {
             }
         }
 
@@ -85,13 +87,13 @@ namespace orangutan::swarm {
                                     std::string_view to,
                                     std::string_view text,
                                     message_type type) {
-            stmt.clear_bindings();
+            sqlite::unwrap(stmt.clear_bindings());
             stmt.bind_all(generate_id(), team_id, from, to, text, now_millis(), message_type_to_string(type));
             run_statement(stmt);
         }
 
         void mark_mailbox_message_read(sqlite::Statement &stmt, std::string_view message_id) {
-            stmt.clear_bindings();
+            sqlite::unwrap(stmt.clear_bindings());
             stmt.bind_all(message_id);
             run_statement(stmt);
         }
@@ -103,19 +105,20 @@ namespace orangutan::swarm {
         std::mutex mutex;
 
         explicit Impl(const std::filesystem::path &db_path)
-        : db(db_path) {
-            db.exec_script("PRAGMA journal_mode=WAL;", "failed to enable mailbox wal mode");
-            db.exec_script("CREATE TABLE IF NOT EXISTS agent_mailbox ("
-                           "    id TEXT PRIMARY KEY,"
-                           "    team_id TEXT NOT NULL,"
-                           "    sender TEXT NOT NULL,"
-                           "    recipient TEXT NOT NULL,"
-                           "    body TEXT NOT NULL,"
-                           "    timestamp INTEGER NOT NULL,"
-                           "    is_read INTEGER NOT NULL DEFAULT 0,"
-                           "    message_type TEXT NOT NULL DEFAULT 'message'"
-                           ");",
-                           "failed to create mailbox table");
+        : db(sqlite::open_or_throw(db_path)) {
+            sqlite::exec_script(db, "PRAGMA journal_mode=WAL;", "failed to enable mailbox wal mode");
+            sqlite::exec_script(db,
+                                "CREATE TABLE IF NOT EXISTS agent_mailbox ("
+                                "    id TEXT PRIMARY KEY,"
+                                "    team_id TEXT NOT NULL,"
+                                "    sender TEXT NOT NULL,"
+                                "    recipient TEXT NOT NULL,"
+                                "    body TEXT NOT NULL,"
+                                "    timestamp INTEGER NOT NULL,"
+                                "    is_read INTEGER NOT NULL DEFAULT 0,"
+                                "    message_type TEXT NOT NULL DEFAULT 'message'"
+                                ");",
+                                "failed to create mailbox table");
         }
 
         Impl(const Impl &) = delete;
@@ -134,7 +137,7 @@ namespace orangutan::swarm {
     void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type) {
         std::scoped_lock lock(impl_->mutex);
         try {
-            sqlite::Statement insert(impl_->db, INSERT_MESSAGE_SQL);
+            auto insert = sqlite::prepare_or_throw(impl_->db, INSERT_MESSAGE_SQL);
             insert_mailbox_message(insert, team_id, from, to, text, type);
         } catch (const std::exception &ex) {
             spdlog::error("failed to insert mailbox message: {}", ex.what());
@@ -144,8 +147,8 @@ namespace orangutan::swarm {
     void AgentMailbox::send_broadcast(const std::string &team_id, const std::string &from, const std::string &text, const std::vector<std::string> &team_members) {
         std::scoped_lock lock(impl_->mutex);
         try {
-            impl_->db.transaction([&](sqlite::Database &tx) {
-                sqlite::Statement insert(tx, INSERT_MESSAGE_SQL);
+            sqlite::unwrap(impl_->db.transaction([&](sqlite::Database &tx) {
+                auto insert = sqlite::prepare_or_throw(tx, INSERT_MESSAGE_SQL);
                 for (const auto &member : team_members) {
                     if (member == from) {
                         continue;
@@ -156,7 +159,7 @@ namespace orangutan::swarm {
                         spdlog::error("failed to insert broadcast mailbox message for {}: {}", member, ex.what());
                     }
                 }
-            });
+            }));
         } catch (const std::exception &ex) {
             spdlog::error("failed to broadcast mailbox messages: {}", ex.what());
         }
@@ -166,9 +169,10 @@ namespace orangutan::swarm {
         std::scoped_lock lock(impl_->mutex);
         try {
             std::vector<MailboxMessage> messages;
-            impl_->db.query(POLL_MESSAGES_SQL).bind(team_id, agent_name).for_each([&messages](const sqlite::Row &row) {
+            auto query = sqlite::unwrap(impl_->db.query(POLL_MESSAGES_SQL));
+            sqlite::unwrap(query.bind(team_id, agent_name).for_each([&messages](const sqlite::Row &row) {
                 messages.push_back(read_mailbox_message(row));
-            });
+            }));
             return messages;
         } catch (const std::exception &ex) {
             spdlog::error("failed to poll mailbox: {}", ex.what());
@@ -183,8 +187,8 @@ namespace orangutan::swarm {
 
         std::scoped_lock lock(impl_->mutex);
         try {
-            impl_->db.transaction([&](sqlite::Database &tx) {
-                sqlite::Statement update(tx, MARK_READ_SQL);
+            sqlite::unwrap(impl_->db.transaction([&](sqlite::Database &tx) {
+                auto update = sqlite::prepare_or_throw(tx, MARK_READ_SQL);
                 for (const auto &message_id : message_ids) {
                     try {
                         mark_mailbox_message_read(update, message_id);
@@ -192,7 +196,7 @@ namespace orangutan::swarm {
                         spdlog::error("failed to mark mailbox message read for {}: {}", message_id, ex.what());
                     }
                 }
-            });
+            }));
         } catch (const std::exception &ex) {
             spdlog::error("failed to batch mark mailbox messages read: {}", ex.what());
         }
@@ -201,7 +205,7 @@ namespace orangutan::swarm {
     void AgentMailbox::clear_team(const std::string &team_id) {
         std::scoped_lock lock(impl_->mutex);
         try {
-            impl_->db.exec("DELETE FROM agent_mailbox WHERE team_id = ?").bind(team_id).run();
+            sqlite::exec_bind(impl_->db, "DELETE FROM agent_mailbox WHERE team_id = ?", team_id);
         } catch (const std::exception &ex) {
             spdlog::error("failed to clear team mailbox: {}", ex.what());
         }
