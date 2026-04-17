@@ -1,12 +1,20 @@
 {
-  "session": {
-    "auto_save": true
+  "agent": {
+    "profile": "anthropic-main",
+    "model": "claude-sonnet-4-20250514",
+    "workspace": "~/workspace"
+  },
+  "tools": {
+    "edit_mode": "hashline"
   },
   "permissions": {
     "default_mode": "default_mode",
     "allow": ["read", "task(list)"],
     "deny": ["shell(rm:*)"],
     "ask": ["edit", "write", "shell"]
+  },
+  "session": {
+    "auto_save": true
   },
   "memory": {
     "mirror_enabled": false,
@@ -41,10 +49,6 @@
   },
   "agents": {
     "default": {
-      "profile": "anthropic-main",
-      "model": "claude-sonnet-4-20250514",
-      "workspace": "~/workspace",
-      "system_prompt": "You are the default general assistant.",
       "coordinator_mode": true,
       "team_agents": [
         "coder",
@@ -53,10 +57,7 @@
       "max_concurrent_agents": 4
     },
     "coder": {
-      "profile": "anthropic-main",
-      "model": "claude-sonnet-4-20250514",
-      "workspace": "~/workspace",
-      "system_prompt": "You focus on code changes, debugging, and implementation details.",
+      "edit_mode": "search_replace",
       "team_agents": [
         "research"
       ],
@@ -68,30 +69,26 @@
       }
     },
     "research": {
-      "profile": "anthropic-main",
-      "model": "claude-sonnet-4-20250514",
-      "workspace": "~/workspace",
-      "system_prompt": "You focus on analysis, investigation, and planning.",
-      "team_agents": []
+      "thinking_budget": 2048
     }
   },
   "qq_bots": [
     {
       "name": "primary",
-      "app_id": "QQ_APP_ID_PRIMARY",
-      "client_secret": "QQ_CLIENT_SECRET_PRIMARY",
+      "app_id": "${QQ_APP_ID_PRIMARY}",
+      "client_secret": "${QQ_CLIENT_SECRET_PRIMARY}",
       "agent": "default"
     },
     {
       "name": "coder-bot",
-      "app_id": "QQ_APP_ID_CODER",
-      "client_secret": "QQ_CLIENT_SECRET_CODER",
+      "app_id": "${QQ_APP_ID_CODER}",
+      "client_secret": "${QQ_CLIENT_SECRET_CODER}",
       "agent": "coder"
     },
     {
       "name": "research-bot",
-      "app_id": "QQ_APP_ID_RESEARCH",
-      "client_secret": "QQ_CLIENT_SECRET_RESEARCH",
+      "app_id": "${QQ_APP_ID_RESEARCH}",
+      "client_secret": "${QQ_CLIENT_SECRET_RESEARCH}",
       "agent": "research"
     }
   ]
