@@ -1,53 +1,76 @@
+import { useEffect } from "react";
+import { Canvas } from "./canvas/Canvas";
+import { Observatory } from "./observatory/Observatory";
+import { CommandPalette } from "./palette/CommandPalette";
+import { HUD } from "./hud/HUD";
+import { Ticker } from "./hud/Ticker";
+import { useHotkeys } from "./lib/useHotkeys";
+import { toggleTheme } from "./theme";
 import {
-  HashRouter,
-  Routes,
-  Route,
-  Navigate,
-  useLocation,
-} from "react-router-dom";
-import { SideDock } from "./components/layout/SideDock";
-import { ThemeToggle } from "./components/layout/ThemeToggle";
-import { PageTransition } from "./components/layout/PageTransition";
-import { ChatView } from "./components/chat/ChatView";
-import { ConfigPage } from "./components/admin/ConfigPage";
-import { ToolsPage } from "./components/admin/ToolsPage";
-import { AgentsPage } from "./components/admin/AgentsPage";
-import { SkillsPage } from "./components/admin/SkillsPage";
-import { SystemPage } from "./components/admin/SystemPage";
+  WorkspaceProvider,
+  useWorkspace,
+  useWorkspaceState,
+} from "./state/WorkspaceProvider";
 
-function AppRoutes() {
-  const location = useLocation();
-  const routeKey = location.pathname.startsWith("/chat")
-    ? "chat"
-    : location.pathname;
+function WorkspaceChrome() {
+  const store = useWorkspace();
+  const mode = useWorkspaceState((s) => s.mode);
+
+  useHotkeys([
+    {
+      combo: "mod+k",
+      allowInInput: true,
+      handler: () => store.setPaletteOpen(!store.getState().paletteOpen),
+    },
+    {
+      combo: "mod+e",
+      allowInInput: true,
+      handler: () =>
+        store.setMode(
+          store.getState().mode === "observatory" ? "workspace" : "observatory",
+        ),
+    },
+    {
+      combo: "mod+.",
+      allowInInput: true,
+      handler: () => toggleTheme(),
+    },
+    {
+      combo: "escape",
+      handler: () => {
+        if (store.getState().paletteOpen) {
+          store.setPaletteOpen(false);
+        } else if (store.getState().mode === "observatory") {
+          store.setMode("workspace");
+        }
+      },
+    },
+    {
+      combo: "n",
+      handler: () => {
+        const focus = store.getState().focusAgent;
+        if (focus) store.openSession(focus);
+      },
+    },
+  ]);
 
   return (
-    <PageTransition key={routeKey}>
-      <Routes location={location}>
-        <Route path="/" element={<Navigate to="/chat/default" replace />} />
-        <Route path="/chat" element={<Navigate to="/chat/default" replace />} />
-        <Route path="/chat/:agentKey" element={<ChatView />} />
-        <Route path="/chat/:agentKey/:sessionId" element={<ChatView />} />
-        <Route path="/config" element={<ConfigPage />} />
-        <Route path="/tools" element={<ToolsPage />} />
-        <Route path="/agents" element={<AgentsPage />} />
-        <Route path="/skills" element={<SkillsPage />} />
-        <Route path="/system" element={<SystemPage />} />
-      </Routes>
-    </PageTransition>
+    <div className="relative h-full w-full overflow-hidden">
+      {mode === "workspace" ? <Canvas /> : <Observatory />}
+      <HUD />
+      <Ticker />
+      <CommandPalette />
+    </div>
   );
 }
 
 export default function App() {
+  useEffect(() => {
+    // Nothing to do today; reserved for future wiring (error boundary, etc.).
+  }, []);
   return (
-    <HashRouter>
-      <div className="h-screen w-screen overflow-hidden bg-bg text-text relative">
-        <main className="h-full w-full overflow-hidden">
-          <AppRoutes />
-        </main>
-        <ThemeToggle />
-        <SideDock />
-      </div>
-    </HashRouter>
+    <WorkspaceProvider>
+      <WorkspaceChrome />
+    </WorkspaceProvider>
   );
 }
