@@ -20,7 +20,8 @@ namespace orangutan::tools {
         register_write_tool(registry, workspace_root, permissions);
         register_edit_tool(registry, workspace_root, permissions, edit_mode);
         register_fs_tools(registry, workspace_root, permissions);
-        register_file_search_tools(registry, workspace_root, permissions);
+        register_fd_tool(registry, workspace_root, permissions);
+        register_rg_tool(registry, workspace_root, permissions);
     }
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
