@@ -1,4 +1,5 @@
 #include "storage/session-store.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "types/base.hpp"
 #include "utils/format.hpp"
 #include "utils/overloaded.hpp"
@@ -6,7 +7,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <iterator>
 #include <random>
 #include <stdexcept>
 #include <string_view>
@@ -98,14 +98,15 @@ namespace orangutan::storage {
         }
 
         void ensure_column(sqlite::Database &db, std::string_view table_name, std::string_view column_name, std::string_view add_sql) {
-            sqlite::Statement pragma(db, std::string("PRAGMA table_info(") + std::string(table_name) + ")");
-            while (pragma.step()) {
-                if (pragma.row().get<std::string>(1) == column_name) {
+            auto pragma = sqlite::prepare_or_throw(db, std::string("PRAGMA table_info(") + std::string(table_name) + ")");
+            while (sqlite::unwrap(pragma.step())) {
+                auto row = sqlite::unwrap(pragma.row());
+                if (sqlite::unwrap(row.get<std::string>(1)) == column_name) {
                     return;
                 }
             }
 
-            db.exec_script(add_sql, "Failed to migrate session schema");
+            sqlite::exec_script(db, add_sql, "Failed to migrate session schema");
         }
 
         struct ChannelBindingSchema {
@@ -115,13 +116,13 @@ namespace orangutan::storage {
         };
 
         ChannelBindingSchema inspect_channel_binding_schema(sqlite::Database &db) {
-            sqlite::Statement pragma(db, "PRAGMA table_info(channel_session_bindings)");
+            auto pragma = sqlite::prepare_or_throw(db, "PRAGMA table_info(channel_session_bindings)");
 
             ChannelBindingSchema schema;
-            while (pragma.step()) {
-                const auto row = pragma.row();
-                const auto column_name = row.get<std::string>(1);
-                const auto pk_position = row.get<int>(5);
+            while (sqlite::unwrap(pragma.step())) {
+                auto row = sqlite::unwrap(pragma.row());
+                const auto column_name = sqlite::unwrap(row.get<std::string>(1));
+                const auto pk_position = sqlite::unwrap(row.get<int>(5));
 
                 if (column_name == "jid") {
                     schema.jid_pk_position = pk_position;
@@ -136,45 +137,47 @@ namespace orangutan::storage {
         }
 
         void rebuild_channel_binding_table(sqlite::Database &db, bool legacy_has_agent_key) {
-            db.exec_script("DROP INDEX IF EXISTS idx_channel_session_bindings_updated;", "Failed to drop old binding index");
-            db.exec_script("ALTER TABLE channel_session_bindings RENAME TO channel_session_bindings_legacy;", "Failed to rename legacy binding table");
-            db.exec_script("CREATE TABLE channel_session_bindings ("
-                           "jid TEXT NOT NULL,"
-                           "agent_key TEXT NOT NULL DEFAULT '',"
-                           "session_id TEXT NOT NULL,"
-                           "updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
-                           "PRIMARY KEY (jid, agent_key),"
-                           "FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE"
-                           ");",
-                           "Failed to create upgraded binding table");
+            sqlite::exec_script(db, "DROP INDEX IF EXISTS idx_channel_session_bindings_updated;", "Failed to drop old binding index");
+            sqlite::exec_script(db, "ALTER TABLE channel_session_bindings RENAME TO channel_session_bindings_legacy;", "Failed to rename legacy binding table");
+            sqlite::exec_script(db,
+                                "CREATE TABLE channel_session_bindings ("
+                                "jid TEXT NOT NULL,"
+                                "agent_key TEXT NOT NULL DEFAULT '',"
+                                "session_id TEXT NOT NULL,"
+                                "updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+                                "PRIMARY KEY (jid, agent_key),"
+                                "FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE"
+                                ");",
+                                "Failed to create upgraded binding table");
 
-            db.exec_script(legacy_has_agent_key ? "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
-                                                  "SELECT jid, COALESCE(agent_key, ''), session_id, updated_at FROM channel_session_bindings_legacy;"
-                                                : "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
-                                                  "SELECT jid, '', session_id, updated_at FROM channel_session_bindings_legacy;",
-                           "Failed to migrate legacy channel bindings");
-            db.exec_script("DROP TABLE channel_session_bindings_legacy;", "Failed to drop legacy binding table");
-            db.exec_script("CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);",
-                           "Failed to recreate binding index");
+            sqlite::exec_script(db,
+                                legacy_has_agent_key ? "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
+                                                       "SELECT jid, COALESCE(agent_key, ''), session_id, updated_at FROM channel_session_bindings_legacy;"
+                                                     : "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
+                                                       "SELECT jid, '', session_id, updated_at FROM channel_session_bindings_legacy;",
+                                "Failed to migrate legacy channel bindings");
+            sqlite::exec_script(db, "DROP TABLE channel_session_bindings_legacy;", "Failed to drop legacy binding table");
+            sqlite::exec_script(db, "CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);",
+                                "Failed to recreate binding index");
         }
 
         void write_messages(sqlite::Database &db, std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index) {
-            sqlite::Statement insert_msg(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
+            auto insert_msg = sqlite::prepare_or_throw(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
             for (std::size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
                 const auto content_json = serialize_content(message).dump();
 
-                insert_msg.clear_bindings();
+                sqlite::unwrap(insert_msg.clear_bindings());
                 insert_msg.bind_all(session_id, static_cast<int>(index), magic_enum::enum_name(message.role()), content_json);
-                static_cast<void>(insert_msg.step());
-                insert_msg.reset();
+                sqlite::unwrap(insert_msg.step());
+                sqlite::unwrap(insert_msg.reset());
             }
         }
 
         void insert_session(sqlite::Database &db, std::string_view session_id, const SessionMetadata &metadata) {
-            db.exec("INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) VALUES (?, ?, ?, ?, ?, ?)")
-                .bind(session_id, metadata.model, metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref)
-                .run();
+            sqlite::exec_bind(db,
+                              "INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) VALUES (?, ?, ?, ?, ?, ?)",
+                              session_id, metadata.model, metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref);
         }
 
         void update_session_model(sqlite::Database &db, std::string_view session_id, std::string_view model) {
@@ -182,19 +185,19 @@ namespace orangutan::storage {
                 return;
             }
 
-            db.exec("UPDATE sessions SET model = ? WHERE id = ?").bind(model, session_id).run();
+            sqlite::exec_bind(db, "UPDATE sessions SET model = ? WHERE id = ?", model, session_id);
         }
 
         void update_session_metadata(sqlite::Database &db, std::string_view session_id, const SessionMetadata &metadata) {
-            db.exec("UPDATE sessions "
-                    "SET model = ?, scope_key = ?, agent_key = ?, origin_kind = ?, origin_ref = ? "
-                    "WHERE id = ?")
-                .bind(metadata.model, metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref, session_id)
-                .run();
+            sqlite::exec_bind(db,
+                              "UPDATE sessions "
+                              "SET model = ?, scope_key = ?, agent_key = ?, origin_kind = ?, origin_ref = ? "
+                              "WHERE id = ?",
+                              metadata.model, metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref, session_id);
         }
 
         bool session_exists(sqlite::Database &db, std::string_view session_id) {
-            return db.query("SELECT 1 FROM sessions WHERE id = ? LIMIT 1").bind(session_id).optional<int>().has_value();
+            return sqlite::query_optional<int>(db, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", session_id).has_value();
         }
 
         void append_permission_rule(ToolPermissionContext &ctx, PermissionRule rule) {
@@ -239,21 +242,18 @@ namespace orangutan::storage {
     } // namespace
 
     SessionStore::SessionStore()
-    : db_(db_path()) {
-        db_.exec_script("PRAGMA foreign_keys = ON;", "Failed to enable SQLite foreign keys");
-        ensure_schema();
-    }
+    : SessionStore(db_path()) {}
 
     SessionStore::SessionStore(const std::filesystem::path &path)
-    : db_(path) {
-        db_.exec_script("PRAGMA foreign_keys = ON;", "Failed to enable SQLite foreign keys");
+    : db_(sqlite::open_or_throw(path)) {
+        sqlite::exec_script(db_, "PRAGMA foreign_keys = ON;", "Failed to enable SQLite foreign keys");
         ensure_schema();
     }
 
     SessionStore::~SessionStore() = default;
 
     void SessionStore::ensure_schema() {
-        db_.exec_script(R"(
+        sqlite::exec_script(db_, R"(
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             model TEXT NOT NULL,
@@ -294,20 +294,20 @@ namespace orangutan::storage {
         CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);
         CREATE INDEX IF NOT EXISTS idx_session_permission_rules_session ON session_permission_rules(session_id, created_at);
     )",
-                        "Failed to create session schema");
+                            "Failed to create session schema");
 
         ensure_column(db_, "sessions", "scope_key", "ALTER TABLE sessions ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''");
         ensure_column(db_, "sessions", "agent_key", "ALTER TABLE sessions ADD COLUMN agent_key TEXT NOT NULL DEFAULT ''");
         ensure_column(db_, "sessions", "origin_kind", "ALTER TABLE sessions ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'cli'");
         ensure_column(db_, "sessions", "origin_ref", "ALTER TABLE sessions ADD COLUMN origin_ref TEXT NOT NULL DEFAULT ''");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_sessions_scope_key ON sessions(scope_key, created_at DESC);", "Failed to create session scope index");
-        db_.exec_script("CREATE INDEX IF NOT EXISTS idx_sessions_agent_key ON sessions(agent_key, created_at DESC);", "Failed to create session agent index");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_sessions_scope_key ON sessions(scope_key, created_at DESC);", "Failed to create session scope index");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_sessions_agent_key ON sessions(agent_key, created_at DESC);", "Failed to create session agent index");
 
         const auto binding_schema = inspect_channel_binding_schema(db_);
         if (!binding_schema.has_agent_key || binding_schema.jid_pk_position != 1 || binding_schema.agent_key_pk_position != 2) {
-            db_.transaction([&](sqlite::Database &tx) {
+            sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
                 rebuild_channel_binding_table(tx, binding_schema.has_agent_key);
-            });
+            }));
         }
     }
 
@@ -323,10 +323,10 @@ namespace orangutan::storage {
     std::string SessionStore::save(const std::vector<Message> &messages, const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
         const auto session_id = generate_uuid();
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             insert_session(tx, session_id, metadata);
             write_messages(tx, session_id, messages, 0);
-        });
+        }));
         spdlog::info("Saved session {} ({} messages)", session_id, messages.size());
         return session_id;
     }
@@ -334,30 +334,30 @@ namespace orangutan::storage {
     std::string SessionStore::create_empty(const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
         const auto session_id = generate_uuid();
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             insert_session(tx, session_id, metadata);
-        });
+        }));
         spdlog::info("Created empty session {}", session_id);
         return session_id;
     }
 
     void SessionStore::update(std::string_view session_id, const std::vector<Message> &messages, std::string_view model) {
         std::scoped_lock lock(mutex_);
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             update_session_model(tx, session_id, model);
-            tx.exec("DELETE FROM messages WHERE session_id = ?").bind(session_id).run();
+            sqlite::exec_bind(tx, "DELETE FROM messages WHERE session_id = ?", session_id);
             write_messages(tx, session_id, messages, 0);
-        });
+        }));
         spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
     }
 
     void SessionStore::update(std::string_view session_id, const std::vector<Message> &messages, const SessionMetadata &metadata) {
         std::scoped_lock lock(mutex_);
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             update_session_metadata(tx, session_id, metadata);
-            tx.exec("DELETE FROM messages WHERE session_id = ?").bind(session_id).run();
+            sqlite::exec_bind(tx, "DELETE FROM messages WHERE session_id = ?", session_id);
             write_messages(tx, session_id, messages, 0);
-        });
+        }));
         spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
     }
 
@@ -367,10 +367,10 @@ namespace orangutan::storage {
             throw std::runtime_error("append start_index is out of range");
         }
 
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             update_session_model(tx, session_id, model);
             write_messages(tx, session_id, messages, start_index);
-        });
+        }));
 
         spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
@@ -381,10 +381,10 @@ namespace orangutan::storage {
             throw std::runtime_error("append start_index is out of range");
         }
 
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             update_session_metadata(tx, session_id, metadata);
             write_messages(tx, session_id, messages, start_index);
-        });
+        }));
 
         spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
@@ -393,9 +393,9 @@ namespace orangutan::storage {
         std::scoped_lock lock(mutex_);
 
         std::vector<Message> messages;
-        for (const auto &[role_text, content_json] : db_.query("SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq")
-                                                   .bind(session_id)
-                                                   .all<std::tuple<std::string, std::string>>()) {
+        const auto rows = sqlite::query_all<std::tuple<std::string, std::string>>(
+            db_, "SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq", session_id);
+        for (const auto &[role_text, content_json] : rows) {
             Message message{magic_enum::enum_cast<base::role>(role_text).value_or(base::role::user)};
             for (auto &block : deserialize_content(content_json)) {
                 std::visit(
@@ -429,16 +429,16 @@ namespace orangutan::storage {
 
         rule.source = permission_rule_source::session;
 
-        db_.exec("INSERT OR IGNORE INTO session_permission_rules "
-                 "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
-                 "VALUES (?, ?, ?, ?, ?, ?)")
-            .bind(session_id,
-                  static_cast<int>(rule.behavior),
-                  rule.tool_name,
-                  rule.content.has_value() ? 1 : 0,
-                  rule.content.has_value() ? static_cast<int>(rule.content->match_type) : static_cast<int>(rule_match_type::exact),
-                  rule.content.has_value() ? std::string_view{rule.content->pattern} : std::string_view{})
-            .run();
+        sqlite::exec_bind(db_,
+                          "INSERT OR IGNORE INTO session_permission_rules "
+                          "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                          "VALUES (?, ?, ?, ?, ?, ?)",
+                          session_id,
+                          static_cast<int>(rule.behavior),
+                          rule.tool_name,
+                          rule.content.has_value() ? 1 : 0,
+                          rule.content.has_value() ? static_cast<int>(rule.content->match_type) : static_cast<int>(rule_match_type::exact),
+                          rule.content.has_value() ? std::string_view{rule.content->pattern} : std::string_view{});
     }
 
     std::vector<PermissionRule> SessionStore::load_session_permission_rules(std::string_view session_id) {
@@ -448,13 +448,14 @@ namespace orangutan::storage {
 
         std::scoped_lock lock(mutex_);
         std::vector<PermissionRule> rules;
-        for (const auto &[behavior_value, tool_name, has_content_value, match_type_value, content_pattern] :
-             db_.query("SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
-                       "FROM session_permission_rules "
-                       "WHERE session_id = ? "
-                       "ORDER BY created_at ASC, rowid ASC")
-                 .bind(session_id)
-                 .all<std::tuple<int, std::string, int, int, std::string>>()) {
+        const auto rows = sqlite::query_all<std::tuple<int, std::string, int, int, std::string>>(
+            db_,
+            "SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
+            "FROM session_permission_rules "
+            "WHERE session_id = ? "
+            "ORDER BY created_at ASC, rowid ASC",
+            session_id);
+        for (const auto &[behavior_value, tool_name, has_content_value, match_type_value, content_pattern] : rows) {
             const auto behavior = static_cast<permission_behavior>(behavior_value);
             const auto has_content = has_content_value != 0;
 
@@ -495,7 +496,7 @@ namespace orangutan::storage {
         }
 
         std::scoped_lock lock(mutex_);
-        db_.exec("DELETE FROM session_permission_rules WHERE session_id = ?").bind(session_id).run();
+        sqlite::exec_bind(db_, "DELETE FROM session_permission_rules WHERE session_id = ?", session_id);
     }
 
     void SessionStore::replace_session_permission_rules(std::string_view session_id, const ToolPermissionContext &context) {
@@ -513,37 +514,40 @@ namespace orangutan::storage {
             throw std::runtime_error("Session not found: " + std::string(session_id));
         }
 
-        db_.transaction([&](sqlite::Database &tx) {
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             // Replace the persisted session-scoped subset atomically so resumed sessions mirror
             // the in-memory rules exactly, without leaking non-session rules into storage.
-            tx.exec("DELETE FROM session_permission_rules WHERE session_id = ?").bind(session_id).run();
+            sqlite::exec_bind(tx, "DELETE FROM session_permission_rules WHERE session_id = ?", session_id);
 
-            sqlite::Statement insert(tx, "INSERT OR IGNORE INTO session_permission_rules "
-                                         "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
-                                         "VALUES (?, ?, ?, ?, ?, ?)");
+            auto insert = sqlite::prepare_or_throw(tx,
+                                                   "INSERT OR IGNORE INTO session_permission_rules "
+                                                   "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                                                   "VALUES (?, ?, ?, ?, ?, ?)");
             for (auto rule : session_rules) {
                 rule.source = permission_rule_source::session;
-                insert.clear_bindings();
+                sqlite::unwrap(insert.clear_bindings());
                 bind_session_permission_rule(insert, session_id, rule);
-                static_cast<void>(insert.step());
-                insert.reset();
+                sqlite::unwrap(insert.step());
+                sqlite::unwrap(insert.reset());
             }
-        });
+        }));
     }
 
     std::vector<SessionInfo> SessionStore::list_sessions(std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
         const auto rows = scope_key.empty()
-                              ? db_.query("SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-                                          "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-                                          "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
-                                    .all<session_info_row>()
-                              : db_.query("SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-                                          "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-                                          "WHERE s.scope_key = ? "
-                                          "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
-                                    .bind(scope_key)
-                                    .all<session_info_row>();
+                              ? sqlite::query_all<session_info_row>(
+                                    db_,
+                                    "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
+                              : sqlite::query_all<session_info_row>(
+                                    db_,
+                                    "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                    "WHERE s.scope_key = ? "
+                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
+                                    scope_key);
 
         std::vector<SessionInfo> sessions;
         sessions.reserve(rows.size());
@@ -555,12 +559,13 @@ namespace orangutan::storage {
 
     std::vector<SessionInfo> SessionStore::list_sessions_for_agent(std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        const auto rows = db_.query("SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-                                    "WHERE s.agent_key = ? "
-                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
-                              .bind(agent_key)
-                              .all<session_info_row>();
+        const auto rows = sqlite::query_all<session_info_row>(
+            db_,
+            "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+            "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+            "WHERE s.agent_key = ? "
+            "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
+            agent_key);
 
         std::vector<SessionInfo> sessions;
         sessions.reserve(rows.size());
@@ -572,52 +577,49 @@ namespace orangutan::storage {
 
     void SessionStore::remove(std::string_view session_id) {
         std::scoped_lock lock(mutex_);
-        db_.transaction([&](sqlite::Database &tx) {
-            tx.exec("DELETE FROM channel_session_bindings WHERE session_id = ?").bind(session_id).run();
-            tx.exec("DELETE FROM messages WHERE session_id = ?").bind(session_id).run();
-            tx.exec("DELETE FROM sessions WHERE id = ?").bind(session_id).run();
-        });
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
+            sqlite::exec_bind(tx, "DELETE FROM channel_session_bindings WHERE session_id = ?", session_id);
+            sqlite::exec_bind(tx, "DELETE FROM messages WHERE session_id = ?", session_id);
+            sqlite::exec_bind(tx, "DELETE FROM sessions WHERE id = ?", session_id);
+        }));
     }
 
     std::optional<std::string> SessionStore::latest_session_id() {
         std::scoped_lock lock(mutex_);
-        return db_.query("SELECT id FROM sessions ORDER BY created_at DESC, rowid DESC LIMIT 1").optional<std::string>();
+        return sqlite::query_optional<std::string>(db_, "SELECT id FROM sessions ORDER BY created_at DESC, rowid DESC LIMIT 1");
     }
 
     void SessionStore::bind_jid(std::string_view jid, std::string_view session_id, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        db_.exec("INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
-                 "VALUES (?, ?, ?, datetime('now')) "
-                 "ON CONFLICT(jid, agent_key) DO UPDATE SET session_id = excluded.session_id, updated_at = datetime('now')")
-            .bind(jid, agent_key, session_id)
-            .run();
+        sqlite::exec_bind(db_,
+                          "INSERT INTO channel_session_bindings (jid, agent_key, session_id, updated_at) "
+                          "VALUES (?, ?, ?, datetime('now')) "
+                          "ON CONFLICT(jid, agent_key) DO UPDATE SET session_id = excluded.session_id, updated_at = datetime('now')",
+                          jid, agent_key, session_id);
     }
 
     void SessionStore::clear_jid(std::string_view jid, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        db_.exec("DELETE FROM channel_session_bindings WHERE jid = ? AND agent_key = ?").bind(jid, agent_key).run();
+        sqlite::exec_bind(db_, "DELETE FROM channel_session_bindings WHERE jid = ? AND agent_key = ?", jid, agent_key);
     }
 
     std::optional<std::string> SessionStore::bound_session_for_jid(std::string_view jid, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        return db_.query("SELECT session_id FROM channel_session_bindings WHERE jid = ? AND agent_key = ?")
-            .bind(jid, agent_key)
-            .optional<std::string>();
+        return sqlite::query_optional<std::string>(
+            db_, "SELECT session_id FROM channel_session_bindings WHERE jid = ? AND agent_key = ?", jid, agent_key);
     }
 
     bool SessionStore::session_belongs_to_scope(std::string_view session_id, std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
-        return db_.query("SELECT 1 FROM sessions WHERE id = ? AND scope_key = ? LIMIT 1")
-            .bind(session_id, scope_key)
-            .optional<int>()
+        return sqlite::query_optional<int>(
+                   db_, "SELECT 1 FROM sessions WHERE id = ? AND scope_key = ? LIMIT 1", session_id, scope_key)
             .has_value();
     }
 
     bool SessionStore::session_belongs_to_agent(std::string_view session_id, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        return db_.query("SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1")
-            .bind(session_id, agent_key)
-            .optional<int>()
+        return sqlite::query_optional<int>(
+                   db_, "SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1", session_id, agent_key)
             .has_value();
     }
 
