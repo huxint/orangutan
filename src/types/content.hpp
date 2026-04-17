@@ -1,10 +1,11 @@
 #pragma once
 
+#include <concepts>
 #include <nlohmann/json.hpp>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace orangutan {
 
@@ -12,11 +13,13 @@ namespace orangutan {
         std::string text;
 
         Text() = default;
-        Text(std::string value)
-        : text(std::move(value)) {}
-        Text(std::string_view value)
-        : text(value) {}
-        Text(const char *value)
+
+        template <typename T>
+            requires std::constructible_from<std::string, T &&>
+        explicit Text(T &&value)
+        : text(std::forward<T>(value)) {}
+
+        explicit Text(const char *value)
         : text(value != nullptr ? value : "") {}
     };
 
@@ -24,11 +27,13 @@ namespace orangutan {
         std::string thinking;
 
         Thinking() = default;
-        Thinking(std::string value)
-        : thinking(std::move(value)) {}
-        Thinking(std::string_view value)
-        : thinking(value) {}
-        Thinking(const char *value)
+
+        template <typename T>
+            requires std::constructible_from<std::string, T &&>
+        explicit Thinking(T &&value)
+        : thinking(std::forward<T>(value)) {}
+
+        explicit Thinking(const char *value)
         : thinking(value != nullptr ? value : "") {}
     };
 
