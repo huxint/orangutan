@@ -205,13 +205,6 @@ namespace orangutan::web {
             return payload;
         }
 
-        std::string resolve_agent_key_param(const httplib::Request &req) {
-            if (req.has_param("agent_key")) {
-                return req.get_param_value("agent_key");
-            }
-            return "default";
-        }
-
         void resolve_pending_approval(WebPendingApproval &approval, bool approved, bool cancelled) {
             std::scoped_lock lock(approval.mutex);
             if (approval.resolved) {

@@ -28,11 +28,6 @@ namespace orangutan::web::internal {
     [[nodiscard]]
     std::optional<storage::SessionInfo> find_agent_session(storage::SessionStore *store, const std::string &agent_key, const std::string &session_id);
 
-    [[nodiscard]]
-    std::string resolve_agent_key_param(const httplib::Request &req);
-
-    void write_sse_event(httplib::DataSink &sink, std::string_view event_name, const nlohmann::json &payload);
-
     void send_web_command_stream(httplib::Response &res, const cli::SlashCommandReply &command_response);
 
     [[nodiscard]]
