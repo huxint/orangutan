@@ -16,37 +16,18 @@ namespace orangutan::sqlite {
     template <>
     struct RowMapper<orangutan::orchestration::TeamRecord> {
         static auto map(const Row &row) -> SqliteResult<orangutan::orchestration::TeamRecord> {
-            auto id = row.get<std::string>(0);
-            if (!id) {
-                return std::unexpected(id.error());
+            auto columns = read_columns<std::string, std::string, std::string, std::string, std::int64_t, int>(row);
+            if (!columns) {
+                return std::unexpected(columns.error());
             }
-            auto name = row.get<std::string>(1);
-            if (!name) {
-                return std::unexpected(name.error());
-            }
-            auto description = row.get<std::string>(2);
-            if (!description) {
-                return std::unexpected(description.error());
-            }
-            auto lead_agent_id = row.get<std::string>(3);
-            if (!lead_agent_id) {
-                return std::unexpected(lead_agent_id.error());
-            }
-            auto created_at = row.get<std::int64_t>(4);
-            if (!created_at) {
-                return std::unexpected(created_at.error());
-            }
-            auto active = row.get<int>(5);
-            if (!active) {
-                return std::unexpected(active.error());
-            }
+            auto &[id, name, description, lead_agent_id, created_at, active] = *columns;
             return orangutan::orchestration::TeamRecord{
-                .id = std::move(*id),
-                .name = std::move(*name),
-                .description = std::move(*description),
-                .lead_agent_id = std::move(*lead_agent_id),
-                .created_at = *created_at,
-                .active = *active != 0,
+                .id = std::move(id),
+                .name = std::move(name),
+                .description = std::move(description),
+                .lead_agent_id = std::move(lead_agent_id),
+                .created_at = created_at,
+                .active = active != 0,
             };
         }
     };
@@ -54,37 +35,18 @@ namespace orangutan::sqlite {
     template <>
     struct RowMapper<orangutan::orchestration::TeamMemberRecord> {
         static auto map(const Row &row) -> SqliteResult<orangutan::orchestration::TeamMemberRecord> {
-            auto agent_id = row.get<std::string>(0);
-            if (!agent_id) {
-                return std::unexpected(agent_id.error());
+            auto columns = read_columns<std::string, std::string, std::string, std::string, std::int64_t, int>(row);
+            if (!columns) {
+                return std::unexpected(columns.error());
             }
-            auto name = row.get<std::string>(1);
-            if (!name) {
-                return std::unexpected(name.error());
-            }
-            auto agent_key = row.get<std::string>(2);
-            if (!agent_key) {
-                return std::unexpected(agent_key.error());
-            }
-            auto team_id = row.get<std::string>(3);
-            if (!team_id) {
-                return std::unexpected(team_id.error());
-            }
-            auto joined_at = row.get<std::int64_t>(4);
-            if (!joined_at) {
-                return std::unexpected(joined_at.error());
-            }
-            auto active = row.get<int>(5);
-            if (!active) {
-                return std::unexpected(active.error());
-            }
+            auto &[agent_id, name, agent_key, team_id, joined_at, active] = *columns;
             return orangutan::orchestration::TeamMemberRecord{
-                .agent_id = std::move(*agent_id),
-                .name = std::move(*name),
-                .agent_key = std::move(*agent_key),
-                .team_id = std::move(*team_id),
-                .joined_at = *joined_at,
-                .active = *active != 0,
+                .agent_id = std::move(agent_id),
+                .name = std::move(name),
+                .agent_key = std::move(agent_key),
+                .team_id = std::move(team_id),
+                .joined_at = joined_at,
+                .active = active != 0,
             };
         }
     };

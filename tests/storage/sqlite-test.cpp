@@ -3,7 +3,6 @@
 #include <optional>
 #include <string>
 #include <tuple>
-#include <type_traits>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -24,22 +23,15 @@ namespace orangutan::sqlite {
     template <>
     struct RowMapper<SampleRow> {
         static auto map(const Row &row) -> SqliteResult<SampleRow> {
-            auto name = row.get<std::string>(0);
-            if (!name) {
-                return std::unexpected(name.error());
+            auto columns = read_columns<std::string, orangutan::base::i64, std::optional<std::string>>(row);
+            if (!columns) {
+                return std::unexpected(columns.error());
             }
-            auto created_at = row.get<orangutan::base::i64>(1);
-            if (!created_at) {
-                return std::unexpected(created_at.error());
-            }
-            auto note = row.get<std::optional<std::string>>(2);
-            if (!note) {
-                return std::unexpected(note.error());
-            }
+            auto &[name, created_at, note] = *columns;
             return SampleRow{
-                .name = std::move(*name),
-                .created_at = *created_at,
-                .note = std::move(*note),
+                .name = std::move(name),
+                .created_at = created_at,
+                .note = std::move(note),
             };
         }
     };
@@ -75,8 +67,8 @@ namespace {
 
         exec_script(db, "CREATE TABLE sample (id INTEGER PRIMARY KEY, value TEXT NOT NULL);", "create sample");
         CHECK(db.try_exec_script("CREATE INDEX idx_sample_value ON sample(value);"));
-        static_cast<void>(db.query("SELECT COUNT(*) FROM sample"));
-        static_cast<void>(db.exec("INSERT INTO sample (value) VALUES (?)"));
+        CHECK(db.query("SELECT COUNT(*) FROM sample").has_value());
+        CHECK(db.exec("INSERT INTO sample (value) VALUES (?)").has_value());
         CHECK(db.handle() != nullptr);
         CHECK(db.changes() == 0);
     }
@@ -342,7 +334,7 @@ namespace {
         auto insert = prepare_or_throw(db, "INSERT INTO sample (left_value, right_value) VALUES (?1, ?3)");
         insert.bind(1, "left");
         insert.bind(3, "right");
-        static_cast<void>(insert.step());
+        CHECK(insert.step().has_value());
 
         const auto row = orangutan::sqlite::query_one<std::tuple<std::string, std::string>>(
             db, "SELECT left_value, right_value FROM sample LIMIT 1");
@@ -400,6 +392,29 @@ namespace {
         CHECK(orangutan::sqlite::unwrap(row.is_null(2)));
     }
 
+    TEST_CASE("read_columns unpacks rows and enforces column count", "[storage][sqlite]") {
+        const ScopedDbPath db_path("sqlite-read-columns");
+        auto db = open_or_throw(db_path.path);
+        exec_script(db, "CREATE TABLE sample (name TEXT NOT NULL, created_at INTEGER NOT NULL, note TEXT);", "create sample");
+        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "gamma", static_cast<orangutan::base::i64>(42), std::string{"hello"});
+
+        auto statement = prepare_or_throw(db, "SELECT name, created_at, note FROM sample LIMIT 1");
+        REQUIRE(orangutan::sqlite::unwrap(statement.step()));
+        const auto row = orangutan::sqlite::unwrap(statement.row());
+
+        const auto columns =
+            orangutan::sqlite::read_columns<std::string, orangutan::base::i64, std::optional<std::string>>(row);
+        REQUIRE(columns.has_value());
+        const auto &[name, created_at, note] = *columns;
+        CHECK(name == "gamma");
+        CHECK(created_at == 42);
+        CHECK(note == std::optional<std::string>{"hello"});
+
+        const auto mismatch = orangutan::sqlite::read_columns<std::string, orangutan::base::i64>(row);
+        REQUIRE_FALSE(mismatch.has_value());
+        CHECK(mismatch.error().kind == orangutan::sqlite::sqlite_error_kind::mapping_error);
+    }
+
     TEST_CASE("for_each_handles_zero_rows", "[storage][sqlite]") {
         const ScopedDbPath db_path("sqlite-for-each");
         auto db = open_or_throw(db_path.path);
@@ -451,11 +466,15 @@ namespace {
         auto db = open_or_throw(db_path.path);
         exec_script(db, "CREATE TABLE sample (value TEXT NOT NULL);", "create sample");
 
-        CHECK_THROWS(db.transaction([&](orangutan::sqlite::Database &tx) {
-            exec_bind(tx, "INSERT INTO sample (value) VALUES (?)", "rolled-back");
-            throw std::runtime_error("rollback");
-            return 0;
-        }));
+        auto run_transaction = [&] {
+            auto result = db.transaction([&](orangutan::sqlite::Database &tx) {
+                exec_bind(tx, "INSERT INTO sample (value) VALUES (?)", "rolled-back");
+                throw std::runtime_error("rollback");
+                return 0;
+            });
+            static_cast<void>(result);
+        };
+        CHECK_THROWS(run_transaction());
 
         CHECK(orangutan::sqlite::query_one<int>(db, "SELECT COUNT(*) FROM sample") == 0);
     }
@@ -496,11 +515,11 @@ namespace {
 
         auto insert = prepare_or_throw(db, "INSERT INTO sample (value) VALUES (?1)");
         insert.bind(1, "second");
-        static_cast<void>(insert.step());
-        static_cast<void>(insert.reset());
-        static_cast<void>(insert.clear_bindings());
+        CHECK(insert.step().has_value());
+        CHECK(insert.reset().has_value());
+        CHECK(insert.clear_bindings().has_value());
         insert.bind_all("third");
-        static_cast<void>(insert.step());
+        CHECK(insert.step().has_value());
 
         const auto values = orangutan::sqlite::query_all<std::string>(db, "SELECT value FROM sample ORDER BY rowid ASC");
         CHECK(values == std::vector<std::string>{"second", "third"});

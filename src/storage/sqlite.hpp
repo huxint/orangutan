@@ -1076,6 +1076,16 @@ namespace orangutan::sqlite {
 
     } // namespace detail
 
+    /// Read the first `sizeof...(Ts)` columns of `row` as the given types, short-circuiting
+    /// on the first failure. The row's column count must match exactly. Intended for
+    /// `RowMapper::map` bodies that would otherwise repeat `row.get<T>(i)` + early-return
+    /// boilerplate for each field.
+    template <typename... Ts>
+    [[nodiscard]]
+    auto read_columns(const Row &row) -> SqliteResult<std::tuple<Ts...>> {
+        return detail::map_tuple<std::tuple<Ts...>>(row, std::index_sequence_for<Ts...>{});
+    }
+
     inline auto Statement::create(const Database &db, std::string_view sql) -> SqliteResult<Statement> {
         auto stmt_or = detail::prepare_statement(db.handle(), sql);
         if (!stmt_or) {
