@@ -40,13 +40,7 @@ namespace orangutan::skills {
         });
 
         for (const auto &diagnostic : runtime_.diagnostics()) {
-            if (diagnostic.code == "missing_frontmatter") {
-                spdlog::warn("skill file has no frontmatter: {}", diagnostic.source_path);
-            } else if (diagnostic.code == "unclosed_frontmatter") {
-                spdlog::warn("skill file has unclosed frontmatter: {}", diagnostic.source_path);
-            } else if (diagnostic.code == "missing_name" || diagnostic.code == "missing_description") {
-                spdlog::warn("skill file missing required 'name' or 'description': {}", diagnostic.source_path);
-            }
+            spdlog::warn("skill diagnostic [{}]: {}: {}", diagnostic.code, diagnostic.message, diagnostic.source_path);
         }
     }
 

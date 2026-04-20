@@ -59,6 +59,8 @@ namespace orangutan::agent {
         std::string final_text;
         const bool human_output = !on_stream_event && !on_tool_event;
 
+        const auto memory_section = detail::render_prompt_memory_section(memory_, user_input);
+
         for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
             spdlog::debug("agent loop iteration {}", iteration + 1);
 
@@ -73,7 +75,7 @@ namespace orangutan::agent {
             }
 
             auto tool_defs = tools_->definitions();
-            const auto effective_system_prompt = detail::build_system_prompt(env_info_, user_input, effective_skills_prompt, *tools_, memory_);
+            const auto effective_system_prompt = detail::build_system_prompt(env_info_, effective_skills_prompt, *tools_, memory_section);
 
             bool first_text = true;
             auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);

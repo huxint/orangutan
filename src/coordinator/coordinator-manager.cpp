@@ -2,10 +2,12 @@
 #include "coordinator/agent-definition-registry.hpp"
 #include "swarm/mailbox.hpp"
 #include "utils/escape.hpp"
+#include "utils/format.hpp"
 #include "utils/task-pool.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <magic_enum/magic_enum.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <utility>
@@ -22,48 +24,18 @@ namespace orangutan::coordinator {
         }
 
         std::string format_task_notification(const AgentRunRecord &record) {
-            std::string status_str;
-            switch (record.status) {
-                case agent_run_status::succeeded:
-                    status_str = "completed";
-                    break;
-                case agent_run_status::failed:
-                    status_str = "failed";
-                    break;
-                case agent_run_status::terminated:
-                    status_str = "terminated";
-                    break;
-                case agent_run_status::abandoned:
-                    status_str = "abandoned";
-                    break;
-                default:
-                    status_str = "unknown";
-                    break;
-            }
-
-            return "<task-notification>\n"
-                   "  <task-id>" +
-                   utils::escape_xml(record.run_id) +
-                   "</task-id>\n"
-                   "  <agent-key>" +
-                   utils::escape_xml(record.agent_key) +
-                   "</agent-key>\n"
-                   "  <agent-name>" +
-                   utils::escape_xml(record.agent_name) +
-                   "</agent-name>\n"
-                   "  <status>" +
-                   utils::escape_xml(status_str) +
-                   "</status>\n"
-                   "  <summary>" +
-                   utils::escape_xml(record.task_summary) +
-                   "</summary>\n"
-                   "  <result>" +
-                   utils::escape_xml(record.final_output) +
-                   "</result>\n"
-                   "  <error>" +
-                   utils::escape_xml(record.error) +
-                   "</error>\n"
-                   "</task-notification>";
+            return utils::format(
+                "<task-notification>\n"
+                "  <task-id>{}</task-id>\n"
+                "  <agent-key>{}</agent-key>\n"
+                "  <agent-name>{}</agent-name>\n"
+                "  <status>{}</status>\n"
+                "  <summary>{}</summary>\n"
+                "  <result>{}</result>\n"
+                "  <error>{}</error>\n"
+                "</task-notification>",
+                utils::escape_xml(record.run_id), utils::escape_xml(record.agent_key), utils::escape_xml(record.agent_name), magic_enum::enum_name(record.status),
+                utils::escape_xml(record.task_summary), utils::escape_xml(record.final_output), utils::escape_xml(record.error));
         }
 
     } // namespace
@@ -106,7 +78,7 @@ namespace orangutan::coordinator {
     }
 
     void CoordinatorManager::register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler) {
-        if (runtime_key.empty() || !handler) {
+        if (runtime_key.empty() || handler == nullptr) {
             return;
         }
 
@@ -259,7 +231,7 @@ namespace orangutan::coordinator {
             factory = worker_runtime_factory_;
         }
 
-        if (!factory) {
+        if (factory == nullptr) {
             std::scoped_lock lock(run->mutex);
             run->record.status = agent_run_status::failed;
             run->record.error = "No worker runtime factory configured";
@@ -309,13 +281,13 @@ namespace orangutan::coordinator {
             notification_xml = format_task_notification(run->record);
         }
 
-        if (runtime_handler) {
+        if (runtime_handler != nullptr) {
             if (const auto error = runtime_handler(notification_xml); error.has_value()) {
                 spdlog::warn("failed to resume runtime {} with task notification: {}", run->record.parent_runtime_key, *error);
             }
         }
 
-        if (callback) {
+        if (callback != nullptr) {
             std::scoped_lock lock(run->mutex);
             callback(run->record);
         }
@@ -474,7 +446,7 @@ namespace orangutan::coordinator {
             active_runs_.clear();
         }
 
-        spdlog::info("coordinatormanager shutdown complete");
+        spdlog::info("coordinator manager shutdown complete");
     }
 
 } // namespace orangutan::coordinator

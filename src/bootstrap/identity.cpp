@@ -157,7 +157,7 @@ namespace orangutan::bootstrap {
             return "cli:local";
         }
 
-        return "agent:" + std::string(agent_key) + "|cli:local";
+        return utils::format("agent:{}|cli:local", agent_key);
     }
 
     std::string derive_cli_session_scope(std::string_view agent_key) {
@@ -165,7 +165,7 @@ namespace orangutan::bootstrap {
             return {};
         }
 
-        return "agent:" + std::string(agent_key);
+        return utils::format("agent:{}", agent_key);
     }
 
     RuntimeIdentity derive_cli_identity(const std::string &workspace_root, std::string_view agent_key) {
@@ -185,10 +185,10 @@ namespace orangutan::bootstrap {
         }
 
         if (agent_key.empty()) {
-            return "jid:" + std::string(jid);
+            return utils::format("jid:{}", jid);
         }
 
-        return "agent:" + std::string(agent_key) + "|jid:" + std::string(jid);
+        return utils::format("agent:{}|jid:{}", agent_key, jid);
     }
 
     RuntimeIdentity derive_channel_identity(const std::string &workspace_root, std::string_view jid, std::string_view agent_key) {

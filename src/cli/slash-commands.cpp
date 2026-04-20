@@ -207,8 +207,8 @@ namespace orangutan::cli {
                 return out;
             }
 
-            if (text.starts_with("Error: ")) {
-                utils::format_to(out, "- ⚠️ {}", text.substr(7));
+            if (constexpr std::string_view error_prefix = "Error: "; text.starts_with(error_prefix)) {
+                utils::format_to(out, "- ⚠️ {}", text.substr(error_prefix.size()));
                 return out;
             }
 

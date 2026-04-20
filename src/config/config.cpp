@@ -80,10 +80,7 @@ namespace orangutan::config {
         } // namespace
 
         std::string expand_path_value(std::string input) {
-            if (input.empty() || input[0] != '~') {
-                return input;
-            }
-            if (input.size() > 1 && input[1] != '/') {
+            if (input.size() > 1 && input[0] == '~' && input[1] != '/') {
                 spdlog::warn("path '{}' uses unsupported ~user syntax; leaving it unchanged", input);
                 return input;
             }

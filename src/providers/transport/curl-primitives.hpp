@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/format.hpp"
+
 #include <curl/curl.h>
 
 #include <stdexcept>
@@ -78,9 +80,7 @@ namespace orangutan::providers::transport {
         }
 
         void append(std::string_view key, std::string_view value) {
-            std::string header(key);
-            header += ": ";
-            header += value;
+            const auto header = utils::format("{}: {}", key, value);
             list_ = curl_slist_append(list_, header.c_str());
         }
 

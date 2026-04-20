@@ -1,5 +1,6 @@
 #include "bootstrap/agent-runtime.hpp"
 
+#include "bootstrap/config-bootstrap.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "bootstrap/identity.hpp"
 #include "coordinator/coordinator-prompt.hpp"
@@ -15,30 +16,10 @@
 #include "tools/skill/skill-tool.hpp"
 #include "utils/enum-string.hpp"
 
-#include <cstdlib>
 #include <utility>
 #include <vector>
 
 namespace orangutan::bootstrap {
-    namespace {
-
-        std::vector<std::string> resolve_hook_directories(const AgentRuntimeBuildInput &input) {
-            std::vector<std::string> hook_dirs = input.hook_paths;
-            if (!hook_dirs.empty()) {
-                return hook_dirs;
-            }
-
-            if (const char *home = std::getenv("HOME"); home != nullptr) {
-                hook_dirs.emplace_back(std::string(home) + "/.orangutan/hooks");
-            }
-            if (!input.workspace_root.empty()) {
-                hook_dirs.push_back(workspace_hooks_root(input.workspace_root).string());
-            }
-            return hook_dirs;
-        }
-
-    } // namespace
-
     AgentRuntimeBundle::AgentRuntimeBundle()
     : tool_context_storage_(std::make_unique<ToolRuntimeContext>()),
       tools_storage_(std::make_unique<ToolRegistry>()),
@@ -167,7 +148,7 @@ namespace orangutan::bootstrap {
         }
 
         runtime.hook_manager = std::make_unique<HookManager>();
-        runtime.hook_manager->load_from_directories(resolve_hook_directories(input));
+        runtime.hook_manager->load_from_directories(resolve_runtime_hook_dirs(input.hook_paths, input.workspace_root));
 
         runtime.agent =
             std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get(),

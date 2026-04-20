@@ -206,10 +206,10 @@ namespace orangutan::channel::qq {
         std::string body_text;
         std::array<char, CURL_ERROR_SIZE> error_buffer{};
 
-        headers.append("Content-Type: application/json");
-        headers.append("User-Agent: orangutan/qq-channel");
+        headers.append("Content-Type", "application/json");
+        headers.append("User-Agent", "orangutan/qq-channel");
         if (with_auth) {
-            headers.append("Authorization: QQBot " + access_token());
+            headers.append("Authorization", "QQBot " + access_token());
         }
 
         curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error_buffer.data());

@@ -3,14 +3,13 @@
 #include "tools/shell/command-sandbox.hpp"
 #include "tools/internal.hpp"
 #include "process/subprocess.hpp"
+#include "utils/escape.hpp"
 #include "utils/sender-utils.hpp"
 
 #include <ctre.hpp>
 #include <spdlog/spdlog.h>
 
 namespace orangutan::tools {
-
-    // ── Parameter Substitution ──────────────────────
 
     std::string substitute_params(const std::string &command_template, const nlohmann::json &input, const std::unordered_map<std::string, std::string> &schema) {
         std::string result;
@@ -32,7 +31,7 @@ namespace orangutan::tools {
                 } else {
                     str_val = val.dump();
                 }
-                result += shell_escape(str_val);
+                result += utils::shell_single_quote_escape(str_val);
             } else {
                 spdlog::debug("script tool: parameter '{}' not in input, substituting empty", param_name);
             }
@@ -42,8 +41,6 @@ namespace orangutan::tools {
         result.append(pos, static_cast<std::size_t>(end - pos));
         return result;
     }
-
-    // ── JSON Schema Generation ──────────────────────
 
     nlohmann::json generate_input_schema(const std::unordered_map<std::string, std::string> &schema) {
         nlohmann::json properties = nlohmann::json::object();
@@ -62,8 +59,6 @@ namespace orangutan::tools {
         return {{"type", "object"}, {"properties", properties}, {"required", required}};
     }
 
-    // ── Script Tool Execution ───────────────────────
-
     static SubprocessResult execute_script(std::string_view command, const std::filesystem::path &workspace_root, const std::filesystem::path &working_dir, int timeout_seconds,
                                            tool_sandbox_mode sandbox_mode) {
         const auto sandboxed = prepare_sandboxed_command(command, workspace_root, working_dir, sandbox_mode);
@@ -75,8 +70,6 @@ namespace orangutan::tools {
         auto [result] = execution::sync_wait_or_throw(std::move(pipeline), "script tool subprocess pipeline");
         return result;
     }
-
-    // ── Tool Registration Helpers ───────────────────
 
     static Tool make_script_tool(const ScriptToolConfig &config, const std::filesystem::path &workspace_root, const ToolPermissionContext * /*permissions*/,
                                  const ToolRuntimeContext * /*tool_context*/, const ApprovalCallback & /*approval_callback*/) {
@@ -116,8 +109,6 @@ namespace orangutan::tools {
             },
         };
     }
-
-    // ── User Script Tools ───────────────────────────
 
     void register_script_tools(ToolRegistry &registry, const std::vector<ScriptToolConfig> &tools, const std::filesystem::path &workspace_root,
                                const ToolPermissionContext *permissions, const ToolRuntimeContext *tool_context, const ApprovalCallback &approval_callback) {

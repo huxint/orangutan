@@ -3,6 +3,7 @@
 #include "utils/file-io.hpp"
 #include "utils/string.hpp"
 
+#include <charconv>
 #include <filesystem>
 #include <optional>
 #include <spdlog/spdlog.h>
@@ -55,9 +56,11 @@ namespace orangutan::coordinator {
                 } else if (auto val = parse_frontmatter_value(trimmed, "model"); !val.empty()) {
                     def.model = std::string{val};
                 } else if (auto val = parse_frontmatter_value(trimmed, "max_turns"); !val.empty()) {
-                    try {
-                        def.max_turns = std::stoi(std::string{val});
-                    } catch (...) {
+                    int parsed = 0;
+                    const auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), parsed);
+                    if (ec == std::errc{} && ptr == val.data() + val.size()) {
+                        def.max_turns = parsed;
+                    } else {
                         spdlog::warn("invalid max_turns in {}: {}", path.string(), val);
                     }
                 }

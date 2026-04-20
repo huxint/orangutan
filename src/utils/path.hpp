@@ -1,9 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
@@ -59,25 +59,17 @@ namespace orangutan::utils {
         }
 
         constexpr auto EXEC_BITS = std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec;
-        const auto to_string_view = [](auto &&part) -> std::string_view {
-            const auto first = std::ranges::begin(part);
-            const auto last = std::ranges::end(part);
-            if (first == last) {
-                return {};
-            }
-            return {std::to_address(first), static_cast<std::size_t>(std::ranges::distance(part))};
-        };
 
-        for (auto &&entry : std::string_view{path_env} | std::views::split(':')) {
-            const auto dir = to_string_view(entry);
+        for (auto entry : std::string_view{path_env} | std::views::split(':')) {
+            const std::string_view dir{entry};
             if (dir.empty()) {
                 continue;
             }
 
-            const auto candidate = std::filesystem::path{dir} / binary;
+            auto candidate = std::filesystem::path{dir} / binary;
             std::error_code ec;
             const auto status = std::filesystem::status(candidate, ec);
-            if (!ec && std::filesystem::exists(status) && (status.permissions() & EXEC_BITS) != std::filesystem::perms::none) {
+            if (!ec && status.type() != std::filesystem::file_type::not_found && (status.permissions() & EXEC_BITS) != std::filesystem::perms::none) {
                 return candidate;
             }
         }
@@ -87,21 +79,13 @@ namespace orangutan::utils {
 
     [[nodiscard]]
     inline bool path_has_prefix(const std::filesystem::path &path, const std::filesystem::path &root) {
-        auto normalized_path = normalize_path(path);
-        auto normalized_root = normalize_path(root);
+        const auto normalized_root = normalize_path(root);
         if (normalized_root.empty()) {
             return false;
         }
-
-        auto path_it = normalized_path.begin();
-        auto root_it = normalized_root.begin();
-        for (; root_it != normalized_root.end(); ++root_it, ++path_it) {
-            if (path_it == normalized_path.end() || *path_it != *root_it) {
-                return false;
-            }
-        }
-
-        return true;
+        const auto normalized_path = normalize_path(path);
+        const auto mismatch = std::ranges::mismatch(normalized_root, normalized_path);
+        return mismatch.in1 == normalized_root.end();
     }
 
     [[nodiscard]]

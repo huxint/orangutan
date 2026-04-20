@@ -26,7 +26,7 @@ namespace orangutan::bootstrap {
     void load_display_skills(skills::SkillLoader &skill_loader, const config::Config &cfg, const std::string &workspace_root);
 
     [[nodiscard]]
-    std::vector<std::string> resolve_runtime_hook_dirs(const config::Config &cfg, const std::string &workspace_root);
+    std::vector<std::string> resolve_runtime_hook_dirs(const std::vector<std::string> &configured_hook_paths, std::string_view workspace_root);
 
     void log_loaded_hooks(const std::vector<std::string> &hook_dirs, const hooks::HookManager &hook_manager);
 

@@ -2,9 +2,10 @@
 #include "utils/local-time.hpp"
 
 #include <charconv>
+#include <ranges>
 #include <spdlog/spdlog.h>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace orangutan::automation {
@@ -37,10 +38,8 @@ namespace orangutan::automation {
                 return field;
             }
 
-            // Handle */N step syntax
             if (token.starts_with("*/")) {
-                auto step_str = token.substr(2);
-                auto step = parse_int_token(step_str);
+                auto step = parse_int_token(token.substr(2));
                 if (!step || *step <= 0) {
                     return std::nullopt;
                 }
@@ -50,40 +49,31 @@ namespace orangutan::automation {
                 return field;
             }
 
-            // Handle comma-separated values, each can be a range or range/step
-            std::string token_str(token);
-            std::istringstream stream(token_str);
-            std::string part;
+            for (auto subrange : token | std::views::split(',')) {
+                const std::string_view part{subrange};
+                const auto dash = part.find('-');
+                const auto slash = part.find('/');
 
-            while (std::getline(stream, part, ',')) {
-                auto dash = part.find('-');
-                auto slash = part.find('/');
+                if (dash != std::string_view::npos) {
+                    const auto range_str = (slash != std::string_view::npos) ? part.substr(0, slash) : part;
+                    const auto start_str = range_str.substr(0, range_str.find('-'));
+                    const auto end_str = range_str.substr(range_str.find('-') + 1);
 
-                if (dash != std::string::npos) {
-                    // Range: N-M or N-M/S
-                    int range_start = 0;
-                    int range_end = 0;
-                    int step = 1;
-
-                    auto range_str = (slash != std::string::npos) ? part.substr(0, slash) : part;
-                    auto start_str = range_str.substr(0, range_str.find('-'));
-                    auto end_str = range_str.substr(range_str.find('-') + 1);
-
-                    auto parsed_start = parse_int_token(start_str);
-                    auto parsed_end = parse_int_token(end_str);
+                    const auto parsed_start = parse_int_token(start_str);
+                    const auto parsed_end = parse_int_token(end_str);
                     if (!parsed_start || !parsed_end) {
                         return std::nullopt;
                     }
-                    range_start = *parsed_start;
-                    range_end = *parsed_end;
 
+                    const int range_start = *parsed_start;
+                    const int range_end = *parsed_end;
                     if (!in_bounds(range_start, min_val, max_val) || !in_bounds(range_end, min_val, max_val) || range_start > range_end) {
                         return std::nullopt;
                     }
 
-                    if (slash != std::string::npos) {
-                        auto step_str = part.substr(slash + 1);
-                        auto parsed_step = parse_int_token(step_str);
+                    int step = 1;
+                    if (slash != std::string_view::npos) {
+                        const auto parsed_step = parse_int_token(part.substr(slash + 1));
                         if (!parsed_step || *parsed_step <= 0) {
                             return std::nullopt;
                         }
@@ -94,8 +84,7 @@ namespace orangutan::automation {
                         field.values.insert(v);
                     }
                 } else {
-                    // Single value
-                    auto parsed_val = parse_int_token(part);
+                    const auto parsed_val = parse_int_token(part);
                     if (!parsed_val || !in_bounds(*parsed_val, min_val, max_val)) {
                         return std::nullopt;
                     }
@@ -199,17 +188,16 @@ namespace orangutan::automation {
     }
 
     std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after) {
-        // Advance minute by minute from `after`, up to ~2 years
         constexpr int MAX_MINUTES = 2 * 366 * 24 * 60;
 
-        // Round up to next whole minute
-        auto candidate = std::chrono::ceil<std::chrono::minutes>(after + std::chrono::seconds(1));
+        const auto start_sys = std::chrono::ceil<std::chrono::minutes>(after + std::chrono::seconds(1));
+        auto local_candidate = std::chrono::floor<std::chrono::seconds>(time::local_time_from(start_sys));
 
         for (int i = 0; i < MAX_MINUTES; ++i) {
-            if (cron_matches(expr, candidate)) {
-                return candidate;
+            if (cron_matches_local(expr, local_candidate)) {
+                return time::sys_time_from_local(local_candidate);
             }
-            candidate += std::chrono::minutes(1);
+            local_candidate += std::chrono::minutes(1);
         }
 
         return std::nullopt;

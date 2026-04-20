@@ -114,7 +114,8 @@ namespace orangutan::config::detail {
         }
 
         bool valid_thinking_mode(std::string_view thinking) {
-            return thinking == "none" || thinking == "low" || thinking == "medium" || thinking == "high" || thinking == "xhigh";
+            constexpr std::array<std::string_view, 5> VALID_MODES = {"none", "low", "medium", "high", "xhigh"};
+            return std::ranges::find(VALID_MODES, thinking) != VALID_MODES.end();
         }
 
         ModelConfig parse_model_config(const nlohmann::json &model) {

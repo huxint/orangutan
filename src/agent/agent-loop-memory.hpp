@@ -282,8 +282,56 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view user_input, std::string_view skills_prompt, const ToolRegistry &tools,
-                                           RuntimeMemory *memory) {
+    inline std::string render_prompt_memory_section(RuntimeMemory *memory, std::string_view user_input) {
+        if (memory == nullptr) {
+            return {};
+        }
+
+        const auto records = memory->prompt_memories(user_input, 8);
+        if (records.empty()) {
+            return {};
+        }
+
+        std::string memory_block = "\n\n<relevant-memories>\n";
+        memory_block.append("Historical notes for context. Memories older than 1 day should be verified before acting on them.\n");
+
+        std::size_t used = std::string{"<relevant-memories>\n</relevant-memories>"}.size();
+        bool wrote_any = false;
+
+        for (const auto &record : records) {
+            std::string candidate;
+            utils::format_to(candidate, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
+            const auto caveat = memory_freshness_caveat(record.updated_at);
+            if (!caveat.empty()) {
+                candidate.push_back(' ');
+                candidate.append(caveat);
+            }
+            if (used + candidate.size() + 1 > MAX_MEMORY_PROMPT_BYTES) {
+                if (wrote_any) {
+                    break;
+                }
+
+                const auto remaining = MAX_MEMORY_PROMPT_BYTES > used + 4 ? MAX_MEMORY_PROMPT_BYTES - used - 4 : 0;
+                candidate = remaining == 0 ? "..." : candidate.substr(0, remaining) + "...";
+            }
+
+            memory_block.append(candidate);
+            memory_block.push_back('\n');
+            used += candidate.size() + 1;
+            wrote_any = true;
+        }
+
+        if (!wrote_any) {
+            return {};
+        }
+
+        memory_block.append("</relevant-memories>");
+        return memory_block;
+    }
+
+    [[nodiscard]]
+    inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view skills_prompt, const ToolRegistry &tools,
+                                           std::string_view memory_section) {
         std::vector<prompt::PromptSection> sections;
         sections.push_back(prompt::PromptSection{
             .id = "system.default",
@@ -330,50 +378,11 @@ namespace orangutan::agent::detail {
                                              })
                           .full_prompt;
 
-        if (memory == nullptr) {
+        if (memory_section.empty()) {
             return prompt;
         }
-
-        const auto records = memory->prompt_memories(user_input, 8);
-        if (records.empty()) {
-            return prompt;
-        }
-
-        std::string memory_block = "\n\n<relevant-memories>\n";
-        memory_block.append("Historical notes for context. Memories older than 1 day should be verified before acting on them.\n");
-
-        std::size_t used = std::string{"<relevant-memories>\n</relevant-memories>"}.size();
-        bool wrote_any = false;
-
-        for (const auto &record : records) {
-            std::string candidate;
-            utils::format_to(candidate, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
-            const auto caveat = memory_freshness_caveat(record.updated_at);
-            if (!caveat.empty()) {
-                candidate.push_back(' ');
-                candidate.append(caveat);
-            }
-            if (used + candidate.size() + 1 > MAX_MEMORY_PROMPT_BYTES) {
-                if (wrote_any) {
-                    break;
-                }
-
-                const auto remaining = MAX_MEMORY_PROMPT_BYTES > used + 4 ? MAX_MEMORY_PROMPT_BYTES - used - 4 : 0;
-                candidate = remaining == 0 ? "..." : candidate.substr(0, remaining) + "...";
-            }
-
-            memory_block.append(candidate);
-            memory_block.push_back('\n');
-            used += candidate.size() + 1;
-            wrote_any = true;
-        }
-
-        if (!wrote_any) {
-            return prompt;
-        }
-
-        memory_block.append("</relevant-memories>");
-        return prompt + memory_block;
+        prompt.append(memory_section);
+        return prompt;
     }
 
 } // namespace orangutan::agent::detail

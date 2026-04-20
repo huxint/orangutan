@@ -15,23 +15,21 @@ namespace {
     static_assert(std::same_as<decltype(&register_script_tools), void (*)(ToolRegistry &, const std::vector<ScriptToolConfig> &, const std::filesystem::path &,
                                                                           const ToolPermissionContext *, const ToolRuntimeContext *, const ApprovalCallback &)>);
 
-    static_assert(std::same_as<decltype(&shell_escape), decltype(&utils::shell_single_quote_escape)>);
-
     TEST_CASE("shell_escape_simple_string") {
-        CHECK(shell_escape("hello") == "'hello'");
+        CHECK(utils::shell_single_quote_escape("hello") == "'hello'");
     };
 
     TEST_CASE("shell_escape_with_single_quote") {
-        CHECK(shell_escape("it's") == "'it'\\''s'");
+        CHECK(utils::shell_single_quote_escape("it's") == "'it'\\''s'");
     };
 
     TEST_CASE("shell_escape_with_special_chars") {
-        const auto escaped = shell_escape("hello; rm -rf /");
+        const auto escaped = utils::shell_single_quote_escape("hello; rm -rf /");
         CHECK(escaped == "'hello; rm -rf /'");
     };
 
     TEST_CASE("shell_escape_empty_string") {
-        CHECK(shell_escape("") == "''");
+        CHECK(utils::shell_single_quote_escape("") == "''");
     };
 
     TEST_CASE("generate_schema_string") {

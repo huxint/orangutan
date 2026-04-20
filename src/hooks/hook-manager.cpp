@@ -16,13 +16,9 @@
 
 namespace orangutan::hooks {
 
-    // ── ISO 8601 timestamp ──────────────────────────
-
     static std::string iso8601_now() {
         return time::current_local_iso8601_timestamp();
     }
-
-    // ── Hook discovery ──────────────────────────────
 
     void HookManager::load_from_directories(const std::vector<std::string> &directories) {
         hooks_.clear();
@@ -78,7 +74,6 @@ namespace orangutan::hooks {
             }
         }
 
-        // Log discovery results
         for (const auto &[event, hooks] : hooks_) {
             if (!hooks.empty()) {
                 spdlog::info("discovered {} hook(s) for event '{}'", hooks.size(), magic_enum::enum_name(event));

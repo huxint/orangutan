@@ -1,13 +1,13 @@
 #include "bootstrap/config-bootstrap.hpp"
 
-#include "bootstrap/bootstrap.hpp"
+#include "bootstrap/config-builder.hpp"
 #include "bootstrap/identity.hpp"
 #include "hooks/hook-manager.hpp"
 #include "skills/skill-loader.hpp"
 #include "config/config.hpp"
+#include "utils/path.hpp"
 
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 
 #include <magic_enum/magic_enum.hpp>
@@ -25,14 +25,14 @@ namespace orangutan::bootstrap {
         }
     }
 
-    std::vector<std::string> resolve_runtime_hook_dirs(const config::Config &cfg, const std::string &workspace_root) {
-        std::vector<std::string> hook_dirs = cfg.hook_paths;
-        if (!hook_dirs.empty()) {
-            return hook_dirs;
+    std::vector<std::string> resolve_runtime_hook_dirs(const std::vector<std::string> &configured_hook_paths, std::string_view workspace_root) {
+        if (!configured_hook_paths.empty()) {
+            return configured_hook_paths;
         }
 
-        if (const char *home = std::getenv("HOME"); home != nullptr) {
-            hook_dirs.push_back(std::string(home) + "/.orangutan/hooks");
+        std::vector<std::string> hook_dirs;
+        if (auto home = utils::try_expand_home_path("~/.orangutan/hooks"); home.has_value()) {
+            hook_dirs.push_back(home->string());
         }
         if (!workspace_root.empty()) {
             hook_dirs.push_back(workspace_hooks_root(workspace_root).string());

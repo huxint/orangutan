@@ -4,10 +4,10 @@
 #include "utils/format.hpp"
 #include "utils/overloaded.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <random>
+#include <ranges>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
@@ -521,8 +521,7 @@ namespace orangutan::storage {
                                                    "INSERT OR IGNORE INTO session_permission_rules "
                                                    "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
                                                    "VALUES (?, ?, ?, ?, ?, ?)");
-            for (auto rule : session_rules) {
-                rule.source = permission_rule_source::session;
+            for (const auto &rule : session_rules) {
                 sqlite::unwrap(insert.clear_bindings());
                 bind_session_permission_rule(insert, session_id, rule);
                 sqlite::unwrap(insert.step());
@@ -547,12 +546,7 @@ namespace orangutan::storage {
                                     "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
                                     scope_key);
 
-        std::vector<SessionInfo> sessions;
-        sessions.reserve(rows.size());
-        for (const auto &row : rows) {
-            sessions.push_back(make_session_info(row));
-        }
-        return sessions;
+        return rows | std::views::transform(make_session_info) | std::ranges::to<std::vector>();
     }
 
     std::vector<SessionInfo> SessionStore::list_sessions_for_agent(std::string_view agent_key) {
@@ -565,12 +559,7 @@ namespace orangutan::storage {
             "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
             agent_key);
 
-        std::vector<SessionInfo> sessions;
-        sessions.reserve(rows.size());
-        for (const auto &row : rows) {
-            sessions.push_back(make_session_info(row));
-        }
-        return sessions;
+        return rows | std::views::transform(make_session_info) | std::ranges::to<std::vector>();
     }
 
     void SessionStore::remove(std::string_view session_id) {

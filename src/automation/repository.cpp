@@ -50,7 +50,7 @@ namespace orangutan::automation {
             validate_non_blank(automation.name, "automation name");
             validate_non_blank(automation.prompt, "prompt");
 
-            if (automation.enabled == false && automation.paused == true) {
+            if (!automation.enabled && automation.paused) {
                 throw std::invalid_argument("disabled automations must not be paused");
             }
 
@@ -103,59 +103,61 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         Automation read_automation(const automation_row &row) {
-            const auto trigger_value = nlohmann::json::parse(std::get<8>(row));
-            const auto parsed_trigger = trigger_from_json(trigger_value);
+            const auto &[id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status] = row;
+            const auto parsed_trigger = trigger_from_json(nlohmann::json::parse(trigger_json));
             if (!parsed_trigger.has_value()) {
                 throw std::runtime_error("stored trigger_json is invalid: " + parsed_trigger.error());
             }
 
             return Automation{
-                .id = std::get<0>(row),
-                .agent_key = std::get<1>(row),
-                .name = std::get<2>(row),
-                .prompt = std::get<5>(row),
-                .notes = std::get<6>(row),
+                .id = id,
+                .agent_key = agent_key,
+                .name = name,
+                .prompt = prompt,
+                .notes = notes,
                 .trigger = *parsed_trigger,
-                .delivery = delivery_policy_from_json(nlohmann::json::parse(std::get<9>(row))),
-                .tags = parse_tags(std::get<7>(row)),
-                .last_run_at = std::get<10>(row),
-                .next_due_at = std::get<11>(row),
-                .last_status = std::get<12>(row),
-                .enabled = std::get<3>(row) != 0,
-                .paused = std::get<4>(row) != 0,
+                .delivery = delivery_policy_from_json(nlohmann::json::parse(delivery_json)),
+                .tags = parse_tags(tags_json),
+                .last_run_at = last_run_at,
+                .next_due_at = next_due_at,
+                .last_status = last_status,
+                .enabled = enabled != 0,
+                .paused = paused != 0,
             };
         }
 
         [[nodiscard]]
         RunRecord read_run(const run_row &row) {
+            const auto &[id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path] = row;
             return RunRecord{
-                .id = std::get<0>(row),
-                .automation_id = std::get<1>(row),
-                .agent_key = std::get<2>(row),
-                .automation_name = std::get<3>(row),
-                .started_at = std::get<4>(row),
-                .finished_at = std::get<5>(row),
-                .status = std::get<6>(row),
-                .summary = std::get<7>(row),
-                .reply = std::get<8>(row),
-                .delivery_status = std::get<9>(row),
-                .log_path = std::get<10>(row),
+                .id = id,
+                .automation_id = automation_id,
+                .agent_key = agent_key,
+                .automation_name = automation_name,
+                .started_at = started_at,
+                .finished_at = finished_at,
+                .status = status,
+                .summary = summary,
+                .reply = reply,
+                .delivery_status = delivery_status,
+                .log_path = log_path,
             };
         }
 
         [[nodiscard]]
         DeliveryRecord read_delivery(const delivery_row &row) {
+            const auto &[id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at] = row;
             return DeliveryRecord{
-                .id = std::get<0>(row),
-                .run_id = std::get<1>(row),
-                .automation_id = std::get<2>(row),
-                .agent_key = std::get<3>(row),
-                .target = std::get<4>(row),
-                .status = std::get<5>(row),
-                .title = std::get<6>(row),
-                .body = std::get<7>(row),
-                .created_at = std::get<8>(row),
-                .acked_at = std::get<9>(row),
+                .id = id,
+                .run_id = run_id,
+                .automation_id = automation_id,
+                .agent_key = agent_key,
+                .target = target,
+                .status = status,
+                .title = title,
+                .body = body,
+                .created_at = created_at,
+                .acked_at = acked_at,
             };
         }
 

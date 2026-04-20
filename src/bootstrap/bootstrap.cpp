@@ -28,6 +28,7 @@
 #include "swarm/mailbox.hpp"
 #include "swarm/team-manager.hpp"
 #include "utils/escape.hpp"
+#include "utils/format.hpp"
 #include "utils/scope-exit.hpp"
 
 #include <CLI/CLI.hpp>
@@ -98,7 +99,7 @@ namespace {
     }
 
     std::string format_teammate_message_xml(const orangutan::MailboxMessage &message) {
-        return "<teammate-message from=\"" + orangutan::utils::escape_xml(message.from) + "\">" + orangutan::utils::escape_xml(message.text) + "</teammate-message>";
+        return orangutan::utils::format(R"(<teammate-message from="{}">{}</teammate-message>)", orangutan::utils::escape_xml(message.from), orangutan::utils::escape_xml(message.text));
     }
 
 } // namespace
@@ -478,7 +479,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             primary_completion_resume_state->hook_manager = primary_runtime->hook_manager.get();
             coordinator_manager->register_runtime_notification_handler(maybe_primary_identity->runtime_key,
                                                                        make_runtime_completion_resume_callback(primary_completion_resume_state));
-            log_loaded_hooks(resolve_runtime_hook_dirs(cfg, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
+            log_loaded_hooks(resolve_runtime_hook_dirs(cfg.hook_paths, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
         } catch (const std::exception &e) {
             web_runtime_build_error = e.what();
             if (options.web_mode && !options.cli_mode) {
