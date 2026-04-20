@@ -2,9 +2,10 @@
 #include "process/posix-fd-utils.hpp"
 #include "types/base.hpp"
 #include "utils/format.hpp"
-#include "utils/sender-utils.hpp"
 #include "utils/file.hpp"
+#include "utils/task-pool.hpp"
 
+#include <exec/async_scope.hpp>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -21,7 +22,6 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -508,7 +508,6 @@ namespace orangutan::process {
             std::optional<int> signal_number;
             BackgroundProcessCompletionPolicy completion_policy;
             bool completion_published = false;
-            std::thread wait_thread;
         };
 
         struct WaitOutcome {
@@ -527,6 +526,8 @@ namespace orangutan::process {
         base::u64 next_id = 0;
         std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
         BackgroundProcessManager::CompletionCallback completion_callback;
+        utils::TaskPool task_pool;
+        exec::async_scope wait_scope;
         bool shutting_down = false;
         std::size_t pending_starts = 0;
 
@@ -611,25 +612,6 @@ namespace orangutan::process {
                 return entry->process_id == process_id;
             });
             entries_by_id.erase(process_id);
-        }
-
-        static void finalize_wait_thread(const std::shared_ptr<ProcessEntry> &entry) {
-            std::thread wait_thread;
-            {
-                std::scoped_lock lock(entry->mutex);
-                if (entry->running) {
-                    return;
-                }
-                if (!entry->wait_thread.joinable()) {
-                    return;
-                }
-                if (entry->wait_thread.get_id() == std::this_thread::get_id()) {
-                    entry->wait_thread.detach();
-                    return;
-                }
-                wait_thread = std::move(entry->wait_thread);
-            }
-            wait_thread.join();
         }
 
         [[nodiscard]]
@@ -747,9 +729,7 @@ namespace orangutan::process {
                 }
             }
             if (already_stopped) {
-                auto snapshot = snapshot_entry(entry);
-                finalize_wait_thread(entry);
-                return snapshot;
+                return snapshot_entry(entry);
             }
 
             signal_process(pid, SIGTERM);
@@ -766,9 +746,14 @@ namespace orangutan::process {
                 }));
             }
             lock.unlock();
-            auto snapshot = snapshot_entry(entry);
-            finalize_wait_thread(entry);
-            return snapshot;
+            return snapshot_entry(entry);
+        }
+
+        void drain_wait_scope() {
+            try {
+                static_cast<void>(stdexec::sync_wait(wait_scope.on_empty()));
+            } catch (...) { // NOLINT(bugprone-empty-catch): shutdown path is best-effort
+            }
         }
 
         void shutdown() {
@@ -786,9 +771,7 @@ namespace orangutan::process {
                 static_cast<void>(terminate_entry(entry));
             }
 
-            for (const auto &entry : active_entries) {
-                finalize_wait_thread(entry);
-            }
+            drain_wait_scope();
 
             std::error_code ec;
             std::filesystem::remove_all(temp_root, ec);
@@ -858,28 +841,16 @@ namespace orangutan::process {
         }
 
         try {
-            std::scoped_lock lock(entry->mutex);
-            entry->wait_thread = std::thread([entry, completion_callback = impl_->completion_callback]() {
-                auto pipeline = stdexec::just() | stdexec::then([entry] {
-                                    return Impl::wait_for_process_exit(entry);
-                                }) |
-                                stdexec::then([entry, has_completion_callback = (completion_callback != nullptr)](const Impl::WaitOutcome &outcome) {
-                                    return Impl::finalize_wait_outcome(entry, outcome, has_completion_callback);
-                                }) |
-                                stdexec::then([entry, completion_callback](std::optional<BackgroundProcessCompletionEvent> completion_event) {
-                                    Impl::publish_completion_event(entry, completion_callback, std::move(completion_event));
-                                });
-
-                try {
-                    static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "background process completion pipeline"));
-                } catch (const std::exception &ex) {
-                    spdlog::error("background process completion pipeline failed for {}: {}", entry->process_id, ex.what());
-                } catch (...) {
-                    spdlog::error("background process completion pipeline failed for {} with non-standard exception", entry->process_id);
-                }
-
-                Impl::finalize_wait_thread(entry);
-            });
+            auto pipeline = stdexec::schedule(impl_->task_pool.scheduler()) | stdexec::then([entry] {
+                                return Impl::wait_for_process_exit(entry);
+                            }) |
+                            stdexec::then([entry, has_completion_callback = (impl_->completion_callback != nullptr)](const Impl::WaitOutcome &outcome) {
+                                return Impl::finalize_wait_outcome(entry, outcome, has_completion_callback);
+                            }) |
+                            stdexec::then([entry, completion_callback = impl_->completion_callback](std::optional<BackgroundProcessCompletionEvent> completion_event) {
+                                Impl::publish_completion_event(entry, completion_callback, std::move(completion_event));
+                            });
+            impl_->wait_scope.spawn(std::move(pipeline));
         } catch (...) {
             impl_->erase_entry(entry->process_id);
             signal_process(entry->pid, SIGKILL);

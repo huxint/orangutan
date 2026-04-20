@@ -67,7 +67,7 @@ namespace orangutan::channel::qq {
 
         ensure_access_token();
         const auto gateway_url = get_gateway_url();
-        spdlog::info("Connecting QQ gateway: {}", gateway_url);
+        spdlog::info("connecting qq gateway: {}", gateway_url);
         connect_websocket(gateway_url);
 
         std::unique_lock<std::mutex> lock(runtime_->mutex);
@@ -251,19 +251,19 @@ namespace orangutan::channel::qq {
         runtime_->websocket = std::make_unique<qq::Transport>(qq::Transport::Callbacks{
             .on_open =
                 [] {
-                    spdlog::info("QQ WebSocket connected");
+                    spdlog::info("qq websocket connected");
                 },
             .on_text =
                 [this](const std::string &text) {
                     try {
                         handle_ws_message(text);
                     } catch (const std::exception &e) {
-                        spdlog::error("Failed to process QQ WebSocket message: {}", e.what());
+                        spdlog::error("failed to process qq websocket message: {}", e.what());
                     }
                 },
             .on_close =
                 [this](base::u16 code, std::string reason) {
-                    spdlog::warn("QQ WebSocket closed: {} {}", code, reason);
+                    spdlog::warn("qq websocket closed: {} {}", code, reason);
                     connected_ = false;
                     stop_heartbeat();
 
@@ -286,7 +286,7 @@ namespace orangutan::channel::qq {
                 },
             .on_error =
                 [this](std::string error) {
-                    spdlog::error("QQ WebSocket error: {}", error);
+                    spdlog::error("qq websocket error: {}", error);
                     connected_ = false;
 
                     bool close_requested = false;
@@ -306,7 +306,8 @@ namespace orangutan::channel::qq {
                         runtime_->websocket->request_reconnect();
                     }
                 },
-        });
+        },
+                                                               *task_pool_);
 
         runtime_->websocket->start(gateway_url);
 #endif
@@ -384,7 +385,7 @@ namespace orangutan::channel::qq {
             try {
                 send_gateway_payload(heartbeat);
             } catch (const std::exception &e) {
-                spdlog::warn("QQ heartbeat send failed: {}", e.what());
+                spdlog::warn("qq heartbeat send failed: {}", e.what());
                 connected_ = false;
                 return false;
             }
@@ -403,7 +404,7 @@ namespace orangutan::channel::qq {
             try {
                 api_client_->refresh_access_token_if_due();
             } catch (const std::exception &e) {
-                spdlog::warn("QQ background token refresh failed: {}", e.what());
+                spdlog::warn("qq background token refresh failed: {}", e.what());
             }
             return true;
         });
@@ -535,7 +536,7 @@ namespace orangutan::channel::qq {
                     return resolve_passive_reply_message_id(reply_id, reply_units);
                 });
         } catch (const std::exception &e) {
-            spdlog::error("QQ debounced send failed for jid '{}': {}", jid, e.what());
+            spdlog::error("qq debounced send failed for jid '{}': {}", jid, e.what());
         }
     }
 
@@ -571,7 +572,7 @@ namespace orangutan::channel::qq {
             runtime_->session_id = payload.value("session_id", std::string{});
             runtime_->last_seq = payload.value("last_seq", 0U);
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to load QQ session state: {}", e.what());
+            spdlog::warn("failed to load qq session state: {}", e.what());
         }
     }
 
@@ -603,7 +604,7 @@ namespace orangutan::channel::qq {
             };
             output << payload.dump(2);
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to persist QQ session state: {}", e.what());
+            spdlog::warn("failed to persist qq session state: {}", e.what());
         }
     }
 
@@ -612,7 +613,7 @@ namespace orangutan::channel::qq {
         std::error_code error;
         std::filesystem::remove(file_path, error);
         if (error) {
-            spdlog::warn("Failed to clear QQ session state '{}': {}", file_path.string(), error.message());
+            spdlog::warn("failed to clear qq session state '{}': {}", file_path.string(), error.message());
         }
     }
 
@@ -650,7 +651,7 @@ namespace orangutan::channel::qq {
             std::scoped_lock lock(runtime_->known_users_mutex);
             runtime_->known_users = std::move(loaded);
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to load QQ known users: {}", e.what());
+            spdlog::warn("failed to load qq known users: {}", e.what());
         }
     }
 
@@ -687,7 +688,7 @@ namespace orangutan::channel::qq {
             }
             output << payload.dump(2);
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to persist QQ known users: {}", e.what());
+            spdlog::warn("failed to persist qq known users: {}", e.what());
         }
     }
 
@@ -827,7 +828,7 @@ namespace orangutan::channel::qq {
         if (consume_passive_reply_quota(reply_to_message_id, reply_units)) {
             return reply_to_message_id;
         }
-        spdlog::warn("QQ passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
+        spdlog::warn("qq passive reply quota exceeded or expired for message_id='{}', falling back to proactive send", reply_to_message_id);
         return {};
     }
 
@@ -860,7 +861,7 @@ namespace orangutan::channel::qq {
             }
             append_ref_index_line(ref_idx, content);
         } catch (const std::exception &e) {
-            spdlog::debug("QQ failed to capture outbound ref_idx: {}", e.what());
+            spdlog::debug("qq failed to capture outbound ref_idx: {}", e.what());
         }
     }
 
@@ -897,9 +898,9 @@ namespace orangutan::channel::qq {
                     runtime_->ref_index_cache[key] = value;
                 }
             }
-            spdlog::debug("QQ loaded {} ref-index entries for bot '{}'", runtime_->ref_index_cache.size(), bot_name_);
+            spdlog::debug("qq loaded {} ref-index entries for bot '{}'", runtime_->ref_index_cache.size(), bot_name_);
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to load QQ ref-index: {}", e.what());
+            spdlog::warn("failed to load qq ref-index: {}", e.what());
         }
     }
 
@@ -914,7 +915,7 @@ namespace orangutan::channel::qq {
             const nlohmann::json line = {{"k", ref_idx}, {"v", content}};
             output << line.dump() << '\n';
         } catch (const std::exception &e) {
-            spdlog::debug("Failed to append QQ ref-index line: {}", e.what());
+            spdlog::debug("failed to append qq ref-index line: {}", e.what());
         }
     }
 
@@ -947,7 +948,7 @@ namespace orangutan::channel::qq {
             }
             static_cast<void>(api_client_->post(message_path(*target), build_typing_payload(next_msg_seq(), message_id)));
         } catch (const std::exception &e) {
-            spdlog::debug("QQ typing indicator failed for jid '{}': {}", jid, e.what());
+            spdlog::debug("qq typing indicator failed for jid '{}': {}", jid, e.what());
         }
     }
 

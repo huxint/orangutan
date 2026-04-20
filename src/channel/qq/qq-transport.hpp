@@ -7,6 +7,10 @@
 #include <optional>
 #include <string>
 
+namespace orangutan::utils {
+    class TaskPool;
+}
+
 namespace orangutan::channel::qq {
 
     class Transport {
@@ -66,6 +70,8 @@ namespace orangutan::channel::qq {
 
         explicit Transport(Callbacks callbacks);
         Transport(Callbacks callbacks, ConnectionFactory connection_factory);
+        explicit Transport(Callbacks callbacks, utils::TaskPool &task_pool);
+        Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool);
         ~Transport();
 
         Transport(const Transport &) = delete;

@@ -2,7 +2,9 @@
 
 #include "channel/qq/reconnect-backoff.hpp"
 #include "types/base.hpp"
+#include "utils/task-pool.hpp"
 
+#include <exec/async_scope.hpp>
 #include <arpa/inet.h>
 #include <array>
 #include <cerrno>
@@ -15,7 +17,6 @@
 #include <poll.h>
 #include <stdexcept>
 #include <string_view>
-#include <thread>
 #include <utility>
 
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
@@ -29,6 +30,12 @@ namespace orangutan::channel::qq {
     namespace {
 
         using Clock = std::chrono::steady_clock;
+
+        [[nodiscard]]
+        utils::TaskPool &shared_transport_pool() {
+            static utils::TaskPool pool;
+            return pool;
+        }
 
         void ensure_curl_ready() {
             static std::once_flag once;
@@ -215,7 +222,7 @@ namespace orangutan::channel::qq {
                 std::size_t sent = 0;
                 const auto result = curl_ws_send(handle_, &code, sizeof(code), &sent, 0, CURLWS_CLOSE);
                 if (result != CURLE_OK && result != CURLE_GOT_NOTHING) {
-                    spdlog::debug("QQ WebSocket close frame failed: {}", curl_easy_strerror(result));
+                    spdlog::debug("qq websocket close frame failed: {}", curl_easy_strerror(result));
                 }
                 cleanup();
             }
@@ -279,12 +286,14 @@ namespace orangutan::channel::qq {
 
     class Transport::Impl : public std::enable_shared_from_this<Transport::Impl> {
     public:
-        Impl(Callbacks callbacks, ConnectionFactory connection_factory)
+        Impl(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
         : callbacks_(std::move(callbacks)),
           connection_factory_(connection_factory ? std::move(connection_factory) : default_connection_factory()),
-          worker_thread_([this] {
-              run();
-          }) {}
+          worker_scope_(std::make_unique<exec::async_scope>()) {
+            worker_scope_->spawn(stdexec::schedule(task_pool.scheduler()) | stdexec::then([this] {
+                                     run();
+                                 }));
+        }
 
         ~Impl() = default;
         Impl(const Impl &) = delete;
@@ -524,9 +533,14 @@ namespace orangutan::channel::qq {
         }
 
         void finalize_join() {
-            if (worker_thread_.joinable() && worker_thread_.get_id() != std::this_thread::get_id()) {
-                worker_thread_.join();
+            if (worker_scope_ == nullptr) {
+                return;
             }
+            try {
+                static_cast<void>(stdexec::sync_wait(worker_scope_->on_empty()));
+            } catch (...) { // NOLINT(bugprone-empty-catch): transport shutdown is best-effort
+            }
+            worker_scope_.reset();
         }
 
         void emit_open() const {
@@ -536,7 +550,7 @@ namespace orangutan::channel::qq {
             try {
                 callbacks_.on_open();
             } catch (const std::exception &e) {
-                spdlog::error("QQ websocket open callback failed: {}", e.what());
+                spdlog::error("qq websocket open callback failed: {}", e.what());
             }
         }
 
@@ -547,7 +561,7 @@ namespace orangutan::channel::qq {
             try {
                 callbacks_.on_text(text);
             } catch (const std::exception &e) {
-                spdlog::error("QQ websocket text callback failed: {}", e.what());
+                spdlog::error("qq websocket text callback failed: {}", e.what());
             }
         }
 
@@ -558,7 +572,7 @@ namespace orangutan::channel::qq {
             try {
                 callbacks_.on_close(code, reason);
             } catch (const std::exception &e) {
-                spdlog::error("QQ websocket close callback failed: {}", e.what());
+                spdlog::error("qq websocket close callback failed: {}", e.what());
             }
         }
 
@@ -569,7 +583,7 @@ namespace orangutan::channel::qq {
             try {
                 callbacks_.on_error(error);
             } catch (const std::exception &e) {
-                spdlog::error("QQ websocket error callback failed: {}", e.what());
+                spdlog::error("qq websocket error callback failed: {}", e.what());
             }
         }
 
@@ -579,8 +593,8 @@ namespace orangutan::channel::qq {
         std::condition_variable cv_;
         std::deque<std::string> write_queue_;
         ReconnectBackoff backoff_;
+        std::unique_ptr<exec::async_scope> worker_scope_;
         std::unique_ptr<Connection> connection_;
-        std::thread worker_thread_;
         std::string url_;
         Clock::time_point reconnect_at_ = Clock::time_point::min();
         bool stopped_ = false;
@@ -594,20 +608,41 @@ namespace orangutan::channel::qq {
 
     Transport::Transport(Callbacks callbacks)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : impl_(std::make_shared<Impl>(std::move(callbacks), ConnectionFactory{})){}
+    : Transport(std::move(callbacks), ConnectionFactory{}, shared_transport_pool()) {}
 #else
     : impl_(nullptr) {
         static_cast<void>(callbacks);
     }
 #endif
 
-      Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory)
+    Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : impl_(std::make_shared<Impl>(std::move(callbacks), std::move(connection_factory))){}
+    : Transport(std::move(callbacks), std::move(connection_factory), shared_transport_pool()) {}
 #else
     : impl_(nullptr) {
         static_cast<void>(callbacks);
         static_cast<void>(connection_factory);
+    }
+#endif
+
+    Transport::Transport(Callbacks callbacks, utils::TaskPool &task_pool)
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+    : impl_(std::make_shared<Impl>(std::move(callbacks), ConnectionFactory{}, task_pool)){}
+#else
+    : impl_(nullptr) {
+        static_cast<void>(callbacks);
+        static_cast<void>(task_pool);
+    }
+#endif
+
+      Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
+#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
+    : impl_(std::make_shared<Impl>(std::move(callbacks), std::move(connection_factory), task_pool)){}
+#else
+    : impl_(nullptr) {
+        static_cast<void>(callbacks);
+        static_cast<void>(connection_factory);
+        static_cast<void>(task_pool);
     }
 #endif
 
