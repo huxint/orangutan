@@ -194,7 +194,7 @@ namespace orangutan::bootstrap::detail {
                                           .memory = cfg.memory,
                                           .permission_context = build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
                                           .team_agents = agent_cfg.team_agents,
-                                          .coordinator_mode = agent_cfg.coordinator_mode,
+                                          .leader_mode = agent_cfg.leader_mode,
                                           .max_concurrent_agents = agent_cfg.max_concurrent_agents,
                                       });
         }

@@ -362,7 +362,7 @@ namespace orangutan::config::detail {
             if (const auto *value = find_array_member(agent, "team_agents"); value != nullptr) {
                 assign_string_array(*value, agent_cfg.team_agents);
             }
-            static_cast<void>(assign_bool_member(agent, "coordinator_mode", agent_cfg, &AgentConfig::coordinator_mode));
+            static_cast<void>(assign_bool_member(agent, "leader_mode", agent_cfg, &AgentConfig::leader_mode));
             static_cast<void>(assign_number_member(agent, "max_concurrent_agents", agent_cfg, &AgentConfig::max_concurrent_agents));
             static_cast<void>(assign_number_member(agent, "thinking_budget", agent_cfg, &AgentConfig::thinking_budget));
 

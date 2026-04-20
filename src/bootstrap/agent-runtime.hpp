@@ -64,8 +64,6 @@ namespace orangutan::bootstrap {
         std::string raw_caller_id = "cli:local";
         automation::AutomationService *automation_service = nullptr;
         automation::AutomationRuntime *automation_runtime = nullptr;
-        bool is_child_run = false; // NOLINT: retained for backward compat, prefer agent_role
-        bool coordinator_mode = false; // NOLINT: retained for backward compat, prefer agent_role
         orchestration::agent_role agent_role = orchestration::agent_role::standalone;
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;

@@ -177,7 +177,7 @@ namespace {
     TEST_CASE("leader_mode_runtime_exposes_only_orchestration_tools") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
-        input.coordinator_mode = true;
+        input.agent_role = orchestration::agent_role::leader;
         input.team_agents = {"explorer", "planner"};
 
         auto runtime = build_agent_runtime(input);
@@ -200,7 +200,7 @@ namespace {
     TEST_CASE("child_runtime_uses_worker_prompt_guidance") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
-        input.is_child_run = true;
+        input.agent_role = orchestration::agent_role::worker;
         input.delegated_task_prompt = "Inspect the logging pipeline and report defects.";
 
         auto runtime = build_agent_runtime(input);

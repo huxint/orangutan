@@ -34,7 +34,7 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -110,7 +110,7 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -140,7 +140,7 @@ namespace {
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
             .team_agents = {"explorer"},
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -171,7 +171,7 @@ namespace {
             .orchestration_manager = &manager,
             .team_manager = &team_manager,
             .team_agents = {"general-purpose"},
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -203,7 +203,7 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -230,7 +230,7 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -257,7 +257,7 @@ namespace {
             .agent_key = "lead-agent",
             .agent_name = "lead",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -345,7 +345,7 @@ namespace {
             .agent_key = "lead-agent",
             .agent_name = "lead",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);
@@ -406,7 +406,7 @@ namespace {
             .agent_key = "lead-agent",
             .agent_name = "lead",
             .orchestration_manager = &manager,
-            .coordinator_mode = true,
+            .role = orchestration::agent_role::leader,
         };
 
         register_orchestration_tools(registry, &context);

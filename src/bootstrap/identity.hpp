@@ -1,5 +1,7 @@
 #pragma once
 
+#include "orchestration/types.hpp"
+
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -36,6 +38,6 @@ namespace orangutan::bootstrap {
 
     RuntimeIdentity derive_child_identity(const std::string &workspace_root, std::string_view raw_caller_id, std::string_view agent_key);
 
-    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, bool is_child_run);
+    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, orchestration::agent_role role);
 
 } // namespace orangutan::bootstrap

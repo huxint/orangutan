@@ -82,8 +82,8 @@ namespace orangutan::bootstrap {
 
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
-        const bool leader_mode = input.coordinator_mode || input.agent_role == orchestration::agent_role::leader;
-        const bool delegated_mode = input.is_child_run || input.agent_role == orchestration::agent_role::worker || input.agent_role == orchestration::agent_role::teammate;
+        const bool leader_mode = orchestration::is_leader(input.agent_role);
+        const bool delegated_mode = orchestration::is_delegated(input.agent_role);
 
         runtime.provider = std::make_unique<providers::ProviderSystem>();
 
@@ -102,8 +102,6 @@ namespace orangutan::bootstrap {
             .team_manager = input.team_manager,
             .mailbox = input.mailbox,
             .team_agents = input.team_agents,
-            .is_child_run = input.is_child_run,
-            .coordinator_mode = input.coordinator_mode,
             .role = input.agent_role,
             .runtime_origin = input.runtime_origin,
             .raw_caller_id = input.raw_caller_id,
@@ -137,7 +135,7 @@ namespace orangutan::bootstrap {
             const auto task_description = input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
             prompt_guidance = orchestration::get_worker_system_prompt_addendum(input.agent_key, task_description);
         } else if (!input.team_agents.empty()) {
-            prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, false);
+            prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, input.agent_role);
         }
 
         runtime.skills_prompt = std::move(prompt_guidance);

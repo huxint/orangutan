@@ -13,11 +13,11 @@ namespace orangutan::bootstrap {
             return request.runtime_config->team_agents;
         }
 
-        bool resolve_coordinator_mode(const RuntimeAssemblyRequest &request) {
-            if (request.coordinator_mode.has_value()) {
-                return *request.coordinator_mode;
+        auto resolve_agent_role(const RuntimeAssemblyRequest &request) -> orchestration::agent_role {
+            if (request.agent_role != orchestration::agent_role::standalone) {
+                return request.agent_role;
             }
-            return request.runtime_config->coordinator_mode;
+            return request.runtime_config->leader_mode ? orchestration::agent_role::leader : orchestration::agent_role::standalone;
         }
 
     } // namespace
@@ -44,9 +44,7 @@ namespace orangutan::bootstrap {
             .raw_caller_id = request.raw_caller_id,
             .automation_service = request.automation_service,
             .automation_runtime = request.automation_runtime,
-            .is_child_run = request.is_child_run,
-            .coordinator_mode = resolve_coordinator_mode(request),
-            .agent_role = request.agent_role,
+            .agent_role = resolve_agent_role(request),
             .abort_checker = request.abort_checker,
             .approval_callback = request.approval_callback,
             .delegated_task_prompt = request.delegated_task_prompt,

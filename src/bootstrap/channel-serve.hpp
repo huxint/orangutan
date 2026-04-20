@@ -48,9 +48,9 @@ namespace orangutan::bootstrap {
 
     struct AgentRuntimeBundle;
 
-    class ChannelApprovalCoordinator {
+    class ChannelApprovalGate {
     public:
-        explicit ChannelApprovalCoordinator(std::chrono::milliseconds timeout = std::chrono::minutes(2));
+        explicit ChannelApprovalGate(std::chrono::milliseconds timeout = std::chrono::minutes(2));
 
         [[nodiscard]]
         ApprovalCallback make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner = nullptr,

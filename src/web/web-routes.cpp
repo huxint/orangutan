@@ -123,7 +123,7 @@ namespace orangutan::web {
                 .memory = config.memory,
                 .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
                 .team_agents = agent.team_agents,
-                .coordinator_mode = agent.coordinator_mode,
+                .leader_mode = agent.leader_mode,
             };
             auto input = bootstrap::make_runtime_build_input(bootstrap::RuntimeAssemblyRequest{
                 .runtime_config = &runtime_config,

@@ -1,6 +1,7 @@
 #include "bootstrap/identity.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "config/config.hpp"
+#include "orchestration/types.hpp"
 #include "test-helpers.hpp"
 
 #include <filesystem>
@@ -10,6 +11,7 @@
 namespace {
 
     namespace bootstrap = orangutan::bootstrap;
+    namespace orchestration = orangutan::orchestration;
 
     TEST_CASE("resolve_workspace_root_canonicalizes_existing_directory") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-workspace");
@@ -116,7 +118,7 @@ namespace {
     };
 
     TEST_CASE("parent_prompt_guidance_mentions_agent_spawn_tool") {
-        const auto prompt = bootstrap::append_agent_prompt_guidance("Parent base prompt.", {"coder"}, false);
+        const auto prompt = bootstrap::append_agent_prompt_guidance("Parent base prompt.", {"coder"}, orchestration::agent_role::standalone);
 
         CHECK(prompt.contains("`agent_spawn`"));
         CHECK(prompt.contains("Avoid spawning agents for trivial tasks"));

@@ -1,7 +1,6 @@
 #include "orchestration/team-manager.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -10,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "storage/sqlite-throwing.hpp"
+#include "utils/time-format.hpp"
 
 namespace orangutan::sqlite {
 
@@ -97,14 +97,8 @@ namespace orangutan::orchestration {
 
         std::string generate_team_id() {
             static std::atomic<std::uint64_t> counter{0};
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
             auto seq = counter.fetch_add(1, std::memory_order_relaxed);
-            return "team-" + std::to_string(us) + "-" + std::to_string(seq);
-        }
-
-        std::int64_t now_millis() {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            return "team-" + std::to_string(utils::steady_micros()) + "-" + std::to_string(seq);
         }
 
     } // namespace
@@ -158,7 +152,7 @@ namespace orangutan::orchestration {
         record.name = name;
         record.description = description;
         record.lead_agent_id = lead_agent_id;
-        record.created_at = now_millis();
+        record.created_at = utils::epoch_millis();
         record.active = true;
 
         try {
@@ -219,7 +213,7 @@ namespace orangutan::orchestration {
         try {
             sqlite::exec_bind(impl_->db,
                               "INSERT INTO team_members (agent_id, name, agent_key, team_id, joined_at, active) VALUES (?, ?, ?, ?, ?, 1)",
-                              member.agent_id, member.name, member.agent_key, member.team_id, member.joined_at != 0 ? member.joined_at : now_millis());
+                              member.agent_id, member.name, member.agent_key, member.team_id, member.joined_at != 0 ? member.joined_at : utils::epoch_millis());
         } catch (const std::exception &ex) {
             spdlog::error("failed to insert team member: {}", ex.what());
         }

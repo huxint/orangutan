@@ -1,7 +1,7 @@
 #include "orchestration/mailbox.hpp"
 
 #include <atomic>
-#include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -12,6 +12,7 @@
 #include "storage/sqlite-throwing.hpp"
 #include "utils/enum-string.hpp"
 #include "utils/scope-exit.hpp"
+#include "utils/time-format.hpp"
 
 namespace orangutan::orchestration {
 
@@ -29,14 +30,8 @@ namespace orangutan::orchestration {
 
         auto generate_id() -> std::string {
             static std::atomic<std::uint64_t> counter{0};
-            const auto now = std::chrono::steady_clock::now().time_since_epoch();
-            const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
             const auto sequence = counter.fetch_add(1, std::memory_order_relaxed);
-            return "msg-" + std::to_string(micros) + "-" + std::to_string(sequence);
-        }
-
-        auto now_millis() -> std::int64_t {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            return "msg-" + std::to_string(utils::steady_micros()) + "-" + std::to_string(sequence);
         }
 
         auto read_mailbox_message(const sqlite::Row &row) -> MailboxMessage {
@@ -67,7 +62,7 @@ namespace orangutan::orchestration {
                                     std::string_view text,
                                     message_type type) {
             sqlite::unwrap(stmt.clear_bindings());
-            stmt.bind_all(generate_id(), team_id, from, to, text, now_millis(), utils::enum_name(type));
+            stmt.bind_all(generate_id(), team_id, from, to, text, utils::epoch_millis(), utils::enum_name(type));
             run_statement(stmt);
         }
 
@@ -81,7 +76,10 @@ namespace orangutan::orchestration {
 
     struct AgentMailbox::Impl {
         sqlite::Database db;
-        std::mutex mutex;
+        std::mutex db_mutex;
+        std::mutex wait_mutex;
+        std::condition_variable wait_cv;
+        std::uint64_t arrival_seq{0}; // guarded by wait_mutex
 
         explicit Impl(const std::filesystem::path &db_path)
         : db(sqlite::open_or_throw(db_path)) {
@@ -106,6 +104,14 @@ namespace orangutan::orchestration {
         Impl &operator=(Impl &&) = delete;
 
         ~Impl() = default;
+
+        void notify_arrivals() {
+            {
+                std::scoped_lock lock(wait_mutex);
+                ++arrival_seq;
+            }
+            wait_cv.notify_all();
+        }
     };
 
     AgentMailbox::AgentMailbox(const std::filesystem::path &db_path)
@@ -114,38 +120,46 @@ namespace orangutan::orchestration {
     AgentMailbox::~AgentMailbox() = default;
 
     void AgentMailbox::send(const std::string &team_id, const std::string &from, const std::string &to, const std::string &text, message_type type) {
-        std::scoped_lock lock(impl_->mutex);
-        try {
-            auto insert = sqlite::prepare_or_throw(impl_->db, INSERT_MESSAGE_SQL);
-            insert_mailbox_message(insert, team_id, from, to, text, type);
-        } catch (const std::exception &ex) {
-            spdlog::error("failed to insert mailbox message: {}", ex.what());
+        {
+            std::scoped_lock lock(impl_->db_mutex);
+            try {
+                auto insert = sqlite::prepare_or_throw(impl_->db, INSERT_MESSAGE_SQL);
+                insert_mailbox_message(insert, team_id, from, to, text, type);
+            } catch (const std::exception &ex) {
+                spdlog::error("failed to insert mailbox message: {}", ex.what());
+                return;
+            }
         }
+        impl_->notify_arrivals();
     }
 
     void AgentMailbox::send_broadcast(const std::string &team_id, const std::string &from, const std::string &text, const std::vector<std::string> &team_members) {
-        std::scoped_lock lock(impl_->mutex);
-        try {
-            sqlite::unwrap(impl_->db.transaction([&](sqlite::Database &tx) {
-                auto insert = sqlite::prepare_or_throw(tx, INSERT_MESSAGE_SQL);
-                for (const auto &member : team_members) {
-                    if (member == from) {
-                        continue;
+        {
+            std::scoped_lock lock(impl_->db_mutex);
+            try {
+                sqlite::unwrap(impl_->db.transaction([&](sqlite::Database &tx) {
+                    auto insert = sqlite::prepare_or_throw(tx, INSERT_MESSAGE_SQL);
+                    for (const auto &member : team_members) {
+                        if (member == from) {
+                            continue;
+                        }
+                        try {
+                            insert_mailbox_message(insert, team_id, from, member, text, message_type::message);
+                        } catch (const std::exception &ex) {
+                            spdlog::error("failed to insert broadcast mailbox message for {}: {}", member, ex.what());
+                        }
                     }
-                    try {
-                        insert_mailbox_message(insert, team_id, from, member, text, message_type::message);
-                    } catch (const std::exception &ex) {
-                        spdlog::error("failed to insert broadcast mailbox message for {}: {}", member, ex.what());
-                    }
-                }
-            }));
-        } catch (const std::exception &ex) {
-            spdlog::error("failed to broadcast mailbox messages: {}", ex.what());
+                }));
+            } catch (const std::exception &ex) {
+                spdlog::error("failed to broadcast mailbox messages: {}", ex.what());
+                return;
+            }
         }
+        impl_->notify_arrivals();
     }
 
     std::vector<MailboxMessage> AgentMailbox::poll(const std::string &team_id, const std::string &agent_name) {
-        std::scoped_lock lock(impl_->mutex);
+        std::scoped_lock lock(impl_->db_mutex);
         try {
             std::vector<MailboxMessage> messages;
             auto query = sqlite::unwrap(impl_->db.query(POLL_MESSAGES_SQL));
@@ -159,12 +173,37 @@ namespace orangutan::orchestration {
         }
     }
 
+    std::vector<MailboxMessage> AgentMailbox::wait_for_messages(const std::string &team_id,
+                                                                 const std::string &agent_name,
+                                                                 std::chrono::milliseconds timeout,
+                                                                 std::stop_token stop_token) {
+        if (auto initial = poll(team_id, agent_name); !initial.empty()) {
+            return initial;
+        }
+        if (stop_token.stop_requested()) {
+            return {};
+        }
+
+        std::stop_callback stop_cb(stop_token, [this] {
+            impl_->notify_arrivals();
+        });
+
+        {
+            std::unique_lock lock(impl_->wait_mutex);
+            const auto pre_seq = impl_->arrival_seq;
+            impl_->wait_cv.wait_for(lock, timeout, [&] {
+                return stop_token.stop_requested() || impl_->arrival_seq != pre_seq;
+            });
+        }
+        return poll(team_id, agent_name);
+    }
+
     void AgentMailbox::mark_read(const std::vector<std::string> &message_ids) {
         if (message_ids.empty()) {
             return;
         }
 
-        std::scoped_lock lock(impl_->mutex);
+        std::scoped_lock lock(impl_->db_mutex);
         try {
             sqlite::unwrap(impl_->db.transaction([&](sqlite::Database &tx) {
                 auto update = sqlite::prepare_or_throw(tx, MARK_READ_SQL);
@@ -182,7 +221,7 @@ namespace orangutan::orchestration {
     }
 
     void AgentMailbox::clear_team(const std::string &team_id) {
-        std::scoped_lock lock(impl_->mutex);
+        std::scoped_lock lock(impl_->db_mutex);
         try {
             sqlite::exec_bind(impl_->db, "DELETE FROM agent_mailbox WHERE team_id = ?", team_id);
         } catch (const std::exception &ex) {

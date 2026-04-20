@@ -323,8 +323,8 @@ namespace orangutan::config {
                 if (!agent_cfg.team_agents.empty()) {
                     agent_json["team_agents"] = agent_cfg.team_agents;
                 }
-                if (agent_cfg.coordinator_mode) {
-                    agent_json["coordinator_mode"] = agent_cfg.coordinator_mode;
+                if (agent_cfg.leader_mode) {
+                    agent_json["leader_mode"] = agent_cfg.leader_mode;
                 }
                 if (agent_cfg.max_concurrent_agents != 4) {
                     agent_json["max_concurrent_agents"] = agent_cfg.max_concurrent_agents;

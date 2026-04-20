@@ -83,8 +83,6 @@ namespace orangutan::tools {
         orchestration::TeamManager *team_manager = nullptr;
         orchestration::AgentMailbox *mailbox = nullptr;
         std::vector<std::string> team_agents;
-        bool is_child_run = false; // NOLINT: retained for backward compat, prefer agent_role
-        bool coordinator_mode = false; // NOLINT: retained for backward compat, prefer agent_role
         orchestration::agent_role role = orchestration::agent_role::standalone;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;

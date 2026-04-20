@@ -49,7 +49,7 @@
   },
   "agents": {
     "default": {
-      "coordinator_mode": true,
+      "leader_mode": true,
       "team_agents": [
         "coder",
         "research"

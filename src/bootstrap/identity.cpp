@@ -1,4 +1,5 @@
 #include "bootstrap/identity.hpp"
+#include "orchestration/types.hpp"
 #include "types/base.hpp"
 #include "utils/format.hpp"
 
@@ -209,7 +210,7 @@ namespace orangutan::bootstrap {
         return derive_channel_identity(workspace_root, raw_caller_id, agent_key);
     }
 
-    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, bool is_child_run) {
+    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, orchestration::agent_role role) {
         std::string prompt = system_prompt;
 
         const auto append_separator = [&prompt] {
@@ -218,14 +219,14 @@ namespace orangutan::bootstrap {
             }
         };
 
-        if (is_child_run) {
+        if (orchestration::is_delegated(role)) {
             append_separator();
             prompt += "# Worker agent mode\n";
             prompt += "You are a worker agent handling a delegated task.\n";
             prompt += "- Complete the assigned task fully — don't gold-plate, but don't leave it half-done.\n";
             prompt += "- When complete, respond with a concise report covering what was done and key findings.\n";
             prompt += "- You cannot spawn additional agents.\n";
-            prompt += "- Use absolute file paths in your final response so the coordinator can navigate to them.";
+            prompt += "- Use absolute file paths in your final response so the leader can navigate to them.";
             return prompt;
         }
 

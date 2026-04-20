@@ -229,7 +229,7 @@ namespace orangutan::web {
                 {"profile", agent.profile},
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},
-                {"coordinator_mode", agent.coordinator_mode},
+                {"leader_mode", agent.leader_mode},
                 {"team_size", agent.team_agents.size()},
                 {"live_sessions", live_it == live_counts.end() ? 0 : live_it->second},
             });

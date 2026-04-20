@@ -1,8 +1,10 @@
 #pragma once
 
-#include <filesystem>
+#include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <stop_token>
 #include <string>
 #include <vector>
 #include "types/base.hpp"
@@ -42,6 +44,14 @@ namespace orangutan::orchestration {
 
         [[nodiscard]]
         std::vector<MailboxMessage> poll(const std::string &team_id, const std::string &agent_name);
+
+        /// Block until a message arrives for the recipient, the stop token fires,
+        /// or `timeout` elapses. Returns the unread messages (may be empty on timeout).
+        [[nodiscard]]
+        std::vector<MailboxMessage> wait_for_messages(const std::string &team_id,
+                                                       const std::string &agent_name,
+                                                       std::chrono::milliseconds timeout,
+                                                       std::stop_token stop_token = {});
 
         void mark_read(const std::vector<std::string> &message_ids);
 

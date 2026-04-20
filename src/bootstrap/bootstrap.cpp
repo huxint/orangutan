@@ -1,5 +1,6 @@
 #include "bootstrap/bootstrap.hpp"
 
+#include "bootstrap/agent-loop-worker.hpp"
 #include "bootstrap/cli-options.hpp"
 #include "bootstrap/cli-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
@@ -12,9 +13,7 @@
 #include "bootstrap/runtime-assembler.hpp"
 #include "bootstrap/runtime-control.hpp"
 #include "cli/repl.hpp"
-#include "cli/session-workflow.hpp"
 #include "cli/single-shot.hpp"
-#include "tools/registry/tool.hpp"
 #include "web/web-server.hpp"
 #include "channel/message-queue.hpp"
 #include "hooks/hook-manager.hpp"
@@ -23,21 +22,16 @@
 #include "skills/skill-loader.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
-#include "orchestration/orchestration-manager.hpp"
 #include "orchestration/agent-definition-registry.hpp"
-#include "orchestration/orchestration-manager.hpp"
-#include "orchestration/worker-runtime.hpp"
 #include "orchestration/mailbox.hpp"
+#include "orchestration/orchestration-manager.hpp"
 #include "orchestration/team-manager.hpp"
-#include "utils/escape.hpp"
-#include "utils/format.hpp"
 #include "utils/scope-exit.hpp"
 
 #include <CLI/CLI.hpp>
 #include <array>
 #include <chrono>
 #include <csignal>
-#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -98,10 +92,6 @@ namespace {
             }
         }
         return workspace_root;
-    }
-
-    std::string format_teammate_message_xml(const orangutan::MailboxMessage &message) {
-        return orangutan::utils::format(R"(<teammate-message from="{}">{}</teammate-message>)", orangutan::utils::escape_xml(message.from), orangutan::utils::escape_xml(message.text));
     }
 
 } // namespace
@@ -276,119 +266,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         .team_manager = team_manager.get(),
     });
 
-    orchestration_manager->set_worker_runtime_factory([&cfg, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &orchestration_manager](
-                                                        const orangutan::orchestration::AgentSpawnRequest &request) -> std::unique_ptr<orangutan::orchestration::WorkerRuntime> {
-        auto config_it = maybe_agent_runtime_configs->find(request.agent_key);
-        if (config_it == maybe_agent_runtime_configs->end()) {
-            throw std::runtime_error("No runtime configuration for agent '" + request.agent_key + "'.");
-        }
-
-        const auto &runtime_cfg = config_it->second;
-
-        /// Unified RuntimeWorker supporting both fire-and-forget and persistent (teammate) modes.
-        struct RuntimeWorker : orangutan::orchestration::WorkerRuntime {
-            orangutan::bootstrap::AgentRuntimeBundle bundle;
-            std::string team_id;
-            std::string agent_name;
-            bool persistent_ = false;
-
-            explicit RuntimeWorker(orangutan::bootstrap::AgentRuntimeBundle b, bool persistent)
-            : bundle(std::move(b)), persistent_(persistent) {}
-
-            auto run(const std::string &prompt, std::stop_token stop_token) -> std::string override {
-                bundle.agent->set_stop_requested_callback([stop_token]() {
-                    return stop_token.stop_requested();
-                });
-
-                if (bundle.tool_context().mailbox != nullptr && !team_id.empty() && !agent_name.empty()) {
-                    auto *mailbox = bundle.tool_context().mailbox;
-                    const auto team = team_id;
-                    const auto name = agent_name;
-                    bundle.agent->set_incoming_message_fetcher([mailbox, team, name]() {
-                        auto messages = mailbox->poll(team, name);
-                        if (messages.empty()) {
-                            return std::vector<std::string>{};
-                        }
-
-                        std::vector<std::string> injected;
-                        std::vector<std::string> ids;
-                        injected.reserve(messages.size());
-                        ids.reserve(messages.size());
-                        for (const auto &message : messages) {
-                            injected.push_back(format_teammate_message_xml(message));
-                            ids.push_back(message.id);
-                        }
-                        mailbox->mark_read(ids);
-                        return injected;
-                    });
-                }
-
-                return bundle.agent->run(prompt);
-            }
-
-            /// Teammate mode: wait for the next prompt from the mailbox.
-            auto wait_for_next_prompt(std::stop_token stop_token) -> std::optional<std::string> override {
-                if (!persistent_ || bundle.tool_context().mailbox == nullptr || team_id.empty() || agent_name.empty()) {
-                    return std::nullopt;
-                }
-
-                auto *mailbox = bundle.tool_context().mailbox;
-                const auto team = team_id;
-                const auto name = agent_name;
-
-                while (!stop_token.stop_requested()) {
-                    auto messages = mailbox->poll(team, name);
-                    if (!messages.empty()) {
-                        std::vector<std::string> ids;
-                        ids.reserve(messages.size());
-                        for (const auto &msg : messages) {
-                            ids.push_back(msg.id);
-                        }
-                        mailbox->mark_read(ids);
-                        // Return the first message text as the next prompt
-                        return messages.front().text;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                }
-
-                return std::nullopt;
-            }
-
-            [[nodiscard]] auto is_persistent() const -> bool override {
-                return persistent_;
-            }
-        };
-
-        const bool is_teammate = request.role == orangutan::orchestration::agent_role::teammate;
-        const auto child_role = is_teammate
-            ? orangutan::orchestration::agent_role::teammate
-            : orangutan::orchestration::agent_role::worker;
-
-        orangutan::bootstrap::RuntimeIdentity identity{
-            .workspace = runtime_cfg.workspace_root,
-            .runtime_key = "agent:" + runtime_cfg.agent_key + "|worker:" + request.agent_name,
-            .memory_scope = "agent:" + runtime_cfg.agent_key + "|worker",
-        };
-
-        auto bundle = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
-            .runtime_config = &runtime_cfg,
-            .identity = &identity,
-            .app_config = &cfg,
-            .memory_store = memory_store,
-            .agent_name = request.agent_name,
-            .team_agents = std::vector<std::string>{},
-            .team_id = request.team_id,
-            .orchestration_manager = orchestration_manager.get(),
-            .is_child_run = true,
-            .agent_role = child_role,
-            .delegated_task_prompt = request.task_prompt,
-        }));
-
-        auto worker = std::make_unique<RuntimeWorker>(std::move(bundle), is_teammate);
-        worker->team_id = request.team_id;
-        worker->agent_name = request.agent_name;
-        return worker;
-    });
+    orchestration_manager->set_worker_runtime_factory(
+        orangutan::bootstrap::make_agent_loop_worker_factory(cfg, *maybe_agent_runtime_configs, memory_store.get(), *orchestration_manager));
 
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
     orangutan::bootstrap::reconcile_heartbeat_jobs(cfg, app_runtime.automation_service());

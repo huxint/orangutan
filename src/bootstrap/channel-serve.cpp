@@ -304,10 +304,10 @@ namespace orangutan::bootstrap {
 
     } // namespace
 
-    ChannelApprovalCoordinator::ChannelApprovalCoordinator(std::chrono::milliseconds timeout)
+    ChannelApprovalGate::ChannelApprovalGate(std::chrono::milliseconds timeout)
     : timeout_(timeout) {}
 
-    ApprovalCallback ChannelApprovalCoordinator::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner,
+    ApprovalCallback ChannelApprovalGate::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner,
                                                                tools::PermissionRuleMutationCallback permission_rule_mutator) {
         if (!can_prompt_for_channel_approval(message)) {
             return {};
@@ -461,7 +461,7 @@ namespace orangutan::bootstrap {
             };
     }
 
-    bool ChannelApprovalCoordinator::handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager) {
+    bool ChannelApprovalGate::handle_inbound_message(const InboundMessage &message, ChannelManager &channel_manager) {
         if (!message.is_user_message()) {
             return false;
         }
@@ -543,7 +543,7 @@ namespace orangutan::bootstrap {
         return true;
     }
 
-    void ChannelApprovalCoordinator::shutdown() {
+    void ChannelApprovalGate::shutdown() {
         std::vector<std::shared_ptr<PendingApproval>> pending;
         {
             std::scoped_lock lock(mutex_);
@@ -571,7 +571,7 @@ namespace orangutan::bootstrap {
         }
     }
 
-    void ChannelApprovalCoordinator::clear_pending(const std::shared_ptr<PendingApproval> &pending) {
+    void ChannelApprovalGate::clear_pending(const std::shared_ptr<PendingApproval> &pending) {
         std::scoped_lock lock(mutex_);
         if (!pending->request_id.empty()) {
             pending_by_request_id_.erase(pending->request_id);
@@ -617,7 +617,7 @@ namespace orangutan::bootstrap {
                                      const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                      const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
                                      orchestration::OrchestrationManager *orchestration_manager, const Config &cfg, HookManager *hook_manager,
-                                     automation::AutomationRuntime *automation_runtime, ChannelApprovalCoordinator &approval_coordinator, JidTaskRunner &task_runner,
+                                     automation::AutomationRuntime *automation_runtime, ChannelApprovalGate &approval_gate, JidTaskRunner &task_runner,
                                      orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
             try {
                 auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store,
@@ -667,7 +667,7 @@ namespace orangutan::bootstrap {
                         runtime.agent().clear_history();
                     }
 
-                    tool_context.approval_callback = approval_coordinator.make_callback(
+                    tool_context.approval_callback = approval_gate.make_callback(
                         message, channel_manager, &task_runner,
                         [&session_store, current_session_id = &runtime.current_session_id, base_mutator = tool_context.permission_rule_mutator](PermissionRule rule) {
                             if (base_mutator) {
@@ -785,7 +785,7 @@ namespace orangutan::bootstrap {
                           HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
         std::mutex runtimes_mutex;
-        ChannelApprovalCoordinator approval_coordinator;
+        ChannelApprovalGate approval_gate;
 
         while (!stop_requested.load()) {
             InboundMessage message;
@@ -805,18 +805,18 @@ namespace orangutan::bootstrap {
                 continue;
             }
 
-            if (approval_coordinator.handle_inbound_message(message, channel_manager)) {
+            if (approval_gate.handle_inbound_message(message, channel_manager)) {
                 continue;
             }
 
             task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store, &session_store,
-                                             orchestration_manager, &cfg, hook_manager, automation_runtime, &approval_coordinator, &task_runner, team_manager, mailbox] {
+                                             orchestration_manager, &cfg, hook_manager, automation_runtime, &approval_gate, &task_runner, team_manager, mailbox] {
                 process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, orchestration_manager, cfg,
-                                        hook_manager, automation_runtime, approval_coordinator, task_runner, team_manager, mailbox);
+                                        hook_manager, automation_runtime, approval_gate, task_runner, team_manager, mailbox);
             });
         }
 
-        approval_coordinator.shutdown();
+        approval_gate.shutdown();
         task_runner.shutdown(true);
 
         std::scoped_lock lock(runtimes_mutex);

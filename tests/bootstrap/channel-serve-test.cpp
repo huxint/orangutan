@@ -598,18 +598,18 @@ namespace {
         CHECK(sent_messages[0].second.contains("Error: No runtime configuration for agent: default"));
     };
 
-    TEST_CASE("channel_approval_coordinator_prompts_and_accepts_replies") {
+    TEST_CASE("channel_approval_gate_prompts_and_accepts_replies") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -635,24 +635,24 @@ namespace {
         CHECK_FALSE(request_id.empty());
         CHECK(sent_messages[0].keyboard_payload.at("content").at("rows").at(0).at("buttons").size() == 3UL);
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::allow_once)}, manager));
         CHECK(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_formats_text_prompts_and_parses_text_always_replies") {
+    TEST_CASE("channel_approval_gate_formats_text_prompts_and_parses_text_always_replies") {
         ChannelManager manager;
         auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
         auto *irc = irc_channel.get();
         manager.add_channel(std::move(irc_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "irc:dm:42",
             .content = "run shell",
             .message_id = "message-42",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -679,23 +679,23 @@ namespace {
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].text);
         REQUIRE_FALSE(request_id.empty());
 
-        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "  " + request_id + " ALWAYS allow!!!  "}, manager));
+        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "  " + request_id + " ALWAYS allow!!!  "}, manager));
         CHECK(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_invalid_text_replies_do_not_reference_qq_buttons") {
+    TEST_CASE("channel_approval_gate_invalid_text_replies_do_not_reference_qq_buttons") {
         ChannelManager manager;
         auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
         auto *irc = irc_channel.get();
         manager.add_channel(std::move(irc_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "irc:dm:42",
             .content = "run shell",
             .message_id = "message-42",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -711,7 +711,7 @@ namespace {
         const auto request_id = ChannelServeHarness::extract_request_id(initial_messages[0].text);
         REQUIRE_FALSE(request_id.empty());
 
-        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "what?"}, manager));
+        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "what?"}, manager));
         CHECK(future.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout);
 
         const auto sent_messages = irc->sent_text_messages();
@@ -720,11 +720,11 @@ namespace {
         CHECK(sent_messages.back().text.contains(request_id + " yes"));
         CHECK(sent_messages.back().text.contains(request_id + " no"));
 
-        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = request_id + " no"}, manager));
+        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = request_id + " no"}, manager));
         CHECK_FALSE(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_rejects_when_qq_keyboard_is_unavailable") {
+    TEST_CASE("channel_approval_gate_rejects_when_qq_keyboard_is_unavailable") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
@@ -732,12 +732,12 @@ namespace {
         manager.add_channel(std::move(qq_channel));
 
         auto permission_context = initialize_permission_context(PermissionConfig{});
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager, nullptr, [&permission_context](PermissionRule rule) {
+        auto callback = gate.make_callback(request, manager, nullptr, [&permission_context](PermissionRule rule) {
             permission_context = add_rule(permission_context, rule);
         });
         REQUIRE(callback != nullptr);
@@ -774,7 +774,7 @@ namespace {
         CHECK_FALSE(second_future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_persists_allow_always_rules_when_session_exists") {
+    TEST_CASE("channel_approval_gate_persists_allow_always_rules_when_session_exists") {
         ChannelServeHarness harness;
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
@@ -791,13 +791,13 @@ namespace {
             .origin_ref = "qqbot:c2c:42",
         });
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
             .message_id = "msg-1",
         };
-        auto callback = coordinator.make_callback(request, manager, nullptr, [&session_store, &session_id, &permission_context](PermissionRule rule) {
+        auto callback = gate.make_callback(request, manager, nullptr, [&session_store, &session_id, &permission_context](PermissionRule rule) {
             permission_context = add_rule(permission_context, rule);
             session_store.save_session_permission_rule(session_id, std::move(rule));
         });
@@ -820,7 +820,7 @@ namespace {
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::always_allow)}, manager));
         CHECK(future.get());
         REQUIRE(permission_context.allow_rules.size() == std::size_t{1});
@@ -837,18 +837,18 @@ namespace {
         CHECK(stored_rules[0].tool_name == "shell");
     };
 
-    TEST_CASE("channel_approval_coordinator_includes_decision_reason_details_in_qq_card") {
+    TEST_CASE("channel_approval_gate_includes_decision_reason_details_in_qq_card") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -869,23 +869,23 @@ namespace {
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::allow_once)}, manager));
         CHECK(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_omits_allow_always_button_for_compound_shell_commands") {
+    TEST_CASE("channel_approval_gate_omits_allow_always_button_for_compound_shell_commands") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -906,29 +906,29 @@ namespace {
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::always_allow)}, manager));
         auto fallback_messages = qq->sent_messages();
         REQUIRE(not fallback_messages.empty());
         CHECK(fallback_messages.back().second.contains("Always allow is not available for this request"));
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::deny)}, manager));
         CHECK_FALSE(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_omits_allow_always_button_when_tool_signature_is_not_eligible") {
+    TEST_CASE("channel_approval_gate_omits_allow_always_button_when_tool_signature_is_not_eligible") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "search tools",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -949,22 +949,22 @@ namespace {
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
-        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " no"}, manager));
+        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " no"}, manager));
         CHECK_FALSE(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_consumes_invalid_replies_while_waiting") {
+    TEST_CASE("channel_approval_gate_consumes_invalid_replies_while_waiting") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:99",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -980,35 +980,35 @@ namespace {
         const auto request_id = ChannelServeHarness::extract_request_id(sent_keyboard_messages.front());
         CHECK_FALSE(request_id.empty());
 
-        CHECK(coordinator.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " yes"}, manager));
+        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " yes"}, manager));
         CHECK(future.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout);
         auto sent_messages = qq->sent_messages();
         CHECK(sent_messages.size() >= 1UL);
         CHECK(sent_messages.back().second.contains("Use the buttons on the approval card"));
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:99", .content = channel::qq::build_approval_callback_data("shell-approval-999", channel::qq::approval_action::deny)}, manager));
         sent_messages = qq->sent_messages();
         CHECK(sent_messages.size() >= 2UL);
         CHECK(sent_messages.back().second.contains("Use the buttons on the approval card"));
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:99", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::deny)}, manager));
         CHECK_FALSE(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_accepts_allow_always_callback_payload") {
+    TEST_CASE("channel_approval_gate_accepts_allow_always_callback_payload") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
@@ -1024,26 +1024,26 @@ namespace {
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages.front());
         REQUIRE_FALSE(request_id.empty());
 
-        CHECK(coordinator.handle_inbound_message(
+        CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::always_allow)}, manager));
         CHECK(future.get());
     };
 
-    TEST_CASE("channel_approval_coordinator_disables_prompts_when_replies_cannot_return_to_same_conversation") {
+    TEST_CASE("channel_approval_gate_disables_prompts_when_replies_cannot_return_to_same_conversation") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
 
-        CHECK(coordinator.make_callback(
+        CHECK(gate.make_callback(
                   InboundMessage{
                       .jid = "heartbeat:nightly",
                       .reply_target = "qqbot:c2c:42",
                   },
                   manager) == nullptr);
 
-        CHECK(coordinator.make_callback(
+        CHECK(gate.make_callback(
                   InboundMessage{
                       .jid = "qqbot:c2c:42",
                       .reply_target = "qqbot:c2c:other",
@@ -1058,7 +1058,7 @@ namespace {
         manager.add_channel(std::move(qq_channel));
 
         JidTaskRunner runner(1);
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::seconds(5));
+        bootstrap::ChannelApprovalGate gate(std::chrono::seconds(5));
         const InboundMessage approval_request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
@@ -1071,7 +1071,7 @@ namespace {
         std::atomic<bool> approval_result = true;
 
         runner.submit(approval_request.jid, [&] {
-            auto callback = coordinator.make_callback(approval_request, manager, &runner);
+            auto callback = gate.make_callback(approval_request, manager, &runner);
             approval_result.store(
                 callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required.")));
             approval_finished.set_value();
@@ -1088,7 +1088,7 @@ namespace {
         REQUIRE(not qq->sent_keyboard_messages().empty());
         CHECK(bob_started_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
 
-        coordinator.shutdown();
+        gate.shutdown();
         CHECK(approval_finished_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
         CHECK_FALSE(approval_result.load());
 
@@ -1100,26 +1100,26 @@ namespace {
         runner.shutdown(true);
     };
 
-    TEST_CASE("channel_approval_coordinator_rejects_callbacks_after_shutdown") {
+    TEST_CASE("channel_approval_gate_rejects_callbacks_after_shutdown") {
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
         auto *qq = qq_channel.get();
         manager.add_channel(std::move(qq_channel));
 
-        bootstrap::ChannelApprovalCoordinator coordinator(std::chrono::milliseconds(250));
+        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
         const InboundMessage request{
             .jid = "qqbot:c2c:42",
             .content = "run shell",
         };
-        auto callback = coordinator.make_callback(request, manager);
+        auto callback = gate.make_callback(request, manager);
         REQUIRE(callback != nullptr);
 
-        coordinator.shutdown();
+        gate.shutdown();
 
         CHECK_FALSE(callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required.")));
         CHECK(qq->sent_messages().empty());
         CHECK(qq->sent_keyboard_messages().empty());
-        CHECK(coordinator.make_callback(request, manager) == nullptr);
+        CHECK(gate.make_callback(request, manager) == nullptr);
     };
 
     TEST_CASE("new_command_updates_bound_session_with_channel_metadata") {

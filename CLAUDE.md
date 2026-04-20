@@ -49,7 +49,7 @@ xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
 
 ### Core primitive: the agent loop
 
-`agent::AgentLoop` (src/agent/agent-loop.hpp) is the ReAct loop. Given a user prompt, it iterates up to `MAX_ITERATIONS`: build request → `ProviderSystem::send` → parse tool calls → dispatch via `ToolRegistry` → append results to history → repeat until a final text response or stop. It composes with **providers**, a **tool registry**, optional **runtime memory**, **hooks**, and a **skills** prompt. Configure via the fluent `AgentLoopBuilder` (uses C++23 deducing-`this`). One `AgentLoop` per running agent instance; multiple instances coexist (primary CLI + coordinator workers + automation-triggered runs).
+`agent::AgentLoop` (src/agent/agent-loop.hpp) is the ReAct loop. Given a user prompt, it iterates up to `MAX_ITERATIONS`: build request → `ProviderSystem::send` → parse tool calls → dispatch via `ToolRegistry` → append results to history → repeat until a final text response or stop. It composes with **providers**, a **tool registry**, optional **runtime memory**, **hooks**, and a **skills** prompt. Configure via the fluent `AgentLoopBuilder` (uses C++23 deducing-`this`). One `AgentLoop` per running agent instance; multiple instances coexist (primary CLI + orchestrated workers + automation-triggered runs).
 
 **Iteration cost trap.** The loop body runs up to `MAX_ITERATIONS` times per user turn. Any input that does not change across iterations (e.g. the user prompt, and therefore the memory records retrieved for it) must be computed **once before the loop** and passed into `build_system_prompt` as a pre-rendered section (`render_prompt_memory_section` is the template). Per-iteration work currently includes the skills section (intentionally, so newly activated skills surface mid-turn) and deferred-tool summaries; keep that list small.
 
@@ -66,7 +66,7 @@ xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
 
 `src/tools/`:
 
-- **registry/** — `ToolRegistry` holds tool definitions and dispatches calls through a `ToolRuntimeContext` (workspace root, permissions, memory, coordinator, mailbox, automation, skill loader, etc.).
+- **registry/** — `ToolRegistry` holds tool definitions and dispatches calls through a `ToolRuntimeContext` (workspace root, permissions, memory, orchestration runtime, mailbox, automation, skill loader, etc.).
 - Per-category subdirs register themselves via `tools::register_builtin_*` (see `tools/register.hpp` and each subdir's `register.cpp`): `file/` (read/write/edit/search via fd+rg), `shell/` (sandboxed shell exec), `mcp/` (external MCP clients), `memory/`, `orchestration/` (spawn/stop/send-message plus team management), `automation/`, `skill/`, `message-attachments/`, `tool-search/`, `script/`, `runtime-loader/`, `background/`.
 - `permissions/` evaluates allow/deny/ask rules (`permission-evaluator`, `rule-parser`, `safety-checks`) and produces approval prompts signed for replay.
 - `hooks/HookManager` runs external shell hooks at tool lifecycle events.
@@ -108,7 +108,7 @@ Channel mode replaces the input source with `MessageQueue`; web mode exposes the
 
 ### Where things are assembled
 
-`bootstrap/runtime-assembler.cpp` builds an `AgentRuntimeBundle` (agent + provider + tools + hook_manager) from a `RuntimeAssemblyRequest`. Three assembly sites: primary CLI runtime, coordinator worker runtimes, automation-triggered runtimes. When adding a runtime-wide capability, thread it through `RuntimeAssemblyRequest` — don't reach into globals.
+`bootstrap/runtime-assembler.cpp` builds an `AgentRuntimeBundle` (agent + provider + tools + hook_manager) from a `RuntimeAssemblyRequest`. Three assembly sites: primary CLI runtime, delegated worker runtimes, automation-triggered runtimes. When adding a runtime-wide capability, thread it through `RuntimeAssemblyRequest` — don't reach into globals.
 
 ## Code Constraints & Conventions
 

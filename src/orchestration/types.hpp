@@ -11,7 +11,6 @@
 namespace orangutan::orchestration {
 
     /// Unified agent role within the orchestration hierarchy.
-    /// Replaces the legacy `coordinator_mode` / `is_child_run` bool pair.
     enum class agent_role : base::u8 {
         /// Standalone agent — no orchestration context.
         standalone,
@@ -22,6 +21,26 @@ namespace orangutan::orchestration {
         /// Persistent worker: runs tasks, then idles waiting for follow-up messages.
         teammate,
     };
+
+    [[nodiscard]]
+    constexpr auto is_leader(agent_role role) -> bool {
+        return role == agent_role::leader;
+    }
+
+    [[nodiscard]]
+    constexpr auto is_worker(agent_role role) -> bool {
+        return role == agent_role::worker;
+    }
+
+    [[nodiscard]]
+    constexpr auto is_teammate(agent_role role) -> bool {
+        return role == agent_role::teammate;
+    }
+
+    [[nodiscard]]
+    constexpr auto is_delegated(agent_role role) -> bool {
+        return is_worker(role) || is_teammate(role);
+    }
 
     /// Status of an agent run within the orchestration system.
     enum class run_status : base::u8 {

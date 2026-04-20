@@ -68,6 +68,16 @@ namespace orangutan::utils {
     }
 
     [[nodiscard]]
+    inline std::int64_t epoch_millis(std::chrono::system_clock::time_point tp = std::chrono::system_clock::now()) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
+    }
+
+    [[nodiscard]]
+    inline std::int64_t steady_micros() {
+        return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    [[nodiscard]]
     inline std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
         if (offset + width > value.size()) {
             return std::nullopt;
