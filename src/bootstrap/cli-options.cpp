@@ -177,7 +177,7 @@ namespace orangutan::bootstrap {
                     return mode;
                 })
                 .or_else([&options] {
-                    spdlog::warn("Unknown --permission-mode '{}', ignoring", options.permission_mode_str);
+                    spdlog::warn("unknown --permission-mode '{}', ignoring", options.permission_mode_str);
                     return std::optional<permission_mode>{};
                 });
         }

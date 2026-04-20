@@ -170,9 +170,6 @@ namespace orangutan::config {
     // Undefined variables are replaced with empty string (with a warning logged).
     std::string expand_env_vars(const std::string &input);
 
-    // Expand "~" or "~/" to the current user's home directory.
-    std::string expand_home_path(const std::string &input);
-
 } // namespace orangutan::config
 
 namespace orangutan {
@@ -180,7 +177,6 @@ namespace orangutan {
     using config::AgentConfig;
     using config::Config;
     using config::expand_env_vars;
-    using config::expand_home_path;
     using config::FallbackModelRef;
     using config::ModelConfig;
     using config::ModelCostConfig;

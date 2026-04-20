@@ -114,7 +114,7 @@ namespace {
         auto &stop_requested = orangutan::bootstrap::signal_stop_requested();
         stop_requested.store(false);
         auto channel_task_runner = std::make_unique<orangutan::JidTaskRunner>(orangutan::bootstrap::default_serve_worker_count());
-        spdlog::info("Starting channel executor (configured concurrency hint: {})", channel_task_runner->worker_count());
+        spdlog::info("starting channel executor (configured concurrency hint: {})", channel_task_runner->worker_count());
 
         if (channel_manager.has_channels()) {
             try {
@@ -127,7 +127,7 @@ namespace {
                 return 1;
             }
         } else {
-            spdlog::warn("Channel mode started without any configured channels.");
+            spdlog::warn("channel mode started without any configured channels.");
         }
 
         std::signal(SIGINT, orangutan::bootstrap::handle_signal);
@@ -258,7 +258,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         agent_mailbox = std::make_unique<orangutan::swarm::AgentMailbox>((coordinator_state_root / "mailbox.db").string());
         team_manager = std::make_unique<orangutan::swarm::TeamManager>((coordinator_state_root / "teams.db").string());
     } catch (const std::exception &e) {
-        spdlog::warn("Failed to initialize coordinator stores: {}", e.what());
+        spdlog::warn("failed to initialize coordinator stores: {}", e.what());
     }
 
     int coordinator_max_concurrent = 4;
@@ -482,7 +482,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         } catch (const std::exception &e) {
             web_runtime_build_error = e.what();
             if (options.web_mode && !options.cli_mode) {
-                spdlog::warn("Web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
+                spdlog::warn("web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
             } else {
                 spdlog::fmt_lib::println(stderr, "Error: failed to initialize primary runtime: {}", e.what());
                 app_runtime.automation_runtime().stop();

@@ -1,5 +1,6 @@
 #include "config/config-detail.hpp"
 #include "config/secret-fields.hpp"
+#include "utils/path.hpp"
 #include "utils/transparent-lookup.hpp"
 
 #include <cstdlib>
@@ -48,36 +49,13 @@ namespace orangutan::config {
             if (val != nullptr) {
                 result.append(val);
             } else {
-                spdlog::warn("Environment variable '{}' is not set, replacing with empty string", var_name);
+                spdlog::warn("environment variable '{}' is not set, replacing with empty string", var_name);
             }
 
             pos = end + 1;
         }
 
         return result;
-    }
-
-    std::string expand_home_path(const std::string &input) {
-        if (input.empty() || input[0] != '~') {
-            return input;
-        }
-
-        if (input.size() > 1 && input[1] != '/') {
-            spdlog::warn("Path '{}' uses unsupported ~user syntax; leaving it unchanged", input);
-            return input;
-        }
-
-        const char *home = std::getenv("HOME");
-        if (home == nullptr) {
-            spdlog::warn("HOME is not set; cannot expand path '{}'", input);
-            return input;
-        }
-
-        if (input == "~") {
-            return home;
-        }
-
-        return std::string{home} + input.substr(1);
     }
 
     namespace detail {
@@ -100,6 +78,23 @@ namespace orangutan::config {
             }
 
         } // namespace
+
+        std::string expand_path_value(std::string input) {
+            if (input.empty() || input[0] != '~') {
+                return input;
+            }
+            if (input.size() > 1 && input[1] != '/') {
+                spdlog::warn("path '{}' uses unsupported ~user syntax; leaving it unchanged", input);
+                return input;
+            }
+
+            auto expanded = utils::try_expand_home_path(std::filesystem::path{input});
+            if (!expanded.has_value()) {
+                spdlog::warn("{}", expanded.error());
+                return input;
+            }
+            return expanded->string();
+        }
 
         void resolve_secret_field(std::string &value, std::string_view field_kind, std::string_view display_field, ConfigPasswordResolver &resolver) {
             if (value.empty()) {
@@ -132,7 +127,7 @@ namespace orangutan::config {
 
             cfg.profile = expand_env_vars(cfg.profile);
             cfg.model = expand_env_vars(cfg.model);
-            cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
+            cfg.workspace = expand_path_value(expand_env_vars(cfg.workspace));
             for (auto &fallback_model : cfg.fallback_models) {
                 fallback_model.profile = expand_env_vars(fallback_model.profile);
                 fallback_model.model = expand_env_vars(fallback_model.model);
@@ -140,8 +135,8 @@ namespace orangutan::config {
             for (auto &[_, profile_cfg] : cfg.profiles) {
                 expand_profile_config(profile_cfg);
             }
-            cfg.memory.mirror_file = expand_home_path(expand_env_vars(cfg.memory.mirror_file));
-            cfg.memory.journal_dir = expand_home_path(expand_env_vars(cfg.memory.journal_dir));
+            cfg.memory.mirror_file = expand_path_value(expand_env_vars(cfg.memory.mirror_file));
+            cfg.memory.journal_dir = expand_path_value(expand_env_vars(cfg.memory.journal_dir));
             cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);
 
             cfg = parse_agents_section(resolved_root, std::move(cfg));

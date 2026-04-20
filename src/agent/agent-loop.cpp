@@ -60,7 +60,7 @@ namespace orangutan::agent {
         const bool human_output = !on_stream_event && !on_tool_event;
 
         for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
-            spdlog::debug("Agent loop iteration {}", iteration + 1);
+            spdlog::debug("agent loop iteration {}", iteration + 1);
 
             const auto refreshed_skill_section =
                 skill_loader_ == nullptr ? std::string{} : skills::render_skill_prompt_section(skill_loader_->list(skills::skill_list_query{.include_inactive = false}));

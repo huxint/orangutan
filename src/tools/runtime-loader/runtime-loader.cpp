@@ -18,7 +18,7 @@ namespace orangutan::tools {
         void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext &ctx, const ToolRuntimeContext *tool_context) {
             registry.set_definition_filter([ctx](const Tool &tool) {
                 for (const auto &rule : ctx.deny_rules) {
-                    if (!rule.content && matches_rule(rule, tool.definition.name)) {
+                    if (!rule.content.has_value() && matches_rule(rule, tool.definition.name)) {
                         return false;
                     }
                 }
@@ -49,7 +49,7 @@ namespace orangutan::tools {
                         return ToolResult{call.id, decision.message.value_or("Blocked by permission policy"), true};
                     case permission_behavior::ask: {
                         const auto &callback = (tool_context && tool_context->approval_callback) ? tool_context->approval_callback : ApprovalCallback{};
-                        if (!callback) {
+                        if (callback == nullptr) {
                             return ToolResult{call.id, "Requires approval but interactive approval unavailable", true};
                         }
                         if (!callback(call, decision)) {
@@ -85,13 +85,13 @@ namespace orangutan::tools {
             result.mcp_manager->register_tools(registry);
             result.mcp_tool_count = result.mcp_manager->total_tool_count();
 
-            spdlog::info("Registered {} MCP tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
+            spdlog::info("registered {} mcp tool(s) across {} connected server(s)", result.mcp_tool_count, result.mcp_manager->connected_server_count());
         }
 
         // Register tool_search if there are any deferred tools (builtin or MCP)
         if (!coordinator_only && registry.has_deferred_tools()) {
             register_tool_search(registry);
-            spdlog::debug("Registered tool_search for deferred tools");
+            spdlog::debug("registered tool_search for deferred tools");
         }
 
         return result;

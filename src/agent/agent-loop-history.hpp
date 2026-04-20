@@ -99,7 +99,7 @@ namespace orangutan::agent::detail {
         ContinuationResult result;
 
         for (int attempt = 0; attempt < MAX_CONTINUATIONS; ++attempt) {
-            spdlog::debug("Max-token continuation attempt {}", attempt + 1);
+            spdlog::debug("max-token continuation attempt {}", attempt + 1);
 
             history.push_back(Message::user().text("Please continue from where you left off."));
             emit_history_checkpoint(on_history_checkpoint, history);
@@ -147,7 +147,7 @@ namespace orangutan::agent::detail {
             return result;
         }
 
-        spdlog::info("Compacting history: {} messages -> summarizing first {}, keeping last {}", history.size(), keep_start, COMPACTION_KEEP_RECENT);
+        spdlog::info("compacting history: {} messages -> summarizing first {}, keeping last {}", history.size(), keep_start, COMPACTION_KEEP_RECENT);
 
         std::vector<Message> older_messages(history.begin(), history.begin() + keep_start);
         constexpr std::string_view SUMMARY_PROMPT = "You are a conversation summarizer. Summarize the following conversation "
@@ -167,7 +167,7 @@ namespace orangutan::agent::detail {
             }
 
             if (summary_text.empty()) {
-                spdlog::warn("Compaction produced empty summary, skipping");
+                spdlog::warn("compaction produced empty summary, skipping");
                 result.status = "Compaction produced an empty summary.";
                 return result;
             }
@@ -177,12 +177,12 @@ namespace orangutan::agent::detail {
             compacted.insert(compacted.end(), history.begin() + keep_start, history.end());
             history = std::move(compacted);
 
-            spdlog::info("History compacted to {} messages", history.size());
+            spdlog::info("history compacted to {} messages", history.size());
             result.compacted = true;
             result.messages_after = history.size();
             result.status = "History compressed.";
         } catch (const std::exception &e) {
-            spdlog::warn("History compaction failed: {}", e.what());
+            spdlog::warn("history compaction failed: {}", e.what());
             result.status = std::string("History compaction failed: ") + e.what();
         }
         return result;

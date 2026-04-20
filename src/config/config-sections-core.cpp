@@ -160,7 +160,7 @@ namespace orangutan::config::detail {
     void expand_agent_config(AgentConfig &cfg) {
         cfg.profile = expand_env_vars(cfg.profile);
         cfg.model = expand_env_vars(cfg.model);
-        cfg.workspace = expand_home_path(expand_env_vars(cfg.workspace));
+        cfg.workspace = expand_path_value(expand_env_vars(cfg.workspace));
 
         for (auto &fallback_model : cfg.fallback_models) {
             fallback_model.profile = expand_env_vars(fallback_model.profile);
@@ -269,7 +269,7 @@ namespace orangutan::config::detail {
                     return mode;
                 })
                 .or_else([value] {
-                    spdlog::warn("Unknown permissions.default_mode '{}'", value->get<std::string>());
+                    spdlog::warn("unknown permissions.default_mode '{}'", value->get<std::string>());
                     return std::optional<permission_mode>{};
                 });
         }

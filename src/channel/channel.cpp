@@ -33,7 +33,7 @@ namespace orangutan::channel {
         for (const auto &channel : channels_) {
             channel->connect([this, on_message](const InboundMessage &message) {
                 if (!allowlist_.is_allowed(message.jid)) {
-                    spdlog::warn("Dropping inbound message from denied jid '{}'", message.jid);
+                    spdlog::warn("dropping inbound message from denied jid '{}'", message.jid);
                     return;
                 }
 
@@ -143,7 +143,7 @@ namespace orangutan::channel {
             try {
                 channel->disconnect();
             } catch (const std::exception &e) {
-                spdlog::warn("Failed to disconnect channel '{}': {}", channel->name(), e.what());
+                spdlog::warn("failed to disconnect channel '{}': {}", channel->name(), e.what());
             }
         }
     }

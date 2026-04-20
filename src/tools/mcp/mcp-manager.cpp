@@ -29,16 +29,16 @@ namespace orangutan::tools {
             server.client = std::make_unique<McpClient>(server.config);
 
             try {
-                spdlog::info("Connecting MCP server '{}' with command '{}'", server.config.name, server.client->command_line());
+                spdlog::info("connecting mcp server '{}' with command '{}'", server.config.name, server.client->command_line());
                 server.client->connect();
                 server.tools = server.client->list_tools();
                 server.connected = true;
-                spdlog::info("Connected MCP server '{}' [{}]: {} tool(s)", server.config.name, server.client->command_line(), server.tools.size());
+                spdlog::info("connected mcp server '{}' [{}]: {} tool(s)", server.config.name, server.client->command_line(), server.tools.size());
                 if (server.tools.empty()) {
-                    spdlog::warn("MCP server '{}' exposed no tools", server.config.name);
+                    spdlog::warn("mcp server '{}' exposed no tools", server.config.name);
                 }
             } catch (const std::exception &e) {
-                spdlog::error("Failed to initialize MCP server '{}' [{}]: {}", server.config.name, server.client->command_line(), e.what());
+                spdlog::error("failed to initialize mcp server '{}' [{}]: {}", server.config.name, server.client->command_line(), e.what());
                 server.client->disconnect();
                 server.connected = false;
                 server.tools.clear();

@@ -169,7 +169,7 @@ namespace orangutan::bootstrap {
                     if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
                         try {
                             if (!session_store.session_belongs_to_scope(*session_id, runtime->session_scope_key)) {
-                                spdlog::warn("Session {} does not belong to runtime scope '{}' for jid '{}' agent '{}'", *session_id, runtime->session_scope_key, jid, agent_key);
+                                spdlog::warn("session {} does not belong to runtime scope '{}' for jid '{}' agent '{}'", *session_id, runtime->session_scope_key, jid, agent_key);
                                 session_store.clear_jid(jid, agent_key);
                                 rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
                             } else {
@@ -177,11 +177,11 @@ namespace orangutan::bootstrap {
                                 runtime->agent().set_history(session_store.load(*session_id));
                                 runtime->current_session_id = *session_id;
                                 runtime->persisted_message_count = runtime->agent().history().size();
-                                spdlog::info("Restored session {} for jid '{}' agent '{}'", *session_id, jid, agent_key);
+                                spdlog::info("restored session {} for jid '{}' agent '{}'", *session_id, jid, agent_key);
                                 dispatch_session_start(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
                             }
                         } catch (const std::exception &e) {
-                            spdlog::warn("Failed to restore session {} for jid '{}' agent '{}': {}", *session_id, jid, agent_key, e.what());
+                            spdlog::warn("failed to restore session {} for jid '{}' agent '{}': {}", *session_id, jid, agent_key, e.what());
                             session_store.clear_jid(jid, agent_key);
                             rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
                         }
@@ -189,7 +189,7 @@ namespace orangutan::bootstrap {
                 }
 
                 if (!runtime->workspace.empty()) {
-                    spdlog::info("Using workspace '{}' for jid '{}'", runtime->workspace, jid);
+                    spdlog::info("using workspace '{}' for jid '{}'", runtime->workspace, jid);
                 }
 
                 it = runtimes.try_emplace(runtime_key, std::move(runtime)).first;
@@ -400,7 +400,7 @@ namespace orangutan::bootstrap {
                                                 std::scoped_lock lock(mutex_);
                                                 qq_keyboard_disabled_keys_.insert(qq_keyboard_key);
                                             }
-                                            spdlog::warn("QQ custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}",
+                                            spdlog::warn("qq custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}",
                                                          qq_keyboard_key, e.what());
                                             clear_pending(pending);
                                             deliver_reply(message, delivery_failure_reply(true), channel_manager);
@@ -410,7 +410,7 @@ namespace orangutan::bootstrap {
                                                 .cancelled = true,
                                             };
                                         } else {
-                                            spdlog::warn("Failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
+                                            spdlog::warn("failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
                                             clear_pending(pending);
                                             deliver_reply(message, delivery_failure_reply(false), channel_manager);
                                             return WaitOutcome{
@@ -657,7 +657,7 @@ namespace orangutan::bootstrap {
                                 att = tool_context.attachment_download_callback(att, (ws / ".orangutan" / "attachments" / name).string());
                                 tool_context.current_message_attachments[att_idx] = att;
                             } catch (const std::exception &e) {
-                                spdlog::warn("Auto-download attachment [{}] failed: {}", att_idx, e.what());
+                                spdlog::warn("auto-download attachment [{}] failed: {}", att_idx, e.what());
                             }
                         }
                     }
@@ -700,7 +700,7 @@ namespace orangutan::bootstrap {
                                                                });
                             first_block_sent = true;
                         } catch (const std::exception &e) {
-                            spdlog::debug("Stream relay send failed: {}", e.what());
+                            spdlog::debug("stream relay send failed: {}", e.what());
                         }
                     };
 
@@ -753,7 +753,7 @@ namespace orangutan::bootstrap {
                                                                        .reply_to_message_id = message.message_id,
                                                                    });
                             } catch (const std::exception &e) {
-                                spdlog::error("Failed to deliver final reply for jid '{}': {}", message.jid, e.what());
+                                spdlog::error("failed to deliver final reply for jid '{}': {}", message.jid, e.what());
                             }
                         }
                     } else {
@@ -761,10 +761,10 @@ namespace orangutan::bootstrap {
                     }
                 });
             } catch (const std::exception &e) {
-                spdlog::error("Failed to process message for jid '{}': {}", message.jid, e.what());
+                spdlog::error("failed to process message for jid '{}': {}", message.jid, e.what());
                 deliver_reply(message, "Error: " + std::string(e.what()), channel_manager);
             } catch (...) {
-                spdlog::error("Failed to process message for jid '{}': unknown exception", message.jid);
+                spdlog::error("failed to process message for jid '{}': unknown exception", message.jid);
                 deliver_reply(message, "Error: internal failure while processing the message.", channel_manager);
             }
         }
@@ -801,7 +801,7 @@ namespace orangutan::bootstrap {
             }
 
             if (!is_supported_inbound_event(message)) {
-                spdlog::debug("Ignoring unsupported inbound event for jid '{}'", message.jid);
+                spdlog::debug("ignoring unsupported inbound event for jid '{}'", message.jid);
                 continue;
             }
 
@@ -831,7 +831,7 @@ namespace orangutan::bootstrap {
             const bool has_qq_app_id = !bot.app_id.empty();
             const bool has_qq_secret = !bot.client_secret.empty();
             if (has_qq_app_id != has_qq_secret) {
-                spdlog::warn("QQ channel configuration is incomplete for bot '{}'; both app_id and client_secret are required",
+                spdlog::warn("qq channel configuration is incomplete for bot '{}'; both app_id and client_secret are required",
                              bot.name.empty() ? std::string{"default"} : bot.name);
                 continue;
             }
@@ -842,7 +842,7 @@ namespace orangutan::bootstrap {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
             channel_manager.add_channel(std::make_unique<QqChannel>(bot.name, bot.app_id, bot.client_secret, task_pool));
 #else
-            spdlog::warn("QQ credentials are configured, but this build was compiled without QQ support. Rebuild with -DORANGUTAN_ENABLE_QQ_CHANNEL=ON");
+            spdlog::warn("qq credentials are configured, but this build was compiled without qq support. rebuild with -dorangutan_enable_qq_channel=on");
 #endif
         }
     }

@@ -34,7 +34,7 @@ namespace orangutan::tools {
                 }
                 result += shell_escape(str_val);
             } else {
-                spdlog::debug("Script tool: parameter '{}' not in input, substituting empty", param_name);
+                spdlog::debug("script tool: parameter '{}' not in input, substituting empty", param_name);
             }
 
             pos = full.data() + full.size();
@@ -52,7 +52,7 @@ namespace orangutan::tools {
         for (const auto &[name, type_str] : schema) {
             std::string json_type = type_str;
             if (json_type != "string" && json_type != "integer" && json_type != "number" && json_type != "boolean") {
-                spdlog::warn("Script tool: unknown type '{}' for parameter '{}', defaulting to string", type_str, name);
+                spdlog::warn("script tool: unknown type '{}' for parameter '{}', defaulting to string", type_str, name);
                 json_type = "string";
             }
             properties[name] = {{"type", json_type}};
@@ -128,20 +128,20 @@ namespace orangutan::tools {
         int registered = 0;
         for (const auto &config : tools) {
             if (config.name.empty()) {
-                spdlog::warn("Script tool missing 'name', skipping");
+                spdlog::warn("script tool missing 'name', skipping");
                 continue;
             }
             if (config.command.empty()) {
-                spdlog::warn("Script tool '{}' missing 'command', skipping", config.name);
+                spdlog::warn("script tool '{}' missing 'command', skipping", config.name);
                 continue;
             }
 
-            spdlog::info("Registering script tool '{}': {}", config.name, config.command);
+            spdlog::info("registering script tool '{}': {}", config.name, config.command);
             registry.register_tool(make_script_tool(config, workspace_root, permissions, tool_context, approval_callback));
             ++registered;
         }
 
-        spdlog::info("Registered {} user script tool(s)", registered);
+        spdlog::info("registered {} user script tool(s)", registered);
     }
 
 } // namespace orangutan::tools

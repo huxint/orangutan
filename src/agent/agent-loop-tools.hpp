@@ -181,11 +181,11 @@ namespace orangutan::agent::detail {
         ++count;
 
         if (count >= LOOP_ABORT_THRESHOLD) {
-            spdlog::warn("Loop abort: tool '{}' called {} times with same input, forcing stop", call.name, count);
+            spdlog::warn("loop abort: tool '{}' called {} times with same input, forcing stop", call.name, count);
             return loop_status::abort;
         }
         if (count >= LOOP_DETECTION_THRESHOLD) {
-            spdlog::warn("Loop detected: tool '{}' called {} times with same input", call.name, count);
+            spdlog::warn("loop detected: tool '{}' called {} times with same input", call.name, count);
             return loop_status::warning;
         }
         return loop_status::ok;

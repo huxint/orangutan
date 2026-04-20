@@ -170,7 +170,7 @@ namespace orangutan::coordinator {
             pending_run_ids_.push_back(run_id);
         }
 
-        spdlog::info("Spawned agent run: id={} key={} name={}", run_id, request.agent_key, agent_name);
+        spdlog::info("spawned agent run: id={} key={} name={}", run_id, request.agent_key, agent_name);
 
         return AgentSpawnResult{
             .accepted = true,
@@ -241,7 +241,7 @@ namespace orangutan::coordinator {
             run->record.status = agent_run_status::running;
         }
 
-        spdlog::info("Agent worker started: id={} key={}", run_id, run->record.agent_key);
+        spdlog::info("agent worker started: id={} key={}", run_id, run->record.agent_key);
 
         if (stop_token.stop_requested()) {
             std::scoped_lock lock(run->mutex);
@@ -249,7 +249,7 @@ namespace orangutan::coordinator {
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
-            spdlog::info("Agent worker terminated before execution: id={}", run_id);
+            spdlog::info("agent worker terminated before execution: id={}", run_id);
             return;
         }
 
@@ -266,7 +266,7 @@ namespace orangutan::coordinator {
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
-            spdlog::warn("Agent worker failed (no factory): id={}", run_id);
+            spdlog::warn("agent worker failed (no factory): id={}", run_id);
         } else {
             try {
                 auto worker = factory(run->request);
@@ -288,7 +288,7 @@ namespace orangutan::coordinator {
             }
         }
 
-        spdlog::info("Agent worker completed: id={}", run_id);
+        spdlog::info("agent worker completed: id={}", run_id);
 
         TaskNotificationCallback callback;
         RuntimeNotificationHandler runtime_handler;
@@ -311,7 +311,7 @@ namespace orangutan::coordinator {
 
         if (runtime_handler) {
             if (const auto error = runtime_handler(notification_xml); error.has_value()) {
-                spdlog::warn("Failed to resume runtime {} with task notification: {}", run->record.parent_runtime_key, *error);
+                spdlog::warn("failed to resume runtime {} with task notification: {}", run->record.parent_runtime_key, *error);
             }
         }
 
@@ -320,7 +320,7 @@ namespace orangutan::coordinator {
             callback(run->record);
         }
 
-        spdlog::debug("Task notification: {}", notification_xml);
+        spdlog::debug("task notification: {}", notification_xml);
         maybe_start_queued_runs();
     }
 
@@ -344,7 +344,7 @@ namespace orangutan::coordinator {
         }
 
         env_.mailbox->send(record.team_id, from, record.agent_name, text);
-        spdlog::debug("Message sent to run_id={} from={}", run_id, from);
+        spdlog::debug("message sent to run_id={} from={}", run_id, from);
         return std::nullopt;
     }
 
@@ -372,7 +372,7 @@ namespace orangutan::coordinator {
         }
 
         if (stopped_queued_run) {
-            spdlog::info("Stopped queued agent run: id={}", run_id);
+            spdlog::info("stopped queued agent run: id={}", run_id);
             maybe_start_queued_runs();
             return;
         }
@@ -399,7 +399,7 @@ namespace orangutan::coordinator {
             }
         }
 
-        spdlog::info("Stopped agent run: id={}", run_id);
+        spdlog::info("stopped agent run: id={}", run_id);
         maybe_start_queued_runs();
     }
 

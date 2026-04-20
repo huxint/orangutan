@@ -74,7 +74,7 @@ namespace orangutan::tools {
         redacted |= redact_between_edges<R"(([Ss]ecret\s*[:=]\s*["']?)[A-Za-z0-9_.\-/+=]{16,}(["']?))">(result);
 
         if (redacted) {
-            spdlog::warn("Credential scrubbing: redacted sensitive content in tool output");
+            spdlog::warn("credential scrubbing: redacted sensitive content in tool output");
         }
         return result;
     }

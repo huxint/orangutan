@@ -40,7 +40,7 @@ namespace orangutan::hooks {
                 auto event_name = entry.path().filename().string();
                 auto event = magic_enum::enum_cast<hook_event>(event_name);
                 if (!event.has_value()) {
-                    spdlog::debug("Ignoring unknown hook event directory: {}", event_name);
+                    spdlog::debug("ignoring unknown hook event directory: {}", event_name);
                     continue;
                 }
 
@@ -52,7 +52,7 @@ namespace orangutan::hooks {
 
                     auto perms = hook_file.status().permissions();
                     if ((perms & std::filesystem::perms::owner_exec) == std::filesystem::perms::none) {
-                        spdlog::debug("Skipping non-executable hook: {}", hook_file.path().string());
+                        spdlog::debug("skipping non-executable hook: {}", hook_file.path().string());
                         continue;
                     }
 
@@ -70,7 +70,7 @@ namespace orangutan::hooks {
                 auto &existing = hooks_[*event];
                 for (const auto &hook : event_hooks) {
                     if (auto shadowed = std::ranges::find(existing, hook.filename, &HookDef::filename); shadowed != existing.end()) {
-                        spdlog::debug("Hook '{}' for '{}' overridden by {}", hook.filename, event_name, hook.path);
+                        spdlog::debug("hook '{}' for '{}' overridden by {}", hook.filename, event_name, hook.path);
                         existing.erase(shadowed);
                     }
                 }
@@ -81,7 +81,7 @@ namespace orangutan::hooks {
         // Log discovery results
         for (const auto &[event, hooks] : hooks_) {
             if (!hooks.empty()) {
-                spdlog::info("Discovered {} hook(s) for event '{}'", hooks.size(), magic_enum::enum_name(event));
+                spdlog::info("discovered {} hook(s) for event '{}'", hooks.size(), magic_enum::enum_name(event));
             }
         }
     }
@@ -106,7 +106,7 @@ namespace orangutan::hooks {
                }) |
                stdexec::then([hook_filename = std::move(hook_filename), hook_timeout_seconds = HOOK_TIMEOUT_SECONDS](SubprocessResult subprocess_result) {
                    if (subprocess_result.timed_out) {
-                       spdlog::warn("[{}] Hook timed out after {}s", hook_filename, hook_timeout_seconds);
+                       spdlog::warn("[{}] hook timed out after {}s", hook_filename, hook_timeout_seconds);
                    }
 
                    return HookResult{
@@ -132,7 +132,7 @@ namespace orangutan::hooks {
         }
 
         if (is_blocking_event) {
-            spdlog::info("Hook '{}' blocked {} (exit code {})", hook.filename, magic_enum::enum_name(event), result.exit_code);
+            spdlog::info("hook '{}' blocked {} (exit code {})", hook.filename, magic_enum::enum_name(event), result.exit_code);
             return DispatchResult{
                 .allowed = false,
                 .blocked_by = hook.filename,
@@ -140,7 +140,7 @@ namespace orangutan::hooks {
             };
         }
 
-        spdlog::warn("Hook '{}' for '{}' exited with code {}", hook.filename, magic_enum::enum_name(event), result.exit_code);
+        spdlog::warn("hook '{}' for '{}' exited with code {}", hook.filename, magic_enum::enum_name(event), result.exit_code);
         return std::nullopt;
     }
 
@@ -153,7 +153,7 @@ namespace orangutan::hooks {
         const HookDef &hook = hooks[index];
 
         return execute_hook_sender(hook, *context) | stdexec::then([hook, event, is_blocking_event](HookResult result) {
-                   spdlog::debug("Dispatching hook '{}' for event '{}'", hook.filename, magic_enum::enum_name(event));
+                   spdlog::debug("dispatching hook '{}' for event '{}'", hook.filename, magic_enum::enum_name(event));
                    return process_hook_result(hook, event, is_blocking_event, std::move(result));
                }) |
                stdexec::let_value([hooks, index, event, context, is_blocking_event](std::optional<DispatchResult> blocked_result) -> dispatch_sender_t {

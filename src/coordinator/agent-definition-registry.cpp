@@ -24,13 +24,13 @@ namespace orangutan::coordinator {
         std::optional<AgentDefinition> parse_agent_file(const std::filesystem::path &path) {
             const auto content = fileio::try_read_file(path);
             if (!content.has_value()) {
-                spdlog::warn("Could not open agent definition file: {}", path.string());
+                spdlog::warn("could not open agent definition file: {}", path.string());
                 return std::nullopt;
             }
 
             const auto lines = utils::split_lines(*content);
             if (lines.empty() || utils::trim_copy(lines.front()) != "---") {
-                spdlog::warn("Agent definition file missing frontmatter: {}", path.string());
+                spdlog::warn("agent definition file missing frontmatter: {}", path.string());
                 return std::nullopt;
             }
 
@@ -58,7 +58,7 @@ namespace orangutan::coordinator {
                     try {
                         def.max_turns = std::stoi(std::string{val});
                     } catch (...) {
-                        spdlog::warn("Invalid max_turns in {}: {}", path.string(), val);
+                        spdlog::warn("invalid max_turns in {}: {}", path.string(), val);
                     }
                 }
             }
@@ -110,7 +110,7 @@ namespace orangutan::coordinator {
     void AgentDefinitionRegistry::load_from_directory(const std::filesystem::path &directory_path) {
         std::error_code ec;
         if (!std::filesystem::is_directory(directory_path, ec)) {
-            spdlog::debug("Agent definition directory does not exist: {}", directory_path.string());
+            spdlog::debug("agent definition directory does not exist: {}", directory_path.string());
             return;
         }
 
@@ -124,7 +124,7 @@ namespace orangutan::coordinator {
 
             auto def = parse_agent_file(entry.path());
             if (def.has_value()) {
-                spdlog::info("Loaded agent definition from file: {} (key={})", entry.path().string(), def->key);
+                spdlog::info("loaded agent definition from file: {} (key={})", entry.path().string(), def->key);
                 register_definition(std::move(*def));
             }
         }

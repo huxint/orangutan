@@ -2,8 +2,8 @@
 
 #include "process/subprocess.hpp"
 #include "utils/escape.hpp"
+#include "utils/path.hpp"
 
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -21,26 +21,7 @@ namespace orangutan::tools::file::search {
     /// Walk PATH and return the first existing entry named `binary`.
     [[nodiscard]]
     inline bool binary_available(std::string_view binary) {
-        const auto *path_env = std::getenv("PATH");
-        if (path_env == nullptr) {
-            return false;
-        }
-        std::string_view remaining{path_env};
-        while (!remaining.empty()) {
-            const auto sep = remaining.find(':');
-            const auto dir = remaining.substr(0, sep);
-            if (!dir.empty()) {
-                std::error_code ec;
-                if (std::filesystem::exists(std::filesystem::path{dir} / binary, ec)) {
-                    return true;
-                }
-            }
-            if (sep == std::string_view::npos) {
-                break;
-            }
-            remaining.remove_prefix(sep + 1);
-        }
-        return false;
+        return utils::find_in_path(binary).has_value();
     }
 
     /// Build a helpful error when a required binary is missing, including an install hint.

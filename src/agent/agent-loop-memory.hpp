@@ -274,7 +274,7 @@ namespace orangutan::agent::detail {
                 result.status += " journaling was skipped.";
             }
         } catch (const std::exception &e) {
-            spdlog::warn("Session memory distillation failed: {}", e.what());
+            spdlog::warn("session memory distillation failed: {}", e.what());
             result.status = std::string("Session distillation failed: ") + e.what();
         }
 

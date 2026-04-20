@@ -1,5 +1,6 @@
 #include "channel/qq/qq-api-client.hpp"
 
+#include "channel/qq/qq-url.hpp"
 #include "providers/transport/curl-primitives.hpp"
 #include "types/base.hpp"
 #include "utils/string.hpp"
@@ -45,11 +46,6 @@ namespace orangutan::channel::qq {
             std::from_chars(sv.begin(), sv.end(), default_value);
         }
         return default_value;
-    }
-
-    [[nodiscard]]
-    bool is_absolute_url(std::string_view path) {
-        return path.starts_with("https://") || path.starts_with("http://");
     }
 
     nlohmann::json QqApiResponse::parse_json_body() const {
@@ -109,7 +105,7 @@ namespace orangutan::channel::qq {
         token_expiry_ = now + expires_in;
         token_background_refresh_at_ = now + refresh_interval(expires_in);
 
-        spdlog::debug("QQ access token refreshed successfully");
+        spdlog::debug("qq access token refreshed successfully");
     }
 
     void QqApiClient::clear_access_token() {
@@ -167,7 +163,7 @@ namespace orangutan::channel::qq {
 
             if (response.http_status == 401 && token_refresh_retries < 1) {
                 ++token_refresh_retries;
-                spdlog::warn("QQ API {} {} returned 401, refreshing token and retrying once", method, path);
+                spdlog::warn("qq api {} {} returned 401, refreshing token and retrying once", method, path);
                 clear_access_token();
                 continue;
             }
@@ -175,7 +171,7 @@ namespace orangutan::channel::qq {
             if (response.http_status == 429 && rate_limit_retries < 2) {
                 ++rate_limit_retries;
                 const auto delay = parse_retry_after_delay(response.retry_after);
-                spdlog::warn("QQ API {} {} rate limited (429), retrying after {}ms", method, path, delay.count());
+                spdlog::warn("qq api {} {} rate limited (429), retrying after {}ms", method, path, delay.count());
                 std::this_thread::sleep_for(delay);
                 continue;
             }
@@ -183,7 +179,7 @@ namespace orangutan::channel::qq {
             if (is_retryable_gateway_status(response.http_status) && gateway_retries < 2) {
                 const auto delay = std::chrono::milliseconds(500 * (1 << gateway_retries));
                 ++gateway_retries;
-                spdlog::warn("QQ API {} {} temporary gateway failure ({}), retrying in {}ms", method, path, response.http_status, delay.count());
+                spdlog::warn("qq api {} {} temporary gateway failure ({}), retrying in {}ms", method, path, response.http_status, delay.count());
                 std::this_thread::sleep_for(delay);
                 continue;
             }

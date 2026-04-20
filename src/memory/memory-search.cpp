@@ -57,22 +57,23 @@ namespace orangutan::memory::detail {
     std::vector<std::string> tokenize_ascii_words(std::string_view value) {
         std::vector<std::string> tokens;
         std::string current;
+        const auto flush = [&] {
+            if (current.size() >= 2) {
+                tokens.push_back(utils::ascii_to_lower_copy(current));
+            }
+            current.clear();
+        };
 
         for (const unsigned char ch : value) {
             if (std::isalnum(ch) != 0) {
-                current.push_back(static_cast<char>(std::tolower(ch)));
+                current.push_back(static_cast<char>(ch));
                 continue;
             }
 
-            if (current.size() >= 2) {
-                tokens.push_back(current);
-            }
-            current.clear();
+            flush();
         }
 
-        if (current.size() >= 2) {
-            tokens.push_back(current);
-        }
+        flush();
 
         std::ranges::sort(tokens);
         tokens.erase(std::ranges::unique(tokens).begin(), tokens.end());

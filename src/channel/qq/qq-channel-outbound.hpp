@@ -2,6 +2,7 @@
 
 #include "channel/channel.hpp"
 #include "channel/qq/qq-message-builder.hpp"
+#include "channel/qq/qq-url.hpp"
 #include "types/base.hpp"
 #include "utils/string.hpp"
 
@@ -221,7 +222,7 @@ namespace orangutan::channel::qq {
                         const auto paren_close = remaining.find(')', bracket_close + 2);
                         if (paren_close != std::string::npos) {
                             const auto url = remaining.substr(bracket_close + 2, paren_close - bracket_close - 2);
-                            if (url.starts_with("http://") || url.starts_with("https://")) {
+                            if (is_absolute_url(url)) {
                                 flush_text(remaining.substr(0, markdown_pos));
                                 segments.push_back({.segment_kind = qq_media_segment::kind::media, .content = std::string(trim_copy(url)), .file_type = 1});
                                 remaining.erase(0, paren_close + 1);
@@ -251,7 +252,7 @@ namespace orangutan::channel::qq {
             }
 
             auto media_url = std::string(trim_copy(best_tag));
-            if (media_url.starts_with("http://") || media_url.starts_with("https://")) {
+            if (is_absolute_url(media_url)) {
                 segments.push_back({.segment_kind = qq_media_segment::kind::media, .content = std::move(media_url), .file_type = best_file_type});
             }
         }

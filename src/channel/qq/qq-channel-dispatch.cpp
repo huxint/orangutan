@@ -55,7 +55,7 @@ namespace orangutan::channel::qq {
                         runtime_->cv.notify_all();
                     }
                     should_persist = true;
-                    spdlog::info("QQ gateway READY for bot '{}'", event_data.value("session_id", std::string{"unknown"}));
+                    spdlog::info("qq gateway ready for bot '{}'", event_data.value("session_id", std::string{"unknown"}));
                 } else if (event_type == "RESUMED") {
                     {
                         std::scoped_lock lock(runtime_->mutex);
@@ -65,7 +65,7 @@ namespace orangutan::channel::qq {
                         runtime_->cv.notify_all();
                     }
                     should_persist = true;
-                    spdlog::info("QQ gateway session resumed");
+                    spdlog::info("qq gateway session resumed");
                 }
 
                 if (should_persist) {
@@ -76,10 +76,10 @@ namespace orangutan::channel::qq {
                 break;
             }
             case GATEWAY_OP_HEARTBEAT_ACK:
-                spdlog::debug("QQ heartbeat acknowledged");
+                spdlog::debug("qq heartbeat acknowledged");
                 break;
             case GATEWAY_OP_RECONNECT:
-                spdlog::warn("QQ gateway requested reconnect");
+                spdlog::warn("qq gateway requested reconnect");
                 connected_ = false;
                 stop_heartbeat();
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
@@ -89,7 +89,7 @@ namespace orangutan::channel::qq {
 #endif
                 break;
             case GATEWAY_OP_INVALID_SESSION:
-                spdlog::warn("QQ gateway reported invalid session");
+                spdlog::warn("qq gateway reported invalid session");
                 connected_ = false;
                 stop_heartbeat();
                 {
@@ -106,7 +106,7 @@ namespace orangutan::channel::qq {
 #endif
                 break;
             default:
-                spdlog::debug("Unhandled QQ gateway opcode: {}", op);
+                spdlog::debug("unhandled qq gateway opcode: {}", op);
                 break;
         }
     }
@@ -193,7 +193,7 @@ namespace orangutan::channel::qq {
                                                                                           {"code", 0},
                                                                                       }));
             } catch (const std::exception &e) {
-                spdlog::warn("QQ interaction ACK failed for '{}': {}", interaction_id, e.what());
+                spdlog::warn("qq interaction ack failed for '{}': {}", interaction_id, e.what());
             }
         }
 

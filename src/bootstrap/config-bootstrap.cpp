@@ -21,7 +21,7 @@ namespace orangutan::bootstrap {
         skill_loader.load_from_directories(skill_dirs);
         const auto active_catalog = skill_loader.list(skills::skill_list_query{.include_inactive = false});
         if (!active_catalog.skills.empty()) {
-            spdlog::info("Loaded {} skill(s)", active_catalog.skills.size());
+            spdlog::info("loaded {} skill(s)", active_catalog.skills.size());
         }
     }
 
@@ -42,13 +42,13 @@ namespace orangutan::bootstrap {
 
     void log_loaded_hooks(const std::vector<std::string> &hook_dirs, const hooks::HookManager &hook_manager) {
         for (const auto &dir : hook_dirs) {
-            spdlog::info("Hook directory: {}", dir);
+            spdlog::info("hook directory: {}", dir);
         }
         for (const auto event : {hooks::hook_event::before_tool_call, hooks::hook_event::after_tool_call, hooks::hook_event::message_received, hooks::hook_event::message_sending,
                                  hooks::hook_event::session_start, hooks::hook_event::session_end}) {
-            spdlog::info("Hook count for '{}': {}", magic_enum::enum_name(event), hook_manager.hook_count(event));
+            spdlog::info("hook count for '{}': {}", magic_enum::enum_name(event), hook_manager.hook_count(event));
         }
-        spdlog::info("Loaded {} hook(s) total", hook_manager.total_hooks());
+        spdlog::info("loaded {} hook(s) total", hook_manager.total_hooks());
     }
 
     std::optional<config::AgentConfig> resolve_selected_agent(const config::Config &cfg, const CliOptions &options) {
@@ -70,7 +70,7 @@ namespace orangutan::bootstrap {
         try {
             auto workspace = resolve_workspace_root(selected_agent.workspace);
             if (!workspace.empty()) {
-                spdlog::info("Using workspace: {}", workspace);
+                spdlog::info("using workspace: {}", workspace);
             }
             return workspace;
         } catch (const std::exception &e) {

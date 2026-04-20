@@ -30,6 +30,9 @@ namespace orangutan::config::detail {
     [[nodiscard]]
     AgentConfig make_agent_defaults(const Config &cfg);
 
+    [[nodiscard]]
+    std::string expand_path_value(std::string input);
+
     void expand_agent_config(AgentConfig &cfg);
     void expand_profile_config(ProfileConfig &cfg);
 

@@ -325,7 +325,7 @@ namespace orangutan::storage {
             insert_session(tx, session_id, metadata);
             write_messages(tx, session_id, messages, 0);
         }));
-        spdlog::info("Saved session {} ({} messages)", session_id, messages.size());
+        spdlog::info("saved session {} ({} messages)", session_id, messages.size());
         return session_id;
     }
 
@@ -335,7 +335,7 @@ namespace orangutan::storage {
         sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) {
             insert_session(tx, session_id, metadata);
         }));
-        spdlog::info("Created empty session {}", session_id);
+        spdlog::info("created empty session {}", session_id);
         return session_id;
     }
 
@@ -346,7 +346,7 @@ namespace orangutan::storage {
             sqlite::exec_bind(tx, "DELETE FROM messages WHERE session_id = ?", session_id);
             write_messages(tx, session_id, messages, 0);
         }));
-        spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
+        spdlog::info("updated session {} ({} messages)", session_id, messages.size());
     }
 
     void SessionStore::update(std::string_view session_id, const std::vector<Message> &messages, const SessionMetadata &metadata) {
@@ -356,7 +356,7 @@ namespace orangutan::storage {
             sqlite::exec_bind(tx, "DELETE FROM messages WHERE session_id = ?", session_id);
             write_messages(tx, session_id, messages, 0);
         }));
-        spdlog::info("Updated session {} ({} messages)", session_id, messages.size());
+        spdlog::info("updated session {} ({} messages)", session_id, messages.size());
     }
 
     void SessionStore::append(std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index, std::string_view model) {
@@ -370,7 +370,7 @@ namespace orangutan::storage {
             write_messages(tx, session_id, messages, start_index);
         }));
 
-        spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
+        spdlog::info("appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
 
     void SessionStore::append(std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index, const SessionMetadata &metadata) {
@@ -384,7 +384,7 @@ namespace orangutan::storage {
             write_messages(tx, session_id, messages, start_index);
         }));
 
-        spdlog::info("Appended {} message(s) to session {}", messages.size() - start_index, session_id);
+        spdlog::info("appended {} message(s) to session {}", messages.size() - start_index, session_id);
     }
 
     std::vector<Message> SessionStore::load(std::string_view session_id) {

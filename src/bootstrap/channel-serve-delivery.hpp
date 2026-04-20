@@ -29,7 +29,7 @@ namespace orangutan::bootstrap {
 
         const auto target = resolve_reply_target(message);
         if (target == "cli") {
-            spdlog::info("Heartbeat reply [{}]: {}", message.jid, reply);
+            spdlog::info("heartbeat reply [{}]: {}", message.jid, reply);
             return;
         }
 
@@ -44,7 +44,7 @@ namespace orangutan::bootstrap {
                 channel_manager.send(target, reply, message.message_id);
             }
         } catch (const std::exception &e) {
-            spdlog::error("Failed to deliver reply for jid '{}' to target '{}': {}", message.jid, target, e.what());
+            spdlog::error("failed to deliver reply for jid '{}' to target '{}': {}", message.jid, target, e.what());
         }
     }
 

@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -16,26 +15,9 @@ namespace orangutan::tools {
     namespace {
 
         std::optional<std::string> find_bwrap_path() {
-            const char *path_env = std::getenv("PATH");
-            if (path_env == nullptr) {
-                return std::nullopt;
-            }
-
-            std::stringstream stream(path_env);
-            std::string entry;
-            while (std::getline(stream, entry, ':')) {
-                if (entry.empty()) {
-                    continue;
-                }
-                auto candidate = std::filesystem::path(entry) / "bwrap";
-                std::error_code ec;
-                const auto status = std::filesystem::status(candidate, ec);
-                if (!ec && std::filesystem::exists(status) && (status.permissions() & std::filesystem::perms::owner_exec) != std::filesystem::perms::none) {
-                    return candidate.string();
-                }
-            }
-
-            return std::nullopt;
+            return utils::find_in_path("bwrap").transform([](const std::filesystem::path &path) {
+                return path.string();
+            });
         }
 
         void append_ro_bind_if_exists(std::string &command, std::string_view path) {

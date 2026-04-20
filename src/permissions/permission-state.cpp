@@ -66,7 +66,7 @@ namespace orangutan::permissions {
         try {
             std::ifstream file(path);
             if (!file.is_open()) {
-                spdlog::warn("Could not open permissions file: {}", path.string());
+                spdlog::warn("could not open permissions file: {}", path.string());
                 return {};
             }
 
@@ -111,10 +111,10 @@ namespace orangutan::permissions {
 
             return rules;
         } catch (const nlohmann::json::parse_error &e) {
-            spdlog::warn("Failed to parse permissions file {}: {}", path.string(), e.what());
+            spdlog::warn("failed to parse permissions file {}: {}", path.string(), e.what());
             return {};
         } catch (const std::exception &e) {
-            spdlog::warn("Error reading permissions file {}: {}", path.string(), e.what());
+            spdlog::warn("error reading permissions file {}: {}", path.string(), e.what());
             return {};
         }
     }
@@ -193,7 +193,7 @@ namespace orangutan::permissions {
                     }
                 }
             } catch (const std::exception &e) {
-                spdlog::warn("Failed to read existing settings file {}: {}", settings_file.string(), e.what());
+                spdlog::warn("failed to read existing settings file {}: {}", settings_file.string(), e.what());
                 root = nlohmann::json::object();
             }
         }
@@ -234,7 +234,7 @@ namespace orangutan::permissions {
             file << root.dump(4) << '\n';
             file.close();
         } catch (const std::exception &e) {
-            spdlog::warn("Failed to persist rule to {}: {}", settings_file.string(), e.what());
+            spdlog::warn("failed to persist rule to {}: {}", settings_file.string(), e.what());
         }
     }
 

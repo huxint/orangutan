@@ -156,7 +156,7 @@ namespace orangutan::tools {
 
             const auto server_protocol = result.value("protocolVersion", std::string{});
             if (!server_protocol.empty() && server_protocol != PROTOCOL_VERSION) {
-                spdlog::warn("MCP server '{}' reported protocol '{}', client requested '{}'", config_.name, server_protocol, PROTOCOL_VERSION);
+                spdlog::warn("mcp server '{}' reported protocol '{}', client requested '{}'", config_.name, server_protocol, PROTOCOL_VERSION);
             }
 
             send_notification("notifications/initialized", nlohmann::json::object(), INITIALIZE_TIMEOUT);

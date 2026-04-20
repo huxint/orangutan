@@ -162,7 +162,7 @@ namespace orangutan::bootstrap {
 
     void warn_if_nonlocal_web_host(const std::string &web_host) {
         if (web_host != "127.0.0.1") {
-            spdlog::warn("Web server binding to {} — accessible from network", web_host);
+            spdlog::warn("web server binding to {} — accessible from network", web_host);
         }
     }
 
