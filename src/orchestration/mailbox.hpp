@@ -7,7 +7,7 @@
 #include <vector>
 #include "types/base.hpp"
 
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
 
     enum class message_type : base::u8 {
         message,
@@ -52,10 +52,10 @@ namespace orangutan::swarm {
         std::unique_ptr<Impl> impl_;
     };
 
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration
 
 namespace orangutan {
-    using swarm::AgentMailbox;
-    using swarm::MailboxMessage;
-    using swarm::message_type;
+    using orchestration::AgentMailbox;
+    using orchestration::MailboxMessage;
+    using orchestration::message_type;
 } // namespace orangutan

@@ -1,4 +1,4 @@
-#include "tools/coordinator/register.hpp"
+#include "tools/orchestration/register.hpp"
 
 #include <algorithm>
 #include <string>
@@ -6,8 +6,9 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "coordinator/coordinator-manager.hpp"
-#include "swarm/team-manager.hpp"
+#include "orchestration/orchestration-manager.hpp"
+#include "orchestration/types.hpp"
+#include "orchestration/team-manager.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
 
@@ -15,14 +16,23 @@ namespace orangutan::tools {
 
     namespace {
 
-        std::string agent_spawn_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
+        auto parse_agent_role(std::string_view role_str) -> orangutan::orchestration::agent_role {
+            if (role_str == "teammate") {
+                return orangutan::orchestration::agent_role::teammate;
+            }
+            // Default to worker for backward compatibility
+            return orangutan::orchestration::agent_role::worker;
+        }
+
+        auto agent_spawn_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
             auto agent_key = input.at("agent_key").get<std::string>();
             auto prompt = input.at("prompt").get<std::string>();
             auto name = input.value("name", std::string{});
             auto team = input.value("team", std::string{});
+            auto role_str = input.value("role", std::string{"worker"});
 
-            if (tool_context.coordinator_manager == nullptr) {
-                return nlohmann::json{{"accepted", false}, {"error", "Coordinator manager not available"}}.dump();
+            if (tool_context.orchestration_manager == nullptr) {
+                return nlohmann::json{{"accepted", false}, {"error", "Orchestration manager not available"}}.dump();
             }
 
             if (!tool_context.team_agents.empty()) {
@@ -52,16 +62,19 @@ namespace orangutan::tools {
                 resolved_team_id = team_record->id;
             }
 
-            auto result = tool_context.coordinator_manager->spawn(orangutan::coordinator::AgentSpawnRequest{
+            auto role = parse_agent_role(role_str);
+
+            auto result = tool_context.orchestration_manager->spawn(orangutan::orchestration::AgentSpawnRequest{
                 .agent_key = agent_key,
                 .agent_name = name,
                 .task_prompt = prompt,
                 .team_id = resolved_team_id,
                 .parent_runtime_key = tool_context.runtime_key,
+                .role = role,
             });
 
             if (result.accepted && !resolved_team_id.empty() && tool_context.team_manager != nullptr) {
-                tool_context.team_manager->add_member(orangutan::swarm::TeamMemberRecord{
+                tool_context.team_manager->add_member(orangutan::orchestration::TeamMemberRecord{
                     .agent_id = result.run_id,
                     .name = result.agent_name,
                     .agent_key = agent_key,
@@ -70,7 +83,11 @@ namespace orangutan::tools {
             }
 
             return nlohmann::json{
-                {"accepted", result.accepted}, {"run_id", result.run_id}, {"agent_name", result.agent_name}, {"status", result.accepted ? "running" : "rejected"},
+                {"accepted", result.accepted},
+                {"run_id", result.run_id},
+                {"agent_name", result.agent_name},
+                {"role", role_str},
+                {"status", result.accepted ? "running" : "rejected"},
                 {"error", result.error},
             }
                 .dump();
@@ -80,13 +97,16 @@ namespace orangutan::tools {
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         if (auto tool = make_tool_spec_builder("agent_spawn")
-                            .description("Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.")
+                            .description("Spawn a worker agent to handle a delegated task. "
+                                         "Workers run a single task and report results. "
+                                         "Teammates stay alive for follow-up messages after completing their initial task.")
                             .input_schema({{"type", "object"},
                                            {"properties",
                                             {{"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
                                              {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
                                              {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
-                                             {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}}}},
+                                             {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
+                                             {"role", {{"type", "string"}, {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"}, {"enum", nlohmann::json::array({"worker", "teammate"})}}}}},
                                            {"required", nlohmann::json::array({"agent_key", "prompt"})}})
                             .execute([tool_context](const nlohmann::json &input) {
                                 return agent_spawn_handler(input, *tool_context);

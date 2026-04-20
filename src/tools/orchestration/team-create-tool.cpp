@@ -1,11 +1,11 @@
-#include "tools/swarm/register.hpp"
+#include "tools/orchestration/register.hpp"
 
 #include <string>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "swarm/team-manager.hpp"
+#include "orchestration/team-manager.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
 
@@ -13,7 +13,7 @@ namespace orangutan::tools {
 
     namespace {
 
-        std::string team_create_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
+        auto team_create_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
             if (tool_context.team_manager == nullptr) {
                 return nlohmann::json{{"created", false}, {"error", "Team manager is not available"}}.dump();
             }

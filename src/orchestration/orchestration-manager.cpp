@@ -1,6 +1,8 @@
-#include "coordinator/coordinator-manager.hpp"
-#include "coordinator/agent-definition-registry.hpp"
-#include "swarm/mailbox.hpp"
+#include "orchestration/orchestration-manager.hpp"
+
+#include "orchestration/agent-definition-registry.hpp"
+#include "orchestration/mailbox.hpp"
+#include "orchestration/team-manager.hpp"
 #include "utils/escape.hpp"
 #include "utils/format.hpp"
 #include "utils/task-pool.hpp"
@@ -15,32 +17,46 @@
 #include <exec/async_scope.hpp>
 #include <stdexec/execution.hpp>
 
-namespace orangutan::coordinator {
+namespace orangutan::orchestration {
 
     namespace {
 
-        std::int64_t now_millis() {
+        auto now_millis() -> std::int64_t {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         }
 
-        std::string format_task_notification(const AgentRunRecord &record) {
+        auto format_task_notification(const AgentRunRecord &record) -> std::string {
             return utils::format(
                 "<task-notification>\n"
                 "  <task-id>{}</task-id>\n"
                 "  <agent-key>{}</agent-key>\n"
                 "  <agent-name>{}</agent-name>\n"
+                "  <role>{}</role>\n"
                 "  <status>{}</status>\n"
                 "  <summary>{}</summary>\n"
                 "  <result>{}</result>\n"
                 "  <error>{}</error>\n"
                 "</task-notification>",
-                utils::escape_xml(record.run_id), utils::escape_xml(record.agent_key), utils::escape_xml(record.agent_name), magic_enum::enum_name(record.status),
-                utils::escape_xml(record.task_summary), utils::escape_xml(record.final_output), utils::escape_xml(record.error));
+                utils::escape_xml(record.run_id),
+                utils::escape_xml(record.agent_key),
+                utils::escape_xml(record.agent_name),
+                magic_enum::enum_name(record.role),
+                magic_enum::enum_name(record.status),
+                utils::escape_xml(record.task_summary),
+                utils::escape_xml(record.final_output),
+                utils::escape_xml(record.error));
+        }
+
+        constexpr std::size_t MIN_POOL_SIZE = 2;
+
+        [[nodiscard]]
+        auto resolve_pool_size(int max_concurrent) -> std::size_t {
+            return std::max<std::size_t>(static_cast<std::size_t>(std::max(1, max_concurrent)), MIN_POOL_SIZE);
         }
 
     } // namespace
 
-    struct CoordinatorManager::Impl {
+    struct OrchestrationManager::Impl {
         utils::TaskPool pool;
         exec::async_scope scope;
 
@@ -48,68 +64,56 @@ namespace orangutan::coordinator {
         : pool{pool_size} {}
     };
 
-    namespace {
-
-        constexpr std::size_t MIN_POOL_SIZE = 2;
-
-        [[nodiscard]]
-        std::size_t resolve_pool_size(int max_concurrent) {
-            return std::max<std::size_t>(static_cast<std::size_t>(std::max(1, max_concurrent)), MIN_POOL_SIZE);
-        }
-
-    } // namespace
-
-    CoordinatorManager::CoordinatorManager(int max_concurrent_agents)
+    OrchestrationManager::OrchestrationManager(int max_concurrent_agents)
     : max_concurrent_(std::max(1, max_concurrent_agents)),
       impl_(std::make_unique<Impl>(resolve_pool_size(max_concurrent_agents))) {}
 
-    CoordinatorManager::~CoordinatorManager() {
+    OrchestrationManager::~OrchestrationManager() {
         shutdown();
     }
 
-    void CoordinatorManager::set_environment(AgentExecutionEnvironment env) {
+    void OrchestrationManager::set_environment(AgentExecutionEnvironment env) {
         std::scoped_lock lock(mutex_);
         env_ = env;
     }
 
-    void CoordinatorManager::set_notification_callback(TaskNotificationCallback callback) {
+    void OrchestrationManager::set_notification_callback(TaskNotificationCallback callback) {
         std::scoped_lock lock(mutex_);
         notification_callback_ = std::move(callback);
     }
 
-    void CoordinatorManager::register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler) {
+    void OrchestrationManager::register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler) {
         if (runtime_key.empty() || handler == nullptr) {
             return;
         }
-
         std::scoped_lock lock(mutex_);
         runtime_notification_handlers_.insert_or_assign(std::move(runtime_key), std::move(handler));
     }
 
-    void CoordinatorManager::unregister_runtime_notification_handler(const std::string &runtime_key) {
+    void OrchestrationManager::unregister_runtime_notification_handler(const std::string &runtime_key) {
         std::scoped_lock lock(mutex_);
         runtime_notification_handlers_.erase(runtime_key);
     }
 
-    void CoordinatorManager::set_worker_runtime_factory(WorkerRuntimeFactory factory) {
+    void OrchestrationManager::set_worker_runtime_factory(WorkerRuntimeFactory factory) {
         std::scoped_lock lock(mutex_);
         worker_runtime_factory_ = std::move(factory);
     }
 
-    CoordinatorManagerBuilder CoordinatorManager::configure(CoordinatorManager &manager) {
-        return CoordinatorManagerBuilder(manager);
+    OrchestrationManagerBuilder OrchestrationManager::configure(OrchestrationManager &manager) {
+        return OrchestrationManagerBuilder(manager);
     }
 
-    std::string CoordinatorManager::make_run_id() {
+    auto OrchestrationManager::make_run_id() -> std::string {
         auto seq = next_run_id_++;
         return "run-" + std::to_string(now_millis()) + "-" + std::to_string(seq);
     }
 
-    AgentSpawnResult CoordinatorManager::spawn(const AgentSpawnRequest &request) {
+    auto OrchestrationManager::spawn(const AgentSpawnRequest &request) -> AgentSpawnResult {
         std::scoped_lock lock(mutex_);
 
         if (shutting_down_) {
-            return AgentSpawnResult{.accepted = false, .error = "Coordinator is shutting down"};
+            return AgentSpawnResult{.accepted = false, .error = "Orchestration manager is shutting down"};
         }
 
         // Validate agent key if registry available
@@ -122,13 +126,15 @@ namespace orangutan::coordinator {
 
         auto active_run = std::make_shared<ActiveRun>();
         active_run->request = request;
+        active_run->request.agent_name = agent_name;
         active_run->record = AgentRunRecord{
             .run_id = run_id,
             .agent_key = request.agent_key,
             .agent_name = agent_name,
             .team_id = request.team_id,
             .parent_runtime_key = request.parent_runtime_key,
-            .status = agent_run_status::queued,
+            .role = request.role,
+            .status = run_status::queued,
             .task_summary = request.task_prompt,
             .started_at = now_millis(),
         };
@@ -142,7 +148,7 @@ namespace orangutan::coordinator {
             pending_run_ids_.push_back(run_id);
         }
 
-        spdlog::info("spawned agent run: id={} key={} name={}", run_id, request.agent_key, agent_name);
+        spdlog::info("spawned agent run: id={} key={} name={} role={}", run_id, request.agent_key, agent_name, magic_enum::enum_name(request.role));
 
         return AgentSpawnResult{
             .accepted = true,
@@ -151,21 +157,21 @@ namespace orangutan::coordinator {
         };
     }
 
-    int CoordinatorManager::count_running_locked() const {
+    auto OrchestrationManager::count_running_locked() const -> int {
         int running_count = 0;
         for (const auto &[id, run] : active_runs_) {
             std::scoped_lock run_lock(run->mutex);
-            if (run->record.status == agent_run_status::running && !run->completed) {
+            if ((run->record.status == run_status::running || run->record.status == run_status::idle) && !run->completed) {
                 ++running_count;
             }
         }
         return running_count;
     }
 
-    void CoordinatorManager::launch_run_locked(const std::shared_ptr<ActiveRun> &run) {
+    void OrchestrationManager::launch_run_locked(const std::shared_ptr<ActiveRun> &run) {
         {
             std::scoped_lock run_lock(run->mutex);
-            run->record.status = agent_run_status::running;
+            run->record.status = run_status::running;
         }
         auto sender = stdexec::schedule(impl_->pool.scheduler())
                     | stdexec::then([this, run] {
@@ -174,11 +180,11 @@ namespace orangutan::coordinator {
         impl_->scope.spawn(std::move(sender));
     }
 
-    void CoordinatorManager::remove_pending_run_locked(const std::string &run_id) {
+    void OrchestrationManager::remove_pending_run_locked(const std::string &run_id) {
         std::erase(pending_run_ids_, run_id);
     }
 
-    void CoordinatorManager::maybe_start_queued_runs() {
+    void OrchestrationManager::maybe_start_queued_runs() {
         std::vector<std::shared_ptr<ActiveRun>> runs_to_launch;
         {
             std::scoped_lock lock(mutex_);
@@ -192,7 +198,7 @@ namespace orangutan::coordinator {
                 }
 
                 std::scoped_lock run_lock(it->second->mutex);
-                if (it->second->completed || it->second->record.status != agent_run_status::queued) {
+                if (it->second->completed || it->second->record.status != run_status::queued) {
                     continue;
                 }
 
@@ -205,19 +211,20 @@ namespace orangutan::coordinator {
         }
     }
 
-    void CoordinatorManager::run_worker(const std::shared_ptr<ActiveRun> &run, const std::stop_token &stop_token) {
+    void OrchestrationManager::run_worker(const std::shared_ptr<ActiveRun> &run, const std::stop_token &stop_token) {
         const auto run_id = run->record.run_id;
+        const auto role = run->record.role;
 
         {
             std::scoped_lock lock(run->mutex);
-            run->record.status = agent_run_status::running;
+            run->record.status = run_status::running;
         }
 
-        spdlog::info("agent worker started: id={} key={}", run_id, run->record.agent_key);
+        spdlog::info("agent worker started: id={} key={} role={}", run_id, run->record.agent_key, magic_enum::enum_name(role));
 
         if (stop_token.stop_requested()) {
             std::scoped_lock lock(run->mutex);
-            run->record.status = agent_run_status::terminated;
+            run->record.status = run_status::terminated;
             run->record.completed_at = now_millis();
             run->completed = true;
             run->cv.notify_all();
@@ -233,7 +240,7 @@ namespace orangutan::coordinator {
 
         if (factory == nullptr) {
             std::scoped_lock lock(run->mutex);
-            run->record.status = agent_run_status::failed;
+            run->record.status = run_status::failed;
             run->record.error = "No worker runtime factory configured";
             run->record.completed_at = now_millis();
             run->completed = true;
@@ -244,15 +251,28 @@ namespace orangutan::coordinator {
                 auto worker = factory(run->request);
                 auto output = worker->run(run->request.task_prompt, stop_token);
 
-                std::scoped_lock lock(run->mutex);
-                run->record.status = stop_token.stop_requested() ? agent_run_status::terminated : agent_run_status::succeeded;
-                run->record.final_output = std::move(output);
-                run->record.completed_at = now_millis();
-                run->completed = true;
-                run->cv.notify_all();
+                {
+                    std::scoped_lock lock(run->mutex);
+                    run->record.final_output = std::move(output);
+                }
+
+                // For persistent teammates, enter the idle loop after the first task completes.
+                if (role == agent_role::teammate && worker->is_persistent() && !stop_token.stop_requested()) {
+                    run_teammate_idle_loop(run, worker, stop_token);
+                }
+
+                {
+                    std::scoped_lock lock(run->mutex);
+                    if (run->record.status != run_status::terminated) {
+                        run->record.status = stop_token.stop_requested() ? run_status::terminated : run_status::succeeded;
+                    }
+                    run->record.completed_at = now_millis();
+                    run->completed = true;
+                    run->cv.notify_all();
+                }
             } catch (const std::exception &e) {
                 std::scoped_lock lock(run->mutex);
-                run->record.status = agent_run_status::failed;
+                run->record.status = run_status::failed;
                 run->record.error = e.what();
                 run->record.completed_at = now_millis();
                 run->completed = true;
@@ -261,7 +281,64 @@ namespace orangutan::coordinator {
         }
 
         spdlog::info("agent worker completed: id={}", run_id);
+        deliver_notification(run);
+        maybe_start_queued_runs();
+    }
 
+    void OrchestrationManager::run_teammate_idle_loop(const std::shared_ptr<ActiveRun> &run,
+                                                       const std::unique_ptr<WorkerRuntime> &worker,
+                                                       const std::stop_token &stop_token) {
+        const auto run_id = run->record.run_id;
+
+        // Mark as idle
+        {
+            std::scoped_lock lock(run->mutex);
+            run->record.status = run_status::idle;
+            spdlog::info("teammate entering idle loop: id={}", run_id);
+        }
+
+        // Send idle notification via task-notification to leader
+        deliver_notification(run);
+
+        while (!stop_token.stop_requested()) {
+            auto next_prompt = worker->wait_for_next_prompt(stop_token);
+            if (!next_prompt.has_value()) {
+                spdlog::info("teammate exiting idle loop (no more prompts): id={}", run_id);
+                break;
+            }
+
+            // Re-activate for the next task
+            {
+                std::scoped_lock lock(run->mutex);
+                run->record.status = run_status::running;
+                run->record.task_summary = *next_prompt;
+            }
+
+            spdlog::info("teammate resuming with new prompt: id={}", run_id);
+
+            try {
+                auto output = worker->run(*next_prompt, stop_token);
+                {
+                    std::scoped_lock lock(run->mutex);
+                    run->record.final_output = std::move(output);
+                    run->record.status = run_status::idle;
+                }
+
+                // Notify leader that this task cycle completed
+                deliver_notification(run);
+            } catch (const std::exception &e) {
+                std::scoped_lock lock(run->mutex);
+                run->record.status = run_status::failed;
+                run->record.error = e.what();
+                run->record.completed_at = now_millis();
+                run->completed = true;
+                run->cv.notify_all();
+                break;
+            }
+        }
+    }
+
+    void OrchestrationManager::deliver_notification(const std::shared_ptr<ActiveRun> &run) {
         TaskNotificationCallback callback;
         RuntimeNotificationHandler runtime_handler;
         std::string notification_xml;
@@ -293,10 +370,9 @@ namespace orangutan::coordinator {
         }
 
         spdlog::debug("task notification: {}", notification_xml);
-        maybe_start_queued_runs();
     }
 
-    std::optional<std::string> CoordinatorManager::send_message(const std::string &run_id, const std::string &from, const std::string &text) {
+    auto OrchestrationManager::send_message(const std::string &run_id, const std::string &from, const std::string &text) -> std::optional<std::string> {
         std::scoped_lock lock(mutex_);
 
         auto it = active_runs_.find(run_id);
@@ -320,7 +396,44 @@ namespace orangutan::coordinator {
         return std::nullopt;
     }
 
-    void CoordinatorManager::stop(const std::string &run_id) {
+    auto OrchestrationManager::send_message_by_name(const std::string &team_id, const std::string &from,
+                                                     const std::string &to, const std::string &text) -> std::optional<std::string> {
+        if (env_.mailbox == nullptr) {
+            return "Mailbox is not available";
+        }
+
+        if (env_.team_manager == nullptr) {
+            return "Team manager is not available";
+        }
+
+        auto member_names = env_.team_manager->list_member_names(team_id);
+        const auto found = std::ranges::find(member_names, to);
+        if (found == member_names.end()) {
+            return "Agent '" + to + "' not found in team";
+        }
+
+        env_.mailbox->send(team_id, from, to, text);
+        spdlog::debug("message sent to agent={} in team={} from={}", to, team_id, from);
+        return std::nullopt;
+    }
+
+    auto OrchestrationManager::broadcast_message(const std::string &team_id, const std::string &from,
+                                                  const std::string &text) -> std::optional<std::string> {
+        if (env_.mailbox == nullptr) {
+            return "Mailbox is not available";
+        }
+
+        if (env_.team_manager == nullptr) {
+            return "Team manager is not available";
+        }
+
+        auto member_names = env_.team_manager->list_member_names(team_id);
+        env_.mailbox->send_broadcast(team_id, from, text, member_names);
+        spdlog::debug("broadcast sent in team={} from={}", team_id, from);
+        return std::nullopt;
+    }
+
+    void OrchestrationManager::stop(const std::string &run_id) {
         std::shared_ptr<ActiveRun> run;
         bool stopped_queued_run = false;
         {
@@ -330,10 +443,10 @@ namespace orangutan::coordinator {
                 spdlog::warn("stop: unknown run_id={}", run_id);
                 return;
             }
-            if (it->second->record.status == agent_run_status::queued) {
+            if (it->second->record.status == run_status::queued) {
                 remove_pending_run_locked(run_id);
                 std::scoped_lock run_lock(it->second->mutex);
-                it->second->record.status = agent_run_status::terminated;
+                it->second->record.status = run_status::terminated;
                 it->second->record.completed_at = now_millis();
                 it->second->completed = true;
                 it->second->cv.notify_all();
@@ -364,7 +477,7 @@ namespace orangutan::coordinator {
         {
             std::scoped_lock lock(run->mutex);
             if (!run->completed) {
-                run->record.status = agent_run_status::terminated;
+                run->record.status = run_status::terminated;
                 run->record.completed_at = now_millis();
                 run->completed = true;
                 run->cv.notify_all();
@@ -375,7 +488,7 @@ namespace orangutan::coordinator {
         maybe_start_queued_runs();
     }
 
-    std::optional<AgentRunRecord> CoordinatorManager::get_run(const std::string &run_id) const {
+    auto OrchestrationManager::get_run(const std::string &run_id) const -> std::optional<AgentRunRecord> {
         std::scoped_lock lock(mutex_);
         auto it = active_runs_.find(run_id);
         if (it == active_runs_.end()) {
@@ -385,19 +498,19 @@ namespace orangutan::coordinator {
         return it->second->record;
     }
 
-    std::vector<AgentRunRecord> CoordinatorManager::list_active_runs() const {
+    auto OrchestrationManager::list_active_runs() const -> std::vector<AgentRunRecord> {
         std::scoped_lock lock(mutex_);
         std::vector<AgentRunRecord> result;
         for (const auto &[id, run] : active_runs_) {
             std::scoped_lock run_lock(run->mutex);
-            if (run->record.status == agent_run_status::queued || run->record.status == agent_run_status::running) {
+            if (run->record.status == run_status::queued || run->record.status == run_status::running || run->record.status == run_status::idle) {
                 result.push_back(run->record);
             }
         }
         return result;
     }
 
-    void CoordinatorManager::shutdown() {
+    void OrchestrationManager::shutdown() {
         std::vector<std::shared_ptr<ActiveRun>> runs_to_stop;
         {
             std::scoped_lock lock(mutex_);
@@ -409,8 +522,8 @@ namespace orangutan::coordinator {
             for (auto &[id, run] : active_runs_) {
                 static_cast<void>(id);
                 std::scoped_lock run_lock(run->mutex);
-                if (!run->completed && run->record.status == agent_run_status::queued) {
-                    run->record.status = agent_run_status::terminated;
+                if (!run->completed && run->record.status == run_status::queued) {
+                    run->record.status = run_status::terminated;
                     run->record.completed_at = now_millis();
                     run->completed = true;
                     run->cv.notify_all();
@@ -431,7 +544,7 @@ namespace orangutan::coordinator {
                 return run->completed;
             });
             if (!run->completed) {
-                run->record.status = agent_run_status::abandoned;
+                run->record.status = run_status::abandoned;
                 run->record.completed_at = now_millis();
                 run->completed = true;
             }
@@ -446,7 +559,7 @@ namespace orangutan::coordinator {
             active_runs_.clear();
         }
 
-        spdlog::info("coordinator manager shutdown complete");
+        spdlog::info("orchestration manager shutdown complete");
     }
 
-} // namespace orangutan::coordinator
+} // namespace orangutan::orchestration

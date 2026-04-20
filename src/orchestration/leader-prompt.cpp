@@ -1,16 +1,16 @@
-#include "coordinator/coordinator-prompt.hpp"
+#include "orchestration/leader-prompt.hpp"
 
 #include <string>
 
-namespace orangutan::coordinator {
+namespace orangutan::orchestration {
 
-    std::string get_coordinator_system_prompt(const std::vector<std::string> &available_agents) {
+    std::string get_leader_system_prompt(const std::vector<std::string> &available_agents) {
         std::string agents_list;
         for (const auto &agent : available_agents) {
             agents_list += "  - " + agent + "\n";
         }
 
-        return R"(You are a coordinator agent responsible for orchestrating work across multiple worker agents. Your role is to break down complex tasks, delegate work to specialized agents, and synthesize their results.
+        return R"(You are a leader agent responsible for orchestrating work across multiple worker agents. Your role is to break down complex tasks, delegate work to specialized agents, and synthesize their results.
 
 ## Workflow
 
@@ -60,4 +60,4 @@ You have access to the following tools:
                "- If you encounter issues that block your task, describe them clearly in your output.\n";
     }
 
-} // namespace orangutan::coordinator
+} // namespace orangutan::orchestration

@@ -2,6 +2,7 @@
 
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
+#include "orchestration/types.hpp"
 
 #include <optional>
 #include <string>
@@ -21,15 +22,16 @@ namespace orangutan::bootstrap {
         std::string *current_session_id = nullptr;
         std::optional<std::vector<std::string>> team_agents;
         std::string team_id;
-        coordinator::CoordinatorManager *coordinator_manager = nullptr;
-        swarm::TeamManager *team_manager = nullptr;
-        swarm::AgentMailbox *mailbox = nullptr;
+        orchestration::OrchestrationManager *orchestration_manager = nullptr;
+        orchestration::TeamManager *team_manager = nullptr;
+        orchestration::AgentMailbox *mailbox = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
         automation::AutomationService *automation_service = nullptr;
         automation::AutomationRuntime *automation_runtime = nullptr;
-        bool is_child_run = false;
-        std::optional<bool> coordinator_mode;
+        bool is_child_run = false; // NOLINT: retained for backward compat, prefer agent_role
+        std::optional<bool> coordinator_mode; // NOLINT: retained for backward compat, prefer agent_role
+        orchestration::agent_role agent_role = orchestration::agent_role::standalone;
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
         std::string delegated_task_prompt;

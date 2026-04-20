@@ -1,6 +1,7 @@
 #pragma once
 
 #include "channel/channel.hpp"
+#include "orchestration/types.hpp"
 #include "permissions/permission-types.hpp"
 #include "types/types.hpp"
 
@@ -17,14 +18,11 @@ namespace orangutan::automation {
     struct DeliveryRecord;
 } // namespace orangutan::automation
 
-namespace orangutan::coordinator {
-    class CoordinatorManager;
-}
-
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
+    class OrchestrationManager;
     class AgentMailbox;
     class TeamManager;
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration
 
 namespace orangutan::tools {
     using BackgroundCompletionResumeCallback = std::function<std::optional<std::string>(const std::string &message)>;
@@ -81,12 +79,13 @@ namespace orangutan::tools {
         std::string scope_key;
         std::string team_id;
         std::string *current_session_id = nullptr;
-        coordinator::CoordinatorManager *coordinator_manager = nullptr;
-        swarm::TeamManager *team_manager = nullptr;
-        swarm::AgentMailbox *mailbox = nullptr;
+        orchestration::OrchestrationManager *orchestration_manager = nullptr;
+        orchestration::TeamManager *team_manager = nullptr;
+        orchestration::AgentMailbox *mailbox = nullptr;
         std::vector<std::string> team_agents;
-        bool is_child_run = false;
-        bool coordinator_mode = false;
+        bool is_child_run = false; // NOLINT: retained for backward compat, prefer agent_role
+        bool coordinator_mode = false; // NOLINT: retained for backward compat, prefer agent_role
+        orchestration::agent_role role = orchestration::agent_role::standalone;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;
         automation::AutomationService *automation_service = nullptr;

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan::coordinator {
+namespace orangutan::orchestration {
 
     struct AgentDefinition {
         std::string key;
@@ -16,8 +16,8 @@ namespace orangutan::coordinator {
         std::string source;          // "builtin", "config", "directory"
     };
 
-} // namespace orangutan::coordinator
+} // namespace orangutan::orchestration
 
 namespace orangutan {
-    using coordinator::AgentDefinition;
+    using orchestration::AgentDefinition;
 } // namespace orangutan

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Orangutan** is a C++23 agent assistant: a single binary that runs an LLM ReAct loop with a tool registry, pluggable providers, persistent memory/sessions, an HTTP web UI, external chat channels (QQ), a coordinator that spawns worker agents, and a cron-like automation runtime. Act as an expert C++23 developer producing **correct, maintainable, and performant** code that matches the conventions below.
+**Orangutan** is a C++23 agent assistant: a single binary that runs an LLM ReAct loop with a tool registry, pluggable providers, persistent memory/sessions, an HTTP web UI, external chat channels (QQ), an orchestration runtime that spawns and coordinates worker agents, and a cron-like automation runtime. Act as an expert C++23 developer producing **correct, maintainable, and performant** code that matches the conventions below.
 
 ## Build, Test, Lint
 
@@ -67,16 +67,15 @@ xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
 `src/tools/`:
 
 - **registry/** — `ToolRegistry` holds tool definitions and dispatches calls through a `ToolRuntimeContext` (workspace root, permissions, memory, coordinator, mailbox, automation, skill loader, etc.).
-- Per-category subdirs register themselves via `tools::register_builtin_*` (see `tools/register.hpp` and each subdir's `register.cpp`): `file/` (read/write/edit/search via fd+rg), `shell/` (sandboxed shell exec), `mcp/` (external MCP clients), `memory/`, `coordinator/` (spawn/stop/send-message to worker agents), `swarm/` (team mgmt), `automation/`, `skill/`, `message-attachments/`, `tool-search/`, `script/`, `runtime-loader/`, `background/`.
+- Per-category subdirs register themselves via `tools::register_builtin_*` (see `tools/register.hpp` and each subdir's `register.cpp`): `file/` (read/write/edit/search via fd+rg), `shell/` (sandboxed shell exec), `mcp/` (external MCP clients), `memory/`, `orchestration/` (spawn/stop/send-message plus team management), `automation/`, `skill/`, `message-attachments/`, `tool-search/`, `script/`, `runtime-loader/`, `background/`.
 - `permissions/` evaluates allow/deny/ask rules (`permission-evaluator`, `rule-parser`, `safety-checks`) and produces approval prompts signed for replay.
 - `hooks/HookManager` runs external shell hooks at tool lifecycle events.
 
 Shell already covers `ls/glob/mkdir/delete/move`; new file tools should only exist when they provide structured output, patch semantics, or wrap a real binary — don't duplicate shell.
 
-### Coordinator, swarm, automation
+### Orchestration, automation
 
-- **coordinator/** — `CoordinatorManager` spawns worker `AgentLoop` runtimes on demand via a factory supplied by `bootstrap` (see `set_worker_runtime_factory`). Max-concurrent spawns is per-agent (`coordinator_max_concurrent`). Agent definitions load from builtins + `<workspace>/.orangutan/agents/`.
-- **swarm/** — `AgentMailbox` (SQLite) for inter-agent messages, `TeamManager` (SQLite) for team membership. Workers poll the mailbox via an injected `incoming_message_fetcher` each loop iteration.
+- **orchestration/** — `OrchestrationManager` owns worker/teammate lifecycles, notifications, mailbox-backed messaging, and team membership. It spawns `AgentLoop` runtimes on demand via a factory supplied by `bootstrap`. Max-concurrent orchestration is per-agent (`max_concurrent_agents`). Agent definitions load from builtins + `<workspace>/.orangutan/agents/`.
 - **automation/** — cron/periodic/triggered jobs persisted in SQLite. `AutomationRuntime` has an executor callback that builds a fresh agent runtime for each firing; categories (e.g. `heartbeat`) register custom runners. Notifier callback routes output to cli/channel/web.
 
 ### Channels, web, CLI

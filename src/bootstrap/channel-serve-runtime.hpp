@@ -8,7 +8,7 @@
 #include "bootstrap/runtime-assembler.hpp"
 #include "cli/single-shot.hpp"
 #include "config/config.hpp"
-#include "coordinator/coordinator-manager.hpp"
+#include "orchestration/orchestration-manager.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
 #include "permissions/permission-types.hpp"
@@ -132,9 +132,9 @@ namespace orangutan::bootstrap {
         [[nodiscard]]
         inline std::unique_ptr<ConversationRuntime>
         make_conversation_runtime(const Config &app_cfg, const AgentRuntimeConfig &cfg, MemoryStore *memory_store, const RuntimeIdentity &identity,
-                                  coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id, hooks::HookManager *hook_manager,
-                                  automation::AutomationRuntime *automation_runtime, swarm::TeamManager *team_manager = nullptr,
-                                  swarm::AgentMailbox *mailbox = nullptr) {
+                                  orchestration::OrchestrationManager *orchestration_manager, const std::string &raw_caller_id, hooks::HookManager *hook_manager,
+                                  automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager = nullptr,
+                                  orchestration::AgentMailbox *mailbox = nullptr) {
             auto runtime = std::make_unique<ConversationRuntime>();
             auto completion_resume_state = std::make_shared<ChannelCompletionResumeState>();
             runtime->runtime_key = identity.runtime_key;
@@ -155,7 +155,7 @@ namespace orangutan::bootstrap {
                 .app_config = &app_cfg,
                 .memory_store = memory_store,
                 .current_session_id = &runtime->current_session_id,
-                .coordinator_manager = coordinator_manager,
+                .orchestration_manager = orchestration_manager,
                 .team_manager = team_manager,
                 .mailbox = mailbox,
                 .runtime_origin = base::origin::channel,
@@ -184,8 +184,8 @@ namespace orangutan::bootstrap {
             completion_resume_state->hook_manager = runtime->hook_manager;
             completion_resume_state->current_session_id = &runtime->current_session_id;
             completion_resume_state->persisted_message_count = &runtime->persisted_message_count;
-            if (coordinator_manager != nullptr) {
-                coordinator_manager->register_runtime_notification_handler(runtime->runtime_key, make_channel_completion_resume_callback(completion_resume_state));
+            if (orchestration_manager != nullptr) {
+                orchestration_manager->register_runtime_notification_handler(runtime->runtime_key, make_channel_completion_resume_callback(completion_resume_state));
             }
             runtime->completion_resume_state = std::move(completion_resume_state);
             return runtime;
@@ -299,13 +299,13 @@ namespace orangutan::bootstrap {
 
         [[nodiscard]]
         inline ConversationRuntimeInspection inspect_conversation_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg, MemoryStore *memory_store,
-                                                                          coordinator::CoordinatorManager *coordinator_manager, const std::string &raw_caller_id,
+                                                                          orchestration::OrchestrationManager *orchestration_manager, const std::string &raw_caller_id,
                                                                           hooks::HookManager *hook_manager = nullptr,
                                                                           automation::AutomationRuntime *automation_runtime = nullptr,
-                                                                          swarm::TeamManager *team_manager = nullptr, swarm::AgentMailbox *mailbox = nullptr) {
+                                                                          orchestration::TeamManager *team_manager = nullptr, orchestration::AgentMailbox *mailbox = nullptr) {
             const auto identity = derive_channel_identity(runtime_cfg.workspace_root, raw_caller_id, runtime_cfg.agent_key);
             auto runtime =
-                make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, coordinator_manager, raw_caller_id, hook_manager, automation_runtime, team_manager, mailbox);
+                make_conversation_runtime(cfg, runtime_cfg, memory_store, identity, orchestration_manager, raw_caller_id, hook_manager, automation_runtime, team_manager, mailbox);
 
             return ConversationRuntimeInspection{
                 .tool_definitions = runtime->tools().definitions(),

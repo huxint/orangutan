@@ -1,4 +1,4 @@
-#include "swarm/mailbox.hpp"
+#include "orchestration/mailbox.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -13,7 +13,7 @@
 #include "utils/enum-string.hpp"
 #include "utils/scope-exit.hpp"
 
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
 
     namespace {
 
@@ -190,4 +190,4 @@ namespace orangutan::swarm {
         }
     }
 
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration

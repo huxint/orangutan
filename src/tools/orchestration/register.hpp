@@ -1,15 +1,15 @@
 #pragma once
 
-#include "tools/registry/tool-registry.hpp"
-
 namespace orangutan::tools {
-
     struct ToolRuntimeContext;
+    class ToolRegistry;
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
     void register_agent_send_message_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
     void register_agent_stop_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+    void register_team_create_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+    void register_team_delete_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 
-    void register_coordinator_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
-
+    /// Register all orchestration tools (agent + team management).
+    void register_orchestration_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 } // namespace orangutan::tools

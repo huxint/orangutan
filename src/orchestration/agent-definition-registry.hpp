@@ -1,6 +1,6 @@
 #pragma once
 
-#include "coordinator/agent-definition.hpp"
+#include "orchestration/agent-definition.hpp"
 #include "utils/transparent-lookup.hpp"
 
 #include <filesystem>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace orangutan::coordinator {
+namespace orangutan::orchestration {
 
     class AgentDefinitionRegistry {
     public:
@@ -32,8 +32,8 @@ namespace orangutan::coordinator {
         utils::transparent_string_unordered_map<AgentDefinition> definitions_;
     };
 
-} // namespace orangutan::coordinator
+} // namespace orangutan::orchestration
 
 namespace orangutan {
-    using coordinator::AgentDefinitionRegistry;
+    using orchestration::AgentDefinitionRegistry;
 } // namespace orangutan

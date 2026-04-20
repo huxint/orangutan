@@ -1,4 +1,4 @@
-#include "swarm/team-manager.hpp"
+#include "orchestration/team-manager.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -14,8 +14,8 @@
 namespace orangutan::sqlite {
 
     template <>
-    struct RowMapper<orangutan::swarm::TeamRecord> {
-        static auto map(const Row &row) -> SqliteResult<orangutan::swarm::TeamRecord> {
+    struct RowMapper<orangutan::orchestration::TeamRecord> {
+        static auto map(const Row &row) -> SqliteResult<orangutan::orchestration::TeamRecord> {
             auto id = row.get<std::string>(0);
             if (!id) {
                 return std::unexpected(id.error());
@@ -40,7 +40,7 @@ namespace orangutan::sqlite {
             if (!active) {
                 return std::unexpected(active.error());
             }
-            return orangutan::swarm::TeamRecord{
+            return orangutan::orchestration::TeamRecord{
                 .id = std::move(*id),
                 .name = std::move(*name),
                 .description = std::move(*description),
@@ -52,8 +52,8 @@ namespace orangutan::sqlite {
     };
 
     template <>
-    struct RowMapper<orangutan::swarm::TeamMemberRecord> {
-        static auto map(const Row &row) -> SqliteResult<orangutan::swarm::TeamMemberRecord> {
+    struct RowMapper<orangutan::orchestration::TeamMemberRecord> {
+        static auto map(const Row &row) -> SqliteResult<orangutan::orchestration::TeamMemberRecord> {
             auto agent_id = row.get<std::string>(0);
             if (!agent_id) {
                 return std::unexpected(agent_id.error());
@@ -78,7 +78,7 @@ namespace orangutan::sqlite {
             if (!active) {
                 return std::unexpected(active.error());
             }
-            return orangutan::swarm::TeamMemberRecord{
+            return orangutan::orchestration::TeamMemberRecord{
                 .agent_id = std::move(*agent_id),
                 .name = std::move(*name),
                 .agent_key = std::move(*agent_key),
@@ -91,7 +91,7 @@ namespace orangutan::sqlite {
 
 } // namespace orangutan::sqlite
 
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
 
     namespace {
 
@@ -283,4 +283,4 @@ namespace orangutan::swarm {
         }
     }
 
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration

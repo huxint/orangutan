@@ -1,4 +1,4 @@
-#include "coordinator/agent-definition-registry.hpp"
+#include "orchestration/agent-definition-registry.hpp"
 
 #include "utils/file-io.hpp"
 #include "utils/string.hpp"
@@ -9,7 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
-namespace orangutan::coordinator {
+namespace orangutan::orchestration {
 
     namespace {
 
@@ -154,4 +154,4 @@ namespace orangutan::coordinator {
         return utils::transparent_contains(definitions_, key);
     }
 
-} // namespace orangutan::coordinator
+} // namespace orangutan::orchestration

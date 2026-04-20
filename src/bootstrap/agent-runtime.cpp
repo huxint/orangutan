@@ -3,7 +3,7 @@
 #include "bootstrap/config-bootstrap.hpp"
 #include "bootstrap/memory-context.hpp"
 #include "bootstrap/identity.hpp"
-#include "coordinator/coordinator-prompt.hpp"
+#include "orchestration/leader-prompt.hpp"
 #include "permissions/permission-state.hpp"
 #include "prompt/system-prompt-sections.hpp"
 #include "providers/provider.hpp"
@@ -82,6 +82,8 @@ namespace orangutan::bootstrap {
 
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
+        const bool leader_mode = input.coordinator_mode || input.agent_role == orchestration::agent_role::leader;
+        const bool delegated_mode = input.is_child_run || input.agent_role == orchestration::agent_role::worker || input.agent_role == orchestration::agent_role::teammate;
 
         runtime.provider = std::make_unique<providers::ProviderSystem>();
 
@@ -96,12 +98,13 @@ namespace orangutan::bootstrap {
             .scope_key = input.identity.memory_scope,
             .team_id = input.team_id,
             .current_session_id = input.current_session_id,
-            .coordinator_manager = input.coordinator_manager,
+            .orchestration_manager = input.orchestration_manager,
             .team_manager = input.team_manager,
             .mailbox = input.mailbox,
             .team_agents = input.team_agents,
             .is_child_run = input.is_child_run,
             .coordinator_mode = input.coordinator_mode,
+            .role = input.agent_role,
             .runtime_origin = input.runtime_origin,
             .raw_caller_id = input.raw_caller_id,
             .automation_service = input.automation_service,
@@ -128,11 +131,11 @@ namespace orangutan::bootstrap {
         runtime.skill_loader->set_workspace_root(std::filesystem::path{input.workspace_root});
         runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, std::filesystem::path{input.workspace_root}));
         std::string prompt_guidance;
-        if (input.coordinator_mode) {
-            prompt_guidance = coordinator::get_coordinator_system_prompt(input.team_agents);
-        } else if (input.is_child_run) {
+        if (leader_mode) {
+            prompt_guidance = orchestration::get_leader_system_prompt(input.team_agents);
+        } else if (delegated_mode) {
             const auto task_description = input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
-            prompt_guidance = coordinator::get_worker_system_prompt_addendum(input.agent_key, task_description);
+            prompt_guidance = orchestration::get_worker_system_prompt_addendum(input.agent_key, task_description);
         } else if (!input.team_agents.empty()) {
             prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, false);
         }
@@ -143,7 +146,7 @@ namespace orangutan::bootstrap {
             runtime.skills_prompt += "\n\n";
         }
         runtime.skills_prompt += skills_prompt;
-        if (!input.coordinator_mode) {
+        if (!leader_mode) {
             tools::register_skill_tool(runtime.tools(), *runtime.skill_loader);
         }
 

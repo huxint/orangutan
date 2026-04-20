@@ -1,4 +1,4 @@
-#include "tools/swarm/register.hpp"
+#include "tools/orchestration/register.hpp"
 
 #include <chrono>
 #include <string>
@@ -7,8 +7,8 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "swarm/mailbox.hpp"
-#include "swarm/team-manager.hpp"
+#include "orchestration/mailbox.hpp"
+#include "orchestration/team-manager.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
 
@@ -18,7 +18,7 @@ namespace orangutan::tools {
 
         constexpr int K_DEFAULT_GRACE_PERIOD_MS = 5000;
 
-        std::string team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) {
+        auto team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
             if (tool_context.team_manager == nullptr) {
                 return nlohmann::json{{"deleted", false}, {"error", "Team manager is not available"}}.dump();
             }
@@ -44,7 +44,7 @@ namespace orangutan::tools {
 
             if (tool_context.mailbox != nullptr) {
                 for (const auto &member : active_members) {
-                    tool_context.mailbox->send(team_id, sender, member.name, "Team shutdown requested", message_type::shutdown_request);
+                    tool_context.mailbox->send(team_id, sender, member.name, "Team shutdown requested", orangutan::orchestration::message_type::shutdown_request);
                 }
             }
 

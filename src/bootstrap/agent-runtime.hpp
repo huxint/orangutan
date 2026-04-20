@@ -2,6 +2,7 @@
 
 #include "bootstrap/identity.hpp"
 #include "config/config.hpp"
+#include "orchestration/types.hpp"
 #include "permissions/permission-types.hpp"
 #include "providers/provider.hpp"
 #include "skills/skill-loader.hpp"
@@ -29,14 +30,11 @@ namespace orangutan::memory {
     class RuntimeMemory;
 } // namespace orangutan::memory
 
-namespace orangutan::coordinator {
-    class CoordinatorManager;
-}
-
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
+    class OrchestrationManager;
     class AgentMailbox;
     class TeamManager;
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration
 
 namespace orangutan::tools {
     class McpManager;
@@ -59,15 +57,16 @@ namespace orangutan::bootstrap {
 
         memory::MemoryStore *memory_store = nullptr;
         std::string *current_session_id = nullptr;
-        coordinator::CoordinatorManager *coordinator_manager = nullptr;
-        swarm::TeamManager *team_manager = nullptr;
-        swarm::AgentMailbox *mailbox = nullptr;
+        orchestration::OrchestrationManager *orchestration_manager = nullptr;
+        orchestration::TeamManager *team_manager = nullptr;
+        orchestration::AgentMailbox *mailbox = nullptr;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id = "cli:local";
         automation::AutomationService *automation_service = nullptr;
         automation::AutomationRuntime *automation_runtime = nullptr;
-        bool is_child_run = false;
-        bool coordinator_mode = false;
+        bool is_child_run = false; // NOLINT: retained for backward compat, prefer agent_role
+        bool coordinator_mode = false; // NOLINT: retained for backward compat, prefer agent_role
+        orchestration::agent_role agent_role = orchestration::agent_role::standalone;
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
         std::string delegated_task_prompt;

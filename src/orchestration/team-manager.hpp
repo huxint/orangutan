@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace orangutan::swarm {
+namespace orangutan::orchestration {
 
     struct TeamRecord {
         std::string id;
@@ -68,10 +68,10 @@ namespace orangutan::swarm {
         std::unique_ptr<Impl> impl_;
     };
 
-} // namespace orangutan::swarm
+} // namespace orangutan::orchestration
 
 namespace orangutan {
-    using swarm::TeamManager;
-    using swarm::TeamMemberRecord;
-    using swarm::TeamRecord;
+    using orchestration::TeamManager;
+    using orchestration::TeamMemberRecord;
+    using orchestration::TeamRecord;
 } // namespace orangutan

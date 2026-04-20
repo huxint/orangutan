@@ -2,7 +2,7 @@
 
 #include "permissions/permission-evaluator.hpp"
 #include "permissions/rule-parser.hpp"
-#include "coordinator/coordinator-mode.hpp"
+#include "orchestration/leader-mode.hpp"
 #include "tools/register.hpp"
 #include "tools/script/script-loader.hpp"
 #include "tools/tool-search/tool-search.hpp"
@@ -68,9 +68,9 @@ namespace orangutan::tools {
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
                                                       const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions,
                                                       file::edit_mode mode) {
-        const bool coordinator_only = coordinator::is_coordinator_mode(tool_context);
+        const bool leader_only = orchestration::is_leader_mode(tool_context);
         register_builtin_tools(registry, runtime_memory, workspace_root, tool_context, permissions, mode);
-        if (!coordinator_only) {
+        if (!leader_only) {
             register_script_tools(registry, custom_tools, workspace_root, permissions, tool_context);
         }
 
@@ -79,7 +79,7 @@ namespace orangutan::tools {
         }
 
         RuntimeToolBootstrapResult result;
-        if (!coordinator_only && !mcp_servers.empty()) {
+        if (!leader_only && !mcp_servers.empty()) {
             result.mcp_manager = std::make_unique<McpManager>(mcp_servers);
             result.mcp_manager->connect_all();
             result.mcp_manager->register_tools(registry);
@@ -89,7 +89,7 @@ namespace orangutan::tools {
         }
 
         // Register tool_search if there are any deferred tools (builtin or MCP)
-        if (!coordinator_only && registry.has_deferred_tools()) {
+        if (!leader_only && registry.has_deferred_tools()) {
             register_tool_search(registry);
             spdlog::debug("registered tool_search for deferred tools");
         }

@@ -1,13 +1,12 @@
 #include "tools/register.hpp"
 
 #include "tools/automation/automation-tool.hpp"
-#include "coordinator/coordinator-mode.hpp"
-#include "tools/coordinator/register.hpp"
+#include "orchestration/leader-mode.hpp"
 #include "tools/internal.hpp"
 #include "tools/message-attachments/message-attachments-tool.hpp"
+#include "tools/orchestration/register.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/shell/register.hpp"
-#include "tools/swarm/register.hpp"
 
 #include <filesystem>
 
@@ -25,8 +24,9 @@ namespace orangutan::tools {
 
     void register_builtin_tools(ToolRegistry &registry, orangutan::memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
                                 const ToolRuntimeContext *tool_context, const ToolPermissionContext *permissions, file::edit_mode mode) {
-        if (coordinator::is_coordinator_mode(tool_context)) {
-            register_coordinator_tools(registry, tool_context);
+        // Leader mode: only orchestration tools (spawn, send, stop, team management)
+        if (orchestration::is_leader_mode(tool_context)) {
+            register_orchestration_tools(registry, tool_context);
             registry.discover_deferred_tools();
             return;
         }
@@ -35,11 +35,13 @@ namespace orangutan::tools {
         register_automation_tool(registry, tool_context);
         register_message_attachments_tool(registry, workspace_root, tool_context);
 
-        const bool can_register_collaboration_tools = tool_context != nullptr && tool_context->coordinator_manager != nullptr && !tool_context->is_child_run;
-        if (can_register_collaboration_tools && !tool_context->team_agents.empty()) {
-            // Team workers can orchestrate sub-agents and manage their team lifecycle.
-            register_coordinator_tools(registry, tool_context);
-            register_swarm_tools(registry, tool_context);
+        // Agents with orchestration access (leader or team-capable) get orchestration tools.
+        const bool has_orchestration = tool_context != nullptr
+                                     && tool_context->orchestration_manager != nullptr
+                                     && tool_context->role != orchestration::agent_role::worker
+                                     && tool_context->role != orchestration::agent_role::teammate;
+        if (has_orchestration && !tool_context->team_agents.empty()) {
+            register_orchestration_tools(registry, tool_context);
         }
 
         if (runtime_memory != nullptr) {
