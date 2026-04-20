@@ -42,9 +42,9 @@ namespace orangutan::tools {
             }
             cmd = search::append_arg(std::move(cmd), "--max-count", std::to_string(max_count));
             cmd.push_back(' ');
-            cmd += search::shell_quote(pattern);
+            cmd += utils::shell_single_quote_escape(pattern);
             cmd.push_back(' ');
-            cmd += search::shell_quote(root.string());
+            cmd += utils::shell_single_quote_escape(root.string());
 
             spdlog::info("  [tool] rg: {}", cmd);
             // rg exits 1 when there are no matches — treat as success.

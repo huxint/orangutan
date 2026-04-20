@@ -215,11 +215,9 @@ namespace orangutan::storage {
         }
 
         void remove_session_rules(std::vector<PermissionRule> &rules) {
-            rules.erase(std::remove_if(rules.begin(), rules.end(),
-                                       [](const PermissionRule &rule) {
-                                           return rule.source == permission_rule_source::session;
-                                       }),
-                        rules.end());
+            std::erase_if(rules, [](const PermissionRule &rule) {
+                return rule.source == permission_rule_source::session;
+            });
         }
 
         void append_session_rules_from_context(std::vector<PermissionRule> &target, const std::vector<PermissionRule> &rules) {

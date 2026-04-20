@@ -53,13 +53,13 @@ namespace orangutan::utils {
                                         try {
                                             results[i] = fn(items[i]);
                                         } catch (...) {
-                                            std::lock_guard lock{mx};
+                                            std::scoped_lock lock{mx};
                                             if (!first_error) {
                                                 first_error = std::current_exception();
                                             }
                                         }
                                         if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                                            std::lock_guard lock{mx};
+                                            std::scoped_lock lock{mx};
                                             cv.notify_one();
                                         }
                                     }));

@@ -34,9 +34,9 @@ namespace orangutan::tools {
             }
             cmd = search::append_arg(std::move(cmd), "--max-results", std::to_string(max_results));
             cmd.push_back(' ');
-            cmd += search::shell_quote(pattern);
+            cmd += utils::shell_single_quote_escape(pattern);
             cmd.push_back(' ');
-            cmd += search::shell_quote(root.string());
+            cmd += utils::shell_single_quote_escape(root.string());
 
             spdlog::info("  [tool] fd: {}", cmd);
             return search::summarise(search::run(cmd, workspace_root), "No matches.", /*no_match_exit_ok=*/false);

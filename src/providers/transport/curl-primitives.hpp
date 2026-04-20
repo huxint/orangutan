@@ -26,8 +26,17 @@ namespace orangutan::providers::transport {
 
         CurlHandle(const CurlHandle &) = delete;
         CurlHandle &operator=(const CurlHandle &) = delete;
-        CurlHandle(CurlHandle &&) = delete;
-        CurlHandle &operator=(CurlHandle &&) = delete;
+        CurlHandle(CurlHandle &&other) noexcept
+        : handle_(std::exchange(other.handle_, nullptr)) {}
+        CurlHandle &operator=(CurlHandle &&other) noexcept {
+            if (this != &other) {
+                if (handle_ != nullptr) {
+                    curl_easy_cleanup(handle_);
+                }
+                handle_ = std::exchange(other.handle_, nullptr);
+            }
+            return *this;
+        }
 
         [[nodiscard]]
         CURL *get() const noexcept {
@@ -66,6 +75,13 @@ namespace orangutan::providers::transport {
         void append(std::string_view header) {
             const auto owned = std::string(header);
             list_ = curl_slist_append(list_, owned.c_str());
+        }
+
+        void append(std::string_view key, std::string_view value) {
+            std::string header(key);
+            header += ": ";
+            header += value;
+            list_ = curl_slist_append(list_, header.c_str());
         }
 
         [[nodiscard]]

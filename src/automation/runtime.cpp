@@ -51,7 +51,7 @@ namespace orangutan::automation {
 
     void AutomationRuntime::AgentExecutionLease::release() noexcept {
         auto gate = std::exchange(gate_, nullptr);
-        if (!gate) {
+        if (gate == nullptr) {
             return;
         }
 
@@ -172,7 +172,7 @@ namespace orangutan::automation {
 
         auto &entry = agent_execution_gates_[key];
         auto gate = entry.lock();
-        if (!gate) {
+        if (gate == nullptr) {
             gate = std::make_shared<AgentExecutionGate>();
             entry = gate;
         }

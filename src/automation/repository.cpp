@@ -11,6 +11,7 @@
 
 #include "automation/parser.hpp"
 #include "storage/sqlite-throwing.hpp"
+#include "utils/string.hpp"
 
 namespace orangutan::automation {
     namespace {
@@ -35,12 +36,7 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         bool is_blank(std::string_view value) {
-            for (const auto ch : value) {
-                if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
-                    return false;
-                }
-            }
-            return true;
+            return utils::trim_copy(value).empty();
         }
 
         void validate_non_blank(std::string_view value, std::string_view label) {

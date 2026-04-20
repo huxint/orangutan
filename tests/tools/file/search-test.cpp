@@ -3,6 +3,7 @@
 #include "tools/file/search/common.hpp"
 #include "tools/internal.hpp"
 #include "tools/registry/tool-registry.hpp"
+#include "utils/escape.hpp"
 #include "utils/file-io.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -32,10 +33,10 @@ TEST_CASE("search binary_available walks PATH via filesystem") {
 }
 
 TEST_CASE("search shell_quote escapes single quotes safely") {
-    using file::search::shell_quote;
-    CHECK(shell_quote("simple") == "'simple'");
-    CHECK(shell_quote("it's") == R"('it'\''s')");
-    CHECK(shell_quote("") == "''");
+    using utils::shell_single_quote_escape;
+    CHECK(shell_single_quote_escape("simple") == "'simple'");
+    CHECK(shell_single_quote_escape("it's") == R"('it'\''s')");
+    CHECK(shell_single_quote_escape("") == "''");
 }
 
 TEST_CASE("search missing_binary_error surfaces a hint") {

@@ -9,10 +9,10 @@
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 #include "utils/task-pool.hpp"
+#include "utils/time-format.hpp"
 #include "types/base.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -557,7 +557,7 @@ namespace orangutan::channel::qq {
                 return;
             }
             const auto saved_at_text = payload.value("saved_at", std::string{});
-            const auto saved_at = parse_iso_utc(saved_at_text);
+            const auto saved_at = utils::parse_iso8601_utc(saved_at_text);
             if (!saved_at.has_value()) {
                 return;
             }
@@ -599,7 +599,7 @@ namespace orangutan::channel::qq {
                 {"session_id", session_id},
                 {"last_seq", last_seq},
                 {"app_id", app_id_},
-                {"saved_at", format_iso_utc(std::chrono::system_clock::now())},
+                {"saved_at", utils::format_iso8601_utc(std::chrono::system_clock::now())},
             };
             output << payload.dump(2);
         } catch (const std::exception &e) {
@@ -639,7 +639,7 @@ namespace orangutan::channel::qq {
                 }
 
                 const auto last_seen_text = item.value("last_seen", std::string{});
-                const auto last_seen = parse_iso_utc(last_seen_text).value_or(std::chrono::system_clock::now());
+                const auto last_seen = utils::parse_iso8601_utc(last_seen_text).value_or(std::chrono::system_clock::now());
                 loaded.emplace(utils::format("{}:{}", kind, openid), RuntimeState::known_user{
                                                                                    .kind = kind,
                                                                                    .openid = openid,
@@ -676,7 +676,7 @@ namespace orangutan::channel::qq {
                 payload.push_back({
                     {"kind", user.kind},
                     {"openid", user.openid},
-                    {"last_seen", format_iso_utc(user.last_seen_at)},
+                    {"last_seen", utils::format_iso8601_utc(user.last_seen_at)},
                 });
             }
 

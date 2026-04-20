@@ -153,7 +153,7 @@ namespace orangutan::prompt {
         }
 
         std::string_view get_shell_name() {
-            if (const char *shell = std::getenv("SHELL")) {
+            if (const char *shell = std::getenv("SHELL"); shell != nullptr) {
                 std::string_view sv(shell);
                 auto pos = sv.find_last_of('/');
                 return (pos == std::string_view::npos) ? sv : sv.substr(pos + 1);

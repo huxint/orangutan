@@ -1,172 +1,122 @@
-# Orangutan Project — C++23 Agent Assistant Guidelines
+# CLAUDE.md
 
-You are an expert C++23 developer building the **Orangutan Project** — a high‑performance, extensible agent assistant. Follow this specification to produce code that is **correct, maintainable, and performant**.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Environment & Available Libraries
+**Orangutan** is a C++23 agent assistant: a single binary that runs an LLM ReAct loop with a tool registry, pluggable providers, persistent memory/sessions, an HTTP web UI, external chat channels (QQ), a coordinator that spawns worker agents, and a cron-like automation runtime. Act as an expert C++23 developer producing **correct, maintainable, and performant** code that matches the conventions below.
 
-The project uses the following libraries (already available, do not re‑implement their functionality):
+## Build, Test, Lint
 
-| Category | Libraries |
-|----------|-----------|
-| CLI parsing | `cli11` |
-| JSON | `nlohmann_json` |
-| Logging | `spdlog` |
-| HTTP client | `libcurl`, `cpp-httplib` |
-| Database | `sqlite3` |
-| Concurrency / Senders | `stdexec` |
-| Hashing | `rapidhash` |
-| Line editing | `replxx` |
-| TLS / Crypto | `mbedtls` |
-| Unicode / Text | `simdutf`, `uni_algo` |
-| Compile‑time regex | `ctre` |
-| Reflection utilities | `magic_enum` |
+The project uses **xmake** (not CMake). Packages are pinned in `xmake-requires.lock`.
 
-## Workflow – *Always Follow This Order*
+```bash
+# Configure (first time or when switching modes)
+xmake f -m release         # or -m debug
 
-1. **Create a new branch** before making any change.
-2. **Commit incrementally** — one logical change per commit. Avoid large, mixed commits.
-3. **Compile only when necessary.** The project is large and builds slowly; trust your code inspection for trivial, obviously correct changes.
-4. **Do not over‑analyze trivial changes.** Focus on correctness and clarity.
-5. **Keep this document updated** when important style or rule changes occur.
+# Build
+xmake                      # build all targets (slow — minutes)
+xmake build orangutan      # binary only
+xmake build orangutan-lib  # static lib only (the shared link target for tests)
+xmake build test-agent     # one test bucket only (much faster iteration)
 
-## Critical Rules – Do Not Violate
+# Run the binary
+xmake run orangutan -- --help      # preferred
+./orangutan --help                  # symlink → build/linux/x86_64/release/orangutan
 
-- **No macros.** Use `constexpr`, templates, or `inline` functions instead.
-- **No implicit bool conversions.** Write `ptr != nullptr` (explicit comparisons).
-- **Single‑argument constructors must be `explicit`.**
-- **Follow `.clang-tidy` and LSP diagnostics** — treat all warnings as errors.
-- **Do not pollute the global namespace** with `using namespace`. Use namespace aliases locally if depth exceeds 2 levels.
+# Tests (Catch2)
+xmake test                                # run every test-* target
+xmake run test-agent                      # run one bucket
+xmake run test-agent "[tag]"              # Catch2 tag filter
+xmake run test-agent "test case name"     # by test case name
+xmake run test-agent -s                   # show successful assertions
 
-## Design Principles – How to Structure Code
+# Options
+xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
 
-| Principle | Implementation Requirement |
-|-----------|---------------------------|
-| **Integration** | Design every module to drop into the existing architecture without friction. |
-| **Composability** | Provide chainable APIs that can be combined without side‑effects. |
-| **Sender/Receiver** | Use `stdexec` patterns for asynchronous operations. Do not roll custom async primitives. |
-| **Thread Pool** | **Always** use `stdexec`'s built‑in thread pool. Do not use `std::thread` or custom pools. |
-| **Error Handling** | Use `try_do` / `value_or` patterns to flatten control flow. Avoid deeply nested `if` / `catch` blocks. |
-| **Wrapper APIs** | Wrap third‑party libraries that have unfriendly interfaces. Provide a clean, C++23‑style API on top. |
-
-## Modern C++ Idioms – *Prefer the Left Side*
-
-### Type & Memory Choices
-
-| ✅ **Prefer** | ❌ **Avoid** | **Reason** |
-|------------|----------|---------|
-| `std::string_view` | `const std::string&` | Zero‑copy, avoids allocation when passing literals / substrings. |
-| `std::span<T>` | `T* + size` or `const std::vector<T>&` | Bounds‑safe view over contiguous data. |
-| `std::array<T, N>` | C‑style arrays | Type‑safe, size is part of the type. |
-| `std::expected<T, E>` | Exceptions or `std::error_code` | Explicit, composable error handling without hidden control flow. |
-| `std::jthread` | `std::thread` | Automatic joining and stop‑token support. |
-| `std::scoped_lock` | `std::lock_guard` | C++17's `scoped_lock` handles multiple mutexes and deduces template arguments. |
-| PMR allocators | Default allocators | Enable runtime memory strategy tuning without changing container types. |
-
-#### `std::string_view` vs `const std::string&` – Know the Difference
-
-| Scenario | `const std::string&` | `std::string_view` |
-|----------|---------------------|-------------------|
-| Passing a string literal | **Allocates + copies (expensive)** | **Zero overhead** |
-| Passing an existing `std::string` | Cheap (no copy) | Cheap (no copy) |
-| Need null‑terminated string | **Yes** (`.c_str()` available) | **No guarantee** — do not pass to C APIs expecting `\0`. |
-| Original string may be modified | Safe (if lifetime managed) | **Dangerous** — view may dangle. |
-
-**Rule:** Use `std::string_view` for read‑only inspection. Use `const std::string&` only when the callee requires null termination or stores the string.
-
-### Syntax & Style Choices
-
-| ✅ **Write This** | ❌ **Not This** | **Why** |
-|----------------|-------------|------|
-| `static_cast<int>(x)` | `(int)x` | Type‑safe, greppable, explicit intent. |
-| `int x{42};` | `int x = 42;` | Uniform initialization prevents narrowing conversions. |
-| `std::ranges::sort(v);` | `std::sort(v.begin(), v.end());` | Cleaner, composable, works directly on containers. |
-| `if (map.contains(key))` | `if (map.find(key) != map.end())` | Clearer intent, less noise. |
-| Lambda `[&](int x) { ... }` | `std::bind(...)` | Readable, captures are explicit. |
-| `std::to_underlying(e)` | `static_cast<int>(e)` | Semantic: "I want the underlying value". |
-| `std::unreachable()` | `__builtin_unreachable()` | Portable and standard. |
-| Deducing `this` (C++23) | Separate const/non‑const overloads | Eliminates code duplication for member functions. |
-
-### C++23 Features – Use These Actively
-
-- `std::ranges::to<Container>()` – Convert views to concrete containers.
-- `std::views::zip`, `chunk`, `slide`, `join` – Compose data transformations without loops.
-- `std::generator<T>` – Implement lazy, coroutine‑based sequences.
-- Deducing `this` – Replace CRTP with self‑explicit object parameters.
-
-## Naming & Code Organization – *Strict Conventions*
-
-| Entity | Convention | Example |
-|--------|------------|---------|
-| Namespace | `snake_case` | `orangutan::network` |
-| Class / Struct | `CamelCase` | `HttpClient` |
-| Function | `snake_case` | `send_request` |
-| Variable | `snake_case` | `request_count` |
-| Enum type | `snake_case` | `error_code` |
-| Enum values | `snake_case` | `timeout` |
-| Private member variable | `snake_case_` | `socket_fd_` |
-| Constexpr / compile‑time constant | `UPPER_CASE` | `MAX_RETRIES` |
-
-### Header Include Order
-
-Group includes with a blank line between groups:
-
-1. Associated header (if any)
-2. C++ standard library headers
-3. C standard library headers (wrapped in `extern "C"` if needed)
-4. Third‑party library headers
-5. Project headers (`src/...`)
-
-## Performance & Safety – *Every Line Matters*
-
-- **Place larger struct members first** to minimize padding. Use `alignas` only when necessary.
-- **Avoid unnecessary copies** – pass views, move when ownership transfers.
-- **Prefer `std::string_view` and `std::span` for function parameters** unless you need to take ownership.
-- **Follow the Rule of Zero.** If you must define a destructor, copy constructor, or copy assignment, define all five (Rule of Five) and mark move operations `noexcept`.
-- **Mark everything `constexpr` that can be computed at compile time.**
-- **Use factory functions** (`static std::expected<MyClass, Error> create(...)`) when construction requires validation or complex setup.
-
-## Logging with `spdlog`
-
-- Log messages **must be all lowercase** (no capital first letters).
-- Example: `logger->info("connection established to {}", host);`
-
-## Testing
-
-- Write **meaningful, robust tests**. Do not write tests for trivially correct behavior (e.g., getter/setter pairs).
-- Focus on edge cases, error paths, and integration points.
-
-## Utility Code (`src/utils/`)
-
-- **Before implementing a new utility**, check `src/utils/` for an existing solution. Reuse, don't duplicate.
-- Prefer STL or library functions over custom implementations.
-
-## Command‑Line Tools – *Modern Alternatives First*
-
-When invoking external tools (e.g., for searching or file manipulation), prefer the modern equivalents. Fall back to legacy tools only if the modern version is not available.
-
-| Task | **Use This First** | Fallback |
-|------|-------------------|----------|
-| Search code | `rg` | `grep` |
-| Find files | `fd` | `find` |
-| List directory | `exa` | `ls` |
-| Replace text | `sd` | `sed` |
-| Package manager | `pnpm` | `npm` |
-
-## Comments & Documentation
-
-- Use **Doxygen‑style comments** for public APIs (`///` or `/** */`).
-- **Keep comments in sync with code.** Outdated comments are worse than no comments.
-- Let **good naming and structure** reduce the need for comments. Reserve comments for *why*, not *what*.
-- Include `// TODO(username): description` and `// FIXME(username): description` when necessary.
-
-## Suppressing Lint Warnings (`// NOLINT`)
-
-Use `// NOLINT` **only** when the warning is a confirmed false positive. **Always add a brief justification** on the same line:
-
-```cpp
-int legacy_flag = 0; // NOLINT: required by external C API
+# Formatting / lint
+# A pre-commit hook (.githooks/pre-commit) auto-runs clang-format on staged C/C++ files.
+# If not installed: git config core.hooksPath .githooks
+# clang-tidy is governed by .clang-tidy; treat its warnings and LSP diagnostics as errors.
+# compile_commands.json auto-regenerates on build (configured for clangd).
 ```
 
----
+**Test target map.** Each directory under `tests/` is compiled as its own `test-<name>` target — see `xmake/tests.lua`. When iterating on module X, run only `test-<x>` rather than the whole suite. Test helpers live at `tests/test-helpers.hpp` (unique tmp paths, `ScopedEnvVar`) and `tests/test-provider-support.hpp` (`FakeProviderBackend`, `make_test_route`).
 
-**Remember:** You have more than enough time to complete each task. Focus on quality over speed, and continue improving your implementation until it meets every requirement above.
+**Builds are slow (~70s+).** Batch edits, rely on clangd diagnostics, and build only at the end of a change series. Do not rebuild after every trivial edit.
+
+## Architecture — The Big Picture
+
+`main.cpp` does nothing except call `orangutan::bootstrap::run(argc, argv)`. Everything interesting is in `src/bootstrap/`, which is the **runtime assembler**: it parses CLI flags, loads/decrypts config, constructs per-agent runtimes, wires them into channel/web/automation services, and drives the main loop. Read `src/bootstrap/bootstrap.cpp` first — it names every collaborator.
+
+### Core primitive: the agent loop
+
+`agent::AgentLoop` (src/agent/agent-loop.hpp) is the ReAct loop. Given a user prompt, it iterates up to `MAX_ITERATIONS`: build request → `ProviderSystem::send` → parse tool calls → dispatch via `ToolRegistry` → append results to history → repeat until a final text response or stop. It composes with **providers**, a **tool registry**, optional **runtime memory**, **hooks**, and a **skills** prompt. Configure via the fluent `AgentLoopBuilder` (uses C++23 deducing-`this`). One `AgentLoop` per running agent instance; multiple instances coexist (primary CLI + coordinator workers + automation-triggered runs).
+
+### Providers: HTTP → protocol → execution
+
+`src/providers/` is layered:
+
+- **transport/** — libcurl primitives + SSE parser (`http-transport`, `sse-parser`).
+- **protocols/** — per-API adapters (`anthropic-messages`, `openai-chat-completions`, `openai-responses`). `protocol-adapter.hpp` is the common interface; `provider-registry` maps `provider_kind × protocol_kind` to an adapter.
+- **execution/** — `runtime-backend` applies retry, fallback-model switching, and aggregates `ProviderUsageStats`.
+- `provider.hpp` defines `ProviderSystem`, `ProviderRoute` (primary + fallbacks), `ModelTarget`, and `stdexec`-based sender types (`provider_sender`). Every async edge is a sender/receiver — **do not introduce `std::thread` or custom pools**.
+
+### Tools: registry + dispatch + permissions + hooks
+
+`src/tools/`:
+
+- **registry/** — `ToolRegistry` holds tool definitions and dispatches calls through a `ToolRuntimeContext` (workspace root, permissions, memory, coordinator, mailbox, automation, skill loader, etc.).
+- Per-category subdirs register themselves via `tools::register_builtin_*` (see `tools/register.hpp` and each subdir's `register.cpp`): `file/` (read/write/edit/search via fd+rg), `shell/` (sandboxed shell exec), `mcp/` (external MCP clients), `memory/`, `coordinator/` (spawn/stop/send-message to worker agents), `swarm/` (team mgmt), `automation/`, `skill/`, `message-attachments/`, `tool-search/`, `script/`, `runtime-loader/`, `background/`.
+- `permissions/` evaluates allow/deny/ask rules (`permission-evaluator`, `rule-parser`, `safety-checks`) and produces approval prompts signed for replay.
+- `hooks/HookManager` runs external shell hooks at tool lifecycle events.
+
+Shell already covers `ls/glob/mkdir/delete/move`; new file tools should only exist when they provide structured output, patch semantics, or wrap a real binary — don't duplicate shell.
+
+### Coordinator, swarm, automation
+
+- **coordinator/** — `CoordinatorManager` spawns worker `AgentLoop` runtimes on demand via a factory supplied by `bootstrap` (see `set_worker_runtime_factory`). Max-concurrent spawns is per-agent (`coordinator_max_concurrent`). Agent definitions load from builtins + `<workspace>/.orangutan/agents/`.
+- **swarm/** — `AgentMailbox` (SQLite) for inter-agent messages, `TeamManager` (SQLite) for team membership. Workers poll the mailbox via an injected `incoming_message_fetcher` each loop iteration.
+- **automation/** — cron/periodic/triggered jobs persisted in SQLite. `AutomationRuntime` has an executor callback that builds a fresh agent runtime for each firing; categories (e.g. `heartbeat`) register custom runners. Notifier callback routes output to cli/channel/web.
+
+### Channels, web, CLI
+
+- **channel/** — `ChannelManager` dispatches inbound messages into `MessageQueue`, `JidTaskRunner` fans out to per-JID task pools. `channel/qq/` is the QQ platform adapter (gated by `qq_channel` option at compile time).
+- **web/** — cpp-httplib server. Routes split across `chat-routes`, `session-routes`, `admin-routes*`, `event-stream` (SSE), shared `WebContext`/`EventBus`. `web-route-internal.hpp` collects internals.
+- **cli/** — replxx-backed REPL (`repl.cpp`), single-shot mode (`single-shot.cpp`), slash commands (`slash-commands.cpp`), session restore/save workflow.
+
+### State layer
+
+- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API.
+- **memory/** — `MemoryStore` (SQLite) + `RuntimeMemory` scope wrapper + `memory-search` + `memory-mirror` (optional `.orangutan/memory/MEMORY.md` mirror for human inspection) + `memory-age` (decay/retention).
+- **config/** — JSON (`config.example.json` is the shape). Secrets (`api_key`, `client_secret`, etc.) are encrypted at rest under a password (`secret-protection-*`, `secret-fields`). `Config::load` accepts `ConfigSecretOptions` for password override. Do not log or echo decrypted secrets.
+- **bootstrap/identity.cpp** — derives per-runtime identity keys (`runtime_key`, `memory_scope`) used to namespace memory and notifications.
+
+### Request flow (CLI mode, one message)
+
+```
+user input → cli/repl or cli/single-shot
+  → AgentLoop::run(prompt)
+     → hook_manager (pre-iteration)
+     → ProviderSystem::send (transport → protocol adapter → runtime backend)
+     → response parsed into Message + ToolUse list
+     → for each ToolUse: permissions check → tool dispatch → ToolResult
+     → append to history; loop until stop_reason = end_turn or MAX_ITERATIONS
+  → session_store persists history (if auto_save) → memory distillation (optional)
+```
+
+Channel mode replaces the input source with `MessageQueue`; web mode exposes the same loop via HTTP/SSE.
+
+### Where things are assembled
+
+`bootstrap/runtime-assembler.cpp` builds an `AgentRuntimeBundle` (agent + provider + tools + hook_manager) from a `RuntimeAssemblyRequest`. Three assembly sites: primary CLI runtime, coordinator worker runtimes, automation-triggered runtimes. When adding a runtime-wide capability, thread it through `RuntimeAssemblyRequest` — don't reach into globals.
+
+## Code Constraints & Conventions
+
+Rules, idioms, and style guidance live in [`.claude/rules/`](.claude/rules/README.md). Read the file that matches the task:
+
+- [`.claude/rules/critical-rules.md`](.claude/rules/critical-rules.md) — non-negotiable constraints (no macros, no implicit bool, explicit single-arg ctors, treat clang-tidy warnings as errors, no custom thread pools, new SQLite code uses `std::expected`, do not log decrypted secrets, etc.). **Read before any C++ edit.**
+- [`.claude/rules/design-principles.md`](.claude/rules/design-principles.md) — integration, composability, sender/receiver, error handling, wrapper APIs, testing expectations, `src/utils/` reuse.
+- [`.claude/rules/code-style.md`](.claude/rules/code-style.md) — modern C++ idioms, type/memory choices, naming conventions, include order, performance rules, spdlog conventions.
+- [`.claude/rules/workflow.md`](.claude/rules/workflow.md) — branch/commit workflow, pre-commit hook, preferred CLI tools (`rg`, `fd`, etc.).
+- [`.claude/rules/libraries.md`](.claude/rules/libraries.md) — reference for integrated third-party libraries.
+
+When rules or architecture shift, update the corresponding `.claude/rules/*.md` file and this document.

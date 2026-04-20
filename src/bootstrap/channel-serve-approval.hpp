@@ -6,6 +6,7 @@
 #include "types/base.hpp"
 #include "types/content.hpp"
 #include "utils/format.hpp"
+#include "utils/string.hpp"
 
 #include <cctype>
 #include <cstdint>
@@ -65,23 +66,13 @@ namespace orangutan::bootstrap::detail {
 
     [[nodiscard]]
     inline bool is_qq_custom_keyboard_blocked_error(std::string_view message) {
-        std::string lowered;
-        lowered.reserve(message.size());
-        for (const auto ch : message) {
-            lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-        }
+        const auto lowered = utils::ascii_to_lower_copy(message);
         return lowered.contains("biz_code=304057") || lowered.contains("not allowd custom keyborad") || lowered.contains("not allowed custom keyboard");
     }
 
     [[nodiscard]]
     inline std::string trim_ascii_copy(std::string_view value) {
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-            value.remove_prefix(1);
-        }
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-            value.remove_suffix(1);
-        }
-        return std::string(value);
+        return std::string(utils::trim_copy(value));
     }
 
     [[nodiscard]]
@@ -260,14 +251,10 @@ namespace orangutan::bootstrap::detail {
 
     [[nodiscard]]
     inline std::string normalize_channel_approval_token(std::string_view content) {
-        std::string normalized;
-        normalized.reserve(content.size());
-        for (const auto ch : content) {
-            const auto lowered = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-            if (std::isalnum(static_cast<unsigned char>(lowered)) != 0 || lowered == '-') {
-                normalized.push_back(lowered);
-            }
-        }
+        auto normalized = utils::ascii_to_lower_copy(content);
+        std::erase_if(normalized, [](unsigned char ch) {
+            return std::isalnum(ch) == 0 && ch != '-';
+        });
         return normalized;
     }
 

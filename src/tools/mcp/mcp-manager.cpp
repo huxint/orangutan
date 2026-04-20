@@ -82,7 +82,7 @@ namespace orangutan::tools {
     }
 
     std::size_t McpManager::connected_server_count() const {
-        return static_cast<std::size_t>(std::count_if(servers_.begin(), servers_.end(), [](const ServerState &server) {
+        return static_cast<std::size_t>(std::ranges::count_if(servers_, [](const ServerState &server) {
             return server.connected;
         }));
     }

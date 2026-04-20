@@ -1,4 +1,5 @@
 #include "process/subprocess.hpp"
+#include "process/posix-fd-utils.hpp"
 #include "types/base.hpp"
 #include "utils/format.hpp"
 #include "utils/sender-utils.hpp"
@@ -29,46 +30,6 @@
 namespace orangutan::process {
 
     namespace {
-
-        void write_all(int fd, std::string_view text) {
-            std::size_t written = 0;
-            while (written < text.size()) {
-                const auto pending = text.substr(written);
-                const auto count = write(fd, pending.data(), pending.size());
-                if (count > 0) {
-                    written += static_cast<std::size_t>(count);
-                    continue;
-                }
-                if (count < 0 && errno == EINTR) {
-                    continue;
-                }
-                break;
-            }
-        }
-
-        void write_child_error(std::string_view operation, std::string_view path) {
-            std::string message(operation);
-            utils::format_to(message, "({}) failed: {})\n", path, std::strerror(errno));
-            write_all(STDERR_FILENO, message);
-        }
-
-        // Calculate remaining milliseconds until deadline, returns 0 if expired.
-        int remaining_ms(std::chrono::steady_clock::time_point deadline) {
-            auto now = std::chrono::steady_clock::now();
-            if (now >= deadline) {
-                return 0;
-            }
-            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-            return static_cast<int>(ms);
-        }
-
-        bool set_nonblocking(int fd) {
-            int flags = fcntl(fd, F_GETFL, 0); // NOLINT(cppcoreguidelines-pro-type-vararg)
-            if (flags == -1) {
-                return false;
-            }
-            return fcntl(fd, F_SETFL, flags | O_NONBLOCK) != -1; // NOLINT(cppcoreguidelines-pro-type-vararg)
-        }
 
         bool drain_fd(int fd, std::string &output) {
             std::array<char, 4096> buffer{};

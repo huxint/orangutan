@@ -11,7 +11,7 @@ namespace orangutan::permissions {
     namespace {
 
         std::string rule_to_string(const PermissionRule &rule) {
-            if (!rule.content) {
+            if (!rule.content.has_value()) {
                 return rule.tool_name;
             }
 

@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <sstream>
 
 #include <magic_enum/magic_enum.hpp>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -102,13 +101,10 @@ namespace orangutan::bootstrap {
                 return false;
             }
 
-            std::string normalized;
-            normalized.reserve(answer.size());
-            for (const auto ch : answer) {
-                if (std::isspace(static_cast<unsigned char>(ch)) == 0) {
-                    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-                }
-            }
+            auto normalized = utils::ascii_to_lower_copy(answer);
+            std::erase_if(normalized, [](unsigned char ch) {
+                return std::isspace(ch) != 0;
+            });
             return normalized == "y" || normalized == "yes";
         };
     }
@@ -169,25 +165,6 @@ namespace orangutan::bootstrap {
         }
     }
 
-    namespace {
-        std::vector<std::string> split_comma_list(const std::string &input) {
-            std::vector<std::string> result;
-            std::istringstream stream(input);
-            std::string token;
-            while (std::getline(stream, token, ',')) {
-                auto trimmed = token;
-                std::erase_if(trimmed, [](unsigned char ch) {
-                    return std::isspace(ch) != 0;
-                });
-                if (!trimmed.empty()) {
-                    result.push_back(std::move(trimmed));
-                }
-            }
-            return result;
-        }
-
-    } // namespace
-
     CLIPermissionOptions build_cli_permission_options(const CliOptions &options) {
         CLIPermissionOptions cli_perms;
         cli_perms.dangerously_skip_permissions = options.dangerously_skip_permissions;
@@ -206,10 +183,10 @@ namespace orangutan::bootstrap {
         }
 
         if (!options.allowed_tools_str.empty()) {
-            cli_perms.allowed_tools = split_comma_list(options.allowed_tools_str);
+            cli_perms.allowed_tools = utils::split_trimmed(options.allowed_tools_str);
         }
         if (!options.disallowed_tools_str.empty()) {
-            cli_perms.disallowed_tools = split_comma_list(options.disallowed_tools_str);
+            cli_perms.disallowed_tools = utils::split_trimmed(options.disallowed_tools_str);
         }
 
         return cli_perms;

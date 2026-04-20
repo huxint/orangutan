@@ -70,23 +70,13 @@ namespace orangutan {
         }
 
         [[nodiscard]]
-        auto begin() noexcept {
-            return content_.begin();
+        auto begin(this auto &&self) noexcept {
+            return self.content_.begin();
         }
 
         [[nodiscard]]
-        auto end() noexcept {
-            return content_.end();
-        }
-
-        [[nodiscard]]
-        auto begin() const noexcept {
-            return content_.begin();
-        }
-
-        [[nodiscard]]
-        auto end() const noexcept {
-            return content_.end();
+        auto end(this auto &&self) noexcept {
+            return self.content_.end();
         }
 
         [[nodiscard]]
@@ -138,23 +128,13 @@ namespace orangutan {
         }
 
         [[nodiscard]]
-        auto begin() noexcept {
-            return messages_.begin();
+        auto begin(this auto &&self) noexcept {
+            return self.messages_.begin();
         }
 
         [[nodiscard]]
-        auto end() noexcept {
-            return messages_.end();
-        }
-
-        [[nodiscard]]
-        auto begin() const noexcept {
-            return messages_.begin();
-        }
-
-        [[nodiscard]]
-        auto end() const noexcept {
-            return messages_.end();
+        auto end(this auto &&self) noexcept {
+            return self.messages_.end();
         }
 
     private:

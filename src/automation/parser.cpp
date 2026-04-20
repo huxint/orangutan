@@ -7,15 +7,15 @@
 #include <cctype>
 #include <cstddef>
 #include <expected>
-#include <iomanip>
 #include <limits>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "automation/cron-parser.hpp"
+#include "utils/format.hpp"
+#include "utils/time-format.hpp"
 
 namespace orangutan::automation {
     namespace {
@@ -59,21 +59,6 @@ namespace orangutan::automation {
             std::string_view{"type"},
             std::string_view{"at"},
         };
-
-        [[nodiscard]]
-        std::optional<int> parse_fixed_int(std::string_view value, std::size_t offset, std::size_t width) {
-            if (offset + width > value.size()) {
-                return std::nullopt;
-            }
-
-            int result = 0;
-            const auto token = value.substr(offset, width);
-            auto [ptr, ec] = std::from_chars(token.begin(), token.end(), result);
-            if (ec != std::errc{} || ptr != token.end()) {
-                return std::nullopt;
-            }
-            return result;
-        }
 
         [[nodiscard]]
         std::expected<std::string, std::string> parse_required_string_field(const nlohmann::json &value, std::string_view field_name) {
@@ -141,10 +126,7 @@ namespace orangutan::automation {
             const auto total_minutes = value.count();
             const auto hours = total_minutes / 60;
             const auto minutes = total_minutes % 60;
-
-            std::ostringstream stream;
-            stream << std::setfill('0') << std::setw(2) << hours << ':' << std::setw(2) << minutes;
-            return stream.str();
+            return utils::format("{:02}:{:02}", hours, minutes);
         }
 
         [[nodiscard]]
@@ -153,8 +135,8 @@ namespace orangutan::automation {
                 return std::unexpected("time values must use hh:mm");
             }
 
-            const auto hour = parse_fixed_int(value, 0, 2);
-            const auto minute = parse_fixed_int(value, 3, 2);
+            const auto hour = utils::parse_fixed_int(value, 0, 2);
+            const auto minute = utils::parse_fixed_int(value, 3, 2);
             if (!hour.has_value() || !minute.has_value()) {
                 return std::unexpected("time values must use hh:mm");
             }
@@ -172,45 +154,12 @@ namespace orangutan::automation {
         }
 
         [[nodiscard]]
-        std::string format_iso_utc(TimePoint value) {
-            const auto truncated = std::chrono::floor<std::chrono::seconds>(value);
-            const auto day = std::chrono::floor<std::chrono::days>(truncated);
-            const auto ymd = std::chrono::year_month_day{day};
-            const auto tod = std::chrono::hh_mm_ss{truncated - day};
-
-            std::ostringstream stream;
-            stream << std::setfill('0') << std::setw(4) << static_cast<int>(ymd.year()) << '-' << std::setw(2) << static_cast<unsigned>(ymd.month()) << '-' << std::setw(2)
-                   << static_cast<unsigned>(ymd.day()) << 'T' << std::setw(2) << tod.hours().count() << ':' << std::setw(2) << tod.minutes().count() << ':' << std::setw(2)
-                   << tod.seconds().count() << 'Z';
-            return stream.str();
-        }
-
-        [[nodiscard]]
         std::expected<TimePoint, std::string> parse_iso_utc(std::string_view value) {
-            if (value.size() != 20 || value[4] != '-' || value[7] != '-' || value[10] != 'T' || value[13] != ':' || value[16] != ':' || value[19] != 'Z') {
+            const auto parsed = utils::parse_iso8601_utc(value);
+            if (!parsed.has_value()) {
                 return std::unexpected("at must use iso-8601 utc format");
             }
-
-            const auto year = parse_fixed_int(value, 0, 4);
-            const auto month = parse_fixed_int(value, 5, 2);
-            const auto day = parse_fixed_int(value, 8, 2);
-            const auto hour = parse_fixed_int(value, 11, 2);
-            const auto minute = parse_fixed_int(value, 14, 2);
-            const auto second = parse_fixed_int(value, 17, 2);
-            if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() || !minute.has_value() || !second.has_value()) {
-                return std::unexpected("at must use iso-8601 utc format");
-            }
-            if (*hour > 23 || *minute > 59 || *second > 59) {
-                return std::unexpected("at must use valid utc time values");
-            }
-
-            const auto ymd = std::chrono::year{*year} / std::chrono::month{static_cast<unsigned>(*month)} / std::chrono::day{static_cast<unsigned>(*day)};
-            if (!ymd.ok()) {
-                return std::unexpected("at must use a valid utc date");
-            }
-
-            const auto utc_time = std::chrono::sys_days{ymd} + std::chrono::hours{*hour} + std::chrono::minutes{*minute} + std::chrono::seconds{*second};
-            return std::chrono::time_point_cast<Clock::duration>(utc_time);
+            return std::chrono::time_point_cast<Clock::duration>(*parsed);
         }
 
         [[nodiscard]]
@@ -279,7 +228,7 @@ namespace orangutan::automation {
             case trigger_type::once:
                 return {
                     {"type", "once"},
-                    {"at", format_iso_utc(trigger.at)},
+                    {"at", utils::format_iso8601_utc(trigger.at)},
                 };
         }
 

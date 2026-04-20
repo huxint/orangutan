@@ -19,7 +19,7 @@ namespace orangutan::skills {
         }
 
         std::vector<std::filesystem::path> directories;
-        if (const char *home = std::getenv("HOME")) {
+        if (const char *home = std::getenv("HOME"); home != nullptr) {
             directories.emplace_back(std::filesystem::path{home} / ".orangutan" / "skills");
         }
         if (!workspace_root.empty()) {

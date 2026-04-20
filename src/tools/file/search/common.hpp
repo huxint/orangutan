@@ -1,6 +1,7 @@
 #pragma once
 
 #include "process/subprocess.hpp"
+#include "utils/escape.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -9,27 +10,11 @@
 
 namespace orangutan::tools::file::search {
 
-    /// POSIX single-quote escape: wrap in '...', replacing any embedded ' with '\''.
-    inline std::string shell_quote(std::string_view value) {
-        std::string out;
-        out.reserve(value.size() + 2);
-        out.push_back('\'');
-        for (const char ch : value) {
-            if (ch == '\'') {
-                out += R"('\'')";
-            } else {
-                out.push_back(ch);
-            }
-        }
-        out.push_back('\'');
-        return out;
-    }
-
     inline std::string append_arg(std::string command, std::string_view flag, std::string_view value) {
         command.push_back(' ');
         command += flag;
         command.push_back(' ');
-        command += shell_quote(value);
+        command += utils::shell_single_quote_escape(value);
         return command;
     }
 

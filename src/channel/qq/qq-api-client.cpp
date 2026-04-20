@@ -48,16 +48,6 @@ namespace orangutan::channel::qq {
     }
 
     [[nodiscard]]
-    std::string to_lower_ascii(std::string_view input) {
-        std::string lowered;
-        lowered.reserve(input.size());
-        for (char ch : input) {
-            lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-        }
-        return lowered;
-    }
-
-    [[nodiscard]]
     bool is_absolute_url(std::string_view path) {
         return path.starts_with("https://") || path.starts_with("http://");
     }
@@ -277,7 +267,7 @@ namespace orangutan::channel::qq {
                 return total;
             }
 
-            const auto key = to_lower_ascii(utils::trim_copy(line.substr(0, colon)));
+            const auto key = utils::ascii_to_lower_copy(utils::trim_copy(line.substr(0, colon)));
             const auto value = static_cast<std::string>(utils::trim_copy(line.substr(colon + 1)));
             if (key == "x-tps-trace-id" && capture->trace_id != nullptr) {
                 *capture->trace_id = value;

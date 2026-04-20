@@ -174,8 +174,7 @@ namespace orangutan::automation {
         return parse_cron_impl(expr, false);
     }
 
-    bool cron_matches(const CronExpr &expr, const TimePoint &time_point) {
-        const auto local_time = time::local_time_from(time_point);
+    bool cron_matches_local(const CronExpr &expr, std::chrono::local_seconds local_time) {
         const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
         const auto ymd = std::chrono::year_month_day{local_day};
         const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
@@ -193,6 +192,10 @@ namespace orangutan::automation {
 
         return expr.minute.matches(static_cast<int>(tod.minutes().count())) && expr.hour.matches(static_cast<int>(tod.hours().count())) &&
                expr.month.matches(static_cast<int>(static_cast<unsigned>(ymd.month()))) && day_matches;
+    }
+
+    bool cron_matches(const CronExpr &expr, const TimePoint &time_point) {
+        return cron_matches_local(expr, time::local_time_from(time_point));
     }
 
     std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after) {

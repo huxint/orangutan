@@ -27,27 +27,6 @@ namespace orangutan::automation {
         }
 
         [[nodiscard]]
-        bool cron_matches_local_time(const CronExpr &expr, std::chrono::local_seconds local_time) {
-            const auto local_day = std::chrono::floor<std::chrono::days>(local_time);
-            const auto ymd = std::chrono::year_month_day{local_day};
-            const auto tod = std::chrono::hh_mm_ss{local_time - local_day};
-            const auto day_of_month_matches = expr.day_of_month.matches(static_cast<int>(static_cast<unsigned>(ymd.day())));
-            const auto day_of_week_matches = expr.day_of_week.matches(static_cast<int>(std::chrono::weekday{local_day}.c_encoding()));
-            const auto either_day_field_restricted = !expr.day_of_month.wildcard || !expr.day_of_week.wildcard;
-            const auto both_day_fields_restricted = !expr.day_of_month.wildcard && !expr.day_of_week.wildcard;
-
-            auto day_matches = true;
-            if (both_day_fields_restricted) {
-                day_matches = day_of_month_matches || day_of_week_matches;
-            } else if (either_day_field_restricted) {
-                day_matches = day_of_month_matches && day_of_week_matches;
-            }
-
-            return expr.minute.matches(static_cast<int>(tod.minutes().count())) && expr.hour.matches(static_cast<int>(tod.hours().count())) &&
-                   expr.month.matches(static_cast<int>(static_cast<unsigned>(ymd.month()))) && day_matches;
-        }
-
-        [[nodiscard]]
         std::optional<TimePoint> next_cron_fire_time(const TriggerDefinition &trigger, TimePoint after) {
             const auto parsed = parse_cron_silent(trigger.cron);
             if (!parsed.has_value()) {
@@ -56,7 +35,7 @@ namespace orangutan::automation {
 
             auto candidate = std::chrono::ceil<std::chrono::minutes>(after + std::chrono::seconds{1});
             for (int index = 0; index < MAX_CRON_SCAN_MINUTES; ++index) {
-                if (cron_matches_local_time(*parsed, local_time_in_zone(candidate, trigger.time_zone))) {
+                if (cron_matches_local(*parsed, local_time_in_zone(candidate, trigger.time_zone))) {
                     return candidate;
                 }
                 candidate += std::chrono::minutes{1};

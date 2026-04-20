@@ -1,84 +1,25 @@
 #include "providers/transport/http-transport.hpp"
 
 #include <curl/curl.h>
+#include <stdexcept>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
+#include "providers/transport/curl-primitives.hpp"
 #include "providers/transport/sse-parser.hpp"
 
 namespace orangutan::providers::transport {
     namespace {
 
-        class CurlHandle {
-        public:
-            CurlHandle()
-            : handle_(curl_easy_init()) {
-                if (handle_ == nullptr) {
-                    throw ProviderError(error_category::network, "failed to initialize libcurl");
-                }
+        [[nodiscard]]
+        CurlHandle make_curl_handle(const ModelTarget &target) {
+            try {
+                return CurlHandle{};
+            } catch (const std::runtime_error &e) {
+                throw ProviderError(error_category::network, e.what(), target);
             }
-
-            ~CurlHandle() {
-                if (handle_ != nullptr) {
-                    curl_easy_cleanup(handle_);
-                }
-            }
-
-            CurlHandle(const CurlHandle &) = delete;
-            CurlHandle &operator=(const CurlHandle &) = delete;
-            CurlHandle(CurlHandle &&) = delete;
-            CurlHandle &operator=(CurlHandle &&) = delete;
-
-            [[nodiscard]]
-            CURL *get() const noexcept {
-                return handle_;
-            }
-
-        private:
-            CURL *handle_ = nullptr;
-        };
-
-        class CurlHeaders {
-        public:
-            CurlHeaders() = default;
-
-            ~CurlHeaders() {
-                if (list_ != nullptr) {
-                    curl_slist_free_all(list_);
-                }
-            }
-
-            CurlHeaders(const CurlHeaders &) = delete;
-            CurlHeaders &operator=(const CurlHeaders &) = delete;
-            CurlHeaders(CurlHeaders &&other) noexcept
-            : list_(std::exchange(other.list_, nullptr)) {}
-            CurlHeaders &operator=(CurlHeaders &&other) noexcept {
-                if (this == &other) {
-                    return *this;
-                }
-                if (list_ != nullptr) {
-                    curl_slist_free_all(list_);
-                }
-                list_ = std::exchange(other.list_, nullptr);
-                return *this;
-            }
-
-            void append(std::string_view key, std::string_view value) {
-                std::string header(key);
-                header += ": ";
-                header += value;
-                list_ = curl_slist_append(list_, header.c_str());
-            }
-
-            [[nodiscard]]
-            curl_slist *get() const noexcept {
-                return list_;
-            }
-
-        private:
-            curl_slist *list_ = nullptr;
-        };
+        }
 
         [[nodiscard]]
         std::string truncate_body(std::string_view body, std::size_t max_chars = 512) {
@@ -146,7 +87,7 @@ namespace orangutan::providers::transport {
     } // namespace
 
     HttpResponse HttpTransport::post(const HttpRequest &request, const ModelTarget &target) const {
-        CurlHandle handle;
+        auto handle = make_curl_handle(target);
         std::string response_body;
         const auto headers = make_headers(request.headers);
 
@@ -176,7 +117,7 @@ namespace orangutan::providers::transport {
     }
 
     void HttpTransport::stream_sse(const HttpRequest &request, const ModelTarget &target, const sse_event_callback &on_event) const {
-        CurlHandle handle;
+        auto handle = make_curl_handle(target);
         std::string error_preview;
         const auto headers = make_headers(request.headers);
         SseParser parser([&](std::string_view event_name, std::string_view data) {

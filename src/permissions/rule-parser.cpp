@@ -133,7 +133,7 @@ namespace orangutan::permissions {
             return false;
         }
 
-        if (!rule.content) {
+        if (!rule.content.has_value()) {
             return true;
         }
 

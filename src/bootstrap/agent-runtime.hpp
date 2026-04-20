@@ -90,7 +90,7 @@ namespace orangutan::bootstrap {
         ~AgentRuntimeBundle();
 
         AgentRuntimeBundle(AgentRuntimeBundle &&other) noexcept;
-        AgentRuntimeBundle &operator=(AgentRuntimeBundle &&other) = delete;
+        AgentRuntimeBundle &operator=(AgentRuntimeBundle &&other) noexcept;
 
         AgentRuntimeBundle(const AgentRuntimeBundle &) = delete;
         AgentRuntimeBundle &operator=(const AgentRuntimeBundle &) = delete;

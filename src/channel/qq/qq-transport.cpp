@@ -635,7 +635,7 @@ namespace orangutan::channel::qq {
 
     void Transport::request_reconnect() {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-        if (impl_) {
+        if (impl_ != nullptr) {
             impl_->request_reconnect();
         }
 #endif
@@ -643,7 +643,7 @@ namespace orangutan::channel::qq {
 
     void Transport::stop() {
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-        if (impl_) {
+        if (impl_ != nullptr) {
             impl_->stop();
         }
 #endif

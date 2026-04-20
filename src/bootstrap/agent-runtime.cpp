@@ -47,9 +47,9 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle::~AgentRuntimeBundle() = default;
 
     AgentRuntimeBundle::AgentRuntimeBundle(AgentRuntimeBundle &&other) noexcept
-    : tool_context_storage_(other.tool_context_storage_ ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),
-      tools_storage_(other.tools_storage_ ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>()),
-      permissions_storage_(other.permissions_storage_ ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>()),
+    : tool_context_storage_(other.tool_context_storage_ != nullptr ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),
+      tools_storage_(other.tools_storage_ != nullptr ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>()),
+      permissions_storage_(other.permissions_storage_ != nullptr ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>()),
       provider(std::move(other.provider)),
       memory(std::move(other.memory)),
       mcp_manager(std::move(other.mcp_manager)),
@@ -57,6 +57,23 @@ namespace orangutan::bootstrap {
       skill_loader(std::move(other.skill_loader)),
       hook_manager(std::move(other.hook_manager)),
       agent(std::move(other.agent)) {}
+
+    AgentRuntimeBundle &AgentRuntimeBundle::operator=(AgentRuntimeBundle &&other) noexcept {
+        if (this == &other) {
+            return *this;
+        }
+        tool_context_storage_ = other.tool_context_storage_ != nullptr ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>();
+        tools_storage_ = other.tools_storage_ != nullptr ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>();
+        permissions_storage_ = other.permissions_storage_ != nullptr ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>();
+        provider = std::move(other.provider);
+        memory = std::move(other.memory);
+        mcp_manager = std::move(other.mcp_manager);
+        skills_prompt = std::move(other.skills_prompt);
+        skill_loader = std::move(other.skill_loader);
+        hook_manager = std::move(other.hook_manager);
+        agent = std::move(other.agent);
+        return *this;
+    }
 
     ToolRegistry &AgentRuntimeBundle::tools() noexcept {
         return *tools_storage_;

@@ -37,6 +37,8 @@ namespace orangutan::automation {
 
     bool cron_matches(const CronExpr &expr, const TimePoint &time);
 
+    bool cron_matches_local(const CronExpr &expr, std::chrono::local_seconds local_time);
+
     std::optional<TimePoint> next_fire_time(const CronExpr &expr, const TimePoint &after);
 
 } // namespace orangutan::automation
