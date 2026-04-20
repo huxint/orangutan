@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "swarm/team-manager.hpp"
+#include "orchestration/team-manager.hpp"
 
 #include <concepts>
 #include <filesystem>
@@ -7,12 +7,12 @@
 
 namespace {
 
-    static_assert(std::constructible_from<orangutan::swarm::TeamManager, const std::filesystem::path &>);
+    static_assert(std::constructible_from<orangutan::orchestration::TeamManager, const std::filesystem::path &>);
 
 } // namespace
 
-TEST_CASE("TeamManager basic operations", "[swarm]") {
-    orangutan::swarm::TeamManager manager(std::filesystem::path{":memory:"});
+TEST_CASE("TeamManager basic operations", "[orchestration]") {
+    orangutan::orchestration::TeamManager manager(std::filesystem::path{":memory:"});
 
     SECTION("create and find team") {
         auto team = manager.create_team("test-team", "A test team", "lead-1");

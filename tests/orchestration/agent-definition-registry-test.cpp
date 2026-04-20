@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <concepts>
-#include "coordinator/agent-definition-registry.hpp"
+#include "orchestration/agent-definition-registry.hpp"
 #include "test-helpers.hpp"
 
 #include <type_traits>
@@ -10,8 +10,8 @@
 
 namespace {
 
-    using Registry = orangutan::coordinator::AgentDefinitionRegistry;
-    using FindSignature = std::optional<orangutan::coordinator::AgentDefinition> (Registry::*)(std::string_view) const;
+    using Registry = orangutan::orchestration::AgentDefinitionRegistry;
+    using FindSignature = std::optional<orangutan::orchestration::AgentDefinition> (Registry::*)(std::string_view) const;
 
     static_assert(std::same_as<decltype(&Registry::load_from_directory), void (Registry::*)(const std::filesystem::path &)>);
     static_assert(std::same_as<decltype(&Registry::find), FindSignature>);
@@ -19,8 +19,8 @@ namespace {
 
 } // namespace
 
-TEST_CASE("AgentDefinitionRegistry built-in agents", "[coordinator]") {
-    orangutan::coordinator::AgentDefinitionRegistry registry;
+TEST_CASE("AgentDefinitionRegistry built-in agents", "[orchestration]") {
+    orangutan::orchestration::AgentDefinitionRegistry registry;
     registry.load_builtin_definitions();
 
     REQUIRE(registry.has("general-purpose"));
@@ -32,8 +32,7 @@ TEST_CASE("AgentDefinitionRegistry built-in agents", "[coordinator]") {
     REQUIRE(!gp->description.empty());
 }
 
-TEST_CASE("agent definition frontmatter csv fields trim whitespace and skip blanks", "[coordinator]") {
-    namespace coordinator = orangutan::coordinator;
+TEST_CASE("agent definition frontmatter csv fields trim whitespace and skip blanks", "[orchestration]") {
     namespace testing = orangutan::testing;
 
     const auto root = testing::unique_test_root("agent-definition-registry");
@@ -46,7 +45,7 @@ TEST_CASE("agent definition frontmatter csv fields trim whitespace and skip blan
                               << "---\n"
                               << "prompt body\n";
 
-    coordinator::AgentDefinitionRegistry registry;
+    orangutan::orchestration::AgentDefinitionRegistry registry;
     registry.load_from_directory(agent_path.parent_path());
 
     constexpr std::string_view agent_key = "csv-agent";

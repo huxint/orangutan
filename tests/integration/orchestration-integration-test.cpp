@@ -1,7 +1,7 @@
-#include "coordinator/coordinator-manager.hpp"
-#include "coordinator/agent-definition-registry.hpp"
-#include "swarm/mailbox.hpp"
-#include "swarm/team-manager.hpp"
+#include "orchestration/orchestration-manager.hpp"
+#include "orchestration/agent-definition-registry.hpp"
+#include "orchestration/mailbox.hpp"
+#include "orchestration/team-manager.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,16 +14,16 @@ using namespace orangutan;
 
 namespace {
 
-    TEST_CASE("Coordinator spawns worker and receives notification", "[integration][coordinator]") {
-        coordinator::AgentDefinitionRegistry def_registry;
+    TEST_CASE("orchestration manager spawns worker and receives notification", "[integration][orchestration]") {
+        orchestration::AgentDefinitionRegistry def_registry;
         def_registry.load_builtin_definitions();
 
-        coordinator::CoordinatorManager manager(2);
-        manager.set_environment(coordinator::AgentExecutionEnvironment{
+        orchestration::OrchestrationManager manager(2);
+        manager.set_environment(orchestration::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
         });
-        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
-            struct ImmediateWorker final : coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct ImmediateWorker final : orchestration::WorkerRuntime {
                 std::string run(const std::string &, std::stop_token) override {
                     return "integration done";
                 }
@@ -35,13 +35,13 @@ namespace {
         std::string notified_run_id;
         std::mutex notify_mutex;
 
-        manager.set_notification_callback([&](const coordinator::AgentRunRecord &record) {
+        manager.set_notification_callback([&](const orchestration::AgentRunRecord &record) {
             std::scoped_lock lock(notify_mutex);
             notified_run_id = record.run_id;
             notification_received.store(true);
         });
 
-        auto result = manager.spawn(coordinator::AgentSpawnRequest{
+        auto result = manager.spawn(orchestration::AgentSpawnRequest{
             .agent_key = "general-purpose",
             .task_prompt = "Test task for integration",
             .parent_runtime_key = "test-runtime",
@@ -62,22 +62,22 @@ namespace {
 
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
-        CHECK(run->status == coordinator::agent_run_status::succeeded);
+        CHECK(run->status == orchestration::run_status::succeeded);
         CHECK(run->final_output == "integration done");
 
         manager.shutdown();
     }
 
-    TEST_CASE("Coordinator rejects unknown agent key", "[integration][coordinator]") {
-        coordinator::AgentDefinitionRegistry def_registry;
+    TEST_CASE("orchestration manager rejects unknown agent key", "[integration][orchestration]") {
+        orchestration::AgentDefinitionRegistry def_registry;
         def_registry.load_builtin_definitions();
 
-        coordinator::CoordinatorManager manager(2);
-        manager.set_environment(coordinator::AgentExecutionEnvironment{
+        orchestration::OrchestrationManager manager(2);
+        manager.set_environment(orchestration::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
         });
 
-        auto result = manager.spawn(coordinator::AgentSpawnRequest{
+        auto result = manager.spawn(orchestration::AgentSpawnRequest{
             .agent_key = "nonexistent-agent",
             .task_prompt = "This should fail",
             .parent_runtime_key = "test-runtime",
@@ -90,19 +90,19 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("Coordinator queues runs beyond max concurrent limit", "[integration][coordinator]") {
-        coordinator::AgentDefinitionRegistry def_registry;
+    TEST_CASE("orchestration manager queues runs beyond max concurrent limit", "[integration][orchestration]") {
+        orchestration::AgentDefinitionRegistry def_registry;
         def_registry.load_builtin_definitions();
 
-        coordinator::CoordinatorManager manager(1);
-        manager.set_environment(coordinator::AgentExecutionEnvironment{
+        orchestration::OrchestrationManager manager(1);
+        manager.set_environment(orchestration::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
         });
 
         std::atomic<bool> release_first{false};
         std::atomic<int> started{0};
-        manager.set_worker_runtime_factory([&](const coordinator::AgentSpawnRequest &request) {
-            struct QueuedWorker final : coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([&](const orchestration::AgentSpawnRequest &request) {
+            struct QueuedWorker final : orchestration::WorkerRuntime {
                 std::atomic<bool> *release_first = nullptr;
                 std::atomic<int> *started = nullptr;
                 std::string task_prompt;
@@ -125,7 +125,7 @@ namespace {
             return worker;
         });
 
-        auto r1 = manager.spawn(coordinator::AgentSpawnRequest{
+        auto r1 = manager.spawn(orchestration::AgentSpawnRequest{
             .agent_key = "general-purpose",
             .task_prompt = "first task",
             .parent_runtime_key = "test-runtime",
@@ -137,7 +137,7 @@ namespace {
         }
         REQUIRE(started.load() == 1);
 
-        auto r2 = manager.spawn(coordinator::AgentSpawnRequest{
+        auto r2 = manager.spawn(orchestration::AgentSpawnRequest{
             .agent_key = "explorer",
             .task_prompt = "second task",
             .parent_runtime_key = "test-runtime",
@@ -146,14 +146,14 @@ namespace {
 
         auto queued = manager.get_run(r2.run_id);
         REQUIRE(queued.has_value());
-        CHECK(queued->status == coordinator::agent_run_status::queued);
+        CHECK(queued->status == orchestration::run_status::queued);
         CHECK(started.load() == 1);
 
         release_first.store(true);
 
         for (int i = 0; i < 100; ++i) {
             auto run = manager.get_run(r2.run_id);
-            if (run.has_value() && run->status == coordinator::agent_run_status::succeeded) {
+            if (run.has_value() && run->status == orchestration::run_status::succeeded) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -161,22 +161,22 @@ namespace {
 
         auto completed = manager.get_run(r2.run_id);
         REQUIRE(completed.has_value());
-        CHECK(completed->status == coordinator::agent_run_status::succeeded);
+        CHECK(completed->status == orchestration::run_status::succeeded);
         CHECK(started.load() == 2);
 
         manager.shutdown();
     }
 
-    TEST_CASE("Coordinator stop terminates a run", "[integration][coordinator]") {
-        coordinator::AgentDefinitionRegistry def_registry;
+    TEST_CASE("orchestration manager stop terminates a run", "[integration][orchestration]") {
+        orchestration::AgentDefinitionRegistry def_registry;
         def_registry.load_builtin_definitions();
 
-        coordinator::CoordinatorManager manager(2);
-        manager.set_environment(coordinator::AgentExecutionEnvironment{
+        orchestration::OrchestrationManager manager(2);
+        manager.set_environment(orchestration::AgentExecutionEnvironment{
             .definition_registry = &def_registry,
         });
-        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
-            struct SlowWorker final : coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct SlowWorker final : orchestration::WorkerRuntime {
                 std::string run(const std::string &, std::stop_token stop_token) override {
                     for (int i = 0; i < 100; ++i) {
                         if (stop_token.stop_requested()) {
@@ -190,7 +190,7 @@ namespace {
             return std::make_unique<SlowWorker>();
         });
 
-        auto result = manager.spawn(coordinator::AgentSpawnRequest{
+        auto result = manager.spawn(orchestration::AgentSpawnRequest{
             .agent_key = "general-purpose",
             .task_prompt = "task to stop",
             .parent_runtime_key = "test-runtime",
@@ -204,40 +204,40 @@ namespace {
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
         // Status should be either succeeded (if worker completed before stop) or terminated
-        CHECK((run->status == coordinator::agent_run_status::succeeded || run->status == coordinator::agent_run_status::terminated));
+        CHECK((run->status == orchestration::run_status::succeeded || run->status == orchestration::run_status::terminated));
 
         manager.shutdown();
     }
 
-    TEST_CASE("Team agents exchange messages via mailbox", "[integration][swarm]") {
-        swarm::AgentMailbox mailbox(":memory:");
-        swarm::TeamManager team_mgr(":memory:");
+    TEST_CASE("Team agents exchange messages via mailbox", "[integration][orchestration]") {
+        orchestration::AgentMailbox mailbox(":memory:");
+        orchestration::TeamManager team_mgr(":memory:");
 
         // Create a team
-        auto team = team_mgr.create_team("test-team", "Integration test team", "coordinator");
+        auto team = team_mgr.create_team("test-team", "Integration test team", "leader");
         REQUIRE(!team.id.empty());
 
         // Add members
         team_mgr.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
         team_mgr.add_member({.agent_id = "agent-2", .name = "worker2", .agent_key = "explorer", .team_id = team.id});
 
-        // Coordinator sends message to worker1
-        mailbox.send(team.id, "coordinator", "worker1", "Please analyze the codebase");
+        // Leader sends message to worker1
+        mailbox.send(team.id, "leader", "worker1", "Please analyze the codebase");
 
         // worker1 receives the message
         auto msgs = mailbox.poll(team.id, "worker1");
         REQUIRE(msgs.size() == 1);
-        CHECK(msgs[0].from == "coordinator");
+        CHECK(msgs[0].from == "leader");
         CHECK(msgs[0].text == "Please analyze the codebase");
         mailbox.mark_read({msgs[0].id});
 
         // worker1 broadcasts a finding to all team members
         auto members = team_mgr.list_member_names(team.id);
-        members.emplace_back("coordinator"); // coordinator is also a recipient
+        members.emplace_back("leader"); // leader is also a recipient
         mailbox.send_broadcast(team.id, "worker1", "Found 3 modules to update", members);
 
-        // coordinator and worker2 should receive the broadcast (not worker1 itself)
-        auto coord_msgs = mailbox.poll(team.id, "coordinator");
+        // leader and worker2 should receive the broadcast (not worker1 itself)
+        auto coord_msgs = mailbox.poll(team.id, "leader");
         auto w2_msgs = mailbox.poll(team.id, "worker2");
         auto w1_msgs = mailbox.poll(team.id, "worker1");
 
@@ -248,9 +248,9 @@ namespace {
         CHECK(w1_msgs.empty()); // sender doesn't receive own broadcast
     }
 
-    TEST_CASE("Team lifecycle with mailbox cleanup", "[integration][swarm]") {
-        swarm::AgentMailbox mailbox(":memory:");
-        swarm::TeamManager team_mgr(":memory:");
+    TEST_CASE("Team lifecycle with mailbox cleanup", "[integration][orchestration]") {
+        orchestration::AgentMailbox mailbox(":memory:");
+        orchestration::TeamManager team_mgr(":memory:");
 
         auto team = team_mgr.create_team("ephemeral-team", "Short-lived team", "lead");
         REQUIRE(!team.id.empty());

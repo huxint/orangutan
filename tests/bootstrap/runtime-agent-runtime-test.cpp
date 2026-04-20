@@ -174,7 +174,7 @@ namespace {
         CHECK(recall.content.contains("amber"));
     };
 
-    TEST_CASE("coordinator_mode_runtime_exposes_only_orchestration_tools") {
+    TEST_CASE("leader_mode_runtime_exposes_only_orchestration_tools") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
         input.coordinator_mode = true;
@@ -183,14 +183,16 @@ namespace {
         auto runtime = build_agent_runtime(input);
         const auto definitions = runtime.tools().definitions();
 
-        CHECK(definitions.size() == 3);
+        CHECK(definitions.size() == 5);
         CHECK(orangutan::testing::has_tool_named(definitions, "agent_spawn"));
         CHECK(orangutan::testing::has_tool_named(definitions, "agent_send_message"));
         CHECK(orangutan::testing::has_tool_named(definitions, "agent_stop"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "team_create"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "team_delete"));
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "file_read"));
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "tool_search"));
-        CHECK(runtime.skills_prompt.contains("You are a coordinator agent"));
+        CHECK(runtime.skills_prompt.contains("You are a leader agent"));
         CHECK(runtime.skills_prompt.contains("Research"));
         CHECK(runtime.skills_prompt.contains("Verification"));
     };

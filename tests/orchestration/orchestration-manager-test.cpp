@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "coordinator/coordinator-manager.hpp"
+#include "orchestration/orchestration-manager.hpp"
 
 #include <atomic>
 #include <array>
@@ -22,8 +22,8 @@ namespace {
 
 } // namespace
 
-TEST_CASE("CoordinatorManager basic lifecycle", "[coordinator]") {
-    orangutan::coordinator::CoordinatorManager manager(2);
+TEST_CASE("OrchestrationManager basic lifecycle", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(2);
 
     SECTION("starts empty") {
         REQUIRE(manager.list_active_runs().empty());
@@ -35,12 +35,12 @@ TEST_CASE("CoordinatorManager basic lifecycle", "[coordinator]") {
     }
 }
 
-TEST_CASE("CoordinatorManager stop requests the worker stop token", "[coordinator]") {
-    orangutan::coordinator::CoordinatorManager manager(1);
+TEST_CASE("OrchestrationManager stop requests the worker stop token", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> saw_stop{false};
 
-    manager.set_worker_runtime_factory([&saw_stop](const orangutan::coordinator::AgentSpawnRequest &) {
-        struct SlowWorker final : orangutan::coordinator::WorkerRuntime {
+    manager.set_worker_runtime_factory([&saw_stop](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct SlowWorker final : orangutan::orchestration::WorkerRuntime {
             std::atomic<bool> *saw_stop = nullptr;
 
             std::string run(const std::string &, std::stop_token stop_token) override {
@@ -79,12 +79,12 @@ TEST_CASE("CoordinatorManager stop requests the worker stop token", "[coordinato
 
     const auto run = manager.get_run(result.run_id);
     REQUIRE(run.has_value());
-    CHECK((run->status == orangutan::coordinator::agent_run_status::terminated || run->status == orangutan::coordinator::agent_run_status::succeeded));
+    CHECK((run->status == orangutan::orchestration::run_status::terminated || run->status == orangutan::orchestration::run_status::succeeded));
 
     manager.shutdown();
 }
 
-TEST_CASE("CoordinatorManager escapes xml-sensitive notification content", "[coordinator]") {
+TEST_CASE("OrchestrationManager escapes xml-sensitive notification content", "[orchestration]") {
     struct EscapeCase {
         std::string task_prompt;
         std::string worker_output;
@@ -114,7 +114,7 @@ TEST_CASE("CoordinatorManager escapes xml-sensitive notification content", "[coo
     }};
 
     for (const auto &test_case : cases) {
-        orangutan::coordinator::CoordinatorManager manager(1);
+        orangutan::orchestration::OrchestrationManager manager(1);
         std::string delivered;
 
         manager.register_runtime_notification_handler("parent-runtime", [&delivered](const std::string &message) -> std::optional<std::string> {
@@ -122,8 +122,8 @@ TEST_CASE("CoordinatorManager escapes xml-sensitive notification content", "[coo
             return std::nullopt;
         });
 
-        manager.set_worker_runtime_factory([worker_output = test_case.worker_output](const orangutan::coordinator::AgentSpawnRequest &) {
-            struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([worker_output = test_case.worker_output](const orangutan::orchestration::AgentSpawnRequest &) {
+            struct ImmediateWorker final : orangutan::orchestration::WorkerRuntime {
                 std::string result;
 
                 std::string run(const std::string &, std::stop_token) override {
@@ -161,13 +161,13 @@ TEST_CASE("CoordinatorManager escapes xml-sensitive notification content", "[coo
     }
 }
 
-TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them later", "[coordinator]") {
-    orangutan::coordinator::CoordinatorManager manager(1);
+TEST_CASE("OrchestrationManager queues runs beyond max concurrency and starts them later", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> release_first{false};
     std::atomic<int> started{0};
 
-    manager.set_worker_runtime_factory([&](const orangutan::coordinator::AgentSpawnRequest &request) {
-        struct QueuedWorker final : orangutan::coordinator::WorkerRuntime {
+    manager.set_worker_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
+        struct QueuedWorker final : orangutan::orchestration::WorkerRuntime {
             std::atomic<bool> *release_first = nullptr;
             std::atomic<int> *started = nullptr;
             std::string task_prompt;
@@ -213,7 +213,7 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
 
     const auto queued_run = manager.get_run(second.run_id);
     REQUIRE(queued_run.has_value());
-    CHECK(queued_run->status == orangutan::coordinator::agent_run_status::queued);
+    CHECK(queued_run->status == orangutan::orchestration::run_status::queued);
     CHECK(started.load() == 1);
 
     release_first.store(true);
@@ -221,27 +221,27 @@ TEST_CASE("CoordinatorManager queues runs beyond max concurrency and starts them
     CHECK(wait_for_condition(
         [&] {
             const auto run = manager.get_run(second.run_id);
-            return run.has_value() && run->status == orangutan::coordinator::agent_run_status::succeeded;
+            return run.has_value() && run->status == orangutan::orchestration::run_status::succeeded;
         },
         100));
 
     CHECK(started.load() == 2);
     const auto completed_run = manager.get_run(second.run_id);
     REQUIRE(completed_run.has_value());
-    CHECK(completed_run->status == orangutan::coordinator::agent_run_status::succeeded);
+    CHECK(completed_run->status == orangutan::orchestration::run_status::succeeded);
     CHECK(completed_run->final_output == "second task done");
 
     manager.shutdown();
 }
 
-TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordinator]") {
+TEST_CASE("OrchestrationManager shutdown does not block on queued runs", "[orchestration]") {
     using namespace std::chrono_literals;
 
-    orangutan::coordinator::CoordinatorManager manager(1);
+    orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> first_started{false};
 
-    manager.set_worker_runtime_factory([&](const orangutan::coordinator::AgentSpawnRequest &request) {
-        struct BlockingWorker final : orangutan::coordinator::WorkerRuntime {
+    manager.set_worker_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
+        struct BlockingWorker final : orangutan::orchestration::WorkerRuntime {
             std::atomic<bool> *first_started = nullptr;
             std::string prompt;
 
@@ -283,7 +283,7 @@ TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordin
 
     const auto queued = manager.get_run(second.run_id);
     REQUIRE(queued.has_value());
-    CHECK(queued->status == orangutan::coordinator::agent_run_status::queued);
+    CHECK(queued->status == orangutan::orchestration::run_status::queued);
 
     const auto started_at = std::chrono::steady_clock::now();
     manager.shutdown();
@@ -292,10 +292,10 @@ TEST_CASE("CoordinatorManager shutdown does not block on queued runs", "[coordin
     CHECK(elapsed < 2s);
 }
 
-TEST_CASE("CoordinatorManager shutdown is safe while completion callback is still running", "[coordinator]") {
+TEST_CASE("OrchestrationManager shutdown is safe while completion callback is still running", "[orchestration]") {
     using namespace std::chrono_literals;
 
-    orangutan::coordinator::CoordinatorManager manager(1);
+    orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> callback_started{false};
 
     manager.register_runtime_notification_handler("parent-runtime", [&callback_started](const std::string &) -> std::optional<std::string> {
@@ -304,8 +304,8 @@ TEST_CASE("CoordinatorManager shutdown is safe while completion callback is stil
         return std::nullopt;
     });
 
-    manager.set_worker_runtime_factory([](const orangutan::coordinator::AgentSpawnRequest &) {
-        struct ImmediateWorker final : orangutan::coordinator::WorkerRuntime {
+    manager.set_worker_runtime_factory([](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct ImmediateWorker final : orangutan::orchestration::WorkerRuntime {
             std::string run(const std::string &, std::stop_token) override {
                 return "done";
             }

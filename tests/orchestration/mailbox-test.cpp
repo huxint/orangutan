@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "swarm/mailbox.hpp"
+#include "orchestration/mailbox.hpp"
 
 #include <filesystem>
 #include <concepts>
@@ -7,17 +7,17 @@
 
 namespace {
 
-    using MailboxSignature = void (orangutan::swarm::AgentMailbox::*)(const std::string &, const std::string &, const std::string &, const std::string &,
-                                                                      orangutan::swarm::message_type);
+    using MailboxSignature = void (orangutan::orchestration::AgentMailbox::*)(const std::string &, const std::string &, const std::string &, const std::string &,
+                                                                      orangutan::orchestration::message_type);
 
-    static_assert(std::constructible_from<orangutan::swarm::AgentMailbox, const std::filesystem::path &>);
-    static_assert(std::same_as<decltype(&orangutan::swarm::AgentMailbox::send), MailboxSignature>);
+    static_assert(std::constructible_from<orangutan::orchestration::AgentMailbox, const std::filesystem::path &>);
+    static_assert(std::same_as<decltype(&orangutan::orchestration::AgentMailbox::send), MailboxSignature>);
 
 } // namespace
 
-TEST_CASE("AgentMailbox basic operations", "[swarm]") {
+TEST_CASE("AgentMailbox basic operations", "[orchestration]") {
     // Use in-memory SQLite
-    orangutan::swarm::AgentMailbox mailbox(std::filesystem::path{":memory:"});
+    orangutan::orchestration::AgentMailbox mailbox(std::filesystem::path{":memory:"});
 
     SECTION("send and poll") {
         mailbox.send("team1", "coordinator", "worker1", "do the thing");
@@ -25,7 +25,7 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
         REQUIRE(messages.size() == 1);
         REQUIRE(messages[0].text == "do the thing");
         REQUIRE(messages[0].from == "coordinator");
-        REQUIRE(messages[0].type == orangutan::swarm::message_type::message);
+        REQUIRE(messages[0].type == orangutan::orchestration::message_type::message);
     }
 
     SECTION("broadcast") {
@@ -70,9 +70,9 @@ TEST_CASE("AgentMailbox basic operations", "[swarm]") {
     }
 
     SECTION("custom message type round trips") {
-        mailbox.send("team1", "coordinator", "worker1", "shutdown", orangutan::swarm::message_type::shutdown_request);
+        mailbox.send("team1", "coordinator", "worker1", "shutdown", orangutan::orchestration::message_type::shutdown_request);
         auto messages = mailbox.poll("team1", "worker1");
         REQUIRE(messages.size() == 1);
-        CHECK(messages[0].type == orangutan::swarm::message_type::shutdown_request);
+        CHECK(messages[0].type == orangutan::orchestration::message_type::shutdown_request);
     }
 }

@@ -1,8 +1,8 @@
-#include "tools/swarm/register.hpp"
+#include "tools/orchestration/register.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
-#include "swarm/mailbox.hpp"
-#include "swarm/team-manager.hpp"
+#include "orchestration/mailbox.hpp"
+#include "orchestration/team-manager.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,15 +14,15 @@ using namespace orangutan::tools;
 
 namespace {
 
-    TEST_CASE("Swarm tools are not registered without context", "[tools][swarm]") {
+    TEST_CASE("team tools are not registered without context", "[tools][orchestration]") {
         ToolRegistry registry;
-        register_swarm_tools(registry, nullptr);
+        register_orchestration_tools(registry, nullptr);
 
         auto defs = registry.definitions();
         CHECK(defs.empty());
     }
 
-    TEST_CASE("Swarm tools registration", "[tools][swarm]") {
+    TEST_CASE("team tools registration", "[tools][orchestration]") {
         ToolRegistry registry;
 
         ToolRuntimeContext context{
@@ -30,7 +30,7 @@ namespace {
             .agent_key = "test-agent",
         };
 
-        register_swarm_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         SECTION("registers team_create tool") {
             const auto *def = registry.find_definition("team_create");
@@ -72,9 +72,9 @@ namespace {
         }
     }
 
-    TEST_CASE("team_create tool creates a team when team manager is available", "[tools][swarm]") {
+    TEST_CASE("team_create tool creates a team when team manager is available", "[tools][orchestration]") {
         ToolRegistry registry;
-        swarm::TeamManager team_manager(":memory:");
+        orchestration::TeamManager team_manager(":memory:");
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
@@ -82,7 +82,7 @@ namespace {
             .team_manager = &team_manager,
         };
 
-        register_swarm_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("create-1", "team_create",
                                                {
@@ -98,7 +98,7 @@ namespace {
         CHECK(team_manager.find_team(json["team_id"].get<std::string>()).has_value());
     }
 
-    TEST_CASE("team_create tool returns an error when team manager is unavailable", "[tools][swarm]") {
+    TEST_CASE("team_create tool returns an error when team manager is unavailable", "[tools][orchestration]") {
         ToolRegistry registry;
 
         ToolRuntimeContext context{
@@ -106,7 +106,7 @@ namespace {
             .agent_key = "test-agent",
         };
 
-        register_swarm_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("create-2", "team_create",
                                                {
@@ -120,7 +120,7 @@ namespace {
         CHECK(json["error"].get<std::string>() == "Team manager is not available");
     }
 
-    TEST_CASE("team_delete tool returns an error when team manager is unavailable", "[tools][swarm]") {
+    TEST_CASE("team_delete tool returns an error when team manager is unavailable", "[tools][orchestration]") {
         ToolRegistry registry;
 
         ToolRuntimeContext context{
@@ -128,7 +128,7 @@ namespace {
             .agent_key = "test-agent",
         };
 
-        register_swarm_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("delete-1", "team_delete",
                                                {
@@ -142,10 +142,10 @@ namespace {
         CHECK(json["error"].get<std::string>() == "Team manager is not available");
     }
 
-    TEST_CASE("team_delete sends shutdown requests before deleting the team", "[tools][swarm]") {
+    TEST_CASE("team_delete sends shutdown requests before deleting the team", "[tools][orchestration]") {
         ToolRegistry registry;
-        swarm::TeamManager team_manager(":memory:");
-        swarm::AgentMailbox mailbox(":memory:");
+        orchestration::TeamManager team_manager(":memory:");
+        orchestration::AgentMailbox mailbox(":memory:");
 
         auto team = team_manager.create_team("test-team", "A test team", "lead");
         team_manager.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
@@ -159,7 +159,7 @@ namespace {
             .mailbox = &mailbox,
         };
 
-        register_swarm_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("delete-2", "team_delete",
                                                {

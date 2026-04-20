@@ -213,7 +213,7 @@ namespace {
         CHECK(result.tool_result->is_error);
         CHECK(result.tool_result->content.contains("03-timeout.sh"));
         CHECK(result.execution_count == 0);
-        CHECK(harness.contains_log("Hook timed out after 5s"));
+        CHECK(harness.contains_log("hook timed out after 5s"));
     };
 
     TEST_CASE("after_tool_call_logs_stderr_without_changing_tool_result") {

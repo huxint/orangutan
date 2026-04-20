@@ -1,9 +1,9 @@
-#include "tools/coordinator/register.hpp"
+#include "tools/orchestration/register.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-registry.hpp"
-#include "coordinator/coordinator-manager.hpp"
-#include "swarm/mailbox.hpp"
-#include "swarm/team-manager.hpp"
+#include "orchestration/orchestration-manager.hpp"
+#include "orchestration/mailbox.hpp"
+#include "orchestration/team-manager.hpp"
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,30 +18,30 @@ using namespace orangutan::tools;
 
 namespace {
 
-    TEST_CASE("Coordinator tools are not registered without context", "[tools][coordinator]") {
+    TEST_CASE("orchestration tools are not registered without context", "[tools][orchestration]") {
         ToolRegistry registry;
-        register_coordinator_tools(registry, nullptr);
+        register_orchestration_tools(registry, nullptr);
 
         auto defs = registry.definitions();
         CHECK(defs.empty());
     }
 
-    TEST_CASE("Coordinator tools registration", "[tools][coordinator]") {
+    TEST_CASE("orchestration tools registration", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto defs = registry.definitions();
 
-        // All coordinator tools are deferred, so definitions() returns empty.
+        // All orchestration tools are deferred, so definitions() returns empty.
         // But they should be findable and executable.
 
         SECTION("registers agent_spawn tool") {
@@ -49,7 +49,7 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_spawn");
-            CHECK(def->description == "Spawn a worker agent to handle a delegated task. The agent will run asynchronously and report results when complete.");
+            CHECK(def->description == "Spawn a worker agent to handle a delegated task. Workers run a single task and report results. Teammates stay alive for follow-up messages after completing their initial task.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties",
@@ -58,6 +58,7 @@ namespace {
                                                 {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
                                                 {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
                                                 {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
+                                                {"role", {{"type", "string"}, {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"}, {"enum", nlohmann::json::array({"worker", "teammate"})}}},
                                             }},
                                            {"required", nlohmann::json::array({"agent_key", "prompt"})},
                                        });
@@ -68,13 +69,13 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_send_message");
-            CHECK(def->description == "Send a message to a running agent. Can address by run_id or agent name.");
+            CHECK(def->description == "Send a message to a running agent. Can address by run_id, by agent name within a team, or broadcast to all team members with to='*'.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties",
                                             {
                                                 {"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
-                                                {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id)"}}},
+                                                {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id). Use '*' for broadcast."}}},
                                                 {"text", {{"type", "string"}, {"description", "The message text to send"}}},
                                             }},
                                            {"required", nlohmann::json::array({"text"})},
@@ -86,7 +87,7 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_stop");
-            CHECK(def->description == "Stop a running agent. The agent will be given a chance to clean up before being terminated.");
+            CHECK(def->description == "Stop a running agent. The agent will be given a chance to clean up before being terminated. Works for both workers and teammates.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
@@ -101,18 +102,18 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_spawn tool returns coordinator spawn result", "[tools][coordinator]") {
+    TEST_CASE("agent_spawn tool returns orchestration spawn result", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("spawn-1", "agent_spawn",
                                                {
@@ -130,19 +131,19 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_spawn rejects agent outside team_agents list", "[tools][coordinator]") {
+    TEST_CASE("agent_spawn rejects agent outside team_agents list", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .team_agents = {"explorer"},
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("spawn-2", "agent_spawn",
                                                {
@@ -158,22 +159,22 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_spawn registers spawned member with team", "[tools][coordinator]") {
+    TEST_CASE("agent_spawn registers spawned member with team", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
-        swarm::TeamManager team_manager(":memory:");
+        orchestration::OrchestrationManager manager(2);
+        orchestration::TeamManager team_manager(":memory:");
         auto team = team_manager.create_team("research", "Research team", "lead");
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .team_manager = &team_manager,
             .team_agents = {"general-purpose"},
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("spawn-3", "agent_spawn",
                                                {
@@ -194,18 +195,18 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_send_message tool validates missing recipient", "[tools][coordinator]") {
+    TEST_CASE("agent_send_message tool validates missing recipient", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("msg-1", "agent_send_message",
                                                {
@@ -221,18 +222,18 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_stop tool reports not found status for unknown run", "[tools][coordinator]") {
+    TEST_CASE("agent_stop tool reports not found status for unknown run", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("stop-1", "agent_stop",
                                                {
@@ -247,19 +248,19 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_send_message returns an error for unknown run_id", "[tools][coordinator]") {
+    TEST_CASE("agent_send_message returns an error for unknown run_id", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
+        orchestration::OrchestrationManager manager(2);
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "lead-agent",
             .agent_name = "lead",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("msg-unknown", "agent_send_message",
                                                {
@@ -275,25 +276,29 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_send_message delivers direct team mailbox message", "[tools][coordinator]") {
+    TEST_CASE("agent_send_message delivers direct team mailbox message", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(2);
-        swarm::TeamManager team_manager(":memory:");
-        swarm::AgentMailbox mailbox(":memory:");
+        orchestration::OrchestrationManager manager(2);
+        orchestration::TeamManager team_manager(":memory:");
+        orchestration::AgentMailbox mailbox(":memory:");
         auto team = team_manager.create_team("research", "Research team", "lead");
         team_manager.add_member({.agent_id = "agent-2", .name = "worker2", .agent_key = "explorer", .team_id = team.id});
+        manager.set_environment({
+            .mailbox = &mailbox,
+            .team_manager = &team_manager,
+        });
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "general-purpose",
             .agent_name = "worker1",
             .team_id = team.id,
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .team_manager = &team_manager,
             .mailbox = &mailbox,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("msg-2", "agent_send_message",
                                                {
@@ -313,15 +318,15 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_send_message delivers mailbox message by run_id", "[tools][coordinator]") {
+    TEST_CASE("agent_send_message delivers mailbox message by run_id", "[tools][orchestration]") {
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(1);
-        swarm::AgentMailbox mailbox(":memory:");
+        orchestration::OrchestrationManager manager(1);
+        orchestration::AgentMailbox mailbox(":memory:");
         manager.set_environment({
             .mailbox = &mailbox,
         });
-        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
-            struct WaitingWorker final : coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct WaitingWorker final : orchestration::WorkerRuntime {
                 std::string run(const std::string &, std::stop_token stop_token) override {
                     for (int i = 0; i < 50; ++i) {
                         if (stop_token.stop_requested()) {
@@ -339,11 +344,11 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "lead-agent",
             .agent_name = "lead",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         const auto spawned = manager.spawn({
             .agent_key = "general-purpose",
@@ -373,11 +378,11 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("coordinator tools can shutdown while runtime notification callback is active", "[tools][coordinator]") {
+    TEST_CASE("orchestration tools can shutdown while runtime notification callback is active", "[tools][orchestration]") {
         using namespace std::chrono_literals;
 
         ToolRegistry registry;
-        coordinator::CoordinatorManager manager(1);
+        orchestration::OrchestrationManager manager(1);
         std::atomic<bool> callback_started{false};
 
         manager.register_runtime_notification_handler("test-runtime", [&callback_started](const std::string &) -> std::optional<std::string> {
@@ -386,8 +391,8 @@ namespace {
             return std::nullopt;
         });
 
-        manager.set_worker_runtime_factory([](const coordinator::AgentSpawnRequest &) {
-            struct ImmediateWorker final : coordinator::WorkerRuntime {
+        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct ImmediateWorker final : orchestration::WorkerRuntime {
                 std::string run(const std::string &, std::stop_token) override {
                     return "ok";
                 }
@@ -400,11 +405,11 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "lead-agent",
             .agent_name = "lead",
-            .coordinator_manager = &manager,
+            .orchestration_manager = &manager,
             .coordinator_mode = true,
         };
 
-        register_coordinator_tools(registry, &context);
+        register_orchestration_tools(registry, &context);
 
         auto result = registry.execute(ToolUse("spawn-race", "agent_spawn",
                                                {
