@@ -51,11 +51,13 @@ xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
 
 `agent::AgentLoop` (src/agent/agent-loop.hpp) is the ReAct loop. Given a user prompt, it iterates up to `MAX_ITERATIONS`: build request → `ProviderSystem::send` → parse tool calls → dispatch via `ToolRegistry` → append results to history → repeat until a final text response or stop. It composes with **providers**, a **tool registry**, optional **runtime memory**, **hooks**, and a **skills** prompt. Configure via the fluent `AgentLoopBuilder` (uses C++23 deducing-`this`). One `AgentLoop` per running agent instance; multiple instances coexist (primary CLI + coordinator workers + automation-triggered runs).
 
+**Iteration cost trap.** The loop body runs up to `MAX_ITERATIONS` times per user turn. Any input that does not change across iterations (e.g. the user prompt, and therefore the memory records retrieved for it) must be computed **once before the loop** and passed into `build_system_prompt` as a pre-rendered section (`render_prompt_memory_section` is the template). Per-iteration work currently includes the skills section (intentionally, so newly activated skills surface mid-turn) and deferred-tool summaries; keep that list small.
+
 ### Providers: HTTP → protocol → execution
 
 `src/providers/` is layered:
 
-- **transport/** — libcurl primitives + SSE parser (`http-transport`, `sse-parser`).
+- **transport/** — libcurl primitives + SSE parser (`http-transport`, `sse-parser`). `curl-primitives.hpp` (`CurlHandle`, `CurlHeaders`) is shared with `channel/qq/qq-api-client.cpp` — use it (and its two-arg `append(key, value)`) for any new curl call sites rather than re-initializing curl handles.
 - **protocols/** — per-API adapters (`anthropic-messages`, `openai-chat-completions`, `openai-responses`). `protocol-adapter.hpp` is the common interface; `provider-registry` maps `provider_kind × protocol_kind` to an adapter.
 - **execution/** — `runtime-backend` applies retry, fallback-model switching, and aggregates `ProviderUsageStats`.
 - `provider.hpp` defines `ProviderSystem`, `ProviderRoute` (primary + fallbacks), `ModelTarget`, and `stdexec`-based sender types (`provider_sender`). Every async edge is a sender/receiver — **do not introduce `std::thread` or custom pools**.
@@ -85,7 +87,7 @@ Shell already covers `ls/glob/mkdir/delete/move`; new file tools should only exi
 
 ### State layer
 
-- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API.
+- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API. Row reads currently flow through `map_tuple` with `std::tuple<...>` row types; unpack them via structured bindings in reader functions (`auto &[id, agent_key, …] = row;`), not `std::get<N>(row)`.
 - **memory/** — `MemoryStore` (SQLite) + `RuntimeMemory` scope wrapper + `memory-search` + `memory-mirror` (optional `.orangutan/memory/MEMORY.md` mirror for human inspection) + `memory-age` (decay/retention).
 - **config/** — JSON (`config.example.json` is the shape). Secrets (`api_key`, `client_secret`, etc.) are encrypted at rest under a password (`secret-protection-*`, `secret-fields`). `Config::load` accepts `ConfigSecretOptions` for password override. Do not log or echo decrypted secrets.
 - **bootstrap/identity.cpp** — derives per-runtime identity keys (`runtime_key`, `memory_scope`) used to namespace memory and notifications.
