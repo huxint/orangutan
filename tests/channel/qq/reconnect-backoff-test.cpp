@@ -1,5 +1,6 @@
 #include "channel/qq/reconnect-backoff.hpp"
 #include "channel/qq/qq-transport.hpp"
+#include "utils/task-pool.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -208,7 +209,7 @@ namespace {
     };
 
     [[nodiscard]]
-    Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector) {
+    Transport make_transport(CallbackRecorder &recorder, FakeConnector &connector, utils::TaskPool &task_pool) {
         return Transport({
                              .on_open =
                                  [&] {
@@ -235,7 +236,7 @@ namespace {
                                      recorder.cv.notify_all();
                                  },
                          },
-                         connector.factory());
+                         connector.factory(), task_pool);
     }
 
 } // namespace
@@ -276,7 +277,8 @@ TEST_CASE("reconnect_backoff_reset_restarts_sequence") {
 TEST_CASE("transport_start_connects_and_forwards_messages") {
     FakeConnector connector;
     CallbackRecorder recorder;
-    auto transport = make_transport(recorder, connector);
+    utils::TaskPool task_pool;
+    auto transport = make_transport(recorder, connector, task_pool);
 
     transport.start("wss://qq.example/ws");
     auto connection = connector.wait_for_connection(1);
@@ -297,7 +299,8 @@ TEST_CASE("transport_connect_failure_emits_error_and_reconnects") {
     FakeConnector connector;
     connector.fail_next_connects(1);
     CallbackRecorder recorder;
-    auto transport = make_transport(recorder, connector);
+    utils::TaskPool task_pool;
+    auto transport = make_transport(recorder, connector, task_pool);
 
     transport.start("wss://qq.example/ws");
 
@@ -314,7 +317,8 @@ TEST_CASE("transport_connect_failure_emits_error_and_reconnects") {
 TEST_CASE("transport_request_reconnect_suppresses_close_callback_and_reopens") {
     FakeConnector connector;
     CallbackRecorder recorder;
-    auto transport = make_transport(recorder, connector);
+    utils::TaskPool task_pool;
+    auto transport = make_transport(recorder, connector, task_pool);
 
     transport.start("wss://qq.example/ws");
     auto first = connector.wait_for_connection(1);
@@ -333,7 +337,8 @@ TEST_CASE("transport_request_reconnect_suppresses_close_callback_and_reopens") {
 TEST_CASE("transport_stop_prevents_further_sends_and_callbacks") {
     FakeConnector connector;
     CallbackRecorder recorder;
-    auto transport = make_transport(recorder, connector);
+    utils::TaskPool task_pool;
+    auto transport = make_transport(recorder, connector, task_pool);
 
     transport.start("wss://qq.example/ws");
     auto connection = connector.wait_for_connection(1);

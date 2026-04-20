@@ -90,6 +90,15 @@ namespace {
         return cfg;
     }
 
+    [[nodiscard]]
+    orangutan::web::WebContext make_web_context(std::mutex &sessions_mutex,
+                                                std::unordered_map<std::string, std::unique_ptr<orangutan::web::WebSessionState>> &sessions) {
+        return orangutan::web::WebContext{
+            .sessions_mutex = &sessions_mutex,
+            .sessions = &sessions,
+        };
+    }
+
     TEST_CASE("list_sessions_returns_empty_array") {
         WebRoutesHarness harness;
         orangutan::WebServer server;
@@ -571,10 +580,11 @@ namespace {
         req.body = R"({"session_id":"web-session","approved":true})";
         httplib::Response res;
 
-        orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+        const auto ctx = make_web_context(sessions_mutex, sessions);
+        orangutan::web::handle_chat_approval(ctx, req, res);
 
         CHECK(res.status == 400);
-        CHECK(nlohmann::json::parse(res.body)["error"] == "missing or invalid 'request_id' field");
+        CHECK(nlohmann::json::parse(res.body)["error"]["message"] == "missing or invalid 'request_id' field");
     };
 
     TEST_CASE("chat_approval_endpoint_approves_pending_request") {
@@ -633,7 +643,8 @@ namespace {
                 .dump();
         httplib::Response res;
 
-        orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+        const auto ctx = make_web_context(sessions_mutex, sessions);
+        orangutan::web::handle_chat_approval(ctx, req, res);
 
         CHECK(res.status == 200);
         CHECK(nlohmann::json::parse(res.body)["status"] == "approved");
@@ -685,10 +696,11 @@ namespace {
                 .dump();
         httplib::Response res;
 
-        orangutan::web::handle_chat_approval(req, res, sessions_mutex, sessions);
+        const auto ctx = make_web_context(sessions_mutex, sessions);
+        orangutan::web::handle_chat_approval(ctx, req, res);
 
         CHECK(res.status == 404);
-        CHECK(nlohmann::json::parse(res.body)["error"] == "approval not found");
+        CHECK(nlohmann::json::parse(res.body)["error"]["message"] == "approval not found");
 
         orangutan::web::detail::cancel_pending_approval(*session_ptr);
         CHECK_FALSE(approval_future.get());

@@ -69,6 +69,18 @@ namespace orangutan {
             return nlohmann::json::parse(std::string(body.substr(payload_start, payload_end - payload_start)));
         }
 
+        [[nodiscard]]
+        web::WebContext make_web_context(Config *config, SessionStore *session_store, MemoryStore *memory_store, std::mutex &sessions_mutex,
+                                         std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> &sessions) {
+            return web::WebContext{
+                .config = config,
+                .session_store = session_store,
+                .memory_store = memory_store,
+                .sessions_mutex = &sessions_mutex,
+                .sessions = &sessions,
+            };
+        }
+
         class ScriptedProvider {
         public:
             using Step = std::function<LLMResponse(const std::vector<Message> &)>;
@@ -225,7 +237,8 @@ namespace orangutan {
             req.body = R"({"message":"hello","agent_key":"default"})";
             httplib::Response res;
 
-            orangutan::web::handle_chat(req, res, &config, &harness.store(), &memory_store, nullptr, nullptr, sessions_mutex, sessions);
+            const auto ctx = make_web_context(&config, &harness.store(), &memory_store, sessions_mutex, sessions);
+            orangutan::web::handle_chat(ctx, req, res);
 
             REQUIRE(sessions.size() == 1UL);
             const auto &session = *sessions.begin()->second;
@@ -324,7 +337,8 @@ namespace orangutan {
             req.body = nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump();
             httplib::Response res;
 
-            web::handle_chat(req, res, &config, &store_harness.store(), nullptr, nullptr, nullptr, sessions_mutex, sessions);
+            const auto ctx = make_web_context(&config, &store_harness.store(), nullptr, sessions_mutex, sessions);
+            web::handle_chat(ctx, req, res);
 
             CHECK(res.status == 409);
             REQUIRE_FALSE(res.body.empty());
@@ -345,7 +359,8 @@ namespace orangutan {
             req.body = nlohmann::json{{"message", "run shell"}, {"agent_key", "default"}, {"session_id", session_id}}.dump();
             httplib::Response res;
 
-            web::handle_chat(req, res, &config, &store_harness.store(), nullptr, nullptr, nullptr, sessions_mutex, sessions);
+            const auto ctx = make_web_context(&config, &store_harness.store(), nullptr, sessions_mutex, sessions);
+            web::handle_chat(ctx, req, res);
 
             std::scoped_lock lock(sessions_mutex);
             REQUIRE(sessions.contains(session_id));
@@ -646,7 +661,8 @@ namespace orangutan {
                 }
                     .dump();
             httplib::Response res;
-            web::handle_chat_approval(req, res, sessions_mutex, sessions);
+            const auto ctx = make_web_context(nullptr, nullptr, nullptr, sessions_mutex, sessions);
+            web::handle_chat_approval(ctx, req, res);
 
             CHECK(res.status == 200);
             CHECK(nlohmann::json::parse(res.body)["status"] == "denied");
@@ -691,7 +707,8 @@ namespace orangutan {
             httplib::Request req;
             req.body = R"({"session_id":"web-session"})";
             httplib::Response res;
-            web::handle_chat_abort(req, res, sessions_mutex, sessions);
+            const auto ctx = make_web_context(nullptr, nullptr, nullptr, sessions_mutex, sessions);
+            web::handle_chat_abort(ctx, req, res);
 
             CHECK(nlohmann::json::parse(res.body)["status"] == "abort_requested");
             CHECK(session_ptr->abort_requested.load());

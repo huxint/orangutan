@@ -68,8 +68,6 @@ namespace orangutan::channel::qq {
 
         using ConnectionFactory = std::function<std::unique_ptr<Connection>(const std::string &url)>;
 
-        explicit Transport(Callbacks callbacks);
-        Transport(Callbacks callbacks, ConnectionFactory connection_factory);
         explicit Transport(Callbacks callbacks, utils::TaskPool &task_pool);
         Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool);
         ~Transport();

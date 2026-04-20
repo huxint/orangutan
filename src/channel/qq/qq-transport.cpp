@@ -31,12 +31,6 @@ namespace orangutan::channel::qq {
 
         using Clock = std::chrono::steady_clock;
 
-        [[nodiscard]]
-        utils::TaskPool &shared_transport_pool() {
-            static utils::TaskPool pool;
-            return pool;
-        }
-
         void ensure_curl_ready() {
             static std::once_flag once;
             std::call_once(once, [] {
@@ -604,25 +598,6 @@ namespace orangutan::channel::qq {
         bool connection_reset_requested_ = false;
         bool open_ = false;
     };
-#endif
-
-    Transport::Transport(Callbacks callbacks)
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : Transport(std::move(callbacks), ConnectionFactory{}, shared_transport_pool()) {}
-#else
-    : impl_(nullptr) {
-        static_cast<void>(callbacks);
-    }
-#endif
-
-    Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory)
-#ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : Transport(std::move(callbacks), std::move(connection_factory), shared_transport_pool()) {}
-#else
-    : impl_(nullptr) {
-        static_cast<void>(callbacks);
-        static_cast<void>(connection_factory);
-    }
 #endif
 
     Transport::Transport(Callbacks callbacks, utils::TaskPool &task_pool)
