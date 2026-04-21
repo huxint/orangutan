@@ -14,8 +14,8 @@
 namespace orangutan::config {
 
     struct ModelCostConfig {
-        base::f64 input = 0.0;
-        base::f64 output = 0.0;
+        double input = 0.0;
+        double output = 0.0;
     };
 
     struct ModelConfig {
@@ -73,7 +73,7 @@ namespace orangutan::config {
         std::string profile;
         std::string model = "claude-sonnet-4-20250514";
         std::vector<FallbackModelRef> fallback_models;
-        base::f64 temperature = 1.0;
+        double temperature = 1.0;
         int max_iterations = 20;
         int max_tokens = 4096;
         int thinking_budget = 0;

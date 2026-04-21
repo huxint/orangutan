@@ -20,13 +20,13 @@ namespace orangutan::memory {
       context_(std::move(context)),
       mirror_(mirror) {}
 
-    void RuntimeMemory::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view source, base::f64 importance) {
+    void RuntimeMemory::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view source, double importance) {
         store_->remember(key, content, category, type, context_.scope, source, importance);
         refresh_mirror_after_write();
     }
 
     void RuntimeMemory::update(std::string_view key, std::string_view content, std::string_view category, memory_type type, bool merge, std::string_view source,
-                               base::f64 importance) {
+                               double importance) {
         store_->update(key, content, category, type, context_.scope, merge, source, importance);
         refresh_mirror_after_write();
     }
@@ -135,7 +135,7 @@ namespace orangutan::memory {
         static_cast<void>(refresh_mirror());
     }
 
-    std::size_t RuntimeMemory::consolidate(std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
+    std::size_t RuntimeMemory::consolidate(std::size_t max_per_scope, int stale_days, double stale_importance_threshold) {
         const auto pruned = store_->consolidate(context_.scope, max_per_scope, stale_days, stale_importance_threshold);
         if (pruned > 0) {
             refresh_mirror_after_write();

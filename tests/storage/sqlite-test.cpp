@@ -123,7 +123,7 @@ namespace {
 
         exec_bind(db, "INSERT INTO sample (name, score, enabled) VALUES (?, ?, ?)", "alice", 9.5, true);
 
-        const auto row = orangutan::sqlite::query_one<std::tuple<std::string, orangutan::base::f64, bool>>(
+        const auto row = orangutan::sqlite::query_one<std::tuple<std::string, double, bool>>(
             db, "SELECT name, score, enabled FROM sample LIMIT 1");
 
         CHECK(std::get<0>(row) == "alice");

@@ -28,7 +28,7 @@ namespace orangutan::agent::detail {
         std::string category;
         memory_type type = memory_type::user;
         std::string key;
-        base::f64 importance = 0.5;
+        double importance = 0.5;
         std::string content;
     };
 
@@ -96,7 +96,7 @@ namespace orangutan::agent::detail {
             category = "general";
         }
 
-        base::f64 importance = 0.5;
+        double importance = 0.5;
         std::from_chars(trimmed_importance.begin(), trimmed_importance.end(), importance);
         importance = std::clamp(importance, 0.0, 1.0);
 

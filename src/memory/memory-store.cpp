@@ -29,14 +29,14 @@ namespace orangutan::memory {
     }
 
     void MemoryStore::remember(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view scope, std::string_view source,
-                               base::f64 importance) {
+                               double importance) {
         std::scoped_lock lock(mutex_);
         const auto type_str = std::string(magic_enum::enum_name(type));
         memory_detail::upsert_memory_record(db_, scope, key, content, category, type_str, source, importance);
     }
 
     void MemoryStore::update(std::string_view key, std::string_view content, std::string_view category, memory_type type, std::string_view scope, bool merge,
-                             std::string_view source, base::f64 importance) {
+                             std::string_view source, double importance) {
         std::scoped_lock lock(mutex_);
         const auto existing = memory_detail::fetch_memory_by_key(db_, scope, key);
 
@@ -81,7 +81,7 @@ namespace orangutan::memory {
         }
 
         const auto effective_limit = limit == 0 ? memory_detail::DEFAULT_SEARCH_LIMIT : limit;
-        std::unordered_map<int, base::f64> fts_bonus_by_id;
+        std::unordered_map<int, double> fts_bonus_by_id;
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
                 auto fts_records = std::vector<MemoryRecord>{};
@@ -92,7 +92,7 @@ namespace orangutan::memory {
                     fts_records.push_back(memory_detail::read_memory_record(row));
                 }));
                 for (std::size_t index = 0; index < fts_records.size(); ++index) {
-                    fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<base::f64>(index));
+                    fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<double>(index));
                 }
             }
         }
@@ -105,7 +105,7 @@ namespace orangutan::memory {
         }));
         struct RankedRecord {
             MemoryRecord record;
-            base::f64 score = 0.0;
+            double score = 0.0;
         };
 
         std::vector<RankedRecord> ranked;
@@ -232,7 +232,7 @@ namespace orangutan::memory {
         return memory_detail::format_records(list(scope, {}, limit));
     }
 
-    std::size_t MemoryStore::consolidate(std::string_view scope, std::size_t max_per_scope, int stale_days, base::f64 stale_importance_threshold) {
+    std::size_t MemoryStore::consolidate(std::string_view scope, std::size_t max_per_scope, int stale_days, double stale_importance_threshold) {
         std::scoped_lock lock(mutex_);
 
         // Phase 1: Prune stale, low-importance, non-journal memories.

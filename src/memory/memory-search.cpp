@@ -14,16 +14,16 @@ namespace orangutan::memory::detail {
 
     namespace {
 
-        base::f64 substring_score(std::string_view haystack, std::string_view needle, base::f64 score) {
+        double substring_score(std::string_view haystack, std::string_view needle, double score) {
             return haystack.contains(needle) ? score : 0.0;
         }
 
-        base::f64 exact_score(std::string_view left, std::string_view right, base::f64 score) {
+        double exact_score(std::string_view left, std::string_view right, double score) {
             return left == right ? score : 0.0;
         }
 
-        base::f64 token_overlap_score(const std::vector<std::string> &tokens, std::string_view haystack, base::f64 per_token_score) {
-            base::f64 score = 0.0;
+        double token_overlap_score(const std::vector<std::string> &tokens, std::string_view haystack, double per_token_score) {
+            double score = 0.0;
             for (const auto &token : tokens) {
                 score += substring_score(haystack, token, per_token_score);
             }
@@ -86,7 +86,7 @@ namespace orangutan::memory::detail {
         });
     }
 
-    base::f64 score_memory_match(const MemoryRecord &record, std::string_view query) {
+    double score_memory_match(const MemoryRecord &record, std::string_view query) {
         auto trimmed_query = utils::trim_copy(query);
         if (trimmed_query.empty()) {
             return 0.0;
@@ -99,7 +99,7 @@ namespace orangutan::memory::detail {
         const auto query_tokens = tokenize_ascii_words(trimmed_query);
         const bool query_has_non_ascii = contains_non_ascii(trimmed_query);
 
-        base::f64 match_score = 0.0;
+        double match_score = 0.0;
 
         if (!normalized_query.empty()) {
             match_score += exact_score(normalized_key, normalized_query, 100.0);
@@ -123,7 +123,7 @@ namespace orangutan::memory::detail {
             return 0.0;
         }
 
-        return match_score + (record.importance * 10.0) + static_cast<base::f64>(std::min(record.access_count, 8));
+        return match_score + (record.importance * 10.0) + static_cast<double>(std::min(record.access_count, 8));
     }
 
     std::string format_records(const std::vector<MemoryRecord> &records) {
@@ -199,7 +199,7 @@ namespace orangutan::memory::detail {
             .scope = sqlite::unwrap(row.get<std::string>(5)),
             .source = sqlite::unwrap(row.get<std::string>(6)),
             .updated_at = sqlite::unwrap(row.get<std::string>(7)),
-            .importance = sqlite::unwrap(row.get<base::f64>(8)),
+            .importance = sqlite::unwrap(row.get<double>(8)),
             .access_count = sqlite::unwrap(row.get<int>(9)),
         };
     }
@@ -218,7 +218,7 @@ namespace orangutan::memory::detail {
     }
 
     void upsert_memory_record(sqlite::Database &db, std::string_view scope, std::string_view key, std::string_view content, std::string_view category, std::string_view type,
-                              std::string_view source, base::f64 importance) {
+                              std::string_view source, double importance) {
         sqlite::exec_bind(db,
                           "INSERT INTO memories (scope, memory_key, content, category, type, source, importance, created_at, updated_at, last_accessed_at) "
                           "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), NULL) "

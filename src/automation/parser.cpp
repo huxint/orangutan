@@ -109,25 +109,24 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         std::string format_duration_string(std::chrono::seconds value) {
-            const auto total_seconds = value.count();
-            if (total_seconds != 0 && total_seconds % (24 * 60 * 60) == 0) {
-                return std::to_string(total_seconds / (24 * 60 * 60)) + "d";
+            using namespace std::chrono;
+            if (value != 0s) {
+                if (value % days{1} == 0s) {
+                    return std::to_string(value / days{1}) + "d";
+                }
+                if (value % 1h == 0s) {
+                    return std::to_string(value / 1h) + "h";
+                }
+                if (value % 1min == 0s) {
+                    return std::to_string(value / 1min) + "m";
+                }
             }
-            if (total_seconds != 0 && total_seconds % (60 * 60) == 0) {
-                return std::to_string(total_seconds / (60 * 60)) + "h";
-            }
-            if (total_seconds != 0 && total_seconds % 60 == 0) {
-                return std::to_string(total_seconds / 60) + "m";
-            }
-            return std::to_string(total_seconds) + "s";
+            return std::to_string(value.count()) + "s";
         }
 
         [[nodiscard]]
         std::string format_time_of_day(std::chrono::minutes value) {
-            const auto total_minutes = value.count();
-            const auto hours = total_minutes / 60;
-            const auto minutes = total_minutes % 60;
-            return fmt::format("{:02}:{:02}", hours, minutes);
+            return fmt::format("{:%H:%M}", value);
         }
 
         [[nodiscard]]

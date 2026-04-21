@@ -3,8 +3,6 @@
 #include <cstdint>
 
 namespace orangutan::base {
-    using f32 = float;
-    using f64 = double;
 
     enum class role : std::uint8_t {
         user,

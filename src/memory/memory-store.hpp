@@ -22,7 +22,7 @@ namespace orangutan::memory {
         std::string scope;
         std::string source;
         std::string updated_at;
-        base::f64 importance = 0.5;
+        double importance = 0.5;
         int access_count = 0;
     };
 
@@ -46,10 +46,10 @@ namespace orangutan::memory {
         MemoryStore &operator=(MemoryStore &&) = delete;
 
         void remember(std::string_view key, std::string_view content, std::string_view category = "general", memory_type type = memory_type::user, std::string_view scope = {},
-                      std::string_view source = "manual", base::f64 importance = 0.5);
+                      std::string_view source = "manual", double importance = 0.5);
 
         void update(std::string_view key, std::string_view content, std::string_view category = {}, memory_type type = memory_type::user, std::string_view scope = {},
-                    bool merge = true, std::string_view source = {}, base::f64 importance = 0.5);
+                    bool merge = true, std::string_view source = {}, double importance = 0.5);
 
         [[nodiscard]]
         std::vector<MemoryRecord> search(std::string_view query, std::string_view scope = {}, std::size_t limit = 8);
@@ -75,7 +75,7 @@ namespace orangutan::memory {
         /// Consolidate memories: prune stale low-importance entries, enforce per-scope limits.
         /// Returns the number of records pruned.
         [[nodiscard]]
-        std::size_t consolidate(std::string_view scope = {}, std::size_t max_per_scope = 200, int stale_days = 90, base::f64 stale_importance_threshold = 0.3);
+        std::size_t consolidate(std::string_view scope = {}, std::size_t max_per_scope = 200, int stale_days = 90, double stale_importance_threshold = 0.3);
 
         /// Generate a concise manifest listing of all non-journal memories.
         [[nodiscard]]
