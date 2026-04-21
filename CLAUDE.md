@@ -86,7 +86,7 @@ Shell already covers `ls/glob/mkdir/delete/move`; new file tools should only exi
 
 ### State layer
 
-- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API. Row reads currently flow through `map_tuple` with `std::tuple<...>` row types; unpack them via structured bindings in reader functions (`auto &[id, agent_key, …] = row;`), not `std::get<N>(row)`.
+- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API. For row reads, prefer `sqlite::read_columns<Ts...>(row)` inside `RowMapper::map` bodies — it short-circuits on the first column failure and returns a `std::tuple` you can unpack via structured bindings (`auto &[id, agent_key, …] = *columns;`). Do not reach for `std::get<N>(row)` or the private `detail::map_tuple`.
 - **memory/** — `MemoryStore` (SQLite) + `RuntimeMemory` scope wrapper + `memory-search` + `memory-mirror` (optional `.orangutan/memory/MEMORY.md` mirror for human inspection) + `memory-age` (decay/retention).
 - **config/** — JSON (`config.example.json` is the shape). Secrets (`api_key`, `client_secret`, etc.) are encrypted at rest under a password (`secret-protection-*`, `secret-fields`). `Config::load` accepts `ConfigSecretOptions` for password override. Do not log or echo decrypted secrets.
 - **bootstrap/identity.cpp** — derives per-runtime identity keys (`runtime_key`, `memory_scope`) used to namespace memory and notifications.
@@ -109,6 +109,15 @@ Channel mode replaces the input source with `MessageQueue`; web mode exposes the
 ### Where things are assembled
 
 `bootstrap/runtime-assembler.cpp` builds an `AgentRuntimeBundle` (agent + provider + tools + hook_manager) from a `RuntimeAssemblyRequest`. Three assembly sites: primary CLI runtime, delegated worker runtimes, automation-triggered runtimes. When adding a runtime-wide capability, thread it through `RuntimeAssemblyRequest` — don't reach into globals.
+
+### Shared utilities worth knowing
+
+Before inventing a helper, check `src/utils/`. A few that cut recurring boilerplate:
+
+- `utils::all_ok(expected...)` (`expected-combine.hpp`) — combines any number of `std::expected<T, E>` values sharing the same error type into one `std::expected<tuple<T...>, E>`, short-circuiting on the first error. Use it for parser/validator call sites that would otherwise produce a staircase of early returns. `void`-typed slots are kept as `std::monostate` placeholders so structured bindings line up with call order.
+- `utils::Overloaded` (`overloaded.hpp`) — variant visitor helper for `std::visit` lambdas.
+- `utils::enum_name` / `enum_name_kebab` (`enum-string.hpp`) — the preferred way to stringify enums at boundaries (wraps `magic_enum`; do not add per-enum `to_string` helpers).
+- `utils::TaskPool` (`task-pool.hpp`) and `sender-utils.hpp` — use these for async work instead of `std::thread`.
 
 ## Code Constraints & Conventions
 
