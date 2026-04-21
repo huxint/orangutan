@@ -1,6 +1,7 @@
 #include "automation/parser.hpp"
 
 #include "automation/cron-parser.hpp"
+#include "utils/expected-combine.hpp"
 #include "utils/time-format.hpp"
 
 #include <fmt/format.h>
@@ -160,34 +161,42 @@ namespace orangutan::automation {
                 return std::unexpected("active_windows entries must be objects");
             }
 
-            const auto start_value = parse_required_string_field(value, "start");
-            if (!start_value.has_value()) {
-                return std::unexpected(start_value.error());
+            auto parts = utils::all_ok(
+                parse_required_string_field(value, "start").and_then(parse_time_of_day),
+                parse_required_string_field(value, "end").and_then(parse_time_of_day));
+            if (!parts.has_value()) {
+                return std::unexpected(parts.error());
             }
+            const auto &[start, end] = *parts;
 
-            const auto end_value = parse_required_string_field(value, "end");
-            if (!end_value.has_value()) {
-                return std::unexpected(end_value.error());
-            }
-
-            const auto start = parse_time_of_day(*start_value);
-            if (!start.has_value()) {
-                return std::unexpected(start.error());
-            }
-
-            const auto end = parse_time_of_day(*end_value);
-            if (!end.has_value()) {
-                return std::unexpected(end.error());
-            }
-
-            if (*start >= *end) {
+            if (start >= end) {
                 return std::unexpected("active window start must be before end");
             }
 
             return ActiveWindow{
-                .start = *start,
-                .end = *end,
+                .start = start,
+                .end = end,
             };
+        }
+
+        [[nodiscard]]
+        std::expected<std::vector<ActiveWindow>, std::string> parse_active_windows(const nlohmann::json &value) {
+            std::vector<ActiveWindow> result;
+            const auto field = value.find("active_windows");
+            if (field == value.end()) {
+                return result;
+            }
+            if (!field->is_array()) {
+                return std::unexpected("active_windows must be an array");
+            }
+            for (const auto &window_value : *field) {
+                auto parsed = parse_active_window(window_value);
+                if (!parsed.has_value()) {
+                    return std::unexpected(std::move(parsed).error());
+                }
+                result.push_back(*std::move(parsed));
+            }
+            return result;
         }
 
     } // namespace
@@ -238,111 +247,67 @@ namespace orangutan::automation {
         }
 
         if (*type_value == "cron") {
-            const auto allowed_fields = validate_allowed_trigger_fields(value, "cron", CRON_TRIGGER_FIELDS);
-            if (!allowed_fields.has_value()) {
-                return std::unexpected(allowed_fields.error());
+            auto cron_str = parse_required_string_field(value, "cron");
+            auto parts = utils::all_ok(
+                validate_allowed_trigger_fields(value, "cron", CRON_TRIGGER_FIELDS),
+                cron_str,
+                cron_str.and_then(parse_cron_expression),
+                parse_time_zone_field(value));
+            if (!parts.has_value()) {
+                return std::unexpected(parts.error());
             }
-
-            const auto cron_value = parse_required_string_field(value, "cron");
-            if (!cron_value.has_value()) {
-                return std::unexpected(cron_value.error());
-            }
-
-            const auto parsed_cron = parse_cron_expression(*cron_value);
-            if (!parsed_cron.has_value()) {
-                return std::unexpected(parsed_cron.error());
-            }
-
-            const auto time_zone = parse_time_zone_field(value);
-            if (!time_zone.has_value()) {
-                return std::unexpected(time_zone.error());
-            }
+            auto &[_allowed, cron_value, _parsed_cron, time_zone] = *parts;
 
             return TriggerDefinition{
                 .type = trigger_type::cron,
-                .cron = *cron_value,
-                .time_zone = *time_zone,
+                .cron = std::move(cron_value),
+                .time_zone = std::move(time_zone),
             };
         }
 
         if (*type_value == "interval") {
-            const auto allowed_fields = validate_allowed_trigger_fields(value, "interval", INTERVAL_TRIGGER_FIELDS);
-            if (!allowed_fields.has_value()) {
-                return std::unexpected(allowed_fields.error());
-            }
+            auto every = parse_required_string_field(value, "every")
+                             .and_then(parse_duration_string)
+                             .and_then([](std::chrono::seconds d) -> std::expected<std::chrono::seconds, std::string> {
+                                 if (d <= std::chrono::seconds{0}) {
+                                     return std::unexpected("every must be greater than zero");
+                                 }
+                                 return d;
+                             });
+            auto jitter = parse_required_string_field(value, "jitter").and_then(parse_duration_string);
 
-            const auto every_value = parse_required_string_field(value, "every");
-            if (!every_value.has_value()) {
-                return std::unexpected(every_value.error());
+            auto parts = utils::all_ok(
+                validate_allowed_trigger_fields(value, "interval", INTERVAL_TRIGGER_FIELDS),
+                every,
+                jitter,
+                parse_time_zone_field(value),
+                parse_active_windows(value));
+            if (!parts.has_value()) {
+                return std::unexpected(parts.error());
             }
-
-            const auto every = parse_duration_string(*every_value);
-            if (!every.has_value()) {
-                return std::unexpected(every.error());
-            }
-            if (*every <= std::chrono::seconds{0}) {
-                return std::unexpected("every must be greater than zero");
-            }
-
-            const auto jitter_value = parse_required_string_field(value, "jitter");
-            if (!jitter_value.has_value()) {
-                return std::unexpected(jitter_value.error());
-            }
-
-            const auto jitter = parse_duration_string(*jitter_value);
-            if (!jitter.has_value()) {
-                return std::unexpected(jitter.error());
-            }
-
-            const auto time_zone = parse_time_zone_field(value);
-            if (!time_zone.has_value()) {
-                return std::unexpected(time_zone.error());
-            }
-
-            std::vector<ActiveWindow> active_windows;
-            const auto active_windows_field = value.find("active_windows");
-            if (active_windows_field != value.end()) {
-                if (!active_windows_field->is_array()) {
-                    return std::unexpected("active_windows must be an array");
-                }
-
-                for (const auto &window_value : *active_windows_field) {
-                    const auto parsed_window = parse_active_window(window_value);
-                    if (!parsed_window.has_value()) {
-                        return std::unexpected(parsed_window.error());
-                    }
-                    active_windows.push_back(*parsed_window);
-                }
-            }
+            auto &[_allowed, every_value, jitter_value, time_zone, active_windows] = *parts;
 
             return TriggerDefinition{
                 .type = trigger_type::interval,
-                .every = *every,
-                .jitter = *jitter,
-                .time_zone = *time_zone,
+                .every = every_value,
+                .jitter = jitter_value,
+                .time_zone = std::move(time_zone),
                 .active_windows = std::move(active_windows),
             };
         }
 
         if (*type_value == "once") {
-            const auto allowed_fields = validate_allowed_trigger_fields(value, "once", ONCE_TRIGGER_FIELDS);
-            if (!allowed_fields.has_value()) {
-                return std::unexpected(allowed_fields.error());
+            auto parts = utils::all_ok(
+                validate_allowed_trigger_fields(value, "once", ONCE_TRIGGER_FIELDS),
+                parse_required_string_field(value, "at").and_then(parse_iso_utc));
+            if (!parts.has_value()) {
+                return std::unexpected(parts.error());
             }
-
-            const auto at_value = parse_required_string_field(value, "at");
-            if (!at_value.has_value()) {
-                return std::unexpected(at_value.error());
-            }
-
-            const auto at = parse_iso_utc(*at_value);
-            if (!at.has_value()) {
-                return std::unexpected(at.error());
-            }
+            const auto &[_allowed, at] = *parts;
 
             return TriggerDefinition{
                 .type = trigger_type::once,
-                .at = *at,
+                .at = at,
                 .time_zone = "UTC",
             };
         }

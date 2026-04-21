@@ -1,4 +1,5 @@
 #include "automation/service.hpp"
+#include "utils/expected-combine.hpp"
 #include "web/admin-routes-detail.hpp"
 #include "web/event-bus.hpp"
 #include "web/web-routes.hpp"
@@ -85,17 +86,15 @@ namespace orangutan::web {
             automation::AutomationQuery query;
             query.agent_key = resolve_optional_agent_key(req);
 
-            const auto enabled = parse_optional_bool_param(req, "enabled");
-            if (!enabled.has_value()) {
-                return std::unexpected(enabled.error());
+            auto parts = utils::all_ok(
+                parse_optional_bool_param(req, "enabled"),
+                parse_optional_bool_param(req, "paused"));
+            if (!parts.has_value()) {
+                return std::unexpected(parts.error());
             }
-            query.enabled = *enabled;
-
-            const auto paused = parse_optional_bool_param(req, "paused");
-            if (!paused.has_value()) {
-                return std::unexpected(paused.error());
-            }
-            query.paused = *paused;
+            auto &[enabled, paused] = *parts;
+            query.enabled = enabled;
+            query.paused = paused;
             return query;
         }
 

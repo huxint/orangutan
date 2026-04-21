@@ -1,5 +1,7 @@
 #include "tools/automation/automation-tool-support.hpp"
 
+#include "utils/expected-combine.hpp"
+
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::builtin::detail {
@@ -134,23 +136,17 @@ namespace orangutan::builtin::detail {
         automation.enabled = request.value("enabled", true);
         automation.paused = request.value("paused", false);
 
-        const auto tags = parse_tags_value(request, {});
-        if (!tags.has_value()) {
-            return std::unexpected(tags.error());
+        auto parts = utils::all_ok(
+            parse_tags_value(request, {}),
+            parse_trigger_value(request),
+            parse_delivery_overlay(request, automation.delivery));
+        if (!parts.has_value()) {
+            return std::unexpected(parts.error());
         }
-        automation.tags = *tags;
-
-        const auto trigger = parse_trigger_value(request);
-        if (!trigger.has_value()) {
-            return std::unexpected(trigger.error());
-        }
-        automation.trigger = *trigger;
-
-        const auto delivery = parse_delivery_overlay(request, automation.delivery);
-        if (!delivery.has_value()) {
-            return std::unexpected(delivery.error());
-        }
-        automation.delivery = *delivery;
+        auto &[tags, trigger, delivery] = *parts;
+        automation.tags = std::move(tags);
+        automation.trigger = std::move(trigger);
+        automation.delivery = std::move(delivery);
 
         return automation;
     }
@@ -175,11 +171,13 @@ namespace orangutan::builtin::detail {
             automation.paused = it->get<bool>();
         }
 
-        const auto tags = parse_tags_value(request, automation.tags);
-        if (!tags.has_value()) {
-            return std::unexpected(tags.error());
+        auto parts = utils::all_ok(
+            parse_tags_value(request, automation.tags),
+            parse_delivery_overlay(request, automation.delivery));
+        if (!parts.has_value()) {
+            return std::unexpected(parts.error());
         }
-        automation.tags = *tags;
+        auto &[tags, delivery] = *parts;
 
         if (request.contains("trigger")) {
             const auto trigger = parse_trigger_value(request);
@@ -189,11 +187,8 @@ namespace orangutan::builtin::detail {
             automation.trigger = *trigger;
         }
 
-        const auto delivery = parse_delivery_overlay(request, automation.delivery);
-        if (!delivery.has_value()) {
-            return std::unexpected(delivery.error());
-        }
-        automation.delivery = *delivery;
+        automation.tags = std::move(tags);
+        automation.delivery = std::move(delivery);
 
         return automation;
     }
