@@ -1,7 +1,4 @@
 {
-    __meta__ = {
-        version = "1.0"
-    },
     ["linux|x86_64"] = {
         ["catch2 3.7.1#f56260b5"] = {
             repo = {
@@ -43,15 +40,7 @@
             },
             version = "v3.10.0"
         },
-        ["fmt 11.0.2#f56260b5"] = {
-            repo = {
-                branch = "master",
-                commit = "1ee8ee1b0588441ffe09503c715e7090b6a1a732",
-                url = "https://gitee.com/tboox/xmake-repo.git"
-            },
-            version = "11.0.2"
-        },
-        ["fmt#0360e9e3"] = {
+        ["fmt 12.1.0#0360e9e3"] = {
             repo = {
                 branch = "master",
                 commit = "1ee8ee1b0588441ffe09503c715e7090b6a1a732",
@@ -163,5 +152,8 @@
             },
             version = "v1.2.0"
         }
+    },
+    __meta__ = {
+        version = "1.0"
     }
 }
