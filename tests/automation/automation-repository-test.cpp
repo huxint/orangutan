@@ -37,7 +37,7 @@ namespace {
     }
 
     [[nodiscard]]
-    orangutan::automation::RunRecord make_run_record(const orangutan::automation::Automation &automation, orangutan::base::i64 started_at) {
+    orangutan::automation::RunRecord make_run_record(const orangutan::automation::Automation &automation, std::int64_t started_at) {
         return orangutan::automation::RunRecord{
             .automation_id = automation.id,
             .agent_key = automation.agent_key,
@@ -49,7 +49,7 @@ namespace {
     }
 
     [[nodiscard]]
-    orangutan::automation::DeliveryRecord make_delivery_record(const orangutan::automation::RunRecord &run, std::string_view target, orangutan::base::i64 created_at) {
+    orangutan::automation::DeliveryRecord make_delivery_record(const orangutan::automation::RunRecord &run, std::string_view target, std::int64_t created_at) {
         return orangutan::automation::DeliveryRecord{
             .run_id = run.id,
             .automation_id = run.automation_id,

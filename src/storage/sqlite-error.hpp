@@ -10,7 +10,7 @@
 namespace orangutan::sqlite {
 
     /// Categorizes the failure mode of a sqlite operation.
-    enum class sqlite_error_kind : base::u8 {
+    enum class sqlite_error_kind : std::uint8_t {
         /// Failed to open or configure the database handle.
         open_failed,
         /// sqlite3_prepare_v2 returned non-OK, produced no statement, or left trailing SQL.

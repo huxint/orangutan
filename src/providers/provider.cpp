@@ -2,9 +2,10 @@
 
 #include <memory>
 
+#include <fmt/format.h>
+
 #include "providers/execution/runtime-backend.hpp"
 #include "utils/enum-string.hpp"
-#include "utils/format.hpp"
 #include "utils/string.hpp"
 
 namespace orangutan::providers {
@@ -13,7 +14,7 @@ namespace orangutan::providers {
 
         [[nodiscard]]
         std::string format_parse_error(std::string_view kind, std::string_view token) {
-            return utils::format("unsupported {}: {}", kind, token);
+            return fmt::format("unsupported {}: {}", kind, token);
         }
 
     } // namespace

@@ -6,18 +6,18 @@
 #include "channel/qq/qq-channel-session.hpp"
 #include "channel/qq/qq-message-builder.hpp"
 #include "channel/qq/qq-transport.hpp"
-#include "utils/format.hpp"
 #include "utils/string.hpp"
 #include "utils/task-pool.hpp"
 #include "utils/time-format.hpp"
-#include "types/base.hpp"
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <optional>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
@@ -262,7 +262,7 @@ namespace orangutan::channel::qq {
                     }
                 },
             .on_close =
-                [this](base::u16 code, std::string reason) {
+                [this](std::uint16_t code, std::string reason) {
                     spdlog::warn("qq websocket closed: {} {}", code, reason);
                     connected_ = false;
                     stop_heartbeat();
@@ -578,7 +578,7 @@ namespace orangutan::channel::qq {
 
     void QqChannel::persist_session_state() {
         std::string session_id;
-        base::u32 last_seq = 0;
+        std::uint32_t last_seq = 0;
         {
             std::scoped_lock lock(runtime_->mutex);
             if (runtime_->session_id.empty() || runtime_->last_seq == 0) {
@@ -641,7 +641,7 @@ namespace orangutan::channel::qq {
 
                 const auto last_seen_text = item.value("last_seen", std::string{});
                 const auto last_seen = utils::parse_iso8601_utc(last_seen_text).value_or(std::chrono::system_clock::now());
-                loaded.emplace(utils::format("{}:{}", kind, openid), RuntimeState::known_user{
+                loaded.emplace(fmt::format("{}:{}", kind, openid), RuntimeState::known_user{
                                                                                    .kind = kind,
                                                                                    .openid = openid,
                                                                                    .last_seen_at = last_seen,
@@ -770,9 +770,9 @@ namespace orangutan::channel::qq {
         runtime_->last_error.clear();
     }
 
-    base::u16 QqChannel::next_msg_seq() {
+    std::uint16_t QqChannel::next_msg_seq() {
         const auto current = msg_seq_.fetch_add(1, std::memory_order_relaxed);
-        return static_cast<base::u16>((current + 1U) & 0xFFFFU);
+        return static_cast<std::uint16_t>((current + 1U) & 0xFFFFU);
     }
 
     void QqChannel::remember_inbound_message(const std::string &message_id) {

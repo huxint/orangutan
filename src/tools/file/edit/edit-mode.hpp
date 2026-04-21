@@ -4,7 +4,7 @@
 
 namespace orangutan::tools::file {
 
-    enum class edit_mode : base::u8 {
+    enum class edit_mode : std::uint8_t {
         search_replace,
         hashline,
     };

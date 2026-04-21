@@ -15,7 +15,7 @@
 namespace orangutan::channel::qq {
 
     [[nodiscard]]
-    base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value);
+    std::int64_t parse_integer_like(const nlohmann::json &payload, std::string_view key, std::int64_t default_value);
 
     [[nodiscard]]
     inline std::vector<Attachment> parse_attachments(const nlohmann::json &data) {

@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <filesystem>
 
+#include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
@@ -55,7 +56,7 @@ namespace orangutan::bootstrap {
         const auto effective_agents = detail::build_effective_agents(cfg);
         const auto agent_it = effective_agents.find(options.cli_agent_key);
         if (agent_it == effective_agents.end()) {
-            spdlog::fmt_lib::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
+            fmt::println(stderr, "Error: unknown agent: {}", options.cli_agent_key);
             return std::nullopt;
         }
 
@@ -74,7 +75,7 @@ namespace orangutan::bootstrap {
             }
             return workspace;
         } catch (const std::exception &e) {
-            spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+            fmt::println(stderr, "Error: {}", e.what());
             return std::nullopt;
         }
     }

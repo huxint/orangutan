@@ -8,13 +8,13 @@ namespace orangutan::cli {
 
     namespace {
 
-        enum class slash_argument_mode : base::u8 {
+        enum class slash_argument_mode : std::uint8_t {
             none,
             optional,
             required,
         };
 
-        enum class slash_command_surface_mask : base::u8 {
+        enum class slash_command_surface_mask : std::uint8_t {
             none = 0,
             cli = 1 << 0,
             channel = 1 << 1,
@@ -91,7 +91,7 @@ namespace orangutan::cli {
                 }
                 return slash_command_surface_mask::none;
             }();
-            return (static_cast<base::u8>(mask) & static_cast<base::u8>(bit)) != 0;
+            return (static_cast<std::uint8_t>(mask) & static_cast<std::uint8_t>(bit)) != 0;
         }
 
         std::string_view description_for_surface(const SlashCommandDescription &description, slash_command_surface surface) {

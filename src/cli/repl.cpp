@@ -10,9 +10,9 @@
 #include "storage/session-store.hpp"
 
 #include <cstdio>
+#include <fmt/format.h>
 #include <iostream>
 #include <optional>
-#include <spdlog/common.h>
 #include <string_view>
 namespace orangutan::cli {
 
@@ -27,7 +27,7 @@ namespace orangutan::cli {
                           const std::string &agent_key, HookManager *hook_manager) {
             const auto updating_existing = !current_session_id.empty();
             if (!persist_session(agent, store, current_session_id, make_cli_session_metadata(model, scope_key, agent_key))) {
-                spdlog::fmt_lib::println("💤 Nothing to save (empty history).\n");
+                fmt::println("💤 Nothing to save (empty history).\n");
                 return;
             }
 
@@ -36,22 +36,22 @@ namespace orangutan::cli {
             }
 
             if (updating_existing) {
-                spdlog::fmt_lib::println("💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+                fmt::println("💾 Session updated: {} (use -r {} to resume)\n", current_session_id, current_session_id);
                 return;
             }
-            spdlog::fmt_lib::println("💾 Session saved: {} (use -r {} to resume)\n", current_session_id, current_session_id);
+            fmt::println("💾 Session saved: {} (use -r {} to resume)\n", current_session_id, current_session_id);
         }
 
         void print_slash_reply(const std::string &text) {
             if (text.ends_with("\n\n")) {
-                spdlog::fmt_lib::print("{}", text);
+                fmt::print("{}", text);
                 return;
             }
             if (text.ends_with('\n')) {
-                spdlog::fmt_lib::println("{}", text);
+                fmt::println("{}", text);
                 return;
             }
-            spdlog::fmt_lib::println("{}\n", text);
+            fmt::println("{}\n", text);
         }
 
         bool handle_slash_command(const std::string &line, AgentLoop &agent, const ProviderSystem &provider, SessionStore &store, const std::string &configured_model,
@@ -66,7 +66,7 @@ namespace orangutan::cli {
             }
             if (line == "/clear") {
                 agent.clear_history();
-                spdlog::fmt_lib::println("History cleared.\n");
+                fmt::println("History cleared.\n");
                 return true;
             }
             if (line == "/save") {
@@ -75,7 +75,7 @@ namespace orangutan::cli {
             }
             if (line == "/skills") {
                 if (skill_loader == nullptr) {
-                    spdlog::fmt_lib::println("No skills loaded.\n");
+                    fmt::println("No skills loaded.\n");
                 } else {
                     print_slash_reply(format_skill_catalog(skill_loader->list(skills::skill_list_query{.include_inactive = true})));
                 }
@@ -83,17 +83,17 @@ namespace orangutan::cli {
             }
             if (line == "/tools") {
                 if (tool_registry == nullptr) {
-                    spdlog::fmt_lib::println("No tool registry available.\n");
+                    fmt::println("No tool registry available.\n");
                 } else {
                     const auto defs = tool_registry->definitions();
                     if (defs.empty()) {
-                        spdlog::fmt_lib::println("No tools registered.\n");
+                        fmt::println("No tools registered.\n");
                     } else {
-                        spdlog::fmt_lib::println("Registered tools ({}):", defs.size());
+                        fmt::println("Registered tools ({}):", defs.size());
                         for (const auto &def : defs) {
-                            spdlog::fmt_lib::println("  {} — {}", def.name, def.description);
+                            fmt::println("  {} — {}", def.name, def.description);
                         }
-                        spdlog::fmt_lib::println("");
+                        fmt::println("");
                     }
                 }
                 return true;
@@ -184,8 +184,8 @@ namespace orangutan::cli {
                   const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
                   const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager,
                   automation::AutomationRuntime *automation_runtime) {
-        spdlog::fmt_lib::println("Orangutan v0.1.0");
-        spdlog::fmt_lib::println("Type /help for commands, Ctrl+D to quit\n");
+        fmt::println("Orangutan v0.1.0");
+        fmt::println("Type /help for commands, Ctrl+D to quit\n");
         std::fflush(stdout);
 
         dispatch_session_start(hook_manager, current_session_id, agent.history().size());
@@ -219,7 +219,7 @@ namespace orangutan::cli {
                 try {
                     agent.run(line);
                 } catch (const std::exception &e) {
-                    spdlog::fmt_lib::println(stderr, "Error: {}\n", e.what());
+                    fmt::println(stderr, "Error: {}\n", e.what());
                 }
                 return false;
             });
@@ -237,17 +237,17 @@ namespace orangutan::cli {
             const auto metadata = make_cli_session_metadata(active_model, scope_key, agent_key);
             if (!current_session_id.empty()) {
                 store.update(current_session_id, agent.history(), metadata);
-                spdlog::fmt_lib::println("\n💾 Session updated: {} (use -r {} to resume)", current_session_id, current_session_id);
+                fmt::println("\n💾 Session updated: {} (use -r {} to resume)", current_session_id, current_session_id);
             } else {
                 current_session_id = store.save(agent.history(), metadata);
                 dispatch_session_start(hook_manager, current_session_id, agent.history().size());
-                spdlog::fmt_lib::println("\n💾 Auto-saved session: {} (use -r {} to resume)", current_session_id, current_session_id);
+                fmt::println("\n💾 Auto-saved session: {} (use -r {} to resume)", current_session_id, current_session_id);
             }
         }
 
         dispatch_session_end(hook_manager, current_session_id, agent.history().size());
 
-        spdlog::fmt_lib::println("\nBye!");
+        fmt::println("\nBye!");
     }
 
 } // namespace orangutan::cli

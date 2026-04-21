@@ -9,32 +9,32 @@
 
 namespace orangutan::utf8_policy {
 
-    enum class invalid_utf8_mode : base::u8 {
+    enum class invalid_utf8_mode : std::uint8_t {
         reject,
         drop_invalid,
         replace_invalid,
     };
 
-    enum class normalization_mode : base::u8 {
+    enum class normalization_mode : std::uint8_t {
         none,
         nfc,
         nfkc,
         nfkc_casefold,
     };
 
-    enum class control_character_mode : base::u8 {
+    enum class control_character_mode : std::uint8_t {
         allow,
         strip,
         reject,
     };
 
-    enum class bound_mode : base::u8 {
+    enum class bound_mode : std::uint8_t {
         none,
         prefix,
         suffix,
     };
 
-    enum class canonicalize_error_code : base::u8 {
+    enum class canonicalize_error_code : std::uint8_t {
         invalid_utf8,
         disallowed_code_point,
     };

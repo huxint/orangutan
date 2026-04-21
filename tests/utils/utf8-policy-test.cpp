@@ -10,11 +10,11 @@
 
 using namespace orangutan;
 
-static_assert(std::same_as<std::underlying_type_t<utf8_policy::invalid_utf8_mode>, base::u8>);
-static_assert(std::same_as<std::underlying_type_t<utf8_policy::normalization_mode>, base::u8>);
-static_assert(std::same_as<std::underlying_type_t<utf8_policy::control_character_mode>, base::u8>);
-static_assert(std::same_as<std::underlying_type_t<utf8_policy::bound_mode>, base::u8>);
-static_assert(std::same_as<std::underlying_type_t<utf8_policy::canonicalize_error_code>, base::u8>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::invalid_utf8_mode>, std::uint8_t>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::normalization_mode>, std::uint8_t>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::control_character_mode>, std::uint8_t>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::bound_mode>, std::uint8_t>);
+static_assert(std::same_as<std::underlying_type_t<utf8_policy::canonicalize_error_code>, std::uint8_t>);
 
 TEST_CASE("drop_invalid_mode_keeps_valid_spans") {
     utf8_policy::CanonicalizePolicy policy{};

@@ -80,7 +80,7 @@ namespace orangutan::bootstrap {
         std::unordered_map<std::string, std::shared_ptr<PendingApproval>> pending_by_request_id_;
         std::unordered_map<std::string, std::vector<std::string>> pending_request_ids_by_jid_;
         std::unordered_set<std::string> qq_keyboard_disabled_keys_;
-        base::u64 next_prompt_id_ = 0;
+        std::uint64_t next_prompt_id_ = 0;
         bool shutting_down_ = false;
 
         void clear_pending(const std::shared_ptr<PendingApproval> &pending);

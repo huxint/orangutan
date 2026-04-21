@@ -44,8 +44,8 @@ namespace orangutan::automation {
         std::string status;
         std::string title;
         std::string body;
-        base::i64 created_at = 0;
-        std::optional<base::i64> acked_at;
+        std::int64_t created_at = 0;
+        std::optional<std::int64_t> acked_at;
     };
 
     /// Persists unified automations, run history, and delivery history in sqlite.
@@ -85,9 +85,9 @@ namespace orangutan::automation {
         std::vector<DeliveryRecord> list_deliveries(const DeliveryQuery &query = {}) const;
 
         [[nodiscard]]
-        std::optional<DeliveryRecord> ack_delivery(std::string_view agent_key, std::string_view delivery_id, std::optional<base::i64> acked_at = std::nullopt);
+        std::optional<DeliveryRecord> ack_delivery(std::string_view agent_key, std::string_view delivery_id, std::optional<std::int64_t> acked_at = std::nullopt);
 
-        void clear_deliveries(const DeliveryQuery &query, std::optional<base::i64> acked_at = std::nullopt);
+        void clear_deliveries(const DeliveryQuery &query, std::optional<std::int64_t> acked_at = std::nullopt);
 
     private:
         void ensure_schema();

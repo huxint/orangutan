@@ -70,7 +70,7 @@ namespace orangutan::tools {
         ToolOutput read_image_file(const std::filesystem::path &path, std::string_view media_type) {
             const auto size = std::filesystem::file_size(path);
             if (size > MAX_IMAGE_SIZE) {
-                return ToolOutput{utils::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, MAX_IMAGE_SIZE)};
+                return ToolOutput{fmt::format("Image too large to display: {} ({} bytes, limit {} bytes)", path.string(), size, MAX_IMAGE_SIZE)};
             }
 
             fileio::File file(path, "rb");
@@ -81,7 +81,7 @@ namespace orangutan::tools {
 
             auto media = std::string(media_type);
             const auto b64 = encode_base64(buf);
-            const auto description = utils::format("Image: {} ({} bytes, {})", path.string(), size, media);
+            const auto description = fmt::format("Image: {} ({} bytes, {})", path.string(), size, media);
             return ToolOutput{description, {{.media_type = std::move(media), .data = b64}}};
         }
 
@@ -122,7 +122,7 @@ namespace orangutan::tools {
                 if (ext.empty()) {
                     ext = "unknown";
                 }
-                return utils::format("Binary file: {} ({} bytes, type: {})", path.string(), size, ext);
+                return fmt::format("Binary file: {} ({} bytes, type: {})", path.string(), size, ext);
             }
 
             const auto content = fileio::read_file(path);
@@ -131,7 +131,7 @@ namespace orangutan::tools {
 
             const auto total_lines = static_cast<int>(lines.size());
             if (offset > total_lines) {
-                return utils::format("No content at offset {} (file has {} lines)", offset, total_lines);
+                return fmt::format("No content at offset {} (file has {} lines)", offset, total_lines);
             }
 
             const int start = offset;

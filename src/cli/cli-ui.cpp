@@ -1,10 +1,9 @@
 #include "cli/cli-ui.hpp"
 #include "cli/slash-commands.hpp"
 
-#include <spdlog/common.h>
 #include <algorithm>
-#include <magic_enum/magic_enum.hpp>
 #include "utils/format.hpp"
+#include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::cli {
 
@@ -87,7 +86,7 @@ namespace orangutan::cli {
             return "## Compression\n- " + result.status;
         }
 
-        return utils::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
+        return fmt::format("## Compression\n- Messages: `{} -> {}`", result.messages_before, result.messages_after);
     }
 
     std::string render_saved_sessions(SessionStore &store, const std::string &scope_key) {

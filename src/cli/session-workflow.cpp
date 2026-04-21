@@ -2,8 +2,9 @@
 #include "bootstrap/identity.hpp"
 #include "utils/file.hpp"
 
+#include <fmt/format.h>
+
 #include <filesystem>
-#include <spdlog/common.h>
 
 namespace orangutan::cli {
 
@@ -20,26 +21,26 @@ namespace orangutan::cli {
         }
 
         void append_message_markdown(std::FILE *file, const Message &message, std::size_t index) {
-            spdlog::fmt_lib::println(file, "## {}\n", message_heading(message, index));
+            fmt::println(file, "## {}\n", message_heading(message, index));
 
             if (message.empty()) {
-                spdlog::fmt_lib::println(file, "_Empty message._\n");
+                fmt::println(file, "_Empty message._\n");
                 return;
             }
 
             for (const auto &block : message) {
                 if (const auto *text = std::get_if<Text>(&block)) {
-                    spdlog::fmt_lib::println(file, "{}\n", text->text);
+                    fmt::println(file, "{}\n", text->text);
                     continue;
                 }
                 if (const auto *tool = std::get_if<ToolUse>(&block)) {
-                    spdlog::fmt_lib::println(file, "### Tool Use: `{}`\n", tool->name);
-                    spdlog::fmt_lib::println(file, "```json\n{}\n```\n", tool->input.dump(2));
+                    fmt::println(file, "### Tool Use: `{}`\n", tool->name);
+                    fmt::println(file, "```json\n{}\n```\n", tool->input.dump(2));
                     continue;
                 }
                 if (const auto *result = std::get_if<ToolResult>(&block)) {
-                    spdlog::fmt_lib::println(file, "{}\n", result->is_error ? "### Tool Result (error)" : "### Tool Result");
-                    spdlog::fmt_lib::println(file, "```text\n{}\n```\n", result->content);
+                    fmt::println(file, "{}\n", result->is_error ? "### Tool Result (error)" : "### Tool Result");
+                    fmt::println(file, "```text\n{}\n```\n", result->content);
                 }
             }
         }
@@ -167,9 +168,9 @@ namespace orangutan::cli {
         }
 
         try {
-            spdlog::fmt_lib::println(file->get(), "# Session Export\n");
-            spdlog::fmt_lib::println(file->get(), "- Session: `{}`", session_id);
-            spdlog::fmt_lib::println(file->get(), "- Messages: `{}`\n", history.size());
+            fmt::println(file->get(), "# Session Export\n");
+            fmt::println(file->get(), "- Session: `{}`", session_id);
+            fmt::println(file->get(), "- Messages: `{}`\n", history.size());
 
             for (std::size_t index = 0; index < history.size(); ++index) {
                 append_message_markdown(file->get(), history[index], index);

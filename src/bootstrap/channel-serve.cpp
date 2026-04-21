@@ -67,7 +67,7 @@ namespace orangutan::bootstrap {
         constexpr auto SERVE_POLL_INTERVAL = std::chrono::milliseconds(50);
 
         std::string describe_attachment_for_agent(const Attachment &attachment, std::size_t index) {
-            std::string line = utils::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
+            std::string line = fmt::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
             if (!attachment.content_type.empty()) {
                 line.append(" (");
                 line.append(attachment.content_type);

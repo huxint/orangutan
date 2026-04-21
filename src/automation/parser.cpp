@@ -1,5 +1,10 @@
 #include "automation/parser.hpp"
 
+#include "automation/cron-parser.hpp"
+#include "utils/time-format.hpp"
+
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -12,10 +17,6 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-
-#include "automation/cron-parser.hpp"
-#include "utils/format.hpp"
-#include "utils/time-format.hpp"
 
 namespace orangutan::automation {
     namespace {
@@ -126,7 +127,7 @@ namespace orangutan::automation {
             const auto total_minutes = value.count();
             const auto hours = total_minutes / 60;
             const auto minutes = total_minutes % 60;
-            return utils::format("{:02}:{:02}", hours, minutes);
+            return fmt::format("{:02}:{:02}", hours, minutes);
         }
 
         [[nodiscard]]

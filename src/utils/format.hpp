@@ -4,29 +4,21 @@
 #include <string>
 #include <utility>
 
-#include <spdlog/common.h>
-#include <spdlog/fmt/bundled/color.h>
-#include <spdlog/fmt/bundled/format.h>
+#include <fmt/color.h>
+#include <fmt/format.h>
 
 namespace orangutan::utils {
 
-    /// Format text into a string without exposing spdlog::fmt_lib details.
+    /// Append formatted text to `out`.
     template <typename... Args>
-    void format_to(std::string &out, spdlog::fmt_lib::format_string<Args...> format_str, Args &&...args) {
-        spdlog::fmt_lib::format_to(std::back_inserter(out), format_str, std::forward<Args>(args)...);
+    void format_to(std::string &out, fmt::format_string<Args...> fmt_str, Args &&...args) {
+        fmt::format_to(std::back_inserter(out), fmt_str, std::forward<Args>(args)...);
     }
 
-    /// Format styled text into a string without exposing spdlog::fmt_lib details.
+    /// Append styled formatted text to `out`.
     template <typename... Args>
-    void format_to(std::string &out, const spdlog::fmt_lib::text_style &style, spdlog::fmt_lib::format_string<Args...> format_str, Args &&...args) {
-        spdlog::fmt_lib::format_to(std::back_inserter(out), style, format_str, std::forward<Args>(args)...);
-    }
-
-    /// Format text and return the result, without exposing spdlog::fmt_lib details.
-    template <typename... Args>
-    [[nodiscard]]
-    std::string format(spdlog::fmt_lib::format_string<Args...> format_str, Args &&...args) {
-        return spdlog::fmt_lib::format(format_str, std::forward<Args>(args)...);
+    void format_to(std::string &out, const fmt::text_style &style, fmt::format_string<Args...> fmt_str, Args &&...args) {
+        fmt::format_to(std::back_inserter(out), style, fmt_str, std::forward<Args>(args)...);
     }
 
 } // namespace orangutan::utils

@@ -3,6 +3,7 @@
 #include "bootstrap/identity.hpp"
 
 #include <filesystem>
+#include <fmt/format.h>
 #include <optional>
 #include <spdlog/spdlog.h>
 
@@ -84,18 +85,18 @@ namespace orangutan::bootstrap::detail {
 
     std::optional<ResolvedAgentRoute> resolve_agent_route(const Config &cfg, const AgentConfig &agent_cfg, std::string_view agent_key, std::string_view cli_api_key_override) {
         if (agent_cfg.profile.empty()) {
-            spdlog::fmt_lib::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
+            fmt::println(stderr, "Error: agent '{}' is missing a profile.", agent_key);
             return std::nullopt;
         }
         const auto profile_it = cfg.profiles.find(agent_cfg.profile);
         if (profile_it == cfg.profiles.end()) {
-            spdlog::fmt_lib::println(stderr, "Error: agent '{}' references unknown profile '{}'.", agent_key, agent_cfg.profile);
+            fmt::println(stderr, "Error: agent '{}' references unknown profile '{}'.", agent_key, agent_cfg.profile);
             return std::nullopt;
         }
         const auto &profile_cfg = profile_it->second;
         const auto model_it = profile_cfg.models.find(agent_cfg.model);
         if (model_it == profile_cfg.models.end()) {
-            spdlog::fmt_lib::println(stderr, "Error: agent '{}' references unknown model '{}' in profile '{}'.", agent_key, agent_cfg.model, agent_cfg.profile);
+            fmt::println(stderr, "Error: agent '{}' references unknown model '{}' in profile '{}'.", agent_key, agent_cfg.model, agent_cfg.profile);
             return std::nullopt;
         }
 
@@ -113,7 +114,7 @@ namespace orangutan::bootstrap::detail {
                 .thinking = model_it->second.thinking,
             };
         } catch (const providers::ProviderError &error) {
-            spdlog::fmt_lib::println(stderr, "Error: agent '{}' model '{}' has invalid provider config: {}", agent_key, agent_cfg.model, error.what());
+            fmt::println(stderr, "Error: agent '{}' model '{}' has invalid provider config: {}", agent_key, agent_cfg.model, error.what());
             return std::nullopt;
         }
 
@@ -124,13 +125,13 @@ namespace orangutan::bootstrap::detail {
             }
             const auto fallback_profile_it = cfg.profiles.find(fallback_profile_name);
             if (fallback_profile_it == cfg.profiles.end()) {
-                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback profile '{}' is not defined.", agent_key, fallback_profile_name);
+                fmt::println(stderr, "Error: agent '{}' fallback profile '{}' is not defined.", agent_key, fallback_profile_name);
                 return std::nullopt;
             }
             const auto &fallback_profile_cfg = fallback_profile_it->second;
             const auto fallback_it = fallback_profile_cfg.models.find(fallback_model.model);
             if (fallback_it == fallback_profile_cfg.models.end()) {
-                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model.model, fallback_profile_name);
+                fmt::println(stderr, "Error: agent '{}' fallback model '{}' is not defined in profile '{}'.", agent_key, fallback_model.model, fallback_profile_name);
                 return std::nullopt;
             }
             try {
@@ -146,7 +147,7 @@ namespace orangutan::bootstrap::detail {
                     .thinking = fallback_it->second.thinking,
                 });
             } catch (const providers::ProviderError &error) {
-                spdlog::fmt_lib::println(stderr, "Error: agent '{}' fallback model '{}' has invalid provider config: {}", agent_key, fallback_model.model, error.what());
+                fmt::println(stderr, "Error: agent '{}' fallback model '{}' has invalid provider config: {}", agent_key, fallback_model.model, error.what());
                 return std::nullopt;
             }
         }
@@ -167,7 +168,7 @@ namespace orangutan::bootstrap::detail {
             try {
                 resolved_workspace_root = resolve_workspace_root(agent_cfg.workspace);
             } catch (const std::exception &e) {
-                spdlog::fmt_lib::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
+                fmt::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
                 return std::nullopt;
             }
 

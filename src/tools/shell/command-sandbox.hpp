@@ -8,7 +8,7 @@
 
 namespace orangutan::tools {
 
-    enum class tool_sandbox_mode : base::u8 {
+    enum class tool_sandbox_mode : std::uint8_t {
         isolated,
         workspace_write,
         disabled,

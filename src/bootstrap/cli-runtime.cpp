@@ -4,6 +4,7 @@
 #include "storage/session-store.hpp"
 
 #include <cstdio>
+#include <fmt/format.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -13,8 +14,8 @@ namespace {
 
     bool choose_resume_session_id(const std::vector<orangutan::storage::SessionInfo> &sessions, std::string &resume_session) {
         if (sessions.empty()) {
-            spdlog::fmt_lib::println(stderr, "Error: no saved sessions to resume.");
-            spdlog::fmt_lib::println(stderr, "Start a conversation first - sessions are auto-saved on exit.");
+            fmt::println(stderr, "Error: no saved sessions to resume.");
+            fmt::println(stderr, "Start a conversation first - sessions are auto-saved on exit.");
             return false;
         }
 
@@ -28,12 +29,12 @@ namespace {
             return true;
         }
 
-        spdlog::fmt_lib::println("Available sessions:");
+        fmt::println("Available sessions:");
         for (std::size_t index = 0; index < sessions.size(); ++index) {
             const auto &session = sessions[index];
-            spdlog::fmt_lib::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
+            fmt::println("  [{}] {}  {}  {}  ({} messages)", index + 1, session.id, session.created_at, session.model, session.message_count);
         }
-        spdlog::fmt_lib::print("\nEnter number (or press Enter for latest): ");
+        fmt::print("\nEnter number (or press Enter for latest): ");
         std::fflush(stdout);
 
         std::string choice;
@@ -46,13 +47,13 @@ namespace {
         try {
             const auto idx = std::stoul(choice) - 1;
             if (idx >= sessions.size()) {
-                spdlog::fmt_lib::println(stderr, "Invalid selection.");
+                fmt::println(stderr, "Invalid selection.");
                 return false;
             }
             resume_session = sessions[idx].id;
             return true;
         } catch (const std::exception &) {
-            spdlog::fmt_lib::println(stderr, "Invalid selection.");
+            fmt::println(stderr, "Invalid selection.");
             return false;
         }
     }
@@ -76,25 +77,25 @@ namespace orangutan::bootstrap {
 
         try {
             if (!runtime_cfg.cli_memory_scope.empty() && !session_store.session_belongs_to_scope(resume_session, runtime_cfg.cli_memory_scope)) {
-                spdlog::fmt_lib::println(stderr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
+                fmt::println(stderr, "Error: session does not belong to agent '{}'.", options.cli_agent_key);
                 return false;
             }
             auto messages = session_store.load(resume_session);
             agent.set_history(std::move(messages));
             current_session_id = resume_session;
             if (!options.event_stream) {
-                spdlog::fmt_lib::println("Resumed session: {}", resume_session);
+                fmt::println("Resumed session: {}", resume_session);
             }
             return true;
         } catch (const std::exception &) {
-            spdlog::fmt_lib::println(stderr, "Error: session not found: {}", resume_session);
+            fmt::println(stderr, "Error: session not found: {}", resume_session);
             auto sessions = session_store.list_sessions(runtime_cfg.cli_memory_scope);
             if (sessions.empty()) {
-                spdlog::fmt_lib::println(stderr, "No saved sessions available.");
+                fmt::println(stderr, "No saved sessions available.");
             } else {
-                spdlog::fmt_lib::println(stderr, "Available sessions:");
+                fmt::println(stderr, "Available sessions:");
                 for (const auto &session : sessions) {
-                    spdlog::fmt_lib::println(stderr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
+                    fmt::println(stderr, "  {}  {}  {}  ({} messages)", session.id, session.created_at, session.model, session.message_count);
                 }
             }
             return false;
@@ -115,18 +116,18 @@ namespace orangutan::bootstrap {
 
     bool validate_runtime_mode_options(const CliOptions &options, bool has_current_session) {
         if (options.event_stream && options.message.empty() && !options.dump_session) {
-            spdlog::fmt_lib::println(stderr, "Error: --event-stream requires --message or piped stdin.");
+            fmt::println(stderr, "Error: --event-stream requires --message or piped stdin.");
             return false;
         }
         if (!options.dump_session) {
             return true;
         }
         if (!options.event_stream) {
-            spdlog::fmt_lib::println(stderr, "Error: --dump-session requires --event-stream.");
+            fmt::println(stderr, "Error: --dump-session requires --event-stream.");
             return false;
         }
         if (!has_current_session) {
-            spdlog::fmt_lib::println(stderr, "Error: --dump-session requires --resume.");
+            fmt::println(stderr, "Error: --dump-session requires --resume.");
             return false;
         }
         return true;

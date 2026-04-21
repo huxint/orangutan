@@ -4,16 +4,15 @@
 #include "tools/register.hpp"
 #include "types/base.hpp"
 
-#include <spdlog/common.h>
 #include <algorithm>
+#include "utils/format.hpp"
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-#include "utils/format.hpp"
 
 namespace orangutan::tools {
     namespace {
-        enum class recall_mode : base::u8 {
+        enum class recall_mode : std::uint8_t {
             query,
             category,
         };
@@ -138,7 +137,7 @@ namespace orangutan::tools {
 
         std::string stats_memory(RuntimeMemory &runtime_memory) {
             const auto stats = runtime_memory.stats();
-            return utils::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
+            return fmt::format("total={}\ncategories={}\nmanual={}\nauto={}\njournal={}", stats.total, stats.categories, stats.manual_entries, stats.auto_entries,
                                            stats.journal_entries);
         }
 

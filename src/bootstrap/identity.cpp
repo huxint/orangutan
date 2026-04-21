@@ -1,7 +1,7 @@
 #include "bootstrap/identity.hpp"
 #include "orchestration/types.hpp"
-#include "types/base.hpp"
-#include "utils/format.hpp"
+
+#include <fmt/format.h>
 
 #include <cstdlib>
 #include <cctype>
@@ -16,12 +16,12 @@ namespace orangutan::bootstrap {
 
     namespace {
 
-        constexpr base::u64 FNV_OFFSET_BASIS = 14695981039346656037ULL;
-        constexpr base::u64 FNV_PRIME = 1099511628211ULL;
+        constexpr std::uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
+        constexpr std::uint64_t FNV_PRIME = 1099511628211ULL;
         constexpr std::size_t MAX_IDENTITY_LABEL_LENGTH = 48;
 
-        base::u64 fnv1a_64(std::string_view input) {
-            base::u64 hash = FNV_OFFSET_BASIS;
+        std::uint64_t fnv1a_64(std::string_view input) {
+            std::uint64_t hash = FNV_OFFSET_BASIS;
             for (const unsigned char ch : input) {
                 hash ^= ch;
                 hash *= FNV_PRIME;
@@ -64,7 +64,7 @@ namespace orangutan::bootstrap {
         }
 
         std::string make_identity_slug(const std::string &jid) {
-            return utils::format("{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
+            return fmt::format("{}-{:016x}", sanitize_identity_component(jid), fnv1a_64(jid));
         }
 
         std::string normalize_path(const std::filesystem::path &path) {
@@ -158,7 +158,7 @@ namespace orangutan::bootstrap {
             return "cli:local";
         }
 
-        return utils::format("agent:{}|cli:local", agent_key);
+        return fmt::format("agent:{}|cli:local", agent_key);
     }
 
     std::string derive_cli_session_scope(std::string_view agent_key) {
@@ -166,7 +166,7 @@ namespace orangutan::bootstrap {
             return {};
         }
 
-        return utils::format("agent:{}", agent_key);
+        return fmt::format("agent:{}", agent_key);
     }
 
     RuntimeIdentity derive_cli_identity(const std::string &workspace_root, std::string_view agent_key) {
@@ -186,10 +186,10 @@ namespace orangutan::bootstrap {
         }
 
         if (agent_key.empty()) {
-            return utils::format("jid:{}", jid);
+            return fmt::format("jid:{}", jid);
         }
 
-        return utils::format("agent:{}|jid:{}", agent_key, jid);
+        return fmt::format("agent:{}|jid:{}", agent_key, jid);
     }
 
     RuntimeIdentity derive_channel_identity(const std::string &workspace_root, std::string_view jid, std::string_view agent_key) {

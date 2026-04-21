@@ -15,7 +15,7 @@ namespace orangutan::permissions {
 
     // ── Permission Mode ──────────────────────────────────────────────────
 
-    enum class permission_mode : base::u8 {
+    enum class permission_mode : std::uint8_t {
         default_mode,
         accept_edits,
         plan,
@@ -25,7 +25,7 @@ namespace orangutan::permissions {
 
     // ── Permission Behavior ──────────────────────────────────────────────
 
-    enum class permission_behavior : base::u8 {
+    enum class permission_behavior : std::uint8_t {
         allow,
         deny,
         ask,
@@ -53,7 +53,7 @@ namespace orangutan::permissions {
 
     // ── Permission Rules ─────────────────────────────────────────────────
 
-    enum class rule_match_type : base::u8 {
+    enum class rule_match_type : std::uint8_t {
         exact,
         prefix,
         wildcard,
@@ -64,7 +64,7 @@ namespace orangutan::permissions {
         std::string pattern;
     };
 
-    enum class permission_rule_source : base::u8 {
+    enum class permission_rule_source : std::uint8_t {
         cli_arg,
         session,
         local_settings,

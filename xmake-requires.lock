@@ -1,4 +1,7 @@
 {
+    __meta__ = {
+        version = "1.0"
+    },
     ["linux|x86_64"] = {
         ["catch2 3.7.1#f56260b5"] = {
             repo = {
@@ -39,6 +42,22 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v3.10.0"
+        },
+        ["fmt 11.0.2#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "1ee8ee1b0588441ffe09503c715e7090b6a1a732",
+                url = "https://gitee.com/tboox/xmake-repo.git"
+            },
+            version = "11.0.2"
+        },
+        ["fmt#0360e9e3"] = {
+            repo = {
+                branch = "master",
+                commit = "1ee8ee1b0588441ffe09503c715e7090b6a1a732",
+                url = "https://gitee.com/tboox/xmake-repo.git"
+            },
+            version = "12.1.0"
         },
         ["libcurl 8.11.0#f5a641a2"] = {
             repo = {
@@ -112,11 +131,11 @@
             },
             version = "v8.0.0"
         },
-        ["spdlog 1.17.0#f56260b5"] = {
+        ["spdlog 1.17.0#24792a69"] = {
             repo = {
                 branch = "master",
-                commit = "75c3fcffb897a8aeb37863c495b9f58266216b26",
-                url = "https://github.com/xmake-io/xmake-repo.git"
+                commit = "1ee8ee1b0588441ffe09503c715e7090b6a1a732",
+                url = "https://gitee.com/tboox/xmake-repo.git"
             },
             version = "v1.17.0"
         },
@@ -144,8 +163,5 @@
             },
             version = "v1.2.0"
         }
-    },
-    __meta__ = {
-        version = "1.0"
     }
 }

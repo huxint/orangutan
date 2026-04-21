@@ -4,18 +4,19 @@
 #include "orchestration/mailbox.hpp"
 #include "orchestration/team-manager.hpp"
 #include "utils/escape.hpp"
-#include "utils/format.hpp"
 #include "utils/task-pool.hpp"
 #include "utils/time-format.hpp"
+
+#include <fmt/format.h>
+#include <magic_enum/magic_enum.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
-#include <magic_enum/magic_enum.hpp>
 #include <mutex>
-#include <spdlog/spdlog.h>
 #include <stop_token>
 #include <string>
 #include <utility>
@@ -48,7 +49,7 @@ namespace orangutan::orchestration {
 
         [[nodiscard]]
         auto format_task_notification(const AgentRunRecord &record) -> std::string {
-            return utils::format(
+            return fmt::format(
                 "<task-notification>\n"
                 "  <task-id>{}</task-id>\n"
                 "  <agent-key>{}</agent-key>\n"

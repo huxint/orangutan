@@ -8,7 +8,7 @@
 namespace orangutan::memory {
 
     /// Semantic memory types inspired by Claude Code's taxonomy.
-    enum class memory_type : base::u8 {
+    enum class memory_type : std::uint8_t {
         /// User's role, goals, preferences, knowledge, and personal context.
         user,
         /// Corrections, validated approaches, and guidance on how to work.

@@ -9,7 +9,7 @@
 
 namespace orangutan::channel::qq {
 
-    enum class approval_action : base::u8 {
+    enum class approval_action : std::uint8_t {
         allow_once,
         always_allow,
         deny,

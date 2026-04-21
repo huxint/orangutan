@@ -59,7 +59,7 @@ namespace orangutan::process {
         bool stderr_truncated = false;
     };
 
-    enum class background_process_terminal_status : base::u8 {
+    enum class background_process_terminal_status : std::uint8_t {
         exited,
         signaled,
         unknown,

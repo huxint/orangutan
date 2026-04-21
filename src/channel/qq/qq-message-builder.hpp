@@ -68,7 +68,7 @@ namespace orangutan::channel::qq {
             return std::forward<decltype(self)>(self);
         }
 
-        auto msg_seq(this auto &&self, base::u16 seq) -> decltype(auto) {
+        auto msg_seq(this auto &&self, std::uint16_t seq) -> decltype(auto) {
             self.payload_["msg_seq"] = seq;
             return std::forward<decltype(self)>(self);
         }

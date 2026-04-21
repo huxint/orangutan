@@ -1,12 +1,11 @@
 #include "memory/memory-mirror.hpp"
 #include "utils/file-io.hpp"
 #include "utils/file.hpp"
+#include "utils/format.hpp"
 #include "utils/string.hpp"
 #include "utils/time-format.hpp"
-#include "utils/format.hpp"
 
 #include <filesystem>
-#include <spdlog/common.h>
 
 namespace orangutan::memory {
     namespace {
@@ -98,12 +97,12 @@ namespace orangutan::memory {
 
         fileio::File file(result.path, "a");
         if (has_existing_content) {
-            spdlog::fmt_lib::println(file.get(), "");
-            spdlog::fmt_lib::println(file.get(), "");
+            fmt::println(file.get(), "");
+            fmt::println(file.get(), "");
         }
-        spdlog::fmt_lib::println(file.get(), "## {}", time::current_local_timestamp());
-        spdlog::fmt_lib::print(file.get(), "{}", trimmed_summary);
-        spdlog::fmt_lib::println(file.get(), "");
+        fmt::println(file.get(), "## {}", time::current_local_timestamp());
+        fmt::print(file.get(), "{}", trimmed_summary);
+        fmt::println(file.get(), "");
         file.close();
 
         result.mirrored = true;

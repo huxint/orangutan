@@ -5,7 +5,8 @@
 #include "orchestration/mailbox.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "utils/escape.hpp"
-#include "utils/format.hpp"
+
+#include <fmt/format.h>
 
 #include <chrono>
 #include <memory>
@@ -21,7 +22,7 @@ namespace orangutan::bootstrap {
     namespace {
 
         std::string format_teammate_message_xml(const MailboxMessage &message) {
-            return utils::format(R"(<teammate-message from="{}">{}</teammate-message>)", utils::escape_xml(message.from), utils::escape_xml(message.text));
+            return fmt::format(R"(<teammate-message from="{}">{}</teammate-message>)", utils::escape_xml(message.from), utils::escape_xml(message.text));
         }
 
         /// `WorkerRuntime` backed by a full `AgentLoop` assembled via `build_agent_runtime`.

@@ -39,7 +39,7 @@ namespace orangutan::tools {
         }
 
         std::string render_tool(const ToolDef &def) {
-            return utils::format("## {}\n{}\n\nInput schema:\n```json\n{}\n```\n\n", def.name, def.description, format_schema(def.input_schema));
+            return fmt::format("## {}\n{}\n\nInput schema:\n```json\n{}\n```\n\n", def.name, def.description, format_schema(def.input_schema));
         }
 
         std::string select_tools(std::string_view names_csv, ToolRegistry &registry) {

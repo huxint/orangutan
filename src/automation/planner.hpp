@@ -11,11 +11,11 @@ namespace orangutan::automation {
 
     struct DueAutomation {
         Automation automation;
-        base::i64 scheduled_for = 0;
+        std::int64_t scheduled_for = 0;
     };
 
     [[nodiscard]]
-    std::optional<base::i64> plan_next_due(const Automation &automation, TimePoint from);
+    std::optional<std::int64_t> plan_next_due(const Automation &automation, TimePoint from);
 
     [[nodiscard]]
     bool is_automation_due(const Automation &automation, TimePoint now);

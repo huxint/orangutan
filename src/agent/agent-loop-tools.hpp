@@ -12,8 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include <spdlog/fmt/bundled/color.h>
-#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 
 #include "agent/agent-loop.hpp"
@@ -28,7 +26,7 @@ namespace orangutan::agent::detail {
     inline constexpr int LOOP_DETECTION_THRESHOLD = 3;
     inline constexpr int LOOP_ABORT_THRESHOLD = 5;
 
-    enum class loop_status : base::u8 {
+    enum class loop_status : std::uint8_t {
         ok,
         warning,
         abort,
@@ -220,7 +218,7 @@ namespace orangutan::agent::detail {
                                 if (human_output) {
                                     std::string line;
                                     utils::format_to(line, "  -> ");
-                                    utils::format_to(line, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::cyan), "{}", state.call.name);
+                                    utils::format_to(line, fmt::fg(fmt::terminal_color::cyan), "{}", state.call.name);
                                     utils::format_to(line, "\n");
                                     write_tool_stdout(line);
                                 }

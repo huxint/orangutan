@@ -11,7 +11,7 @@
 
 namespace orangutan::hooks {
 
-    enum class hook_event : base::u8 {
+    enum class hook_event : std::uint8_t {
         before_tool_call,
         after_tool_call,
         message_received,
@@ -22,7 +22,7 @@ namespace orangutan::hooks {
 
     struct HookEventHash {
         std::size_t operator()(hook_event e) const noexcept {
-            return std::hash<base::u8>{}(std::to_underlying(e));
+            return std::hash<std::uint8_t>{}(std::to_underlying(e));
         }
     };
 

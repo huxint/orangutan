@@ -11,7 +11,7 @@
 
 namespace orangutan::orchestration {
 
-    enum class message_type : base::u8 {
+    enum class message_type : std::uint8_t {
         message,
         shutdown_request,
         shutdown_response,

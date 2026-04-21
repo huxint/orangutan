@@ -18,12 +18,12 @@ namespace orangutan::channel::qq {
         struct Callbacks {
             std::function<void()> on_open;
             std::function<void(std::string)> on_text;
-            std::function<void(base::u16, std::string)> on_close;
+            std::function<void(std::uint16_t, std::string)> on_close;
             std::function<void(std::string)> on_error;
         };
 
         struct Event {
-            enum class kind : base::u8 {
+            enum class kind : std::uint8_t {
                 text,
                 close,
                 error,
@@ -31,7 +31,7 @@ namespace orangutan::channel::qq {
 
             kind kind;
             std::string payload;
-            base::u16 close_code = 1000;
+            std::uint16_t close_code = 1000;
 
             [[nodiscard]]
             static Event text(std::string payload) {
@@ -39,7 +39,7 @@ namespace orangutan::channel::qq {
             }
 
             [[nodiscard]]
-            static Event close(base::u16 close_code, std::string reason) {
+            static Event close(std::uint16_t close_code, std::string reason) {
                 return Event{.kind = kind::close, .payload = std::move(reason), .close_code = close_code};
             }
 

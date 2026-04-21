@@ -33,10 +33,10 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <fmt/format.h>
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <spdlog/common.h>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -69,7 +69,7 @@ namespace {
         try {
             return std::make_unique<Store>();
         } catch (const std::exception &e) {
-            spdlog::fmt_lib::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
+            fmt::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
             return nullptr;
         }
     }
@@ -86,7 +86,7 @@ namespace {
         const auto &workspace_root = agent_runtime_configs.begin()->second.workspace_root;
         for (const auto &[agent_key, runtime_cfg] : agent_runtime_configs) {
             if (runtime_cfg.workspace_root != workspace_root) {
-                spdlog::fmt_lib::println(stderr, "Error: agent '{}' uses workspace '{}', which does not match the shared workspace '{}'.", agent_key, runtime_cfg.workspace_root,
+                fmt::println(stderr, "Error: agent '{}' uses workspace '{}', which does not match the shared workspace '{}'.", agent_key, runtime_cfg.workspace_root,
                                          workspace_root);
                 return std::nullopt;
             }
@@ -115,7 +115,7 @@ namespace {
                     message_queue.push(message);
                 });
             } catch (const std::exception &e) {
-                spdlog::fmt_lib::println(stderr, "Error: failed to start configured channels: {}", e.what());
+                fmt::println(stderr, "Error: failed to start configured channels: {}", e.what());
                 channel_manager.disconnect_all();
                 return 1;
             }
@@ -161,10 +161,10 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .allow_interactive_password = true,
         });
     } catch (const orangutan::ConfigSecretProtectionError &e) {
-        spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+        fmt::println(stderr, "Error: {}", e.what());
         return 1;
     } catch (const std::exception &e) {
-        spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+        fmt::println(stderr, "Error: {}", e.what());
         return 1;
     }
     apply_cli_edit_mode_override(cfg, options.edit_mode);
@@ -210,8 +210,8 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     }
 
     if (options.cli_mode && primary_api_key.empty()) {
-        spdlog::fmt_lib::println(stderr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
-        spdlog::fmt_lib::println(stderr, "Set profiles.<name>.api_key, LLM_API_KEY, or use --api-key");
+        fmt::println(stderr, "Error: missing API key for agent '{}'.", options.cli_agent_key);
+        fmt::println(stderr, "Set profiles.<name>.api_key, LLM_API_KEY, or use --api-key");
         return 1;
     }
 
@@ -221,7 +221,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     }
     const auto maybe_app_workspace_root = resolve_app_workspace_root(maybe_primary_runtime_cfg, *maybe_agent_runtime_configs);
     if (!maybe_app_workspace_root.has_value()) {
-        spdlog::fmt_lib::println(stderr, "Error: unable to resolve a shared workspace root for runtime state.");
+        fmt::println(stderr, "Error: unable to resolve a shared workspace root for runtime state.");
         return 1;
     }
 
@@ -231,7 +231,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         memory_store = std::make_unique<orangutan::MemoryStore>(orangutan::bootstrap::workspace_memory_store_path(*maybe_app_workspace_root));
         session_store = std::make_unique<orangutan::SessionStore>(orangutan::bootstrap::workspace_session_store_path(*maybe_app_workspace_root));
     } catch (const std::exception &e) {
-        spdlog::fmt_lib::println(stderr, "Error: failed to initialize runtime stores: {}", e.what());
+        fmt::println(stderr, "Error: failed to initialize runtime stores: {}", e.what());
         return 1;
     }
 
@@ -404,7 +404,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             if (options.web_mode && !options.cli_mode) {
                 spdlog::warn("web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
             } else {
-                spdlog::fmt_lib::println(stderr, "Error: failed to initialize primary runtime: {}", e.what());
+                fmt::println(stderr, "Error: failed to initialize primary runtime: {}", e.what());
                 app_runtime.automation_runtime().stop();
                 return 1;
             }
@@ -425,7 +425,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         }
         warn_if_nonlocal_web_host(options.web_host);
         web_server->start(options.web_host, options.web_port);
-        spdlog::fmt_lib::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
+        fmt::println("Web UI available at http://{}:{}", options.web_host, web_server->port());
     }
 
     orangutan::MessageQueue message_queue;
@@ -455,7 +455,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     int exit_code = 0;
     if (options.cli_mode) {
         if (primary_runtime == nullptr || !maybe_primary_runtime_cfg.has_value()) {
-            spdlog::fmt_lib::println(stderr, "Error: failed to initialize CLI runtime.");
+            fmt::println(stderr, "Error: failed to initialize CLI runtime.");
             exit_code = 1;
         } else {
             auto resume_session = options.resume_session;

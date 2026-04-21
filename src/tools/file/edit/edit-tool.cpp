@@ -74,7 +74,7 @@ namespace orangutan::tools {
             constexpr std::string_view SEPARATOR = "=======";
             constexpr std::string_view REPLACE_MARKER = ">>>>>>> REPLACE";
 
-            enum class state : base::u8 {
+            enum class state : std::uint8_t {
                 idle,
                 search,
                 replace,
@@ -313,7 +313,7 @@ namespace orangutan::tools {
 
             fileio::write_file(resolved_path, render_lines(result.lines, had_trailing_newline));
 
-            std::string summary = utils::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
+            std::string summary = fmt::format("Applied {}{} to {}", result.edits_applied, result.edits_applied == 1 ? " edit" : " edits", path_str);
             if (!result.warnings.empty()) {
                 summary += "\nWarnings: " + result.warnings;
             }
@@ -338,7 +338,7 @@ namespace orangutan::tools {
                 utils::format_to(summary, "{} ({} {})", file.path, file.hunks.size(), file.hunks.size() == 1 ? "hunk" : "hunks");
             }
 
-            return utils::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files",
+            return fmt::format("Applied {} {} across {} {}: {}", total_hunks, total_hunks == 1 ? "hunk" : "hunks", files.size(), files.size() == 1 ? "file" : "files",
                                            summary);
         }
 

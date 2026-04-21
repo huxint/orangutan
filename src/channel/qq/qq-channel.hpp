@@ -20,7 +20,7 @@ namespace orangutan::utils {
 
 namespace orangutan::channel::qq {
     [[nodiscard]]
-    base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value);
+    std::int64_t parse_integer_like(const nlohmann::json &payload, std::string_view key, std::int64_t default_value);
 
     struct qq_channel_runtime_state;
 
@@ -77,7 +77,7 @@ namespace orangutan::channel::qq {
         std::string client_secret_;
         utils::TaskPool *task_pool_ = nullptr;
         std::unique_ptr<QqApiClient> api_client_;
-        std::atomic<base::u16> msg_seq_{0};
+        std::atomic<std::uint16_t> msg_seq_{0};
         std::unordered_map<std::string, MessageReplyTracker> reply_trackers_;
         mutable std::mutex reply_trackers_mutex_;
         MessageCallback on_message_;
@@ -115,7 +115,7 @@ namespace orangutan::channel::qq {
         void emit_inbound(const InboundMessage &message) const;
         void clear_ready_state();
         [[nodiscard]]
-        base::u16 next_msg_seq();
+        std::uint16_t next_msg_seq();
         void remember_inbound_message(const std::string &message_id);
         [[nodiscard]]
         bool consume_passive_reply_quota(const std::string &message_id, int reply_units = 1);

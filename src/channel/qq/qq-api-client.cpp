@@ -32,14 +32,14 @@ namespace orangutan::channel::qq {
     constexpr auto MIN_BACKGROUND_REFRESH_INTERVAL = std::chrono::seconds(60);
 
     [[nodiscard]]
-    base::i64 parse_integer_like(const nlohmann::json &payload, std::string_view key, base::i64 default_value) {
+    std::int64_t parse_integer_like(const nlohmann::json &payload, std::string_view key, std::int64_t default_value) {
         if (!payload.contains(key)) {
             return default_value;
         }
 
         const auto &value = payload.at(key);
         if (value.is_number_integer()) {
-            return value.get<base::i64>();
+            return value.get<std::int64_t>();
         }
         if (value.is_string()) {
             std::string_view sv = value.get<std::string_view>();
@@ -101,7 +101,7 @@ namespace orangutan::channel::qq {
         }
 
         access_token_ = payload.at("access_token").get<std::string>();
-        const auto expires_in = std::chrono::seconds(std::max<base::i64>(60, parse_integer_like(payload, "expires_in", 7200)));
+        const auto expires_in = std::chrono::seconds(std::max<std::int64_t>(60, parse_integer_like(payload, "expires_in", 7200)));
         token_expiry_ = now + expires_in;
         token_background_refresh_at_ = now + refresh_interval(expires_in);
 
@@ -325,7 +325,7 @@ namespace orangutan::channel::qq {
         const std::string retry_after_text(retry_after);
         const auto seconds = std::strtod(retry_after_text.c_str(), &end_ptr);
         if (end_ptr != retry_after_text.c_str() && std::isfinite(seconds) && seconds > 0.0) {
-            return std::chrono::milliseconds(static_cast<base::i64>(seconds * 1000.0));
+            return std::chrono::milliseconds(static_cast<std::int64_t>(seconds * 1000.0));
         }
 
         return std::chrono::seconds(1);

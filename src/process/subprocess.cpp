@@ -1,11 +1,12 @@
 #include "process/subprocess.hpp"
 #include "process/posix-fd-utils.hpp"
-#include "types/base.hpp"
-#include "utils/format.hpp"
 #include "utils/file.hpp"
 #include "utils/task-pool.hpp"
 
 #include <exec/async_scope.hpp>
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -15,11 +16,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fcntl.h>
-#include <spdlog/common.h>
 #include <mutex>
 #include <optional>
 #include <poll.h>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
@@ -52,7 +51,7 @@ namespace orangutan::process {
             }
         }
 
-        enum class write_status : base::u8 {
+        enum class write_status : std::uint8_t {
             open,
             closed,
             done,
@@ -104,10 +103,10 @@ namespace orangutan::process {
 
         [[nodiscard]]
         std::string make_process_token() {
-            static std::atomic<base::u64> counter{0};
+            static std::atomic<std::uint64_t> counter{0};
             const auto now = std::chrono::steady_clock::now().time_since_epoch();
             const auto ticks = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-            return utils::format("{}-{}", ticks, ++counter);
+            return fmt::format("{}-{}", ticks, ++counter);
         }
 
         struct CapturedOutput {
@@ -523,7 +522,7 @@ namespace orangutan::process {
         std::condition_variable shutdown_cv;
         std::vector<std::shared_ptr<ProcessEntry>> entries;
         std::unordered_map<std::string, std::shared_ptr<ProcessEntry>> entries_by_id;
-        base::u64 next_id = 0;
+        std::uint64_t next_id = 0;
         std::filesystem::path temp_root = std::filesystem::temp_directory_path() / ("orangutan-processes-" + make_process_token());
         BackgroundProcessManager::CompletionCallback completion_callback;
         utils::TaskPool task_pool;

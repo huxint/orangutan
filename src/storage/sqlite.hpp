@@ -18,7 +18,6 @@
 #include <sqlite3.h>
 
 #include "storage/sqlite-error.hpp"
-#include "types/base.hpp"
 
 namespace orangutan::sqlite {
 
@@ -36,7 +35,7 @@ namespace orangutan::sqlite {
 
         constexpr auto DEFAULT_BUSY_TIMEOUT_MS = 1000;
 
-        enum class placeholder_mode : base::u8 {
+        enum class placeholder_mode : std::uint8_t {
             none,
             anonymous,
             indexed,
@@ -111,7 +110,7 @@ namespace orangutan::sqlite {
             std::vector<int> indexed_ids;
             int anonymous_count = 0;
 
-            enum class parse_state : base::u8 {
+            enum class parse_state : std::uint8_t {
                 normal,
                 single_quote,
                 double_quote,
@@ -333,10 +332,10 @@ namespace orangutan::sqlite {
                     return copy_column_text(stmt, index);
                 } else if constexpr (std::same_as<value_type, int>) {
                     return sqlite3_column_int(stmt, index);
-                } else if constexpr (std::same_as<value_type, std::int64_t> || std::same_as<value_type, base::i64>) {
+                } else if constexpr (std::same_as<value_type, std::int64_t>) {
                     return static_cast<value_type>(sqlite3_column_int64(stmt, index));
-                } else if constexpr (std::same_as<value_type, double> || std::same_as<value_type, base::f64>) {
-                    return static_cast<value_type>(sqlite3_column_double(stmt, index));
+                } else if constexpr (std::same_as<value_type, double>) {
+                    return sqlite3_column_double(stmt, index);
                 } else if constexpr (std::same_as<value_type, bool>) {
                     return sqlite3_column_int(stmt, index) != 0;
                 } else {

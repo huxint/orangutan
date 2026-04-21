@@ -20,7 +20,7 @@
 
 namespace orangutan::channel::qq {
 
-    enum class qq_target_kind : base::u8 {
+    enum class qq_target_kind : std::uint8_t {
         c2c,
         group,
         guild,
@@ -32,7 +32,7 @@ namespace orangutan::channel::qq {
     };
 
     struct qq_media_segment {
-        enum class kind : base::u8 {
+        enum class kind : std::uint8_t {
             text,
             media,
         };
@@ -124,7 +124,7 @@ namespace orangutan::channel::qq {
     }
 
     [[nodiscard]]
-    inline nlohmann::json build_typing_payload(base::u16 msg_seq, std::string_view message_id) {
+    inline nlohmann::json build_typing_payload(std::uint16_t msg_seq, std::string_view message_id) {
         nlohmann::json payload = {
             {"msg_type", 6},
             {"input_notify", {{"input_type", 1}, {"input_second", 60}}},

@@ -21,7 +21,7 @@ namespace orangutan::web {
         using admin_detail::set_json_error;
 
         [[nodiscard]]
-        nlohmann::json unix_time_to_json(const std::optional<base::i64> &value) {
+        nlohmann::json unix_time_to_json(const std::optional<std::int64_t> &value) {
             if (!value.has_value()) {
                 return nullptr;
             }

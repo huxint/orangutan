@@ -17,12 +17,12 @@ namespace orangutan::automation {
     namespace {
 
         using automation_row =
-            std::tuple<std::string, std::string, std::string, int, int, std::string, std::string, std::string, std::string, std::string, std::optional<base::i64>,
-                       std::optional<base::i64>, std::string>;
+            std::tuple<std::string, std::string, std::string, int, int, std::string, std::string, std::string, std::string, std::string, std::optional<std::int64_t>,
+                       std::optional<std::int64_t>, std::string>;
         using run_row =
-            std::tuple<std::string, std::string, std::string, std::string, base::i64, std::optional<base::i64>, std::string, std::string, std::string, std::string, std::string>;
+            std::tuple<std::string, std::string, std::string, std::string, std::int64_t, std::optional<std::int64_t>, std::string, std::string, std::string, std::string, std::string>;
         using delivery_row =
-            std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::string, std::string, base::i64, std::optional<base::i64>>;
+            std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::string, std::string, std::int64_t, std::optional<std::int64_t>>;
 
         [[nodiscard]]
         std::filesystem::path default_db_path() {
@@ -402,7 +402,7 @@ namespace orangutan::automation {
         return deliveries;
     }
 
-    std::optional<DeliveryRecord> Repository::ack_delivery(std::string_view agent_key, std::string_view delivery_id, std::optional<base::i64> acked_at) {
+    std::optional<DeliveryRecord> Repository::ack_delivery(std::string_view agent_key, std::string_view delivery_id, std::optional<std::int64_t> acked_at) {
         std::scoped_lock lock(mutex_);
         validate_non_blank(agent_key, "agent key");
         validate_non_blank(delivery_id, "delivery id");
@@ -432,7 +432,7 @@ namespace orangutan::automation {
         return read_delivery(*row);
     }
 
-    void Repository::clear_deliveries(const DeliveryQuery &query, std::optional<base::i64> acked_at) {
+    void Repository::clear_deliveries(const DeliveryQuery &query, std::optional<std::int64_t> acked_at) {
         std::scoped_lock lock(mutex_);
         if (query.agent_key.empty()) {
             throw std::invalid_argument("clear_deliveries requires agent_key");

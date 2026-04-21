@@ -11,7 +11,7 @@
 namespace orangutan::orchestration {
 
     /// Unified agent role within the orchestration hierarchy.
-    enum class agent_role : base::u8 {
+    enum class agent_role : std::uint8_t {
         /// Standalone agent — no orchestration context.
         standalone,
         /// Orchestrator that spawns and manages workers.
@@ -43,7 +43,7 @@ namespace orangutan::orchestration {
     }
 
     /// Status of an agent run within the orchestration system.
-    enum class run_status : base::u8 {
+    enum class run_status : std::uint8_t {
         queued,
         running,
         idle,      ///< Teammate finished a task, waiting for next prompt

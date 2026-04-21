@@ -21,7 +21,7 @@ namespace orangutan::tools {
         std::string actual;
     };
 
-    enum class hashline_edit_op : base::u8 {
+    enum class hashline_edit_op : std::uint8_t {
         replace,
         insert_after,
         insert_before,

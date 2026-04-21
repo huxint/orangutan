@@ -21,7 +21,7 @@
 
 namespace orangutan::skills {
 
-    enum class skill_source : base::u8 {
+    enum class skill_source : std::uint8_t {
         managed,
         user,
         project,
@@ -30,18 +30,18 @@ namespace orangutan::skills {
         plugin,
     };
 
-    enum class skill_scope : base::u8 {
+    enum class skill_scope : std::uint8_t {
         always,
         conditional,
         manual_only,
     };
 
-    enum class skill_call_origin : base::u8 {
+    enum class skill_call_origin : std::uint8_t {
         manual,
         automatic,
     };
 
-    enum class skill_invoke_status : base::u8 {
+    enum class skill_invoke_status : std::uint8_t {
         ok,
         not_found,
         invalid_args,

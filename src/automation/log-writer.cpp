@@ -2,8 +2,9 @@
 #include "utils/file.hpp"
 #include "utils/time-format.hpp"
 
+#include <fmt/format.h>
+
 #include <filesystem>
-#include <spdlog/common.h>
 #include <stdexcept>
 
 namespace orangutan::automation {
@@ -31,7 +32,7 @@ namespace orangutan::automation {
         }();
 
         try {
-            spdlog::fmt_lib::println(file.get(), "{}", entry.dump());
+            fmt::println(file.get(), "{}", entry.dump());
             file.close();
         } catch (const std::exception &) {
             throw std::runtime_error("failed to write automation log file: " + log_path.string());

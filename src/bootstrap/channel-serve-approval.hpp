@@ -162,7 +162,7 @@ namespace orangutan::bootstrap::detail {
     }
 
     [[nodiscard]]
-    inline std::string format_channel_approval_request_id(base::u64 prompt_id) {
+    inline std::string format_channel_approval_request_id(std::uint64_t prompt_id) {
         return "tool-approval-" + std::to_string(prompt_id);
     }
 

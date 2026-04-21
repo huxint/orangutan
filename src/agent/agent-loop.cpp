@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include <spdlog/fmt/bundled/color.h>
+#include <fmt/color.h>
 #include <spdlog/spdlog.h>
 
 #include "agent/agent-loop-history.hpp"

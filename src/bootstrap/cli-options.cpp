@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -36,7 +37,7 @@ namespace orangutan::bootstrap {
     }
 
     void emit_json_event(const nlohmann::json &event) {
-        spdlog::fmt_lib::println("{}", event.dump());
+        fmt::println("{}", event.dump());
         std::fflush(stdout);
     }
 
@@ -94,7 +95,7 @@ namespace orangutan::bootstrap {
 
         return [](const ToolUse &call, const PermissionDecision &decision) {
             const auto prompt_text = format_cli_permission_prompt(call, decision);
-            spdlog::fmt_lib::print("\n{}\nApprove? [y/N]: ", prompt_text);
+            fmt::print("\n{}\nApprove? [y/N]: ", prompt_text);
             std::fflush(stdout);
             std::string answer;
             if (!std::getline(std::cin, answer)) {
@@ -111,16 +112,16 @@ namespace orangutan::bootstrap {
 
     bool validate_initial_options(const CliOptions &options) {
         if (!options.cli_mode && !options.web_mode && !options.channel_mode) {
-            spdlog::fmt_lib::println(stderr, "Error: specify at least one entry flag: --cli, --web, or --channel.");
+            fmt::println(stderr, "Error: specify at least one entry flag: --cli, --web, or --channel.");
             return false;
         }
         if (options.protect_config_requested && (options.cli_mode || options.web_mode || options.channel_mode || options.resume_requested || !options.message.empty() ||
                                                  options.event_stream || options.dump_session || !options.api_key.empty())) {
-            spdlog::fmt_lib::println(stderr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
+            fmt::println(stderr, "Error: --protect-config-secrets cannot be combined with runtime execution flags.");
             return false;
         }
         if (!options.cli_mode && (options.resume_requested || !options.message.empty() || options.event_stream || options.dump_session)) {
-            spdlog::fmt_lib::println(stderr, "Error: --message, --resume, --event-stream, and --dump-session require --cli.");
+            fmt::println(stderr, "Error: --message, --resume, --event-stream, and --dump-session require --cli.");
             return false;
         }
         return true;
@@ -129,11 +130,11 @@ namespace orangutan::bootstrap {
     int run_protect_config_mode(const CliOptions &options) {
         const auto path = options.protect_config_path.empty() ? config::default_orangutan_config_path() : std::filesystem::path{options.protect_config_path};
         if (path.empty()) {
-            spdlog::fmt_lib::println(stderr, "Error: could not resolve the default config path.");
+            fmt::println(stderr, "Error: could not resolve the default config path.");
             return 1;
         }
         if (!std::filesystem::exists(path)) {
-            spdlog::fmt_lib::println(stderr, "Error: config file not found: {}", path.string());
+            fmt::println(stderr, "Error: config file not found: {}", path.string());
             return 1;
         }
 
@@ -145,7 +146,7 @@ namespace orangutan::bootstrap {
             const auto password = config::resolve_config_secret_password(secret_options);
             const auto result = config::protect_config_file_secrets(path, password);
             if (!result.modified) {
-                spdlog::fmt_lib::println("No eligible plaintext config secrets found in {}.", path.string());
+                fmt::println("No eligible plaintext config secrets found in {}.", path.string());
                 return 0;
             }
 
@@ -153,14 +154,14 @@ namespace orangutan::bootstrap {
                                                                   .password_override = password,
                                                               }));
 
-            spdlog::fmt_lib::println("Protected {} config secret(s) in {}", result.protected_count, path.string());
-            spdlog::fmt_lib::println("Backup written to {}", result.backup_path.string());
+            fmt::println("Protected {} config secret(s) in {}", result.protected_count, path.string());
+            fmt::println("Backup written to {}", result.backup_path.string());
             return 0;
         } catch (const config::ConfigSecretProtectionError &e) {
-            spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+            fmt::println(stderr, "Error: {}", e.what());
             return 1;
         } catch (const std::exception &e) {
-            spdlog::fmt_lib::println(stderr, "Error: {}", e.what());
+            fmt::println(stderr, "Error: {}", e.what());
             return 1;
         }
     }

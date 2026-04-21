@@ -1,7 +1,7 @@
 #include "config/secret-protection.hpp"
 #include "config/secret-fields.hpp"
 #include "utils/file-io.hpp"
-#include "utils/format.hpp"
+#include <fmt/format.h>
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -47,7 +47,7 @@ namespace orangutan::config {
         [[nodiscard]]
         std::string make_temp_filename(const std::filesystem::path &path) {
             thread_local std::mt19937_64 generator{std::random_device{}()};
-            return utils::format("{}.{:016x}.tmp", path.filename().string(), generator());
+            return fmt::format("{}.{:016x}.tmp", path.filename().string(), generator());
         }
 
         void prepare_parent_directory(const std::filesystem::path &path) {

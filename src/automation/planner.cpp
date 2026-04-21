@@ -45,14 +45,14 @@ namespace orangutan::automation {
         }
 
         [[nodiscard]]
-        base::i64 positive_jitter_offset(const Automation &automation, TimePoint base_time) {
+        std::int64_t positive_jitter_offset(const Automation &automation, TimePoint base_time) {
             if (automation.trigger.jitter <= std::chrono::seconds{0}) {
                 return 0;
             }
 
             const auto seed_material = automation.id + ":" + std::to_string(to_unix_seconds(base_time));
-            std::mt19937_64 generator(static_cast<base::u64>(std::hash<std::string>{}(seed_material)));
-            std::uniform_int_distribution<base::i64> distribution(0, automation.trigger.jitter.count());
+            std::mt19937_64 generator(static_cast<std::uint64_t>(std::hash<std::string>{}(seed_material)));
+            std::uniform_int_distribution<std::int64_t> distribution(0, automation.trigger.jitter.count());
             return distribution(generator);
         }
 
@@ -135,7 +135,7 @@ namespace orangutan::automation {
         }
 
         [[nodiscard]]
-        base::i64 scheduled_for_time(const Automation &automation, TimePoint now) {
+        std::int64_t scheduled_for_time(const Automation &automation, TimePoint now) {
             if (automation.next_due_at.has_value()) {
                 return *automation.next_due_at;
             }
@@ -149,7 +149,7 @@ namespace orangutan::automation {
 
     } // namespace
 
-    std::optional<base::i64> plan_next_due(const Automation &automation, TimePoint from) {
+    std::optional<std::int64_t> plan_next_due(const Automation &automation, TimePoint from) {
         if (!automation.enabled || automation.paused) {
             return std::nullopt;
         }

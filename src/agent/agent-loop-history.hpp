@@ -7,8 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include <spdlog/fmt/bundled/color.h>
-#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 
 #include "agent/agent-loop.hpp"
@@ -50,20 +48,20 @@ namespace orangutan::agent::detail {
                 if (human_output && first_text) {
                     std::string prompt;
                     utils::format_to(prompt, "\n");
-                    utils::format_to(prompt, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::green), "{}", "orangutan> ");
+                    utils::format_to(prompt, fmt::fg(fmt::terminal_color::green), "{}", "orangutan> ");
                     write_stdout(prompt);
                     first_text = false;
                 }
                 if (human_output) {
                     std::string rendered_thinking;
-                    utils::format_to(rendered_thinking, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::bright_black), "{}", thinking->thinking);
+                    utils::format_to(rendered_thinking, fmt::fg(fmt::terminal_color::bright_black), "{}", thinking->thinking);
                     write_stdout(rendered_thinking);
                 }
             } else if (const auto *text = std::get_if<TextDelta>(&event)) {
                 if (human_output && first_text) {
                     std::string prompt;
                     utils::format_to(prompt, "\n");
-                    utils::format_to(prompt, spdlog::fmt_lib::fg(spdlog::fmt_lib::terminal_color::green), "{}", "orangutan> ");
+                    utils::format_to(prompt, fmt::fg(fmt::terminal_color::green), "{}", "orangutan> ");
                     write_stdout(prompt);
                     first_text = false;
                 }

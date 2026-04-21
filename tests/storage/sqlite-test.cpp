@@ -14,7 +14,7 @@
 
 struct SampleRow {
     std::string name;
-    orangutan::base::i64 created_at;
+    std::int64_t created_at;
     std::optional<std::string> note;
 };
 
@@ -23,7 +23,7 @@ namespace orangutan::sqlite {
     template <>
     struct RowMapper<SampleRow> {
         static auto map(const Row &row) -> SqliteResult<SampleRow> {
-            auto columns = read_columns<std::string, orangutan::base::i64, std::optional<std::string>>(row);
+            auto columns = read_columns<std::string, std::int64_t, std::optional<std::string>>(row);
             if (!columns) {
                 return std::unexpected(columns.error());
             }
@@ -210,7 +210,7 @@ namespace {
         auto db = open_or_throw(db_path.path);
         exec_script(db, "CREATE TABLE sample (value TEXT NOT NULL);", "create sample");
 
-        const auto rowid = orangutan::sqlite::query_one<orangutan::base::i64>(
+        const auto rowid = orangutan::sqlite::query_one<std::int64_t>(
             db, "INSERT INTO sample (value) VALUES ('one') RETURNING rowid");
 
         CHECK(rowid == 1);
@@ -223,7 +223,7 @@ namespace {
         auto db = open_or_throw(db_path.path);
         exec_script(db, "CREATE TABLE sample (value TEXT NOT NULL);", "create sample");
 
-        const auto rowid = orangutan::sqlite::query_optional<orangutan::base::i64>(
+        const auto rowid = orangutan::sqlite::query_optional<std::int64_t>(
             db, "INSERT INTO sample (value) VALUES ('optional') RETURNING rowid");
 
         REQUIRE(rowid.has_value());
@@ -377,8 +377,8 @@ namespace {
         auto db = open_or_throw(db_path.path);
         exec_script(db, "CREATE TABLE sample (name TEXT NOT NULL, created_at INTEGER NOT NULL, note TEXT);", "create sample");
 
-        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "alpha", static_cast<orangutan::base::i64>(7), nullptr);
-        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "beta", static_cast<orangutan::base::i64>(8), std::string{"memo"});
+        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "alpha", static_cast<std::int64_t>(7), nullptr);
+        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "beta", static_cast<std::int64_t>(8), std::string{"memo"});
 
         const auto rows = orangutan::sqlite::query_all<SampleRow>(db, "SELECT name, created_at, note FROM sample ORDER BY created_at ASC");
         REQUIRE(rows.size() == std::size_t{2});
@@ -396,21 +396,21 @@ namespace {
         const ScopedDbPath db_path("sqlite-read-columns");
         auto db = open_or_throw(db_path.path);
         exec_script(db, "CREATE TABLE sample (name TEXT NOT NULL, created_at INTEGER NOT NULL, note TEXT);", "create sample");
-        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "gamma", static_cast<orangutan::base::i64>(42), std::string{"hello"});
+        exec_bind(db, "INSERT INTO sample (name, created_at, note) VALUES (?, ?, ?)", "gamma", static_cast<std::int64_t>(42), std::string{"hello"});
 
         auto statement = prepare_or_throw(db, "SELECT name, created_at, note FROM sample LIMIT 1");
         REQUIRE(orangutan::sqlite::unwrap(statement.step()));
         const auto row = orangutan::sqlite::unwrap(statement.row());
 
         const auto columns =
-            orangutan::sqlite::read_columns<std::string, orangutan::base::i64, std::optional<std::string>>(row);
+            orangutan::sqlite::read_columns<std::string, std::int64_t, std::optional<std::string>>(row);
         REQUIRE(columns.has_value());
         const auto &[name, created_at, note] = *columns;
         CHECK(name == "gamma");
         CHECK(created_at == 42);
         CHECK(note == std::optional<std::string>{"hello"});
 
-        const auto mismatch = orangutan::sqlite::read_columns<std::string, orangutan::base::i64>(row);
+        const auto mismatch = orangutan::sqlite::read_columns<std::string, std::int64_t>(row);
         REQUIRE_FALSE(mismatch.has_value());
         CHECK(mismatch.error().kind == orangutan::sqlite::sqlite_error_kind::mapping_error);
     }

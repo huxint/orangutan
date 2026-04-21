@@ -1,12 +1,13 @@
 #include "tools/internal.hpp"
 #include "tools/file/common.hpp"
 #include "utils/file-io.hpp"
-#include "utils/format.hpp"
 #include "utils/parallel.hpp"
+
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <filesystem>
 #include <span>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -25,7 +26,7 @@ namespace orangutan::tools {
                 std::filesystem::create_directories(job.path.parent_path());
             }
             fileio::write_file(job.path, job.content);
-            return utils::format("Wrote {} bytes to {}", job.content.size(), job.path.string());
+            return fmt::format("Wrote {} bytes to {}", job.content.size(), job.path.string());
         }
 
         std::vector<WriteJob> collect_jobs(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {

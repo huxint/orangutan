@@ -187,7 +187,7 @@ namespace orangutan::web {
         }
 
         std::string make_approval_request_id() {
-            static std::atomic<base::u64> next_request_id{1};
+            static std::atomic<std::uint64_t> next_request_id{1};
             return "approval-" + std::to_string(next_request_id.fetch_add(1, std::memory_order_relaxed));
         }
 

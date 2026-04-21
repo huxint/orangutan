@@ -17,7 +17,7 @@ namespace orangutan::automation {
     using Clock = std::chrono::system_clock;
     using TimePoint = Clock::time_point;
 
-    enum class delivery_mode : base::u8 {
+    enum class delivery_mode : std::uint8_t {
         silent,
         notify,
     };
@@ -32,8 +32,8 @@ namespace orangutan::automation {
         std::string automation_id;
         std::string agent_key;
         std::string automation_name;
-        base::i64 started_at = 0;
-        std::optional<base::i64> finished_at;
+        std::int64_t started_at = 0;
+        std::optional<std::int64_t> finished_at;
         std::string status;
         std::string summary;
         std::string reply;
@@ -52,10 +52,10 @@ namespace orangutan::automation {
     std::string generate_id(std::string_view prefix);
 
     [[nodiscard]]
-    base::i64 to_unix_seconds(TimePoint time);
+    std::int64_t to_unix_seconds(TimePoint time);
 
     [[nodiscard]]
-    TimePoint from_unix_seconds(base::i64 seconds);
+    TimePoint from_unix_seconds(std::int64_t seconds);
 
     [[nodiscard]]
     nlohmann::json delivery_policy_to_json(const DeliveryPolicy &delivery);
@@ -64,7 +64,7 @@ namespace orangutan::automation {
     DeliveryPolicy delivery_policy_from_json(const nlohmann::json &value);
 
     /// Represents the supported unified trigger kinds for automations.
-    enum class trigger_type : base::u8 {
+    enum class trigger_type : std::uint8_t {
         cron,
         interval,
         once,
@@ -97,8 +97,8 @@ namespace orangutan::automation {
         TriggerDefinition trigger;
         DeliveryPolicy delivery;
         std::vector<std::string> tags;
-        std::optional<base::i64> last_run_at;
-        std::optional<base::i64> next_due_at;
+        std::optional<std::int64_t> last_run_at;
+        std::optional<std::int64_t> next_due_at;
         std::string last_status;
         bool enabled = true;
         bool paused = false;

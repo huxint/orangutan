@@ -1,8 +1,10 @@
 #include "storage/session-store.hpp"
 #include "storage/sqlite-throwing.hpp"
 #include "types/base.hpp"
-#include "utils/format.hpp"
 #include "utils/overloaded.hpp"
+
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -11,8 +13,6 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
-
-#include <spdlog/spdlog.h>
 
 namespace orangutan::storage {
 
@@ -312,9 +312,9 @@ namespace orangutan::storage {
     std::string SessionStore::generate_uuid() {
         static std::random_device rd;
         static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<base::u32> dist;
+        static std::uniform_int_distribution<std::uint32_t> dist;
 
-        return utils::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
+        return fmt::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
                                        dist(gen) & 0xFFFF);
     }
 

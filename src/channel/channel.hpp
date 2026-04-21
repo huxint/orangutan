@@ -16,7 +16,7 @@
 
 namespace orangutan::channel {
 
-    enum class inbound_event_kind : base::u8 {
+    enum class inbound_event_kind : std::uint8_t {
         message,
         reaction_added,
         reaction_removed,

@@ -19,11 +19,11 @@ namespace orangutan::testing {
     inline std::filesystem::path test_tmp_root() {
         static const auto root = [] {
             const auto base_root = std::filesystem::current_path() / "tmp" / "tests";
-            const auto now = std::to_string(static_cast<base::u64>(std::chrono::steady_clock::now().time_since_epoch().count()));
+            const auto now = std::to_string(static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
 
             std::random_device random_device;
-            const auto high = static_cast<base::u64>(random_device()) << 32U;
-            const auto low = static_cast<base::u64>(random_device());
+            const auto high = static_cast<std::uint64_t>(random_device()) << 32U;
+            const auto low = static_cast<std::uint64_t>(random_device());
             const auto entropy = std::to_string(high | low);
 
             return base_root / std::filesystem::path(std::string{"proc-"} + now + "-" + entropy);
@@ -34,8 +34,8 @@ namespace orangutan::testing {
 
     /// Returns a unique temporary root under the current process test root and creates it.
     inline std::filesystem::path unique_test_root(std::string_view prefix) {
-        static std::atomic<base::u64> sequence{0};
-        const auto token = std::to_string(static_cast<base::u64>(std::chrono::steady_clock::now().time_since_epoch().count())) + "-" +
+        static std::atomic<std::uint64_t> sequence{0};
+        const auto token = std::to_string(static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())) + "-" +
                            std::to_string(sequence.fetch_add(1, std::memory_order_relaxed));
         auto root = test_tmp_root() / (std::string(prefix) + "-" + token);
         std::filesystem::create_directories(root);

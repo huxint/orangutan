@@ -22,7 +22,7 @@ namespace orangutan::channel::qq {
         if (payload.contains("s") && !payload.at("s").is_null()) {
             {
                 std::scoped_lock lock(runtime_->mutex);
-                runtime_->last_seq = payload.at("s").get<base::u32>();
+                runtime_->last_seq = payload.at("s").get<std::uint32_t>();
             }
             persist_session_state();
         }
