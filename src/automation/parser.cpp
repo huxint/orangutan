@@ -63,7 +63,7 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         std::expected<std::string, std::string> parse_required_string_field(const nlohmann::json &value, std::string_view field_name) {
-            const auto field = value.find(std::string(field_name));
+            const auto field = value.find(field_name);
             if (field == value.end()) {
                 return std::unexpected(std::string(field_name) + " is required");
             }
@@ -97,14 +97,6 @@ namespace orangutan::automation {
                 }
             }
             return {};
-        }
-
-        [[nodiscard]]
-        std::expected<std::chrono::seconds, std::string> seconds_from_numeric(long long numeric, long long multiplier) {
-            if (numeric > std::numeric_limits<long long>::max() / multiplier) {
-                return std::unexpected("duration is too large");
-            }
-            return std::chrono::seconds{numeric * multiplier};
         }
 
         [[nodiscard]]
@@ -359,29 +351,42 @@ namespace orangutan::automation {
     }
 
     std::expected<std::chrono::seconds, std::string> parse_duration_string(std::string_view value) {
+        using namespace std::chrono;
+
         if (value.size() < 2) {
             return std::unexpected("duration must include a numeric value and unit suffix");
         }
 
-        long long numeric = 0;
-        const auto number_part = value.substr(0, value.size() - 1);
-        auto [ptr, ec] = std::from_chars(number_part.begin(), number_part.end(), numeric);
-        if (ec != std::errc{} || ptr != number_part.end() || numeric < 0) {
-            return std::unexpected("duration must start with a non-negative integer");
-        }
-
+        seconds unit{};
         switch (value.back()) {
             case 's':
-                return seconds_from_numeric(numeric, 1);
+                unit = 1s;
+                break;
             case 'm':
-                return seconds_from_numeric(numeric, 60);
+                unit = 1min;
+                break;
             case 'h':
-                return seconds_from_numeric(numeric, static_cast<long long>(60) * 60);
+                unit = 1h;
+                break;
             case 'd':
-                return seconds_from_numeric(numeric, static_cast<long long>(24) * 60 * 60);
+                unit = 24h;
+                break;
             default:
                 return std::unexpected("duration must end with s, m, h, or d");
         }
+
+        const auto digits = value.substr(0, value.size() - 1);
+        seconds::rep count = 0;
+        const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), count);
+        if (ec != std::errc{} || ptr != digits.data() + digits.size() || count < 0) {
+            return std::unexpected("duration must start with a non-negative integer");
+        }
+
+        if (count > std::numeric_limits<seconds::rep>::max() / unit.count()) {
+            return std::unexpected("duration is too large");
+        }
+
+        return unit * count;
     }
 
 } // namespace orangutan::automation
