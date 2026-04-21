@@ -171,7 +171,7 @@ namespace orangutan {
             Config config = make_config();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", "{}", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", "{}", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
@@ -181,7 +181,7 @@ namespace orangutan {
             Config config = make_config();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", "not json", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", "not json", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
@@ -190,7 +190,7 @@ namespace orangutan {
         TEST_CASE("chat_endpoint_returns_503_without_config") {
             WebChatServerHarness harness;
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 503);
@@ -200,7 +200,7 @@ namespace orangutan {
             Config config = make_config();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"hello"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"hello"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
@@ -214,12 +214,12 @@ namespace orangutan {
             config.profiles.at("shared").api_key.clear();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
             const auto body = nlohmann::json::parse(res->body);
-            CHECK(body["error"] == "missing api key for agent 'default'");
+            CHECK(body["error"]["message"] == "missing api key for agent 'default'");
         };
 
         TEST_CASE("chat_handler_populates_completion_resume_state_for_active_session") {
@@ -263,7 +263,7 @@ namespace orangutan {
             config.profiles.at("shared").api_key.clear();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"/help","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"/help","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -284,12 +284,12 @@ namespace orangutan {
             config.agents["default"].workspace = workspace_file.string();
             WebChatServerHarness harness(&config);
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"hello","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 500);
             const auto body = nlohmann::json::parse(res->body);
-            CHECK(body["error"].get<std::string>().contains("failed to resolve workspace for agent 'default'"));
+            CHECK(body["error"]["message"].get<std::string>().contains("failed to resolve workspace for agent 'default'"));
 
             std::filesystem::remove(workspace_file);
         };
@@ -302,7 +302,7 @@ namespace orangutan {
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+                harness.client().Post("/api/v1/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 409);
@@ -316,7 +316,7 @@ namespace orangutan {
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+                harness.client().Post("/api/v1/chat", nlohmann::json{{"message", "hello again"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 404);
@@ -342,7 +342,9 @@ namespace orangutan {
 
             CHECK(res.status == 409);
             REQUIRE_FALSE(res.body.empty());
-            CHECK(nlohmann::json::parse(res.body).at("error") == "session already active");
+            const auto body = nlohmann::json::parse(res.body);
+            CHECK(body.at("error").at("code") == "session_active");
+            CHECK(body.at("error").at("message") == "session already active");
         };
 
         TEST_CASE("chat_handler_uses_shared_runtime_guard_for_shell_path_checks") {
@@ -384,7 +386,7 @@ namespace orangutan {
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", nlohmann::json{{"message", std::string("/resume ") + session_id}, {"agent_key", "default"}}.dump(), "application/json");
+                harness.client().Post("/api/v1/chat", nlohmann::json{{"message", std::string("/resume ") + session_id}, {"agent_key", "default"}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -405,7 +407,7 @@ namespace orangutan {
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", nlohmann::json{{"message", "/new"}, {"agent_key", "default"}, {"session_id", existing_session_id}}.dump(), "application/json");
+                harness.client().Post("/api/v1/chat", nlohmann::json{{"message", "/new"}, {"agent_key", "default"}, {"session_id", existing_session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -428,7 +430,7 @@ namespace orangutan {
             WebChatServerHarness harness(&config, &store_harness.store());
 
             const auto res =
-                harness.client().Post("/api/chat", nlohmann::json{{"message", "/export"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
+                harness.client().Post("/api/v1/chat", nlohmann::json{{"message", "/export"}, {"agent_key", "default"}, {"session_id", session_id}}.dump(), "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);
@@ -449,7 +451,7 @@ namespace orangutan {
         TEST_CASE("abort_endpoint_returns_404_for_unknown_session") {
             WebChatServerHarness harness;
 
-            const auto res = harness.client().Post("/api/chat/abort", R"({"session_id":"nonexistent"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat/abort", R"({"session_id":"nonexistent"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 404);
@@ -458,7 +460,7 @@ namespace orangutan {
         TEST_CASE("abort_endpoint_rejects_missing_session_id") {
             WebChatServerHarness harness;
 
-            const auto res = harness.client().Post("/api/chat/abort", "{}", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat/abort", "{}", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 400);
@@ -506,7 +508,7 @@ namespace orangutan {
             bootstrap::AppRuntime app_runtime(orangutan::testing::unique_test_db_path("web-chat-tasks", "automation.db"));
             WebChatServerHarness harness(&config, nullptr, &app_runtime.automation_runtime());
 
-            const auto res = harness.client().Post("/api/chat", R"({"message":"/automation","agent_key":"default"})", "application/json");
+            const auto res = harness.client().Post("/api/v1/chat", R"({"message":"/automation","agent_key":"default"})", "application/json");
 
             REQUIRE(static_cast<bool>(res));
             CHECK(res->status == 200);

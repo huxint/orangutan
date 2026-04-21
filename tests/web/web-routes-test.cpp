@@ -105,12 +105,12 @@ namespace {
         server.set_session_store(harness.session_store());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/sessions");
+        const auto res = cli.Get("/api/v1/sessions");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
-        CHECK(body.is_array());
-        CHECK(body.empty());
+        REQUIRE(body["items"].is_array());
+        CHECK(body["items"].empty());
         server.stop();
     };
 
@@ -120,7 +120,7 @@ namespace {
         server.set_session_store(harness.session_store());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/sessions/nonexistent");
+        const auto res = cli.Get("/api/v1/sessions/nonexistent");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 404);
         server.stop();
@@ -132,7 +132,7 @@ namespace {
         server.set_session_store(harness.session_store());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Delete("/api/sessions/nonexistent");
+        const auto res = cli.Delete("/api/v1/sessions/nonexistent");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         server.stop();
@@ -150,7 +150,7 @@ namespace {
         server.set_config(&cfg);
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/config");
+        const auto res = cli.Get("/api/v1/config");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
@@ -167,7 +167,7 @@ namespace {
         orangutan::WebServer server;
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/config");
+        const auto res = cli.Get("/api/v1/config");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 503);
         server.stop();
@@ -182,7 +182,7 @@ namespace {
         server.set_config_save_path(harness.config_path());
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Put("/api/config", R"({"agent":{"model":"new-model"}})", "application/json");
+        const auto res = cli.Put("/api/v1/config", R"({"agent":{"model":"new-model"}})", "application/json");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         CHECK(cfg.model == "new-model");
@@ -194,7 +194,7 @@ namespace {
         orangutan::WebServer server;
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/tools");
+        const auto res = cli.Get("/api/v1/tools");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 503);
         server.stop();
@@ -212,15 +212,16 @@ namespace {
         server.set_config(&cfg);
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/agents");
+        const auto res = cli.Get("/api/v1/agents");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
-        CHECK(body.is_array());
-        CHECK(body.size() == 2UL);
+        REQUIRE(body["items"].is_array());
+        const auto &agents = body["items"];
+        CHECK(agents.size() == 2UL);
         bool saw_default = false;
         bool saw_helper = false;
-        for (const auto &agent : body) {
+        for (const auto &agent : agents) {
             if (agent["key"] == "default") {
                 saw_default = true;
                 CHECK(agent["team_agents"][0] == "helper");
@@ -254,15 +255,16 @@ namespace {
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto res = cli.Get("/api/agents/coder/sessions");
+        const auto res = cli.Get("/api/v1/agents/coder/sessions");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
-        REQUIRE(body.is_array());
-        CHECK(body.size() == 2UL);
-        CHECK(body[0]["agent_key"] == "coder");
-        CHECK(body[1]["agent_key"] == "coder");
-        CHECK((body[0]["read_only"].get<bool>() || body[1]["read_only"].get<bool>()));
+        REQUIRE(body["items"].is_array());
+        const auto &sessions_body = body["items"];
+        CHECK(sessions_body.size() == 2UL);
+        CHECK(sessions_body[0]["agent_key"] == "coder");
+        CHECK(sessions_body[1]["agent_key"] == "coder");
+        CHECK((sessions_body[0]["read_only"].get<bool>() || sessions_body[1]["read_only"].get<bool>()));
         server.stop();
     };
 
@@ -280,7 +282,7 @@ namespace {
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto res = cli.Get("/api/agents/default/sessions/" + coder_session_id);
+        const auto res = cli.Get("/api/v1/agents/default/sessions/" + coder_session_id);
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 404);
         server.stop();
@@ -290,7 +292,7 @@ namespace {
         orangutan::WebServer server;
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
-        const auto res = cli.Get("/api/system/status");
+        const auto res = cli.Get("/api/v1/system/status");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
         const auto body = nlohmann::json::parse(res->body);
@@ -407,21 +409,21 @@ namespace {
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto res = cli.Get("/api/skills");
+        const auto res = cli.Get("/api/v1/skills");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
 
         const auto body = nlohmann::json::parse(res->body);
         CHECK(body["schema_version"] == 2);
-        REQUIRE(body["skills"].is_array());
-        REQUIRE(body["skills"].size() == 1UL);
-        CHECK(body["skills"][0]["name"] == "endpoint-skill");
-        CHECK(body["skills"][0]["scope"] == "always");
-        CHECK(body["skills"][0]["active"] == true);
-        CHECK(body["skills"][0]["diagnostic_count"] == 0);
-        CHECK(body["skills"][0].contains("id"));
-        CHECK(body["skills"][0].contains("source"));
-        CHECK(body["skills"][0].contains("source_path"));
+        REQUIRE(body["items"].is_array());
+        REQUIRE(body["items"].size() == 1UL);
+        CHECK(body["items"][0]["name"] == "endpoint-skill");
+        CHECK(body["items"][0]["scope"] == "always");
+        CHECK(body["items"][0]["active"] == true);
+        CHECK(body["items"][0]["diagnostic_count"] == 0);
+        CHECK(body["items"][0].contains("id"));
+        CHECK(body["items"][0].contains("source"));
+        CHECK(body["items"][0].contains("source_path"));
 
         server.stop();
     };
@@ -460,19 +462,19 @@ namespace {
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto res = cli.Get("/api/skills");
+        const auto res = cli.Get("/api/v1/skills");
         REQUIRE(static_cast<bool>(res));
         CHECK(res->status == 200);
 
         const auto body = nlohmann::json::parse(res->body);
         CHECK(body["schema_version"] == 2);
-        REQUIRE(body["skills"].is_array());
-        REQUIRE(body["skills"].size() == 2UL);
+        REQUIRE(body["items"].is_array());
+        REQUIRE(body["items"].size() == 2UL);
 
-        const auto conditional = std::ranges::find_if(body["skills"], [](const nlohmann::json &skill) {
+        const auto conditional = std::ranges::find_if(body["items"], [](const nlohmann::json &skill) {
             return skill["name"] == "conditional-skill";
         });
-        REQUIRE(conditional != body["skills"].end());
+        REQUIRE(conditional != body["items"].end());
         CHECK((*conditional)["scope"] == "conditional");
         CHECK((*conditional)["active"] == false);
 
@@ -491,7 +493,7 @@ namespace {
         server.start("127.0.0.1", 0);
         httplib::Client cli("127.0.0.1", server.port());
 
-        const auto create_res = cli.Post("/api/automation",
+        const auto create_res = cli.Post("/api/v1/automation",
                                          nlohmann::json{
                                              {"agent_key", "default"},
                                              {"name", "repo-check"},
@@ -507,65 +509,65 @@ namespace {
         const auto automation_id = created.at("id").get<std::string>();
         CHECK(created.at("name") == "repo-check");
 
-        const auto list_res = cli.Get("/api/automation?agent_key=default");
+        const auto list_res = cli.Get("/api/v1/automation?agent_key=default");
         REQUIRE(static_cast<bool>(list_res));
         CHECK(list_res->status == 200);
         const auto listed = nlohmann::json::parse(list_res->body);
-        REQUIRE(listed.size() == 1UL);
-        CHECK(listed.at(0).at("id") == automation_id);
+        REQUIRE(listed.at("items").size() == 1UL);
+        CHECK(listed.at("items").at(0).at("id") == automation_id);
 
-        const auto get_res = cli.Get("/api/automation/" + automation_id + "?agent_key=default");
+        const auto get_res = cli.Get("/api/v1/automation/" + automation_id + "?agent_key=default");
         REQUIRE(static_cast<bool>(get_res));
         CHECK(get_res->status == 200);
         CHECK(nlohmann::json::parse(get_res->body).at("prompt") == "Check the repository state.");
 
-        const auto patch_silent_res = cli.Patch("/api/automation/" + automation_id + "?agent_key=default",
+        const auto patch_silent_res = cli.Patch("/api/v1/automation/" + automation_id + "?agent_key=default",
                                                 nlohmann::json{{"delivery", {{"mode", "silent"}, {"targets", nlohmann::json::array()}}}}.dump(),
                                                 "application/json");
         REQUIRE(static_cast<bool>(patch_silent_res));
         CHECK(patch_silent_res->status == 200);
         CHECK(nlohmann::json::parse(patch_silent_res->body).at("delivery").at("mode") == "silent");
 
-        const auto patch_notify_res = cli.Patch("/api/automation/" + automation_id + "?agent_key=default",
+        const auto patch_notify_res = cli.Patch("/api/v1/automation/" + automation_id + "?agent_key=default",
                                                 nlohmann::json{{"delivery", {{"mode", "notify"}, {"targets", {"owner"}}}}}.dump(),
                                                 "application/json");
         REQUIRE(static_cast<bool>(patch_notify_res));
         CHECK(patch_notify_res->status == 200);
 
-        const auto run_res = cli.Post("/api/automation/" + automation_id + "/run?agent_key=default", "", "application/json");
+        const auto run_res = cli.Post("/api/v1/automation/" + automation_id + "/run?agent_key=default", "", "application/json");
         REQUIRE(static_cast<bool>(run_res));
         CHECK(run_res->status == 200);
         CHECK_FALSE(nlohmann::json::parse(run_res->body).at("run_id").get<std::string>().empty());
 
-        const auto runs_res = cli.Get("/api/automation/runs?agent_key=default&automation_id=" + automation_id);
+        const auto runs_res = cli.Get("/api/v1/automation/runs?agent_key=default&automation_id=" + automation_id);
         REQUIRE(static_cast<bool>(runs_res));
         CHECK(runs_res->status == 200);
         const auto runs = nlohmann::json::parse(runs_res->body);
-        REQUIRE(runs.is_array());
-        CHECK(runs.size() == 1UL);
+        REQUIRE(runs.at("items").is_array());
+        CHECK(runs.at("items").size() == 1UL);
 
-        const auto deliveries_res = cli.Get("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id);
+        const auto deliveries_res = cli.Get("/api/v1/automation/deliveries?agent_key=default&automation_id=" + automation_id);
         REQUIRE(static_cast<bool>(deliveries_res));
         CHECK(deliveries_res->status == 200);
         const auto deliveries = nlohmann::json::parse(deliveries_res->body);
-        REQUIRE(deliveries.is_array());
-        REQUIRE(deliveries.size() == 1UL);
-        const auto delivery_id = deliveries.at(0).at("id").get<std::string>();
+        REQUIRE(deliveries.at("items").is_array());
+        REQUIRE(deliveries.at("items").size() == 1UL);
+        const auto delivery_id = deliveries.at("items").at(0).at("id").get<std::string>();
 
-        const auto ack_res = cli.Post("/api/automation/deliveries/" + delivery_id + "/ack?agent_key=default", "", "application/json");
+        const auto ack_res = cli.Post("/api/v1/automation/deliveries/" + delivery_id + "/ack?agent_key=default", "", "application/json");
         REQUIRE(static_cast<bool>(ack_res));
         CHECK(ack_res->status == 200);
 
-        const auto clear_res = cli.Delete("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id);
+        const auto clear_res = cli.Delete("/api/v1/automation/deliveries?agent_key=default&automation_id=" + automation_id);
         REQUIRE(static_cast<bool>(clear_res));
         CHECK(clear_res->status == 200);
 
-        const auto deliveries_after_clear = cli.Get("/api/automation/deliveries?agent_key=default&automation_id=" + automation_id + "&only_unacked=true");
+        const auto deliveries_after_clear = cli.Get("/api/v1/automation/deliveries?agent_key=default&automation_id=" + automation_id + "&only_unacked=true");
         REQUIRE(static_cast<bool>(deliveries_after_clear));
         CHECK(deliveries_after_clear->status == 200);
-        CHECK(nlohmann::json::parse(deliveries_after_clear->body).empty());
+        CHECK(nlohmann::json::parse(deliveries_after_clear->body).at("items").empty());
 
-        const auto delete_res = cli.Delete("/api/automation/" + automation_id + "?agent_key=default");
+        const auto delete_res = cli.Delete("/api/v1/automation/" + automation_id + "?agent_key=default");
         REQUIRE(static_cast<bool>(delete_res));
         CHECK(delete_res->status == 200);
 
