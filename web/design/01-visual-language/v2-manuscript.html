@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Style Tile · V2 · 手稿 · Orangutan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,300;1,6..72,400;1,6..72,500;1,6..72,600&family=Spline+Sans+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper: oklch(94.5% 0.018 78);
+  --paper-2: oklch(92% 0.022 76);
+  --paper-3: oklch(88% 0.028 74);
+  --ink: oklch(22% 0.035 255);
+  --ink-muted: oklch(44% 0.028 255);
+  --ink-soft: oklch(62% 0.02 250);
+  --sienna: oklch(55% 0.13 42);
+  --sienna-tint: oklch(89% 0.035 50);
+  --sienna-deep: oklch(40% 0.12 38);
+  --moss: oklch(44% 0.08 150);
+  --moss-tint: oklch(88% 0.038 145);
+  --moss-deep: oklch(30% 0.06 150);
+  --rule: oklch(72% 0.018 75);
+  --rule-soft: oklch(84% 0.015 75);
+  --f-display: 'Newsreader',Georgia,serif;
+  --f-body: 'Newsreader',Georgia,serif;
+  --f-mono: 'Spline Sans Mono',ui-monospace,monospace;
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px;
+  --r-0: 0; --r-1: 4px; --r-2: 8px; --r-3: 12px;
+  --t-caption: 12px; --t-meta: 13px; --t-ui: 14px; --t-body: 17px;
+  --t-lede: 20px; --t-h3: 24px; --t-h2: 32px; --t-h1: 48px; --t-masthead: 68px;
+  --shadow-1: 0 1px 0 oklch(22% 0.035 255 / .05), 0 1px 2px oklch(22% 0.035 255 / .04);
+  --shadow-2: 0 2px 4px oklch(22% 0.035 255 / .06), 0 1px 0 oklch(22% 0.035 255 / .05);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:var(--t-body);line-height:1.62;text-wrap:pretty;-webkit-font-smoothing:antialiased;}
+html{background:
+  radial-gradient(ellipse at 20% 0%, oklch(92% 0.025 80 / .45), transparent 55%),
+  radial-gradient(ellipse at 95% 100%, oklch(91% 0.03 60 / .35), transparent 50%),
+  var(--paper);
+  background-attachment:fixed;
+}
+hr{border:none;border-top:1px solid var(--rule-soft);margin:var(--s-6) 0;}
+code{font-family:var(--f-mono);font-size:.9em;background:var(--paper-2);padding:1px 6px;border-radius:var(--r-1);color:var(--ink);}
+.wrap{max-width:1100px;margin:0 auto;padding:var(--s-6) var(--s-6) var(--s-9);}
+.row{display:grid;gap:var(--s-5);}
+.row.two{grid-template-columns:repeat(2,1fr);}
+.row.three{grid-template-columns:repeat(3,1fr);}
+.row.four{grid-template-columns:repeat(4,1fr);}
+.row.six{grid-template-columns:repeat(6,1fr);}
+@media(max-width:840px){.row.two,.row.three,.row.four{grid-template-columns:1fr;}.row.six{grid-template-columns:repeat(3,1fr);}}
+
+.topbar{position:sticky;top:0;z-index:10;background:color-mix(in oklch,var(--paper) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--rule-soft);}
+.topbar-inner{max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;padding:var(--s-3) var(--s-6);font-family:var(--f-mono);font-size:var(--t-meta);letter-spacing:.02em;}
+.topbar-inner .crest{color:var(--ink-muted);}
+.topbar-inner nav a{color:var(--ink-muted);text-decoration:none;padding:6px 12px;border-radius:var(--r-1);}
+.topbar-inner nav a.active{color:var(--ink);background:var(--paper-2);}
+.topbar-inner nav a:hover{color:var(--ink);}
+
+.masthead{padding:var(--s-6) 0 var(--s-5);margin-bottom:var(--s-6);text-align:center;position:relative;}
+.masthead::before{content:'';display:block;width:100px;height:1px;background:var(--ink);margin:0 auto var(--s-4);}
+.masthead::after{content:'';display:block;width:100px;height:1px;background:var(--ink);margin:var(--s-4) auto 0;}
+.masthead h1{font-family:var(--f-display);font-size:var(--t-masthead);font-weight:600;font-style:italic;letter-spacing:-.02em;margin:0;line-height:1.04;}
+.masthead h1 em{font-weight:400;font-style:normal;color:var(--sienna-deep);}
+.masthead .folio{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);margin-top:var(--s-4);}
+.lede{font-family:var(--f-body);font-size:var(--t-lede);line-height:1.5;max-width:60ch;margin:var(--s-5) auto 0;color:var(--ink-muted);text-align:center;font-style:italic;}
+.lede strong{font-style:normal;color:var(--ink);font-weight:500;}
+
+section{padding:var(--s-7) 0;}
+section + section{border-top:1px solid var(--rule-soft);}
+.section-kicker{font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:var(--s-2);}
+.section-title{font-family:var(--f-display);font-style:italic;font-weight:500;font-size:var(--t-h2);letter-spacing:-.01em;margin:0 0 var(--s-5);}
+.section-title .ord{font-family:var(--f-mono);font-style:normal;font-size:var(--t-caption);color:var(--ink-muted);letter-spacing:.1em;text-transform:uppercase;margin-right:var(--s-3);vertical-align:middle;font-weight:400;}
+
+.swatch{border:1px solid var(--rule-soft);border-radius:var(--r-2);overflow:hidden;font-family:var(--f-mono);font-size:var(--t-meta);background:var(--paper);box-shadow:var(--shadow-1);}
+.swatch .chip{height:88px;}
+.swatch .meta{padding:var(--s-3) var(--s-4);display:flex;justify-content:space-between;align-items:baseline;gap:var(--s-2);}
+.swatch .meta .name{color:var(--ink);}
+.swatch .meta .value{color:var(--ink-muted);font-size:11px;}
+
+.specimen{padding:var(--s-5) 0;border-top:1px dashed var(--rule-soft);}
+.specimen:first-child{border-top:none;padding-top:0;}
+.specimen .label{font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:var(--s-2);}
+.display-sample{font-family:var(--f-display);font-weight:600;font-size:92px;line-height:1.04;letter-spacing:-.024em;margin:var(--s-2) 0 var(--s-1);}
+.display-sample em{font-weight:400;font-style:italic;color:var(--sienna-deep);}
+.display-sample .small{font-size:42px;letter-spacing:-.01em;font-weight:500;font-style:italic;}
+.body-sample{font-family:var(--f-body);font-size:var(--t-body);max-width:62ch;text-wrap:pretty;line-height:1.65;}
+.body-sample p + p{margin-top:var(--s-3);}
+.pull{font-family:var(--f-display);font-size:26px;font-style:italic;font-weight:400;line-height:1.3;color:var(--ink);max-width:52ch;padding:var(--s-4) var(--s-5);margin:var(--s-5) 0;background:var(--paper-2);border-radius:var(--r-3);}
+.pull .mark{color:var(--sienna);font-family:var(--f-display);font-size:48px;line-height:0;vertical-align:-8px;margin-right:var(--s-2);}
+.mono-sample{font-family:var(--f-mono);font-size:var(--t-meta);line-height:1.72;background:var(--paper-2);padding:var(--s-4) var(--s-5);border-radius:var(--r-2);white-space:pre-wrap;box-shadow:var(--shadow-1);}
+
+.atoms{display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center;}
+.btn{font-family:var(--f-body);font-size:var(--t-ui);font-weight:500;background:var(--ink);color:var(--paper);border:none;padding:10px 18px;min-height:40px;border-radius:var(--r-2);cursor:pointer;letter-spacing:.01em;transition:background .15s ease,transform .1s ease;box-shadow:var(--shadow-1);}
+.btn:hover{background:oklch(from var(--ink) calc(l + 0.08) c h);}
+.btn:active{transform:translateY(1px);}
+.btn.secondary{background:var(--paper);color:var(--ink);border:1px solid var(--ink);box-shadow:none;}
+.btn.secondary:hover{background:var(--paper-2);}
+.btn.ghost{background:transparent;color:var(--ink-muted);border:1px solid var(--rule);box-shadow:none;}
+.btn.ghost:hover{color:var(--ink);border-color:var(--ink);}
+.btn.signal{background:var(--sienna);color:var(--paper);}
+.btn.signal:hover{background:var(--sienna-deep);}
+.btn.danger{background:transparent;color:var(--sienna-deep);border:1px solid var(--sienna);box-shadow:none;}
+.btn[disabled]{opacity:.42;cursor:not-allowed;}
+.badge{font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;padding:3px 9px;border-radius:999px;background:var(--paper-2);color:var(--ink-muted);border:1px solid var(--rule-soft);}
+.badge.moss{color:var(--moss-deep);background:var(--moss-tint);border-color:transparent;}
+.badge.sienna{color:var(--sienna-deep);background:var(--sienna-tint);border-color:transparent;}
+.badge.ink{color:var(--paper);background:var(--ink);border-color:transparent;}
+
+.field{display:flex;flex-direction:column;gap:var(--s-2);max-width:420px;font-family:var(--f-body);}
+.field label{font-family:var(--f-mono);font-size:var(--t-caption);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted);}
+.field input,.field textarea{font-family:var(--f-body);font-size:var(--t-body);background:var(--paper);color:var(--ink);border:1px solid var(--rule);padding:10px 14px;outline:none;border-radius:var(--r-2);transition:border-color .18s,box-shadow .18s;}
+.field input:focus,.field textarea:focus{border-color:var(--ink);box-shadow:0 0 0 3px oklch(from var(--sienna) l c h / .15);}
+.field .hint{font-family:var(--f-mono);font-size:11px;color:var(--ink-soft);}
+
+.conv{max-width:720px;}
+.msg{display:grid;grid-template-columns:52px 1fr;gap:var(--s-4);padding:var(--s-4) 0;}
+.msg + .msg{border-top:1px dashed var(--rule-soft);}
+.avatar{width:52px;height:52px;border-radius:50%;background:var(--paper-3);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-style:italic;font-weight:500;font-size:24px;color:var(--ink);box-shadow:inset 0 0 0 1px oklch(22% 0.035 255 / .12);}
+.msg.agent .avatar{background:var(--sienna-tint);color:var(--sienna-deep);box-shadow:inset 0 0 0 1px oklch(55% 0.13 42 / .35);}
+.msg.team-a .avatar{background:var(--moss-tint);color:var(--moss-deep);box-shadow:inset 0 0 0 1px oklch(44% 0.08 150 / .4);}
+.msg .head{display:flex;align-items:baseline;gap:var(--s-3);font-family:var(--f-mono);font-size:var(--t-meta);color:var(--ink-muted);margin-bottom:var(--s-2);letter-spacing:.02em;flex-wrap:wrap;}
+.msg .head .name{color:var(--ink);font-weight:600;font-family:var(--f-display);font-style:italic;font-size:16px;letter-spacing:0;}
+.msg .head .role{font-style:italic;font-family:var(--f-display);font-size:14px;color:var(--sienna-deep);letter-spacing:0;}
+.msg .head .dot{color:var(--rule);}
+.msg .body{font-family:var(--f-body);font-size:var(--t-body);line-height:1.64;}
+.msg .body p{margin:var(--s-2) 0;}
+.msg .body p:first-child{margin-top:0;}
+
+.thinking{margin:var(--s-3) 0;padding:var(--s-4) var(--s-5);font-family:var(--f-body);font-style:italic;color:var(--ink-muted);background:color-mix(in oklch,var(--paper-2) 60%,transparent);border-radius:var(--r-2);font-size:var(--t-ui);line-height:1.68;display:grid;grid-template-columns:auto 1fr;gap:var(--s-4);}
+.thinking .marker{font-family:var(--f-mono);font-style:normal;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);align-self:start;padding-top:4px;border-right:1px solid var(--rule);padding-right:var(--s-4);}
+
+.tool{margin:var(--s-3) 0;border:1px solid var(--rule-soft);border-radius:var(--r-2);font-family:var(--f-mono);font-size:var(--t-meta);background:var(--paper);overflow:hidden;box-shadow:var(--shadow-1);}
+.tool-head{display:flex;justify-content:space-between;align-items:center;padding:10px var(--s-4);background:var(--paper-2);color:var(--ink-muted);border-bottom:1px solid var(--rule-soft);}
+.tool-head .lhs{display:flex;align-items:center;gap:var(--s-3);}
+.tool-head .glyph{width:18px;height:18px;border:1.5px solid var(--ink);border-radius:var(--r-1);display:inline-block;position:relative;}
+.tool-head .glyph::after{content:'';position:absolute;inset:3px;background:var(--sienna);border-radius:1px;}
+.tool-head .name{color:var(--ink);font-weight:600;}
+.tool-head .status{font-size:11px;letter-spacing:.08em;}
+.tool-head .status.ok{color:var(--moss-deep);}
+.tool-head .status.err{color:var(--sienna-deep);}
+.tool-body{padding:var(--s-4);font-family:var(--f-mono);white-space:pre-wrap;color:var(--ink);line-height:1.62;max-height:220px;overflow:auto;}
+
+.diff{font-family:var(--f-mono);font-size:var(--t-meta);line-height:1.74;background:var(--paper);border:1px solid var(--rule-soft);border-radius:var(--r-2);padding:var(--s-3) 0;margin:var(--s-3) 0;box-shadow:var(--shadow-1);overflow:hidden;}
+.diff .hunk{padding:6px var(--s-4);color:var(--ink-soft);font-size:11px;background:var(--paper-2);border-bottom:1px solid var(--rule-soft);margin-bottom:var(--s-2);letter-spacing:.02em;}
+.diff .line{display:grid;grid-template-columns:56px 1fr;padding:1px var(--s-4);}
+.diff .line .gutter{color:var(--ink-soft);text-align:right;padding-right:var(--s-3);user-select:none;}
+.diff .line.add{background:color-mix(in oklch,var(--moss-tint) 60%,transparent);}
+.diff .line.add .gutter::before{content:'+ ';color:var(--moss-deep);}
+.diff .line.del{background:color-mix(in oklch,var(--sienna-tint) 60%,transparent);}
+.diff .line.del .gutter::before{content:'- ';color:var(--sienna-deep);}
+
+.inline-diff{font-family:var(--f-body);line-height:1.72;padding:var(--s-3) 0;}
+.inline-diff ins{background:color-mix(in oklch,var(--moss-tint) 85%,transparent);text-decoration:none;color:var(--moss-deep);padding:1px 5px;border-radius:var(--r-1);}
+.inline-diff del{background:color-mix(in oklch,var(--sienna-tint) 85%,transparent);text-decoration:line-through;text-decoration-color:var(--sienna);color:var(--sienna-deep);padding:1px 5px;border-radius:var(--r-1);}
+
+.image-block{border:1px solid var(--rule-soft);padding:var(--s-3);background:var(--paper);border-radius:var(--r-2);max-width:420px;margin:var(--s-3) 0;box-shadow:var(--shadow-1);}
+.image-block .frame{border:1px dashed var(--rule);border-radius:var(--r-1);height:180px;display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(135deg,var(--paper-2),var(--paper-2) 6px,var(--paper) 6px,var(--paper) 12px);font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-soft);letter-spacing:.1em;}
+.image-block .caption{font-family:var(--f-body);font-style:italic;font-size:var(--t-ui);color:var(--ink-muted);margin-top:var(--s-3);text-align:center;}
+
+.reply-quote{font-family:var(--f-body);font-size:var(--t-ui);color:var(--ink-muted);background:color-mix(in oklch,var(--paper-2) 75%,transparent);padding:var(--s-3) var(--s-4);border-radius:var(--r-2);margin:var(--s-2) 0;display:grid;grid-template-columns:auto 1fr;gap:var(--s-3);font-style:italic;}
+.reply-quote .who{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;color:var(--ink-soft);font-style:normal;padding-top:2px;}
+
+.math-block{font-family:'Newsreader',serif;font-size:22px;text-align:center;padding:var(--s-6) var(--s-5);background:var(--paper);border:1px solid var(--rule-soft);border-radius:var(--r-2);letter-spacing:.01em;color:var(--ink);box-shadow:var(--shadow-1);}
+.math-block .tag{font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-soft);letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:var(--s-3);}
+.math-inline{font-family:'Newsreader',serif;font-style:italic;font-size:1.04em;padding:0 3px;}
+
+.orang-placeholder{border:1.5px dashed var(--rule);border-radius:var(--r-3);background:radial-gradient(ellipse at 30% 20%,oklch(92% 0.025 80 / .7),transparent 60%),repeating-linear-gradient(135deg,var(--paper-2),var(--paper-2) 8px,var(--paper) 8px,var(--paper) 16px);min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:var(--t-meta);color:var(--ink-muted);text-align:center;padding:var(--s-5);gap:var(--s-3);}
+.orang-placeholder .tag{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--ink-soft);}
+.orang-placeholder .name{font-family:var(--f-display);font-style:italic;font-weight:500;font-size:30px;color:var(--ink);letter-spacing:0;}
+
+.scale-row{display:flex;flex-wrap:wrap;gap:var(--s-4);align-items:flex-end;}
+.scale-item{display:flex;flex-direction:column;align-items:center;gap:var(--s-2);font-family:var(--f-mono);font-size:11px;color:var(--ink-muted);}
+.scale-box{border:1px solid var(--ink);background:var(--paper);width:72px;height:72px;}
+.r-0{border-radius:0;} .r-1{border-radius:var(--r-1);} .r-2{border-radius:var(--r-2);} .r-3{border-radius:var(--r-3);}
+.sh-0{box-shadow:none;} .sh-1{box-shadow:var(--shadow-1);} .sh-2{box-shadow:var(--shadow-2);}
+
+.space-row{display:flex;align-items:center;gap:var(--s-3);flex-wrap:wrap;font-family:var(--f-mono);font-size:11px;color:var(--ink-muted);}
+.space-row .bar{background:var(--ink);height:14px;border-radius:2px;}
+.space-row .tok{color:var(--ink);}
+
+.dark-preview{background:oklch(20% 0.028 260);color:oklch(92% 0.02 80);padding:var(--s-6) var(--s-5);border-radius:var(--r-3);font-family:var(--f-body);border:1px solid oklch(28% 0.025 260);}
+.dark-preview h3{font-family:var(--f-display);font-style:italic;font-weight:500;margin:0 0 var(--s-4);font-size:var(--t-h2);color:oklch(94% 0.018 80);}
+.dark-preview h3 em{color:oklch(72% 0.14 42);font-weight:400;}
+.dark-preview p{color:oklch(80% 0.014 80);margin:0 0 var(--s-3);line-height:1.6;}
+.dark-preview code{background:oklch(27% 0.025 260);padding:2px 6px;border-radius:var(--r-1);font-family:var(--f-mono);font-size:var(--t-meta);color:oklch(92% 0.02 80);}
+.dark-preview .dark-chips{display:flex;gap:var(--s-2);margin-top:var(--s-4);}
+.dark-preview .chip{width:36px;height:36px;border-radius:var(--r-1);border:1px solid oklch(30% 0.02 260);}
+
+footer{padding:var(--s-8) 0 var(--s-7);font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);text-align:center;letter-spacing:.1em;margin-top:var(--s-7);}
+footer::before,footer::after{content:'';display:block;width:64px;height:1px;background:var(--rule);margin:var(--s-4) auto;}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-inner">
+    <span class="crest">Orangutan · Visual Language · V2 Manuscript · 已选定</span>
+    <nav>
+      <a href="../../prompt/01-visual-language/README.md" class="active">开发提示词 →</a>
+    </nav>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="folio">
+      <span>Variant · Two</span>
+      <span>Hand Manuscript</span>
+      <span>Hemp · Ink-Blue · Sienna</span>
+    </div>
+    <h1><em>Orangutan</em> Manuscript</h1>
+    <div class="folio">
+      <span>大麻纸 · 墨蓝 · 赭红</span>
+      <span>Newsreader 单家族 · Spline Sans Mono</span>
+      <span>圆角 4 / 8 / 12</span>
+    </div>
+    <p class="lede">比报纸更近一步 —— <strong>学者工作桌</strong>的视角：同一种衬线（Newsreader）在不同字重 / 字斜间做层级，圆角更软，阴影更淡但存在，带点手做的温度。</p>
+  </header>
+
+  <section>
+    <div class="section-kicker">01 · Palette</div>
+    <h2 class="section-title"><span class="ord">§ 01</span>色板</h2>
+    <div class="row three">
+      <div class="swatch"><div class="chip" style="background:var(--paper)"></div><div class="meta"><span class="name">Paper · 大麻</span><span class="value">oklch 94.5 .018 78</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--paper-2)"></div><div class="meta"><span class="name">Paper 2</span><span class="value">oklch 92 .022 76</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--paper-3)"></div><div class="meta"><span class="name">Paper 3</span><span class="value">oklch 88 .028 74</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ink)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Ink · 墨蓝</span><span class="value" style="color:var(--paper-3)">oklch 22 .035 255</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ink-muted)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Ink Muted</span><span class="value" style="color:var(--paper-3)">oklch 44 .028 255</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ink-soft)"></div><div class="meta"><span class="name">Ink Soft</span><span class="value">oklch 62 .02 250</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--sienna)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Sienna · 主信号</span><span class="value" style="color:var(--paper-3)">oklch 55 .13 42</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--sienna-tint)"></div><div class="meta"><span class="name">Sienna Tint</span><span class="value">oklch 89 .035 50</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--sienna-deep)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Sienna Deep</span><span class="value" style="color:var(--paper-3)">oklch 40 .12 38</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--moss)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Moss · 次信号</span><span class="value" style="color:var(--paper-3)">oklch 44 .08 150</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--moss-tint)"></div><div class="meta"><span class="name">Moss Tint</span><span class="value">oklch 88 .038 145</span></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--moss-deep)"></div><div class="meta" style="color:var(--paper)"><span class="name" style="color:var(--paper)">Moss Deep</span><span class="value" style="color:var(--paper-3)">oklch 30 .06 150</span></div></div>
+    </div>
+    <p class="body-sample" style="margin-top:var(--s-5);color:var(--ink-muted);">
+      V2 把主 / 次信号色对调 —— <strong style="color:var(--ink);">Sienna 做主信号色</strong>（思考块、主按钮、agent 名字的斜体），Moss 退居次信号（成功、运行中）。纸张更暖更灰、墨色偏蓝，配合一轻一重的信号色形成「手稿」质感。
+    </p>
+  </section>
+
+  <section>
+    <div class="section-kicker">02 · Typography</div>
+    <h2 class="section-title"><span class="ord">§ 02</span>字族（单家族策略）</h2>
+
+    <div class="specimen">
+      <div class="label">Display · Newsreader Semibold Italic</div>
+      <div class="display-sample"><em>Orangutan</em> Manuscript</div>
+      <div class="display-sample small">章节题 · 面板标题 · 空状态</div>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Body · Newsreader Regular</div>
+      <div class="body-sample">
+        <p>Orangutan 是一个 C&#43;&#43;23 的 agent 助手，前端的任务是把它庞杂的 ReAct 循环变成<em>一份可被轻松阅读的文档</em>。手稿方案用的是单家族字族策略（<strong>所有字都来自 Newsreader</strong>），靠字重、斜体和字号做层级，而不是靠第二种字体——这样排版噪声最低。</p>
+        <p>Spline Sans Mono 做等宽，它的 tabular 与 Newsreader 的正文垂直节律意外地吻合，又比 IBM Plex Mono 柔和，像学者自己手写在 code 缝隙里的笔记。</p>
+      </div>
+      <blockquote class="pull"><span class="mark">&ldquo;</span>单家族的好处不是视觉统一，而是语气统一 —— 每一行字都像出自同一个人之手。</blockquote>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Mono · Spline Sans Mono</div>
+      <div class="mono-sample">AgentLoopBuilder()
+    .with_provider(system)
+    .with_tools(registry)
+    .with_memory(runtime)
+    .with_hooks(hooks)
+    .with_skills(skills)
+    .build();
+
+// 等宽 Spline 比 Plex 更圆，和衬线家族在抑扬关系上更近。
+// 行高 1.72、字号 13 —— 长代码阅读不疲惫。</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">03 · UI Atoms</div>
+    <h2 class="section-title"><span class="ord">§ 03</span>原子组件</h2>
+
+    <div class="specimen">
+      <div class="label">Buttons · 圆角 8px · 有浅阴影</div>
+      <div class="atoms">
+        <button class="btn">发送</button>
+        <button class="btn signal">批准调用</button>
+        <button class="btn secondary">取消</button>
+        <button class="btn ghost">跳过</button>
+        <button class="btn danger">驳回</button>
+        <button class="btn" disabled>已停用</button>
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Badges · 胶囊</div>
+      <div class="atoms">
+        <span class="badge">agent:default</span>
+        <span class="badge moss">运行中 · 3s</span>
+        <span class="badge sienna">等待审批</span>
+        <span class="badge ink">lead</span>
+        <span class="badge">claude-sonnet-4</span>
+        <span class="badge">permissions · ask</span>
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Field · 带边框 · 焦点光晕</div>
+      <div class="row two">
+        <div class="field">
+          <label>搜索会话</label>
+          <input type="text" value="token + cache" />
+          <span class="hint">⌘ K 打开 · 支持正则</span>
+        </div>
+        <div class="field">
+          <label>发送新消息</label>
+          <textarea rows="3">把上次 agent-loop 迭代里的 prompt 成本输出成 markdown 表</textarea>
+          <span class="hint">Shift + Enter 换行 · Enter 发送</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">04 · Conversation</div>
+    <h2 class="section-title"><span class="ord">§ 04</span>消息示例（群聊视角）</h2>
+    <div class="conv">
+
+      <div class="msg user">
+        <div class="avatar">H</div>
+        <div>
+          <div class="head">
+            <span class="name">Huxint</span>
+            <span class="dot">·</span>
+            <span>22:14</span>
+          </div>
+          <div class="body">
+            <p>帮我查一下 <code>AgentLoopBuilder</code> 每轮迭代中的 token 成本，以及哪些是可以 cache 的？顺便让 research 去查一下 Anthropic 文档里 prompt-caching 的最新 TTL 限制。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg agent">
+        <div class="avatar"><em>L</em></div>
+        <div>
+          <div class="head">
+            <span class="name">lead</span>
+            <span class="role">主协调</span>
+            <span class="dot">·</span>
+            <span>claude-sonnet-4 · 22:14</span>
+            <span class="dot">·</span>
+            <span class="badge moss">in-flight</span>
+          </div>
+          <div class="body">
+            <div class="thinking">
+              <span class="marker">Thinking · 4s</span>
+              <span>用户同时发出两个请求：本地代码 audit 我自己来，文档查询委派给 research。顺序是 spawn research → 读源码 → 等回归。</span>
+            </div>
+
+            <p>我在阅读 <code>src/agent/agent-loop.hpp</code>，同时把文档查询委派给了 <em>research</em>。</p>
+
+            <div class="tool">
+              <div class="tool-head">
+                <span class="lhs"><span class="glyph"></span><span class="name">read_file</span> <span>src/agent/agent-loop.hpp</span></span>
+                <span class="status ok">ok · 142 ms</span>
+              </div>
+              <div class="tool-body">→ 共 312 行
+→ 发现 MAX_ITERATIONS=25
+→ build_system_prompt() 每轮重算 skills / deferred-tools 段，其它段缓存
+→ 存在 iteration-cost trap：user prompt 对应的 memory 记录当前在循环内取一次/轮</div>
+            </div>
+
+            <p>在 <code>agent-loop.hpp</code> 我注意到<em>热</em>（每轮重算）与<em>冷</em>（循环外预渲染）段的划分和 CLAUDE.md 里的注释一致。等 research 回。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg team-a">
+        <div class="avatar"><em>R</em></div>
+        <div>
+          <div class="head">
+            <span class="name">research</span>
+            <span class="role">委派</span>
+            <span class="dot">·</span>
+            <span>via spawn_worker · 22:14</span>
+            <span class="dot">·</span>
+            <span class="badge sienna">finished</span>
+          </div>
+          <div class="body">
+            <div class="reply-quote">
+              <span class="who">Re · lead</span>
+              <span>帮我查一下 Anthropic 文档里 prompt-caching 的最新 TTL 限制</span>
+            </div>
+            <p>最新文档（截至 2026-04）说 cache 控制段的 TTL 默认 <strong>5 分钟</strong>、最长 <strong>1 小时</strong>（需显式 <code>ttl=&quot;1h&quot;</code>）。超过 4 个 cache breakpoints 会报错。完整回答放在附注。</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">05 · Tool + Diff + Math</div>
+    <h2 class="section-title"><span class="ord">§ 05</span>工具输出 · Diff · Math</h2>
+
+    <div class="row two">
+      <div>
+        <div class="label" style="font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:var(--s-2);">行内 diff</div>
+        <div class="inline-diff">
+          把 <code>MAX_ITERATIONS</code> 从 <del>20</del><ins>25</ins> 提升；同时把 <del>build_system_prompt(memory, skills, tools)</del><ins>build_system_prompt(pre_rendered_memory, skills, tools)</ins>，避免每轮重复拉取记忆。
+        </div>
+      </div>
+      <div>
+        <div class="label" style="font-family:var(--f-mono);font-size:var(--t-caption);color:var(--ink-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:var(--s-2);">块级 diff</div>
+        <div class="diff">
+          <div class="hunk">@@ src/agent/agent-loop.cpp · L142</div>
+          <div class="line del"><span class="gutter">142</span><span>for (auto &amp;memory_hit : memory_store_.search(prompt)) {</span></div>
+          <div class="line add"><span class="gutter">142</span><span>// memory pre-rendered once before the loop</span></div>
+          <div class="line add"><span class="gutter">143</span><span>const auto &amp;pre_rendered_memory = context.memory_section;</span></div>
+          <div class="line"><span class="gutter">144</span><span>  build_system_prompt(pre_rendered_memory, skills, tools);</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="math-block">
+      <span class="tag">Delimited Block Math · 规范化后</span>
+      <span class="math-inline">Δt = 1 / f<sub>s</sub></span> &nbsp;&nbsp;·&nbsp;&nbsp; <span class="math-inline">E = mc²</span> &nbsp;&nbsp;·&nbsp;&nbsp; <span class="math-inline">∑<sub>i=0</sub><sup>n</sup> a<sub>i</sub>x<sup>i</sup></span>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">06 · Image &amp; Orangutan</div>
+    <h2 class="section-title"><span class="ord">§ 06</span>图像块 · 主品牌占位</h2>
+    <div class="row two">
+      <div class="image-block">
+        <div class="frame">IMAGE · 512 × 320</div>
+        <div class="caption">—— agent 附加的截图 / 生成图像</div>
+      </div>
+      <div class="orang-placeholder">
+        <span class="tag">Placeholder · Dynamic SVG</span>
+        <span class="name"><em>Orangutan</em></span>
+        <span>主 agent 头像 · 会随状态（思考 / 工具 / 等待）变化<br>真实素材待设计</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">07 · Radius / Shadow / Space</div>
+    <h2 class="section-title"><span class="ord">§ 07</span>空间系统</h2>
+
+    <div class="specimen">
+      <div class="label">Radii · 0 / 4 / 8 / 12</div>
+      <div class="scale-row">
+        <div class="scale-item"><div class="scale-box r-0"></div>0 · 内嵌线</div>
+        <div class="scale-item"><div class="scale-box r-1"></div>4 · 小</div>
+        <div class="scale-item"><div class="scale-box r-2"></div>8 · 中 · 主</div>
+        <div class="scale-item"><div class="scale-box r-3"></div>12 · 大 · 容器</div>
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Shadow · 浅油墨印痕感</div>
+      <div class="scale-row">
+        <div class="scale-item"><div class="scale-box sh-0"></div>sh-0 · 无</div>
+        <div class="scale-item"><div class="scale-box sh-1"></div>sh-1 · 单层</div>
+        <div class="scale-item"><div class="scale-box sh-2"></div>sh-2 · 抬升</div>
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="label">Spacing · 4 → 96</div>
+      <div class="space-row">
+        <span class="tok">4</span><div class="bar" style="width:4px;"></div>
+        <span class="tok">8</span><div class="bar" style="width:8px;"></div>
+        <span class="tok">12</span><div class="bar" style="width:12px;"></div>
+        <span class="tok">16</span><div class="bar" style="width:16px;"></div>
+        <span class="tok">24</span><div class="bar" style="width:24px;"></div>
+        <span class="tok">32</span><div class="bar" style="width:32px;"></div>
+        <span class="tok">48</span><div class="bar" style="width:48px;"></div>
+        <span class="tok">64</span><div class="bar" style="width:64px;"></div>
+        <span class="tok">96</span><div class="bar" style="width:96px;"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-kicker">08 · Dark Sibling</div>
+    <h2 class="section-title"><span class="ord">§ 08</span>深色伴生态</h2>
+    <div class="dark-preview">
+      <h3><em>Manuscript</em> · Night Desk</h3>
+      <p>深色版不是反转 —— 墨蓝变深墨夜、麻纸变茶色卷轴、Sienna 在暗色里反而更亮暖。 <code>oklch</code> 在两端保持相似的感受亮度差。</p>
+      <p>圆圈主题切换动画掠过时，像油灯被点亮／吹灭。</p>
+      <div class="dark-chips">
+        <span class="chip" style="background:oklch(20% 0.028 260);"></span>
+        <span class="chip" style="background:oklch(27% 0.025 260);"></span>
+        <span class="chip" style="background:oklch(92% 0.02 80);"></span>
+        <span class="chip" style="background:oklch(68% 0.14 42);"></span>
+        <span class="chip" style="background:oklch(60% 0.1 150);"></span>
+      </div>
+    </div>
+  </section>
+
+  <footer>End of Variant Two · Orangutan Visual Language</footer>
+</div>
+
+</body>
+</html>

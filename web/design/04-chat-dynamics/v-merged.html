@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light" data-right="closed">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Step 04 · Chat Dynamics · Merged (V1 typing + V2 reactions)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ============ TOKENS ============ */
+:root {
+  --surface:         oklch(94.5% 0.018 78);
+  --surface-raised:  oklch(92% 0.022 76);
+  --surface-sunken:  oklch(88% 0.028 74);
+  --content:         oklch(22% 0.035 255);
+  --content-muted:   oklch(44% 0.028 255);
+  --content-soft:    oklch(62% 0.020 250);
+  --signal:          oklch(55% 0.13 42);
+  --signal-tint:     oklch(89% 0.035 50);
+  --signal-deep:     oklch(40% 0.12 38);
+  --accent:          oklch(44% 0.08 150);
+  --accent-tint:     oklch(88% 0.038 145);
+  --accent-deep:     oklch(30% 0.06 150);
+  --rule:            oklch(72% 0.018 75);
+  --rule-soft:       oklch(84% 0.015 75);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-1: 0 1px 0 oklch(22% 0.035 255 / .05), 0 1px 2px oklch(22% 0.035 255 / .04);
+  --shadow-2: 0 2px 4px oklch(22% 0.035 255 / .06), 0 1px 0 oklch(22% 0.035 255 / .05);
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body:    'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-mono:    'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --text-caption: 12px; --text-meta: 13px; --text-ui: 14px; --text-body: 17px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration-fast: 120ms; --duration-med: 200ms; --duration-slow: 320ms;
+}
+
+[data-theme="dark"] {
+  --surface:         oklch(20% 0.028 260);
+  --surface-raised:  oklch(26% 0.025 260);
+  --surface-sunken:  oklch(16% 0.025 260);
+  --content:         oklch(92% 0.020 80);
+  --content-muted:   oklch(70% 0.015 80);
+  --content-soft:    oklch(52% 0.012 75);
+  --signal:          oklch(68% 0.14 42);
+  --signal-tint:     oklch(32% 0.08 40);
+  --signal-deep:     oklch(82% 0.10 45);
+  --accent:          oklch(60% 0.10 150);
+  --accent-tint:     oklch(28% 0.06 150);
+  --accent-deep:     oklch(78% 0.09 145);
+  --rule:            oklch(36% 0.02 260);
+  --rule-soft:       oklch(28% 0.02 260);
+  --shadow-1: 0 1px 0 oklch(0% 0 0 / .24), 0 1px 2px oklch(0% 0 0 / .32);
+  --shadow-2: 0 2px 4px oklch(0% 0 0 / .28), 0 1px 0 oklch(0% 0 0 / .20);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--content);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ============ APP SHELL ============ */
+.workspace {
+  display: grid;
+  grid-template-columns: 260px 4px 1fr 4px 0px;
+  grid-template-rows: 52px 1fr;
+  grid-template-areas:
+    "nav nav nav nav nav"
+    "left div1 mid div2 right";
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============ TOP NAV ============ */
+.top-nav {
+  grid-area: nav;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+}
+.top-nav__left { display: flex; align-items: center; gap: var(--space-3); }
+.top-nav__right { display: flex; align-items: center; gap: var(--space-3); }
+.brand {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 18px;
+}
+.session-chip {
+  padding: 4px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--content-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.icon-btn {
+  width: 32px; height: 32px;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--content-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  transition: background var(--duration-fast) var(--ease);
+}
+.icon-btn:hover { background: var(--surface-raised); color: var(--content); }
+
+/* ============ LEFT PANEL ============ */
+.left-panel {
+  grid-area: left;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: var(--surface);
+}
+.left-panel__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--content-soft);
+  margin-bottom: var(--space-4);
+}
+
+.team-card {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  margin-bottom: var(--space-2);
+  transition: background var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease);
+  position: relative;
+  overflow: hidden;
+}
+.team-card:hover { background: var(--surface-raised); border-color: var(--rule); }
+.team-card[aria-current="true"] {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 1px oklch(from var(--signal) l c h / .15);
+}
+.team-card__avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.team-card__avatar--lead {
+  background: var(--signal-tint);
+  color: var(--signal-deep);
+  box-shadow: inset 0 0 0 1px oklch(55% 0.13 42 / .35);
+}
+.team-card__avatar--team {
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px oklch(44% 0.08 150 / .4);
+}
+.team-card__info { flex: 1; min-width: 0; }
+.team-card__name {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--content);
+  line-height: 1.2;
+}
+.team-card__status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--content-muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Status dots */
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot--idle { background: var(--content-soft); }
+.status-dot--working {
+  background: var(--accent);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.status-dot--waiting {
+  background: var(--signal);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+.status-dot--done { background: var(--accent-deep); }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+/* V2: Progress bar under card */
+.team-card__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: progress-sweep 3s ease-in-out infinite;
+  width: 60%;
+}
+.team-card__progress--waiting {
+  background: var(--signal);
+  animation: progress-sweep 4s ease-in-out infinite;
+  width: 30%;
+}
+.team-card__progress--done {
+  background: var(--accent-deep);
+  animation: none;
+  width: 100%;
+}
+@keyframes progress-sweep {
+  0%   { left: 0; }
+  50%  { left: 40%; }
+  100% { left: 0; }
+}
+
+/* V2: Pop-in entry animation */
+.team-card--entering {
+  animation: card-pop-in 320ms var(--ease) both;
+}
+@keyframes card-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.add-card {
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  text-align: center;
+  color: var(--content-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.add-card:hover { border-color: var(--content-muted); color: var(--content-muted); }
+
+/* ============ DIVIDERS ============ */
+.divider { background: transparent; cursor: col-resize; position: relative; }
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px; height: 24px;
+  border-radius: 1px;
+  background: var(--rule);
+  opacity: 0;
+  transition: opacity var(--duration-med) var(--ease);
+}
+.divider:hover::after { opacity: 1; }
+
+/* ============ MIDDLE CHAT ============ */
+.chat-region {
+  grid-area: mid;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-5);
+}
+.chat-scroll__inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.chat-footer {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--rule-soft);
+  background: var(--surface);
+}
+.chat-footer__inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* ============ MESSAGES ============ */
+.msg {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  position: relative;
+}
+.msg + .msg { border-top: 1px dashed var(--rule-soft); }
+
+.avatar {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 24px;
+  flex-shrink: 0;
+  background: var(--surface-sunken);
+  color: var(--content);
+  box-shadow: inset 0 0 0 1px oklch(22% 0.035 255 / .12);
+}
+.avatar--lead {
+  background: var(--signal-tint);
+  color: var(--signal-deep);
+  box-shadow: inset 0 0 0 1px oklch(55% 0.13 42 / .35);
+}
+.avatar--team {
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px oklch(44% 0.08 150 / .4);
+}
+
+.msg__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--content-muted);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+.msg__name {
+  color: var(--content);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 16px;
+}
+.msg__dot { color: var(--rule); }
+
+.msg__body {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.64;
+  color: var(--content);
+}
+.msg__body p { margin: var(--space-2) 0; }
+.msg__body p:first-child { margin-top: 0; }
+.msg__body p:last-child { margin-bottom: 0; }
+
+/* ============ V1: TYPING INDICATOR — Ink Dots ============ */
+.typing {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px dashed var(--rule-soft);
+}
+.typing__avatar {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.typing__col { display: flex; flex-direction: column; gap: var(--space-2); }
+.typing__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--content-muted);
+}
+.typing__name {
+  color: var(--content);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 16px;
+}
+.typing__indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 16px;
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+}
+.typing__dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--content-muted);
+  animation: ink-swell 1.4s ease-in-out infinite;
+}
+.typing__dot:nth-child(2) { animation-delay: 200ms; }
+.typing__dot:nth-child(3) { animation-delay: 400ms; }
+
+@keyframes ink-swell {
+  0%   { opacity: .25; transform: scale(.7); }
+  40%  { opacity: 1;   transform: scale(1.1); }
+  60%  { opacity: 1;   transform: scale(1); }
+  100% { opacity: .25; transform: scale(.7); }
+}
+
+/* Streaming cursor — thin blinking ink line */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--content);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1s step-end infinite;
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ============ V2: REACTIONS — Margin Annotations ============ */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--rule-soft);
+}
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--content-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease),
+              background var(--duration-fast) var(--ease);
+  user-select: none;
+}
+.reaction:hover {
+  background: var(--surface-raised);
+  color: var(--content);
+}
+.reaction--active {
+  color: var(--signal-deep);
+  font-style: italic;
+}
+.reaction--active .reaction__icon {
+  border-bottom: 1px solid var(--signal);
+}
+.reaction__icon {
+  font-size: 13px;
+  line-height: 1;
+  font-family: var(--font-body);
+  padding-bottom: 1px;
+}
+.reaction__count {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: .7;
+}
+
+/* Reaction picker */
+.reaction-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity var(--duration-fast) var(--ease),
+              transform var(--duration-fast) var(--ease);
+}
+.reaction-picker.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.reaction-picker__item {
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease);
+}
+.reaction-picker__item:hover {
+  background: var(--surface-raised);
+}
+
+/* Add reaction button — pencil icon */
+.msg__react-btn {
+  position: absolute;
+  top: var(--space-3);
+  right: 0;
+  width: 24px; height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--content-soft);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.msg:hover .msg__react-btn { opacity: 1; }
+.msg__react-btn:hover { color: var(--content-muted); }
+
+/* ============ STATUS ROW ============ */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--content-muted);
+  flex-wrap: wrap;
+}
+.status-row .item { display: flex; align-items: center; gap: 6px; }
+.status-row .dot-blink {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.status-row .sep { color: var(--rule); }
+
+/* ============ SEND BAR ============ */
+.send-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-2);
+  align-items: end;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+}
+.send-bar__attach {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--content-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+.send-bar__attach:hover { background: var(--surface); color: var(--content); }
+.send-bar__input {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--content);
+  padding: 8px 4px;
+  resize: none;
+  min-height: 36px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.send-bar__input::placeholder { color: var(--content-soft); font-style: italic; }
+.send-bar__send {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  background: var(--signal);
+  color: var(--surface);
+  border: none;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: var(--text-ui);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+}
+.send-bar__send:hover { background: var(--signal-deep); }
+
+/* ============ DEMO CONTROLS ============ */
+.demo-controls {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 100;
+}
+.demo-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--content-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.demo-btn:hover { background: var(--surface); color: var(--content); }
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  color: var(--content-soft);
+  margin: var(--space-7) 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.section-label:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="workspace">
+  <header class="top-nav">
+    <div class="top-nav__left">
+      <span class="brand"><em>Orangutan</em></span>
+      <span class="session-chip">session · 0429</span>
+    </div>
+    <div class="top-nav__right">
+      <button class="icon-btn" aria-label="主题切换" onclick="toggleTheme()">◐</button>
+      <button class="icon-btn" aria-label="设置">⚙</button>
+    </div>
+  </header>
+
+  <aside class="left-panel">
+    <div class="left-panel__title">Contributors</div>
+
+    <div class="team-card" aria-current="true" onclick="selectCard(this)">
+      <span class="team-card__avatar team-card__avatar--lead"><em>L</em></span>
+      <div class="team-card__info">
+        <div class="team-card__name">Lead</div>
+        <div class="team-card__status">
+          <span class="status-dot status-dot--working"></span>
+          回复中 · 12s
+        </div>
+      </div>
+      <div class="team-card__progress"></div>
+    </div>
+
+    <div class="team-card" onclick="selectCard(this)">
+      <span class="team-card__avatar team-card__avatar--team"><em>R</em></span>
+      <div class="team-card__info">
+        <div class="team-card__name">Research</div>
+        <div class="team-card__status">
+          <span class="status-dot status-dot--waiting"></span>
+          等待 · 队列中
+        </div>
+      </div>
+      <div class="team-card__progress team-card__progress--waiting"></div>
+    </div>
+
+    <div class="team-card" onclick="selectCard(this)">
+      <span class="team-card__avatar team-card__avatar--team"><em>D</em></span>
+      <div class="team-card__info">
+        <div class="team-card__name">Designer</div>
+        <div class="team-card__status">
+          <span class="status-dot status-dot--done"></span>
+          已完成
+        </div>
+      </div>
+      <div class="team-card__progress team-card__progress--done"></div>
+    </div>
+
+    <div class="team-card team-card--entering" id="new-teammate" onclick="selectCard(this)" style="display:none;">
+      <span class="team-card__avatar team-card__avatar--team"><em>C</em></span>
+      <div class="team-card__info">
+        <div class="team-card__name">Coder</div>
+        <div class="team-card__status">
+          <span class="status-dot status-dot--idle"></span>
+          空闲
+        </div>
+      </div>
+    </div>
+
+    <div class="add-card">+ 新 teammate</div>
+  </aside>
+
+  <div class="divider"></div>
+
+  <section class="chat-region" data-chat-state="in-flight">
+    <div class="chat-scroll">
+      <div class="chat-scroll__inner">
+
+        <div class="section-label">User message with reactions</div>
+
+        <div class="msg msg--user">
+          <span class="avatar">H</span>
+          <div class="msg__col">
+            <div class="msg__head">
+              <span class="msg__name">Huxint</span>
+              <span class="msg__dot">·</span>
+              <span>22:14</span>
+            </div>
+            <div class="msg__body">
+              <p>帮我查一下 Anthropic 文档里 prompt-caching 的最新 TTL 限制，然后写一个 C++23 的 wrapper 封装 cache 相关的请求逻辑。</p>
+            </div>
+            <div class="reactions">
+              <span class="reaction reaction--active">
+                <span class="reaction__icon">👍</span>
+                <span class="reaction__count">1</span>
+              </span>
+            </div>
+            <button class="msg__react-btn" aria-label="添加表情" onclick="togglePicker(this)">✎</button>
+          </div>
+        </div>
+
+        <div class="section-label">Lead streaming with cursor</div>
+
+        <div class="msg msg--lead">
+          <span class="avatar avatar--lead"><em>L</em></span>
+          <div class="msg__col">
+            <div class="msg__head">
+              <span class="msg__name">Lead</span>
+              <span class="msg__dot">·</span>
+              <span>22:14</span>
+            </div>
+            <div class="msg__body">
+              <p>好的，我把这个任务拆分一下。文档查询交给 Research，C++ wrapper 交给 Coder。<span class="streaming-cursor"></span></p>
+            </div>
+            <div class="reactions">
+              <span class="reaction">
+                <span class="reaction__icon">🔥</span>
+                <span class="reaction__count">2</span>
+              </span>
+              <span class="reaction">
+                <span class="reaction__icon">💡</span>
+                <span class="reaction__count">1</span>
+              </span>
+            </div>
+            <button class="msg__react-btn" aria-label="添加表情" onclick="togglePicker(this)">✎</button>
+          </div>
+        </div>
+
+        <div class="section-label">Typing indicator — ink dots</div>
+
+        <div class="typing">
+          <span class="typing__avatar avatar--team"><em>R</em></span>
+          <div class="typing__col">
+            <div class="typing__head">
+              <span class="typing__name">Research</span>
+              <span class="msg__dot">·</span>
+              <span>正在输入</span>
+            </div>
+            <div class="typing__indicator">
+              <span class="typing__dot"></span>
+              <span class="typing__dot"></span>
+              <span class="typing__dot"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label">Teammate reply — margin annotation reactions</div>
+
+        <div class="msg msg--team">
+          <span class="avatar avatar--team"><em>R</em></span>
+          <div class="msg__col">
+            <div class="msg__head">
+              <span class="msg__name">Research</span>
+              <span class="msg__dot">·</span>
+              <span>22:15</span>
+            </div>
+            <div class="msg__body">
+              <p>查到了。Anthropic 在 2024 年 11 月更新了 prompt caching 的 TTL：从原来的 5 分钟延长到了 <strong>10 分钟</strong>。SSE 请求中设置 <code>cache_control: { type: "ephemeral" }</code> 即可启用。</p>
+            </div>
+            <div class="reactions">
+              <span class="reaction reaction--active">
+                <span class="reaction__icon">✅</span>
+                <span class="reaction__count">1</span>
+              </span>
+              <span class="reaction">
+                <span class="reaction__icon">📚</span>
+                <span class="reaction__count">1</span>
+              </span>
+            </div>
+            <button class="msg__react-btn" aria-label="添加表情" onclick="togglePicker(this)">✎</button>
+          </div>
+        </div>
+
+        <div class="msg msg--team">
+          <span class="avatar avatar--team"><em>C</em></span>
+          <div class="msg__col">
+            <div class="msg__head">
+              <span class="msg__name">Coder</span>
+              <span class="msg__dot">·</span>
+              <span>22:17</span>
+            </div>
+            <div class="msg__body">
+              <p>Wrapper 写好了。用了 <code>std::expected</code> 做错误处理，<code>stdexec</code> 做异步调度。Cache header 通过 <code>cache_control</code> 字段注入。</p>
+            </div>
+            <div class="reactions">
+              <span class="reaction">
+                <span class="reaction__icon">🚀</span>
+                <span class="reaction__count">1</span>
+              </span>
+            </div>
+            <button class="msg__react-btn" aria-label="添加表情" onclick="togglePicker(this)">✎</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <footer class="chat-footer">
+      <div class="chat-footer__inner">
+        <div class="status-row" aria-live="polite">
+          <span class="item">
+            <span class="dot-blink"></span>
+            <span>lead 回复中 · 12s</span>
+          </span>
+          <span class="sep">·</span>
+          <span class="item">2 tools running</span>
+          <span class="sep">·</span>
+          <span class="item">2 teammates active</span>
+          <span class="sep">·</span>
+          <span class="item">4,831 / 200k tokens</span>
+          <span class="item" style="margin-left:auto;">Esc 中断</span>
+        </div>
+        <form class="send-bar" onsubmit="event.preventDefault()">
+          <button type="button" class="send-bar__attach" aria-label="添加附件">+</button>
+          <textarea class="send-bar__input" rows="1" placeholder="对 lead 说点什么 · Shift+Enter 换行"></textarea>
+          <button type="submit" class="send-bar__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+        </form>
+      </div>
+    </footer>
+  </section>
+
+  <div class="divider"></div>
+  <aside class="right-panel" style="display:none;"></aside>
+</div>
+
+<div class="demo-controls">
+  <button class="demo-btn" onclick="addTeammate()">+ Add teammate</button>
+  <button class="demo-btn" onclick="toggleTheme()">Toggle theme</button>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  html.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+
+function selectCard(el) {
+  document.querySelectorAll('.team-card').forEach(c => c.setAttribute('aria-current', 'false'));
+  el.setAttribute('aria-current', 'true');
+}
+
+function addTeammate() {
+  const card = document.getElementById('new-teammate');
+  if (card.style.display === 'none') {
+    card.style.display = '';
+    card.classList.remove('team-card--entering');
+    void card.offsetWidth;
+    card.classList.add('team-card--entering');
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+function togglePicker(btn) {
+  document.querySelectorAll('.reaction-picker.is-open').forEach(p => p.remove());
+  const picker = document.createElement('div');
+  picker.className = 'reaction-picker is-open';
+  picker.innerHTML = [
+    '👍', '🔥', '💡', '✅', '📚', '🚀', '❓', '👀'
+  ].map(icon => `<button class="reaction-picker__item" onclick="addReaction(this, '${icon}')">${icon}</button>`).join('');
+  btn.parentElement.style.position = 'relative';
+  btn.parentElement.appendChild(picker);
+  setTimeout(() => {
+    document.addEventListener('click', function close(e) {
+      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+    });
+  }, 10);
+}
+
+function addReaction(btn, icon) {
+  const reactionsEl = btn.closest('.msg__col').querySelector('.reactions');
+  if (!reactionsEl) return;
+  const existing = [...reactionsEl.querySelectorAll('.reaction__icon')].find(el => el.textContent === icon);
+  if (existing) {
+    const countEl = existing.nextElementSibling;
+    countEl.textContent = parseInt(countEl.textContent) + 1;
+    existing.closest('.reaction').classList.add('reaction--active');
+  } else {
+    const r = document.createElement('span');
+    r.className = 'reaction reaction--active';
+    r.innerHTML = `<span class="reaction__icon">${icon}</span><span class="reaction__count">1</span>`;
+    reactionsEl.appendChild(r);
+  }
+  btn.closest('.reaction-picker').remove();
+}
+</script>
+
+</body>
+</html>

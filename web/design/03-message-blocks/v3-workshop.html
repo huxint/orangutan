@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Message Blocks · V3 · Workshop（工具台） · Orangutan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400;1,6..72,500;1,6..72,600&family=Spline+Sans+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============ TOKENS ============ */
+:root {
+  --surface: oklch(94.5% 0.018 78);
+  --surface-raised: oklch(92% 0.022 76);
+  --surface-sunken: oklch(88% 0.028 74);
+  --content: oklch(22% 0.035 255);
+  --content-muted: oklch(44% 0.028 255);
+  --content-soft: oklch(62% 0.020 250);
+  --signal: oklch(55% 0.13 42);
+  --signal-tint: oklch(89% 0.035 50);
+  --signal-deep: oklch(40% 0.12 38);
+  --accent: oklch(44% 0.08 150);
+  --accent-tint: oklch(88% 0.038 145);
+  --accent-deep: oklch(30% 0.06 150);
+  --rule: oklch(72% 0.018 75);
+  --rule-soft: oklch(84% 0.015 75);
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-1: 0 1px 0 oklch(22% 0.035 255 / .05), 0 1px 2px oklch(22% 0.035 255 / .04);
+  --text-caption: 12px; --text-meta: 13px; --text-ui: 14px; --text-body: 17px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration-fast: 120ms; --duration-med: 200ms;
+}
+[data-theme="dark"] {
+  --surface: oklch(20% 0.028 260);
+  --surface-raised: oklch(26% 0.025 260);
+  --surface-sunken: oklch(16% 0.025 260);
+  --content: oklch(92% 0.020 80);
+  --content-muted: oklch(70% 0.015 80);
+  --content-soft: oklch(52% 0.012 75);
+  --signal: oklch(68% 0.14 42);
+  --signal-tint: oklch(32% 0.08 40);
+  --signal-deep: oklch(82% 0.10 45);
+  --accent: oklch(60% 0.10 150);
+  --accent-tint: oklch(28% 0.06 150);
+  --accent-deep: oklch(78% 0.09 145);
+  --rule: oklch(36% 0.02 260);
+  --rule-soft: oklch(28% 0.02 260);
+  --shadow-1: 0 1px 0 oklch(0% 0 0 / .24), 0 1px 2px oklch(0% 0 0 / .32);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--surface); color: var(--content);
+  font-family: var(--font-body); font-size: var(--text-body);
+  line-height: 1.62; text-wrap: pretty;
+  font-feature-settings: 'kern', 'liga', 'calt';
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+code, pre, .mono, [class*="mono"] {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum', 'zero';
+  letter-spacing: -.002em;
+}
+::selection { background: var(--signal-tint); color: var(--signal-deep); }
+
+/* ============ PAGE SHELL ============ */
+.page { height: 100vh; display: grid; grid-template-rows: 48px 1fr; }
+.page__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--surface);
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: .06em; color: var(--content-muted);
+  text-transform: uppercase;
+}
+.page__title { display: flex; align-items: baseline; gap: var(--space-3); }
+.page__title em {
+  font-family: var(--font-display); font-style: italic;
+  font-weight: 600; font-size: 16px;
+  letter-spacing: 0; color: var(--content); text-transform: none;
+}
+.page__tools { display: flex; gap: var(--space-3); align-items: center; }
+.page__tools button {
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--content-muted); background: transparent;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  padding: 4px 10px; cursor: pointer;
+  transition: color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease);
+}
+.page__tools button:hover { color: var(--content); border-color: var(--content); }
+
+.chat-scroll { overflow-y: auto; padding: var(--space-6) var(--space-5); }
+.chat-column { max-width: 740px; margin: 0 auto; }
+
+/* ============ MESSAGE SHELL ============ */
+.msg { display: grid; grid-template-columns: 52px 1fr; gap: var(--space-4); padding: var(--space-5) 0; }
+.msg + .msg { border-top: 1px dashed var(--rule-soft); }
+.avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--surface-sunken); color: var(--content);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-style: italic;
+  font-weight: 500; font-size: 24px;
+  box-shadow: inset 0 0 0 1px oklch(22% 0.035 255 / .12);
+  flex-shrink: 0;
+}
+.avatar--user { box-shadow: inset 0 0 0 1px oklch(22% 0.035 255 / .18); }
+.avatar--lead {
+  background: var(--signal-tint); color: var(--signal-deep);
+  box-shadow: inset 0 0 0 1px oklch(55% 0.13 42 / .35);
+}
+.avatar--team {
+  background: var(--accent-tint); color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px oklch(44% 0.08 150 / .4);
+}
+.msg__head {
+  display: flex; align-items: baseline; gap: var(--space-3);
+  font-family: var(--font-mono); font-size: var(--text-meta);
+  color: var(--content-muted); letter-spacing: .02em;
+  margin-bottom: var(--space-3); flex-wrap: wrap;
+}
+.msg__name {
+  color: var(--content); font-family: var(--font-display);
+  font-style: italic; font-weight: 600; font-size: 16px; letter-spacing: 0;
+}
+.msg__role {
+  color: var(--signal-deep); font-family: var(--font-display);
+  font-style: italic; font-size: 14px; font-weight: 400;
+}
+.msg__role--team { color: var(--accent-deep); }
+.msg__dot { color: var(--rule); }
+.msg__body p { margin: var(--space-3) 0; max-width: 64ch; }
+.msg__body p:first-child { margin-top: 0; }
+.msg__body p:last-child { margin-bottom: 0; }
+.msg__body p code {
+  font-family: var(--font-mono); font-size: .88em;
+  background: var(--surface-raised);
+  padding: 1px 6px; border-radius: var(--radius-sm); color: var(--content);
+}
+.msg__body em { font-style: italic; }
+.msg__body strong { font-weight: 600; }
+
+/* ============ V3 · 工具台核心（toolbar + icon actions） ============ */
+
+.icon {
+  width: 14px; height: 14px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.4;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  display: block;
+}
+.icon-lg { width: 16px; height: 16px; }
+
+.block {
+  margin: var(--space-4) 0;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.block__bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 8px var(--space-3) 8px var(--space-4);
+  background: var(--surface-raised);
+  color: var(--content-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .02em;
+  border-bottom: 1px solid var(--rule-soft);
+  min-height: 38px;
+}
+/* 折叠状态下隐藏 bar 底边线 · 防止出现悬空线 */
+.block:has(> .think-v3:not(.is-open)) .block__bar,
+.block:has(> .tool-v3:not(.is-open)) .block__bar {
+  border-bottom: none;
+}
+.block__lhs { display: flex; align-items: center; gap: var(--space-3); min-width: 0; flex: 1; }
+.block__chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--content-muted);
+  border: 1px solid var(--rule);
+  line-height: 1;
+  white-space: nowrap;
+}
+.block__name {
+  color: var(--content);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.block__meta {
+  color: var(--content-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.block__meta .ok { color: var(--accent-deep); }
+.block__meta .err { color: var(--signal-deep); }
+
+.block__rhs { display: flex; align-items: center; gap: 2px; }
+.block__btn {
+  background: transparent; border: none; cursor: pointer;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--content-muted);
+  transition: color var(--duration-fast) var(--ease),
+              background var(--duration-fast) var(--ease);
+}
+.block__btn:hover {
+  color: var(--content);
+  background: color-mix(in oklch, var(--rule-soft) 80%, transparent);
+}
+.block__btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+/* 状态 dot */
+.dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot--ok { background: var(--accent); }
+.dot--err { background: var(--signal); }
+.dot--run {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: pulse 1.4s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 oklch(from var(--accent) l c h / .4); }
+  100% { box-shadow: 0 0 0 8px oklch(from var(--accent) l c h / 0); }
+}
+
+/* ============ CODE · V3 · 工具台行号 ============ */
+.code-v3 {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.72;
+  overflow-x: auto;
+  tab-size: 2;
+  background: var(--surface);
+}
+.code-v3__gutter {
+  padding: var(--space-4) var(--space-2) var(--space-4) var(--space-3);
+  margin: 0;
+  text-align: right;
+  color: var(--content-soft);
+  border-right: 1px solid var(--rule-soft);
+  user-select: none;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.72;
+  background: var(--surface);
+}
+.code-v3__body {
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  white-space: pre;
+  color: var(--content);
+  overflow-x: auto;
+  background: var(--surface);
+  font-size: var(--text-meta);
+  line-height: 1.72;
+}
+.code-v3 .tok-kw { color: var(--signal-deep); font-weight: 500; }
+.code-v3 .tok-str { color: var(--accent-deep); }
+.code-v3 .tok-num { color: var(--accent-deep); }
+.code-v3 .tok-fn { color: var(--content); font-weight: 500; }
+.code-v3 .tok-com { color: var(--content-soft); font-style: italic; }
+.code-v3 .tok-type { color: var(--signal-deep); }
+
+/* ============ TOOL · V3 · 默认全折叠（只剩 bar），click 展开 ============ */
+.tool-v3 {
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.7;
+  color: var(--content);
+  white-space: pre-wrap;
+  display: none;
+}
+.tool-v3.is-open { display: block; }
+.tool-v3 .arrow { color: var(--content-muted); }
+
+/* ============ DIFF · V3 · Unified + Split toggle ============ */
+.diff-v3__toggle {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.diff-v3__toggle button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--content-muted);
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color var(--duration-fast) var(--ease),
+              background var(--duration-fast) var(--ease);
+}
+.diff-v3__toggle button[aria-pressed="true"] {
+  color: var(--content);
+  background: var(--surface-sunken);
+}
+.diff-v3__toggle button:hover:not([aria-pressed="true"]) { color: var(--content); }
+
+.diff-v3 { font-family: var(--font-mono); font-size: var(--text-meta); line-height: 1.74; }
+.diff-v3__hunk {
+  padding: 6px var(--space-4);
+  background: var(--surface-raised);
+  color: var(--content-soft);
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+.diff-v3__unified .diff__line,
+.diff-v3__split .diff__line {
+  display: grid;
+  padding: 0 var(--space-4);
+  tab-size: 2;
+}
+.diff-v3__unified .diff__line { grid-template-columns: 48px 1fr; }
+.diff-v3__split  {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 0;
+}
+.diff-v3__split .col {
+  min-width: 0;
+  overflow-x: auto;
+}
+.diff-v3__split .col__head {
+  padding: 6px var(--space-4);
+  background: var(--surface-raised);
+  color: var(--content-soft);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.diff-v3__split .col--left .col__head { color: var(--signal-deep); }
+.diff-v3__split .col--right .col__head { color: var(--accent-deep); }
+.diff-v3__split .col__sep { background: var(--rule-soft); }
+.diff-v3__split .diff__line { grid-template-columns: 44px 1fr; }
+.diff__gutter {
+  color: var(--content-soft);
+  text-align: right;
+  padding-right: var(--space-3);
+  user-select: none;
+}
+.diff__line--ctx .diff__gutter::before { content: '  '; }
+.diff__line--add {
+  background: color-mix(in oklch, var(--accent-tint) 50%, transparent);
+}
+.diff__line--add .diff__gutter::before { content: '+ '; color: var(--accent-deep); }
+.diff__line--del {
+  background: color-mix(in oklch, var(--signal-tint) 50%, transparent);
+}
+.diff__line--del .diff__gutter::before { content: '- '; color: var(--signal-deep); }
+.diff__line--empty {
+  background: color-mix(in oklch, var(--surface-raised) 50%, transparent);
+  color: var(--content-soft);
+}
+
+/* 切换动画 */
+.diff-v3[data-view="unified"] .diff-v3__split { display: none; }
+.diff-v3[data-view="split"] .diff-v3__unified { display: none; }
+
+/* ============ INLINE DIFF ============ */
+.idiff { font-family: var(--font-body); line-height: 1.72; }
+.idiff ins {
+  background: color-mix(in oklch, var(--accent-tint) 80%, transparent);
+  text-decoration: none; color: var(--accent-deep);
+  padding: 1px 5px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: .9em;
+}
+.idiff del {
+  background: color-mix(in oklch, var(--signal-tint) 80%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: var(--signal);
+  color: var(--signal-deep);
+  padding: 1px 5px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: .9em;
+  margin-right: 3px;
+}
+
+/* ============ THINKING · V3 · 默认全折叠（只剩 bar），click 展开 ============ */
+.think-v3 {
+  color: var(--content-muted);
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-ui);
+  line-height: 1.68;
+  padding: var(--space-3) var(--space-5);
+  display: none;
+}
+.think-v3.is-open { display: block; }
+
+/* ============ REPLY QUOTE · V3 · 手稿注脚 + 放大引号 ============
+   薄 rule 行显示 meta（Re · lead · 时间），下方一行大号 Newsreader
+   斜体开引号 + 原文摘录。无框、无背景、无左竖条。 */
+.rq-v3 {
+  margin: 0 0 var(--space-5) 0;
+}
+.rq-v3__head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.rq-v3__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--content-soft);
+  white-space: nowrap;
+}
+.rq-v3__rule {
+  height: 1px;
+  background: var(--rule-soft);
+}
+.rq-v3__body {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  padding: 0 var(--space-2);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease);
+  border-radius: var(--radius-sm);
+}
+.rq-v3__body:hover {
+  background: color-mix(in oklch, var(--surface-raised) 50%, transparent);
+}
+.rq-v3__mark {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 48px;
+  line-height: .82;
+  color: var(--content-soft);
+  text-align: center;
+  user-select: none;
+  letter-spacing: -.02em;
+}
+.rq-v3__text {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.58;
+  color: var(--content-muted);
+  max-width: 60ch;
+  padding: 10px 0 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ============ MATH · V3 · toolbar 有 raw toggle ============ */
+.math-block {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 20px;
+  line-height: 1.45;
+  text-align: center;
+  padding: var(--space-5) var(--space-4);
+  color: var(--content);
+  letter-spacing: .005em;
+  overflow-x: auto;
+}
+.math-block .op { font-style: normal; }
+.math-block .var { font-style: italic; }
+.math-inline {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.04em;
+  padding: 0 2px;
+  color: var(--content);
+}
+
+/* ============ IMAGE · V3 ============ */
+.image-v3 {
+  overflow: hidden;
+}
+.image-v3__frame {
+  height: 200px;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    repeating-linear-gradient(135deg,
+      var(--surface-raised), var(--surface-raised) 6px,
+      var(--surface) 6px, var(--surface) 12px);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--content-soft);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-top: 1px dashed var(--rule);
+  border-bottom: 1px dashed var(--rule);
+}
+.image-v3__caption {
+  font-family: var(--font-body); font-style: italic;
+  font-size: var(--text-ui); color: var(--content-muted);
+  text-align: center;
+  padding: var(--space-3);
+}
+
+/* ============ SCROLLBAR ============ */
+.chat-scroll::-webkit-scrollbar { width: 10px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: var(--rule); border-radius: 4px; border: 2px solid var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page__bar">
+    <div class="page__title">
+      <span>§ 03 · MESSAGE BLOCKS ·</span>
+      <em>Workshop 工具台</em>
+    </div>
+    <div class="page__tools">
+      <button type="button" data-action="theme">切换主题</button>
+      <button type="button" data-action="expand-all">全部展开</button>
+    </div>
+  </header>
+
+  <main class="chat-scroll" id="chat">
+    <div class="chat-column">
+
+      <!-- MSG 1 · USER -->
+      <article class="msg msg--user">
+        <span class="avatar avatar--user">H</span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">Huxint</span>
+            <span class="msg__dot">·</span>
+            <span>22:14</span>
+          </div>
+          <div class="msg__body">
+            <p>帮我 audit 一下 <code>agent-loop</code> 里 memory 记录重复渲染的问题——我怀疑它在迭代里被反复调用。顺带查一下 Anthropic 文档里 prompt-caching 的 TTL 上限。</p>
+          </div>
+        </div>
+      </article>
+
+      <!-- MSG 2 · LEAD · thinking + text -->
+      <article class="msg">
+        <span class="avatar avatar--lead"><em>L</em></span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">lead</span>
+            <span class="msg__role">主协调</span>
+            <span class="msg__dot">·</span>
+            <span>22:14:03</span>
+            <span class="msg__dot">·</span>
+            <span>claude-opus-4-7</span>
+          </div>
+          <div class="msg__body">
+
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="dot dot--run" aria-hidden="true"></span>
+                  <span class="block__name">Thinking</span>
+                  <span class="block__meta">4 s <em>·</em> 218 tokens <em>·</em> streaming…</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" data-action="toggle-think" aria-label="展开思考">
+                    <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="think-v3">
+                用户同时给了两个任务：本地 audit（agent-loop 的 memory 调用）需要读源码，外部查询需要外网访问。audit 是我的强项——读 <code>agent-loop.cpp</code> 定位 memory_store_ 的调用点；查询应该委派给 research teammate，并发出去能节省至少 3 秒。先读源文件定位，再决定是把查询并发出去还是串行。
+              </div>
+            </div>
+
+            <p>好，本地 audit 我自己做；<em>文档查询</em> 我交给 research。</p>
+
+          </div>
+        </div>
+      </article>
+
+      <!-- MSG 3 · LEAD · tool + code + text -->
+      <article class="msg">
+        <span class="avatar avatar--lead"><em>L</em></span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">lead</span>
+            <span class="msg__role">主协调</span>
+            <span class="msg__dot">·</span>
+            <span>22:14:06</span>
+          </div>
+          <div class="msg__body">
+
+            <!-- TOOL · V3 -->
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="dot dot--ok" aria-hidden="true"></span>
+                  <span class="block__chip">tool</span>
+                  <span class="block__name">read_file</span>
+                  <span class="block__meta">src/agent/agent-loop.cpp <em>·</em> <span class="ok">ok</span> <em>·</em> 142 ms</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" data-action="toggle-tool" aria-label="展开/折叠">
+                    <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="复制">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="打开">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M7 17 17 7"/><polyline points="9 7 17 7 17 15"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="tool-v3">
+<span class="arrow">→</span> read 312 行
+<span class="arrow">→</span> 发现 MAX_ITERATIONS = 25 · memory_store_.search() 被调用于循环体（L141）
+<span class="arrow">→</span> hook_manager.pre_iteration 在 L128 · 每次都触发
+<span class="arrow">→</span> build_system_prompt 重复拼接 memory_section · 无缓存
+<span class="arrow">→</span> 估算单次请求浪费 ≥ 35 ms · 25 轮 ≥ 870 ms
+<span class="arrow">→</span> memory_store_.search_cache_ 在 L68 已存在但未被 consume
+<span class="arrow">→</span> 建议：在循环外预渲染 memory_section 一次</div>
+            </div>
+
+            <!-- CODE · V3 -->
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="block__chip">cpp</span>
+                  <span class="block__name">src/agent/agent-loop.cpp</span>
+                  <span class="block__meta">L138–L148 <em>·</em> 11 行</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" aria-label="在编辑器打开">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M7 17 17 7"/><polyline points="9 7 17 7 17 15"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="复制">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="code-v3">
+                <div class="code-v3__gutter">138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148</div>
+<pre class="code-v3__body"><span class="tok-com">// agent-loop.cpp · 问题代码</span>
+<span class="tok-kw">while</span> (iter &lt; MAX_ITERATIONS) {
+  <span class="tok-kw">auto</span> memory = memory_store_.<span class="tok-fn">search</span>(prompt);   <span class="tok-com">// ← 每轮重算</span>
+  <span class="tok-kw">const</span> <span class="tok-kw">auto</span>&amp; section = <span class="tok-fn">render_prompt_memory_section</span>(memory);
+  <span class="tok-fn">build_system_prompt</span>(section);
+  <span class="tok-kw">auto</span> resp = provider_-&gt;<span class="tok-fn">send</span>(...);
+  <span class="tok-kw">if</span> (resp.stop_reason == <span class="tok-type">StopReason</span>::end_turn)
+    <span class="tok-kw">break</span>;
+  ++iter;
+}</pre>
+              </div>
+            </div>
+
+            <p>问题在 142 行——<code>memory_store_.search()</code> 在循环里反复调用。同一轮 prompt 的检索结果 <strong>不变</strong>，应该在进入循环前预渲染一次。</p>
+
+          </div>
+        </div>
+      </article>
+
+      <!-- MSG 4 · LEAD · diff + inline diff -->
+      <article class="msg">
+        <span class="avatar avatar--lead"><em>L</em></span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">lead</span>
+            <span class="msg__role">主协调</span>
+            <span class="msg__dot">·</span>
+            <span>22:14:11</span>
+          </div>
+          <div class="msg__body">
+
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="block__chip">diff</span>
+                  <span class="block__name">agent-loop.cpp</span>
+                  <span class="block__meta">1 hunk <em>·</em> <span class="ok">+3</span> <em>·</em> <span class="err">−3</span></span>
+                </div>
+                <div class="diff-v3__toggle" role="tablist" aria-label="diff 视图">
+                  <button type="button" aria-pressed="true" data-view="unified">unified</button>
+                  <button type="button" aria-pressed="false" data-view="split">split</button>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" aria-label="复制">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="在编辑器打开">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M7 17 17 7"/><polyline points="9 7 17 7 17 15"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="diff-v3" data-view="unified">
+                <div class="diff-v3__hunk">@@ src/agent/agent-loop.cpp · L138–L141 @@</div>
+
+                <!-- unified -->
+                <div class="diff-v3__unified">
+                  <div class="diff__line diff__line--del"><span class="diff__gutter">138</span><span>while (iter &lt; MAX_ITERATIONS) {</span></div>
+                  <div class="diff__line diff__line--del"><span class="diff__gutter">139</span><span>  auto memory = memory_store_.search(prompt);</span></div>
+                  <div class="diff__line diff__line--del"><span class="diff__gutter">140</span><span>  const auto&amp; section = render_prompt_memory_section(memory);</span></div>
+                  <div class="diff__line diff__line--add"><span class="diff__gutter">138</span><span>auto memory = memory_store_.search(prompt);</span></div>
+                  <div class="diff__line diff__line--add"><span class="diff__gutter">139</span><span>const auto&amp; section = render_prompt_memory_section(memory);</span></div>
+                  <div class="diff__line diff__line--add"><span class="diff__gutter">140</span><span>while (iter &lt; MAX_ITERATIONS) {</span></div>
+                  <div class="diff__line diff__line--ctx"><span class="diff__gutter">141</span><span>  build_system_prompt(section);</span></div>
+                </div>
+
+                <!-- split -->
+                <div class="diff-v3__split">
+                  <div class="col col--left">
+                    <div class="col__head">before</div>
+                    <div class="diff__line diff__line--del"><span class="diff__gutter">138</span><span>while (iter &lt; MAX_ITERATIONS) {</span></div>
+                    <div class="diff__line diff__line--del"><span class="diff__gutter">139</span><span>  auto memory = memory_store_.search(prompt);</span></div>
+                    <div class="diff__line diff__line--del"><span class="diff__gutter">140</span><span>  const auto&amp; section = …(memory);</span></div>
+                    <div class="diff__line diff__line--ctx"><span class="diff__gutter">141</span><span>  build_system_prompt(section);</span></div>
+                  </div>
+                  <div class="col__sep"></div>
+                  <div class="col col--right">
+                    <div class="col__head">after</div>
+                    <div class="diff__line diff__line--add"><span class="diff__gutter">138</span><span>auto memory = memory_store_.search(prompt);</span></div>
+                    <div class="diff__line diff__line--add"><span class="diff__gutter">139</span><span>const auto&amp; section = …(memory);</span></div>
+                    <div class="diff__line diff__line--add"><span class="diff__gutter">140</span><span>while (iter &lt; MAX_ITERATIONS) {</span></div>
+                    <div class="diff__line diff__line--ctx"><span class="diff__gutter">141</span><span>  build_system_prompt(section);</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p class="idiff">顺手把 <del>MAX_ITERATIONS=20</del><ins>MAX_ITERATIONS=25</ins> 也提上来——上轮 provider logs 里看到 20 轮不够，研究 agent 经常卡在第 19 轮。</p>
+
+          </div>
+        </div>
+      </article>
+
+      <!-- MSG 5 · TEAMMATE · reply-quote + math -->
+      <article class="msg">
+        <span class="avatar avatar--team"><em>R</em></span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">research</span>
+            <span class="msg__role msg__role--team">委派</span>
+            <span class="msg__dot">·</span>
+            <span>22:14:12</span>
+            <span class="msg__dot">·</span>
+            <span>claude-sonnet-4-6</span>
+          </div>
+          <div class="msg__body">
+
+            <div class="rq-v3">
+              <div class="rq-v3__head">
+                <span class="rq-v3__meta">Re · lead · 22:14</span>
+                <span class="rq-v3__rule"></span>
+              </div>
+              <div class="rq-v3__body" role="link" tabindex="0" aria-label="跳回原消息">
+                <span class="rq-v3__mark" aria-hidden="true">&ldquo;</span>
+                <span class="rq-v3__text">查一下 Anthropic 文档里 prompt-caching 的 TTL 上限——我怀疑 ephemeral 的 5 分钟上限在实战里会导致很多缓存 miss。</span>
+              </div>
+            </div>
+
+            <p>Anthropic 官方：prompt-caching 使用 <code>cache_control: {"type":"ephemeral"}</code>，默认 <strong>5 分钟 TTL</strong>，到期后必须重写缓存块。实际命中率由请求到达率决定——</p>
+
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="block__chip">math</span>
+                  <span class="block__name">预期命中率</span>
+                  <span class="block__meta">DollarBlock → Block <em>·</em> 规范化后 <em>·</em> KaTeX</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" aria-label="查看 LaTeX 源码">
+                    <svg class="icon" viewBox="0 0 24 24"><polyline points="8 17 4 12 8 7"/><polyline points="16 7 20 12 16 17"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="复制 LaTeX">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="math-block">
+                <span class="var">P</span><span class="op">(hit)</span> <span class="op">=</span> 𝔼 <span class="op">[</span> <span class="op">exp</span><span class="op">(</span>−<span class="var">λ</span> · Δ<span class="var">t</span><span class="op">)</span> <span class="op">]</span> · <span class="op">(</span>1 − <span class="var">ε</span><span class="op">)</span>
+              </div>
+            </div>
+
+            <p>其中 <span class="math-inline">λ</span> 是请求到达率（/s），<span class="math-inline">Δt</span> 是连续请求间隔，<span class="math-inline">ε</span> 是缓存失效概率（服务端偶尔 evict）。设 <span class="math-inline">λ = 0.3/s, TTL = 300s</span>，预期 hit 率 <span class="math-inline">≈ 0.998</span>。</p>
+
+          </div>
+        </div>
+      </article>
+
+      <!-- MSG 6 · TEAMMATE · code + image -->
+      <article class="msg">
+        <span class="avatar avatar--team"><em>R</em></span>
+        <div class="msg__col">
+          <div class="msg__head">
+            <span class="msg__name">research</span>
+            <span class="msg__role msg__role--team">委派</span>
+            <span class="msg__dot">·</span>
+            <span>22:14:15</span>
+          </div>
+          <div class="msg__body">
+
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="block__chip">python</span>
+                  <span class="block__name">expected_hit_rate.py</span>
+                  <span class="block__meta">7 行</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" aria-label="运行">
+                    <svg class="icon" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                  </button>
+                  <button class="block__btn" aria-label="复制">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="code-v3">
+                <div class="code-v3__gutter">1
+2
+3
+4
+5
+6
+7</div>
+<pre class="code-v3__body"><span class="tok-kw">import</span> math
+
+<span class="tok-kw">def</span> <span class="tok-fn">expected_hit_rate</span>(lam: <span class="tok-type">float</span>, ttl: <span class="tok-type">float</span>) -&gt; <span class="tok-type">float</span>:
+    <span class="tok-str">"""Fraction of calls that land inside the ephemeral window."""</span>
+    <span class="tok-kw">return</span> <span class="tok-num">1</span> - math.<span class="tok-fn">exp</span>(-lam * ttl)
+
+<span class="tok-kw">assert</span> <span class="tok-fn">expected_hit_rate</span>(<span class="tok-num">0.3</span>, <span class="tok-num">300</span>) &gt; <span class="tok-num">0.99</span></pre>
+              </div>
+            </div>
+
+            <p>把一条曲线也画一下——请求到达率从 0.05 到 1.0 /s，命中率趋平的拐点在 <span class="math-inline">λ · TTL ≈ 4</span> 附近。</p>
+
+            <div class="block">
+              <div class="block__bar">
+                <div class="block__lhs">
+                  <span class="dot dot--run" aria-hidden="true"></span>
+                  <span class="block__chip">image</span>
+                  <span class="block__name">hit-rate-curve.svg</span>
+                  <span class="block__meta">480 × 220 <em>·</em> generating…</span>
+                </div>
+                <div class="block__rhs">
+                  <button class="block__btn" aria-label="下载" disabled style="opacity:.38">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 4v12"/><polyline points="8 12 12 16 16 12"/><path d="M4 20h16"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="image-v3">
+                <div class="image-v3__frame">image · 480 × 220</div>
+                <div class="image-v3__caption">—— 预期命中率 vs 请求到达率 · 生成中</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  document.querySelector('[data-action="theme"]').addEventListener('click', () => {
+    const html = document.documentElement;
+    html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+
+  document.querySelectorAll('[data-action="toggle-think"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const block = btn.closest('.block');
+      const think = block?.querySelector('.think-v3');
+      if (!think) return;
+      think.classList.toggle('is-open');
+      const svg = btn.querySelector('svg');
+      if (svg) svg.style.transform = think.classList.contains('is-open') ? 'rotate(180deg)' : 'rotate(0)';
+    });
+  });
+
+  document.querySelectorAll('[data-action="toggle-tool"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const block = btn.closest('.block');
+      const tool = block?.querySelector('.tool-v3');
+      if (!tool) return;
+      tool.classList.toggle('is-open');
+      const svg = btn.querySelector('svg');
+      if (svg) svg.style.transform = tool.classList.contains('is-open') ? 'rotate(180deg)' : 'rotate(0)';
+    });
+  });
+
+  // diff view toggle
+  document.querySelectorAll('.diff-v3__toggle').forEach(toggle => {
+    toggle.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        const block = btn.closest('.block');
+        const diff = block?.querySelector('.diff-v3');
+        if (!diff) return;
+        diff.dataset.view = view;
+        toggle.querySelectorAll('button').forEach(b => {
+          b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false');
+        });
+      });
+    });
+  });
+
+  document.querySelector('[data-action="expand-all"]').addEventListener('click', () => {
+    document.querySelectorAll('.think-v3, .tool-v3').forEach(el => el.classList.add('is-open'));
+    document.querySelectorAll('[data-action="toggle-think"] svg, [data-action="toggle-tool"] svg').forEach(svg => {
+      svg.style.transform = 'rotate(180deg)';
+    });
+  });
+</script>
+</body>
+</html>

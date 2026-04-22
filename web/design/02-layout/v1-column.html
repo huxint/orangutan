@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-right="closed">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Layout · V1 · 对称三栏 · Orangutan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400;1,6..72,500;1,6..72,600&family=Spline+Sans+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --surface: oklch(94.5% 0.018 78);
+  --surface-raised: oklch(92% 0.022 76);
+  --surface-sunken: oklch(88% 0.028 74);
+  --content: oklch(22% 0.035 255);
+  --content-muted: oklch(44% 0.028 255);
+  --content-soft: oklch(62% 0.020 250);
+  --signal: oklch(55% 0.13 42);
+  --signal-tint: oklch(89% 0.035 50);
+  --signal-deep: oklch(40% 0.12 38);
+  --accent: oklch(44% 0.08 150);
+  --accent-tint: oklch(88% 0.038 145);
+  --accent-deep: oklch(30% 0.06 150);
+  --rule: oklch(72% 0.018 75);
+  --rule-soft: oklch(84% 0.015 75);
+  --font-display:'Newsreader',Georgia,serif;
+  --font-body:'Newsreader',Georgia,serif;
+  --font-mono:'Spline Sans Mono',ui-monospace,monospace;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --space-5:24px; --space-6:32px; --space-7:48px; --space-8:64px;
+  --radius-sm:4px; --radius-md:8px; --radius-lg:12px;
+  --shadow-1: 0 1px 0 oklch(22% 0.035 255 / .05), 0 1px 2px oklch(22% 0.035 255 / .04);
+  --shadow-2: 0 2px 4px oklch(22% 0.035 255 / .06), 0 1px 0 oklch(22% 0.035 255 / .05);
+  --text-caption:12px; --text-meta:13px; --text-ui:14px; --text-body:17px;
+  --ease:cubic-bezier(0.2, 0.7, 0.2, 1);
+  --left-w:260px;
+  --right-w-open:320px;
+  --right-w-closed:0px;
+  --nav-h:52px;
+}
+[data-theme="dark"]{
+  --surface: oklch(20% 0.028 260);
+  --surface-raised: oklch(26% 0.025 260);
+  --surface-sunken: oklch(16% 0.025 260);
+  --content: oklch(92% 0.020 80);
+  --content-muted: oklch(70% 0.015 80);
+  --content-soft: oklch(52% 0.012 75);
+  --signal: oklch(68% 0.14 42);
+  --signal-tint: oklch(32% 0.08 40);
+  --signal-deep: oklch(82% 0.10 45);
+  --accent: oklch(60% 0.10 150);
+  --accent-tint: oklch(28% 0.06 150);
+  --accent-deep: oklch(78% 0.09 145);
+  --rule: oklch(36% 0.02 260);
+  --rule-soft: oklch(28% 0.02 260);
+  --shadow-1: 0 1px 0 oklch(0% 0 0 / .24), 0 1px 2px oklch(0% 0 0 / .32);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--surface);color:var(--content);font-family:var(--font-body);font-size:var(--text-body);line-height:1.6;-webkit-font-smoothing:antialiased;text-wrap:pretty;}
+
+.app{display:flex;flex-direction:column;height:100vh;}
+
+/* ============ TOP NAV ============ */
+.top-nav{
+  height:var(--nav-h);flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--space-5);
+  background:var(--surface);
+  border-bottom:1px solid var(--rule-soft);
+}
+.top-nav__left{display:flex;align-items:center;gap:var(--space-4);}
+.logo{
+  width:28px;height:28px;border-radius:50%;
+  background:var(--signal-tint);
+  border:1px solid oklch(55% 0.13 42 / .35);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-style:italic;font-weight:600;
+  color:var(--signal-deep);font-size:14px;
+}
+.wordmark{
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:20px;letter-spacing:-.01em;
+}
+.wordmark em{color:var(--signal-deep);font-weight:400;}
+.session-chip{
+  font-family:var(--font-mono);font-size:var(--text-caption);
+  background:var(--surface-raised);color:var(--content-muted);
+  padding:4px 10px;border-radius:999px;
+  display:flex;align-items:center;gap:var(--space-2);
+}
+.session-chip .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);}
+
+.top-nav__right{display:flex;align-items:center;gap:var(--space-2);}
+.nav-chip{
+  font-family:var(--font-mono);font-size:11px;font-weight:500;
+  background:transparent;color:var(--content-muted);
+  padding:6px 10px;border:1px solid transparent;border-radius:var(--radius-sm);
+  cursor:pointer;display:flex;align-items:center;gap:6px;
+  transition:background .12s,color .12s,border-color .12s;
+}
+.nav-chip:hover{background:var(--surface-raised);color:var(--content);}
+.nav-chip.primary{color:var(--content);font-weight:500;}
+.nav-chip.primary .num{color:var(--accent-deep);}
+.nav-divider{width:1px;height:16px;background:var(--rule-soft);margin:0 var(--space-2);}
+.icon-btn{
+  width:32px;height:32px;border-radius:var(--radius-sm);
+  background:transparent;border:none;color:var(--content-muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-mono);font-size:13px;
+  transition:background .12s,color .12s;
+}
+.icon-btn:hover{background:var(--surface-raised);color:var(--content);}
+.user-avatar{
+  width:32px;height:32px;border-radius:50%;
+  background:var(--surface-sunken);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-style:italic;font-weight:600;
+  color:var(--content);font-size:14px;
+  cursor:pointer;
+}
+
+/* ============ WORKSPACE ============ */
+.workspace{
+  flex:1;
+  display:grid;
+  grid-template-columns: var(--left-w) 1px 1fr 1px var(--right-w-closed);
+  overflow:hidden;
+  transition:grid-template-columns .32s var(--ease);
+}
+[data-right="open"] .workspace{
+  grid-template-columns: var(--left-w) 1px 1fr 1px var(--right-w-open);
+}
+
+/* ============ DIVIDER ============ */
+.divider{
+  background:var(--rule-soft);position:relative;
+}
+.divider::before{
+  content:'';position:absolute;inset:0 -4px;cursor:col-resize;
+}
+.divider::after{
+  content:'';position:absolute;top:50%;left:50%;
+  width:3px;height:32px;border-radius:2px;
+  background:var(--rule);
+  transform:translate(-50%,-50%) scaleX(0);
+  transition:transform .2s var(--ease);
+}
+.divider:hover::after{transform:translate(-50%,-50%) scaleX(1);}
+
+/* ============ LEFT PANEL (card variant · from V3) ============ */
+.left-panel{
+  overflow-y:auto;
+  padding:var(--space-4);
+  background:var(--surface);
+  min-width:200px;
+}
+.panel-header{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:0 var(--space-1) var(--space-3);
+  border-bottom:1px solid var(--rule-soft);
+  margin-bottom:var(--space-4);
+}
+.panel-header__title{
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:18px;letter-spacing:-.01em;
+}
+.panel-header__sub{
+  font-family:var(--font-mono);font-size:11px;color:var(--content-muted);letter-spacing:.04em;
+}
+
+.team-card{
+  background:var(--surface);border:1px solid var(--rule-soft);border-radius:var(--radius-md);
+  padding:var(--space-3);margin-bottom:var(--space-3);
+  cursor:pointer;transition:border-color .12s, background .12s;
+  width:100%;text-align:left;font-family:inherit;
+}
+.team-card:hover{border-color:var(--rule);background:var(--surface-raised);}
+.team-card.active{background:var(--surface-raised);border-color:var(--rule);box-shadow:var(--shadow-1);}
+.team-card:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 2px var(--surface), 0 0 0 4px oklch(from var(--signal) l c h / .3);
+}
+
+.team-card__head{
+  display:grid;grid-template-columns:36px 1fr auto;gap:var(--space-3);align-items:center;
+  margin-bottom:var(--space-2);
+}
+.team-avatar{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--surface-sunken);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:16px;
+  color:var(--content);
+  box-shadow:inset 0 0 0 1px oklch(22% 0.035 255 / .12);
+  flex-shrink:0;position:relative;
+}
+.team-avatar.lead{background:var(--signal-tint);color:var(--signal-deep);box-shadow:inset 0 0 0 1px oklch(55% 0.13 42 / .35);}
+.team-avatar.moss{background:var(--accent-tint);color:var(--accent-deep);box-shadow:inset 0 0 0 1px oklch(44% 0.08 150 / .35);}
+.team-avatar.bark{background:oklch(82% 0.05 60);color:oklch(34% 0.06 55);box-shadow:inset 0 0 0 1px oklch(55% 0.08 55 / .35);}
+.team-avatar.slate{background:oklch(88% 0.035 230);color:oklch(34% 0.08 240);box-shadow:inset 0 0 0 1px oklch(50% 0.08 235 / .35);}
+[data-theme="dark"] .team-avatar.bark{background:oklch(32% 0.05 55);color:oklch(82% 0.08 60);}
+[data-theme="dark"] .team-avatar.slate{background:oklch(30% 0.04 240);color:oklch(82% 0.1 235);}
+
+.team-avatar__status{
+  position:absolute;bottom:-1px;right:-1px;
+  width:11px;height:11px;border-radius:50%;
+  border:2px solid var(--surface);
+}
+.status-idle{background:var(--content-soft);}
+.status-work{background:var(--accent);animation:pulse 1.6s ease-in-out infinite;}
+.status-wait{background:var(--signal);}
+
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1);}
+  50%{opacity:.65;transform:scale(0.85);}
+}
+
+.team-card__body{min-width:0;}
+.team-card__name{
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:16px;color:var(--content);letter-spacing:0;
+  display:flex;align-items:baseline;gap:6px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.team-card__role{font-family:var(--font-display);font-style:italic;font-weight:400;font-size:12px;color:var(--signal-deep);}
+.team-card__meta{
+  font-family:var(--font-mono);font-size:10px;color:var(--content-muted);letter-spacing:.02em;
+  margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.team-card__arrow{color:var(--content-soft);font-size:14px;}
+
+.team-card__activity{
+  font-family:var(--font-body);font-size:13px;font-style:italic;color:var(--content-muted);
+  line-height:1.5;padding-top:var(--space-2);border-top:1px dashed var(--rule-soft);
+  margin-top:var(--space-2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.team-card__activity em{color:var(--content);font-style:normal;font-family:var(--font-mono);font-size:11px;background:var(--surface-sunken);padding:1px 4px;border-radius:var(--radius-sm);margin:0 2px;}
+
+.team-card__foot{
+  display:flex;justify-content:space-between;align-items:center;
+  padding-top:var(--space-2);margin-top:var(--space-2);
+  font-family:var(--font-mono);font-size:10px;color:var(--content-soft);letter-spacing:.02em;
+}
+.team-card__foot .dot{color:var(--rule);}
+
+.add-card{
+  display:block;width:100%;
+  background:transparent;border:1px dashed var(--rule);border-radius:var(--radius-md);
+  padding:var(--space-4);margin-bottom:var(--space-3);text-align:center;
+  font-family:var(--font-body);font-size:14px;font-style:italic;color:var(--content-muted);
+  cursor:pointer;transition:all .12s;
+}
+.add-card:hover{border-color:var(--content);color:var(--content);border-style:solid;}
+
+.panel-hint{
+  margin-top:var(--space-4);padding:var(--space-3);
+  background:var(--surface-raised);border-radius:var(--radius-md);
+  font-family:var(--font-body);font-size:var(--text-ui);font-style:italic;
+  color:var(--content-muted);line-height:1.55;
+}
+.panel-hint__tag{
+  font-family:var(--font-mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.08em;
+  color:var(--content-soft);font-style:normal;
+  display:block;margin-bottom:var(--space-1);
+}
+
+/* ============ CHAT REGION ============ */
+.chat-region{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:var(--surface);}
+.chat-scroll{flex:1;overflow-y:auto;padding:var(--space-6) var(--space-5);}
+.chat-scroll__inner{max-width:720px;margin:0 auto;}
+
+.msg{display:grid;grid-template-columns:44px 1fr;gap:var(--space-4);padding:var(--space-4) 0;}
+.msg + .msg{border-top:1px dashed var(--rule-soft);}
+.msg__avatar{
+  width:44px;height:44px;border-radius:50%;
+  background:var(--surface-sunken);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:20px;
+  color:var(--content);
+  box-shadow:inset 0 0 0 1px oklch(22% 0.035 255 / .12);
+}
+.msg__avatar.lead{background:var(--signal-tint);color:var(--signal-deep);box-shadow:inset 0 0 0 1px oklch(55% 0.13 42 / .35);}
+.msg__avatar.team{background:var(--accent-tint);color:var(--accent-deep);box-shadow:inset 0 0 0 1px oklch(44% 0.08 150 / .35);}
+
+.msg__head{
+  display:flex;align-items:baseline;gap:var(--space-3);margin-bottom:var(--space-2);
+  font-family:var(--font-mono);font-size:var(--text-meta);color:var(--content-muted);flex-wrap:wrap;
+}
+.msg__name{
+  color:var(--content);font-family:var(--font-display);font-style:italic;font-weight:600;
+  font-size:16px;letter-spacing:0;
+}
+.msg__role{font-family:var(--font-display);font-style:italic;font-size:14px;color:var(--signal-deep);}
+.msg__dot{color:var(--rule);}
+.badge{font-family:var(--font-mono);font-size:11px;padding:2px 8px;border-radius:999px;letter-spacing:.04em;}
+.badge.moss{color:var(--accent-deep);background:var(--accent-tint);}
+.badge.sienna{color:var(--signal-deep);background:var(--signal-tint);}
+
+.msg__body{line-height:1.64;}
+.msg__body p{margin:var(--space-2) 0;}
+.msg__body p:first-child{margin-top:0;}
+.msg__body code{font-family:var(--font-mono);font-size:.9em;background:var(--surface-raised);padding:1px 5px;border-radius:var(--radius-sm);}
+
+.placeholder-block{
+  margin:var(--space-3) 0;padding:var(--space-4);
+  background:var(--surface-raised);border-radius:var(--radius-md);
+  border:1px dashed var(--rule);
+  font-family:var(--font-mono);font-size:11px;color:var(--content-soft);
+  letter-spacing:.08em;text-transform:uppercase;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.placeholder-block em{color:var(--content-muted);text-transform:none;letter-spacing:0;font-family:var(--font-display);font-style:italic;font-size:14px;}
+
+/* ============ CHAT FOOTER (status + send) ============ */
+.chat-footer{
+  flex-shrink:0;
+  padding:var(--space-3) var(--space-5) var(--space-4);
+  border-top:1px solid var(--rule-soft);
+  background:var(--surface);
+}
+.chat-footer__inner{max-width:720px;margin:0 auto;}
+
+.status-row{
+  display:flex;align-items:center;gap:var(--space-3);
+  padding:0 var(--space-1) var(--space-2);
+  font-family:var(--font-mono);font-size:11px;color:var(--content-muted);
+  flex-wrap:wrap;
+}
+.status-row .item{display:flex;align-items:center;gap:6px;}
+.status-row .dot-blink{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.6s ease-in-out infinite;}
+.status-row .sep{color:var(--rule);}
+
+.send-bar{
+  display:grid;grid-template-columns:auto 1fr auto;gap:var(--space-2);align-items:end;
+  padding:var(--space-3);
+  background:var(--surface-raised);
+  border:1px solid var(--rule-soft);
+  border-radius:var(--radius-md);
+  box-shadow:var(--shadow-1);
+}
+.send-bar__attach{
+  width:36px;height:36px;border-radius:var(--radius-sm);
+  background:transparent;border:1px solid var(--rule);color:var(--content-muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-mono);font-size:16px;
+}
+.send-bar__attach:hover{background:var(--surface);color:var(--content);}
+.send-bar__input{
+  font-family:var(--font-body);font-size:var(--text-body);line-height:1.5;
+  background:transparent;border:none;outline:none;color:var(--content);
+  padding:8px 4px;resize:none;min-height:36px;max-height:180px;
+}
+.send-bar__input::placeholder{color:var(--content-soft);font-style:italic;}
+.send-bar__send{
+  height:36px;padding:0 16px;border-radius:var(--radius-sm);
+  background:var(--signal);color:var(--surface);border:none;
+  font-family:var(--font-body);font-weight:500;font-size:var(--text-ui);
+  cursor:pointer;display:flex;align-items:center;gap:6px;
+}
+.send-bar__send:hover{background:var(--signal-deep);}
+.send-bar__send .kbd{font-family:var(--font-mono);font-size:10px;opacity:.7;}
+
+/* ============ RIGHT PANEL ============ */
+.right-panel{
+  overflow-y:auto;
+  background:var(--surface-raised);
+  border-left:1px solid var(--rule-soft);
+  min-width:0;
+  opacity:0;
+  transition:opacity .24s var(--ease);
+}
+[data-right="open"] .right-panel{opacity:1;}
+.right-panel__inner{padding:var(--space-5) var(--space-4);}
+
+.detail-head{
+  display:flex;justify-content:space-between;align-items:start;gap:var(--space-3);
+  padding-bottom:var(--space-3);margin-bottom:var(--space-4);
+  border-bottom:1px solid var(--rule-soft);
+}
+.detail-head__title{
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:22px;
+  margin:0;line-height:1.15;
+}
+.detail-head__title em{color:var(--accent-deep);font-style:normal;font-weight:400;font-family:var(--font-mono);font-size:13px;letter-spacing:.02em;display:block;margin-bottom:2px;}
+.detail-close{
+  width:28px;height:28px;border-radius:var(--radius-sm);
+  background:transparent;border:none;color:var(--content-muted);
+  cursor:pointer;font-size:16px;line-height:1;
+  flex-shrink:0;
+}
+.detail-close:hover{background:var(--surface);color:var(--content);}
+
+.detail-metrics{
+  display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);
+  margin-bottom:var(--space-5);
+}
+.metric{
+  padding:var(--space-3);background:var(--surface);border-radius:var(--radius-md);
+}
+.metric__label{
+  font-family:var(--font-mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--content-muted);
+  margin-bottom:2px;
+}
+.metric__value{
+  font-family:var(--font-display);font-style:italic;font-weight:600;font-size:24px;
+  color:var(--content);line-height:1;
+}
+
+.detail-section-title{
+  font-family:var(--font-mono);font-size:11px;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--content-muted);
+  margin:0 0 var(--space-3);font-weight:500;
+}
+
+.activity{
+  display:grid;grid-template-columns:16px 1fr auto;gap:var(--space-3);
+  padding:var(--space-3) 0;
+  border-top:1px dashed var(--rule-soft);
+  font-family:var(--font-mono);font-size:12px;align-items:baseline;
+}
+.activity__dot{
+  width:8px;height:8px;border-radius:50%;background:var(--accent);
+  margin-top:4px;
+}
+.activity__dot.done{background:var(--content-soft);}
+.activity__dot.err{background:var(--signal);}
+.activity__label{color:var(--content);font-weight:500;}
+.activity__sub{color:var(--content-muted);font-family:var(--font-body);font-style:italic;font-size:13px;margin-top:2px;}
+.activity__time{color:var(--content-soft);font-size:10px;}
+
+/* ============ DEMO CONTROLS (overlay) ============ */
+.demo-controls{
+  position:fixed;bottom:var(--space-4);right:var(--space-4);z-index:100;
+  background:var(--surface);border:1px solid var(--rule-soft);border-radius:var(--radius-md);
+  padding:var(--space-3);box-shadow:var(--shadow-2);
+  display:flex;flex-direction:column;gap:var(--space-2);
+  font-family:var(--font-mono);font-size:11px;color:var(--content-muted);
+  min-width:200px;
+}
+.demo-controls__label{
+  font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--content-soft);font-weight:500;margin-bottom:4px;
+}
+.demo-btn{
+  font-family:var(--font-mono);font-size:11px;
+  background:var(--surface-raised);color:var(--content);
+  border:1px solid var(--rule-soft);border-radius:var(--radius-sm);
+  padding:6px 10px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:border-color .12s;
+}
+.demo-btn:hover{border-color:var(--content);}
+.demo-btn .state{color:var(--signal-deep);}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOP NAV -->
+  <header class="top-nav">
+    <div class="top-nav__left">
+      <div class="logo"><em>O</em></div>
+      <div class="wordmark"><em>Orangutan</em></div>
+      <div class="session-chip">
+        <span class="dot"></span>
+        <span>session · main-thread · 22:14</span>
+      </div>
+    </div>
+
+    <div class="top-nav__right">
+      <button class="nav-chip primary"><span class="num">2.4k</span> tokens · 32%</button>
+      <div class="nav-divider"></div>
+      <button class="nav-chip">Skills</button>
+      <button class="nav-chip">MCP</button>
+      <button class="nav-chip">Memory</button>
+      <button class="nav-chip">Providers</button>
+      <button class="nav-chip">Workspace</button>
+      <div class="nav-divider"></div>
+      <button class="icon-btn" title="设置">⚙</button>
+      <button class="icon-btn" title="切换主题" onclick="toggleTheme()">◐</button>
+      <div class="user-avatar"><em>H</em></div>
+    </div>
+  </header>
+
+  <!-- WORKSPACE -->
+  <main class="workspace">
+
+    <!-- LEFT PANEL (card variant) -->
+    <aside class="left-panel">
+      <div class="panel-header">
+        <h3 class="panel-header__title"><em>Contributors</em></h3>
+        <span class="panel-header__sub">4 · 2 active</span>
+      </div>
+
+      <button class="team-card" type="button">
+        <div class="team-card__head">
+          <div class="team-avatar lead"><em>L</em><span class="team-avatar__status status-work"></span></div>
+          <div class="team-card__body">
+            <div class="team-card__name">lead <span class="team-card__role">主协调</span></div>
+            <div class="team-card__meta">思考中 · 3 tools · 4s</div>
+          </div>
+          <span class="team-card__arrow">›</span>
+        </div>
+        <div class="team-card__activity">
+          读取 <em>agent-loop.hpp</em> 第 142 行；识别 iteration-cost trap；等 research 回传 TTL 文档。
+        </div>
+        <div class="team-card__foot">
+          <span>tokens 1,147</span>
+          <span class="dot">·</span>
+          <span>cache hit 82%</span>
+        </div>
+      </button>
+
+      <button class="team-card active" type="button">
+        <div class="team-card__head">
+          <div class="team-avatar moss"><em>R</em><span class="team-avatar__status status-work"></span></div>
+          <div class="team-card__body">
+            <div class="team-card__name">research <span class="team-card__role">委派</span></div>
+            <div class="team-card__meta">查询文档 · 5 tools · 1.2s</div>
+          </div>
+          <span class="team-card__arrow">›</span>
+        </div>
+        <div class="team-card__activity">
+          检索 <em>prompt caching</em> 官方文档；抓取 <em>docs.anthropic.com</em>；整理 TTL 规则。
+        </div>
+        <div class="team-card__foot">
+          <span>tokens 1,284</span>
+          <span class="dot">·</span>
+          <span>cache hit 71%</span>
+        </div>
+      </button>
+
+      <button class="team-card" type="button">
+        <div class="team-card__head">
+          <div class="team-avatar bark"><em>C</em><span class="team-avatar__status status-wait"></span></div>
+          <div class="team-card__body">
+            <div class="team-card__name">coder <span class="team-card__role">委派</span></div>
+            <div class="team-card__meta">等待审批 · edit_file</div>
+          </div>
+          <span class="team-card__arrow">›</span>
+        </div>
+        <div class="team-card__activity">
+          准备修改 <em>agent-loop.cpp</em> 的 <em>build_system_prompt</em> 签名。等你点击审批。
+        </div>
+        <div class="team-card__foot">
+          <span>paused 12s</span>
+          <span class="dot">·</span>
+          <span>审批队列 · 1</span>
+        </div>
+      </button>
+
+      <button class="team-card" type="button">
+        <div class="team-card__head">
+          <div class="team-avatar slate"><em>W</em><span class="team-avatar__status status-idle"></span></div>
+          <div class="team-card__body">
+            <div class="team-card__name">writer <span class="team-card__role">委派</span></div>
+            <div class="team-card__meta">空闲 · 就绪</div>
+          </div>
+          <span class="team-card__arrow">›</span>
+        </div>
+      </button>
+
+      <button class="add-card" type="button">+ spawn new teammate</button>
+
+      <div class="panel-hint">
+        <span class="panel-hint__tag">Hint</span>
+        点击 teammate 展开右侧详情 · lead 会在本窗显示其思考 / 工具调用全过程
+      </div>
+    </aside>
+
+    <div class="divider" title="拖拽调整宽度"></div>
+
+    <!-- CHAT REGION -->
+    <section class="chat-region">
+      <div class="chat-scroll">
+        <div class="chat-scroll__inner">
+
+          <div class="msg">
+            <div class="msg__avatar"><em>H</em></div>
+            <div>
+              <div class="msg__head">
+                <span class="msg__name">Huxint</span>
+                <span class="msg__dot">·</span>
+                <span>22:14</span>
+              </div>
+              <div class="msg__body">
+                <p>帮我查一下 <code>AgentLoopBuilder</code> 每轮迭代中的 token 成本，以及哪些是可以 cache 的？顺便让 research 去查一下 Anthropic 文档里 prompt-caching 的最新 TTL 限制。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg">
+            <div class="msg__avatar lead"><em>L</em></div>
+            <div>
+              <div class="msg__head">
+                <span class="msg__name">lead</span>
+                <span class="msg__role">主协调</span>
+                <span class="msg__dot">·</span>
+                <span>claude-sonnet-4 · 22:14</span>
+                <span class="msg__dot">·</span>
+                <span class="badge moss">in-flight</span>
+              </div>
+              <div class="msg__body">
+                <p>正在阅读 <code>src/agent/agent-loop.hpp</code>，文档查询已委派给 <em>research</em>。</p>
+                <div class="placeholder-block">
+                  <span>§ 消息块家族占位（thinking / tool / diff / code / math）</span>
+                  <em>Step C 细化</em>
+                </div>
+                <p>热 / 冷段的划分和 CLAUDE.md 注释一致，等 research 回。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg">
+            <div class="msg__avatar team"><em>R</em></div>
+            <div>
+              <div class="msg__head">
+                <span class="msg__name">research</span>
+                <span class="msg__role">委派</span>
+                <span class="msg__dot">·</span>
+                <span>via spawn_worker · 22:14</span>
+                <span class="msg__dot">·</span>
+                <span class="badge sienna">finished</span>
+              </div>
+              <div class="msg__body">
+                <p>最新文档（截至 2026-04）：TTL 默认 <strong>5 分钟</strong>、最长 <strong>1 小时</strong>（显式 <code>ttl="1h"</code>）。超过 4 个 cache breakpoints 会报错。</p>
+                <div class="placeholder-block" style="border-style:solid;">
+                  <span>§ teammate 的工具调用 / 思考不在主区显示 —— 详情去右栏</span>
+                  <em>点 ▸ 展开</em>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="chat-footer">
+        <div class="chat-footer__inner">
+          <div class="status-row">
+            <span class="item"><span class="dot-blink"></span> lead 思考中 · 3s</span>
+            <span class="sep">·</span>
+            <span class="item">3 tools running</span>
+            <span class="sep">·</span>
+            <span class="item">2 teammates active</span>
+            <span class="sep">·</span>
+            <span class="item">2,431 / 200k tokens</span>
+            <span style="margin-left:auto;" class="item">Esc 中断</span>
+          </div>
+
+          <div class="send-bar">
+            <button class="send-bar__attach" title="添加附件">+</button>
+            <textarea class="send-bar__input" rows="1" placeholder="对 lead 说点什么 · Shift+Enter 换行"></textarea>
+            <button class="send-bar__send">发送 <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider" title="拖拽调整宽度"></div>
+
+    <!-- RIGHT PANEL -->
+    <aside class="right-panel">
+      <div class="right-panel__inner">
+        <div class="detail-head">
+          <h3 class="detail-head__title">
+            <em>teammate · research</em>
+            活动详情
+          </h3>
+          <button class="detail-close" onclick="toggleRight()">×</button>
+        </div>
+
+        <div class="detail-metrics">
+          <div class="metric">
+            <div class="metric__label">Tokens</div>
+            <div class="metric__value">1,284</div>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Elapsed</div>
+            <div class="metric__value">4.2s</div>
+          </div>
+        </div>
+
+        <div class="detail-section-title">§ Tool Calls · 5 total</div>
+
+        <div class="activity">
+          <div class="activity__dot done"></div>
+          <div>
+            <div class="activity__label">web_search</div>
+            <div class="activity__sub">prompt caching TTL anthropic 2026</div>
+          </div>
+          <div class="activity__time">142 ms</div>
+        </div>
+
+        <div class="activity">
+          <div class="activity__dot done"></div>
+          <div>
+            <div class="activity__label">fetch_page</div>
+            <div class="activity__sub">docs.anthropic.com/en/docs/prompt-caching</div>
+          </div>
+          <div class="activity__time">820 ms</div>
+        </div>
+
+        <div class="activity">
+          <div class="activity__dot"></div>
+          <div>
+            <div class="activity__label">summarize</div>
+            <div class="activity__sub">整理 TTL 限制与 breakpoints 规则</div>
+          </div>
+          <div class="activity__time">—</div>
+        </div>
+
+        <div style="margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--rule-soft);">
+          <div class="detail-section-title">§ Thinking</div>
+          <div class="placeholder-block" style="background:transparent;">
+            <span>§ 思考片段 · 仅在此处展开</span>
+            <em>Step E 细化</em>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+</div>
+
+<!-- DEMO CONTROLS -->
+<div class="demo-controls">
+  <div class="demo-controls__label">Demo · Toggle</div>
+  <button class="demo-btn" onclick="toggleRight()">右栏 · <span class="state" id="right-state">closed</span></button>
+  <button class="demo-btn" onclick="toggleTheme()">主题 · <span class="state" id="theme-state">light</span></button>
+  <div style="font-family:var(--font-body);font-style:italic;font-size:12px;color:var(--content-soft);margin-top:var(--space-2);line-height:1.45;">
+    V1 · 对称三栏 · 中栏读取列 720 max-width · 右栏 push
+  </div>
+</div>
+
+<script>
+function toggleRight() {
+  const cur = document.documentElement.getAttribute('data-right');
+  const next = cur === 'open' ? 'closed' : 'open';
+  document.documentElement.setAttribute('data-right', next);
+  document.getElementById('right-state').textContent = next;
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  document.getElementById('theme-state').textContent = next;
+}
+</script>
+
+</body>
+</html>
