@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Step 05 · Attachments · Merged (V4 footnote + V6 sticky)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ============ TOKENS ============ */
+:root {
+  --surface:         oklch(94.5% 0.018 78);
+  --surface-raised:  oklch(92% 0.022 76);
+  --surface-sunken:  oklch(88% 0.028 74);
+  --content:         oklch(22% 0.035 255);
+  --content-muted:   oklch(44% 0.028 255);
+  --content-soft:    oklch(62% 0.020 250);
+  --signal:          oklch(55% 0.13 42);
+  --signal-tint:     oklch(89% 0.035 50);
+  --signal-deep:     oklch(40% 0.12 38);
+  --accent:          oklch(44% 0.08 150);
+  --accent-tint:     oklch(88% 0.038 145);
+  --accent-deep:     oklch(30% 0.06 150);
+  --rule:            oklch(72% 0.018 75);
+  --rule-soft:       oklch(84% 0.015 75);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-1: 0 1px 0 oklch(22% 0.035 255 / .05), 0 1px 2px oklch(22% 0.035 255 / .04);
+  --shadow-2: 0 2px 4px oklch(22% 0.035 255 / .06), 0 1px 0 oklch(22% 0.035 255 / .05);
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body:    'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-mono:    'Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --text-caption: 12px; --text-meta: 13px; --text-ui: 14px; --text-body: 17px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration-fast: 120ms; --duration-med: 200ms; --duration-slow: 320ms;
+}
+[data-theme="dark"] {
+  --surface:         oklch(20% 0.028 260);
+  --surface-raised:  oklch(26% 0.025 260);
+  --surface-sunken:  oklch(16% 0.025 260);
+  --content:         oklch(92% 0.020 80);
+  --content-muted:   oklch(70% 0.015 80);
+  --content-soft:    oklch(52% 0.012 75);
+  --signal:          oklch(68% 0.14 42);
+  --signal-tint:     oklch(32% 0.08 40);
+  --signal-deep:     oklch(82% 0.10 45);
+  --accent:          oklch(60% 0.10 150);
+  --accent-tint:     oklch(28% 0.06 150);
+  --accent-deep:     oklch(78% 0.09 145);
+  --rule:            oklch(36% 0.02 260);
+  --rule-soft:       oklch(28% 0.02 260);
+  --shadow-1: 0 1px 0 oklch(0% 0 0 / .24), 0 1px 2px oklch(0% 0 0 / .32);
+  --shadow-2: 0 2px 4px oklch(0% 0 0 / .28), 0 1px 0 oklch(0% 0 0 / .20);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--content);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-7) var(--space-5);
+  min-height: 100vh;
+}
+.stage { width: 100%; max-width: 720px; }
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  color: var(--content-soft);
+  margin: var(--space-7) 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.section-label:first-child { margin-top: 0; }
+
+/* ============ COMPOSE BAR ============ */
+.compose { position: relative; }
+.compose__bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-2);
+  align-items: end;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  position: relative;
+  z-index: 2;
+}
+.compose__cite {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--content-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 18px;
+  transition: all var(--duration-fast) var(--ease);
+}
+.compose__cite:hover { background: var(--surface); color: var(--content); }
+.compose__cite.is-active {
+  border-color: var(--signal);
+  color: var(--signal-deep);
+  background: var(--signal-tint);
+}
+.compose__input {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  background: transparent;
+  border: none; outline: none;
+  color: var(--content);
+  padding: 8px 4px;
+  resize: none; min-height: 36px;
+}
+.compose__input::placeholder { color: var(--content-soft); font-style: italic; }
+.compose__send {
+  height: 36px; padding: 0 16px;
+  border-radius: var(--radius-sm);
+  background: var(--signal); color: var(--surface); border: none;
+  font-family: var(--font-body); font-weight: 500; font-size: var(--text-ui);
+  cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+.compose__send:hover { background: var(--signal-deep); }
+
+/* Simulated rich-text area with inline sup markers */
+.compose__rich {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--content);
+  padding: 8px 4px;
+  min-height: 36px;
+}
+
+/* ============ SUPERSCRIPT REFERENCE MARKERS ============ */
+.sup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px; height: 17px;
+  border-radius: 50%;
+  background: var(--signal-tint);
+  color: var(--signal-deep);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1;
+  vertical-align: super;
+  margin: 0 1px;
+  cursor: help;
+  border: 1px solid oklch(from var(--signal) l c h / .15);
+  transition: background var(--duration-fast) var(--ease);
+}
+.sup:hover {
+  background: oklch(from var(--signal-tint) calc(l - .04) c h);
+}
+
+/* ============ CITATION LOOKUP (floating) ============ */
+.cite-lookup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  z-index: 10;
+  overflow: hidden;
+  animation: cite-rise 220ms var(--ease) both;
+}
+@keyframes cite-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cite-lookup__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.cite-lookup__glyph {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--signal);
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+.cite-lookup__field {
+  flex: 1;
+  border: none; background: transparent;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--content);
+  outline: none;
+}
+.cite-lookup__field::placeholder { color: var(--content-soft); }
+.cite-lookup__hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--content-soft);
+  white-space: nowrap;
+}
+
+/* Category headers */
+.cite-cat {
+  padding: 5px var(--space-3) 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--content-soft);
+  background: var(--surface-sunken);
+}
+
+/* Result items */
+.cite-item {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px var(--space-3);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--content-muted);
+  transition: background var(--duration-fast) var(--ease);
+}
+.cite-item:hover { background: var(--surface-raised); }
+.cite-item.is-focused { background: var(--signal-tint); color: var(--content); }
+.cite-item__glyph {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--content-soft);
+  text-align: center;
+}
+.cite-item.is-focused .cite-item__glyph { color: var(--signal-deep); }
+.cite-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cite-item__meta {
+  font-size: 10px;
+  color: var(--content-soft);
+  white-space: nowrap;
+}
+.cite-item + .cite-item { border-top: 1px solid var(--rule-soft); }
+.cite-cat + .cite-item { border-top: none; }
+
+/* ============ STICKY NOTE STRIP (below compose bar) ============ */
+.sticky-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--rule-soft);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin-top: -1px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Individual sticky note */
+.sticky {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 10px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
+  position: relative;
+  cursor: default;
+  animation: sticky-land 240ms var(--ease) both;
+}
+@keyframes sticky-land {
+  from { opacity: 0; transform: scale(.88) rotate(-2deg); }
+  to   { opacity: 1; transform: scale(1) rotate(0); }
+}
+.sticky:nth-child(2) { animation-delay: 50ms; }
+.sticky:nth-child(3) { animation-delay: 100ms; }
+.sticky:nth-child(4) { animation-delay: 150ms; }
+
+/* Tape strip across top */
+.sticky::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 6px;
+  border-radius: 1px;
+  opacity: .45;
+}
+
+/* Type-specific tape color & subtle tint */
+.sticky--file::before { background: var(--rule); }
+.sticky--file { background: var(--surface); }
+
+.sticky--ws::before { background: var(--accent); }
+.sticky--ws { background: oklch(from var(--accent-tint) l calc(c * .4) h); }
+
+.sticky--url::before { background: var(--signal); }
+.sticky--url { background: oklch(from var(--signal-tint) l calc(c * .4) h); }
+
+.sticky__num {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--signal);
+  min-width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sticky__name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--content);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sticky__type {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--content-soft);
+  flex-shrink: 0;
+}
+.sticky__x {
+  width: 16px; height: 16px;
+  border: none; background: transparent;
+  color: var(--content-soft); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; border-radius: 50%; flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease),
+              background var(--duration-fast) var(--ease);
+}
+.sticky:hover .sticky__x { opacity: 1; }
+.sticky__x:hover { color: var(--signal); background: var(--signal-tint); }
+
+/* ============ DRAG OVERLAY — blot-in ============ */
+.blot-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--signal-tint);
+  border: 2px solid var(--signal);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  z-index: 20;
+  animation: blot-spread 240ms var(--ease) both;
+}
+@keyframes blot-spread {
+  from {
+    opacity: 0;
+    clip-path: circle(12% at 50% 50%);
+  }
+  to {
+    opacity: 1;
+    clip-path: circle(75% at 50% 50%);
+  }
+}
+.blot-overlay__glyph {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 28px;
+  color: var(--signal);
+}
+.blot-overlay__label {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-ui);
+  color: var(--signal-deep);
+}
+
+/* ============ DEMO ============ */
+.demo-controls {
+  position: fixed; bottom: 12px; left: 12px;
+  display: flex; gap: 8px; z-index: 100;
+}
+.demo-btn {
+  padding: 6px 12px; border: 1px solid var(--rule);
+  border-radius: var(--radius-sm); background: var(--surface-raised);
+  color: var(--content-muted); font-family: var(--font-mono);
+  font-size: 12px; cursor: pointer;
+}
+.demo-btn:hover { background: var(--surface); color: var(--content); }
+.note {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--content-muted);
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-3);
+  line-height: 1.6;
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- ======== STATE 1: IDLE ======== -->
+  <div class="section-label">State 1 · 初始态 — § 按钮等待</div>
+  <div class="compose">
+    <div class="compose__bar">
+      <button class="compose__cite">§</button>
+      <textarea class="compose__input" rows="1" placeholder="对 lead 说点什么 · § 插入引用 · 拖放文件"></textarea>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+  </div>
+
+  <!-- ======== STATE 2: LOOKUP OPEN ======== -->
+  <div class="section-label">State 2 · Citation Lookup — 点 § 或输入 @</div>
+  <div class="compose" style="margin-bottom:260px;">
+    <div class="cite-lookup">
+      <div class="cite-lookup__head">
+        <span class="cite-lookup__glyph"><em>§</em></span>
+        <input class="cite-lookup__field" type="text" placeholder="搜索文件、工作区、链接…" />
+        <span class="cite-lookup__hint">↑↓ 导航 · Enter 选中 · Esc 关闭</span>
+      </div>
+      <div class="cite-cat">上传</div>
+      <div class="cite-item is-focused">
+        <span class="cite-item__glyph"><em>f</em></span>
+        <span class="cite-item__label">选择本地文件…</span>
+        <span class="cite-item__meta">拖拽或点击</span>
+      </div>
+      <div class="cite-cat">工作区</div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/agent/agent-loop.hpp</span>
+        <span class="cite-item__meta">4.2 kB</span>
+      </div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/providers/provider.hpp</span>
+        <span class="cite-item__meta">6.1 kB</span>
+      </div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/tools/registry/tool-registry.cpp</span>
+        <span class="cite-item__meta">3.8 kB</span>
+      </div>
+      <div class="cite-cat">链接</div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>u</em></span>
+        <span class="cite-item__label">粘贴 URL…</span>
+        <span class="cite-item__meta">Enter 确认</span>
+      </div>
+    </div>
+    <div class="compose__bar">
+      <button class="compose__cite is-active">§</button>
+      <textarea class="compose__input" rows="1" placeholder="对 lead 说点什么 · § 插入引用"></textarea>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+  </div>
+
+  <!-- ======== STATE 3: FILTERED SEARCH ======== -->
+  <div class="section-label">State 3 · Citation Lookup — 输入过滤</div>
+  <div class="compose" style="margin-bottom:180px;">
+    <div class="cite-lookup">
+      <div class="cite-lookup__head">
+        <span class="cite-lookup__glyph"><em>§</em></span>
+        <input class="cite-lookup__field" type="text" value="agent-loop" />
+        <span class="cite-lookup__hint">Esc 关闭</span>
+      </div>
+      <div class="cite-cat">工作区 · 3 匹配</div>
+      <div class="cite-item is-focused">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/agent/<strong>agent-loop</strong>.hpp</span>
+        <span class="cite-item__meta">4.2 kB</span>
+      </div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/agent/<strong>agent-loop</strong>.cpp</span>
+        <span class="cite-item__meta">8.7 kB</span>
+      </div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/agent/<strong>agent-loop</strong>-builder.hpp</span>
+        <span class="cite-item__meta">2.1 kB</span>
+      </div>
+    </div>
+    <div class="compose__bar">
+      <button class="compose__cite is-active">§</button>
+      <textarea class="compose__input" rows="1"></textarea>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+  </div>
+
+  <!-- ======== STATE 4: REFERENCES ATTACHED ======== -->
+  <div class="section-label">State 4 · 已添加引用 — 便签条 + 正文内上标</div>
+  <div class="compose">
+    <div class="compose__bar">
+      <button class="compose__cite">§</button>
+      <div class="compose__rich">
+        帮我 review 这两个文件 <span class="sup">1</span><span class="sup">2</span> 的接口设计，参考这个文档 <span class="sup">3</span>
+      </div>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+    <div class="sticky-strip">
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">1</span>
+        <span class="sticky__name">agent-loop.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x" onclick="this.parentElement.remove()">×</button>
+      </div>
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">2</span>
+        <span class="sticky__name">provider.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x" onclick="this.parentElement.remove()">×</button>
+      </div>
+      <div class="sticky sticky--url">
+        <span class="sticky__num">3</span>
+        <span class="sticky__name">docs.anthropic.com/cache</span>
+        <span class="sticky__type">url</span>
+        <button class="sticky__x" onclick="this.parentElement.remove()">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== STATE 5: MANY REFERENCES ======== -->
+  <div class="section-label">State 5 · 引用较多 — 便签条 wrap</div>
+  <div class="compose">
+    <div class="compose__bar">
+      <button class="compose__cite">§</button>
+      <div class="compose__rich">
+        Review 这些文件 <span class="sup">1</span><span class="sup">2</span><span class="sup">3</span> 的架构，结合文档 <span class="sup">4</span> 和截图 <span class="sup">5</span>
+      </div>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+    <div class="sticky-strip">
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">1</span>
+        <span class="sticky__name">agent-loop.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x">×</button>
+      </div>
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">2</span>
+        <span class="sticky__name">provider.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x">×</button>
+      </div>
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">3</span>
+        <span class="sticky__name">tool-registry.cpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x">×</button>
+      </div>
+      <div class="sticky sticky--url">
+        <span class="sticky__num">4</span>
+        <span class="sticky__name">anthropic.com/cache</span>
+        <span class="sticky__type">url</span>
+        <button class="sticky__x">×</button>
+      </div>
+      <div class="sticky sticky--file">
+        <span class="sticky__num">5</span>
+        <span class="sticky__name">screenshot.png</span>
+        <span class="sticky__type">128 kB</span>
+        <button class="sticky__x">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== STATE 6: MINIMAL — only 1 ref, no sup needed ======== -->
+  <div class="section-label">State 6 · 单引用无上标 — 只贴便签</div>
+  <div class="compose">
+    <div class="compose__bar">
+      <button class="compose__cite">§</button>
+      <textarea class="compose__input" rows="1">帮我读一下这个文件</textarea>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+    <div class="sticky-strip">
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">1</span>
+        <span class="sticky__name">agent-loop.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x" onclick="this.parentElement.remove()">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== STATE 7: DRAG OVER ======== -->
+  <div class="section-label">State 7 · 拖拽文件 — 墨渍吸收覆盖层</div>
+  <div class="compose" style="min-height:60px;">
+    <div class="blot-overlay">
+      <span class="blot-overlay__glyph"><em>§</em></span>
+      <span class="blot-overlay__label">松开即引用</span>
+    </div>
+    <div class="compose__bar" style="opacity:.25;">
+      <button class="compose__cite">§</button>
+      <textarea class="compose__input" rows="1" placeholder="对 lead 说点什么"></textarea>
+      <button class="compose__send">发送</button>
+    </div>
+  </div>
+
+  <!-- ======== STATE 8: LOOKUP + existing stickies ======== -->
+  <div class="section-label">State 8 · 有引用时再次打开 Lookup 追加</div>
+  <div class="compose" style="margin-bottom:200px;">
+    <div class="cite-lookup">
+      <div class="cite-lookup__head">
+        <span class="cite-lookup__glyph"><em>§</em></span>
+        <input class="cite-lookup__field" type="text" placeholder="追加引用…" />
+        <span class="cite-lookup__hint">Esc 关闭</span>
+      </div>
+      <div class="cite-cat">上传</div>
+      <div class="cite-item is-focused">
+        <span class="cite-item__glyph"><em>f</em></span>
+        <span class="cite-item__label">选择本地文件…</span>
+        <span class="cite-item__meta">拖拽或点击</span>
+      </div>
+      <div class="cite-cat">工作区</div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/bootstrap/bootstrap.cpp</span>
+        <span class="cite-item__meta">12.3 kB</span>
+      </div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>w</em></span>
+        <span class="cite-item__label">src/bootstrap/runtime-assembler.cpp</span>
+        <span class="cite-item__meta">5.4 kB</span>
+      </div>
+      <div class="cite-cat">链接</div>
+      <div class="cite-item">
+        <span class="cite-item__glyph"><em>u</em></span>
+        <span class="cite-item__label">粘贴 URL…</span>
+        <span class="cite-item__meta">Enter 确认</span>
+      </div>
+    </div>
+    <div class="compose__bar">
+      <button class="compose__cite is-active">§</button>
+      <div class="compose__rich">
+        帮我 review 这两个文件 <span class="sup">1</span><span class="sup">2</span>
+      </div>
+      <button class="compose__send">发送 <span style="font-family:var(--font-mono);font-size:10px;opacity:.7;">⏎</span></button>
+    </div>
+    <div class="sticky-strip">
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">1</span>
+        <span class="sticky__name">agent-loop.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x">×</button>
+      </div>
+      <div class="sticky sticky--ws">
+        <span class="sticky__num">2</span>
+        <span class="sticky__name">provider.hpp</span>
+        <span class="sticky__type">ws</span>
+        <button class="sticky__x">×</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="demo-controls">
+  <button class="demo-btn" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark')">Toggle theme</button>
+</div>
+
+</body>
+</html>
