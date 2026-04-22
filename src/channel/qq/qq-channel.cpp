@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <stdexec/execution.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -61,8 +62,9 @@ namespace orangutan::channel::qq {
         load_session_state();
         load_known_users();
         load_ref_index();
+        start_outbound_send_loop();
+        start_known_users_persist_loop();
         start_token_refresh_loop();
-        start_debounce_loop();
         start_typing_keepalive();
 
         ensure_access_token();
@@ -91,52 +93,41 @@ namespace orangutan::channel::qq {
     }
 
     void QqChannel::send(const std::string &jid, const OutboundMessage &message) {
-        const auto send_immediately = [this, &jid](const OutboundMessage &outbound_message) {
-            const auto target = resolve_send_target(bot_name_, jid);
-            const auto post_payload = [this, &target](const nlohmann::json &payload) {
-                const auto response = api_client_->post(message_path(target), payload);
-                std::string content_text;
-                if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
-                    content_text = payload.at("markdown").at("content").get<std::string>();
-                } else if (payload.contains("content") && payload.at("content").is_string()) {
-                    content_text = payload.at("content").get<std::string>();
-                }
-                if (!content_text.empty()) {
-                    capture_outbound_ref_index(response, content_text);
-                }
-            };
-            const auto upload_media_info = [this](const qq_send_target &upload_target, int file_type, const std::string &url) {
-                const auto response = api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
-                const auto upload_payload = response.parse_json_body();
-                if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
-                    throw std::runtime_error("QQ upload media missing file_info");
-                }
-                return upload_payload.at("file_info").get<std::string>();
-            };
-
-            route_outbound_payload(
-                target, outbound_message, post_payload, upload_media_info,
-                [this] {
-                    return next_msg_seq();
-                },
-                [this](const std::string &reply_to_message_id, int reply_units) {
-                    return resolve_passive_reply_message_id(reply_to_message_id, reply_units);
-                });
-        };
-
         if (const auto *text = std::get_if<TextPayload>(&message.payload)) {
+            if (text->text.empty()) {
+                return;
+            }
             if (text_contains_media_markup(text->text)) {
-                route_media_segments(jid, message, send_immediately,
-                                     [this, &jid](const std::string &text_value, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-                                         enqueue_debounced_text(jid, text_value, reply_to_message_id, reference_message_id);
+                route_media_segments(jid, message,
+                                     [this, &jid](OutboundMessage outbound_message) {
+                                         enqueue_outbound_send(jid, std::move(outbound_message));
+                                     },
+                                     [this, &jid](const std::string &text_value, const std::string &reply_to_message_id,
+                                                  const std::string &reference_message_id) {
+                                         if (text_value.empty()) {
+                                             return;
+                                         }
+                                         enqueue_outbound_send(jid, OutboundMessage{
+                                             .payload = TextPayload{.text = text_value},
+                                             .reply_to_message_id = reply_to_message_id,
+                                             .reference_message_id = reference_message_id,
+                                         });
                                      });
                 return;
             }
-            enqueue_debounced_text(jid, text->text, message.reply_to_message_id, message.reference_message_id);
+            enqueue_outbound_send(jid, message);
             return;
         }
 
-        send_immediately(message);
+        if (const auto *markdown = std::get_if<MarkdownPayload>(&message.payload)) {
+            if (markdown->markdown.empty()) {
+                return;
+            }
+            enqueue_outbound_send(jid, message);
+            return;
+        }
+
+        send_now(jid, message);
     }
 
     Attachment QqChannel::download_attachment(std::string_view jid, const Attachment &attachment, const std::filesystem::path &destination_path) {
@@ -192,8 +183,9 @@ namespace orangutan::channel::qq {
         connected_ = false;
         stop_heartbeat();
         stop_token_refresh_loop();
-        stop_debounce_loop();
+        stop_outbound_send_loop();
         stop_typing_keepalive();
+        stop_known_users_persist_loop();
         persist_known_users();
 
         {
@@ -414,130 +406,131 @@ namespace orangutan::channel::qq {
         runtime_->token_refresh_task.stop();
     }
 
-    void QqChannel::start_debounce_loop() {
-        stop_debounce_loop();
+    void QqChannel::start_outbound_send_loop() {
+        std::scoped_lock lock(runtime_->outbound_send_mutex);
+        runtime_->outbound_send_shutdown = false;
+        if (runtime_->outbound_send_scope == nullptr) {
+            runtime_->outbound_send_scope = std::make_shared<exec::async_scope>();
+        }
+    }
 
-        runtime_->debounce_task.start(*task_pool_, std::chrono::milliseconds(200), [this] {
-            std::vector<std::tuple<std::string, std::string, std::string, std::string>> ready_messages;
+    void QqChannel::stop_outbound_send_loop() {
+        std::shared_ptr<exec::async_scope> scope;
+        {
+            std::scoped_lock lock(runtime_->outbound_send_mutex);
+            runtime_->outbound_send_shutdown = true;
+            runtime_->outbound_send_draining = false;
+            runtime_->outbound_send_queue.clear();
+            scope = std::move(runtime_->outbound_send_scope);
+        }
+        if (scope == nullptr) {
+            return;
+        }
+
+        scope->request_stop();
+        static_cast<void>(stdexec::sync_wait(scope->on_empty()));
+    }
+
+    void QqChannel::enqueue_outbound_send(const std::string &jid, OutboundMessage message) {
+        if (task_pool_ == nullptr) {
+            throw std::runtime_error("QQ channel task pool is not available");
+        }
+
+        std::shared_ptr<exec::async_scope> scope;
+        bool should_schedule = false;
+        {
+            std::scoped_lock lock(runtime_->outbound_send_mutex);
+            runtime_->outbound_send_shutdown = false;
+            if (runtime_->outbound_send_scope == nullptr) {
+                runtime_->outbound_send_scope = std::make_shared<exec::async_scope>();
+            }
+            runtime_->outbound_send_queue.push_back(RuntimeState::pending_outbound_send{
+                .jid = jid,
+                .message = std::move(message),
+            });
+            scope = runtime_->outbound_send_scope;
+            if (!runtime_->outbound_send_draining) {
+                runtime_->outbound_send_draining = true;
+                should_schedule = true;
+            }
+        }
+
+        if (!should_schedule || scope == nullptr) {
+            return;
+        }
+
+        scope->spawn(stdexec::schedule(task_pool_->scheduler()) | stdexec::then([this] {
+                         drain_outbound_send_queue();
+                     }));
+    }
+
+    void QqChannel::drain_outbound_send_queue() {
+        while (true) {
+            std::optional<RuntimeState::pending_outbound_send> pending;
             {
-                std::scoped_lock lock(runtime_->debounce_mutex);
-                const auto now = std::chrono::steady_clock::now();
-                for (auto it = runtime_->pending_messages.begin(); it != runtime_->pending_messages.end();) {
-                    const auto elapsed_since_update = now - it->second.last_update_at;
-                    const auto elapsed_since_first = now - it->second.first_enqueued_at;
-                    if (elapsed_since_update >= runtime_->debounce_window || elapsed_since_first >= runtime_->debounce_max_wait) {
-                        ready_messages.emplace_back(it->first, it->second.text, it->second.reply_to_message_id, it->second.reference_message_id);
-                        it = runtime_->pending_messages.erase(it);
-                    } else {
-                        ++it;
-                    }
+                std::scoped_lock lock(runtime_->outbound_send_mutex);
+                if (runtime_->outbound_send_shutdown || runtime_->outbound_send_queue.empty()) {
+                    runtime_->outbound_send_draining = false;
+                    return;
                 }
+                pending = std::move(runtime_->outbound_send_queue.front());
+                runtime_->outbound_send_queue.pop_front();
             }
 
-            for (const auto &[jid, text, reply_to, reference] : ready_messages) {
-                flush_debounced_text(jid, text, reply_to, reference);
+            try {
+                send_now(pending->jid, pending->message);
+            } catch (const std::exception &e) {
+                spdlog::error("qq async send failed for jid '{}': {}", pending->jid, e.what());
+            } catch (...) {
+                spdlog::error("qq async send failed for jid '{}' with unknown exception", pending->jid);
             }
+        }
+    }
+
+    void QqChannel::send_now(const std::string &jid, const OutboundMessage &message) {
+        const auto target = resolve_send_target(bot_name_, jid);
+        const auto post_payload = [this, &target](const nlohmann::json &payload) {
+            const auto response = api_client_->post(message_path(target), payload);
+            std::string content_text;
+            if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
+                content_text = payload.at("markdown").at("content").get<std::string>();
+            } else if (payload.contains("content") && payload.at("content").is_string()) {
+                content_text = payload.at("content").get<std::string>();
+            }
+            if (!content_text.empty()) {
+                capture_outbound_ref_index(response, content_text);
+            }
+        };
+        const auto upload_media_info = [this](const qq_send_target &upload_target, int file_type, const std::string &url) {
+            const auto response = api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
+            const auto upload_payload = response.parse_json_body();
+            if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
+                throw std::runtime_error("QQ upload media missing file_info");
+            }
+            return upload_payload.at("file_info").get<std::string>();
+        };
+
+        route_outbound_payload(
+            target, message, post_payload, upload_media_info,
+            [this] {
+                return next_msg_seq();
+            },
+            [this](const std::string &reply_to_message_id, int reply_units) {
+                return resolve_passive_reply_message_id(reply_to_message_id, reply_units);
+            });
+    }
+
+    void QqChannel::start_known_users_persist_loop() {
+        stop_known_users_persist_loop();
+
+        runtime_->known_users_persist_task.start(*task_pool_, std::chrono::seconds(2), [this] {
+            persist_known_users();
             return true;
         });
     }
 
-    void QqChannel::stop_debounce_loop() {
-        runtime_->debounce_task.stop();
-
-        std::vector<std::tuple<std::string, std::string, std::string, std::string>> remaining_messages;
-        {
-            std::scoped_lock lock(runtime_->debounce_mutex);
-            for (const auto &[jid, pending] : runtime_->pending_messages) {
-                remaining_messages.emplace_back(jid, pending.text, pending.reply_to_message_id, pending.reference_message_id);
-            }
-            runtime_->pending_messages.clear();
-        }
-        if (!connected_.load()) {
-            return;
-        }
-        for (const auto &[jid, text, reply_to, reference] : remaining_messages) {
-            flush_debounced_text(jid, text, reply_to, reference);
-        }
-    }
-
-    void QqChannel::enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        if (text.empty()) {
-            return;
-        }
-
-        std::optional<std::tuple<std::string, std::string, std::string, std::string>> immediate_flush;
-        {
-            std::scoped_lock lock(runtime_->debounce_mutex);
-            const auto now = std::chrono::steady_clock::now();
-            auto it = runtime_->pending_messages.find(jid);
-            if (it != runtime_->pending_messages.end() && (it->second.reply_to_message_id != reply_to_message_id || it->second.reference_message_id != reference_message_id)) {
-                immediate_flush.emplace(jid, it->second.text, it->second.reply_to_message_id, it->second.reference_message_id);
-                runtime_->pending_messages.erase(it);
-                it = runtime_->pending_messages.end();
-            }
-
-            if (it == runtime_->pending_messages.end()) {
-                runtime_->pending_messages[jid] = RuntimeState::pending_debounced_message{
-                    .text = text,
-                    .reply_to_message_id = reply_to_message_id,
-                    .reference_message_id = reference_message_id,
-                    .first_enqueued_at = now,
-                    .last_update_at = now,
-                };
-            } else {
-                it->second.text.append(runtime_->debounce_separator);
-                it->second.text.append(text);
-                it->second.last_update_at = now;
-            }
-        }
-
-        if (immediate_flush.has_value()) {
-            const auto &[flush_jid, flush_text, flush_reply_to, flush_reference] = *immediate_flush;
-            flush_debounced_text(flush_jid, flush_text, flush_reply_to, flush_reference);
-        }
-    }
-
-    void QqChannel::flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id) {
-        try {
-            const auto target = resolve_send_target(bot_name_, jid);
-            const auto post_payload = [this, &target](const nlohmann::json &payload) {
-                const auto response = api_client_->post(message_path(target), payload);
-                std::string content_text;
-                if (payload.contains("markdown") && payload.at("markdown").contains("content")) {
-                    content_text = payload.at("markdown").at("content").get<std::string>();
-                } else if (payload.contains("content") && payload.at("content").is_string()) {
-                    content_text = payload.at("content").get<std::string>();
-                }
-                if (!content_text.empty()) {
-                    capture_outbound_ref_index(response, content_text);
-                }
-            };
-            const auto upload_media_info = [this](const qq_send_target &upload_target, int file_type, const std::string &url) {
-                const auto response = api_client_->post(media_upload_path(upload_target), nlohmann::json{{"file_type", file_type}, {"url", url}, {"srv_send_msg", false}});
-                const auto upload_payload = response.parse_json_body();
-                if (!upload_payload.contains("file_info") || !upload_payload.at("file_info").is_string()) {
-                    throw std::runtime_error("QQ upload media missing file_info");
-                }
-                return upload_payload.at("file_info").get<std::string>();
-            };
-
-            route_outbound_payload(
-                target,
-                OutboundMessage{
-                    .payload = TextPayload{.text = text},
-                    .reply_to_message_id = reply_to_message_id,
-                    .reference_message_id = reference_message_id,
-                },
-                post_payload, upload_media_info,
-                [this] {
-                    return next_msg_seq();
-                },
-                [this](const std::string &reply_id, int reply_units) {
-                    return resolve_passive_reply_message_id(reply_id, reply_units);
-                });
-        } catch (const std::exception &e) {
-            spdlog::error("qq debounced send failed for jid '{}': {}", jid, e.what());
-        }
+    void QqChannel::stop_known_users_persist_loop() {
+        runtime_->known_users_persist_task.stop();
     }
 
     void QqChannel::load_session_state() {
@@ -650,20 +643,25 @@ namespace orangutan::channel::qq {
 
             std::scoped_lock lock(runtime_->known_users_mutex);
             runtime_->known_users = std::move(loaded);
+            runtime_->known_users_dirty = false;
         } catch (const std::exception &e) {
             spdlog::warn("failed to load qq known users: {}", e.what());
         }
     }
 
-    void QqChannel::persist_known_users() {
+    void QqChannel::persist_known_users(bool force) {
         std::vector<RuntimeState::known_user> users;
         {
             std::scoped_lock lock(runtime_->known_users_mutex);
+            if (!force && !runtime_->known_users_dirty) {
+                return;
+            }
             users.reserve(runtime_->known_users.size());
             for (const auto &[key, user] : runtime_->known_users) {
                 static_cast<void>(key);
                 users.push_back(user);
             }
+            runtime_->known_users_dirty = false;
         }
 
         std::ranges::sort(users, [](const auto &lhs, const auto &rhs) {
@@ -688,6 +686,10 @@ namespace orangutan::channel::qq {
             }
             output << payload.dump(2);
         } catch (const std::exception &e) {
+            {
+                std::scoped_lock lock(runtime_->known_users_mutex);
+                runtime_->known_users_dirty = true;
+            }
             spdlog::warn("failed to persist qq known users: {}", e.what());
         }
     }
@@ -704,8 +706,8 @@ namespace orangutan::channel::qq {
             entry.kind = std::string(kind);
             entry.openid = openid;
             entry.last_seen_at = now;
+            runtime_->known_users_dirty = true;
         }
-        persist_known_users();
     }
 
     void QqChannel::remember_group_history(const std::string &jid, const std::string &sender_name, const std::string &content) {

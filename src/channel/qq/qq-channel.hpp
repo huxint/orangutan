@@ -96,15 +96,18 @@ namespace orangutan::channel::qq {
         void stop_heartbeat();
         void start_token_refresh_loop();
         void stop_token_refresh_loop();
-        void start_debounce_loop();
-        void stop_debounce_loop();
-        void enqueue_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
-        void flush_debounced_text(const std::string &jid, const std::string &text, const std::string &reply_to_message_id, const std::string &reference_message_id);
+        void start_outbound_send_loop();
+        void stop_outbound_send_loop();
+        void enqueue_outbound_send(const std::string &jid, OutboundMessage message);
+        void drain_outbound_send_queue();
+        void send_now(const std::string &jid, const OutboundMessage &message);
+        void start_known_users_persist_loop();
+        void stop_known_users_persist_loop();
         void load_session_state();
         void persist_session_state();
         void clear_session_state();
         void load_known_users();
-        void persist_known_users();
+        void persist_known_users(bool force = false);
         void remember_known_user(std::string_view kind, const std::string &openid);
         void remember_group_history(const std::string &jid, const std::string &sender_name, const std::string &content);
         [[nodiscard]]

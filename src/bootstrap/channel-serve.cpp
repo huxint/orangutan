@@ -324,8 +324,15 @@ namespace orangutan::bootstrap {
                                 const auto previous_message_count = runtime.agent().history().size();
                                 const auto active_model =
                                     runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
+                                const auto distillation_dispatcher = runtime.provider() != nullptr
+                                    ? cli::make_background_session_distillation_dispatcher(runtime.completion_resume_state != nullptr
+                                                                                              ? runtime.completion_resume_state->automation_runtime
+                                                                                              : nullptr,
+                                                                                          *runtime.provider(), runtime.provider_route, runtime.runtime->memory.get())
+                                    : cli::SessionDistillationDispatcher{};
                                 const auto result = cli::start_new_session(runtime.agent(), session_store, runtime.current_session_id,
-                                                                           make_channel_session_metadata(runtime, message.jid, active_model));
+                                                                           make_channel_session_metadata(runtime, message.jid, active_model),
+                                                                           distillation_dispatcher);
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
                                 runtime.current_session_id.clear();
                                 session_store.clear_jid(message.jid, runtime.agent_key);
@@ -804,11 +811,7 @@ namespace orangutan::bootstrap {
                             return;
                         }
                         try {
-                            channel_manager.send(reply_target, OutboundMessage{
-                                                                   .payload = TextPayload{.text = text},
-                                                                   .reply_to_message_id = message.message_id,
-                                                                   .reference_message_id = first_block_sent ? std::string{} : message.message_id,
-                                                               });
+                            channel_manager.send(reply_target, make_qq_stream_progress_message(text));
                             first_block_sent = true;
                         } catch (const std::exception &e) {
                             spdlog::debug("stream relay send failed: {}", e.what());
@@ -859,10 +862,7 @@ namespace orangutan::bootstrap {
                         // Blocks already streamed — send final text without reference (avoid repeated quote)
                         if (!reply.empty()) {
                             try {
-                                channel_manager.send(reply_target, OutboundMessage{
-                                                                       .payload = TextPayload{.text = reply},
-                                                                       .reply_to_message_id = message.message_id,
-                                                                   });
+                                channel_manager.send(reply_target, make_qq_stream_final_message(message, reply));
                             } catch (const std::exception &e) {
                                 spdlog::error("failed to deliver final reply for jid '{}': {}", message.jid, e.what());
                             }
@@ -885,9 +885,9 @@ namespace orangutan::bootstrap {
     std::size_t default_serve_worker_count() {
         const auto hardware = std::thread::hardware_concurrency();
         if (hardware == 0) {
-            return 4;
+            return 2;
         }
-        return std::max<std::size_t>(2, hardware);
+        return std::min<std::size_t>(2, hardware);
     }
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,

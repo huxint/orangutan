@@ -1,10 +1,15 @@
 #include "cli/session-workflow.hpp"
+
+#include "automation/runtime.hpp"
 #include "bootstrap/identity.hpp"
+#include "memory/runtime-memory.hpp"
+#include "tools/registry/tool-registry.hpp"
 #include "utils/file.hpp"
 
 #include <fmt/format.h>
 
 #include <filesystem>
+#include <optional>
 
 namespace orangutan::cli {
 
@@ -92,16 +97,47 @@ namespace orangutan::cli {
         return true;
     }
 
-    NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata) {
+    SessionDistillationDispatcher make_background_session_distillation_dispatcher(automation::AutomationRuntime *automation_runtime, const ProviderSystem &provider,
+                                                                                  ProviderRoute route, const memory::RuntimeMemory *memory) {
+        if (automation_runtime == nullptr) {
+            return {};
+        }
+
+        const auto provider_copy = provider;
+        const auto memory_copy = memory != nullptr ? std::optional<memory::RuntimeMemory>(*memory) : std::nullopt;
+        return [automation_runtime, provider_copy, route = std::move(route), memory_copy](std::vector<Message> history) mutable {
+            if (history.empty()) {
+                return;
+            }
+
+            automation_runtime->dispatch_background([provider = provider_copy, route, history = std::move(history), memory_copy]() mutable {
+                auto background_memory = memory_copy;
+                ToolRegistry tools;
+                auto *memory_ptr = background_memory.has_value() ? &*background_memory : nullptr;
+                AgentLoop loop(provider, route, tools, memory_ptr);
+                loop.set_history(std::move(history));
+                static_cast<void>(loop.distill_session_memory());
+            });
+        };
+    }
+
+    NewSessionResult start_new_session(AgentLoop &agent, SessionStore &store, std::string &current_session_id, const SessionMetadata &metadata,
+                                       const SessionDistillationDispatcher &dispatch_distillation) {
         NewSessionResult result{
             .had_history = !agent.history().empty(),
             .distillation = {},
         };
 
         if (result.had_history) {
-            result.distillation = agent.distill_session_memory();
+            auto history_snapshot = dispatch_distillation ? std::optional<std::vector<Message>>(agent.history()) : std::nullopt;
             static_cast<void>(persist_session(agent, store, current_session_id, metadata));
             result.previous_session_id = current_session_id;
+            if (dispatch_distillation) {
+                dispatch_distillation(std::move(*history_snapshot));
+                result.distillation.status = "Session distillation queued.";
+            } else {
+                result.distillation = agent.distill_session_memory();
+            }
         }
 
         agent.clear_history();

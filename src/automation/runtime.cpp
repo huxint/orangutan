@@ -92,32 +92,65 @@ namespace orangutan::automation {
         service_->set_notifier(std::move(notifier));
     }
 
-    void AutomationRuntime::start() {
-        if (running_.exchange(true)) {
+    void AutomationRuntime::dispatch_background(std::function<void()> work) {
+        if (!work) {
             return;
         }
 
-        if (!scope_.has_value()) {
-            scope_.emplace();
+        std::shared_ptr<exec::async_scope> scope;
+        std::shared_ptr<std::atomic<bool>> stop_requested;
+        {
+            std::scoped_lock lock(scope_mutex_);
+            if (!running_.load() || scope_ == nullptr || background_stop_requested_ == nullptr) {
+                return;
+            }
+            scope = scope_;
+            stop_requested = background_stop_requested_;
         }
+
+        auto task = stdexec::schedule(pool_->scheduler())
+                  | stdexec::then([job = std::move(work), stop_requested = std::move(stop_requested)]() mutable {
+                        if (stop_requested != nullptr && stop_requested->load()) {
+                            return;
+                        }
+                        try {
+                            job();
+                        } catch (const std::exception &error) {
+                            spdlog::warn("background automation task failed: {}", error.what());
+                        } catch (...) {
+                            spdlog::warn("background automation task failed with unknown exception");
+                        }
+                    });
+        scope->spawn(std::move(task));
+    }
+
+    void AutomationRuntime::start() {
+        std::scoped_lock lock(scope_mutex_);
+        if (running_.exchange(true)) {
+            return;
+        }
+        if (scope_ == nullptr) {
+            scope_ = std::make_shared<exec::async_scope>();
+        }
+        background_stop_requested_ = std::make_shared<std::atomic<bool>>(false);
 
         service_->normalize_state(current_time());
 
-        auto tick = stdexec::schedule(pool_->scheduler())
-                  | stdexec::then([this] {
-                        if (running_.load()) {
-                            try {
-                                run_pending(current_time());
-                            } catch (const std::exception &error) {
-                                spdlog::error("automation scheduler tick failed: {}", error.what());
-                            } catch (...) {
-                                spdlog::error("automation scheduler tick failed with unknown exception");
-                            }
-                        }
-                    })
+        // Drive the recurring wake-up from the timer context so the pool does not
+        // keep a long-lived repeating task hot while automation is idle.
+        auto tick = exec::schedule_after(pool_->timed_scheduler(), std::chrono::seconds{1})
                   | stdexec::let_value([this] {
-                        return exec::schedule_after(pool_->timed_scheduler(), std::chrono::seconds{1})
+                        return stdexec::schedule(pool_->scheduler())
                              | stdexec::then([this] {
+                                   if (running_.load()) {
+                                       try {
+                                           run_pending(current_time());
+                                       } catch (const std::exception &error) {
+                                           spdlog::error("automation scheduler tick failed: {}", error.what());
+                                       } catch (...) {
+                                           spdlog::error("automation scheduler tick failed with unknown exception");
+                                       }
+                                   }
                                    return !running_.load();
                                });
                     })
@@ -127,16 +160,36 @@ namespace orangutan::automation {
     }
 
     void AutomationRuntime::stop() {
-        if (!scope_.has_value()) {
-            running_.store(false);
-            return;
+        std::shared_ptr<exec::async_scope> scope;
+        std::shared_ptr<std::atomic<bool>> stop_requested;
+        {
+            std::scoped_lock lock(scope_mutex_);
+            scope = scope_;
+            stop_requested = background_stop_requested_;
+            if (scope == nullptr) {
+                running_.store(false);
+                background_stop_requested_.reset();
+                return;
+            }
+            if (stop_requested != nullptr) {
+                stop_requested->store(true);
+            }
+            if (running_.exchange(false)) {
+                scope->request_stop();
+            }
         }
 
-        if (running_.exchange(false)) {
-            scope_->request_stop();
+        static_cast<void>(stdexec::sync_wait(scope->on_empty()));
+
+        {
+            std::scoped_lock lock(scope_mutex_);
+            if (scope_ == scope) {
+                scope_.reset();
+            }
+            if (background_stop_requested_ == stop_requested) {
+                background_stop_requested_.reset();
+            }
         }
-        static_cast<void>(stdexec::sync_wait(scope_->on_empty()));
-        scope_.reset();
     }
 
     void AutomationRuntime::run_pending(TimePoint now) {

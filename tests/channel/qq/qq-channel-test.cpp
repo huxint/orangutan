@@ -3,6 +3,7 @@
 #include "channel/qq/qq-channel-inbound.hpp"
 #include "channel/qq/qq-channel-outbound.hpp"
 #include "channel/qq/qq-channel-runtime.hpp"
+#include "channel/qq/qq-channel-session.hpp"
 #include "utils/task-pool.hpp"
 #include "test-helpers.hpp"
 
@@ -10,9 +11,11 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <future>
 #include <memory>
-#include <thread>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -88,12 +91,9 @@ namespace orangutan::channel::qq {
         static void handle_interaction(QqChannel &channel, const nlohmann::json &data) {
             channel.handle_interaction(data);
         }
-        static void start_debounce_loop(QqChannel &channel) {
-            channel.start_debounce_loop();
-        }
 
-        static void stop_debounce_loop(QqChannel &channel) {
-            channel.stop_debounce_loop();
+        static void remember_known_user(QqChannel &channel, std::string_view kind, const std::string &openid) {
+            channel.remember_known_user(kind, openid);
         }
 
         static void set_connected(QqChannel &channel, bool connected) {
@@ -115,6 +115,18 @@ namespace {
     orangutan::utils::TaskPool &shared_test_task_pool() {
         static orangutan::utils::TaskPool pool{1};
         return pool;
+    }
+
+    template <typename Predicate>
+    bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout = std::chrono::milliseconds{500}) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (std::forward<Predicate>(predicate)()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+        return std::forward<Predicate>(predicate)();
     }
 
     class FakeQqApiClient final : public QqApiClient {
@@ -141,6 +153,12 @@ namespace {
 
         [[nodiscard]]
         QqApiResponse post(std::string_view path, const nlohmann::json &body) override {
+            if (on_post_start) {
+                on_post_start();
+            }
+            if (before_post_return) {
+                before_post_return();
+            }
             requests.push_back({
                 .method = "POST",
                 .path = std::string(path),
@@ -197,6 +215,8 @@ namespace {
             .body = "attachment-bytes",
         };
         std::string last_get_path;
+        std::function<void()> on_post_start;
+        std::function<void()> before_post_return;
     };
 
     TEST_CASE("qq_channel_passive_reply_quota_requires_known_message_and_enforces_limit") {
@@ -381,7 +401,7 @@ namespace {
         CHECK(captured.referenced_content == "stored outbound text");
     }
 
-    TEST_CASE("qq_channel_debounce_merges_text_messages_for_the_same_jid") {
+    TEST_CASE("qq_channel_queues_text_messages_without_cross_reply_batching") {
         const auto temp_root = testing::unique_test_root("qq-channel");
         const testing::ScopedEnvVar home_var("HOME", temp_root.string());
 
@@ -389,18 +409,76 @@ namespace {
         auto fake_api = std::make_unique<FakeQqApiClient>();
         auto *api = fake_api.get();
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
-        qqtest::QqChannelTestAccess::set_connected(channel, true);
-        qqtest::QqChannelTestAccess::start_debounce_loop(channel);
 
         channel.send("qqbot:bot:c2c:user-openid", OutboundMessage{.payload = TextPayload{.text = "first chunk"}});
         channel.send("qqbot:bot:c2c:user-openid", OutboundMessage{.payload = TextPayload{.text = "second chunk"}});
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1800));
-        qqtest::QqChannelTestAccess::stop_debounce_loop(channel);
-
-        REQUIRE(api->requests.size() == 1UL);
+        REQUIRE(wait_until([&] {
+            return api->requests.size() == 2UL;
+        }));
+        REQUIRE(api->requests.size() == 2UL);
         CHECK(api->requests[0].path == "/v2/users/user-openid/messages");
-        CHECK(api->requests[0].body.at("markdown").at("content").get<std::string>() == "first chunk\n\n---\n\nsecond chunk");
+        CHECK(api->requests[0].body.at("markdown").at("content").get<std::string>() == "first chunk");
+        CHECK(api->requests[1].path == "/v2/users/user-openid/messages");
+        CHECK(api->requests[1].body.at("markdown").at("content").get<std::string>() == "second chunk");
+    }
+
+    TEST_CASE("qq_channel_text_send_returns_before_network_post_completes") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
+        auto fake_api = std::make_unique<FakeQqApiClient>();
+        auto *api = fake_api.get();
+        std::promise<void> post_started;
+        auto post_started_future = post_started.get_future();
+        std::promise<void> allow_post_finish;
+        auto allow_post_finish_future = allow_post_finish.get_future().share();
+        fake_api->on_post_start = [&post_started] {
+            post_started.set_value();
+        };
+        fake_api->before_post_return = [allow_post_finish_future] {
+            allow_post_finish_future.wait();
+        };
+        qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
+
+        const auto started_at = std::chrono::steady_clock::now();
+        channel.send("qqbot:bot:c2c:user-openid", OutboundMessage{.payload = TextPayload{.text = "queued reply"}});
+        const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+        CHECK(elapsed < std::chrono::milliseconds{100});
+        REQUIRE(post_started_future.wait_for(std::chrono::milliseconds{500}) == std::future_status::ready);
+        CHECK(api->requests.empty());
+
+        allow_post_finish.set_value();
+
+        REQUIRE(wait_until([&] {
+            return api->requests.size() == 1UL;
+        }));
+        CHECK(api->requests[0].path == "/v2/users/user-openid/messages");
+        CHECK(api->requests[0].body.at("markdown").at("content").get<std::string>() == "queued reply");
+    }
+
+    TEST_CASE("qq_channel_defers_known_user_disk_writes_until_background_flush_or_disconnect") {
+        const auto temp_root = testing::unique_test_root("qq-channel");
+        const testing::ScopedEnvVar home_var("HOME", temp_root.string());
+
+        QqChannel channel("bot", "app-id", "client-secret", shared_test_task_pool());
+        const auto file_path = qqtest::qq_known_users_file_path("bot");
+
+        qqtest::QqChannelTestAccess::remember_known_user(channel, "c2c", "user-openid");
+        CHECK_FALSE(std::filesystem::exists(file_path));
+
+        channel.disconnect();
+
+        REQUIRE(std::filesystem::exists(file_path));
+        std::ifstream input(file_path);
+        nlohmann::json payload;
+        input >> payload;
+        REQUIRE(payload.is_array());
+        REQUIRE(payload.size() == 1UL);
+        CHECK(payload.front().at("kind").get<std::string>() == "c2c");
+        CHECK(payload.front().at("openid").get<std::string>() == "user-openid");
     }
 
     TEST_CASE("qq_channel_start_typing_sends_c2c_typing_indicator_and_skips_groups") {

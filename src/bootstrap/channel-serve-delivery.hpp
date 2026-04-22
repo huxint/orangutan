@@ -3,6 +3,7 @@
 #include "channel/channel.hpp"
 
 #include <string>
+#include <utility>
 
 #include <spdlog/spdlog.h>
 
@@ -20,6 +21,22 @@ namespace orangutan::bootstrap {
             return message.jid;
         }
         return message.reply_target;
+    }
+
+    [[nodiscard]]
+    inline OutboundMessage make_qq_stream_progress_message(std::string text) {
+        return OutboundMessage{
+            .payload = TextPayload{.text = std::move(text)},
+        };
+    }
+
+    [[nodiscard]]
+    inline OutboundMessage make_qq_stream_final_message(const InboundMessage &message, std::string text) {
+        return OutboundMessage{
+            .payload = TextPayload{.text = std::move(text)},
+            .reply_to_message_id = message.message_id,
+            .reference_message_id = message.message_id,
+        };
     }
 
     inline void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager) {

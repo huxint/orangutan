@@ -468,10 +468,12 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                                                                    current_session_id, maybe_primary_runtime_cfg->model, maybe_primary_runtime_cfg->cli_memory_scope,
                                                                    maybe_primary_runtime_cfg->agent_key, emit_json_event, std::cerr, &app_runtime.automation_runtime());
                 } else {
+                    const auto session_distillation_dispatcher = orangutan::cli::make_background_session_distillation_dispatcher(
+                        &app_runtime.automation_runtime(), *primary_runtime->provider, maybe_primary_runtime_cfg->provider_route, primary_runtime->memory.get());
                     orangutan::cli::run_repl(*primary_runtime->agent, *primary_runtime->provider, *session_store, maybe_primary_runtime_cfg->model,
                                              maybe_primary_runtime_cfg->fallback_models, cfg, current_session_id, maybe_primary_runtime_cfg->agent_key,
                                              maybe_primary_runtime_cfg->cli_memory_scope, maybe_primary_runtime_cfg->workspace_root, &skill_loader, &primary_runtime->tools(),
-                                             primary_runtime->active_hook_manager(), &app_runtime.automation_runtime());
+                                             primary_runtime->active_hook_manager(), session_distillation_dispatcher, &app_runtime.automation_runtime());
                 }
             }
         }

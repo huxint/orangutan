@@ -39,6 +39,7 @@ namespace orangutan::web {
         std::unique_ptr<bootstrap::AgentRuntimeBundle> runtime;
         std::shared_ptr<WebPendingApproval> pending_approval;
         std::shared_ptr<WebCompletionResumeState> completion_resume_state;
+        std::size_t persisted_message_count = 0;
         std::atomic<bool> abort_requested{false};
         std::atomic<bool> running{false};
 

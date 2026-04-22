@@ -57,7 +57,7 @@ namespace orangutan::cli {
         bool handle_slash_command(const std::string &line, AgentLoop &agent, const ProviderSystem &provider, SessionStore &store, const std::string &configured_model,
                                   const std::vector<std::string> &fallback_models, std::string &current_session_id, bool &quit, const Config &cfg, const std::string &agent_key,
                                   const std::string &scope_key, const std::string &workspace_root, const SkillLoader *skill_loader, const ToolRegistry *tool_registry,
-                                  HookManager *hook_manager) {
+                                  HookManager *hook_manager, const SessionDistillationDispatcher &session_distillation_dispatcher) {
             const auto active_model = provider.current_model().empty() ? configured_model : provider.current_model();
 
             if (line == "/quit" || line == "/exit") {
@@ -107,7 +107,8 @@ namespace orangutan::cli {
                            .new_session =
                                [&] {
                                    const auto previous_message_count = agent.history().size();
-                                   const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key));
+                                   const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key),
+                                                                         session_distillation_dispatcher);
                                    dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
                                    return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
                                },
@@ -183,6 +184,7 @@ namespace orangutan::cli {
                   const std::vector<std::string> &fallback_models,
                   const Config &cfg, std::string &current_session_id, const std::string &agent_key, const std::string &scope_key, const std::string &workspace_root,
                   const SkillLoader *skill_loader, const ToolRegistry *tool_registry, HookManager *hook_manager,
+                  const SessionDistillationDispatcher &session_distillation_dispatcher,
                   automation::AutomationRuntime *automation_runtime) {
         fmt::println("Orangutan v0.1.0");
         fmt::println("Type /help for commands, Ctrl+D to quit\n");
@@ -212,7 +214,7 @@ namespace orangutan::cli {
             bool quit = false;
             const bool handled = automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
                 if (line[0] == '/' && handle_slash_command(line, agent, provider, store, configured_model, fallback_models, current_session_id, quit, cfg, agent_key, scope_key,
-                                                           workspace_root, skill_loader, tool_registry, hook_manager)) {
+                                                           workspace_root, skill_loader, tool_registry, hook_manager, session_distillation_dispatcher)) {
                     return true;
                 }
 

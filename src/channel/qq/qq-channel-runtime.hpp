@@ -1,5 +1,6 @@
 #pragma once
 
+#include "channel/channel.hpp"
 #include "channel/qq/qq-transport.hpp"
 #include "types/base.hpp"
 #include "utils/periodic-task.hpp"
@@ -12,6 +13,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
+#include <exec/async_scope.hpp>
 
 namespace orangutan::channel::qq {
 
@@ -33,14 +36,6 @@ namespace orangutan::channel::qq {
     inline constexpr std::uint32_t INTENT_DIRECT_MESSAGES = 1U << 12;
 
     struct qq_channel_runtime_state {
-        struct pending_debounced_message {
-            std::string text;
-            std::string reply_to_message_id;
-            std::string reference_message_id;
-            std::chrono::steady_clock::time_point first_enqueued_at;
-            std::chrono::steady_clock::time_point last_update_at;
-        };
-
         struct known_user {
             std::string kind;
             std::string openid;
@@ -50,6 +45,11 @@ namespace orangutan::channel::qq {
         struct typing_state {
             std::string message_id;
             std::chrono::steady_clock::time_point last_sent_at;
+        };
+
+        struct pending_outbound_send {
+            std::string jid;
+            OutboundMessage message;
         };
 
         std::mutex mutex;
@@ -63,14 +63,15 @@ namespace orangutan::channel::qq {
         std::chrono::milliseconds heartbeat_interval{0};
         utils::PeriodicTask heartbeat_task;
         utils::PeriodicTask token_refresh_task;
-        utils::PeriodicTask debounce_task;
-        std::mutex debounce_mutex;
-        std::unordered_map<std::string, pending_debounced_message> pending_messages;
-        std::chrono::milliseconds debounce_window{1500};
-        std::chrono::milliseconds debounce_max_wait{8000};
-        std::string debounce_separator = "\n\n---\n\n";
+        std::mutex outbound_send_mutex;
+        std::deque<pending_outbound_send> outbound_send_queue;
+        std::shared_ptr<exec::async_scope> outbound_send_scope;
+        bool outbound_send_draining = false;
+        bool outbound_send_shutdown = false;
         std::mutex known_users_mutex;
+        utils::PeriodicTask known_users_persist_task;
         std::unordered_map<std::string, known_user> known_users;
+        bool known_users_dirty = false;
         std::mutex group_history_mutex;
         std::unordered_map<std::string, std::deque<std::string>> group_history;
         std::size_t group_history_limit = 50;

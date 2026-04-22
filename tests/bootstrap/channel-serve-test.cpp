@@ -1,4 +1,5 @@
 #include "bootstrap/channel-serve-runtime.hpp"
+#include "bootstrap/channel-serve-delivery.hpp"
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/identity.hpp"
@@ -442,6 +443,28 @@ namespace {
         CHECK(sent_messages[0].text == "sent");
         CHECK(sent_messages[0].reply_to_message_id == "slack-message-42");
         CHECK(sent_messages[0].reference_message_id.empty());
+    };
+
+    TEST_CASE("qq_stream_progress_messages_leave_passive_reply_quota_for_the_final_reply") {
+        const InboundMessage message{
+            .jid = "qqbot:c2c:42",
+            .content = "prompt",
+            .message_id = "qq-message-42",
+        };
+
+        const auto progress = bootstrap::make_qq_stream_progress_message("💭 thinking");
+        const auto final = bootstrap::make_qq_stream_final_message(message, "done");
+
+        const auto *progress_text = std::get_if<TextPayload>(&progress.payload);
+        const auto *final_text = std::get_if<TextPayload>(&final.payload);
+        REQUIRE(progress_text != nullptr);
+        REQUIRE(final_text != nullptr);
+        CHECK(progress_text->text == "💭 thinking");
+        CHECK(progress.reply_to_message_id.empty());
+        CHECK(progress.reference_message_id.empty());
+        CHECK(final_text->text == "done");
+        CHECK(final.reply_to_message_id == "qq-message-42");
+        CHECK(final.reference_message_id == "qq-message-42");
     };
 
     TEST_CASE("logs_unowned_outbound_jid_without_throwing") {

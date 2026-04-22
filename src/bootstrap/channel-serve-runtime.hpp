@@ -89,6 +89,7 @@ namespace orangutan::bootstrap {
             std::string runtime_key;
             std::string agent_key;
             std::string configured_model;
+            providers::ProviderRoute provider_route;
             std::vector<std::string> fallback_models;
             std::string workspace;
             std::string memory_scope;
@@ -157,6 +158,7 @@ namespace orangutan::bootstrap {
             runtime->runtime_key = identity.runtime_key;
             runtime->agent_key = cfg.agent_key;
             runtime->configured_model = cfg.model;
+            runtime->provider_route = cfg.provider_route;
             runtime->fallback_models = cfg.fallback_models;
             runtime->workspace = identity.workspace;
             runtime->memory_scope = identity.memory_scope;

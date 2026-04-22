@@ -83,7 +83,7 @@ namespace orangutan::orchestration {
         };
 
         const int max_concurrent;
-        utils::TaskPool pool;
+        std::unique_ptr<utils::TaskPool> pool;
         exec::async_scope scope;
 
         mutable std::mutex mutex;
@@ -98,8 +98,15 @@ namespace orangutan::orchestration {
         bool shutting_down = false;
 
         explicit Impl(int max_concurrent_agents)
-        : max_concurrent(std::max(1, max_concurrent_agents)),
-          pool(resolve_pool_size(max_concurrent_agents)) {}
+        : max_concurrent(std::max(1, max_concurrent_agents)) {}
+
+        [[nodiscard]]
+        auto scheduler() -> exec::static_thread_pool::scheduler {
+            if (pool == nullptr) {
+                pool = std::make_unique<utils::TaskPool>(resolve_pool_size(max_concurrent));
+            }
+            return pool->scheduler();
+        }
 
         [[nodiscard]]
         auto make_run_id() -> std::string {
@@ -133,7 +140,7 @@ namespace orangutan::orchestration {
                 run->record.status = run_status::running;
             }
             ++running_count;
-            scope.spawn(stdexec::schedule(pool.scheduler()) | stdexec::then([this, run] {
+            scope.spawn(stdexec::schedule(scheduler()) | stdexec::then([this, run] {
                 run_lifecycle(*run);
                 release_slot_and_resume();
             }));

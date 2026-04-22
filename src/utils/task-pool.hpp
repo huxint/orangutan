@@ -15,12 +15,12 @@ namespace orangutan::utils {
     /// subsystems that need async work — automation timers, QQ heartbeat
     /// loops, background retries, etc.
     ///
-    /// Construction seeds the pool with `hardware_concurrency` threads when
-    /// `thread_count` is zero; pass a positive number for a custom size.
+    /// Construction defaults to a single worker thread. Callers that need more
+    /// parallelism should pass an explicit thread count.
     class TaskPool {
     public:
         TaskPool()
-        : pool_{} {}
+        : pool_{1} {}
 
         explicit TaskPool(std::size_t thread_count)
         : pool_{static_cast<std::uint32_t>(thread_count)} {}

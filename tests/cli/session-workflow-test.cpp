@@ -1,13 +1,16 @@
 #include "cli/session-workflow.hpp"
 
+#include "bootstrap/app-runtime.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
 #include "test-helpers.hpp"
 #include "test-provider-support.hpp"
 #include "tools/registry/tool.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace orangutan;
@@ -173,6 +176,48 @@ namespace {
         REQUIRE(it != std::filesystem::directory_iterator{});
 
         std::filesystem::remove_all(workspace);
+    };
+
+    TEST_CASE("start_new_session_can_queue_distillation_in_background") {
+        SessionWorkflowHarness harness;
+        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        const auto route = orangutan::testing::make_test_route("test-model");
+        ToolRegistry tools;
+        MemoryStore memory_store(harness.memory_db_path());
+        RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "scope:test"});
+        SessionStore session_store(harness.session_db_path());
+        AgentLoop loop(provider, route, tools, &runtime_memory);
+        const auto automation_db_path = orangutan::testing::unique_test_db_path("session-workflow-async", "automation.db");
+        bootstrap::AppRuntime app_runtime(automation_db_path);
+        app_runtime.automation_runtime().start();
+
+        loop.set_history({
+            Message::user().text("we are working on orangutan refactor"),
+            Message::assistant().text("Understood"),
+        });
+
+        std::string current_session_id;
+        const auto dispatcher =
+            cli::make_background_session_distillation_dispatcher(&app_runtime.automation_runtime(), provider, route, &runtime_memory);
+        const auto result = cli::start_new_session(loop, session_store, current_session_id, cli::make_cli_session_metadata("test-model", "scope:test", "coder"), dispatcher);
+
+        CHECK(result.had_history);
+        CHECK(result.distillation.status == "Session distillation queued.");
+        CHECK(loop.history().empty());
+        CHECK(current_session_id.empty());
+
+        bool distilled = false;
+        for (int attempt = 0; attempt < 50; ++attempt) {
+            if (memory_store.recall("project.current", "scope:test").contains("orangutan refactor")) {
+                distilled = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        CHECK(distilled);
+
+        app_runtime.automation_runtime().stop();
+        std::filesystem::remove_all(automation_db_path.parent_path());
     };
 
     TEST_CASE("describe_new_session_result_uses_markdown_slash_reply_format") {

@@ -133,6 +133,7 @@ namespace orangutan::web {
 
             if (!session->session_id.empty() && ctx.session_store != nullptr) {
                 session->agent()->set_history(ctx.session_store->load(session->session_id));
+                session->persisted_message_count = session->agent()->history().size();
             }
 
             if (message.starts_with('/')) {
@@ -271,7 +272,13 @@ namespace orangutan::web {
 
                     if (store_ptr != nullptr) {
                         try {
-                            store_ptr->update(captured_session_id, agent_ptr->history(), captured_metadata);
+                            const auto &history = agent_ptr->history();
+                            if (history.size() > session_ptr->persisted_message_count) {
+                                store_ptr->append(captured_session_id, history, session_ptr->persisted_message_count, captured_metadata);
+                            } else {
+                                store_ptr->update(captured_session_id, history, captured_metadata);
+                            }
+                            session_ptr->persisted_message_count = history.size();
                         } catch (const std::exception &e) {
                             spdlog::warn("failed to save session {}: {}", captured_session_id, e.what());
                         }

@@ -59,6 +59,7 @@ namespace orangutan::automation {
         void add_delivery_filter(AutomationDeliveryFilter filter);
         void register_category(AutomationCategory category);
         void set_notifier(AutomationNotifier notifier);
+        void dispatch_background(std::function<void()> work);
 
         [[nodiscard]]
         AgentExecutionLease acquire_agent_execution_lease(std::string_view agent_key);
@@ -79,8 +80,10 @@ namespace orangutan::automation {
         AutomationService *service_ = nullptr;
         utils::TaskPool *pool_ = nullptr;
         ClockSource clock_;
-        std::optional<exec::async_scope> scope_;
+        std::shared_ptr<exec::async_scope> scope_;
+        std::shared_ptr<std::atomic<bool>> background_stop_requested_;
         std::atomic<bool> running_{false};
+        std::mutex scope_mutex_;
         std::mutex agent_execution_gates_mutex_;
         std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
     };

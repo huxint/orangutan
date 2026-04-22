@@ -160,7 +160,7 @@ namespace orangutan::channel {
 
     namespace {
 
-        constexpr std::size_t MIN_POOL_SIZE = 4;
+        constexpr std::size_t MIN_POOL_SIZE = 2;
 
         [[nodiscard]]
         std::size_t resolve_pool_size(std::size_t worker_count) {
