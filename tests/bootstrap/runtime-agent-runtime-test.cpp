@@ -169,7 +169,7 @@ namespace {
         const auto remember = runtime.tools().execute(ToolUse("remember-before-discovery", "remember", {{"key", "runtime.theme"}, {"content", "amber"}}));
         CHECK_FALSE(remember.is_error);
 
-        const auto recall = runtime.tools().execute(ToolUse("recall-before-discovery", "memory_recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
+        const auto recall = runtime.tools().execute(ToolUse("recall-before-discovery", "recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
         CHECK_FALSE(recall.is_error);
         CHECK(recall.content.contains("amber"));
     };
@@ -333,6 +333,23 @@ namespace {
         CHECK(std::ranges::any_of(permission_context->deny_rules, [](const PermissionRule &rule) {
             return rule.tool_name == "edit" && rule.source == permission_rule_source::local_settings;
         }));
+    };
+
+    TEST_CASE("replace_permissions_updates_live_tool_visibility_and_execution") {
+        RuntimeAgentRuntimeHarness harness;
+        auto input = harness.make_input();
+        input.permission_context.mode = permission_mode::plan;
+
+        auto runtime = build_agent_runtime(input);
+
+        CHECK_FALSE(orangutan::testing::has_tool_named(runtime.tools().definitions(), "shell"));
+
+        runtime.replace_permissions(change_mode(runtime.permissions(), permission_mode::bypass_permissions));
+
+        CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "shell"));
+        const auto shell_result = runtime.tools().execute(ToolUse("runtime-replaced-shell", "shell", {{"command", "echo hello"}}));
+        CHECK_FALSE(shell_result.is_error);
+        CHECK(shell_result.content.contains("hello"));
     };
 
     TEST_CASE("keeps_tool_registry_stable_and_permissions_alive_after_move") {

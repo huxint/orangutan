@@ -81,9 +81,6 @@ namespace orangutan::config::detail {
     Config parse_hooks_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_heartbeat_section(const nlohmann::json &root, Config cfg);
-
-    [[nodiscard]]
     Config parse_json(const nlohmann::json &root, const ConfigSecretOptions &secret_options);
 
 } // namespace orangutan::config::detail

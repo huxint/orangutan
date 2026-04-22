@@ -98,12 +98,12 @@ namespace orangutan::storage {
         }
 
         void ensure_column(sqlite::Database &db, std::string_view table_name, std::string_view column_name, std::string_view add_sql) {
-            auto pragma = sqlite::prepare_or_throw(db, std::string("PRAGMA table_info(") + std::string(table_name) + ")");
-            while (sqlite::unwrap(pragma.step())) {
-                auto row = sqlite::unwrap(pragma.row());
-                if (sqlite::unwrap(row.get<std::string>(1)) == column_name) {
-                    return;
-                }
+            const auto existing = sqlite::query_optional<int>(
+                db,
+                fmt::format("SELECT 1 FROM pragma_table_info('{}') WHERE name = ? LIMIT 1", table_name),
+                column_name);
+            if (existing.has_value()) {
+                return;
             }
 
             sqlite::exec_script(db, add_sql, "Failed to migrate session schema");
@@ -115,15 +115,12 @@ namespace orangutan::storage {
             int agent_key_pk_position = 0;
         };
 
-        ChannelBindingSchema inspect_channel_binding_schema(sqlite::Database &db) {
-            auto pragma = sqlite::prepare_or_throw(db, "PRAGMA table_info(channel_session_bindings)");
-
+        [[nodiscard]]
+        auto inspect_channel_binding_schema(sqlite::Database &db) -> ChannelBindingSchema {
             ChannelBindingSchema schema;
-            while (sqlite::unwrap(pragma.step())) {
-                auto row = sqlite::unwrap(pragma.row());
-                const auto column_name = sqlite::unwrap(row.get<std::string>(1));
-                const auto pk_position = sqlite::unwrap(row.get<int>(5));
-
+            const auto rows =
+                sqlite::query_all<std::tuple<std::string, int>>(db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
+            for (const auto &[column_name, pk_position] : rows) {
                 if (column_name == "jid") {
                     schema.jid_pk_position = pk_position;
                 }
@@ -132,7 +129,6 @@ namespace orangutan::storage {
                     schema.agent_key_pk_position = pk_position;
                 }
             }
-
             return schema;
         }
 
@@ -161,8 +157,17 @@ namespace orangutan::storage {
                                 "Failed to recreate binding index");
         }
 
+        [[nodiscard]]
+        auto prepare_statement(sqlite::Database &db, std::string_view sql) -> sqlite::Statement {
+            auto statement = sqlite::Statement::create(db, sql);
+            if (!statement.has_value()) {
+                throw std::runtime_error("sqlite: " + statement.error().message);
+            }
+            return std::move(*statement);
+        }
+
         void write_messages(sqlite::Database &db, std::string_view session_id, const std::vector<Message> &messages, std::size_t start_index) {
-            auto insert_msg = sqlite::prepare_or_throw(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
+            auto insert_msg = prepare_statement(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
             for (std::size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
                 const auto content_json = serialize_content(message).dump();
@@ -517,10 +522,10 @@ namespace orangutan::storage {
             // the in-memory rules exactly, without leaking non-session rules into storage.
             sqlite::exec_bind(tx, "DELETE FROM session_permission_rules WHERE session_id = ?", session_id);
 
-            auto insert = sqlite::prepare_or_throw(tx,
-                                                   "INSERT OR IGNORE INTO session_permission_rules "
-                                                   "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
-                                                   "VALUES (?, ?, ?, ?, ?, ?)");
+            auto insert = prepare_statement(tx,
+                                            "INSERT OR IGNORE INTO session_permission_rules "
+                                            "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                                            "VALUES (?, ?, ?, ?, ?, ?)");
             for (const auto &rule : session_rules) {
                 sqlite::unwrap(insert.clear_bindings());
                 bind_session_permission_rule(insert, session_id, rule);

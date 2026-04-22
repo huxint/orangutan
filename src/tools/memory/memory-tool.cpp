@@ -210,25 +210,6 @@ namespace orangutan::tools {
                                 .execute = forget_execute,
                                 .deferred = true});
 
-        registry.register_tool({.definition = {.name = "memory_store",
-                                               .description = "Plugin-style alias for remember. "
-                                                              "Type must be one of: user, feedback, project, reference.",
-                                               .input_schema = mutation_schema},
-                                .execute = remember_execute,
-                                .deferred = true});
-
-        registry.register_tool({.definition = {.name = "memory_recall",
-                                               .description = "Plugin-style alias for recall. Use mode='query' or mode='category' with value=<text>.",
-                                               .input_schema = recall_schema},
-                                .execute = recall_execute,
-                                .deferred = true});
-
-        registry.register_tool({.definition = {.name = "memory_forget",
-                                               .description = "Plugin-style alias for forget.",
-                                               .input_schema = key_schema},
-                                .execute = forget_execute,
-                                .deferred = true});
-
         registry.register_tool({.definition = {.name = "memory_update",
                                                .description = "Update or merge a memory entry. "
                                                               "Type must be one of: user, feedback, project, reference.",

@@ -461,25 +461,6 @@ namespace {
         CHECK(ChannelServeHarness::contains_line(sink->lines(), "qqbot:c2c:missing"));
     };
 
-    TEST_CASE("builds_skill_prompt_for_effective_agent_workspace") {
-        ChannelServeHarness harness;
-        ChannelServeHarness::write_skill(harness.home_root() / ".orangutan" / "skills", "home-skill", "home-skill", "Home skill body");
-        ChannelServeHarness::write_skill(harness.workspace_root() / ".orangutan" / "skills", "workspace-skill", "workspace-skill", "Workspace skill body");
-
-        ScopedEnvVar home_env("HOME", harness.home_root().string());
-
-        Config cfg;
-        const bootstrap::AgentRuntimeConfig runtime_cfg{
-            .agent_key = "assistant",
-            .workspace_root = harness.workspace_root().string(),
-        };
-
-        const auto prompt = bootstrap::build_skill_prompt_for_runtime(cfg, runtime_cfg);
-        CHECK(prompt.contains("## Available Skills"));
-        CHECK(prompt.contains("**home-skill**"));
-        CHECK(prompt.contains("**workspace-skill**"));
-    };
-
     TEST_CASE("conversation_runtime_preserves_channel_context_and_shared_capabilities") {
         ChannelServeHarness harness;
         MemoryStore memory_store((harness.temp_root() / "memory.db"));
@@ -1454,6 +1435,49 @@ namespace {
         const auto error = callback("ignored");
         REQUIRE(error.has_value());
         CHECK(*error == "channel runtime is no longer available");
+    };
+
+    TEST_CASE("park_conversation_runtime_preserves_resume_state_for_later_resume") {
+        auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
+        std::string current_session_id = "session-1";
+        std::size_t persisted_message_count = 3;
+        resume_state->current_session_id = &current_session_id;
+        resume_state->persisted_message_count = &persisted_message_count;
+        auto weak_state = std::weak_ptr<bootstrap::detail::ChannelCompletionResumeState>(resume_state);
+
+        bootstrap::detail::ConversationRuntime runtime;
+        runtime.completion_resume_state = resume_state;
+        runtime.owns_runtime_notification_handler = true;
+
+        auto parked_state = bootstrap::detail::park_conversation_runtime(runtime);
+
+        REQUIRE(parked_state != nullptr);
+        CHECK(runtime.completion_resume_state == nullptr);
+        CHECK_FALSE(runtime.owns_runtime_notification_handler);
+        CHECK_FALSE(weak_state.expired());
+        CHECK(parked_state->current_session_id == nullptr);
+        CHECK(parked_state->persisted_message_count == nullptr);
+    };
+
+    TEST_CASE("conversation_runtime_destruction_keeps_shared_resume_services_available") {
+        ChannelServeHarness harness;
+        ChannelManager manager;
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        bootstrap::AppRuntime app_runtime(harness.temp_root() / "automation.db");
+
+        auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
+        resume_state->session_store = &session_store;
+        resume_state->channel_manager = &manager;
+        resume_state->automation_runtime = &app_runtime.automation_runtime();
+
+        {
+            bootstrap::detail::ConversationRuntime runtime;
+            runtime.completion_resume_state = resume_state;
+        }
+
+        CHECK(resume_state->session_store == &session_store);
+        CHECK(resume_state->channel_manager == &manager);
+        CHECK(resume_state->automation_runtime == &app_runtime.automation_runtime());
     };
 
     TEST_CASE("run_channel_loop_replies_with_runtime_errors") {

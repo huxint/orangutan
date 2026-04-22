@@ -143,7 +143,6 @@ namespace orangutan::config {
             cfg = parse_custom_tools_section(resolved_root, std::move(cfg));
             cfg = parse_mcp_section(resolved_root, std::move(cfg));
             cfg = parse_hooks_section(resolved_root, std::move(cfg));
-            cfg = parse_heartbeat_section(resolved_root, std::move(cfg));
 
             for (auto &[key, agent_cfg] : cfg.agents) {
                 expand_agent_config(agent_cfg);

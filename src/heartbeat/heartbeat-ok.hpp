@@ -5,6 +5,8 @@
 
 namespace orangutan::heartbeat {
 
+    inline constexpr int DEFAULT_ACK_MAX_CHARS = 300;
+
     /// Detect the HEARTBEAT_OK sentinel in a heartbeat response.
     /// Returns true if the message should be suppressed (dropped silently).
     /// If true and out_stripped is non-null, writes the stripped remaining text.

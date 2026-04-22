@@ -31,6 +31,7 @@ namespace orangutan::bootstrap {
     : tool_context_storage_(other.tool_context_storage_ != nullptr ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>()),
       tools_storage_(other.tools_storage_ != nullptr ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>()),
       permissions_storage_(other.permissions_storage_ != nullptr ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>()),
+      active_hook_manager_(std::exchange(other.active_hook_manager_, nullptr)),
       provider(std::move(other.provider)),
       memory(std::move(other.memory)),
       mcp_manager(std::move(other.mcp_manager)),
@@ -46,6 +47,7 @@ namespace orangutan::bootstrap {
         tool_context_storage_ = other.tool_context_storage_ != nullptr ? std::move(other.tool_context_storage_) : std::make_unique<ToolRuntimeContext>();
         tools_storage_ = other.tools_storage_ != nullptr ? std::move(other.tools_storage_) : std::make_unique<ToolRegistry>();
         permissions_storage_ = other.permissions_storage_ != nullptr ? std::move(other.permissions_storage_) : std::make_unique<ToolPermissionContext>();
+        active_hook_manager_ = std::exchange(other.active_hook_manager_, nullptr);
         provider = std::move(other.provider);
         memory = std::move(other.memory);
         mcp_manager = std::move(other.mcp_manager);
@@ -74,6 +76,10 @@ namespace orangutan::bootstrap {
 
     const ToolPermissionContext &AgentRuntimeBundle::permissions() const noexcept {
         return *permissions_storage_;
+    }
+
+    hooks::HookManager *AgentRuntimeBundle::active_hook_manager() const noexcept {
+        return active_hook_manager_;
     }
 
     void AgentRuntimeBundle::replace_permissions(ToolPermissionContext context) {
@@ -148,11 +154,16 @@ namespace orangutan::bootstrap {
             tools::register_skill_tool(runtime.tools(), *runtime.skill_loader);
         }
 
-        runtime.hook_manager = std::make_unique<HookManager>();
-        runtime.hook_manager->load_from_directories(resolve_runtime_hook_dirs(input.hook_paths, input.workspace_root));
+        if (input.hook_manager != nullptr) {
+            runtime.active_hook_manager_ = input.hook_manager;
+        } else {
+            runtime.hook_manager = std::make_unique<HookManager>();
+            runtime.hook_manager->load_from_directories(resolve_runtime_hook_dirs(input.hook_paths, input.workspace_root));
+            runtime.active_hook_manager_ = runtime.hook_manager.get();
+        }
 
         runtime.agent =
-            std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.hook_manager.get(),
+            std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.active_hook_manager_,
                                         runtime.skill_loader.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
         runtime.agent->set_environment_info(prompt::EnvironmentInfo{

@@ -5,6 +5,8 @@
 
 #include <array>
 #include <optional>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include <magic_enum/magic_enum.hpp>
@@ -22,9 +24,19 @@ namespace orangutan::config::detail {
         constexpr auto TOOLS_STRING_FIELDS = std::to_array<config_string_field>({
             {"edit_mode", &Config::edit_mode},
         });
+        constexpr auto TOOLS_SECTION_KEYS = std::to_array<std::string_view>({
+            "edit_mode",
+            "custom",
+        });
         constexpr auto QQ_STRING_FIELDS = std::to_array<config_string_field>({
             {"app_id", &Config::qq_app_id},
             {"client_secret", &Config::qq_client_secret},
+        });
+        constexpr auto PERMISSIONS_SECTION_KEYS = std::to_array<std::string_view>({
+            "default_mode",
+            "allow",
+            "deny",
+            "ask",
         });
 
         using fallback_model_string_field = string_member_field<FallbackModelRef>;
@@ -143,6 +155,20 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
+        template <std::size_t N>
+        void validate_object_keys(const nlohmann::json &object, const std::array<std::string_view, N> &allowed_keys, std::string_view section_name) {
+            if (!object.is_object()) {
+                return;
+            }
+
+            for (auto it = object.begin(); it != object.end(); ++it) {
+                const auto key = std::string_view(it.key());
+                if (std::ranges::find(allowed_keys, key) == allowed_keys.end()) {
+                    throw std::runtime_error("unsupported config key '" + it.key() + "' in " + std::string(section_name));
+                }
+            }
+        }
+
     } // namespace
 
     AgentConfig make_agent_defaults(const Config &cfg) {
@@ -248,21 +274,14 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        if (const auto *array = find_array_member(*tools, "allowed"); array != nullptr) {
-            spdlog::warn("tools.allowed is deprecated, use permissions.allow");
-            assign_string_array(*array, cfg.permissions_config.allow);
-        }
-        if (const auto *array = find_array_member(*tools, "denied"); array != nullptr) {
-            spdlog::warn("tools.denied is deprecated, use permissions.deny");
-            assign_string_array(*array, cfg.permissions_config.deny);
-        }
-
+        validate_object_keys(*tools, TOOLS_SECTION_KEYS, "tools");
         assign_string_members(*tools, cfg, TOOLS_STRING_FIELDS);
 
         return cfg;
     }
 
-    void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config) {
+    void apply_permissions_config(const nlohmann::json &permissions, PermissionConfig &config, std::string_view section_name) {
+        validate_object_keys(permissions, PERMISSIONS_SECTION_KEYS, section_name);
         if (const auto *value = find_member(permissions, "default_mode"); value != nullptr && value->is_string()) {
             magic_enum::enum_cast<permission_mode>(utils::normalize_enum_token(value->get<std::string>()))
                 .transform([&config](permission_mode mode) {
@@ -283,14 +302,6 @@ namespace orangutan::config::detail {
         if (const auto *array = find_array_member(permissions, "ask"); array != nullptr) {
             assign_string_array(*array, config.ask);
         }
-        if (const auto *array = find_array_member(permissions, "allowed_tools"); array != nullptr) {
-            spdlog::warn("permissions.allowed_tools is deprecated, use permissions.allow");
-            assign_string_array(*array, config.allow);
-        }
-        if (const auto *array = find_array_member(permissions, "denied_tools"); array != nullptr) {
-            spdlog::warn("permissions.denied_tools is deprecated, use permissions.deny");
-            assign_string_array(*array, config.deny);
-        }
     }
 
     Config parse_permissions_section(const nlohmann::json &root, Config cfg) {
@@ -299,7 +310,7 @@ namespace orangutan::config::detail {
             return cfg;
         }
 
-        apply_permissions_config(*permissions, cfg.permissions_config);
+        apply_permissions_config(*permissions, cfg.permissions_config, "permissions");
         return cfg;
     }
 
@@ -357,7 +368,7 @@ namespace orangutan::config::detail {
                 assign_fallback_array(*value, agent_cfg.fallback_models);
             }
             if (const auto *value = find_object_member(agent, "permissions"); value != nullptr) {
-                apply_permissions_config(*value, agent_cfg.permissions_config);
+                apply_permissions_config(*value, agent_cfg.permissions_config, "agents.<agent>.permissions");
             }
             if (const auto *value = find_array_member(agent, "team_agents"); value != nullptr) {
                 assign_string_array(*value, agent_cfg.team_agents);

@@ -82,27 +82,56 @@ namespace orangutan::memory {
 
         const auto effective_limit = limit == 0 ? memory_detail::DEFAULT_SEARCH_LIMIT : limit;
         std::unordered_map<int, double> fts_bonus_by_id;
+        std::unordered_map<int, MemoryRecord> candidate_records_by_id;
+        const auto collect_candidate = [&candidate_records_by_id](MemoryRecord record) {
+            candidate_records_by_id.insert_or_assign(record.id, std::move(record));
+        };
         if (fts_enabled_) {
             if (const auto fts_query = memory_detail::build_fts_query(trimmed_query); fts_query.has_value()) {
                 auto fts_records = std::vector<MemoryRecord>{};
                 auto fts_stmt = sqlite::unwrap(db_.query("SELECT m.id, m.memory_key, m.content, m.category, m.type, m.scope, m.source, m.updated_at, m.importance, m.access_count "
                                                          "FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid "
-                                                         "WHERE memories_fts MATCH ? AND m.scope = ? ORDER BY rank LIMIT 64"));
-                sqlite::unwrap(fts_stmt.bind(*fts_query, scope).for_each([&](const sqlite::Row &row) {
+                                                         "WHERE memories_fts MATCH ? AND m.scope = ? ORDER BY rank LIMIT ?"));
+                sqlite::unwrap(fts_stmt.bind(*fts_query, scope, static_cast<int>(memory_detail::SEARCH_MATCH_CANDIDATE_LIMIT)).for_each([&](const sqlite::Row &row) {
                     fts_records.push_back(memory_detail::read_memory_record(row));
                 }));
                 for (std::size_t index = 0; index < fts_records.size(); ++index) {
                     fts_bonus_by_id.insert_or_assign(fts_records[index].id, 80.0 - static_cast<double>(index));
+                    collect_candidate(fts_records[index]);
                 }
             }
         }
 
-        auto records = std::vector<MemoryRecord>{};
+        auto exact_stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                                   "FROM memories WHERE scope = ? AND memory_key = ? ORDER BY updated_at DESC, id DESC LIMIT ?"));
+        sqlite::unwrap(exact_stmt.bind(scope, trimmed_query, static_cast<int>(memory_detail::SEARCH_MATCH_CANDIDATE_LIMIT)).for_each([&](const sqlite::Row &row) {
+            collect_candidate(memory_detail::read_memory_record(row));
+        }));
+
+        if (!fts_enabled_) {
+            auto match_stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
+                                                       "FROM memories WHERE scope = ? "
+                                                       "AND (memory_key LIKE '%' || ? || '%' OR content LIKE '%' || ? || '%' OR category LIKE '%' || ? || '%') "
+                                                       "ORDER BY updated_at DESC, id DESC LIMIT ?"));
+            sqlite::unwrap(match_stmt
+                               .bind(scope, trimmed_query, trimmed_query, trimmed_query, static_cast<int>(memory_detail::SEARCH_MATCH_CANDIDATE_LIMIT))
+                               .for_each([&](const sqlite::Row &row) {
+                                   collect_candidate(memory_detail::read_memory_record(row));
+                               }));
+        }
+
         auto stmt = sqlite::unwrap(db_.query("SELECT id, memory_key, content, category, type, scope, source, updated_at, importance, access_count "
                                              "FROM memories WHERE scope = ? ORDER BY updated_at DESC, id DESC LIMIT ?"));
         sqlite::unwrap(stmt.bind(scope, static_cast<int>(memory_detail::SEARCH_SCAN_LIMIT)).for_each([&](const sqlite::Row &row) {
-            records.push_back(memory_detail::read_memory_record(row));
+            collect_candidate(memory_detail::read_memory_record(row));
         }));
+
+        auto records = std::vector<MemoryRecord>{};
+        records.reserve(candidate_records_by_id.size());
+        for (auto &[_, record] : candidate_records_by_id) {
+            static_cast<void>(_);
+            records.push_back(std::move(record));
+        }
         struct RankedRecord {
             MemoryRecord record;
             double score = 0.0;

@@ -191,6 +191,37 @@ namespace {
         CHECK_THROWS_AS(invalid_decoder->on_event("response.output_text.delta", "{bad-json"), orangutan::ProviderError);
     }
 
+    TEST_CASE("openai_responses_adapter_preserves_multiple_tool_results_in_history") {
+        const auto adapter = orangutan::providers::protocols::make_openai_responses_adapter();
+        const auto target = orangutan::testing::make_test_target("gpt-5-responses", orangutan::provider_kind::openai, orangutan::protocol_kind::responses);
+
+        orangutan::ProviderRequest request;
+        request.system_prompt = "be helpful";
+        request.messages = {
+            orangutan::Message::assistant()
+                .tool_use(orangutan::ToolUse{"call-1", "lookup", {{"value", 1}}})
+                .tool_use(orangutan::ToolUse{"call-2", "summarize", {{"value", 2}}}),
+            orangutan::Message::user()
+                .tool_result(orangutan::ToolResult{"call-1", "first"})
+                .tool_result(orangutan::ToolResult{"call-2", "second"}),
+        };
+
+        const auto http_request = adapter->build_request(target, request);
+        const auto body = nlohmann::json::parse(http_request.body);
+
+        REQUIRE(body["input"].size() == 4UL);
+        CHECK(body["input"][0]["type"] == "function_call");
+        CHECK(body["input"][0]["call_id"] == "call-1");
+        CHECK(body["input"][1]["type"] == "function_call");
+        CHECK(body["input"][1]["call_id"] == "call-2");
+        CHECK(body["input"][2]["type"] == "function_call_output");
+        CHECK(body["input"][2]["call_id"] == "call-1");
+        CHECK(body["input"][2]["output"] == "first");
+        CHECK(body["input"][3]["type"] == "function_call_output");
+        CHECK(body["input"][3]["call_id"] == "call-2");
+        CHECK(body["input"][3]["output"] == "second");
+    }
+
     TEST_CASE("anthropic_messages_adapter_builds_thinking_requests_and_parses_stream_blocks") {
         const auto adapter = orangutan::providers::protocols::make_anthropic_messages_adapter();
         auto target = orangutan::testing::make_test_target("claude-sonnet", orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages);

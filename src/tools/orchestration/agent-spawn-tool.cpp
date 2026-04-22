@@ -1,6 +1,7 @@
 #include "tools/orchestration/register.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -16,12 +17,15 @@ namespace orangutan::tools {
 
     namespace {
 
-        auto parse_agent_role(std::string_view role_str) -> orangutan::orchestration::agent_role {
+        [[nodiscard]]
+        auto parse_agent_role(std::string_view role_str) -> std::optional<orangutan::orchestration::agent_role> {
+            if (role_str == "worker") {
+                return orangutan::orchestration::agent_role::worker;
+            }
             if (role_str == "teammate") {
                 return orangutan::orchestration::agent_role::teammate;
             }
-            // Default to worker for backward compatibility
-            return orangutan::orchestration::agent_role::worker;
+            return std::nullopt;
         }
 
         auto agent_spawn_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
@@ -62,7 +66,14 @@ namespace orangutan::tools {
                 resolved_team_id = team_record->id;
             }
 
-            auto role = parse_agent_role(role_str);
+            const auto role = parse_agent_role(role_str);
+            if (!role.has_value()) {
+                return nlohmann::json{
+                    {"accepted", false},
+                    {"error", "Invalid role: " + role_str + ". Expected 'worker' or 'teammate'."},
+                }
+                    .dump();
+            }
 
             auto result = tool_context.orchestration_manager->spawn(orangutan::orchestration::AgentSpawnRequest{
                 .agent_key = agent_key,
@@ -70,7 +81,7 @@ namespace orangutan::tools {
                 .task_prompt = prompt,
                 .team_id = resolved_team_id,
                 .parent_runtime_key = tool_context.runtime_key,
-                .role = role,
+                .role = *role,
             });
 
             if (result.accepted && !resolved_team_id.empty() && tool_context.team_manager != nullptr) {

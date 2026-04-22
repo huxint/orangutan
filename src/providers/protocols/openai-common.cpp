@@ -88,6 +88,35 @@ namespace orangutan::providers::protocols::openai {
             append_serialized_message(chat_messages, message);
         }
 
+        void append_responses_user_message(nlohmann::json &responses_input, const Message &message) {
+            for (const auto &block : message) {
+                if (const auto *result = std::get_if<ToolResult>(&block)) {
+                    if (result->tool_use_id.empty()) {
+                        spdlog::warn("skipping tool result with empty tool call id while serializing responses history");
+                        continue;
+                    }
+
+                    responses_input.push_back({
+                        {"type", "function_call_output"},
+                        {"call_id", result->tool_use_id},
+                        {"output", result->content},
+                    });
+
+                    if (!result->images.empty()) {
+                        responses_input.push_back(build_responses_image_input(*result));
+                    }
+                    continue;
+                }
+
+                if (const auto *text = std::get_if<Text>(&block); text != nullptr && !text->text.empty()) {
+                    responses_input.push_back({
+                        {"role", "user"},
+                        {"content", text->text},
+                    });
+                }
+            }
+        }
+
     } // namespace
 
     void merge_tool_call_delta(ToolCallState &state, const nlohmann::json &delta) {
@@ -207,22 +236,13 @@ namespace orangutan::providers::protocols::openai {
     }
 
     void append_responses_history_message(nlohmann::json &responses_input, const Message &message) {
-        auto converted = serialize_message(message);
-        if (!converted.has_value()) {
+        if (message.role() == base::role::user) {
+            append_responses_user_message(responses_input, message);
             return;
         }
 
-        if (converted->contains("tool_call_id")) {
-            responses_input.push_back({
-                {"type", "function_call_output"},
-                {"call_id", (*converted)["tool_call_id"]},
-                {"output", converted->value("content", std::string{})},
-            });
-            for (const auto &block : message) {
-                if (const auto *result = std::get_if<ToolResult>(&block); result != nullptr && !result->images.empty()) {
-                    responses_input.push_back(build_responses_image_input(*result));
-                }
-            }
+        auto converted = serialize_message(message);
+        if (!converted.has_value()) {
             return;
         }
 

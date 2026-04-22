@@ -393,22 +393,28 @@ namespace {
         CHECK(cfg.agents.at("default").permissions_config.ask == std::vector<std::string>{"shell"});
     };
 
-    TEST_CASE("deprecated_permission_keys_still_map_into_new_permission_config") {
+    TEST_CASE("permissions section rejects keys outside the current schema") {
         ConfigFileHarness harness;
         const auto path = harness.write_config(nlohmann::json::parse(R"json({
-          "tools": {
-            "allowed": ["read", "task(list)"],
-            "denied": ["write"]
-          },
           "permissions": {
-            "allowed_tools": ["shell(git:*)"],
-            "denied_tools": ["shell(rm:*)"]
+            "allow": ["read"],
+            "allowed_tools": ["shell"]
           }
         })json"));
 
-        const auto cfg = Config::load_from(path);
-        CHECK(cfg.permissions_config.allow == std::vector<std::string>{"shell(git:*)"});
-        CHECK(cfg.permissions_config.deny == std::vector<std::string>{"shell(rm:*)"});
+        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
+    };
+
+    TEST_CASE("tools section rejects keys outside the current schema") {
+        ConfigFileHarness harness;
+        const auto path = harness.write_config(nlohmann::json::parse(R"json({
+          "tools": {
+            "edit_mode": "hashline",
+            "allowed": ["read"]
+          }
+        })json"));
+
+        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
     };
 
 } // namespace

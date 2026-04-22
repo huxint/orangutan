@@ -19,15 +19,6 @@ namespace orangutan::config::detail {
             {"command", &Config::ScriptToolConfig::command},
         });
 
-        using heartbeat_job_string_field = string_member_field<Config::HeartbeatJobConfig>;
-        constexpr auto HEARTBEAT_JOB_STRING_FIELDS = std::to_array<heartbeat_job_string_field>({
-            {"name", &Config::HeartbeatJobConfig::name},
-            {"cron", &Config::HeartbeatJobConfig::cron},
-            {"prompt", &Config::HeartbeatJobConfig::prompt},
-            {"agent", &Config::HeartbeatJobConfig::agent},
-            {"channel", &Config::HeartbeatJobConfig::channel},
-        });
-
     } // namespace
 
     Config parse_security_section(const nlohmann::json &root, Config cfg) {
@@ -193,40 +184,6 @@ namespace orangutan::config::detail {
                     cfg.hook_paths.push_back(expand_path_value(expand_env_vars(item.get<std::string>())));
                 }
             }
-        }
-
-        return cfg;
-    }
-
-    Config parse_heartbeat_section(const nlohmann::json &root, Config cfg) {
-        const auto *heartbeat = find_object_member(root, "heartbeat");
-        if (heartbeat == nullptr) {
-            return cfg;
-        }
-
-        static_cast<void>(assign_number_member(*heartbeat, "ack_max_chars", cfg, &Config::ack_max_chars));
-        static_cast<void>(assign_bool_member(*heartbeat, "isolated_session", cfg, &Config::isolated_session));
-        static_cast<void>(assign_bool_member(*heartbeat, "light_context", cfg, &Config::light_context));
-
-        const auto *jobs = find_array_member(*heartbeat, "jobs");
-        if (jobs == nullptr) {
-            return cfg;
-        }
-
-        for (const auto &item : *jobs) {
-            if (!item.is_object()) {
-                continue;
-            }
-
-            Config::HeartbeatJobConfig job_cfg;
-            assign_string_members(item, job_cfg, HEARTBEAT_JOB_STRING_FIELDS);
-
-            if (job_cfg.name.empty() || job_cfg.cron.empty() || job_cfg.prompt.empty()) {
-                spdlog::warn("heartbeat.jobs entry is missing required fields (name, cron, prompt); skipping");
-                continue;
-            }
-
-            cfg.heartbeat_jobs.push_back(std::move(job_cfg));
         }
 
         return cfg;

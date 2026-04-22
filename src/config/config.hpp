@@ -137,21 +137,6 @@ namespace orangutan::config {
         // hooks object
         std::vector<std::string> hook_paths;
 
-        // legacy heartbeat compatibility block
-        int ack_max_chars = 300;
-        bool isolated_session = false;
-        bool light_context = false;
-
-        // legacy heartbeat.jobs config entries
-        struct HeartbeatJobConfig {
-            std::string name;
-            std::string cron;
-            std::string prompt;
-            std::string agent = "default";
-            std::string channel = "cli";
-        };
-        std::vector<HeartbeatJobConfig> heartbeat_jobs;
-
         // Load config from ~/.orangutan/config.json (if it exists)
         // Returns a Config with defaults if file is missing
         static Config load(const ConfigSecretOptions &secret_options = {});

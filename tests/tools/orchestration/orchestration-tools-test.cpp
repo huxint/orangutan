@@ -159,6 +159,34 @@ namespace {
         manager.shutdown();
     }
 
+    TEST_CASE("agent_spawn rejects invalid role values", "[tools][orchestration]") {
+        ToolRegistry registry;
+        orchestration::OrchestrationManager manager(2);
+
+        ToolRuntimeContext context{
+            .runtime_key = "test-runtime",
+            .agent_key = "test-agent",
+            .orchestration_manager = &manager,
+            .role = orchestration::agent_role::leader,
+        };
+
+        register_orchestration_tools(registry, &context);
+
+        auto result = registry.execute(ToolUse("spawn-invalid-role", "agent_spawn",
+                                               {
+                                                   {"agent_key", "general-purpose"},
+                                                   {"prompt", "test task"},
+                                                   {"role", "persistent"},
+                                               }));
+
+        CHECK_FALSE(result.is_error);
+        auto json = nlohmann::json::parse(result.content);
+        CHECK(json["accepted"] == false);
+        CHECK(json["error"].get<std::string>() == "Invalid role: persistent. Expected 'worker' or 'teammate'.");
+
+        manager.shutdown();
+    }
+
     TEST_CASE("agent_spawn registers spawned member with team", "[tools][orchestration]") {
         ToolRegistry registry;
         orchestration::OrchestrationManager manager(2);

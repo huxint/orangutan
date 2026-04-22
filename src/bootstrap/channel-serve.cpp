@@ -21,7 +21,6 @@
 #include "utils/scope-exit.hpp"
 #include "utils/sender-utils.hpp"
 #include "bootstrap/identity.hpp"
-#include "skills/skill-loader.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -42,6 +41,7 @@ namespace orangutan::bootstrap {
 
     using detail::can_prompt_for_channel_approval;
     using detail::channel_approval_decision;
+    using detail::ChannelCompletionResumeState;
     using detail::ConversationRuntime;
     using detail::extract_qq_bot_name;
     using detail::format_channel_approval_request_id;
@@ -59,12 +59,135 @@ namespace orangutan::bootstrap {
     using detail::persist_channel_session;
     using detail::qq_keyboard_capability_key;
     using detail::rehydrate_session_permissions;
+    using detail::restore_bound_channel_session;
 
     namespace {
 
         namespace cli = orangutan::cli;
 
         constexpr auto SERVE_POLL_INTERVAL = std::chrono::milliseconds(50);
+        constexpr auto CHANNEL_RUNTIME_PRUNE_INTERVAL = std::chrono::seconds(15);
+        constexpr auto CHANNEL_RUNTIME_IDLE_TTL = std::chrono::minutes(15);
+        constexpr std::size_t MAX_CHANNEL_RUNTIME_CACHE_SIZE = 64;
+        constexpr auto PARKED_CHANNEL_RESUME_TTL = std::chrono::hours(24);
+        constexpr std::size_t MAX_PARKED_CHANNEL_RESUME_CACHE_SIZE = 256;
+
+        using ParkedResumeStateMap = std::unordered_map<std::string, std::shared_ptr<ChannelCompletionResumeState>>;
+
+        void release_runtime_use(ConversationRuntime &runtime, std::mutex &runtimes_mutex) {
+            std::scoped_lock lock(runtimes_mutex);
+            runtime.last_used_at = std::chrono::steady_clock::now();
+            if (runtime.active_operations > 0) {
+                --runtime.active_operations;
+            }
+        }
+
+        void erase_parked_runtime(ParkedResumeStateMap &parked_resume_states, const std::string &runtime_key,
+                                  orchestration::OrchestrationManager *orchestration_manager) {
+            if (orchestration_manager != nullptr) {
+                orchestration_manager->unregister_runtime_notification_handler(runtime_key);
+            }
+            parked_resume_states.erase(runtime_key);
+        }
+
+        [[nodiscard]]
+        std::chrono::steady_clock::time_point parked_state_timestamp(const std::shared_ptr<ChannelCompletionResumeState> &state) {
+            if (state == nullptr) {
+                return std::chrono::steady_clock::time_point::min();
+            }
+            return state->parked_at == std::chrono::steady_clock::time_point{} ? std::chrono::steady_clock::time_point::min() : state->parked_at;
+        }
+
+        void prune_parked_resume_states(ParkedResumeStateMap &parked_resume_states, orchestration::OrchestrationManager *orchestration_manager) {
+            const auto now = std::chrono::steady_clock::now();
+
+            for (auto it = parked_resume_states.begin(); it != parked_resume_states.end();) {
+                const auto parked_at = parked_state_timestamp(it->second);
+                const bool expired = parked_at == std::chrono::steady_clock::time_point::min() || (now - parked_at) >= PARKED_CHANNEL_RESUME_TTL;
+                if (expired) {
+                    const auto runtime_key = it->first;
+                    ++it;
+                    erase_parked_runtime(parked_resume_states, runtime_key, orchestration_manager);
+                    continue;
+                }
+                ++it;
+            }
+
+            if (parked_resume_states.size() <= MAX_PARKED_CHANNEL_RESUME_CACHE_SIZE) {
+                return;
+            }
+
+            std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> eviction_order;
+            eviction_order.reserve(parked_resume_states.size());
+            for (const auto &[runtime_key, state] : parked_resume_states) {
+                eviction_order.emplace_back(runtime_key, parked_state_timestamp(state));
+            }
+
+            std::ranges::sort(eviction_order, [](const auto &left, const auto &right) {
+                return left.second < right.second;
+            });
+
+            for (const auto &[runtime_key, parked_at] : eviction_order) {
+                static_cast<void>(parked_at);
+                if (parked_resume_states.size() <= MAX_PARKED_CHANNEL_RESUME_CACHE_SIZE) {
+                    break;
+                }
+                erase_parked_runtime(parked_resume_states, runtime_key, orchestration_manager);
+            }
+        }
+
+        void park_runtime(ParkedResumeStateMap &parked_resume_states, const std::string &runtime_key, ConversationRuntime &runtime) {
+            if (auto parked_state = detail::park_conversation_runtime(runtime); parked_state != nullptr) {
+                parked_resume_states.insert_or_assign(runtime_key, std::move(parked_state));
+            }
+        }
+
+        void prune_inactive_runtimes(std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
+                                     ParkedResumeStateMap &parked_resume_states, orchestration::OrchestrationManager *orchestration_manager,
+                                     std::mutex &runtimes_mutex) {
+            std::scoped_lock lock(runtimes_mutex);
+            const auto now = std::chrono::steady_clock::now();
+
+            for (auto it = runtimes.begin(); it != runtimes.end();) {
+                const auto &runtime = it->second;
+                const bool idle_for_too_long =
+                    runtime != nullptr && runtime->active_operations == 0 && (now - runtime->last_used_at) >= CHANNEL_RUNTIME_IDLE_TTL;
+                if (idle_for_too_long) {
+                    if (runtime != nullptr) {
+                        park_runtime(parked_resume_states, it->first, *runtime);
+                    }
+                    it = runtimes.erase(it);
+                    continue;
+                }
+                ++it;
+            }
+
+            if (runtimes.size() > MAX_CHANNEL_RUNTIME_CACHE_SIZE) {
+                std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> eviction_order;
+                eviction_order.reserve(runtimes.size());
+                for (const auto &[runtime_key, runtime] : runtimes) {
+                    if (runtime != nullptr && runtime->active_operations == 0) {
+                        eviction_order.emplace_back(runtime_key, runtime->last_used_at);
+                    }
+                }
+
+                std::ranges::sort(eviction_order, [](const auto &left, const auto &right) {
+                    return left.second < right.second;
+                });
+
+                for (const auto &entry : eviction_order) {
+                    if (runtimes.size() <= MAX_CHANNEL_RUNTIME_CACHE_SIZE) {
+                        break;
+                    }
+                    if (auto it = runtimes.find(entry.first); it != runtimes.end() && it->second != nullptr) {
+                        park_runtime(parked_resume_states, it->first, *it->second);
+                    }
+                    runtimes.erase(entry.first);
+                }
+            }
+
+            prune_parked_resume_states(parked_resume_states, orchestration_manager);
+        }
 
         std::string describe_attachment_for_agent(const Attachment &attachment, std::size_t index) {
             std::string line = fmt::format("- [{}] {}", index, attachment.filename.empty() ? "unnamed-attachment" : attachment.filename);
@@ -147,6 +270,7 @@ namespace orangutan::bootstrap {
         }
 
         ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
+                                                    ParkedResumeStateMap &parked_resume_states,
                                                     std::mutex &runtimes_mutex, const InboundMessage &message,
                                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                                     const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store,
@@ -163,29 +287,15 @@ namespace orangutan::bootstrap {
                 }
 
                 auto identity = derive_channel_identity(cfg_it->second.workspace_root, jid, agent_key);
-                auto runtime =
-                    make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime, team_manager, mailbox);
+                std::shared_ptr<ChannelCompletionResumeState> parked_state;
+                if (auto parked_it = parked_resume_states.find(runtime_key); parked_it != parked_resume_states.end()) {
+                    parked_state = std::move(parked_it->second);
+                    parked_resume_states.erase(parked_it);
+                }
+                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime,
+                                                         team_manager, mailbox, parked_state);
                 if (!message.isolated) {
-                    if (auto session_id = session_store.bound_session_for_jid(jid, agent_key); session_id.has_value()) {
-                        try {
-                            if (!session_store.session_belongs_to_scope(*session_id, runtime->session_scope_key)) {
-                                spdlog::warn("session {} does not belong to runtime scope '{}' for jid '{}' agent '{}'", *session_id, runtime->session_scope_key, jid, agent_key);
-                                session_store.clear_jid(jid, agent_key);
-                                rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
-                            } else {
-                                rehydrate_session_permissions(session_store, *session_id, runtime->runtime.get());
-                                runtime->agent().set_history(session_store.load(*session_id));
-                                runtime->current_session_id = *session_id;
-                                runtime->persisted_message_count = runtime->agent().history().size();
-                                spdlog::info("restored session {} for jid '{}' agent '{}'", *session_id, jid, agent_key);
-                                dispatch_session_start(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
-                            }
-                        } catch (const std::exception &e) {
-                            spdlog::warn("failed to restore session {} for jid '{}' agent '{}': {}", *session_id, jid, agent_key, e.what());
-                            session_store.clear_jid(jid, agent_key);
-                            rehydrate_session_permissions(session_store, {}, runtime->runtime.get());
-                        }
-                    }
+                    restore_bound_channel_session(session_store, jid, *runtime);
                 }
 
                 if (!runtime->workspace.empty()) {
@@ -194,6 +304,8 @@ namespace orangutan::bootstrap {
 
                 it = runtimes.try_emplace(runtime_key, std::move(runtime)).first;
             }
+            it->second->last_used_at = std::chrono::steady_clock::now();
+            ++it->second->active_operations;
             return *it->second;
         }
 
@@ -603,25 +715,24 @@ namespace orangutan::bootstrap {
         return "default";
     }
 
-    std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg) {
-        SkillLoader skill_loader;
-        skill_loader.set_workspace_root(std::filesystem::path{runtime_cfg.workspace_root});
-        skill_loader.load_from_directories(resolve_skill_directories(cfg.skill_paths, std::filesystem::path{runtime_cfg.workspace_root}));
-        return skills::render_skill_prompt_section(skill_loader.list(skills::skill_list_query{.include_inactive = false}));
-    }
-
     namespace {
 
         void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager,
-                                     std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, std::mutex &runtimes_mutex,
+                                     std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
+                                     ParkedResumeStateMap &parked_resume_states,
+                                     std::mutex &runtimes_mutex,
                                      const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                      const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
                                      orchestration::OrchestrationManager *orchestration_manager, const Config &cfg, HookManager *hook_manager,
                                      automation::AutomationRuntime *automation_runtime, ChannelApprovalGate &approval_gate, JidTaskRunner &task_runner,
                                      orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
             try {
-                auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store, session_store,
+                auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, parked_resume_states, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store,
+                                                       session_store,
                                                        orchestration_manager, cfg, hook_manager, automation_runtime, team_manager, mailbox);
+                const auto release_runtime = utils::scope_exit([&runtime, &runtimes_mutex] {
+                    release_runtime_use(runtime, runtimes_mutex);
+                });
                 if (runtime.completion_resume_state != nullptr) {
                     std::scoped_lock lock(runtime.completion_resume_state->mutex);
                     runtime.completion_resume_state->session_store = &session_store;
@@ -738,8 +849,8 @@ namespace orangutan::bootstrap {
                         persist_channel_session(message.jid, runtime, session_store);
                     }
 
-                    // Suppress quiet heartbeat acknowledgements on legacy heartbeat jid flows.
-                    if (should_suppress_heartbeat_reply(message.jid, reply, cfg.ack_max_chars)) {
+                    // Suppress quiet heartbeat acknowledgements on heartbeat jid flows.
+                    if (should_suppress_heartbeat_reply(message.jid, reply, heartbeat::DEFAULT_ACK_MAX_CHARS)) {
                         spdlog::debug("suppressing heartbeat acknowledgement from '{}'", message.jid);
                         return;
                     }
@@ -784,10 +895,17 @@ namespace orangutan::bootstrap {
                           MemoryStore *memory_store, SessionStore &session_store, orchestration::OrchestrationManager *orchestration_manager, const Config &cfg,
                           HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
+        ParkedResumeStateMap parked_resume_states;
         std::mutex runtimes_mutex;
         ChannelApprovalGate approval_gate;
+        auto next_runtime_prune = std::chrono::steady_clock::now() + CHANNEL_RUNTIME_PRUNE_INTERVAL;
 
         while (!stop_requested.load()) {
+            if (std::chrono::steady_clock::now() >= next_runtime_prune) {
+                prune_inactive_runtimes(runtimes, parked_resume_states, orchestration_manager, runtimes_mutex);
+                next_runtime_prune = std::chrono::steady_clock::now() + CHANNEL_RUNTIME_PRUNE_INTERVAL;
+            }
+
             InboundMessage message;
             if (!queue.try_pop(message, SERVE_POLL_INTERVAL)) {
                 if (queue.is_shutdown()) {
@@ -809,10 +927,11 @@ namespace orangutan::bootstrap {
                 continue;
             }
 
-            task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store, &session_store,
+            task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &parked_resume_states, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store,
+                                             &session_store,
                                              orchestration_manager, &cfg, hook_manager, automation_runtime, &approval_gate, &task_runner, team_manager, mailbox] {
-                process_channel_message(message, channel_manager, runtimes, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store, orchestration_manager, cfg,
-                                        hook_manager, automation_runtime, approval_gate, task_runner, team_manager, mailbox);
+                process_channel_message(message, channel_manager, runtimes, parked_resume_states, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store,
+                                        orchestration_manager, cfg, hook_manager, automation_runtime, approval_gate, task_runner, team_manager, mailbox);
             });
         }
 
@@ -824,6 +943,14 @@ namespace orangutan::bootstrap {
             static_cast<void>(runtime_key);
             dispatch_session_end(runtime->hook_manager, runtime->current_session_id, runtime->agent().history().size());
         }
+        if (orchestration_manager != nullptr) {
+            for (const auto &[runtime_key, parked_state] : parked_resume_states) {
+                static_cast<void>(parked_state);
+                orchestration_manager->unregister_runtime_notification_handler(runtime_key);
+            }
+        }
+        runtimes.clear();
+        parked_resume_states.clear();
     }
 
     void add_configured_channels(ChannelManager &channel_manager, const Config &cfg, utils::TaskPool &task_pool) {

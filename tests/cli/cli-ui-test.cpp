@@ -75,7 +75,7 @@ namespace {
         CHECK(orangutan::cli::format_current_agent("coder").contains("🤖 Current Agent: `coder`"));
     };
 
-    TEST_CASE("help_texts_include_supported_commands_and_hide_legacy_commands") {
+    TEST_CASE("help_texts_include_supported_commands_and_hide_removed_commands") {
         CHECK(orangutan::cli::repl_help_text().contains("## Commands"));
         CHECK(orangutan::cli::repl_help_text().contains("`/status`"));
         CHECK(orangutan::cli::repl_help_text().contains("`/export`"));

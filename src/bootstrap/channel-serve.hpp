@@ -92,9 +92,6 @@ namespace orangutan::bootstrap {
     [[nodiscard]]
     std::string resolve_agent_key_for_message(const InboundMessage &message, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents);
 
-    [[nodiscard]]
-    std::string build_skill_prompt_for_runtime(const Config &cfg, const AgentRuntimeConfig &runtime_cfg);
-
     void add_configured_channels(ChannelManager &channel_manager, const Config &cfg, utils::TaskPool &task_pool);
 
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,

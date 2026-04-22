@@ -52,6 +52,7 @@ namespace orangutan::bootstrap {
             .mcp_servers = request.app_config->mcp_servers,
             .skill_paths = request.app_config->skill_paths,
             .hook_paths = request.app_config->hook_paths,
+            .hook_manager = request.hook_manager,
             .background_completion_runtime = request.background_completion_runtime,
         };
     }

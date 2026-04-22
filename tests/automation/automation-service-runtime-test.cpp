@@ -211,6 +211,33 @@ namespace {
         CHECK(deliveries.at(1).acked_at.has_value());
     };
 
+    TEST_CASE("service_persists_runs_when_notifier_throws") {
+        ServiceHarness harness;
+        harness.service.set_notifier([](std::string_view, std::string_view, std::string_view) -> std::optional<std::string> {
+            throw std::runtime_error("notifier exploded");
+        });
+
+        const auto automation_id = harness.service.save(make_notify_automation("repo-check"));
+        const auto run_id = harness.service.run_now("default", automation_id);
+
+        CHECK_FALSE(run_id.empty());
+
+        const auto runs = harness.service.list_runs(orangutan::automation::RunQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(runs.size() == 1UL);
+        CHECK(runs.front().delivery_status == "notify_failed");
+
+        const auto deliveries = harness.service.list_deliveries(orangutan::automation::DeliveryQuery{.agent_key = "default", .automation_id = automation_id});
+        REQUIRE(deliveries.size() == 2UL);
+        CHECK(std::ranges::all_of(deliveries, [](const orangutan::automation::DeliveryRecord &delivery) {
+            return delivery.status == "notify_failed";
+        }));
+
+        const auto stored = harness.service.find("default", automation_id);
+        REQUIRE(stored.has_value());
+        REQUIRE(stored->last_run_at.has_value());
+        CHECK(*stored->last_run_at == 1'000);
+    };
+
     TEST_CASE("service_suppresses_heartbeat_ok_deliveries_for_managed_heartbeat_automations") {
         ServiceHarness harness;
         harness.service.add_delivery_filter([](const orangutan::automation::Automation &automation, const orangutan::automation::ExecutionResult &result) {

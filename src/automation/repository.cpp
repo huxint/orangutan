@@ -183,6 +183,111 @@ namespace orangutan::automation {
                 agent_key, name);
         }
 
+        template <typename... Args>
+        [[nodiscard]]
+        sqlite::SqliteResult<void> run_bound(sqlite::Database &db, std::string_view sql, Args &&...args) {
+            auto command = db.exec(sql);
+            if (!command) {
+                return std::unexpected(command.error());
+            }
+            auto result = command->bind(std::forward<Args>(args)...).run();
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            return {};
+        }
+
+        [[nodiscard]]
+        sqlite::SqliteResult<void> save_automation_record(sqlite::Database &db, const Automation &automation) {
+            validate_automation_definition(automation);
+            const auto now = to_unix_seconds(Clock::now());
+            return run_bound(
+                db,
+                "INSERT INTO automations ("
+                "id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status, created_at, updated_at"
+                ") VALUES ("
+                "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
+                ") "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "agent_key = excluded.agent_key, "
+                "name = excluded.name, "
+                "enabled = excluded.enabled, "
+                "paused = excluded.paused, "
+                "prompt = excluded.prompt, "
+                "notes = excluded.notes, "
+                "tags_json = excluded.tags_json, "
+                "trigger_json = excluded.trigger_json, "
+                "delivery_json = excluded.delivery_json, "
+                "last_run_at = excluded.last_run_at, "
+                "next_due_at = excluded.next_due_at, "
+                "last_status = excluded.last_status, "
+                "updated_at = excluded.updated_at",
+                automation.id,
+                automation.agent_key,
+                automation.name,
+                automation.enabled ? 1 : 0,
+                automation.paused ? 1 : 0,
+                automation.prompt,
+                automation.notes,
+                nlohmann::json(automation.tags).dump(),
+                trigger_to_json(automation.trigger).dump(),
+                delivery_policy_to_json(automation.delivery).dump(),
+                automation.last_run_at,
+                automation.next_due_at,
+                automation.last_status,
+                now,
+                now);
+        }
+
+        [[nodiscard]]
+        sqlite::SqliteResult<void> insert_run_record(sqlite::Database &db, const RunRecord &run) {
+            validate_non_blank(run.id, "run id");
+            validate_non_blank(run.automation_id, "automation id");
+            validate_non_blank(run.agent_key, "agent key");
+            return run_bound(db,
+                             "INSERT INTO automation_runs ("
+                             "id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path"
+                             ") VALUES ("
+                             "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11"
+                             ")",
+                             run.id,
+                             run.automation_id,
+                             run.agent_key,
+                             run.automation_name,
+                             run.started_at,
+                             run.finished_at,
+                             run.status,
+                             run.summary,
+                             run.reply,
+                             run.delivery_status,
+                             run.log_path);
+        }
+
+        [[nodiscard]]
+        sqlite::SqliteResult<void> insert_delivery_record(sqlite::Database &db, const DeliveryRecord &delivery) {
+            validate_non_blank(delivery.id, "delivery id");
+            validate_non_blank(delivery.run_id, "run id");
+            validate_non_blank(delivery.automation_id, "automation id");
+            validate_non_blank(delivery.agent_key, "agent key");
+            validate_non_blank(delivery.target, "delivery target");
+            return run_bound(db,
+                             "INSERT INTO automation_deliveries ("
+                             "id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at"
+                             ") VALUES ("
+                             "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10"
+                             ")",
+                             delivery.id,
+                             delivery.run_id,
+                             delivery.automation_id,
+                             delivery.agent_key,
+                             delivery.target,
+                             delivery.status,
+                             delivery.title,
+                             delivery.body,
+                             delivery.created_at,
+                             delivery.acked_at);
+        }
+
     } // namespace
 
     Repository::Repository()
@@ -202,42 +307,7 @@ namespace orangutan::automation {
             automation.id = generate_id("auto");
         }
 
-        const auto now = to_unix_seconds(Clock::now());
-        sqlite::exec_bind(db_,
-                          "INSERT INTO automations ("
-                          "id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, last_status, created_at, updated_at"
-                          ") VALUES ("
-                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
-                          ") "
-                          "ON CONFLICT(id) DO UPDATE SET "
-                          "agent_key = excluded.agent_key, "
-                          "name = excluded.name, "
-                          "enabled = excluded.enabled, "
-                          "paused = excluded.paused, "
-                          "prompt = excluded.prompt, "
-                          "notes = excluded.notes, "
-                          "tags_json = excluded.tags_json, "
-                          "trigger_json = excluded.trigger_json, "
-                          "delivery_json = excluded.delivery_json, "
-                          "last_run_at = excluded.last_run_at, "
-                          "next_due_at = excluded.next_due_at, "
-                          "last_status = excluded.last_status, "
-                          "updated_at = excluded.updated_at",
-                          automation.id,
-                          automation.agent_key,
-                          automation.name,
-                          automation.enabled ? 1 : 0,
-                          automation.paused ? 1 : 0,
-                          automation.prompt,
-                          automation.notes,
-                          nlohmann::json(automation.tags).dump(),
-                          trigger_to_json(automation.trigger).dump(),
-                          delivery_policy_to_json(automation.delivery).dump(),
-                          automation.last_run_at,
-                          automation.next_due_at,
-                          automation.last_status,
-                          now,
-                          now);
+        sqlite::unwrap(save_automation_record(db_, automation));
 
         return automation.id;
     }
@@ -307,25 +377,43 @@ namespace orangutan::automation {
             run.id = generate_id("run");
         }
 
-        sqlite::exec_bind(db_,
-                          "INSERT INTO automation_runs ("
-                          "id, automation_id, agent_key, automation_name, started_at, finished_at, status, summary, reply, delivery_status, log_path"
-                          ") VALUES ("
-                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11"
-                          ")",
-                          run.id,
-                          run.automation_id,
-                          run.agent_key,
-                          run.automation_name,
-                          run.started_at,
-                          run.finished_at,
-                          run.status,
-                          run.summary,
-                          run.reply,
-                          run.delivery_status,
-                          run.log_path);
+        sqlite::unwrap(insert_run_record(db_, run));
 
         return run.id;
+    }
+
+    void Repository::persist_execution(const Automation &automation, const RunRecord &run) {
+        std::scoped_lock lock(mutex_);
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) -> sqlite::SqliteResult<void> {
+            auto save_result = save_automation_record(tx, automation);
+            if (!save_result) {
+                return save_result;
+            }
+            return insert_run_record(tx, run);
+        }));
+    }
+
+    void Repository::persist_delivery_results(std::string_view run_id, std::string_view delivery_status, const std::vector<DeliveryRecord> &deliveries) {
+        std::scoped_lock lock(mutex_);
+        validate_non_blank(run_id, "run id");
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) -> sqlite::SqliteResult<void> {
+            auto update_status = run_bound(tx, "UPDATE automation_runs SET delivery_status = ?2 WHERE id = ?1", run_id, delivery_status);
+            if (!update_status) {
+                return update_status;
+            }
+
+            for (const auto &delivery_input : deliveries) {
+                auto delivery = delivery_input;
+                if (delivery.id.empty()) {
+                    delivery.id = generate_id("delivery");
+                }
+                auto insert_result = insert_delivery_record(tx, delivery);
+                if (!insert_result) {
+                    return insert_result;
+                }
+            }
+            return sqlite::SqliteResult<void>{};
+        }));
     }
 
     std::vector<RunRecord> Repository::list_runs(const RunQuery &query) const {
@@ -360,22 +448,7 @@ namespace orangutan::automation {
             delivery.id = generate_id("delivery");
         }
 
-        sqlite::exec_bind(db_,
-                          "INSERT INTO automation_deliveries ("
-                          "id, run_id, automation_id, agent_key, target, status, title, body, created_at, acked_at"
-                          ") VALUES ("
-                          "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10"
-                          ")",
-                          delivery.id,
-                          delivery.run_id,
-                          delivery.automation_id,
-                          delivery.agent_key,
-                          delivery.target,
-                          delivery.status,
-                          delivery.title,
-                          delivery.body,
-                          delivery.created_at,
-                          delivery.acked_at);
+        sqlite::unwrap(insert_delivery_record(db_, delivery));
 
         return delivery.id;
     }

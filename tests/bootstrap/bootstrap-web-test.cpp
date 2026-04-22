@@ -54,7 +54,7 @@ namespace {
         CHECK_FALSE(opts.channel_mode);
     };
 
-    TEST_CASE("legacy_serve_flag_is_rejected") {
+    TEST_CASE("removed_serve_flag_is_rejected") {
         orangutan::bootstrap::CliOptions opts;
         CLI::App app{"test"};
         configure_app(app, opts);

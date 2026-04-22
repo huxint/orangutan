@@ -61,7 +61,7 @@ namespace orangutan::bootstrap::detail {
     [[nodiscard]]
     inline std::string qq_keyboard_capability_key(std::string_view target) {
         const auto bot_name = extract_qq_bot_name(std::string(target));
-        return bot_name.empty() ? std::string{"legacy:default"} : "named:" + bot_name;
+        return bot_name.empty() ? std::string{"default:unnamed"} : "named:" + bot_name;
     }
 
     [[nodiscard]]

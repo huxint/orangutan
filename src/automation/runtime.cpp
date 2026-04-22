@@ -7,6 +7,7 @@
 
 #include <exec/repeat_effect_until.hpp>
 #include <exec/timed_scheduler.hpp>
+#include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
 namespace orangutan::automation {
@@ -107,7 +108,10 @@ namespace orangutan::automation {
                         if (running_.load()) {
                             try {
                                 run_pending(current_time());
-                            } catch (...) { // NOLINT(bugprone-empty-catch): next tick retries
+                            } catch (const std::exception &error) {
+                                spdlog::error("automation scheduler tick failed: {}", error.what());
+                            } catch (...) {
+                                spdlog::error("automation scheduler tick failed with unknown exception");
                             }
                         }
                     })

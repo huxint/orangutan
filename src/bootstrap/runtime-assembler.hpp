@@ -33,6 +33,7 @@ namespace orangutan::bootstrap {
         RuntimeAbortChecker abort_checker;
         ApprovalCallback approval_callback;
         std::string delegated_task_prompt;
+        hooks::HookManager *hook_manager = nullptr;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
     };
 

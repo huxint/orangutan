@@ -8,7 +8,6 @@
 #include "bootstrap/config-bootstrap.hpp"
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
-#include "bootstrap/heartbeat-jobs.hpp"
 #include "bootstrap/identity.hpp"
 #include "bootstrap/runtime-assembler.hpp"
 #include "bootstrap/runtime-control.hpp"
@@ -18,6 +17,7 @@
 #include "channel/message-queue.hpp"
 #include "hooks/hook-manager.hpp"
 #include "heartbeat/heartbeat-automation.hpp"
+#include "heartbeat/heartbeat-ok.hpp"
 #include "memory/memory-store.hpp"
 #include "skills/skill-loader.hpp"
 #include "config/config.hpp"
@@ -62,16 +62,6 @@ namespace {
             }
         }
         return labels;
-    }
-
-    template <typename Store>
-    std::unique_ptr<Store> create_store(const char *name) {
-        try {
-            return std::make_unique<Store>();
-        } catch (const std::exception &e) {
-            fmt::println(stderr, "Error: failed to initialize {}: {}", name, e.what());
-            return nullptr;
-        }
     }
 
     std::optional<std::string> resolve_app_workspace_root(const std::optional<orangutan::bootstrap::AgentRuntimeConfig> &maybe_primary_runtime_cfg,
@@ -270,7 +260,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         orangutan::bootstrap::make_agent_loop_worker_factory(cfg, *maybe_agent_runtime_configs, memory_store.get(), *orchestration_manager));
 
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
-    orangutan::bootstrap::reconcile_heartbeat_jobs(cfg, app_runtime.automation_service());
 
     app_runtime.automation_runtime().set_executor([&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &orchestration_manager,
                                                    &team_manager, &agent_mailbox](const orangutan::automation::Automation &automation) {
@@ -328,7 +317,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return result;
         }
     });
-    app_runtime.automation_runtime().register_category(orangutan::heartbeat::make_heartbeat_category(cfg.ack_max_chars));
+    app_runtime.automation_runtime().register_category(orangutan::heartbeat::make_heartbeat_category(orangutan::heartbeat::DEFAULT_ACK_MAX_CHARS));
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
     orangutan::bootstrap::add_configured_channels(channel_manager, cfg, app_runtime.task_pool());
@@ -395,10 +384,12 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             })));
             primary_completion_resume_state->agent = primary_runtime->agent.get();
             primary_completion_resume_state->provider = primary_runtime->provider.get();
-            primary_completion_resume_state->hook_manager = primary_runtime->hook_manager.get();
+            primary_completion_resume_state->hook_manager = primary_runtime->active_hook_manager();
             orchestration_manager->register_runtime_notification_handler(maybe_primary_identity->runtime_key,
                                                                          make_runtime_completion_resume_callback(primary_completion_resume_state));
-            log_loaded_hooks(resolve_runtime_hook_dirs(cfg.hook_paths, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
+            if (primary_runtime->hook_manager != nullptr) {
+                log_loaded_hooks(resolve_runtime_hook_dirs(cfg.hook_paths, maybe_primary_runtime_cfg->workspace_root), *primary_runtime->hook_manager);
+            }
         } catch (const std::exception &e) {
             web_runtime_build_error = e.what();
             if (options.web_mode && !options.cli_mode) {
@@ -412,6 +403,11 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     }
     const auto primary_completion_resume_guard = orangutan::utils::scope_exit([primary_completion_resume_state] {
         deactivate_runtime_completion_resume_state(primary_completion_resume_state);
+    });
+    const auto primary_runtime_notification_guard = orangutan::utils::scope_exit([&] {
+        if (orchestration_manager != nullptr && maybe_primary_identity.has_value()) {
+            orchestration_manager->unregister_runtime_notification_handler(maybe_primary_identity->runtime_key);
+        }
     });
 
     std::unique_ptr<orangutan::WebServer> web_server;
@@ -475,7 +471,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                     orangutan::cli::run_repl(*primary_runtime->agent, *primary_runtime->provider, *session_store, maybe_primary_runtime_cfg->model,
                                              maybe_primary_runtime_cfg->fallback_models, cfg, current_session_id, maybe_primary_runtime_cfg->agent_key,
                                              maybe_primary_runtime_cfg->cli_memory_scope, maybe_primary_runtime_cfg->workspace_root, &skill_loader, &primary_runtime->tools(),
-                                             primary_runtime->hook_manager.get(), &app_runtime.automation_runtime());
+                                             primary_runtime->active_hook_manager(), &app_runtime.automation_runtime());
                 }
             }
         }

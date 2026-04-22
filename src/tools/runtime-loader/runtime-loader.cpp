@@ -15,18 +15,36 @@ namespace orangutan::tools {
 
     namespace {
 
-        void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext &ctx, const ToolRuntimeContext *tool_context) {
-            registry.set_definition_filter([ctx](const Tool &tool) {
-                for (const auto &rule : ctx.deny_rules) {
+        [[nodiscard]]
+        const ToolPermissionContext *resolve_permission_context(const ToolPermissionContext *permissions, const ToolRuntimeContext *tool_context) {
+            if (tool_context != nullptr && tool_context->permission_context != nullptr) {
+                return tool_context->permission_context;
+            }
+            return permissions;
+        }
+
+        void apply_permission_policy(ToolRegistry &registry, const ToolPermissionContext *permissions, const ToolRuntimeContext *tool_context) {
+            registry.set_definition_filter([permissions, tool_context](const Tool &tool) {
+                const auto *ctx = resolve_permission_context(permissions, tool_context);
+                if (ctx == nullptr) {
+                    return true;
+                }
+
+                for (const auto &rule : ctx->deny_rules) {
                     if (!rule.content.has_value() && matches_rule(rule, tool.definition.name)) {
                         return false;
                     }
                 }
-                return ctx.mode != permission_mode::plan || tool.read_only || permissions::is_file_tool_name(tool.definition.name);
+                return ctx->mode != permission_mode::plan || tool.read_only || permissions::is_file_tool_name(tool.definition.name);
             });
-            registry.set_execution_guard([&registry, ctx, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
+            registry.set_execution_guard([&registry, permissions, tool_context](const ToolUse &call) -> std::optional<ToolResult> {
                 if (tool_context != nullptr && tool_context->abort_checker && tool_context->abort_checker()) {
                     return ToolResult(call.id, "Operation aborted by user", true);
+                }
+
+                const auto *ctx = resolve_permission_context(permissions, tool_context);
+                if (ctx == nullptr) {
+                    return std::nullopt;
                 }
 
                 const Tool *tool = registry.find_tool(call.name);
@@ -39,8 +57,8 @@ namespace orangutan::tools {
                     };
                 }
 
-                auto decision = evaluate_permission(call, ctx, checker, is_read_only);
-                decision = apply_post_processing(decision, ctx.mode);
+                auto decision = evaluate_permission(call, *ctx, checker, is_read_only);
+                decision = apply_post_processing(decision, ctx->mode);
 
                 switch (decision.behavior) {
                     case permission_behavior::allow:
@@ -75,7 +93,7 @@ namespace orangutan::tools {
         }
 
         if (permissions != nullptr) {
-            apply_permission_policy(registry, *permissions, tool_context);
+            apply_permission_policy(registry, permissions, tool_context);
         }
 
         RuntimeToolBootstrapResult result;

@@ -73,6 +73,7 @@ namespace orangutan::bootstrap {
         std::vector<Config::McpServerConfig> mcp_servers;
         std::vector<std::string> skill_paths;
         std::vector<std::string> hook_paths;
+        hooks::HookManager *hook_manager = nullptr;
         std::shared_ptr<const BackgroundCompletionRuntimeBindings> background_completion_runtime;
     };
 
@@ -81,6 +82,7 @@ namespace orangutan::bootstrap {
         std::unique_ptr<ToolRuntimeContext> tool_context_storage_;
         std::unique_ptr<ToolRegistry> tools_storage_;
         std::unique_ptr<ToolPermissionContext> permissions_storage_;
+        hooks::HookManager *active_hook_manager_ = nullptr;
 
     public:
         AgentRuntimeBundle();
@@ -114,6 +116,8 @@ namespace orangutan::bootstrap {
         const ToolRuntimeContext &tool_context() const noexcept;
         [[nodiscard]]
         const ToolPermissionContext &permissions() const noexcept;
+        [[nodiscard]]
+        hooks::HookManager *active_hook_manager() const noexcept;
 
         void replace_permissions(ToolPermissionContext context);
 

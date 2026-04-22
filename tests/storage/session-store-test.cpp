@@ -1,4 +1,5 @@
 #include "storage/session-store.hpp"
+#include "storage/sqlite-throwing.hpp"
 #include "types/types.hpp"
 #include "test-helpers.hpp"
 
@@ -7,7 +8,6 @@
 #include <set>
 #include <catch2/catch_test_macros.hpp>
 #include <utility>
-#include <sqlite3.h>
 
 namespace {
 
@@ -30,34 +30,6 @@ namespace {
 
         std::filesystem::path db_path;
     };
-
-    struct SqliteDb {
-        explicit SqliteDb(const std::filesystem::path &path) {
-            const auto rc = sqlite3_open(path.string().c_str(), &db);
-            INFO("failed to open sqlite database");
-            CHECK((rc == SQLITE_OK));
-        }
-
-        ~SqliteDb() {
-            if (db != nullptr) {
-                sqlite3_close(db);
-            }
-        }
-        SqliteDb(const SqliteDb &) = delete;
-        SqliteDb &operator=(const SqliteDb &) = delete;
-        SqliteDb(SqliteDb &&) = delete;
-        SqliteDb &operator=(SqliteDb &&) = delete;
-
-        sqlite3 *db = nullptr;
-    };
-
-    void exec_sql(sqlite3 *db, const char *sql) {
-        char *err_msg = nullptr;
-        const auto rc = sqlite3_exec(db, sql, nullptr, nullptr, &err_msg);
-        INFO((err_msg != nullptr ? err_msg : "sqlite error"));
-        CHECK((rc == SQLITE_OK));
-        sqlite3_free(err_msg);
-    }
 
     orangutan::SessionMetadata make_session_metadata(std::string model, std::string scope_key = {}) {
         return orangutan::SessionMetadata{
@@ -681,37 +653,33 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
     SessionStoreHarness harness;
 
     {
-        SqliteDb db(harness.db_path);
-        exec_sql(db.db, "CREATE TABLE sessions ("
-                        "id TEXT PRIMARY KEY,"
-                        "model TEXT NOT NULL,"
-                        "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                        ");"
-                        "CREATE TABLE messages ("
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                        "session_id TEXT NOT NULL,"
-                        "seq INTEGER NOT NULL,"
-                        "role TEXT NOT NULL,"
-                        "content_json TEXT NOT NULL"
-                        ");"
-                        "CREATE TABLE channel_session_bindings ("
-                        "jid TEXT PRIMARY KEY,"
-                        "session_id TEXT NOT NULL,"
-                        "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                        ");");
-        exec_sql(db.db, "INSERT INTO sessions (id, model) VALUES ('legacy-session', 'legacy-model');");
-        exec_sql(db.db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES ("
-                        "'legacy-session', 0, 'user', '[{"
-                        "type"
-                        ":"
-                        "text"
-                        ","
-                        "text"
-                        ":"
-                        "hello"
-                        "}]'"
-                        ");");
-        exec_sql(db.db, "INSERT INTO channel_session_bindings (jid, session_id) VALUES ('qqbot:c2c:alice', 'legacy-session');");
+        auto db = orangutan::sqlite::open_or_throw(harness.db_path);
+        orangutan::sqlite::exec_script(db,
+                                       "CREATE TABLE sessions ("
+                                       "id TEXT PRIMARY KEY,"
+                                       "model TEXT NOT NULL,"
+                                       "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                                       ");"
+                                       "CREATE TABLE messages ("
+                                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                       "session_id TEXT NOT NULL,"
+                                       "seq INTEGER NOT NULL,"
+                                       "role TEXT NOT NULL,"
+                                       "content_json TEXT NOT NULL"
+                                       ");"
+                                       "CREATE TABLE channel_session_bindings ("
+                                       "jid TEXT PRIMARY KEY,"
+                                       "session_id TEXT NOT NULL,"
+                                       "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                                       ");");
+        orangutan::sqlite::exec_bind(db, "INSERT INTO sessions (id, model) VALUES (?, ?)", "legacy-session", "legacy-model");
+        orangutan::sqlite::exec_bind(db,
+                                     "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)",
+                                     "legacy-session",
+                                     0,
+                                     "user",
+                                     R"([{"type":"text","text":"hello"}])");
+        orangutan::sqlite::exec_bind(db, "INSERT INTO channel_session_bindings (jid, session_id) VALUES (?, ?)", "qqbot:c2c:alice", "legacy-session");
     }
 
     auto store = harness.store();
@@ -721,31 +689,22 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
     CHECK(sessions[0].id == "legacy-session");
     CHECK(sessions[0].scope_key.empty());
 
-    SqliteDb verify_db(harness.db_path);
-    sqlite3_stmt *stmt = nullptr;
-    const auto prepare_rc = sqlite3_prepare_v2(verify_db.db, "PRAGMA table_info(channel_session_bindings)", -1, &stmt, nullptr);
-    INFO("failed to inspect channel_session_bindings schema");
-    REQUIRE(prepare_rc == SQLITE_OK);
+    auto verify_db = orangutan::sqlite::open_or_throw(harness.db_path);
+    const auto schema_rows =
+        orangutan::sqlite::query_all<std::tuple<std::string, int>>(verify_db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
 
     bool has_agent_key = false;
     int jid_pk_position = 0;
     int agent_key_pk_position = 0;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const auto *text = sqlite3_column_text(stmt, 1);
-        // sqlite3_column_text() returns UTF-8 bytes as unsigned char*; convert for std::string construction.
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        const auto *name = text != nullptr ? reinterpret_cast<const char *>(text) : nullptr;
-        const auto pk = sqlite3_column_int(stmt, 5);
-        const auto column_name = name != nullptr ? std::string(name) : std::string{};
+    for (const auto &[column_name, pk_position] : schema_rows) {
         if (column_name == "jid") {
-            jid_pk_position = pk;
+            jid_pk_position = pk_position;
         }
         if (column_name == "agent_key") {
             has_agent_key = true;
-            agent_key_pk_position = pk;
+            agent_key_pk_position = pk_position;
         }
     }
-    sqlite3_finalize(stmt);
 
     CHECK(has_agent_key);
     CHECK(jid_pk_position == 1);

@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 namespace orangutan::automation {
     namespace {
 
@@ -208,13 +210,29 @@ namespace orangutan::automation {
             }
         }
 
+        auto updated = automation;
+        updated.last_run_at = finished_at;
+        updated.last_status = run.status;
+        if (updated.trigger.type == trigger_type::once) {
+            updated.next_due_at.reset();
+        } else {
+            updated.next_due_at = plan_next_due(updated, from_unix_seconds(finished_at));
+        }
+
         if (delivery_disposition.has_value() && delivery_disposition->suppress) {
             run.delivery_status = delivery_disposition->status.empty() ? "suppressed" : delivery_disposition->status;
+            repository_->persist_execution(updated, run);
         } else if (automation.delivery.mode == delivery_mode::silent) {
             run.delivery_status = "silent";
+            repository_->persist_execution(updated, run);
         } else {
+            run.delivery_status = "notify_pending";
+            repository_->persist_execution(updated, run);
+
             const auto message = make_delivery_message(automation, result);
             auto delivery_status = std::string("notified");
+            std::vector<DeliveryRecord> deliveries;
+            deliveries.reserve(automation.delivery.targets.size());
 
             for (const auto &target : automation.delivery.targets) {
                 auto delivery = DeliveryRecord{
@@ -231,29 +249,35 @@ namespace orangutan::automation {
                 if (callbacks_snapshot.notifier == nullptr) {
                     delivery.status = "notify_failed";
                     delivery_status = "notify_failed";
-                } else if (const auto error = callbacks_snapshot.notifier(target, delivery.title, delivery.body); error.has_value()) {
-                    delivery.status = "notify_failed";
-                    delivery.body = *error + "\n" + delivery.body;
-                    delivery_status = "notify_failed";
+                } else {
+                    try {
+                        if (const auto error = callbacks_snapshot.notifier(target, delivery.title, delivery.body); error.has_value()) {
+                            delivery.status = "notify_failed";
+                            delivery.body = *error + "\n" + delivery.body;
+                            delivery_status = "notify_failed";
+                        }
+                    } catch (const std::exception &error) {
+                        delivery.status = "notify_failed";
+                        delivery.body = std::string(error.what()) + "\n" + delivery.body;
+                        delivery_status = "notify_failed";
+                    } catch (...) {
+                        delivery.status = "notify_failed";
+                        delivery.body = "unknown notification failure\n" + delivery.body;
+                        delivery_status = "notify_failed";
+                    }
                 }
 
-                static_cast<void>(repository_->insert_delivery(delivery));
+                deliveries.push_back(std::move(delivery));
             }
 
-            run.delivery_status = delivery_status;
+            try {
+                repository_->persist_delivery_results(run.id, delivery_status, deliveries);
+            } catch (const std::exception &error) {
+                spdlog::error("failed to persist delivery results for automation {} run {}: {}", automation.id, run.id, error.what());
+            } catch (...) {
+                spdlog::error("failed to persist delivery results for automation {} run {} with unknown exception", automation.id, run.id);
+            }
         }
-
-        static_cast<void>(repository_->insert_run(run));
-
-        auto updated = automation;
-        updated.last_run_at = finished_at;
-        updated.last_status = run.status;
-        if (updated.trigger.type == trigger_type::once) {
-            updated.next_due_at.reset();
-        } else {
-            updated.next_due_at = plan_next_due(updated, from_unix_seconds(finished_at));
-        }
-        static_cast<void>(persist(updated));
 
         return run.id;
     }

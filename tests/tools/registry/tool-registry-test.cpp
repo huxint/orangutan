@@ -320,9 +320,6 @@ TEST_CASE("DoesNotRegisterMemoryToolsWithoutMemoryStore") {
     CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "recall")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "forget")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_store")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_recall")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_forget")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "memory_update")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "memory_list")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
@@ -722,7 +719,7 @@ TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
             CHECK(not(orangutan::testing::has_tool_named(defs, "grep")));
             // Memory tools are deferred — not in definitions() but still executable
             CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
-            CHECK(not(orangutan::testing::has_tool_named(defs, "memory_recall")));
+            CHECK(not(orangutan::testing::has_tool_named(defs, "recall")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
             CHECK(orangutan::testing::has_tool_named(defs, "tool_search"));
             CHECK(registry.has_deferred_tools());
@@ -730,7 +727,7 @@ TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
             const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}}));
             CHECK(not(remember.is_error));
 
-            const auto recall = registry.execute(ToolUse("recall-runtime", "memory_recall", {{"mode", "query"}, {"value", "theme"}}));
+            const auto recall = registry.execute(ToolUse("recall-runtime", "recall", {{"mode", "query"}, {"value", "theme"}}));
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
         }
@@ -842,6 +839,25 @@ TEST_CASE("UsesDynamicApprovalCallbackFromToolContext") {
     const auto shell_result = registry.execute(ToolUse("context-allow-shell", "shell", {{"command", "echo hello"}}));
     CHECK(prompted);
     CHECK(not(shell_result.is_error));
+    CHECK(shell_result.content.contains("hello"));
+};
+
+TEST_CASE("UsesUpdatedPermissionContextAfterRuntimeRegistration") {
+    ToolRegistry registry;
+    ToolPermissionContext permissions;
+    permissions.mode = permission_mode::plan;
+    auto tool_context = make_runtime_tool_context();
+    tool_context.permission_context = &permissions;
+
+    static_cast<void>(register_runtime_tools(registry, nullptr, test_tmp_root(), &tool_context, {}, {}, &permissions));
+
+    CHECK_FALSE(orangutan::testing::has_tool_named(registry.definitions(), "shell"));
+
+    permissions.mode = permission_mode::bypass_permissions;
+
+    CHECK(orangutan::testing::has_tool_named(registry.definitions(), "shell"));
+    const auto shell_result = registry.execute(ToolUse("dynamic-shell", "shell", {{"command", "echo hello"}}));
+    CHECK_FALSE(shell_result.is_error);
     CHECK(shell_result.content.contains("hello"));
 };
 

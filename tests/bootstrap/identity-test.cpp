@@ -66,7 +66,7 @@ namespace {
         CHECK(bootstrap::derive_cli_runtime_key("default") == "cli:local");
     };
 
-    TEST_CASE("derive_cli_session_scope_preserves_legacy_default_scope") {
+    TEST_CASE("derive_cli_session_scope_keeps_default_agent_scope_empty") {
         CHECK(bootstrap::derive_cli_session_scope("default").empty());
     };
 
