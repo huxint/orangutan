@@ -108,4 +108,56 @@ namespace {
         CHECK_FALSE(loaded->has_value());
     }
 
+    TEST_CASE("sqlite store reserves due jobs with lease metadata", "[automation][store][lease]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "reserve.db");
+        SqliteJobStore store(db_path);
+
+        REQUIRE(store.save_job(make_definition("job-1", "repo-sync"), make_state(1'776'249'600)).has_value());
+        REQUIRE(store.save_job(make_definition("job-2", "daily-report"), make_state(1'776'249'700)).has_value());
+
+        auto reserved = store.reserve_due(1'776'249'800, 1, "driver-a", 1'776'250'000);
+        REQUIRE(reserved.has_value());
+        REQUIRE(reserved->size() == 1UL);
+        CHECK(reserved->at(0).definition.id.value == "job-1");
+        CHECK(reserved->at(0).state.lease_owner == "driver-a");
+        REQUIRE(reserved->at(0).state.lease_expires_at.has_value());
+        CHECK(*reserved->at(0).state.lease_expires_at == 1'776'250'000);
+        CHECK(reserved->at(0).state.revision == 1);
+    }
+
+    TEST_CASE("sqlite store skips jobs with active leases", "[automation][store][lease]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "active-lease.db");
+        SqliteJobStore store(db_path);
+
+        REQUIRE(store.save_job(make_definition("job-1", "repo-sync"), make_state(1'776'249'600)).has_value());
+
+        auto first_reservation = store.reserve_due(1'776'249'800, 1, "driver-a", 1'776'250'000);
+        REQUIRE(first_reservation.has_value());
+        REQUIRE(first_reservation->size() == 1UL);
+
+        auto second_reservation = store.reserve_due(1'776'249'850, 1, "driver-b", 1'776'250'100);
+        REQUIRE(second_reservation.has_value());
+        CHECK(second_reservation->empty());
+    }
+
+    TEST_CASE("sqlite store reclaims expired leases", "[automation][store][lease]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "expired-lease.db");
+        SqliteJobStore store(db_path);
+
+        REQUIRE(store.save_job(make_definition("job-1", "repo-sync"), make_state(1'776'249'600)).has_value());
+
+        auto first_reservation = store.reserve_due(1'776'249'800, 1, "driver-a", 1'776'249'900);
+        REQUIRE(first_reservation.has_value());
+        REQUIRE(first_reservation->size() == 1UL);
+
+        auto reclaimed = store.reserve_due(1'776'249'950, 1, "driver-b", 1'776'250'100);
+        REQUIRE(reclaimed.has_value());
+        REQUIRE(reclaimed->size() == 1UL);
+        CHECK(reclaimed->at(0).definition.id.value == "job-1");
+        CHECK(reclaimed->at(0).state.lease_owner == "driver-b");
+        REQUIRE(reclaimed->at(0).state.lease_expires_at.has_value());
+        CHECK(*reclaimed->at(0).state.lease_expires_at == 1'776'250'100);
+        CHECK(reclaimed->at(0).state.revision == 2);
+    }
+
 } // namespace

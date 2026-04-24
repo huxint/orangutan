@@ -33,6 +33,10 @@ namespace orangutan::automation {
         [[nodiscard]]
         auto list_due(std::int64_t now, std::size_t limit) const -> StoreResult<std::vector<JobId>> override;
 
+        [[nodiscard]]
+        auto reserve_due(std::int64_t now, std::size_t limit, std::string_view driver_id, std::int64_t lease_until)
+            -> StoreResult<std::vector<StoredJob>> override;
+
     private:
         auto ensure_schema() -> StoreResult<void>;
 

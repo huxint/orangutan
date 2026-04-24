@@ -435,6 +435,70 @@ namespace orangutan::automation {
         return due_jobs;
     }
 
+    auto SqliteJobStore::reserve_due(std::int64_t now, std::size_t limit, std::string_view driver_id, std::int64_t lease_until) -> StoreResult<std::vector<StoredJob>> {
+        if (limit == 0) {
+            return std::vector<StoredJob>{};
+        }
+        validate_non_blank(driver_id, "driver id");
+
+        std::scoped_lock lock(mutex_);
+        const auto updated_at = current_unix_seconds();
+
+        return db_.transaction([&](sqlite::Database &tx) -> StoreResult<std::vector<StoredJob>> {
+            auto query = tx.query(
+                "SELECT d.job_id, d.job_key, d.schedule_kind, d.schedule_json, d.action_key, d.action_payload_json, d.execution_policy_json, d.result_policy_json, d.metadata_json, d.version, "
+                "s.enabled, s.paused, s.next_due_at, s.last_scheduled_at, s.last_started_at, s.last_finished_at, s.last_status, s.in_flight_count, s.lease_owner, s.lease_expires_at, s.revision "
+                "FROM automation_job_definitions d "
+                "JOIN automation_job_state s ON s.job_id = d.job_id "
+                "WHERE s.enabled = 1 "
+                "AND s.paused = 0 "
+                "AND s.next_due_at IS NOT NULL "
+                "AND s.next_due_at <= ?1 "
+                "AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= ?1) "
+                "ORDER BY s.next_due_at ASC, d.job_id ASC "
+                "LIMIT ?2");
+            if (!query) {
+                return std::unexpected(query.error());
+            }
+
+            auto rows = query->bind(now, static_cast<std::int64_t>(limit)).template all<load_job_row>();
+            if (!rows) {
+                return std::unexpected(rows.error());
+            }
+
+            std::vector<StoredJob> reserved_jobs;
+            reserved_jobs.reserve(rows->size());
+            for (const auto &row : *rows) {
+                auto decoded = decode_stored_job(row);
+                if (!decoded) {
+                    return std::unexpected(decoded.error());
+                }
+
+                decoded->state.lease_owner = std::string(driver_id);
+                decoded->state.lease_expires_at = lease_until;
+                ++decoded->state.revision;
+
+                auto update = run_bound(
+                    tx,
+                    "UPDATE automation_job_state "
+                    "SET lease_owner = ?2, lease_expires_at = ?3, revision = ?4, updated_at = ?5 "
+                    "WHERE job_id = ?1",
+                    decoded->definition.id.value,
+                    decoded->state.lease_owner,
+                    decoded->state.lease_expires_at,
+                    decoded->state.revision,
+                    updated_at);
+                if (!update) {
+                    return std::unexpected(update.error());
+                }
+
+                reserved_jobs.push_back(std::move(*decoded));
+            }
+
+            return reserved_jobs;
+        });
+    }
+
     auto SqliteJobStore::ensure_schema() -> StoreResult<void> {
         auto foreign_keys = db_.exec_script("PRAGMA foreign_keys = ON;", "enable automation foreign keys");
         if (!foreign_keys) {
