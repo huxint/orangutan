@@ -4,10 +4,24 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "automation/action-registry.hpp"
 #include "automation/core-model.hpp"
 
 namespace {
 
+    struct AgentPromptPayload {
+        std::string agent;
+        std::string prompt;
+    };
+
+    void to_json(nlohmann::json &json, const AgentPromptPayload &payload) {
+        json = nlohmann::json{
+            {"agent", payload.agent},
+            {"prompt", payload.prompt},
+        };
+    }
+
+    using orangutan::automation::ActionRegistry;
     using orangutan::automation::CronSchedule;
     using orangutan::automation::DispatchRequest;
     using orangutan::automation::ExecutionPolicy;
@@ -97,6 +111,44 @@ namespace {
 
         const ResultPolicy result;
         CHECK(result.targets.empty());
+    }
+
+    TEST_CASE("action registry encodes typed payloads", "[automation][action]") {
+        ActionRegistry registry;
+
+        REQUIRE(registry.register_action<AgentPromptPayload>("agent.prompt").has_value());
+
+        auto descriptor = registry.bind(
+            "agent.prompt",
+            AgentPromptPayload{
+                .agent = "default",
+                .prompt = "scan repo",
+            });
+        REQUIRE(descriptor.has_value());
+        CHECK(descriptor->action_key == "agent.prompt");
+        CHECK(descriptor->payload == nlohmann::json({
+                                          {"agent", "default"},
+                                          {"prompt", "scan repo"},
+                                      }));
+    }
+
+    TEST_CASE("action registry rejects duplicate action keys", "[automation][action]") {
+        ActionRegistry registry;
+
+        REQUIRE(registry.register_action<AgentPromptPayload>("agent.prompt").has_value());
+
+        auto duplicate = registry.register_action<AgentPromptPayload>("agent.prompt");
+        REQUIRE_FALSE(duplicate.has_value());
+        CHECK(duplicate.error() == "action key already registered");
+    }
+
+    TEST_CASE("action registry rejects mismatched payload types", "[automation][action]") {
+        ActionRegistry registry;
+        REQUIRE(registry.register_action<AgentPromptPayload>("agent.prompt").has_value());
+
+        auto descriptor = registry.bind("agent.prompt", std::string("not-a-payload"));
+        REQUIRE_FALSE(descriptor.has_value());
+        CHECK(descriptor.error() == "payload type does not match registered action");
     }
 
 } // namespace
