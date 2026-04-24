@@ -14,12 +14,15 @@ namespace orangutan::bootstrap {
     public:
         AppRuntime();
         explicit AppRuntime(const std::filesystem::path &automation_db_path);
-        ~AppRuntime() = default;
+        ~AppRuntime();
 
         AppRuntime(const AppRuntime &) = delete;
         AppRuntime &operator=(const AppRuntime &) = delete;
         AppRuntime(AppRuntime &&) = delete;
         AppRuntime &operator=(AppRuntime &&) = delete;
+
+        void start();
+        void stop();
 
         orangutan::automation::Repository &automation_repository() noexcept;
         const orangutan::automation::Repository &automation_repository() const noexcept;

@@ -343,7 +343,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             return e.what();
         }
     });
-    app_runtime.automation_runtime().start();
+    app_runtime.start();
 
     std::unique_ptr<orangutan::bootstrap::AgentRuntimeBundle> primary_runtime;
     orangutan::SkillLoader skill_loader;
@@ -396,7 +396,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 spdlog::warn("web runtime assembly failed; continuing with admin-only web surface: {}", e.what());
             } else {
                 fmt::println(stderr, "Error: failed to initialize primary runtime: {}", e.what());
-                app_runtime.automation_runtime().stop();
                 return 1;
             }
         }
@@ -416,7 +415,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         const auto attachments = configure_web_server_runtime(*web_server, options, cfg, session_store.get(), memory_store.get(), &app_runtime.automation_runtime(),
                                                               primary_runtime != nullptr ? &primary_runtime->tools() : nullptr, &skill_loader);
         if (maybe_skip_web_server_start_for_tests(session_store.get(), memory_store.get(), primary_runtime.get(), &skill_loader, attachments, web_runtime_build_error)) {
-            app_runtime.automation_runtime().stop();
             return 0;
         }
         warn_if_nonlocal_web_host(options.web_host);
@@ -495,6 +493,5 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         web_server->stop();
     }
     orchestration_manager->shutdown();
-    app_runtime.automation_runtime().stop();
     return exit_code;
 }

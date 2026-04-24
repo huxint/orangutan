@@ -189,7 +189,7 @@ namespace {
         AgentLoop loop(provider, route, tools, &runtime_memory);
         const auto automation_db_path = orangutan::testing::unique_test_db_path("session-workflow-async", "automation.db");
         bootstrap::AppRuntime app_runtime(automation_db_path);
-        app_runtime.automation_runtime().start();
+        app_runtime.start();
 
         loop.set_history({
             Message::user().text("we are working on orangutan refactor"),
@@ -216,7 +216,7 @@ namespace {
         }
         CHECK(distilled);
 
-        app_runtime.automation_runtime().stop();
+        app_runtime.stop();
         std::filesystem::remove_all(automation_db_path.parent_path());
     };
 

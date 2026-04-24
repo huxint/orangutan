@@ -14,6 +14,18 @@ namespace orangutan::bootstrap {
       automation_service_(std::make_unique<orangutan::automation::AutomationService>(*automation_repository_)),
       automation_runtime_(std::make_unique<orangutan::automation::AutomationRuntime>(*automation_service_, *task_pool_)) {}
 
+    AppRuntime::~AppRuntime() {
+        stop();
+    }
+
+    void AppRuntime::start() {
+        automation_runtime_->start();
+    }
+
+    void AppRuntime::stop() {
+        automation_runtime_->stop();
+    }
+
     orangutan::automation::Repository &AppRuntime::automation_repository() noexcept {
         return *automation_repository_;
     }
