@@ -748,7 +748,7 @@ namespace orangutan::process {
             return snapshot_entry(entry);
         }
 
-        void drain_wait_scope() {
+        void drain_wait_scope() const {
             try {
                 static_cast<void>(stdexec::sync_wait(wait_scope.on_empty()));
             } catch (...) { // NOLINT(bugprone-empty-catch): shutdown path is best-effort

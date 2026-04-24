@@ -8,7 +8,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "types/base.hpp"
 
 #include <stdexec/execution.hpp>
 

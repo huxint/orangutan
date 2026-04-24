@@ -3,19 +3,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace orangutan::prompt {
 
-    enum class prompt_section_kind {
+    enum class prompt_section_kind : std::uint8_t {
         static_section,
         dynamic_section,
         volatile_section,
     };
 
-    enum class prompt_section_classification {
+    enum class prompt_section_classification : std::uint8_t {
         must_keep,
         important,
         optional,

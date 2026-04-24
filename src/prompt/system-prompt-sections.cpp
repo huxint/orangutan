@@ -146,7 +146,7 @@ namespace orangutan::prompt {
         std::string get_os_info() {
 #ifdef __linux__
             if (utsname buf{}; uname(&buf) == 0) {
-                return std::string{buf.sysname} + ' ' + buf.release;
+                return fmt::format("{} {}", buf.sysname, buf.release);
             }
 #endif
             return "Unknown";
