@@ -731,7 +731,7 @@ namespace {
             .content = "run shell",
         };
         auto callback = gate.make_callback(request, manager, nullptr, [&permission_context](PermissionRule rule) {
-            permission_context = add_rule(permission_context, rule);
+            permission_context = add_rule(permission_context, std::move(rule));
         });
         REQUIRE(callback != nullptr);
 
