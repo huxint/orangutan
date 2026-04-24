@@ -108,6 +108,19 @@ namespace {
         CHECK_FALSE(loaded->has_value());
     }
 
+    TEST_CASE("sqlite store reports invalid job arguments via expected errors", "[automation][store]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "invalid-args.db");
+        SqliteJobStore store(db_path);
+
+        auto definition = make_definition("job-1", "repo-sync");
+        definition.action.action_key.clear();
+
+        auto saved = store.save_job(definition, make_state(1'776'249'600));
+        REQUIRE_FALSE(saved.has_value());
+        CHECK(saved.error().kind == orangutan::sqlite::sqlite_error_kind::argument_error);
+        CHECK(saved.error().message == "action key must not be blank");
+    }
+
     TEST_CASE("sqlite store reserves due jobs with lease metadata", "[automation][store][lease]") {
         const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "reserve.db");
         SqliteJobStore store(db_path);

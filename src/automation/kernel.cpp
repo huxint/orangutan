@@ -95,9 +95,7 @@ namespace orangutan::automation {
             }
 
             auto windows = schedule.active_windows;
-            std::ranges::sort(windows, [](const ActiveWindow &lhs, const ActiveWindow &rhs) {
-                return lhs.start < rhs.start;
-            });
+            std::ranges::sort(windows, {}, &ActiveWindow::start);
 
             const auto zone = resolve_time_zone(schedule.time_zone);
             const auto local_candidate = local_time_in_zone(candidate, schedule.time_zone);
@@ -181,11 +179,11 @@ namespace orangutan::automation {
     } // namespace
 
     Kernel::Kernel(JobStore &store, std::chrono::seconds lease_duration)
-    : store_(&store),
+    : store_(store),
       lease_duration_(lease_duration) {}
 
     auto Kernel::next_wakeup() const -> KernelResult<std::optional<TimePoint>> {
-        auto next_due_at = store_->next_due_at();
+        auto next_due_at = store_.next_due_at();
         if (!next_due_at) {
             return std::unexpected(next_due_at.error().message);
         }
@@ -199,19 +197,20 @@ namespace orangutan::automation {
         const auto now_seconds = to_unix_seconds(now);
         const auto lease_until = now_seconds + lease_duration_.count();
 
-        auto reserved_jobs = store_->reserve_due(now_seconds, limit, driver_id, lease_until);
+        auto reserved_jobs = store_.reserve_due(now_seconds, limit, driver_id, lease_until);
         if (!reserved_jobs) {
             return std::unexpected(reserved_jobs.error().message);
         }
 
         std::vector<DispatchRequest> dispatches;
+        dispatches.reserve(reserved_jobs->size());
         for (auto &reserved_job : *reserved_jobs) {
             auto request = make_dispatch_request(reserved_job, now_seconds);
             if (!request.has_value()) {
                 reserved_job.state.next_due_at = plan_next_due(reserved_job.definition, now);
                 reserved_job.state.lease_owner.clear();
                 reserved_job.state.lease_expires_at.reset();
-                auto saved = store_->save_job(reserved_job.definition, reserved_job.state);
+                auto saved = store_.save_job(reserved_job.definition, reserved_job.state);
                 if (!saved) {
                     return std::unexpected(saved.error().message);
                 }
@@ -219,7 +218,7 @@ namespace orangutan::automation {
             }
 
             reserved_job.state.last_scheduled_at = to_unix_seconds(request->scheduled_for);
-            auto saved = store_->save_job(reserved_job.definition, reserved_job.state);
+            auto saved = store_.save_job(reserved_job.definition, reserved_job.state);
             if (!saved) {
                 return std::unexpected(saved.error().message);
             }
@@ -227,7 +226,6 @@ namespace orangutan::automation {
             reservations_.insert_or_assign(request->execution_id.value,
                                            Reservation{
                                                .job = reserved_job,
-                                               .request = *request,
                                                .lease_until = lease_until,
                                            });
             dispatches.push_back(*request);
@@ -237,14 +235,14 @@ namespace orangutan::automation {
     }
 
     auto Kernel::mark_started(const ExecutionId &execution_id, TimePoint now) -> KernelResult<void> {
-        const auto it = reservations_.find(execution_id.value);
+        const auto it = utils::transparent_find(reservations_, execution_id.value);
         if (it == reservations_.end()) {
             return std::unexpected("unknown execution id");
         }
 
         it->second.job.state.last_started_at = to_unix_seconds(now);
         ++it->second.job.state.in_flight_count;
-        auto saved = store_->save_job(it->second.job.definition, it->second.job.state);
+        auto saved = store_.save_job(it->second.job.definition, it->second.job.state);
         if (!saved) {
             return std::unexpected(saved.error().message);
         }
@@ -252,7 +250,7 @@ namespace orangutan::automation {
     }
 
     auto Kernel::mark_finished(const ExecutionId &execution_id, const ExecutionResult &result, TimePoint now) -> KernelResult<void> {
-        const auto it = reservations_.find(execution_id.value);
+        const auto it = utils::transparent_find(reservations_, execution_id.value);
         if (it == reservations_.end()) {
             return std::unexpected("unknown execution id");
         }
@@ -267,7 +265,7 @@ namespace orangutan::automation {
         job.state.lease_expires_at.reset();
         job.state.next_due_at = plan_next_due(job.definition, now);
 
-        auto saved = store_->save_job(job.definition, job.state);
+        auto saved = store_.save_job(job.definition, job.state);
         if (!saved) {
             return std::unexpected(saved.error().message);
         }
@@ -276,8 +274,7 @@ namespace orangutan::automation {
         return {};
     }
 
-    auto Kernel::recover(TimePoint now, std::string_view driver_id) -> KernelResult<void> {
-        static_cast<void>(driver_id);
+    auto Kernel::recover(TimePoint now, std::string_view) -> KernelResult<void> {
         const auto now_seconds = to_unix_seconds(now);
         for (auto it = reservations_.begin(); it != reservations_.end();) {
             if (it->second.lease_until <= now_seconds) {

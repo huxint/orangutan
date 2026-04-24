@@ -1,12 +1,12 @@
 #pragma once
 
 #include "automation/store.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <chrono>
 #include <expected>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace orangutan::automation {
@@ -42,13 +42,12 @@ namespace orangutan::automation {
     private:
         struct Reservation {
             StoredJob job;
-            DispatchRequest request;
             std::int64_t lease_until = 0;
         };
 
-        JobStore *store_ = nullptr;
+        JobStore &store_;
         std::chrono::seconds lease_duration_{30};
-        std::unordered_map<std::string, Reservation> reservations_;
+        utils::transparent_string_unordered_map<Reservation> reservations_;
     };
 
 } // namespace orangutan::automation

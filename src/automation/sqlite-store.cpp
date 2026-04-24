@@ -2,6 +2,7 @@
 
 #include "storage/sqlite.hpp"
 #include "utils/enum-string.hpp"
+#include "utils/expected-combine.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -28,10 +29,12 @@ namespace orangutan::automation {
             return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         }
 
-        void validate_non_blank(std::string_view value, std::string_view label) {
+        [[nodiscard]]
+        auto require_non_blank(std::string_view value, std::string_view label) -> StoreResult<void> {
             if (value.empty()) {
-                throw std::invalid_argument(std::string(label) + " must not be blank");
+                return std::unexpected(sqlite::make_error(sqlite::sqlite_error_kind::argument_error, std::string(label) + " must not be blank"));
             }
+            return {};
         }
 
         [[nodiscard]]
@@ -272,9 +275,13 @@ namespace orangutan::automation {
     }
 
     auto SqliteJobStore::save_job(const JobDefinition &definition, const ScheduleState &state) -> StoreResult<void> {
-        validate_non_blank(definition.id.value, "job id");
-        validate_non_blank(definition.key, "job key");
-        validate_non_blank(definition.action.action_key, "action key");
+        auto validation = utils::all_ok(
+            require_non_blank(definition.id.value, "job id"),
+            require_non_blank(definition.key, "job key"),
+            require_non_blank(definition.action.action_key, "action key"));
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
 
         std::scoped_lock lock(mutex_);
         const auto now = current_unix_seconds();
@@ -347,7 +354,10 @@ namespace orangutan::automation {
     }
 
     auto SqliteJobStore::load_job(const JobId &job_id) const -> StoreResult<std::optional<StoredJob>> {
-        validate_non_blank(job_id.value, "job id");
+        auto validation = require_non_blank(job_id.value, "job id");
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
 
         std::scoped_lock lock(mutex_);
         auto query = db_.query(
@@ -376,7 +386,10 @@ namespace orangutan::automation {
     }
 
     auto SqliteJobStore::remove_job(const JobId &job_id) -> StoreResult<bool> {
-        validate_non_blank(job_id.value, "job id");
+        auto validation = require_non_blank(job_id.value, "job id");
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
 
         std::scoped_lock lock(mutex_);
         auto removed = run_bound(db_, "DELETE FROM automation_job_definitions WHERE job_id = ?1", job_id.value);
@@ -439,7 +452,10 @@ namespace orangutan::automation {
         if (limit == 0) {
             return std::vector<StoredJob>{};
         }
-        validate_non_blank(driver_id, "driver id");
+        auto validation = require_non_blank(driver_id, "driver id");
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
 
         std::scoped_lock lock(mutex_);
         const auto updated_at = current_unix_seconds();

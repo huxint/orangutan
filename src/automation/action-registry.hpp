@@ -5,8 +5,6 @@
 
 #include <exception>
 #include <expected>
-#include <functional>
-#include <memory>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -73,13 +71,6 @@ namespace orangutan::automation {
                 std::move(key),
                 Entry{
                     .payload_type = std::type_index(typeid(Payload)),
-                    .encode =
-                        [](const void *raw_payload) -> ActionResult<nlohmann::json> {
-                        if (raw_payload == nullptr) {
-                            return std::unexpected("payload pointer must not be null");
-                        }
-                        return encode_action_payload(*static_cast<const Payload *>(raw_payload));
-                    },
                 });
             if (!inserted) {
                 return std::unexpected("action key already registered");
@@ -102,7 +93,7 @@ namespace orangutan::automation {
                 return std::unexpected("payload type does not match registered action");
             }
 
-            auto encoded = it->second.encode(std::addressof(payload));
+            auto encoded = encode_action_payload(payload);
             if (!encoded) {
                 return std::unexpected(encoded.error());
             }
@@ -116,7 +107,6 @@ namespace orangutan::automation {
     private:
         struct Entry {
             std::type_index payload_type{typeid(void)};
-            std::function<ActionResult<nlohmann::json>(const void *)> encode;
         };
 
         utils::transparent_string_unordered_map<Entry> entries_;
