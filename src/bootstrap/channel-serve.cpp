@@ -18,21 +18,21 @@
 #include "heartbeat/heartbeat-ok.hpp"
 #include "hooks/hook-manager.hpp"
 #include "providers/provider.hpp"
+#include "utils/format.hpp"
 #include "utils/scope-exit.hpp"
 #include "utils/sender-utils.hpp"
 #include "bootstrap/identity.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include "utils/format.hpp"
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -45,12 +45,9 @@ namespace orangutan::bootstrap {
     using detail::ConversationRuntime;
     using detail::extract_qq_bot_name;
     using detail::format_channel_approval_request_id;
-    using detail::format_channel_approval_text_reply;
-    using detail::format_pending_channel_approval_prompt;
     using detail::format_qq_approval_delivery_failure;
     using detail::format_qq_channel_approval_card_markdown;
-    using detail::format_text_channel_approval_prompt;
-    using detail::is_qq_channel_target;
+    using detail::format_qq_tool_progress_markdown;
     using detail::is_qq_custom_keyboard_blocked_error;
     using detail::make_channel_session_metadata;
     using detail::make_conversation_runtime;
@@ -60,6 +57,7 @@ namespace orangutan::bootstrap {
     using detail::qq_keyboard_capability_key;
     using detail::rehydrate_session_permissions;
     using detail::restore_bound_channel_session;
+    using detail::should_send_qq_tool_progress_at_start;
 
     namespace {
 
@@ -82,8 +80,7 @@ namespace orangutan::bootstrap {
             }
         }
 
-        void erase_parked_runtime(ParkedResumeStateMap &parked_resume_states, const std::string &runtime_key,
-                                  orchestration::OrchestrationManager *orchestration_manager) {
+        void erase_parked_runtime(ParkedResumeStateMap &parked_resume_states, const std::string &runtime_key, orchestration::OrchestrationManager *orchestration_manager) {
             if (orchestration_manager != nullptr) {
                 orchestration_manager->unregister_runtime_notification_handler(runtime_key);
             }
@@ -142,16 +139,14 @@ namespace orangutan::bootstrap {
             }
         }
 
-        void prune_inactive_runtimes(std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
-                                     ParkedResumeStateMap &parked_resume_states, orchestration::OrchestrationManager *orchestration_manager,
-                                     std::mutex &runtimes_mutex) {
+        void prune_inactive_runtimes(std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, ParkedResumeStateMap &parked_resume_states,
+                                     orchestration::OrchestrationManager *orchestration_manager, std::mutex &runtimes_mutex) {
             std::scoped_lock lock(runtimes_mutex);
             const auto now = std::chrono::steady_clock::now();
 
             for (auto it = runtimes.begin(); it != runtimes.end();) {
                 const auto &runtime = it->second;
-                const bool idle_for_too_long =
-                    runtime != nullptr && runtime->active_operations == 0 && (now - runtime->last_used_at) >= CHANNEL_RUNTIME_IDLE_TTL;
+                const bool idle_for_too_long = runtime != nullptr && runtime->active_operations == 0 && (now - runtime->last_used_at) >= CHANNEL_RUNTIME_IDLE_TTL;
                 if (idle_for_too_long) {
                     if (runtime != nullptr) {
                         park_runtime(parked_resume_states, it->first, *runtime);
@@ -270,12 +265,12 @@ namespace orangutan::bootstrap {
         }
 
         ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
-                                                    ParkedResumeStateMap &parked_resume_states,
-                                                    std::mutex &runtimes_mutex, const InboundMessage &message,
+                                                    ParkedResumeStateMap &parked_resume_states, std::mutex &runtimes_mutex, const InboundMessage &message,
                                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                                     const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store,
-                                                    SessionStore &session_store, orchestration::OrchestrationManager *orchestration_manager, const Config &cfg, HookManager *hook_manager,
-                                                    automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
+                                                    SessionStore &session_store, orchestration::OrchestrationManager *orchestration_manager, const Config &cfg,
+                                                    HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager,
+                                                    orchestration::AgentMailbox *mailbox) {
             std::scoped_lock lock(runtimes_mutex);
             const auto agent_key = resolve_agent_key_for_message(message, qq_bot_agents);
             const auto runtime_key = derive_channel_runtime_key(jid, agent_key);
@@ -292,8 +287,8 @@ namespace orangutan::bootstrap {
                     parked_state = std::move(parked_it->second);
                     parked_resume_states.erase(parked_it);
                 }
-                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime,
-                                                         team_manager, mailbox, parked_state);
+                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime, team_manager,
+                                                         mailbox, parked_state);
                 if (!message.isolated) {
                     restore_bound_channel_session(session_store, jid, *runtime);
                 }
@@ -324,15 +319,13 @@ namespace orangutan::bootstrap {
                                 const auto previous_message_count = runtime.agent().history().size();
                                 const auto active_model =
                                     runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
-                                const auto distillation_dispatcher = runtime.provider() != nullptr
-                                    ? cli::make_background_session_distillation_dispatcher(runtime.completion_resume_state != nullptr
-                                                                                              ? runtime.completion_resume_state->automation_runtime
-                                                                                              : nullptr,
-                                                                                          *runtime.provider(), runtime.provider_route, runtime.runtime->memory.get())
-                                    : cli::SessionDistillationDispatcher{};
+                                const auto distillation_dispatcher =
+                                    runtime.provider() != nullptr ? cli::make_background_session_distillation_dispatcher(
+                                                                        runtime.completion_resume_state != nullptr ? runtime.completion_resume_state->automation_runtime : nullptr,
+                                                                        *runtime.provider(), runtime.provider_route, runtime.runtime->memory.get())
+                                                                  : cli::SessionDistillationDispatcher{};
                                 const auto result = cli::start_new_session(runtime.agent(), session_store, runtime.current_session_id,
-                                                                           make_channel_session_metadata(runtime, message.jid, active_model),
-                                                                           distillation_dispatcher);
+                                                                           make_channel_session_metadata(runtime, message.jid, active_model), distillation_dispatcher);
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
                                 runtime.current_session_id.clear();
                                 session_store.clear_jid(message.jid, runtime.agent_key);
@@ -427,7 +420,7 @@ namespace orangutan::bootstrap {
     : timeout_(timeout) {}
 
     ApprovalCallback ChannelApprovalGate::make_callback(const InboundMessage &message, ChannelManager &channel_manager, JidTaskRunner *task_runner,
-                                                               tools::PermissionRuleMutationCallback permission_rule_mutator) {
+                                                        tools::PermissionRuleMutationCallback permission_rule_mutator) {
         if (!can_prompt_for_channel_approval(message)) {
             return {};
         }
@@ -470,34 +463,19 @@ namespace orangutan::bootstrap {
 
                                     const auto include_allow_always = permissions::derive_approval_signature(call).always_allow_eligible;
                                     const auto target = resolve_reply_target(message);
-                                    const bool is_qq_target = is_qq_channel_target(target);
-                                    const auto qq_keyboard_key = is_qq_target ? qq_keyboard_capability_key(target) : std::string{};
+                                    const auto qq_keyboard_key = qq_keyboard_capability_key(target);
                                     {
                                         std::scoped_lock lock(pending->mutex);
                                         pending->allow_always_eligible = include_allow_always;
-                                        pending->allow_text_reply = !is_qq_target;
                                     }
                                     const auto qq_keyboard_disabled = [&] {
-                                        if (qq_keyboard_key.empty()) {
-                                            return false;
-                                        }
                                         std::scoped_lock lock(mutex_);
                                         return qq_keyboard_disabled_keys_.contains(qq_keyboard_key);
                                     }();
-                                    auto delivery_failure_reply = [&](bool keyboard_unavailable) {
-                                        if (is_qq_target) {
-                                            return format_qq_approval_delivery_failure(call, decision, keyboard_unavailable);
-                                        }
-
-                                        std::string message = permissions::approval_prompt_message(decision);
-                                        message += "\nFailed to deliver the approval prompt, so the tool call was rejected.";
-                                        message += "\nTool: " + call.name;
-                                        return message;
-                                    };
 
                                     if (qq_keyboard_disabled) {
                                         clear_pending(pending);
-                                        deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                                        deliver_reply(message, format_qq_approval_delivery_failure(call, decision, true), channel_manager);
                                         return WaitOutcome{
                                             .pending = std::move(pending),
                                             .resolved = true,
@@ -506,23 +484,18 @@ namespace orangutan::bootstrap {
                                     }
 
                                     try {
-                                        if (is_qq_target) {
-                                            // Match openclaw: QQ custom keyboards must be sent as a fresh message, not a passive reply carrying msg_id.
-                                            channel_manager.send_keyboard(target, format_qq_channel_approval_card_markdown(call, decision),
-                                                                          channel::qq::build_approval_keyboard(pending->request_id, include_allow_always), "", "");
-                                        } else {
-                                            deliver_reply(message, format_text_channel_approval_prompt(call, decision, pending->request_id, include_allow_always), channel_manager);
-                                        }
+                                        // Match openclaw: QQ custom keyboards must be sent as a fresh message, not a passive reply carrying msg_id.
+                                        channel_manager.send_keyboard(target, format_qq_channel_approval_card_markdown(call, decision),
+                                                                      channel::qq::build_approval_keyboard(pending->request_id, include_allow_always), "", "");
                                     } catch (const std::exception &e) {
-                                        if (!qq_keyboard_key.empty() && is_qq_custom_keyboard_blocked_error(e.what())) {
+                                        if (is_qq_custom_keyboard_blocked_error(e.what())) {
                                             {
                                                 std::scoped_lock lock(mutex_);
                                                 qq_keyboard_disabled_keys_.insert(qq_keyboard_key);
                                             }
-                                            spdlog::warn("qq custom keyboard is unavailable for bot '{}'; rejecting tool call instead of falling back to text approvals: {}",
-                                                         qq_keyboard_key, e.what());
+                                            spdlog::warn("qq custom keyboard is unavailable for bot '{}'; rejecting tool call: {}", qq_keyboard_key, e.what());
                                             clear_pending(pending);
-                                            deliver_reply(message, delivery_failure_reply(true), channel_manager);
+                                            deliver_reply(message, format_qq_approval_delivery_failure(call, decision, true), channel_manager);
                                             return WaitOutcome{
                                                 .pending = std::move(pending),
                                                 .resolved = true,
@@ -531,7 +504,7 @@ namespace orangutan::bootstrap {
                                         } else {
                                             spdlog::warn("failed to deliver approval prompt for jid '{}': {}", message.jid, e.what());
                                             clear_pending(pending);
-                                            deliver_reply(message, delivery_failure_reply(false), channel_manager);
+                                            deliver_reply(message, format_qq_approval_delivery_failure(call, decision, false), channel_manager);
                                             return WaitOutcome{
                                                 .pending = std::move(pending),
                                                 .resolved = true,
@@ -595,7 +568,6 @@ namespace orangutan::bootstrap {
         }
 
         std::shared_ptr<PendingApproval> pending;
-        bool allow_text_reply = true;
         {
             std::scoped_lock lock(mutex_);
             for (const auto &request_id : pending_request_ids) {
@@ -608,55 +580,38 @@ namespace orangutan::bootstrap {
             }
         }
 
-        if (pending != nullptr) {
-            std::scoped_lock lock(pending->mutex);
-            allow_text_reply = pending->allow_text_reply;
-        }
-
-        const auto parsed = parse_channel_approval_reply(message.content, allow_text_reply);
-        if (parsed.request_id.empty()) {
-            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, allow_text_reply), channel_manager);
+        const auto parsed = parse_channel_approval_reply(message.content);
+        if (!parsed.has_value()) {
             return true;
         }
 
-        if (pending == nullptr || pending->request_id != parsed.request_id) {
+        if (pending == nullptr || pending->request_id != parsed->request_id) {
             pending.reset();
             std::scoped_lock lock(mutex_);
-            const auto it = pending_by_request_id_.find(parsed.request_id);
+            const auto it = pending_by_request_id_.find(parsed->request_id);
             if (it != pending_by_request_id_.end() && it->second->jid == message.jid) {
                 pending = it->second;
             }
         }
 
         if (pending == nullptr) {
-            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, allow_text_reply), channel_manager);
             return true;
         }
 
-        const auto [allow_always_eligible, current_allow_text_reply] = [&pending] {
+        const auto allow_always_eligible = [&pending] {
             std::scoped_lock lock(pending->mutex);
-            return std::pair{pending->allow_always_eligible, pending->allow_text_reply};
+            return pending->allow_always_eligible;
         }();
 
-        if (parsed.decision == channel_approval_decision::approve_always && !allow_always_eligible) {
-            if (current_allow_text_reply) {
-                deliver_reply(message, "Always allow is not available for this request. " + format_channel_approval_text_reply(pending->request_id, false), channel_manager);
-            } else {
-                deliver_reply(message, "Always allow is not available for this request. Use the remaining buttons on the approval card.", channel_manager);
-            }
-            return true;
-        }
-
-        if (parsed.decision == channel_approval_decision::invalid) {
-            deliver_reply(message, format_pending_channel_approval_prompt(pending_request_ids, current_allow_text_reply), channel_manager);
+        if (parsed->decision == channel_approval_decision::approve_always && !allow_always_eligible) {
             return true;
         }
 
         {
             std::scoped_lock lock(pending->mutex);
             pending->resolved = true;
-            pending->approved = parsed.decision == channel_approval_decision::approve_once || parsed.decision == channel_approval_decision::approve_always;
-            pending->always_allow = parsed.decision == channel_approval_decision::approve_always;
+            pending->approved = parsed->decision == channel_approval_decision::approve_once || parsed->decision == channel_approval_decision::approve_always;
+            pending->always_allow = parsed->decision == channel_approval_decision::approve_always;
         }
         pending->cv.notify_all();
         return true;
@@ -725,18 +680,15 @@ namespace orangutan::bootstrap {
     namespace {
 
         void process_channel_message(const InboundMessage &message, ChannelManager &channel_manager,
-                                     std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,
-                                     ParkedResumeStateMap &parked_resume_states,
-                                     std::mutex &runtimes_mutex,
-                                     const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
+                                     std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes, ParkedResumeStateMap &parked_resume_states,
+                                     std::mutex &runtimes_mutex, const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs,
                                      const utils::transparent_string_unordered_map<std::string> &qq_bot_agents, MemoryStore *memory_store, SessionStore &session_store,
                                      orchestration::OrchestrationManager *orchestration_manager, const Config &cfg, HookManager *hook_manager,
                                      automation::AutomationRuntime *automation_runtime, ChannelApprovalGate &approval_gate, JidTaskRunner &task_runner,
                                      orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
             try {
                 auto &runtime = ensure_runtime_for_jid(message.jid, runtimes, parked_resume_states, runtimes_mutex, message, agent_configs, qq_bot_agents, memory_store,
-                                                       session_store,
-                                                       orchestration_manager, cfg, hook_manager, automation_runtime, team_manager, mailbox);
+                                                       session_store, orchestration_manager, cfg, hook_manager, automation_runtime, team_manager, mailbox);
                 const auto release_runtime = utils::scope_exit([&runtime, &runtimes_mutex] {
                     release_runtime_use(runtime, runtimes_mutex);
                 });
@@ -759,6 +711,7 @@ namespace orangutan::bootstrap {
                     const auto restore_tool_context = utils::scope_exit([&tool_context] {
                         tool_context.current_message_attachments.clear();
                         tool_context.attachment_download_callback = {};
+                        tool_context.approval_callback = {};
                     });
 
                     // Auto-download attachments so the agent can process them immediately
@@ -785,7 +738,8 @@ namespace orangutan::bootstrap {
                         runtime.agent().clear_history();
                     }
 
-                    tool_context.approval_callback = approval_gate.make_callback(
+                    std::unordered_set<std::string> qq_approval_prompted_tool_ids;
+                    auto approval_callback = approval_gate.make_callback(
                         message, channel_manager, &task_runner,
                         [&session_store, current_session_id = &runtime.current_session_id, base_mutator = tool_context.permission_rule_mutator](PermissionRule rule) {
                             if (base_mutator) {
@@ -795,16 +749,29 @@ namespace orangutan::bootstrap {
                                 session_store.save_session_permission_rule(*current_session_id, std::move(rule));
                             }
                         });
+                    if (approval_callback != nullptr) {
+                        tool_context.approval_callback = [approval_callback = std::move(approval_callback),
+                                                          &qq_approval_prompted_tool_ids](const ToolUse &call, const PermissionDecision &decision) mutable {
+                            if (!call.id.empty()) {
+                                qq_approval_prompted_tool_ids.insert(call.id);
+                            }
+                            return approval_callback(call, decision);
+                        };
+                    } else {
+                        tool_context.approval_callback = {};
+                    }
                     channel_manager.start_typing(message.jid, message.message_id);
                     const auto stop_typing = utils::scope_exit([&channel_manager, &message] {
                         channel_manager.stop_typing(message.jid);
                     });
 
-                    // Stream relay: sends thinking/tool blocks to QQ as they arrive
+                    // Stream relay: keep reasoning with the final answer, and only
+                    // send tool cards when no approval card supersedes them.
                     const auto reply_target = resolve_reply_target(message);
                     const bool is_qq = reply_target.starts_with("qqbot:");
                     std::string thinking_buffer;
                     bool first_block_sent = false;
+                    std::unordered_set<std::string> qq_progress_sent_tool_ids;
 
                     auto send_block = [&](const std::string &text) {
                         if (text.empty() || reply_target == "cli") {
@@ -818,12 +785,16 @@ namespace orangutan::bootstrap {
                         }
                     };
 
-                    auto flush_thinking = [&] {
-                        if (thinking_buffer.empty()) {
+                    auto tool_progress_key = [](const ToolUse &call) {
+                        return call.id.empty() ? fmt::format("{}:{}", call.name, call.input.dump()) : call.id;
+                    };
+                    auto send_tool_progress = [&](const ToolUse &call) {
+                        const auto key = tool_progress_key(call);
+                        if ((!call.id.empty() && qq_approval_prompted_tool_ids.contains(call.id)) || qq_progress_sent_tool_ids.contains(key)) {
                             return;
                         }
-                        send_block("💭 " + thinking_buffer);
-                        thinking_buffer.clear();
+                        send_block(format_qq_tool_progress_markdown(call));
+                        qq_progress_sent_tool_ids.insert(key);
                     };
 
                     AgentLoop::ProviderEventCallback stream_cb;
@@ -832,20 +803,18 @@ namespace orangutan::bootstrap {
                         stream_cb = [&](const ProviderEvent &event) {
                             if (const auto *thinking = std::get_if<ThinkingDelta>(&event)) {
                                 thinking_buffer += thinking->thinking;
-                            } else if (std::get_if<TextDelta>(&event) != nullptr || std::get_if<ToolCallStarted>(&event) != nullptr) {
-                                flush_thinking();
                             }
                         };
                         tool_cb = [&](const std::string &event_type, const ToolUse &call, const ToolResult *) {
                             if (event_type == "tool_started") {
-                                flush_thinking();
-                                send_block("🔧 " + call.name);
+                                if (should_send_qq_tool_progress_at_start(call, runtime.tools(), tool_context)) {
+                                    send_tool_progress(call);
+                                }
                             }
                         };
                     }
 
                     const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb);
-                    flush_thinking();
 
                     // Skip session persistence for isolated heartbeat-style inbound runs.
                     if (!message.isolated) {
@@ -858,17 +827,18 @@ namespace orangutan::bootstrap {
                         return;
                     }
 
+                    const auto qq_reply = is_qq ? format_qq_reply_markdown(thinking_buffer, reply) : reply;
                     if (first_block_sent && is_qq) {
-                        // Blocks already streamed — send final text without reference (avoid repeated quote)
-                        if (!reply.empty()) {
+                        // Blocks already streamed; keep the final answer tied to the inbound message.
+                        if (!qq_reply.empty()) {
                             try {
-                                channel_manager.send(reply_target, make_qq_stream_final_message(message, reply));
+                                channel_manager.send(reply_target, make_qq_stream_final_message(message, qq_reply));
                             } catch (const std::exception &e) {
                                 spdlog::error("failed to deliver final reply for jid '{}': {}", message.jid, e.what());
                             }
                         }
                     } else {
-                        deliver_reply(message, reply, channel_manager);
+                        deliver_reply(message, qq_reply, channel_manager);
                     }
                 });
             } catch (const std::exception &e) {
@@ -893,7 +863,8 @@ namespace orangutan::bootstrap {
     void run_channel_loop(MessageQueue &queue, ChannelManager &channel_manager, std::atomic<bool> &stop_requested, JidTaskRunner &task_runner,
                           const std::unordered_map<std::string, AgentRuntimeConfig> &agent_configs, const utils::transparent_string_unordered_map<std::string> &qq_bot_agents,
                           MemoryStore *memory_store, SessionStore &session_store, orchestration::OrchestrationManager *orchestration_manager, const Config &cfg,
-                          HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager, orchestration::AgentMailbox *mailbox) {
+                          HookManager *hook_manager, automation::AutomationRuntime *automation_runtime, orchestration::TeamManager *team_manager,
+                          orchestration::AgentMailbox *mailbox) {
         std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> runtimes;
         ParkedResumeStateMap parked_resume_states;
         std::mutex runtimes_mutex;
@@ -928,8 +899,7 @@ namespace orangutan::bootstrap {
             }
 
             task_runner.submit(message.jid, [message, &channel_manager, &runtimes, &parked_resume_states, &runtimes_mutex, &agent_configs, &qq_bot_agents, memory_store,
-                                             &session_store,
-                                             orchestration_manager, &cfg, hook_manager, automation_runtime, &approval_gate, &task_runner, team_manager, mailbox] {
+                                             &session_store, orchestration_manager, &cfg, hook_manager, automation_runtime, &approval_gate, &task_runner, team_manager, mailbox] {
                 process_channel_message(message, channel_manager, runtimes, parked_resume_states, runtimes_mutex, agent_configs, qq_bot_agents, memory_store, session_store,
                                         orchestration_manager, cfg, hook_manager, automation_runtime, approval_gate, task_runner, team_manager, mailbox);
             });

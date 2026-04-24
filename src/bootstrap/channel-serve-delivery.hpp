@@ -1,8 +1,10 @@
 #pragma once
 
 #include "channel/channel.hpp"
+#include "utils/format.hpp"
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -37,6 +39,30 @@ namespace orangutan::bootstrap {
             .reply_to_message_id = message.message_id,
             .reference_message_id = message.message_id,
         };
+    }
+
+    [[nodiscard]]
+    inline std::string format_qq_reply_markdown(std::string_view thinking, std::string_view reply) {
+        if (thinking.empty()) {
+            return std::string(reply);
+        }
+
+        std::string markdown{"> thinking\n"};
+        std::size_t line_start = 0;
+        while (line_start < thinking.size()) {
+            const auto line_end = thinking.find('\n', line_start);
+            const auto line = thinking.substr(line_start, line_end == std::string_view::npos ? std::string_view::npos : line_end - line_start);
+            utils::format_to(markdown, "> {}\n", line);
+            if (line_end == std::string_view::npos) {
+                break;
+            }
+            line_start = line_end + 1;
+        }
+
+        if (!reply.empty()) {
+            utils::format_to(markdown, "\n{}", reply);
+        }
+        return markdown;
     }
 
     inline void deliver_reply(const InboundMessage &message, const std::string &reply, ChannelManager &channel_manager) {

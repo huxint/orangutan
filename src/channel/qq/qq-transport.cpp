@@ -280,11 +280,15 @@ namespace orangutan::channel::qq {
 
     class Transport::Impl : public std::enable_shared_from_this<Transport::Impl> {
     public:
-        Impl(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
+        Impl(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &shared_task_pool)
         : callbacks_(std::move(callbacks)),
           connection_factory_(connection_factory ? std::move(connection_factory) : default_connection_factory()),
+          worker_pool_(1),
           worker_scope_(std::make_unique<exec::async_scope>()) {
-            worker_scope_->spawn(stdexec::schedule(task_pool.scheduler()) | stdexec::then([this] {
+            static_cast<void>(shared_task_pool);
+            // run() blocks in curl/poll for the websocket lifetime; keep it off
+            // the caller's shared pool.
+            worker_scope_->spawn(stdexec::schedule(worker_pool_.scheduler()) | stdexec::then([this] {
                                      run();
                                  }));
         }
@@ -587,6 +591,7 @@ namespace orangutan::channel::qq {
         std::condition_variable cv_;
         std::deque<std::string> write_queue_;
         ReconnectBackoff backoff_;
+        utils::TaskPool worker_pool_;
         std::unique_ptr<exec::async_scope> worker_scope_;
         std::unique_ptr<Connection> connection_;
         std::string url_;
@@ -600,20 +605,22 @@ namespace orangutan::channel::qq {
     };
 #endif
 
-    Transport::Transport(Callbacks callbacks, utils::TaskPool &task_pool)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : impl_(std::make_shared<Impl>(std::move(callbacks), ConnectionFactory{}, task_pool)){}
+    Transport::Transport(Callbacks callbacks, utils::TaskPool &task_pool)
+    : impl_(std::make_shared<Impl>(std::move(callbacks), ConnectionFactory{}, task_pool)) {}
 #else
+    Transport::Transport(Callbacks callbacks, utils::TaskPool &task_pool)
     : impl_(nullptr) {
         static_cast<void>(callbacks);
         static_cast<void>(task_pool);
     }
 #endif
 
-      Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
 #ifdef ORANGUTAN_ENABLE_QQ_CHANNEL
-    : impl_(std::make_shared<Impl>(std::move(callbacks), std::move(connection_factory), task_pool)){}
+    Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
+    : impl_(std::make_shared<Impl>(std::move(callbacks), std::move(connection_factory), task_pool)) {}
 #else
+    Transport::Transport(Callbacks callbacks, ConnectionFactory connection_factory, utils::TaskPool &task_pool)
     : impl_(nullptr) {
         static_cast<void>(callbacks);
         static_cast<void>(connection_factory);
@@ -621,7 +628,7 @@ namespace orangutan::channel::qq {
     }
 #endif
 
-      Transport::~Transport() {
+    Transport::~Transport() {
         stop();
     }
 

@@ -1,4 +1,5 @@
 #include "bootstrap/channel-serve-runtime.hpp"
+#include "bootstrap/channel-serve-approval.hpp"
 #include "bootstrap/channel-serve-delivery.hpp"
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/app-runtime.hpp"
@@ -233,17 +234,17 @@ namespace {
         using Step = std::function<LLMResponse(const std::vector<Message> &)>;
 
         explicit ScriptedProvider(std::vector<Step> steps)
-        : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request,
-                                                              const providers::ProviderEventSink &) {
-              if (next_step_ >= steps_.size()) {
-                  throw std::runtime_error("no scripted response available");
-              }
-              return providers::ProviderResult{
-                  .response = steps_[next_step_++](request.messages),
-                  .usage_snapshot = {},
-                  .active_target = route.primary,
-              };
-          })),
+        : backend_(
+              testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request, const providers::ProviderEventSink &) {
+                  if (next_step_ >= steps_.size()) {
+                      throw std::runtime_error("no scripted response available");
+                  }
+                  return providers::ProviderResult{
+                      .response = steps_[next_step_++](request.messages),
+                      .usage_snapshot = {},
+                      .active_target = route.primary,
+                  };
+              })),
           steps_(std::move(steps)),
           system(backend_),
           route(testing::make_test_route("gpt-test")) {
@@ -294,19 +295,6 @@ namespace {
             return std::ranges::any_of(lines, [&needle](const std::string &line) {
                 return line.contains(needle);
             });
-        }
-
-        [[nodiscard]]
-        static std::string extract_request_id(const std::string &message) {
-            const auto marker = std::string("Request: ");
-            const auto start = message.find(marker);
-            if (start == std::string::npos) {
-                return {};
-            }
-
-            const auto value_start = start + marker.size();
-            const auto value_end = message.find('\n', value_start);
-            return message.substr(value_start, value_end == std::string::npos ? std::string::npos : value_end - value_start);
         }
 
         [[nodiscard]]
@@ -467,6 +455,67 @@ namespace {
         CHECK(final.reference_message_id == "qq-message-42");
     };
 
+    TEST_CASE("qq_reply_markdown_combines_thinking_and_final_text") {
+        const auto reply = bootstrap::format_qq_reply_markdown("checking repo\nchoosing fix", "done");
+
+        CHECK(reply.contains("> thinking"));
+        CHECK(reply.contains("> checking repo"));
+        CHECK(reply.contains("> choosing fix"));
+        CHECK(reply.ends_with("\ndone"));
+    };
+
+    TEST_CASE("qq_tool_progress_markdown_includes_command_and_metadata") {
+        const ToolUse call("tool-1", "shell",
+                           nlohmann::json{
+                               {"command", "rg -n TODO src"},
+                               {"working_dir", "/workspace"},
+                               {"timeout_ms", 5000},
+                           });
+
+        const auto markdown = bootstrap::detail::format_qq_tool_progress_markdown(call);
+
+        CHECK(markdown.contains("## Tool"));
+        CHECK(markdown.contains("`shell`"));
+        CHECK(markdown.contains("```bash\nrg -n TODO src\n```"));
+        CHECK(markdown.contains("dir: `/workspace`"));
+        CHECK(markdown.contains("timeout: `5000ms`"));
+    };
+
+    TEST_CASE("qq_tool_progress_policy_sends_allowed_tools_at_start_and_skips_approval_tools") {
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = {.name = "lookup", .description = "Lookup", .input_schema = nlohmann::json::object()},
+            .read_only = true,
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string{"ok"};
+                },
+        });
+        tools.register_tool({
+            .definition = {.name = "shell", .description = "Shell", .input_schema = nlohmann::json::object()},
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string{"ok"};
+                },
+        });
+
+        ToolPermissionContext permissions;
+        ToolRuntimeContext tool_context{
+            .permission_context = &permissions,
+        };
+
+        CHECK(bootstrap::detail::should_send_qq_tool_progress_at_start(ToolUse("lookup-1", "lookup", nlohmann::json::object()), tools, tool_context));
+        CHECK_FALSE(bootstrap::detail::should_send_qq_tool_progress_at_start(ToolUse("shell-1", "shell", nlohmann::json{{"command", "echo hello"}}), tools, tool_context));
+
+        permissions.allow_rules.push_back(PermissionRule{
+            .source = permission_rule_source::session,
+            .behavior = permission_behavior::allow,
+            .tool_name = "shell",
+            .content = RuleContent{.match_type = rule_match_type::exact, .pattern = "echo hello"},
+        });
+        CHECK(bootstrap::detail::should_send_qq_tool_progress_at_start(ToolUse("shell-2", "shell", nlohmann::json{{"command", "echo hello"}}), tools, tool_context));
+    };
+
     TEST_CASE("logs_unowned_outbound_jid_without_throwing") {
         auto sink = std::make_shared<MemorySink>();
         ScopedDefaultLogger logger("channel-serve-test", sink);
@@ -617,7 +666,13 @@ namespace {
         REQUIRE(callback != nullptr);
 
         auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
+            return callback(ToolUse("approve-shell", "shell",
+                                    nlohmann::json{
+                                        {"command", "echo hello"},
+                                        {"working_dir", "/workspace/project-a"},
+                                        {"timeout_ms", 5000},
+                                    }),
+                            PermissionDecision::ask_default("Shell command approval required."));
         });
 
         for (int attempt = 0; attempt < 20 && qq->sent_keyboard_messages().empty(); ++attempt) {
@@ -629,12 +684,12 @@ namespace {
         CHECK(sent_messages[0].jid == "qqbot:c2c:42");
         CHECK(sent_messages[0].reply_to_message_id.empty());
         CHECK(sent_messages[0].reference_message_id.empty());
-        CHECK(sent_messages[0].markdown.contains("## 🔐 Command Execution Approval"));
-        CHECK(sent_messages[0].markdown.contains("> Shell command approval required."));
+        CHECK(sent_messages[0].markdown.contains("## Approval required"));
+        CHECK(sent_messages[0].markdown.contains("Shell command approval required."));
         CHECK(sent_messages[0].markdown.contains("echo hello"));
-        CHECK(sent_messages[0].markdown.contains("🧰 Tool: `shell`"));
-        CHECK_FALSE(sent_messages[0].markdown.contains("Request:"));
-        CHECK_FALSE(sent_messages[0].markdown.contains("If the QQ buttons fail"));
+        CHECK(sent_messages[0].markdown.contains("dir: `/workspace/project-a`"));
+        CHECK(sent_messages[0].markdown.contains("timeout: `5000ms`"));
+        CHECK_FALSE(sent_messages[0].markdown.contains("Tool: `shell`"));
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         CHECK_FALSE(request_id.empty());
         CHECK(sent_messages[0].keyboard_payload.at("content").at("rows").at(0).at("buttons").size() == 3UL);
@@ -644,7 +699,7 @@ namespace {
         CHECK(future.get());
     };
 
-    TEST_CASE("channel_approval_gate_formats_text_prompts_and_parses_text_always_replies") {
+    TEST_CASE("channel_approval_gate_only_creates_qq_keyboard_callbacks") {
         ChannelManager manager;
         auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
         auto *irc = irc_channel.get();
@@ -656,76 +711,10 @@ namespace {
             .content = "run shell",
             .message_id = "message-42",
         };
-        auto callback = gate.make_callback(request, manager);
-        REQUIRE(callback != nullptr);
 
-        auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
-        });
-
-        for (int attempt = 0; attempt < 20 && irc->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        const auto sent_messages = irc->sent_text_messages();
-        REQUIRE(sent_messages.size() == 1UL);
-        CHECK(sent_messages[0].jid == "irc:dm:42");
-        CHECK(sent_messages[0].reply_to_message_id == "message-42");
-        CHECK(sent_messages[0].reference_message_id.empty());
-        CHECK(sent_messages[0].text.contains("Shell command approval required."));
-        CHECK(sent_messages[0].text.contains("Tool: shell"));
-        CHECK(sent_messages[0].text.contains("Command: echo hello"));
-        CHECK(sent_messages[0].text.contains("Please reply with `"));
-        CHECK(sent_messages[0].text.contains("yes`, `"));
-        CHECK(sent_messages[0].text.contains("always`, or `"));
-        CHECK(sent_messages[0].text.contains("no`."));
-
-        const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0].text);
-        REQUIRE_FALSE(request_id.empty());
-
-        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "  " + request_id + " ALWAYS allow!!!  "}, manager));
-        CHECK(future.get());
-    };
-
-    TEST_CASE("channel_approval_gate_invalid_text_replies_do_not_reference_qq_buttons") {
-        ChannelManager manager;
-        auto irc_channel = std::make_unique<FakeChannel>("irc", "irc:");
-        auto *irc = irc_channel.get();
-        manager.add_channel(std::move(irc_channel));
-
-        bootstrap::ChannelApprovalGate gate(std::chrono::milliseconds(250));
-        const InboundMessage request{
-            .jid = "irc:dm:42",
-            .content = "run shell",
-            .message_id = "message-42",
-        };
-        auto callback = gate.make_callback(request, manager);
-        REQUIRE(callback != nullptr);
-
-        auto future = std::async(std::launch::async, [&callback] {
-            return callback(ToolUse("approve-shell", "shell", nlohmann::json{{"command", "echo hello"}}), PermissionDecision::ask_default("Shell command approval required."));
-        });
-
-        for (int attempt = 0; attempt < 20 && irc->sent_messages().empty(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        const auto initial_messages = irc->sent_text_messages();
-        REQUIRE(initial_messages.size() == 1UL);
-        const auto request_id = ChannelServeHarness::extract_request_id(initial_messages[0].text);
-        REQUIRE_FALSE(request_id.empty());
-
-        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = "what?"}, manager));
-        CHECK(future.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout);
-
-        const auto sent_messages = irc->sent_text_messages();
-        REQUIRE(sent_messages.size() >= 2UL);
-        CHECK_FALSE(sent_messages.back().text.contains("QQ buttons"));
-        CHECK(sent_messages.back().text.contains(request_id + " yes"));
-        CHECK(sent_messages.back().text.contains(request_id + " no"));
-
-        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "irc:dm:42", .content = request_id + " no"}, manager));
-        CHECK_FALSE(future.get());
+        CHECK(gate.make_callback(request, manager) == nullptr);
+        CHECK(irc->sent_messages().empty());
+        CHECK(irc->sent_keyboard_messages().empty());
     };
 
     TEST_CASE("channel_approval_gate_rejects_when_qq_keyboard_is_unavailable") {
@@ -819,7 +808,7 @@ namespace {
         REQUIRE(not sent_messages.empty());
         CHECK(sent_messages[0].reply_to_message_id.empty());
         CHECK(sent_messages[0].reference_message_id.empty());
-        CHECK(sent_messages[0].markdown.contains("## 🔐 Command Execution Approval"));
+        CHECK(sent_messages[0].markdown.contains("## Approval required"));
         CHECK(sent_messages[0].markdown.contains("echo hello"));
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
@@ -867,9 +856,8 @@ namespace {
         const auto sent_messages = qq->sent_keyboard_messages();
         REQUIRE(not sent_messages.empty());
         CHECK(sent_messages[0].markdown.contains("git push origin main"));
-        CHECK(sent_messages[0].markdown.contains("🧰 Tool: `shell`"));
-        CHECK(sent_messages[0].markdown.contains("📝 Reason: `rule from project settings`"));
-        CHECK(sent_messages[0].markdown.contains("📏 Rule: `shell(git push *)`"));
+        CHECK_FALSE(sent_messages[0].markdown.contains("Reason:"));
+        CHECK(sent_messages[0].markdown.contains("rule: `shell(git push *)`"));
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
@@ -905,16 +893,15 @@ namespace {
         REQUIRE(not sent_messages.empty());
         const auto buttons = sent_messages[0].keyboard_payload.at("content").at("rows").at(0).at("buttons");
         REQUIRE(buttons.size() == 2UL);
-        CHECK(buttons.at(0).at("render_data").at("label").get<std::string>() == "Allow once");
-        CHECK(buttons.at(1).at("render_data").at("label").get<std::string>() == "Deny");
+        CHECK(buttons.at(0).at("render_data").at("label").get<std::string>() == "once");
+        CHECK(buttons.at(1).at("render_data").at("label").get<std::string>() == "deny");
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
+        const auto text_message_count = qq->sent_messages().size();
         CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::always_allow)}, manager));
-        auto fallback_messages = qq->sent_messages();
-        REQUIRE(not fallback_messages.empty());
-        CHECK(fallback_messages.back().second.contains("Always allow is not available for this request"));
+        CHECK(qq->sent_messages().size() == text_message_count);
 
         CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::deny)}, manager));
@@ -948,12 +935,13 @@ namespace {
         REQUIRE(not sent_messages.empty());
         const auto buttons = sent_messages[0].keyboard_payload.at("content").at("rows").at(0).at("buttons");
         REQUIRE(buttons.size() == 2UL);
-        CHECK(buttons.at(0).at("render_data").at("label").get<std::string>() == "Allow once");
-        CHECK(buttons.at(1).at("render_data").at("label").get<std::string>() == "Deny");
+        CHECK(buttons.at(0).at("render_data").at("label").get<std::string>() == "once");
+        CHECK(buttons.at(1).at("render_data").at("label").get<std::string>() == "deny");
 
         const auto request_id = ChannelServeHarness::extract_request_id(sent_messages[0]);
         REQUIRE_FALSE(request_id.empty());
-        CHECK(gate.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:42", .content = request_id + " no"}, manager));
+        CHECK(gate.handle_inbound_message(
+            InboundMessage{.jid = "qqbot:c2c:42", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::deny)}, manager));
         CHECK_FALSE(future.get());
     };
 
@@ -983,18 +971,15 @@ namespace {
         REQUIRE(not sent_keyboard_messages.empty());
         const auto request_id = ChannelServeHarness::extract_request_id(sent_keyboard_messages.front());
         CHECK_FALSE(request_id.empty());
+        const auto text_message_count = qq->sent_messages().size();
 
         CHECK(gate.handle_inbound_message(InboundMessage{.jid = "qqbot:c2c:99", .content = request_id + " yes"}, manager));
         CHECK(future.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout);
-        auto sent_messages = qq->sent_messages();
-        CHECK(sent_messages.size() >= 1UL);
-        CHECK(sent_messages.back().second.contains("Use the buttons on the approval card"));
+        CHECK(qq->sent_messages().size() == text_message_count);
 
         CHECK(gate.handle_inbound_message(
-            InboundMessage{.jid = "qqbot:c2c:99", .content = channel::qq::build_approval_callback_data("shell-approval-999", channel::qq::approval_action::deny)}, manager));
-        sent_messages = qq->sent_messages();
-        CHECK(sent_messages.size() >= 2UL);
-        CHECK(sent_messages.back().second.contains("Use the buttons on the approval card"));
+            InboundMessage{.jid = "qqbot:c2c:99", .content = channel::qq::build_approval_callback_data("tool-approval-999", channel::qq::approval_action::deny)}, manager));
+        CHECK(qq->sent_messages().size() == text_message_count);
 
         CHECK(gate.handle_inbound_message(
             InboundMessage{.jid = "qqbot:c2c:99", .content = channel::qq::build_approval_callback_data(request_id, channel::qq::approval_action::deny)}, manager));
@@ -1098,7 +1083,6 @@ namespace {
 
         const auto sent_messages = qq->sent_keyboard_messages();
         CHECK(sent_messages.size() == 1UL);
-        CHECK_FALSE(sent_messages.front().markdown.contains("Request:"));
         CHECK_FALSE(ChannelServeHarness::extract_request_id(sent_messages.front()).empty());
 
         runner.shutdown(true);

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <stdexec/execution.hpp>
 
 using namespace orangutan;
 using namespace orangutan::qq;
@@ -291,6 +292,36 @@ TEST_CASE("transport_start_connects_and_forwards_messages") {
     connection->push_text("gateway payload");
     REQUIRE(recorder.wait_for_texts(1));
     CHECK(recorder.texts.at(0) == "gateway payload");
+
+    transport.stop();
+};
+
+TEST_CASE("transport_open_connection_does_not_starve_caller_task_pool") {
+    FakeConnector connector;
+    CallbackRecorder recorder;
+    utils::TaskPool task_pool;
+    auto transport = make_transport(recorder, connector, task_pool);
+
+    transport.start("wss://qq.example/ws");
+    static_cast<void>(connector.wait_for_connection(1));
+    REQUIRE(recorder.wait_for_opens(1));
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool unrelated_task_ran = false;
+
+    stdexec::start_detached(stdexec::schedule(task_pool.scheduler()) | stdexec::then([&] {
+                                {
+                                    std::scoped_lock lock(mutex);
+                                    unrelated_task_ran = true;
+                                }
+                                cv.notify_all();
+                            }));
+
+    std::unique_lock lock(mutex);
+    REQUIRE(cv.wait_for(lock, std::chrono::milliseconds(500), [&] {
+        return unrelated_task_ran;
+    }));
 
     transport.stop();
 };

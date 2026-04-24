@@ -71,7 +71,6 @@ namespace orangutan::bootstrap {
             bool approved = false;
             bool always_allow = false;
             bool allow_always_eligible = false;
-            bool allow_text_reply = true;
             bool cancelled = false;
         };
 

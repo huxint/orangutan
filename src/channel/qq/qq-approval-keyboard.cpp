@@ -1,6 +1,7 @@
 #include "channel/qq/qq-approval-keyboard.hpp"
 
 #include <cctype>
+#include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::channel::qq {
@@ -12,6 +13,12 @@ namespace orangutan::channel::qq {
             std::string_view visited_label;
             int style = 0;
         };
+
+        inline constexpr std::string_view CALLBACK_PREFIX = "approval:";
+        inline constexpr std::string_view APPROVAL_GROUP_ID = "approval";
+        inline constexpr std::string_view BUTTON_ONCE = "once";
+        inline constexpr std::string_view BUTTON_ALWAYS = "always";
+        inline constexpr std::string_view BUTTON_DENY = "deny";
 
         [[nodiscard]]
         std::string trim_ascii(std::string_view value) {
@@ -29,20 +36,20 @@ namespace orangutan::channel::qq {
             switch (action) {
                 case approval_action::allow_once:
                     return ApprovalButtonSpec{
-                        .label = "Allow once",
-                        .visited_label = "Approved",
+                        .label = BUTTON_ONCE,
+                        .visited_label = BUTTON_ONCE,
                         .style = 1,
                     };
                 case approval_action::always_allow:
                     return ApprovalButtonSpec{
-                        .label = "Always allow",
-                        .visited_label = "Always allowed",
+                        .label = BUTTON_ALWAYS,
+                        .visited_label = BUTTON_ALWAYS,
                         .style = 1,
                     };
                 case approval_action::deny:
                     return ApprovalButtonSpec{
-                        .label = "Deny",
-                        .visited_label = "Denied",
+                        .label = BUTTON_DENY,
+                        .visited_label = BUTTON_DENY,
                         .style = 0,
                     };
             }
@@ -68,24 +75,23 @@ namespace orangutan::channel::qq {
                      {"click_limit", 1},
                      {"data", build_approval_callback_data(request_id, action)},
                  }},
-                {"group_id", "approval"},
+                {"group_id", APPROVAL_GROUP_ID},
             };
         }
 
     } // namespace
 
     std::string build_approval_callback_data(std::string_view request_id, approval_action action) {
-        return "approval:" + std::string(request_id) + ":" + std::string(magic_enum::enum_name(action));
+        return fmt::format("{}{}:{}", CALLBACK_PREFIX, request_id, magic_enum::enum_name(action));
     }
 
     std::optional<ParsedApprovalCallbackData> parse_approval_callback_data(std::string_view data) {
-        constexpr std::string_view PREFIX = "approval:";
         const auto trimmed = trim_ascii(data);
-        if (!trimmed.starts_with(PREFIX)) {
+        if (!trimmed.starts_with(CALLBACK_PREFIX)) {
             return std::nullopt;
         }
 
-        const auto request_start = PREFIX.size();
+        const auto request_start = CALLBACK_PREFIX.size();
         const auto action_separator = trimmed.find(':', request_start);
         if (action_separator == std::string::npos || action_separator == request_start) {
             return std::nullopt;

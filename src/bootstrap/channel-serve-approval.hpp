@@ -3,16 +3,17 @@
 #include "bootstrap/channel-serve-delivery.hpp"
 #include "channel/qq/qq-approval-keyboard.hpp"
 #include "permissions/permission-display.hpp"
+#include "permissions/permission-evaluator.hpp"
+#include "tools/registry/tool-context.hpp"
+#include "tools/registry/tool-registry.hpp"
 #include "types/base.hpp"
 #include "types/content.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 
-#include <cctype>
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -24,13 +25,18 @@ namespace orangutan::bootstrap::detail {
         approve_once,
         approve_always,
         deny,
-        invalid,
     };
 
     struct ParsedChannelApprovalReply {
         std::string request_id;
-        channel_approval_decision decision = channel_approval_decision::invalid;
+        channel_approval_decision decision;
     };
+
+    inline constexpr std::string_view CHANNEL_APPROVAL_REQUEST_PREFIX = "tool-approval-";
+    inline constexpr std::string_view QQ_APPROVAL_TITLE = "## Approval required";
+    inline constexpr std::string_view QQ_TOOL_TITLE = "## Tool";
+    inline constexpr std::string_view QQ_FIELD_DIR = "dir";
+    inline constexpr std::string_view QQ_FIELD_TIMEOUT = "timeout";
 
     [[nodiscard]]
     inline std::string extract_qq_bot_name(const std::string &jid) {
@@ -61,7 +67,11 @@ namespace orangutan::bootstrap::detail {
     [[nodiscard]]
     inline std::string qq_keyboard_capability_key(std::string_view target) {
         const auto bot_name = extract_qq_bot_name(std::string(target));
-        return bot_name.empty() ? std::string{"default:unnamed"} : "named:" + bot_name;
+        if (bot_name.empty()) {
+            return "default:unnamed";
+        }
+
+        return fmt::format("named:{}", bot_name);
     }
 
     [[nodiscard]]
@@ -114,233 +124,122 @@ namespace orangutan::bootstrap::detail {
         return std::nullopt;
     }
 
-    inline void append_qq_card_field(std::string &markdown, std::string_view icon, std::string_view label, std::string_view value, bool inline_code = true) {
+    inline void append_qq_compact_field(std::string &markdown, std::string_view label, std::string_view value) {
         if (value.empty()) {
             return;
         }
-        markdown += "- ";
-        markdown += icon;
-        markdown += " ";
-        markdown += label;
-        markdown += ": ";
-        if (inline_code) {
-            markdown.push_back('`');
-            markdown += value;
-            markdown.push_back('`');
-        } else {
-            markdown += value;
-        }
-        markdown.push_back('\n');
+        utils::format_to(markdown, "- {}: `{}`\n", label, value);
     }
 
-    inline void append_qq_decision_detail(std::string &markdown, std::string_view line) {
-        const auto separator = line.find(':');
-        if (separator == std::string_view::npos) {
-            append_qq_card_field(markdown, "ℹ️", "Detail", trim_ascii_copy(line), false);
-            return;
+    inline void append_qq_tool_preview(std::string &markdown, const ToolUse &call) {
+        if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
+            utils::format_to(markdown, "\n```bash\n{}\n```", *command);
+        } else if (const auto preview = first_scalar_input_value(call.input, {"path", "file_path", "query", "prompt", "url"}); preview.has_value()) {
+            utils::format_to(markdown, "\n`{}`\n", *preview);
+        } else if (call.input.is_object() && !call.input.empty()) {
+            utils::format_to(markdown, "\n```json\n{}\n```", call.input.dump(2));
         }
+    }
 
-        const auto label = trim_ascii_copy(line.substr(0, separator));
-        const auto value = trim_ascii_copy(line.substr(separator + 1));
-        if (label.empty() || value.empty() || label == "Behavior") {
-            return;
+    inline void append_qq_tool_metadata(std::string &markdown, const ToolUse &call) {
+        if (const auto directory = first_scalar_input_value(call.input, {"working_dir", "cwd"}); directory.has_value()) {
+            append_qq_compact_field(markdown, QQ_FIELD_DIR, *directory);
         }
-
-        std::string_view icon = "ℹ️";
-        if (label == "Reason") {
-            icon = "📝";
-        } else if (label == "Rule") {
-            icon = "📏";
-        } else if (label == "Mode") {
-            icon = "⚙️";
-        } else if (label == "Path") {
-            icon = "📂";
-        } else if (label == "Detail") {
-            icon = "📌";
+        if (const auto timeout_seconds = first_scalar_input_value(call.input, {"timeout_seconds", "timeout_secs"}); timeout_seconds.has_value()) {
+            const auto value = fmt::format("{}s", *timeout_seconds);
+            append_qq_compact_field(markdown, QQ_FIELD_TIMEOUT, value);
+        } else if (const auto timeout = first_scalar_input_value(call.input, {"timeout"}); timeout.has_value()) {
+            append_qq_compact_field(markdown, QQ_FIELD_TIMEOUT, *timeout);
+        } else if (const auto timeout_ms = first_scalar_input_value(call.input, {"timeout_ms"}); timeout_ms.has_value()) {
+            const auto value = fmt::format("{}ms", *timeout_ms);
+            append_qq_compact_field(markdown, QQ_FIELD_TIMEOUT, value);
         }
-        append_qq_card_field(markdown, icon, label, value);
     }
 
     [[nodiscard]]
     inline std::string format_channel_approval_request_id(std::uint64_t prompt_id) {
-        return "tool-approval-" + std::to_string(prompt_id);
-    }
-
-    [[nodiscard]]
-    inline std::string format_channel_approval_text_reply(std::string_view request_id, bool include_allow_always) {
-        if (include_allow_always) {
-            return "reply with `" + std::string(request_id) + " yes`, `" + std::string(request_id) + " always`, or `" + std::string(request_id) + " no`.";
-        }
-        return "reply with `" + std::string(request_id) + " yes` or `" + std::string(request_id) + " no`.";
+        return fmt::format("{}{}", CHANNEL_APPROVAL_REQUEST_PREFIX, prompt_id);
     }
 
     [[nodiscard]]
     inline std::string format_qq_channel_approval_card_markdown(const ToolUse &call, const PermissionDecision &decision) {
-        std::string markdown = call.name == "shell" ? "## 🔐 Command Execution Approval" : "## 🔐 Tool Approval";
+        std::string markdown{QQ_APPROVAL_TITLE};
         const auto prompt = permissions::approval_prompt_message(decision);
         if (!prompt.empty()) {
-            markdown += "\n> ";
-            markdown += prompt;
+            utils::format_to(markdown, "\n{}", prompt);
         }
 
-        if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
-            markdown += "\n\n```bash\n";
-            markdown += *command;
-            markdown += "\n```";
-        } else if (const auto preview = first_scalar_input_value(call.input, {"path", "file_path", "query", "prompt", "url"}); preview.has_value()) {
-            markdown += "\n\n> `";
-            markdown += *preview;
-            markdown += '`';
-        } else if (call.input.is_object() && !call.input.empty()) {
-            markdown += "\n\n```json\n";
-            markdown += call.input.dump(2);
-            markdown += "\n```";
-        }
+        markdown += "\n";
+        append_qq_tool_preview(markdown, call);
 
-        markdown += "\n\n";
-        append_qq_card_field(markdown, "🧰", "Tool", call.name);
-        if (const auto directory = first_scalar_input_value(call.input, {"working_dir", "cwd"}); directory.has_value()) {
-            append_qq_card_field(markdown, "📁", "Directory", *directory);
-        }
-        if (const auto agent = first_scalar_input_value(call.input, {"agent", "agent_key"}); agent.has_value()) {
-            append_qq_card_field(markdown, "🤖", "Agent", *agent);
-        }
-        if (const auto timeout_seconds = first_scalar_input_value(call.input, {"timeout_seconds", "timeout_secs"}); timeout_seconds.has_value()) {
-            append_qq_card_field(markdown, "⏱", "Timeout", *timeout_seconds + "s");
-        } else if (const auto timeout = first_scalar_input_value(call.input, {"timeout"}); timeout.has_value()) {
-            append_qq_card_field(markdown, "⏱", "Timeout", *timeout);
-        } else if (const auto timeout_ms = first_scalar_input_value(call.input, {"timeout_ms"}); timeout_ms.has_value()) {
-            append_qq_card_field(markdown, "⏱", "Timeout", *timeout_ms + "ms");
+        std::string metadata;
+        append_qq_tool_metadata(metadata, call);
+        if (!metadata.empty()) {
+            utils::format_to(markdown, "\n{}", metadata);
         }
 
         for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
-            append_qq_decision_detail(markdown, line);
+            const auto separator = line.find(':');
+            if (separator == std::string::npos) {
+                continue;
+            }
+            const auto label = trim_ascii_copy(std::string_view(line).substr(0, separator));
+            const auto value = trim_ascii_copy(std::string_view(line).substr(separator + 1));
+            if (label == "Rule" || label == "Path" || label == "Detail") {
+                append_qq_compact_field(markdown, utils::ascii_to_lower_copy(label), value);
+            }
         }
         return markdown;
     }
 
     [[nodiscard]]
-    inline std::string format_text_channel_approval_prompt(const ToolUse &call, const PermissionDecision &decision, const std::string &request_id, bool include_allow_always) {
-        std::string prompt = permissions::approval_prompt_message(decision);
-        prompt += "\nTool: " + call.name;
-        if (call.input.is_object()) {
-            if (const auto it = call.input.find("command"); it != call.input.end() && it->is_string()) {
-                prompt += "\nCommand: " + it->get<std::string>();
-            }
+    inline std::string format_qq_tool_progress_markdown(const ToolUse &call) {
+        auto markdown = fmt::format("{}\n`{}`", QQ_TOOL_TITLE, call.name);
+        append_qq_tool_preview(markdown, call);
+
+        std::string metadata;
+        append_qq_tool_metadata(metadata, call);
+        if (!metadata.empty()) {
+            utils::format_to(markdown, "\n{}", metadata);
         }
-        for (const auto &line : permissions::permission_decision_detail_lines(decision)) {
-            prompt += "\n" + line;
-        }
-        prompt += "\nRequest: " + request_id;
-        prompt += "\nPlease ";
-        prompt += format_channel_approval_text_reply(request_id, include_allow_always);
-        return prompt;
+        return markdown;
     }
 
     [[nodiscard]]
     inline std::string format_qq_approval_delivery_failure(const ToolUse &call, const PermissionDecision &decision, bool keyboard_unavailable) {
         std::string message = permissions::approval_prompt_message(decision);
-        message += keyboard_unavailable ? "\nQQ approval buttons are unavailable for this bot account, so the tool call was rejected."
-                                        : "\nFailed to deliver the QQ approval card, so the tool call was rejected.";
-        message += "\nTool: " + call.name;
+        utils::format_to(message, "\n{}",
+                         keyboard_unavailable ? "QQ approval buttons are unavailable for this bot account, so the tool call was rejected."
+                                              : "Failed to deliver the QQ approval card, so the tool call was rejected.");
+        utils::format_to(message, "\nTool: {}", call.name);
         if (const auto command = first_scalar_input_value(call.input, {"command"}); command.has_value()) {
-            message += "\nCommand: " + *command;
+            utils::format_to(message, "\nCommand: {}", *command);
         }
         return message;
     }
 
     [[nodiscard]]
-    inline std::string normalize_channel_approval_token(std::string_view content) {
-        auto normalized = utils::ascii_to_lower_copy(content);
-        std::erase_if(normalized, [](unsigned char ch) {
-            return std::isalnum(ch) == 0 && ch != '-';
-        });
-        return normalized;
-    }
-
-    [[nodiscard]]
-    inline channel_approval_decision parse_channel_approval_decision(std::string_view content) {
-        const auto normalized = normalize_channel_approval_token(content);
-        if (normalized.empty()) {
-            return channel_approval_decision::invalid;
-        }
-
-        if (normalized == "always" || normalized == "alwaysallow" || normalized == "always-allow" || normalized == "allowalways" || normalized == "allow-always") {
-            return channel_approval_decision::approve_always;
-        }
-        if (normalized == "y" || normalized == "yes" || normalized == "approve" || normalized == "approved" || normalized == "allow") {
-            return channel_approval_decision::approve_once;
-        }
-        if (normalized == "n" || normalized == "no" || normalized == "deny" || normalized == "denied" || normalized == "reject") {
-            return channel_approval_decision::deny;
-        }
-        return channel_approval_decision::invalid;
-    }
-
-    [[nodiscard]]
-    inline ParsedChannelApprovalReply parse_channel_approval_reply(const std::string &content, bool allow_text_reply) {
-        ParsedChannelApprovalReply parsed;
+    inline std::optional<ParsedChannelApprovalReply> parse_channel_approval_reply(std::string_view content) {
         if (const auto callback = channel::qq::parse_approval_callback_data(content); callback.has_value()) {
-            parsed.request_id = callback->request_id;
             switch (callback->action) {
                 case channel::qq::approval_action::allow_once:
-                    parsed.decision = channel_approval_decision::approve_once;
-                    break;
+                    return ParsedChannelApprovalReply{
+                        .request_id = callback->request_id,
+                        .decision = channel_approval_decision::approve_once,
+                    };
                 case channel::qq::approval_action::always_allow:
-                    parsed.decision = channel_approval_decision::approve_always;
-                    break;
+                    return ParsedChannelApprovalReply{
+                        .request_id = callback->request_id,
+                        .decision = channel_approval_decision::approve_always,
+                    };
                 case channel::qq::approval_action::deny:
-                    parsed.decision = channel_approval_decision::deny;
-                    break;
+                    return ParsedChannelApprovalReply{
+                        .request_id = callback->request_id,
+                        .decision = channel_approval_decision::deny,
+                    };
             }
-            return parsed;
         }
-
-        if (!allow_text_reply) {
-            return parsed;
-        }
-
-        std::istringstream stream(content);
-        for (std::string token; static_cast<bool>(stream >> token);) {
-            const auto normalized = normalize_channel_approval_token(token);
-            if (normalized.starts_with("tool-approval-") || normalized.starts_with("shell-approval-")) {
-                parsed.request_id = normalized;
-                continue;
-            }
-
-            const auto decision = parse_channel_approval_decision(normalized);
-            if (decision == channel_approval_decision::invalid) {
-                continue;
-            }
-            if (parsed.decision == channel_approval_decision::approve_always && decision == channel_approval_decision::approve_once &&
-                (normalized == "allow" || normalized == "approved")) {
-                continue;
-            }
-            parsed.decision = decision;
-        }
-        return parsed;
-    }
-
-    [[nodiscard]]
-    inline std::string format_pending_channel_approval_prompt(const std::vector<std::string> &request_ids, bool allow_text_reply) {
-        if (request_ids.empty()) {
-            return "Tool approval is pending.";
-        }
-
-        if (!allow_text_reply) {
-            return request_ids.size() == 1 ? "Tool approval is pending. Use the buttons on the approval card."
-                                           : "Multiple tool approvals are pending. Use the buttons on the approval cards.";
-        }
-
-        if (request_ids.size() == 1) {
-            return "Tool approval is pending. Reply with `" + request_ids.front() + " yes` or `" + request_ids.front() + " no`.";
-        }
-
-        std::string prompt = "Multiple tool approvals are pending. Reply with `<request-id> yes` or `<request-id> no`. Pending:";
-        for (const auto &request_id : request_ids) {
-            utils::format_to(prompt, " {}", request_id);
-        }
-        return prompt;
+        return std::nullopt;
     }
 
     [[nodiscard]]
@@ -364,7 +263,33 @@ namespace orangutan::bootstrap::detail {
             return false;
         }
 
-        return target == message.jid;
+        return target == message.jid && is_qq_channel_target(target);
+    }
+
+    [[nodiscard]]
+    inline bool should_send_qq_tool_progress_at_start(const ToolUse &call, const ToolRegistry &tools, const ToolRuntimeContext &tool_context) {
+        if (tool_context.abort_checker && tool_context.abort_checker()) {
+            return false;
+        }
+
+        const auto *permission_context = tool_context.permission_context;
+        if (permission_context == nullptr) {
+            return true;
+        }
+
+        const auto *tool = tools.find_tool(call.name);
+        permissions::ToolPermissionChecker checker;
+        permissions::IsReadOnlyChecker is_read_only;
+        if (tool != nullptr) {
+            checker = tool->check_permissions;
+            is_read_only = [tool] {
+                return tool->read_only;
+            };
+        }
+
+        auto decision = permissions::evaluate_permission(call, *permission_context, checker, is_read_only);
+        decision = permissions::apply_post_processing(decision, permission_context->mode);
+        return decision.behavior == permission_behavior::allow;
     }
 
 } // namespace orangutan::bootstrap::detail

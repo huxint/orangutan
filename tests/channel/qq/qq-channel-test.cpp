@@ -288,7 +288,7 @@ namespace {
         qqtest::QqChannelTestAccess::set_api_client(channel, std::move(fake_api));
         qqtest::QqChannelTestAccess::remember_inbound_message(channel, "message-1");
 
-        const auto keyboard = channel::qq::build_approval_keyboard("shell-approval-1", true);
+        const auto keyboard = channel::qq::build_approval_keyboard("tool-approval-1", true);
         channel.send_keyboard_message("qqbot:bot:c2c:user-openid", "pick one", keyboard, "message-1", "message-ref-1");
 
         REQUIRE(api->requests.size() == 1UL);
@@ -570,7 +570,7 @@ namespace {
                                                                      {"group_openid", "group-openid"},
                                                                      {"data",
                                                                       {
-                                                                          {"resolved", {{"button_data", "approval:shell-approval-1:deny"}}},
+                                                                          {"resolved", {{"button_data", "approval:tool-approval-1:deny"}}},
                                                                       }},
                                                                  });
 
@@ -578,7 +578,7 @@ namespace {
         CHECK(captured.jid == "qqbot:bot:group:group-openid");
         CHECK(captured.sender == "user-openid");
         CHECK(captured.sender_name == "user-openid");
-        CHECK(captured.content == "approval:shell-approval-1:deny");
+        CHECK(captured.content == "approval:tool-approval-1:deny");
         CHECK(captured.message_id == "interaction-1");
         CHECK(captured.is_group);
 
