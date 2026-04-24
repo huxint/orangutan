@@ -1,6 +1,8 @@
 #include "automation/service.hpp"
 
+#include "automation/kernel.hpp"
 #include "automation/log-writer.hpp"
+#include "automation/sqlite-store.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -11,18 +13,103 @@ namespace orangutan::automation {
     namespace {
 
         [[nodiscard]]
-        ExecutionResult failed_execution(std::string_view message) {
+        auto failed_execution(std::string_view message) -> ExecutionResult {
             return ExecutionResult{
                 .success = false,
                 .summary = std::string(message),
             };
         }
 
+        [[nodiscard]]
+        auto to_schedule_spec(const TriggerDefinition &trigger) -> ScheduleSpec {
+            switch (trigger.type) {
+            case trigger_type::cron:
+                return CronSchedule{
+                    .expr = trigger.cron,
+                    .time_zone = trigger.time_zone,
+                };
+            case trigger_type::interval:
+                return IntervalSchedule{
+                    .every = trigger.every,
+                    .jitter = trigger.jitter,
+                    .active_windows = trigger.active_windows,
+                    .time_zone = trigger.time_zone,
+                };
+            case trigger_type::once:
+                return OneShotSchedule{
+                    .at = trigger.at,
+                };
+            }
+
+            std::unreachable();
+        }
+
+        [[nodiscard]]
+        auto to_job_definition(const Automation &automation) -> JobDefinition {
+            return JobDefinition{
+                .id = JobId{.value = automation.id},
+                .key = automation.name,
+                .schedule = to_schedule_spec(automation.trigger),
+                .action =
+                    ActionDescriptor{
+                        .action_key = "legacy.automation",
+                        .payload =
+                            {
+                                {"agent_key", automation.agent_key},
+                                {"name", automation.name},
+                                {"prompt", automation.prompt},
+                            },
+                    },
+                .execution = ExecutionPolicy{},
+                .result =
+                    ResultPolicy{
+                        .mode = automation.delivery.mode,
+                        .targets = automation.delivery.targets,
+                    },
+                .metadata =
+                    {
+                        {"notes", automation.notes},
+                        {"tags", automation.tags},
+                    },
+            };
+        }
+
+        [[nodiscard]]
+        auto to_schedule_state(const Automation &automation) -> ScheduleState {
+            return ScheduleState{
+                .enabled = automation.enabled,
+                .paused = automation.paused,
+                .next_due_at = automation.next_due_at,
+                .last_finished_at = automation.last_run_at,
+                .last_status = automation.last_status,
+            };
+        }
+
+        void throw_on_store_error(const StoreResult<void> &result, std::string_view context) {
+            if (result.has_value()) {
+                return;
+            }
+            throw std::runtime_error(std::string(context) + ": " + result.error().message);
+        }
+
+        void throw_on_store_error(const StoreResult<bool> &result, std::string_view context) {
+            if (result.has_value()) {
+                return;
+            }
+            throw std::runtime_error(std::string(context) + ": " + result.error().message);
+        }
+
     } // namespace
 
     AutomationService::AutomationService(Repository &repository, ClockSource clock)
     : repository_(&repository),
-      clock_(std::move(clock)) {}
+      clock_(std::move(clock)),
+      core_store_(std::make_unique<SqliteJobStore>(repository.db_path())),
+      core_kernel_(std::make_unique<Kernel>(*core_store_)) {
+        sync_existing_core_jobs();
+    }
+
+    AutomationService::~AutomationService() = default;
 
     void AutomationService::set_executor(AutomationExecutor executor) {
         std::scoped_lock lock(mutex_);
@@ -61,7 +148,17 @@ namespace orangutan::automation {
     }
 
     bool AutomationService::remove(std::string_view agent_key, std::string_view id_or_name) {
-        return repository_->remove(agent_key, id_or_name);
+        const auto automation = repository_->find(agent_key, id_or_name);
+        if (!automation.has_value()) {
+            return false;
+        }
+
+        if (!repository_->remove(agent_key, id_or_name)) {
+            return false;
+        }
+
+        throw_on_store_error(core_store_->remove_job(JobId{.value = automation->id}), "failed to remove automation core job");
+        return true;
     }
 
     std::string AutomationService::run_now(std::string_view agent_key, std::string_view id_or_name) {
@@ -159,10 +256,22 @@ namespace orangutan::automation {
     }
 
     std::string AutomationService::persist(Automation automation) {
-        return repository_->save(automation);
+        automation.id = repository_->save(automation);
+        sync_core_job(automation);
+        return automation.id;
     }
 
-    std::string AutomationService::execute(const Automation &automation, TimePoint started_at) {
+    void AutomationService::sync_core_job(const Automation &automation) {
+        throw_on_store_error(core_store_->save_job(to_job_definition(automation), to_schedule_state(automation)), "failed to sync automation core job");
+    }
+
+    void AutomationService::sync_existing_core_jobs() {
+        for (const auto &automation : repository_->list()) {
+            sync_core_job(automation);
+        }
+    }
+
+    auto AutomationService::execute_outcome(const Automation &automation, TimePoint started_at, bool sync_core_state) -> ExecutionOutcome {
         const auto callbacks_snapshot = callbacks();
         auto result = ExecutionResult{};
         try {
@@ -279,7 +388,18 @@ namespace orangutan::automation {
             }
         }
 
-        return run.id;
+        if (sync_core_state) {
+            sync_core_job(updated);
+        }
+
+        return ExecutionOutcome{
+            .run_id = run.id,
+            .result = std::move(result),
+        };
+    }
+
+    std::string AutomationService::execute(const Automation &automation, TimePoint started_at) {
+        return execute_outcome(automation, started_at, true).run_id;
     }
 
     std::vector<DueAutomation> AutomationService::collect_due(TimePoint now) const {
@@ -312,6 +432,14 @@ namespace orangutan::automation {
             automation.next_due_at = plan_next_due(automation, now);
             static_cast<void>(persist(automation));
         }
+    }
+
+    Kernel &AutomationService::core_kernel() noexcept {
+        return *core_kernel_;
+    }
+
+    const Kernel &AutomationService::core_kernel() const noexcept {
+        return *core_kernel_;
     }
 
 } // namespace orangutan::automation

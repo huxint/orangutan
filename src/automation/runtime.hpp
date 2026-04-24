@@ -1,9 +1,11 @@
 #pragma once
 
 #include "automation/service.hpp"
+#include "utils/transparent-lookup.hpp"
 #include "utils/task-pool.hpp"
 
 #include <atomic>
+#include <expected>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -12,16 +14,19 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 
 #include <exec/async_scope.hpp>
 
 namespace orangutan::automation {
 
+    class Driver;
+    struct DispatchRequest;
+
     /// Coordinates background scheduling and per-agent execution serialization.
     class AutomationRuntime {
         class AgentExecutionGate;
+        class RuntimeExecutorPort;
 
     public:
         using ClockSource = std::function<TimePoint()>;
@@ -77,15 +82,23 @@ namespace orangutan::automation {
         [[nodiscard]]
         std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(std::string_view agent_key);
 
+        [[nodiscard]]
+        auto execute_dispatch(const DispatchRequest &request) -> std::expected<ExecutionResult, std::string>;
+
+        [[nodiscard]]
+        auto run_request(const DispatchRequest &request, TimePoint now) -> std::expected<void, std::string>;
+
         AutomationService *service_ = nullptr;
         utils::TaskPool *pool_ = nullptr;
         ClockSource clock_;
+        std::unique_ptr<RuntimeExecutorPort> driver_executor_;
+        std::unique_ptr<Driver> driver_;
         std::shared_ptr<exec::async_scope> scope_;
         std::shared_ptr<std::atomic<bool>> background_stop_requested_;
         std::atomic<bool> running_{false};
         std::mutex scope_mutex_;
         std::mutex agent_execution_gates_mutex_;
-        std::unordered_map<std::string, std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
+        utils::transparent_string_unordered_map<std::weak_ptr<AgentExecutionGate>> agent_execution_gates_;
     };
 
     template <typename Fn>

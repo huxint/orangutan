@@ -93,9 +93,13 @@ namespace orangutan::automation {
 
         void clear_deliveries(const DeliveryQuery &query, std::optional<std::int64_t> acked_at = std::nullopt);
 
+        [[nodiscard]]
+        const std::filesystem::path &db_path() const noexcept;
+
     private:
         void ensure_schema();
 
+        std::filesystem::path db_path_;
         sqlite::Database db_;
         mutable std::mutex mutex_;
     };

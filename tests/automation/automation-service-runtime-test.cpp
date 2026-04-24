@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <future>
@@ -323,6 +324,39 @@ namespace {
         REQUIRE(reopened.has_value());
         REQUIRE(reopened->next_due_at.has_value());
         CHECK(*reopened->next_due_at == initial_due);
+    };
+
+    TEST_CASE("runtime_start_waits_for_a_fresh_delay_between_ticks") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "fresh-delay.db");
+        orangutan::automation::Repository repository(db_path);
+
+        std::atomic<int> clock_calls = 0;
+        const auto fixed_time = orangutan::automation::from_unix_seconds(1'000);
+        orangutan::automation::AutomationService service(repository, [fixed_time] {
+            return fixed_time;
+        });
+        orangutan::utils::TaskPool task_pool{1};
+        orangutan::automation::AutomationRuntime runtime(service, task_pool, [&] {
+            clock_calls.fetch_add(1, std::memory_order_relaxed);
+            return fixed_time;
+        });
+
+        runtime.start();
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (clock_calls.load() < 2 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+
+        REQUIRE(clock_calls.load() >= 2);
+
+        const auto calls_after_first_tick = clock_calls.load();
+        std::this_thread::sleep_for(std::chrono::milliseconds{200});
+        const auto calls_after_window = clock_calls.load();
+
+        runtime.stop();
+
+        CHECK(calls_after_window == calls_after_first_tick);
     };
 
     TEST_CASE("runtime_can_restart_the_same_instance_after_stop") {

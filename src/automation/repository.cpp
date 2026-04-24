@@ -294,7 +294,8 @@ namespace orangutan::automation {
     : Repository(default_db_path()) {}
 
     Repository::Repository(const std::filesystem::path &db_path)
-    : db_(sqlite::open_or_throw(db_path)) {
+    : db_path_(db_path),
+      db_(sqlite::open_or_throw(db_path_)) {
         ensure_schema();
     }
 
@@ -521,6 +522,10 @@ namespace orangutan::automation {
                           "AND (?5 = '' OR target = ?5) "
                           "AND acked_at IS NULL",
                           resolved_acked_at, query.agent_key, query.automation_id, query.run_id, query.target);
+    }
+
+    const std::filesystem::path &Repository::db_path() const noexcept {
+        return db_path_;
     }
 
     void Repository::ensure_schema() {

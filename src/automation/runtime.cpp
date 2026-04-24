@@ -1,16 +1,30 @@
 #include "automation/runtime.hpp"
 
-#include "utils/sender-utils.hpp"
+#include "automation/driver.hpp"
+#include "automation/kernel.hpp"
+#include "utils/transparent-lookup.hpp"
 
 #include <chrono>
+#include <expected>
+#include <stdexcept>
 #include <utility>
 
-#include <exec/repeat_effect_until.hpp>
-#include <exec/timed_scheduler.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
 namespace orangutan::automation {
+
+    namespace {
+
+        [[nodiscard]]
+        auto dispatch_agent_key(const DispatchRequest &request) -> std::string {
+            if (const auto it = request.action.payload.find("agent_key"); it != request.action.payload.end() && it->is_string()) {
+                return it->get<std::string>();
+            }
+            return {};
+        }
+
+    } // namespace
 
     class AutomationRuntime::AgentExecutionGate {
     public:
@@ -18,6 +32,19 @@ namespace orangutan::automation {
         std::condition_variable cv;
         std::thread::id owner;
         std::size_t depth = 0;
+    };
+
+    class AutomationRuntime::RuntimeExecutorPort final : public ExecutorPort {
+    public:
+        explicit RuntimeExecutorPort(AutomationRuntime &runtime)
+        : runtime_(runtime) {}
+
+        auto dispatch(const DispatchRequest &request, const ExecutionContext &) -> ExecutorResult override {
+            return runtime_.execute_dispatch(request);
+        }
+
+    private:
+        AutomationRuntime &runtime_;
     };
 
     AutomationRuntime::AgentExecutionLease::AgentExecutionLease(std::shared_ptr<AgentExecutionGate> gate)
@@ -135,28 +162,15 @@ namespace orangutan::automation {
         background_stop_requested_ = std::make_shared<std::atomic<bool>>(false);
 
         service_->normalize_state(current_time());
-
-        // Drive the recurring wake-up from the timer context so the pool does not
-        // keep a long-lived repeating task hot while automation is idle.
-        auto tick = exec::schedule_after(pool_->timed_scheduler(), std::chrono::seconds{1})
-                  | stdexec::let_value([this] {
-                        return stdexec::schedule(pool_->scheduler())
-                             | stdexec::then([this] {
-                                   if (running_.load()) {
-                                       try {
-                                           run_pending(current_time());
-                                       } catch (const std::exception &error) {
-                                           spdlog::error("automation scheduler tick failed: {}", error.what());
-                                       } catch (...) {
-                                           spdlog::error("automation scheduler tick failed with unknown exception");
-                                       }
-                                   }
-                                   return !running_.load();
-                               });
-                    })
-                  | exec::repeat_effect_until();
-
-        scope_->spawn(std::move(tick));
+        if (driver_executor_ == nullptr) {
+            driver_executor_ = std::make_unique<RuntimeExecutorPort>(*this);
+        }
+        if (driver_ == nullptr) {
+            driver_ = std::make_unique<Driver>(service_->core_kernel(), *driver_executor_, *pool_, "legacy-runtime", [this] {
+                return current_time();
+            });
+        }
+        driver_->start();
     }
 
     void AutomationRuntime::stop() {
@@ -166,6 +180,9 @@ namespace orangutan::automation {
             std::scoped_lock lock(scope_mutex_);
             scope = scope_;
             stop_requested = background_stop_requested_;
+            if (driver_ != nullptr) {
+                driver_->stop();
+            }
             if (scope == nullptr) {
                 running_.store(false);
                 background_stop_requested_.reset();
@@ -193,14 +210,17 @@ namespace orangutan::automation {
     }
 
     void AutomationRuntime::run_pending(TimePoint now) {
-        const auto due = service_->collect_due(now);
-        auto pipeline = stdexec::just() | stdexec::then([this, due] {
-                            for (const auto &entry : due) {
-                                auto lease = acquire_agent_execution_lease(entry.automation.agent_key);
-                                static_cast<void>(service_->execute(entry.automation, current_time()));
-                            }
-                        });
-        static_cast<void>(execution::sync_wait_or_throw(std::move(pipeline), "automation runtime run_pending pipeline"));
+        auto due = service_->core_kernel().reserve_due(now, 128, "legacy-runtime-manual");
+        if (!due) {
+            throw std::runtime_error(due.error());
+        }
+
+        for (const auto &request : *due) {
+            auto executed = run_request(request, now);
+            if (!executed) {
+                throw std::runtime_error(executed.error());
+            }
+        }
     }
 
     AutomationRuntime::AgentExecutionLease AutomationRuntime::acquire_agent_execution_lease(std::string_view agent_key) {
@@ -224,17 +244,58 @@ namespace orangutan::automation {
     }
 
     std::shared_ptr<AutomationRuntime::AgentExecutionGate> AutomationRuntime::get_agent_execution_gate(std::string_view agent_key) {
-        const std::string key = agent_key.empty() ? "default" : std::string(agent_key);
+        const std::string_view key = agent_key.empty() ? "default" : agent_key;
         std::scoped_lock lock(agent_execution_gates_mutex_);
 
-        auto &entry = agent_execution_gates_[key];
-        auto gate = entry.lock();
+        auto it = utils::transparent_find(agent_execution_gates_, key);
+        if (it == agent_execution_gates_.end()) {
+            auto gate = std::make_shared<AgentExecutionGate>();
+            static_cast<void>(agent_execution_gates_.emplace(std::string{key}, gate));
+            return gate;
+        }
+
+        auto gate = it->second.lock();
         if (gate == nullptr) {
             gate = std::make_shared<AgentExecutionGate>();
-            entry = gate;
+            it->second = gate;
         }
 
         return gate;
+    }
+
+    auto AutomationRuntime::execute_dispatch(const DispatchRequest &request) -> std::expected<ExecutionResult, std::string> {
+        const auto automation = service_->find(dispatch_agent_key(request), request.job_id.value);
+        if (!automation.has_value()) {
+            return std::unexpected("automation not found for dispatch");
+        }
+
+        auto lease = acquire_agent_execution_lease(automation->agent_key);
+        return service_->execute_outcome(*automation, current_time(), false).result;
+    }
+
+    auto AutomationRuntime::run_request(const DispatchRequest &request, TimePoint now) -> std::expected<void, std::string> {
+        auto started = service_->core_kernel().mark_started(request.execution_id, now);
+        if (!started) {
+            return std::unexpected(started.error());
+        }
+
+        auto result = execute_dispatch(request);
+        auto final_result = result.has_value()
+            ? std::move(*result)
+            : ExecutionResult{
+                  .success = false,
+                  .summary = result.error(),
+              };
+
+        auto finished = service_->core_kernel().mark_finished(request.execution_id, final_result, current_time());
+        if (!finished) {
+            return std::unexpected(finished.error());
+        }
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+
+        return {};
     }
 
 } // namespace orangutan::automation
