@@ -2,13 +2,13 @@
 #include "storage/sqlite-throwing.hpp"
 #include "types/base.hpp"
 #include "utils/json-dump.hpp"
-#include "utils/overloaded.hpp"
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <random>
 #include <ranges>
 #include <stdexcept>
@@ -36,47 +36,64 @@ namespace orangutan::storage {
             return arr;
         }
 
+        [[nodiscard]]
+        ToolResult deserialize_tool_result(const nlohmann::json &item) {
+            const auto &content_field = item.at("content");
+            ToolResult result;
+            result.tool_use_id = item.at("tool_use_id").get<std::string>();
+            result.is_error = item.value("is_error", false);
+            if (content_field.is_string()) {
+                result.content = content_field.get<std::string>();
+                return result;
+            }
+            if (!content_field.is_array()) {
+                return result;
+            }
+
+            for (const auto &part : content_field) {
+                const auto part_type = part.value("type", std::string{});
+                if (part_type == "text") {
+                    result.content += part.value("text", std::string{});
+                    continue;
+                }
+                if (part_type != "image" || !part.contains("source")) {
+                    continue;
+                }
+
+                result.images.push_back({
+                    .media_type = part["source"].value("media_type", std::string{}),
+                    .data = part["source"].value("data", std::string{}),
+                });
+            }
+            return result;
+        }
+
+        [[nodiscard]]
+        std::optional<Content> deserialize_content_block(const nlohmann::json &item) {
+            const auto type = item.at("type").get<std::string>();
+            if (type == "text") {
+                return Text{item.at("text").get<std::string>()};
+            }
+            if (type == "tool_use") {
+                return ToolUse(item.at("id").get<std::string>(), item.at("name").get<std::string>(), item.at("input"));
+            }
+            if (type == "tool_result") {
+                return deserialize_tool_result(item);
+            }
+            if (type == "thinking") {
+                return Thinking{item.at("thinking").get<std::string>()};
+            }
+            return std::nullopt;
+        }
+
         std::vector<Content> deserialize_content(std::string_view json_str) {
             std::vector<Content> blocks;
             const auto arr = nlohmann::json::parse(json_str);
+            blocks.reserve(arr.size());
 
             for (const auto &item : arr) {
-                const auto type = item.at("type").get<std::string>();
-                if (type == "text") {
-                    blocks.emplace_back(Text{item.at("text").get<std::string>()});
-                    continue;
-                }
-                if (type == "tool_use") {
-                    blocks.emplace_back(ToolUse(item.at("id").get<std::string>(), item.at("name").get<std::string>(), item.at("input")));
-                    continue;
-                }
-                if (type == "tool_result") {
-                    const auto &content_field = item.at("content");
-                    ToolResult result;
-                    result.tool_use_id = item.at("tool_use_id").get<std::string>();
-                    result.is_error = item.value("is_error", false);
-                    if (content_field.is_string()) {
-                        result.content = content_field.get<std::string>();
-                    } else if (content_field.is_array()) {
-                        for (const auto &part : content_field) {
-                            const auto part_type = part.value("type", std::string{});
-                            if (part_type == "text") {
-                                result.content += part.value("text", std::string{});
-                            } else if (part_type == "image") {
-                                if (part.contains("source")) {
-                                    result.images.push_back({
-                                        .media_type = part["source"].value("media_type", std::string{}),
-                                        .data = part["source"].value("data", std::string{}),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    blocks.emplace_back(std::move(result));
-                    continue;
-                }
-                if (type == "thinking") {
-                    blocks.emplace_back(Thinking{item.at("thinking").get<std::string>()});
+                if (auto block = deserialize_content_block(item); block.has_value()) {
+                    blocks.push_back(std::move(*block));
                 }
             }
 
@@ -390,25 +407,7 @@ namespace orangutan::storage {
         std::vector<Message> messages;
         const auto rows = sqlite::query_all<std::tuple<std::string, std::string>>(db_, "SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq", session_id);
         for (const auto &[role_text, content_json] : rows) {
-            Message message{magic_enum::enum_cast<base::role>(role_text).value_or(base::role::user)};
-            for (auto &block : deserialize_content(content_json)) {
-                std::visit(utils::Overloaded{
-                               [&](Text &item) {
-                                   message.text(std::move(item));
-                               },
-                               [&](Thinking &item) {
-                                   message.thinking(std::move(item));
-                               },
-                               [&](ToolUse &item) {
-                                   message.tool_use(std::move(item));
-                               },
-                               [&](ToolResult &item) {
-                                   message.tool_result(std::move(item));
-                               },
-                           },
-                           block);
-            }
-            messages.push_back(std::move(message));
+            messages.emplace_back(magic_enum::enum_cast<base::role>(role_text).value_or(base::role::user), deserialize_content(content_json));
         }
 
         if (messages.empty() && !session_exists(db_, session_id)) {

@@ -6,6 +6,23 @@ namespace orangutan::tools {
 
     namespace {
 
+        [[nodiscard]]
+        std::string render_available_skills(const skills::SkillLoader &loader) {
+            const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
+            if (catalog.skills.empty()) {
+                return "(none loaded)";
+            }
+
+            std::string available;
+            for (const auto &skill : catalog.skills) {
+                if (!available.empty()) {
+                    available += ", ";
+                }
+                available += skill.name;
+            }
+            return available;
+        }
+
         std::string execute_skill_tool(const nlohmann::json &input, const skills::SkillLoader &loader) {
             const auto name = input.value("name", "");
             if (name.empty()) {
@@ -22,18 +39,7 @@ namespace orangutan::tools {
             }
 
             if (result.status == skills::skill_invoke_status::not_found) {
-                std::string available;
-                const auto catalog = loader.list(skills::skill_list_query{.include_inactive = true});
-                for (const auto &s : catalog.skills) {
-                    if (!available.empty()) {
-                        available += ", ";
-                    }
-                    available += s.name;
-                }
-                if (available.empty()) {
-                    available = "(none loaded)";
-                }
-                return "Error: skill '" + name + "' not found. Available skills: " + available;
+                return "Error: skill '" + name + "' not found. Available skills: " + render_available_skills(loader);
             }
 
             if (!result.diagnostics.empty()) {

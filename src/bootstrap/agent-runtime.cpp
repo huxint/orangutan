@@ -40,6 +40,20 @@ namespace orangutan::bootstrap {
         }
 
         [[nodiscard]]
+        std::string render_agent_type_allowlist(const std::vector<std::string> &team_agents) {
+            if (team_agents.empty()) {
+                return "No agent-type allowlist is configured for this runtime. Common built-in agent keys include `general-purpose`, `explorer`, and `planner`; "
+                       "if a requested key is rejected by the runtime, report that tool error directly.";
+            }
+
+            std::string out = "Configured agent types for this runtime:\n";
+            for (const auto &agent : team_agents) {
+                utils::format_to(out, "- {}\n", agent);
+            }
+            return out;
+        }
+
+        [[nodiscard]]
         std::string render_orchestration_capability_section(const AgentRuntimeBuildInput &input, const ToolRuntimeContext &tool_context) {
             if (tool_context.orchestration_manager == nullptr || orchestration::is_delegated(tool_context.role)) {
                 return {};
@@ -49,17 +63,7 @@ namespace orangutan::bootstrap {
             out += "Agent orchestration is loaded in this process. You can create one-shot workers and persistent teammates with `agent_spawn`, "
                    "send follow-up messages with `agent_send_message`, stop agents with `agent_stop`, and organize teammates with `team_create`/`team_delete` when useful.\n";
             out += "Use role `worker` for fire-and-forget delegated tasks and role `teammate` for persistent collaborators that can receive follow-up messages.\n";
-
-            if (!input.team_agents.empty()) {
-                out += "Configured agent types for this runtime:\n";
-                for (const auto &agent : input.team_agents) {
-                    utils::format_to(out, "- {}\n", agent);
-                }
-            } else {
-                out += "No agent-type allowlist is configured for this runtime. Common built-in agent keys include `general-purpose`, `explorer`, and `planner`; "
-                       "if a requested key is rejected by the runtime, report that tool error directly.";
-            }
-
+            out += render_agent_type_allowlist(input.team_agents);
             return out;
         }
 
