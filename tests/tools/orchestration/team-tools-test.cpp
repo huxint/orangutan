@@ -6,6 +6,7 @@
 #include "test-helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -67,8 +68,10 @@ namespace {
                   });
         }
 
-        SECTION("has deferred tools") {
-            CHECK(registry.has_deferred_tools());
+        SECTION("team tools are eagerly visible") {
+            CHECK_FALSE(registry.has_deferred_tools());
+            CHECK(orangutan::testing::has_tool_named(registry.definitions(), "team_create"));
+            CHECK(orangutan::testing::has_tool_named(registry.definitions(), "team_delete"));
         }
     }
 
@@ -182,6 +185,42 @@ namespace {
         CHECK(worker2_messages.front().type == message_type::shutdown_request);
         CHECK(worker1_messages.front().text == "Team shutdown requested");
 
+        CHECK_FALSE(team_manager.find_team(team.id).has_value());
+        CHECK(team_manager.list_members(team.id).empty());
+    }
+
+    TEST_CASE("team_delete honors grace_period_ms before deleting the team", "[tools][orchestration]") {
+        ToolRegistry registry;
+        orchestration::TeamManager team_manager(":memory:");
+        orchestration::AgentMailbox mailbox(":memory:");
+
+        auto team = team_manager.create_team("graceful-team", "A test team", "lead");
+        team_manager.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
+
+        ToolRuntimeContext context{
+            .runtime_key = "test-runtime",
+            .agent_key = "lead-agent",
+            .agent_name = "lead",
+            .team_manager = &team_manager,
+            .mailbox = &mailbox,
+        };
+
+        register_orchestration_tools(registry, &context);
+
+        const auto start = std::chrono::steady_clock::now();
+        auto result = registry.execute(ToolUse("delete-grace", "team_delete",
+                                               {
+                                                   {"team_id", team.id},
+                                                   {"grace_period_ms", 50},
+                                               }));
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+
+        CHECK_FALSE(result.is_error);
+        CHECK(elapsed >= std::chrono::milliseconds{40});
+
+        auto json = nlohmann::json::parse(result.content);
+        CHECK(json["deleted"] == true);
+        CHECK(json["grace_period_ms"] == 50);
         CHECK_FALSE(team_manager.find_team(team.id).has_value());
         CHECK(team_manager.list_members(team.id).empty());
     }

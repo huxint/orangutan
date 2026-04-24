@@ -33,8 +33,7 @@ namespace orangutan::tools {
 
             // Send by run_id (directed message via mailbox)
             if (!run_id.empty()) {
-                if (const auto error = tool_context.orchestration_manager->send_message(run_id, sender_name, text);
-                    error.has_value()) {
+                if (const auto error = tool_context.orchestration_manager->send_message(run_id, sender_name, text); error.has_value()) {
                     return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
                 }
                 return nlohmann::json{{"sent", true}}.dump();
@@ -47,16 +46,14 @@ namespace orangutan::tools {
 
             // Broadcast to all team members
             if (to == "*") {
-                if (const auto error = tool_context.orchestration_manager->broadcast_message(tool_context.team_id, sender_name, text);
-                    error.has_value()) {
+                if (const auto error = tool_context.orchestration_manager->broadcast_message(tool_context.team_id, sender_name, text); error.has_value()) {
                     return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
                 }
                 return nlohmann::json{{"sent", true}}.dump();
             }
 
             // Directed message to a specific teammate
-            if (const auto error = tool_context.orchestration_manager->send_message_by_name(tool_context.team_id, sender_name, to, text);
-                error.has_value()) {
+            if (const auto error = tool_context.orchestration_manager->send_message_by_name(tool_context.team_id, sender_name, to, text); error.has_value()) {
                 return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
             }
             return nlohmann::json{{"sent", true}}.dump();
@@ -76,7 +73,6 @@ namespace orangutan::tools {
                             .execute([tool_context](const nlohmann::json &input) {
                                 return agent_send_message_handler(input, *tool_context);
                             })
-                            .deferred()
                             .build();
             tool.has_value()) {
             registry.register_tool(std::move(*tool));

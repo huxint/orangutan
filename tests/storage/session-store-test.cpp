@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <set>
+#include <string>
 #include <catch2/catch_test_macros.hpp>
 #include <utility>
 
@@ -84,6 +85,23 @@ TEST_CASE("save_and_load_text_messages") {
     if (asst_text != nullptr) {
         CHECK(asst_text->text == "Hi there!");
     }
+};
+
+TEST_CASE("save_replaces_invalid_utf8_in_message_json") {
+    SessionStoreHarness harness;
+    auto store = harness.store();
+
+    std::vector<Message> messages = {
+        Message::user().text(std::string{"Hello"} + '\xB8'),
+    };
+
+    const auto session_id = store.save(messages, make_session_metadata("test-model"));
+    const auto loaded = store.load(session_id);
+
+    REQUIRE(loaded.size() == std::size_t{1});
+    const auto *user_text = std::get_if<Text>(&*loaded[0].begin());
+    REQUIRE(user_text != nullptr);
+    CHECK(user_text->text.contains("\xEF\xBF\xBD"));
 };
 
 TEST_CASE("save_and_load_tool_use_blocks") {
@@ -654,30 +672,25 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
 
     {
         auto db = orangutan::sqlite::open_or_throw(harness.db_path);
-        orangutan::sqlite::exec_script(db,
-                                       "CREATE TABLE sessions ("
-                                       "id TEXT PRIMARY KEY,"
-                                       "model TEXT NOT NULL,"
-                                       "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                                       ");"
-                                       "CREATE TABLE messages ("
-                                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                                       "session_id TEXT NOT NULL,"
-                                       "seq INTEGER NOT NULL,"
-                                       "role TEXT NOT NULL,"
-                                       "content_json TEXT NOT NULL"
-                                       ");"
-                                       "CREATE TABLE channel_session_bindings ("
-                                       "jid TEXT PRIMARY KEY,"
-                                       "session_id TEXT NOT NULL,"
-                                       "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
-                                       ");");
+        orangutan::sqlite::exec_script(db, "CREATE TABLE sessions ("
+                                           "id TEXT PRIMARY KEY,"
+                                           "model TEXT NOT NULL,"
+                                           "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                                           ");"
+                                           "CREATE TABLE messages ("
+                                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                           "session_id TEXT NOT NULL,"
+                                           "seq INTEGER NOT NULL,"
+                                           "role TEXT NOT NULL,"
+                                           "content_json TEXT NOT NULL"
+                                           ");"
+                                           "CREATE TABLE channel_session_bindings ("
+                                           "jid TEXT PRIMARY KEY,"
+                                           "session_id TEXT NOT NULL,"
+                                           "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+                                           ");");
         orangutan::sqlite::exec_bind(db, "INSERT INTO sessions (id, model) VALUES (?, ?)", "legacy-session", "legacy-model");
-        orangutan::sqlite::exec_bind(db,
-                                     "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)",
-                                     "legacy-session",
-                                     0,
-                                     "user",
+        orangutan::sqlite::exec_bind(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)", "legacy-session", 0, "user",
                                      R"([{"type":"text","text":"hello"}])");
         orangutan::sqlite::exec_bind(db, "INSERT INTO channel_session_bindings (jid, session_id) VALUES (?, ?)", "qqbot:c2c:alice", "legacy-session");
     }
@@ -690,8 +703,7 @@ TEST_CASE("migrates_legacy_schema_for_scope_and_composite_binding_key") {
     CHECK(sessions[0].scope_key.empty());
 
     auto verify_db = orangutan::sqlite::open_or_throw(harness.db_path);
-    const auto schema_rows =
-        orangutan::sqlite::query_all<std::tuple<std::string, int>>(verify_db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
+    const auto schema_rows = orangutan::sqlite::query_all<std::tuple<std::string, int>>(verify_db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
 
     bool has_agent_key = false;
     int jid_pk_position = 0;

@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "types/serialization.hpp"
+#include "utils/json-dump.hpp"
 
 namespace orangutan::providers::protocols {
     namespace {
@@ -184,15 +185,14 @@ namespace orangutan::providers::protocols {
                     }
                 }
 
-                const auto resolved_budget =
-                    request.options.thinking_budget > 0 ? request.options.thinking_budget : anthropic_thinking_budget(target.thinking);
+                const auto resolved_budget = request.options.thinking_budget > 0 ? request.options.thinking_budget : anthropic_thinking_budget(target.thinking);
                 if (resolved_budget > 0) {
                     body["thinking"] = {{"type", "enabled"}, {"budget_tokens", resolved_budget}};
                 }
 
                 return transport::HttpRequest{
                     .url = target.base_url + "/v1/messages",
-                    .body = body.dump(),
+                    .body = utils::json_dump_lossy(body),
                     .headers = target.headers,
                 };
             }

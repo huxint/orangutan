@@ -27,7 +27,6 @@ namespace orangutan::tools {
         // Leader mode: only orchestration tools (spawn, send, stop, team management)
         if (orchestration::is_leader_mode(tool_context)) {
             register_orchestration_tools(registry, tool_context);
-            registry.discover_deferred_tools();
             return;
         }
 
@@ -36,10 +35,8 @@ namespace orangutan::tools {
         register_message_attachments_tool(registry, workspace_root, tool_context);
 
         // Non-delegated runtimes with orchestration access can spawn and manage delegated agents.
-        const bool has_orchestration = tool_context != nullptr
-                                     && tool_context->orchestration_manager != nullptr
-                                     && !orchestration::is_delegated(tool_context->role);
-        if (has_orchestration && !tool_context->team_agents.empty()) {
+        const bool has_orchestration = tool_context != nullptr && tool_context->orchestration_manager != nullptr && !orchestration::is_delegated(tool_context->role);
+        if (has_orchestration) {
             register_orchestration_tools(registry, tool_context);
         }
 

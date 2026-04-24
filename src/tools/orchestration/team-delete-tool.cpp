@@ -49,7 +49,7 @@ namespace orangutan::tools {
             }
 
             if (grace_period_ms > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(grace_period_ms));
+                std::this_thread::sleep_for(std::chrono::milliseconds{grace_period_ms});
             }
 
             tool_context.team_manager->abandon_active_members(team_id);
@@ -63,15 +63,15 @@ namespace orangutan::tools {
     void register_team_delete_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         if (auto tool = make_tool_spec_builder("team_delete")
                             .description("Delete a team and deactivate all its members.")
-                            .input_schema({{"type", "object"},
-                                           {"properties",
-                                            {{"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
-                                             {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
-                                           {"required", nlohmann::json::array({"team_id"})}})
+                            .input_schema(
+                                {{"type", "object"},
+                                 {"properties",
+                                  {{"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
+                                   {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
+                                 {"required", nlohmann::json::array({"team_id"})}})
                             .execute([tool_context](const nlohmann::json &input) {
                                 return team_delete_handler(input, *tool_context);
                             })
-                            .deferred()
                             .build();
             tool.has_value()) {
             registry.register_tool(std::move(*tool));

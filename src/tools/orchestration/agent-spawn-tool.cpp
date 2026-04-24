@@ -117,12 +117,14 @@ namespace orangutan::tools {
                                              {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
                                              {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
                                              {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
-                                             {"role", {{"type", "string"}, {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"}, {"enum", nlohmann::json::array({"worker", "teammate"})}}}}},
+                                             {"role",
+                                              {{"type", "string"},
+                                               {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"},
+                                               {"enum", nlohmann::json::array({"worker", "teammate"})}}}}},
                                            {"required", nlohmann::json::array({"agent_key", "prompt"})}})
                             .execute([tool_context](const nlohmann::json &input) {
                                 return agent_spawn_handler(input, *tool_context);
                             })
-                            .deferred()
                             .build();
             tool.has_value()) {
             registry.register_tool(std::move(*tool));

@@ -1,6 +1,7 @@
 #include "storage/session-store.hpp"
 #include "storage/sqlite-throwing.hpp"
 #include "types/base.hpp"
+#include "utils/json-dump.hpp"
 #include "utils/overloaded.hpp"
 
 #include <fmt/format.h>
@@ -98,10 +99,7 @@ namespace orangutan::storage {
         }
 
         void ensure_column(sqlite::Database &db, std::string_view table_name, std::string_view column_name, std::string_view add_sql) {
-            const auto existing = sqlite::query_optional<int>(
-                db,
-                fmt::format("SELECT 1 FROM pragma_table_info('{}') WHERE name = ? LIMIT 1", table_name),
-                column_name);
+            const auto existing = sqlite::query_optional<int>(db, fmt::format("SELECT 1 FROM pragma_table_info('{}') WHERE name = ? LIMIT 1", table_name), column_name);
             if (existing.has_value()) {
                 return;
             }
@@ -118,8 +116,7 @@ namespace orangutan::storage {
         [[nodiscard]]
         auto inspect_channel_binding_schema(sqlite::Database &db) -> ChannelBindingSchema {
             ChannelBindingSchema schema;
-            const auto rows =
-                sqlite::query_all<std::tuple<std::string, int>>(db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
+            const auto rows = sqlite::query_all<std::tuple<std::string, int>>(db, "SELECT name, pk FROM pragma_table_info('channel_session_bindings')");
             for (const auto &[column_name, pk_position] : rows) {
                 if (column_name == "jid") {
                     schema.jid_pk_position = pk_position;
@@ -153,8 +150,7 @@ namespace orangutan::storage {
                                                        "SELECT jid, '', session_id, updated_at FROM channel_session_bindings_legacy;",
                                 "Failed to migrate legacy channel bindings");
             sqlite::exec_script(db, "DROP TABLE channel_session_bindings_legacy;", "Failed to drop legacy binding table");
-            sqlite::exec_script(db, "CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);",
-                                "Failed to recreate binding index");
+            sqlite::exec_script(db, "CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_updated ON channel_session_bindings(updated_at);", "Failed to recreate binding index");
         }
 
         [[nodiscard]]
@@ -170,7 +166,7 @@ namespace orangutan::storage {
             auto insert_msg = prepare_statement(db, "INSERT INTO messages (session_id, seq, role, content_json) VALUES (?, ?, ?, ?)");
             for (std::size_t index = start_index; index < messages.size(); ++index) {
                 const auto &message = messages[index];
-                const auto content_json = serialize_content(message).dump();
+                const auto content_json = utils::json_dump_lossy(serialize_content(message));
 
                 sqlite::unwrap(insert_msg.clear_bindings());
                 insert_msg.bind_all(session_id, static_cast<int>(index), magic_enum::enum_name(message.role()), content_json);
@@ -180,9 +176,8 @@ namespace orangutan::storage {
         }
 
         void insert_session(sqlite::Database &db, std::string_view session_id, const SessionMetadata &metadata) {
-            sqlite::exec_bind(db,
-                              "INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) VALUES (?, ?, ?, ?, ?, ?)",
-                              session_id, metadata.model, metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref);
+            sqlite::exec_bind(db, "INSERT INTO sessions (id, model, scope_key, agent_key, origin_kind, origin_ref) VALUES (?, ?, ?, ?, ?, ?)", session_id, metadata.model,
+                              metadata.scope_key, metadata.agent_key, metadata.origin_kind, metadata.origin_ref);
         }
 
         void update_session_model(sqlite::Database &db, std::string_view session_id, std::string_view model) {
@@ -234,10 +229,7 @@ namespace orangutan::storage {
         }
 
         void bind_session_permission_rule(sqlite::Statement &stmt, std::string_view session_id, const PermissionRule &rule) {
-            stmt.bind_all(session_id,
-                          static_cast<int>(rule.behavior),
-                          rule.tool_name,
-                          rule.content.has_value() ? 1 : 0,
+            stmt.bind_all(session_id, static_cast<int>(rule.behavior), rule.tool_name, rule.content.has_value() ? 1 : 0,
                           rule.content.has_value() ? static_cast<int>(rule.content->match_type) : static_cast<int>(rule_match_type::exact),
                           rule.content.has_value() ? std::string_view{rule.content->pattern} : std::string_view{});
         }
@@ -320,7 +312,7 @@ namespace orangutan::storage {
         static std::uniform_int_distribution<std::uint32_t> dist;
 
         return fmt::format("{:x}-{:x}-{:x}-{:x}-{:x}{:x}", dist(gen), dist(gen) & 0xFFFF, 0x4000 | (dist(gen) & 0x0FFF), 0x8000 | (dist(gen) & 0x3FFF), dist(gen),
-                                       dist(gen) & 0xFFFF);
+                           dist(gen) & 0xFFFF);
     }
 
     std::string SessionStore::save(const std::vector<Message> &messages, const SessionMetadata &metadata) {
@@ -396,19 +388,25 @@ namespace orangutan::storage {
         std::scoped_lock lock(mutex_);
 
         std::vector<Message> messages;
-        const auto rows = sqlite::query_all<std::tuple<std::string, std::string>>(
-            db_, "SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq", session_id);
+        const auto rows = sqlite::query_all<std::tuple<std::string, std::string>>(db_, "SELECT role, content_json FROM messages WHERE session_id = ? ORDER BY seq", session_id);
         for (const auto &[role_text, content_json] : rows) {
             Message message{magic_enum::enum_cast<base::role>(role_text).value_or(base::role::user)};
             for (auto &block : deserialize_content(content_json)) {
-                std::visit(
-                    utils::Overloaded{
-                        [&](Text &item) { message.text(std::move(item)); },
-                        [&](Thinking &item) { message.thinking(std::move(item)); },
-                        [&](ToolUse &item) { message.tool_use(std::move(item)); },
-                        [&](ToolResult &item) { message.tool_result(std::move(item)); },
-                    },
-                    block);
+                std::visit(utils::Overloaded{
+                               [&](Text &item) {
+                                   message.text(std::move(item));
+                               },
+                               [&](Thinking &item) {
+                                   message.thinking(std::move(item));
+                               },
+                               [&](ToolUse &item) {
+                                   message.tool_use(std::move(item));
+                               },
+                               [&](ToolResult &item) {
+                                   message.tool_result(std::move(item));
+                               },
+                           },
+                           block);
             }
             messages.push_back(std::move(message));
         }
@@ -436,10 +434,7 @@ namespace orangutan::storage {
                           "INSERT OR IGNORE INTO session_permission_rules "
                           "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
                           "VALUES (?, ?, ?, ?, ?, ?)",
-                          session_id,
-                          static_cast<int>(rule.behavior),
-                          rule.tool_name,
-                          rule.content.has_value() ? 1 : 0,
+                          session_id, static_cast<int>(rule.behavior), rule.tool_name, rule.content.has_value() ? 1 : 0,
                           rule.content.has_value() ? static_cast<int>(rule.content->match_type) : static_cast<int>(rule_match_type::exact),
                           rule.content.has_value() ? std::string_view{rule.content->pattern} : std::string_view{});
     }
@@ -451,13 +446,12 @@ namespace orangutan::storage {
 
         std::scoped_lock lock(mutex_);
         std::vector<PermissionRule> rules;
-        const auto rows = sqlite::query_all<std::tuple<int, std::string, int, int, std::string>>(
-            db_,
-            "SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
-            "FROM session_permission_rules "
-            "WHERE session_id = ? "
-            "ORDER BY created_at ASC, rowid ASC",
-            session_id);
+        const auto rows = sqlite::query_all<std::tuple<int, std::string, int, int, std::string>>(db_,
+                                                                                                 "SELECT behavior, tool_name, has_content, content_match_type, content_pattern "
+                                                                                                 "FROM session_permission_rules "
+                                                                                                 "WHERE session_id = ? "
+                                                                                                 "ORDER BY created_at ASC, rowid ASC",
+                                                                                                 session_id);
         for (const auto &[behavior_value, tool_name, has_content_value, match_type_value, content_pattern] : rows) {
             const auto behavior = static_cast<permission_behavior>(behavior_value);
             const auto has_content = has_content_value != 0;
@@ -522,10 +516,9 @@ namespace orangutan::storage {
             // the in-memory rules exactly, without leaking non-session rules into storage.
             sqlite::exec_bind(tx, "DELETE FROM session_permission_rules WHERE session_id = ?", session_id);
 
-            auto insert = prepare_statement(tx,
-                                            "INSERT OR IGNORE INTO session_permission_rules "
-                                            "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
-                                            "VALUES (?, ?, ?, ?, ?, ?)");
+            auto insert = prepare_statement(tx, "INSERT OR IGNORE INTO session_permission_rules "
+                                                "(session_id, behavior, tool_name, has_content, content_match_type, content_pattern) "
+                                                "VALUES (?, ?, ?, ?, ?, ?)");
             for (const auto &rule : session_rules) {
                 sqlite::unwrap(insert.clear_bindings());
                 bind_session_permission_rule(insert, session_id, rule);
@@ -538,31 +531,27 @@ namespace orangutan::storage {
     std::vector<SessionInfo> SessionStore::list_sessions(std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
         const auto rows = scope_key.empty()
-                              ? sqlite::query_all<session_info_row>(
-                                    db_,
-                                    "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
-                              : sqlite::query_all<session_info_row>(
-                                    db_,
-                                    "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-                                    "WHERE s.scope_key = ? "
-                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
-                                    scope_key);
+                              ? sqlite::query_all<session_info_row>(db_, "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                                                         "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                                                         "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC")
+                              : sqlite::query_all<session_info_row>(db_,
+                                                                    "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                                                    "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                                                    "WHERE s.scope_key = ? "
+                                                                    "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
+                                                                    scope_key);
 
         return rows | std::views::transform(make_session_info) | std::ranges::to<std::vector>();
     }
 
     std::vector<SessionInfo> SessionStore::list_sessions_for_agent(std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        const auto rows = sqlite::query_all<session_info_row>(
-            db_,
-            "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
-            "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
-            "WHERE s.agent_key = ? "
-            "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
-            agent_key);
+        const auto rows = sqlite::query_all<session_info_row>(db_,
+                                                              "SELECT s.id, s.created_at, s.model, s.scope_key, s.agent_key, s.origin_kind, s.origin_ref, COUNT(m.id) "
+                                                              "FROM sessions s LEFT JOIN messages m ON s.id = m.session_id "
+                                                              "WHERE s.agent_key = ? "
+                                                              "GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC",
+                                                              agent_key);
 
         return rows | std::views::transform(make_session_info) | std::ranges::to<std::vector>();
     }
@@ -597,22 +586,17 @@ namespace orangutan::storage {
 
     std::optional<std::string> SessionStore::bound_session_for_jid(std::string_view jid, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        return sqlite::query_optional<std::string>(
-            db_, "SELECT session_id FROM channel_session_bindings WHERE jid = ? AND agent_key = ?", jid, agent_key);
+        return sqlite::query_optional<std::string>(db_, "SELECT session_id FROM channel_session_bindings WHERE jid = ? AND agent_key = ?", jid, agent_key);
     }
 
     bool SessionStore::session_belongs_to_scope(std::string_view session_id, std::string_view scope_key) {
         std::scoped_lock lock(mutex_);
-        return sqlite::query_optional<int>(
-                   db_, "SELECT 1 FROM sessions WHERE id = ? AND scope_key = ? LIMIT 1", session_id, scope_key)
-            .has_value();
+        return sqlite::query_optional<int>(db_, "SELECT 1 FROM sessions WHERE id = ? AND scope_key = ? LIMIT 1", session_id, scope_key).has_value();
     }
 
     bool SessionStore::session_belongs_to_agent(std::string_view session_id, std::string_view agent_key) {
         std::scoped_lock lock(mutex_);
-        return sqlite::query_optional<int>(
-                   db_, "SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1", session_id, agent_key)
-            .has_value();
+        return sqlite::query_optional<int>(db_, "SELECT 1 FROM sessions WHERE id = ? AND agent_key = ? LIMIT 1", session_id, agent_key).has_value();
     }
 
 } // namespace orangutan::storage

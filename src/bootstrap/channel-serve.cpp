@@ -21,6 +21,7 @@
 #include "utils/format.hpp"
 #include "utils/scope-exit.hpp"
 #include "utils/sender-utils.hpp"
+#include "utils/utf8-policy.hpp"
 #include "bootstrap/identity.hpp"
 
 #include <algorithm>
@@ -261,7 +262,10 @@ namespace orangutan::bootstrap {
                               "For images, use the file_read tool on the local path to view them immediately. "
                               "For audio/voice files, note the path for reference.");
             }
-            return prompt;
+            auto policy = utf8_policy::display_policy();
+            policy.invalid_utf8 = utf8_policy::invalid_utf8_mode::replace_invalid;
+            auto sanitized = utf8_policy::canonicalize(prompt, policy);
+            return sanitized.has_value() ? std::move(sanitized->value) : prompt;
         }
 
         ConversationRuntime &ensure_runtime_for_jid(const std::string &jid, std::unordered_map<std::string, std::unique_ptr<ConversationRuntime>> &runtimes,

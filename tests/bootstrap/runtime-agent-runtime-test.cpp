@@ -3,6 +3,7 @@
 #include "bootstrap/identity.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
+#include "orchestration/orchestration-manager.hpp"
 #include "permissions/permission-state.hpp"
 #include "tools/background/background-completion.hpp"
 #include "test-helpers.hpp"
@@ -154,6 +155,31 @@ namespace {
         CHECK_FALSE(shell->input_schema["properties"].contains("on_complete"));
     };
 
+    TEST_CASE("standalone_runtime_with_orchestration_exposes_teammate_capability_without_team_allowlist") {
+        RuntimeAgentRuntimeHarness harness;
+        orchestration::OrchestrationManager orchestration_manager(2);
+
+        auto input = harness.make_input();
+        input.team_agents.clear();
+        input.orchestration_manager = &orchestration_manager;
+
+        auto runtime = build_agent_runtime(input);
+        const auto definitions = runtime.tools().definitions();
+
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_spawn"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_send_message"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "agent_stop"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "team_create"));
+        CHECK(orangutan::testing::has_tool_named(definitions, "team_delete"));
+        CHECK(runtime.skills_prompt.contains("## Agent Orchestration"));
+        CHECK(runtime.skills_prompt.contains("persistent teammates"));
+        CHECK(runtime.skills_prompt.contains("No agent-type allowlist"));
+        CHECK(runtime.skills_prompt.contains("Use `tool_search` when you need specific MCP tools."));
+        CHECK(runtime.skills_prompt.contains("Long-term memory is loaded for scope"));
+
+        orchestration_manager.shutdown();
+    };
+
     TEST_CASE("deferred_tools_remain_directly_executable_before_discovery") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
@@ -269,6 +295,19 @@ namespace {
         CHECK(runtime.skills_prompt.contains("## Available Skills"));
         CHECK(runtime.skills_prompt.contains("**delegation**"));
         CHECK_FALSE(runtime.skills_prompt.contains("Always report concise delegation status."));
+    };
+
+    TEST_CASE("runtime_uses_no_skills_fallback_when_catalog_is_empty") {
+        RuntimeAgentRuntimeHarness harness;
+        ScopedEnvVar home_env("HOME", harness.home_root().string());
+
+        auto input = harness.make_input();
+
+        auto runtime = build_agent_runtime(input);
+
+        CHECK(runtime.skills_prompt.contains("## Available Skills"));
+        CHECK(runtime.skills_prompt.contains("No skills are currently loaded in this runtime."));
+        CHECK(runtime.skills_prompt.contains("Do not invent skill names; answer explicit skill-list questions from this fact."));
     };
 
     TEST_CASE("loads_hooks_from_default_resolved_hook_directories") {

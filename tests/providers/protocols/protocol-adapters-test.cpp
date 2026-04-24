@@ -24,8 +24,7 @@ namespace {
 
         const auto anthropic = registry.resolve(orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages);
         orangutan::providers::transport::header_map anthropic_headers;
-        anthropic.auth(
-            orangutan::testing::make_test_target("claude", orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages), anthropic_headers);
+        anthropic.auth(orangutan::testing::make_test_target("claude", orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages), anthropic_headers);
         CHECK(anthropic.adapter->label() == "anthropic");
         CHECK(anthropic_headers.at("x-api-key") == "test-key");
         CHECK(anthropic_headers.at("anthropic-version") == "2023-06-01");
@@ -198,12 +197,8 @@ namespace {
         orangutan::ProviderRequest request;
         request.system_prompt = "be helpful";
         request.messages = {
-            orangutan::Message::assistant()
-                .tool_use(orangutan::ToolUse{"call-1", "lookup", {{"value", 1}}})
-                .tool_use(orangutan::ToolUse{"call-2", "summarize", {{"value", 2}}}),
-            orangutan::Message::user()
-                .tool_result(orangutan::ToolResult{"call-1", "first"})
-                .tool_result(orangutan::ToolResult{"call-2", "second"}),
+            orangutan::Message::assistant().tool_use(orangutan::ToolUse{"call-1", "lookup", {{"value", 1}}}).tool_use(orangutan::ToolUse{"call-2", "summarize", {{"value", 2}}}),
+            orangutan::Message::user().tool_result(orangutan::ToolResult{"call-1", "first"}).tool_result(orangutan::ToolResult{"call-2", "second"}),
         };
 
         const auto http_request = adapter->build_request(target, request);
@@ -290,6 +285,23 @@ namespace {
                         orangutan::ProviderError);
         auto invalid_decoder = adapter->make_stream_decoder({});
         CHECK_THROWS_AS(invalid_decoder->on_event("", "{bad-json"), orangutan::ProviderError);
+    }
+
+    TEST_CASE("protocol_adapters_replace_invalid_utf8_when_building_json_requests") {
+        const auto adapter = orangutan::providers::protocols::make_anthropic_messages_adapter();
+        auto target = orangutan::testing::make_test_target("claude-sonnet", orangutan::provider_kind::anthropic, orangutan::protocol_kind::messages);
+
+        orangutan::ProviderRequest request;
+        request.system_prompt = std::string{"system"} + '\xB8';
+        request.messages = {
+            orangutan::Message::user().text(std::string{"hello"} + '\xB8'),
+        };
+        request.options.max_tokens = 128;
+
+        const auto http_request = adapter->build_request(target, request);
+        const auto body = nlohmann::json::parse(http_request.body);
+        CHECK(body["system"].get<std::string>().contains("\xEF\xBF\xBD"));
+        CHECK(body["messages"][0]["content"][0]["text"].get<std::string>().contains("\xEF\xBF\xBD"));
     }
 
 } // namespace

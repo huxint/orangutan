@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "providers/protocols/openai-common.hpp"
+#include "utils/json-dump.hpp"
 
 namespace orangutan::providers::protocols {
     namespace {
@@ -158,7 +159,7 @@ namespace orangutan::providers::protocols {
 
                 return transport::HttpRequest{
                     .url = target.base_url + "/v1/chat/completions",
-                    .body = body.dump(),
+                    .body = utils::json_dump_lossy(body),
                     .headers = target.headers,
                 };
             }

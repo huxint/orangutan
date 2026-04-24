@@ -15,11 +15,96 @@
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "tools/skill/skill-tool.hpp"
 #include "utils/enum-string.hpp"
+#include "utils/format.hpp"
 
 #include <utility>
 #include <vector>
 
 namespace orangutan::bootstrap {
+    namespace {
+
+        void append_prompt_section(std::string &prompt, std::string section) {
+            if (section.empty()) {
+                return;
+            }
+            if (!prompt.empty()) {
+                prompt += "\n\n";
+            }
+            prompt += std::move(section);
+        }
+
+        [[nodiscard]]
+        std::string append_mcp_tool_search_guidance(std::string message) {
+            message += " Use `tool_search` when you need specific MCP tools.";
+            return message;
+        }
+
+        [[nodiscard]]
+        std::string render_orchestration_capability_section(const AgentRuntimeBuildInput &input, const ToolRuntimeContext &tool_context) {
+            if (tool_context.orchestration_manager == nullptr || orchestration::is_delegated(tool_context.role)) {
+                return {};
+            }
+
+            std::string out = "## Agent Orchestration\n";
+            out += "Agent orchestration is loaded in this process. You can create one-shot workers and persistent teammates with `agent_spawn`, "
+                   "send follow-up messages with `agent_send_message`, stop agents with `agent_stop`, and organize teammates with `team_create`/`team_delete` when useful.\n";
+            out += "Use role `worker` for fire-and-forget delegated tasks and role `teammate` for persistent collaborators that can receive follow-up messages.\n";
+
+            if (!input.team_agents.empty()) {
+                out += "Configured agent types for this runtime:\n";
+                for (const auto &agent : input.team_agents) {
+                    utils::format_to(out, "- {}\n", agent);
+                }
+            } else {
+                out += "No agent-type allowlist is configured for this runtime. Common built-in agent keys include `general-purpose`, `explorer`, and `planner`; "
+                       "if a requested key is rejected by the runtime, report that tool error directly.";
+            }
+
+            return out;
+        }
+
+        [[nodiscard]]
+        std::string render_mcp_capability_section(const AgentRuntimeBuildInput &input, const tools::McpManager *mcp_manager) {
+            std::string out = "## MCP Tools\n";
+            if (input.mcp_servers.empty()) {
+                out += append_mcp_tool_search_guidance("No MCP servers are configured for this runtime.");
+                return out;
+            }
+
+            if (mcp_manager == nullptr) {
+                out += append_mcp_tool_search_guidance("MCP servers are configured, but no MCP manager is loaded for this runtime role.");
+                return out;
+            }
+
+            utils::format_to(out, "{} MCP servers configured; {} connected; {} tools registered.", input.mcp_servers.size(), mcp_manager->connected_server_count(),
+                             mcp_manager->total_tool_count());
+            out = append_mcp_tool_search_guidance(std::move(out));
+            return out;
+        }
+
+        [[nodiscard]]
+        std::string render_memory_capability_section(RuntimeMemory *memory) {
+            std::string out = "## Long-Term Memory\n";
+            if (memory == nullptr) {
+                out += "Long-term memory is disabled for this runtime.";
+                return out;
+            }
+
+            utils::format_to(out, "Long-term memory is loaded for scope `{}`. Relevant memories are injected automatically when available.", memory->context().scope);
+            return out;
+        }
+
+        [[nodiscard]]
+        std::string render_runtime_capability_section(const AgentRuntimeBuildInput &input, const AgentRuntimeBundle &runtime) {
+            std::string out;
+            append_prompt_section(out, render_orchestration_capability_section(input, runtime.tool_context()));
+            append_prompt_section(out, render_mcp_capability_section(input, runtime.mcp_manager.get()));
+            append_prompt_section(out, render_memory_capability_section(runtime.memory.get()));
+            return out;
+        }
+
+    } // namespace
+
     AgentRuntimeBundle::AgentRuntimeBundle()
     : tool_context_storage_(std::make_unique<ToolRuntimeContext>()),
       tools_storage_(std::make_unique<ToolRegistry>()),
@@ -145,11 +230,9 @@ namespace orangutan::bootstrap {
         }
 
         runtime.skills_prompt = std::move(prompt_guidance);
-        const auto skills_prompt = skills::render_skill_prompt_section(runtime.skill_loader->list(skills::skill_list_query{.include_inactive = false}));
-        if (!runtime.skills_prompt.empty() && !skills_prompt.empty()) {
-            runtime.skills_prompt += "\n\n";
-        }
-        runtime.skills_prompt += skills_prompt;
+        append_prompt_section(runtime.skills_prompt, render_runtime_capability_section(input, runtime));
+        auto skills_prompt = skills::render_skill_prompt_section_or_fallback(runtime.skill_loader->list(skills::skill_list_query{.include_inactive = false}));
+        append_prompt_section(runtime.skills_prompt, std::move(skills_prompt));
         if (!leader_mode) {
             tools::register_skill_tool(runtime.tools(), *runtime.skill_loader);
         }
@@ -162,9 +245,8 @@ namespace orangutan::bootstrap {
             runtime.active_hook_manager_ = runtime.hook_manager.get();
         }
 
-        runtime.agent =
-            std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt, runtime.active_hook_manager_,
-                                        runtime.skill_loader.get());
+        runtime.agent = std::make_unique<AgentLoop>(*runtime.provider, input.provider_route, runtime.tools(), runtime.memory.get(), runtime.skills_prompt,
+                                                    runtime.active_hook_manager_, runtime.skill_loader.get());
         runtime.agent->set_thinking_budget(input.thinking_budget);
         runtime.agent->set_environment_info(prompt::EnvironmentInfo{
             .workspace_root = input.workspace_root,

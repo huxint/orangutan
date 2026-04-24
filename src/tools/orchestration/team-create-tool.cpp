@@ -45,7 +45,6 @@ namespace orangutan::tools {
                             .execute([tool_context](const nlohmann::json &input) {
                                 return team_create_handler(input, *tool_context);
                             })
-                            .deferred()
                             .build();
             tool.has_value()) {
             registry.register_tool(std::move(*tool));

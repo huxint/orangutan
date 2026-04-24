@@ -40,16 +40,15 @@ namespace {
         register_orchestration_tools(registry, &context);
 
         auto defs = registry.definitions();
-
-        // All orchestration tools are deferred, so definitions() returns empty.
-        // But they should be findable and executable.
+        CHECK(defs.size() == 5);
 
         SECTION("registers agent_spawn tool") {
             const auto *def = registry.find_definition("agent_spawn");
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_spawn");
-            CHECK(def->description == "Spawn a worker agent to handle a delegated task. Workers run a single task and report results. Teammates stay alive for follow-up messages after completing their initial task.");
+            CHECK(def->description == "Spawn a worker agent to handle a delegated task. Workers run a single task and report results. Teammates stay alive for follow-up messages "
+                                      "after completing their initial task.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties",
@@ -58,7 +57,10 @@ namespace {
                                                 {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
                                                 {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
                                                 {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
-                                                {"role", {{"type", "string"}, {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"}, {"enum", nlohmann::json::array({"worker", "teammate"})}}},
+                                                {"role",
+                                                 {{"type", "string"},
+                                                  {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"},
+                                                  {"enum", nlohmann::json::array({"worker", "teammate"})}}},
                                             }},
                                            {"required", nlohmann::json::array({"agent_key", "prompt"})},
                                        });
@@ -95,8 +97,13 @@ namespace {
                                        });
         }
 
-        SECTION("has deferred tools") {
-            CHECK(registry.has_deferred_tools());
+        SECTION("orchestration tools are eagerly visible") {
+            CHECK_FALSE(registry.has_deferred_tools());
+            CHECK(orangutan::testing::has_tool_named(defs, "agent_spawn"));
+            CHECK(orangutan::testing::has_tool_named(defs, "agent_send_message"));
+            CHECK(orangutan::testing::has_tool_named(defs, "agent_stop"));
+            CHECK(orangutan::testing::has_tool_named(defs, "team_create"));
+            CHECK(orangutan::testing::has_tool_named(defs, "team_delete"));
         }
 
         manager.shutdown();

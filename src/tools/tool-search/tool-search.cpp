@@ -21,18 +21,64 @@ namespace orangutan::tools {
             return schema.is_null() ? "{}" : schema.dump(2);
         }
 
-        /// Score a summary against a lowercased query. Exact name > substring name > substring description.
-        int score_summary(const DeferredToolSummary &summary, std::string_view query_lower) {
+        std::vector<std::string_view> query_terms(std::string_view query_lower) {
+            std::vector<std::string_view> terms;
+            for (std::size_t pos = 0; pos < query_lower.size();) {
+                const auto first = query_lower.find_first_not_of(" \t\n\r\f\v,", pos);
+                if (first == std::string_view::npos) {
+                    break;
+                }
+
+                const auto last = query_lower.find_first_of(" \t\n\r\f\v,", first);
+                const auto end = last == std::string_view::npos ? query_lower.size() : last;
+                terms.push_back(query_lower.substr(first, end - first));
+                pos = end;
+            }
+            return terms;
+        }
+
+        [[nodiscard]]
+        bool has_synthetic_mcp_match(std::string_view tool_name, std::string_view term) {
+            return term == "mcp" && tool_name.contains(':');
+        }
+
+        /// Score a summary against a lowercased query. Exact full-query match wins; otherwise accumulate per-term evidence.
+        int score_summary(const DeferredToolSummary &summary, std::string_view query_lower, std::span<const std::string_view> terms) {
             const auto name = utils::ascii_to_lower_copy(summary.name);
             const auto description = utils::ascii_to_lower_copy(summary.description);
 
-            int score = 0;
             if (name == query_lower) {
-                score += 100;
-            } else if (name.contains(query_lower)) {
-                score += 50;
+                return 100;
             }
-            if (description.contains(query_lower)) {
+
+            int score = 0;
+            bool all_terms_in_name = true;
+            for (const auto term : terms) {
+                const bool in_name = name.contains(term);
+                const bool in_description = description.contains(term);
+                const bool synthetic_mcp_match = has_synthetic_mcp_match(name, term);
+                const bool matched_in_name = in_name || synthetic_mcp_match;
+
+                if (synthetic_mcp_match) {
+                    score += 40;
+                }
+                if (matched_in_name) {
+                    score += 15;
+                    if (in_name && name == term) {
+                        score += 15;
+                    }
+                } else {
+                    all_terms_in_name = false;
+                }
+                if (in_description) {
+                    score += 8;
+                }
+                if (!matched_in_name && !in_description) {
+                    return 0;
+                }
+            }
+
+            if (all_terms_in_name && !query_lower.empty()) {
                 score += 20;
             }
             return score;
@@ -55,7 +101,7 @@ namespace orangutan::tools {
                 out += render_tool(*def);
                 ++found;
             }
-            utils::format_to(out, "Discovered {} tool(s). They are now available for use.", found);
+            utils::format_to(out, "Discovered {} tools. They are now available for use.", found);
             return out;
         }
 
@@ -75,10 +121,11 @@ namespace orangutan::tools {
             };
 
             const auto query_lower = utils::ascii_to_lower_copy(query);
+            const auto terms = query_terms(query_lower);
             std::vector<Match> matches;
             matches.reserve(summaries.size());
             for (const auto &s : summaries) {
-                if (const int score = score_summary(s, query_lower); score > 0) {
+                if (const int score = score_summary(s, query_lower, terms); score > 0) {
                     matches.push_back({&s, score});
                 }
             }
@@ -92,7 +139,7 @@ namespace orangutan::tools {
             matches.resize(keep);
 
             std::string out;
-            utils::format_to(out, "Found {} matching tool(s):\n\n", matches.size());
+            utils::format_to(out, "Found {} matching tools:\n\n", matches.size());
             for (const auto &m : matches) {
                 utils::format_to(out, "- **{}**: {}\n", m.summary->name, m.summary->description);
             }
@@ -101,7 +148,8 @@ namespace orangutan::tools {
         }
 
         std::string execute_tool_search(const nlohmann::json &input, ToolRegistry &registry) {
-            const auto query = utils::trim_copy(input.value("query", std::string{}));
+            const auto raw_query = input.value("query", std::string{});
+            const auto query = std::string{utils::trim_copy(raw_query)};
             if (query.empty()) {
                 return "error: query is required.";
             }

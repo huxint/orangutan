@@ -330,8 +330,7 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view skills_prompt, const ToolRegistry &tools,
-                                           std::string_view memory_section) {
+    inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view skills_prompt, const ToolRegistry &tools, std::string_view memory_section) {
         std::vector<prompt::PromptSection> sections;
         sections.push_back(prompt::PromptSection{
             .id = "system.default",
@@ -355,7 +354,8 @@ namespace orangutan::agent::detail {
         const auto deferred = tools.deferred_tool_summaries();
         if (!deferred.empty()) {
             std::string deferred_section = "<available-deferred-tools>\n";
-            deferred_section += "The following tools are available but not yet loaded. Use the `tool_search` tool to discover and enable them before use.\n";
+            deferred_section += "The following tools are already registered in the running process but their full schemas are deferred. "
+                                "Use the `tool_search` tool to discover and enable them before use; do not use shell commands to search configuration files for them.\n";
             for (const auto &tool : deferred) {
                 deferred_section += tool.name;
                 deferred_section.push_back('\n');

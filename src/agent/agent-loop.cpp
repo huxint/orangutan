@@ -30,8 +30,8 @@ namespace orangutan::agent {
 
     } // namespace
 
-    AgentLoop::AgentLoop(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt,
-                         HookManager *hook_manager, skills::SkillLoader *skill_loader)
+    AgentLoop::AgentLoop(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools, RuntimeMemory *memory, std::string skills_prompt, HookManager *hook_manager,
+                         skills::SkillLoader *skill_loader)
     : provider_(&provider),
       provider_route_(std::move(route)),
       tools_(&tools),
@@ -64,8 +64,9 @@ namespace orangutan::agent {
         for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
             spdlog::debug("agent loop iteration {}", iteration + 1);
 
-            const auto refreshed_skill_section =
-                skill_loader_ == nullptr ? std::string{} : skills::render_skill_prompt_section(skill_loader_->list(skills::skill_list_query{.include_inactive = false}));
+            const auto refreshed_skill_section = skill_loader_ == nullptr
+                                                     ? std::string{}
+                                                     : skills::render_skill_prompt_section_or_fallback(skill_loader_->list(skills::skill_list_query{.include_inactive = false}));
             const auto effective_skills_prompt = skill_loader_ == nullptr ? skills_prompt_ : merge_refreshed_skill_prompt(skills_prompt_, refreshed_skill_section);
 
             static_cast<void>(inject_incoming_messages(on_history_checkpoint));

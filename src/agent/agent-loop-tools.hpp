@@ -18,6 +18,7 @@
 #include "hooks/hook-manager.hpp"
 #include "skills/skill-loader.hpp"
 #include "utils/format.hpp"
+#include "utils/json-dump.hpp"
 #include "utils/sender-utils.hpp"
 #include "utils/string.hpp"
 
@@ -172,7 +173,7 @@ namespace orangutan::agent::detail {
 
     [[nodiscard]]
     inline loop_status check_loop_detection(ToolCallCounts &call_counts, const ToolUse &call) {
-        const auto input_hash = std::hash<std::string>{}(call.input.dump());
+        const auto input_hash = std::hash<std::string>{}(utils::json_dump_lossy(call.input));
         ToolCallSignature signature{.name = call.name, .input_hash = input_hash};
 
         auto &count = call_counts[signature];

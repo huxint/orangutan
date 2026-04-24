@@ -80,6 +80,12 @@ namespace orangutan::skills {
     };
 
     [[nodiscard]]
+    inline std::string render_empty_skill_prompt_section() {
+        return "\n\n## Available Skills\n"
+               "No skills are currently loaded in this runtime. Do not invent skill names; answer explicit skill-list questions from this fact.";
+    }
+
+    [[nodiscard]]
     inline std::string render_skill_prompt_section(const skill_catalog_view &catalog) {
         if (catalog.skills.empty()) {
             return {};
@@ -104,6 +110,15 @@ namespace orangutan::skills {
             out.append(skill->description);
         }
         return out;
+    }
+
+    [[nodiscard]]
+    inline std::string render_skill_prompt_section_or_fallback(const skill_catalog_view &catalog) {
+        auto section = render_skill_prompt_section(catalog);
+        if (!section.empty()) {
+            return section;
+        }
+        return render_empty_skill_prompt_section();
     }
 
     struct skill_runtime_config {

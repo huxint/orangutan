@@ -30,6 +30,9 @@ namespace orangutan::tools {
                     }
                     available += s.name;
                 }
+                if (available.empty()) {
+                    available = "(none loaded)";
+                }
                 return "Error: skill '" + name + "' not found. Available skills: " + available;
             }
 
@@ -42,11 +45,6 @@ namespace orangutan::tools {
     } // namespace
 
     void register_skill_tool(ToolRegistry &registry, const skills::SkillLoader &skill_loader) {
-        const auto catalog = skill_loader.list(skills::skill_list_query{.include_inactive = true});
-        if (catalog.skills.empty()) {
-            return;
-        }
-
         registry.register_tool({
             .definition =
                 {

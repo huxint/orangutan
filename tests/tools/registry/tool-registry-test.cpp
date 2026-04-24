@@ -8,6 +8,7 @@
 #include "tools/registry/tool.hpp"
 #include "tools/script/script-loader.hpp"
 #include "tools/skill/skill-tool.hpp"
+#include "tools/tool-search/tool-search.hpp"
 #include "tools/file/edit/hashline.hpp"
 #include "tools/internal.hpp"
 #include "memory/memory-store.hpp"
@@ -1937,6 +1938,23 @@ TEST_CASE("HasDeferredToolsReturnsTrueWhenPresent") {
                             .deferred = true});
 
     CHECK(registry.has_deferred_tools());
+};
+
+TEST_CASE("ToolSearchFindsMcpToolsFromProcessRegistryForMultiWordQueries") {
+    ToolRegistry registry;
+    registry.register_tool({.definition = {.name = "github:list_repositories", .description = "List repositories from GitHub"},
+                            .execute =
+                                [](const nlohmann::json &) {
+                                    return "ok";
+                                },
+                            .deferred = true});
+    register_tool_search(registry);
+
+    const auto result = registry.execute(ToolUse("tool-search-mcp", "tool_search", {{"query", "mcp github repositories"}}));
+
+    CHECK_FALSE(result.is_error);
+    CHECK(result.content.contains("github:list_repositories"));
+    CHECK(result.content.contains("select:"));
 };
 
 TEST_CASE("ClearDiscoveredResetsDeferredTools") {
