@@ -407,8 +407,4 @@ namespace orangutan::automation {
         return *core_kernel_;
     }
 
-    const Kernel &AutomationService::core_kernel() const noexcept {
-        return *core_kernel_;
-    }
-
 } // namespace orangutan::automation

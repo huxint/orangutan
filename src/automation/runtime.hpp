@@ -59,7 +59,6 @@ namespace orangutan::automation {
 
         void start();
         void stop();
-        void run_pending(TimePoint now);
         void set_executor(AutomationExecutor executor);
         void add_delivery_filter(AutomationDeliveryFilter filter);
         void register_category(AutomationCategory category);
@@ -84,9 +83,6 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         auto execute_dispatch(const DispatchRequest &request) -> std::expected<ExecutionResult, std::string>;
-
-        [[nodiscard]]
-        auto run_request(const DispatchRequest &request, TimePoint now) -> std::expected<void, std::string>;
 
         AutomationService *service_ = nullptr;
         utils::TaskPool *pool_ = nullptr;

@@ -1,12 +1,9 @@
 #include "automation/runtime.hpp"
 
 #include "automation/driver.hpp"
-#include "automation/kernel.hpp"
 #include "utils/transparent-lookup.hpp"
 
-#include <chrono>
 #include <expected>
-#include <stdexcept>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -208,20 +205,6 @@ namespace orangutan::automation {
         }
     }
 
-    void AutomationRuntime::run_pending(TimePoint now) {
-        auto due = service_->core_kernel().reserve_due(now, 128, "legacy-runtime-manual");
-        if (!due) {
-            throw std::runtime_error(due.error());
-        }
-
-        for (const auto &request : *due) {
-            auto executed = run_request(request, now);
-            if (!executed) {
-                throw std::runtime_error(executed.error());
-            }
-        }
-    }
-
     AutomationRuntime::AgentExecutionLease AutomationRuntime::acquire_agent_execution_lease(std::string_view agent_key) {
         return AgentExecutionLease(get_agent_execution_gate(agent_key));
     }
@@ -270,31 +253,6 @@ namespace orangutan::automation {
 
         auto lease = acquire_agent_execution_lease(automation->agent_key);
         return service_->execute_outcome(*automation, current_time(), false).result;
-    }
-
-    auto AutomationRuntime::run_request(const DispatchRequest &request, TimePoint now) -> std::expected<void, std::string> {
-        auto started = service_->core_kernel().mark_started(request.execution_id, now);
-        if (!started) {
-            return std::unexpected(started.error());
-        }
-
-        auto result = execute_dispatch(request);
-        auto final_result = result.has_value()
-            ? std::move(*result)
-            : ExecutionResult{
-                  .success = false,
-                  .summary = result.error(),
-              };
-
-        auto finished = service_->core_kernel().mark_finished(request.execution_id, final_result, current_time());
-        if (!finished) {
-            return std::unexpected(finished.error());
-        }
-        if (!result) {
-            return std::unexpected(result.error());
-        }
-
-        return {};
     }
 
 } // namespace orangutan::automation

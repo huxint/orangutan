@@ -134,19 +134,6 @@ namespace orangutan::automation {
             return std::nullopt;
         }
 
-        [[nodiscard]]
-        std::int64_t scheduled_for_time(const Automation &automation, TimePoint now) {
-            if (automation.next_due_at.has_value()) {
-                return *automation.next_due_at;
-            }
-
-            if (automation.trigger.type == trigger_type::once && !automation.last_run_at.has_value()) {
-                return to_unix_seconds(automation.trigger.at);
-            }
-
-            return to_unix_seconds(now);
-        }
-
     } // namespace
 
     std::optional<std::int64_t> plan_next_due(const Automation &automation, TimePoint from) {
@@ -159,47 +146,6 @@ namespace orangutan::automation {
             return std::nullopt;
         }
         return to_unix_seconds(*next_due);
-    }
-
-    bool is_automation_due(const Automation &automation, TimePoint now) {
-        if (!automation.enabled || automation.paused) {
-            return false;
-        }
-
-        if (automation.next_due_at.has_value()) {
-            return *automation.next_due_at <= to_unix_seconds(now);
-        }
-
-        if (automation.trigger.type == trigger_type::once && !automation.last_run_at.has_value()) {
-            return automation.trigger.at <= now;
-        }
-
-        return false;
-    }
-
-    std::vector<DueAutomation> collect_due_automations(std::span<const Automation> automations, TimePoint now) {
-        std::vector<DueAutomation> due;
-        for (const auto &automation : automations) {
-            if (!is_automation_due(automation, now)) {
-                continue;
-            }
-
-            due.push_back({
-                .automation = automation,
-                .scheduled_for = scheduled_for_time(automation, now),
-            });
-        }
-
-        std::ranges::sort(due, [](const DueAutomation &lhs, const DueAutomation &rhs) {
-            if (lhs.scheduled_for != rhs.scheduled_for) {
-                return lhs.scheduled_for < rhs.scheduled_for;
-            }
-            if (lhs.automation.agent_key != rhs.automation.agent_key) {
-                return lhs.automation.agent_key < rhs.automation.agent_key;
-            }
-            return lhs.automation.id < rhs.automation.id;
-        });
-        return due;
     }
 
 } // namespace orangutan::automation

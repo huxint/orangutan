@@ -283,14 +283,12 @@ namespace {
         std::optional<orangutan::automation::AutomationRuntime::AgentExecutionLease> lease;
         lease.emplace(harness.runtime.acquire_agent_execution_lease("default"));
 
-        std::thread worker([&harness] {
-            harness.runtime.run_pending(harness.current_time);
-        });
+        harness.runtime.start();
 
         CHECK(started_future.wait_for(std::chrono::milliseconds{100}) == std::future_status::timeout);
         lease.reset();
         CHECK(started_future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-        worker.join();
+        harness.runtime.stop();
     };
 
     TEST_CASE("runtime_start_preserves_future_interval_due_across_restart") {

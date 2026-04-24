@@ -104,9 +104,6 @@ namespace orangutan::automation {
         [[nodiscard]]
         Kernel &core_kernel() noexcept;
 
-        [[nodiscard]]
-        const Kernel &core_kernel() const noexcept;
-
         Repository *repository_ = nullptr;
         ClockSource clock_;
         std::unique_ptr<SqliteJobStore> core_store_;
