@@ -2,7 +2,6 @@
 
 #include "automation/category.hpp"
 #include "automation/delivery.hpp"
-#include "automation/planner.hpp"
 #include "automation/repository.hpp"
 
 #include <functional>
@@ -101,11 +100,6 @@ namespace orangutan::automation {
 
         [[nodiscard]]
         std::string execute(const Automation &automation, TimePoint started_at);
-
-        [[nodiscard]]
-        std::vector<DueAutomation> collect_due(TimePoint now) const;
-
-        void normalize_state(TimePoint now);
 
         [[nodiscard]]
         Kernel &core_kernel() noexcept;

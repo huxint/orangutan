@@ -2,6 +2,7 @@
 
 #include "automation/kernel.hpp"
 #include "automation/log-writer.hpp"
+#include "automation/planner.hpp"
 #include "automation/sqlite-store.hpp"
 
 #include <stdexcept>
@@ -400,38 +401,6 @@ namespace orangutan::automation {
 
     std::string AutomationService::execute(const Automation &automation, TimePoint started_at) {
         return execute_outcome(automation, started_at, true).run_id;
-    }
-
-    std::vector<DueAutomation> AutomationService::collect_due(TimePoint now) const {
-        const auto automations = repository_->list(AutomationQuery{
-            .enabled = true,
-            .paused = false,
-        });
-        return collect_due_automations(automations, now);
-    }
-
-    void AutomationService::normalize_state(TimePoint now) {
-        const auto now_seconds = to_unix_seconds(now);
-        auto automations = repository_->list(AutomationQuery{.enabled = true});
-
-        for (auto &automation : automations) {
-            if (automation.paused) {
-                continue;
-            }
-
-            if (automation.trigger.type == trigger_type::once && automation.last_run_at.has_value()) {
-                automation.next_due_at.reset();
-                static_cast<void>(persist(automation));
-                continue;
-            }
-
-            if (automation.next_due_at.has_value() && *automation.next_due_at >= now_seconds) {
-                continue;
-            }
-
-            automation.next_due_at = plan_next_due(automation, now);
-            static_cast<void>(persist(automation));
-        }
     }
 
     Kernel &AutomationService::core_kernel() noexcept {

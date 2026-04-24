@@ -161,7 +161,6 @@ namespace orangutan::automation {
         }
         background_stop_requested_ = std::make_shared<std::atomic<bool>>(false);
 
-        service_->normalize_state(current_time());
         if (driver_executor_ == nullptr) {
             driver_executor_ = std::make_unique<RuntimeExecutorPort>(*this);
         }

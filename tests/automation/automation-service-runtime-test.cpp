@@ -326,8 +326,45 @@ namespace {
         CHECK(*reopened->next_due_at == initial_due);
     };
 
-    TEST_CASE("runtime_start_waits_for_a_fresh_delay_between_ticks") {
-        const auto db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "fresh-delay.db");
+    TEST_CASE("runtime_start_dispatches_due_jobs_from_persisted_schedule_state") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "persisted-due.db");
+        orangutan::automation::TimePoint current_time = orangutan::automation::from_unix_seconds(1'000);
+
+        {
+            orangutan::automation::Repository repository(db_path);
+            orangutan::automation::AutomationService service(repository, [&current_time] {
+                return current_time;
+            });
+            static_cast<void>(service.save(make_once_automation("persisted-due", orangutan::automation::from_unix_seconds(900))));
+        }
+
+        orangutan::automation::Repository reopened_repository(db_path);
+        orangutan::automation::AutomationService reopened_service(reopened_repository, [&current_time] {
+            return current_time;
+        });
+        orangutan::utils::TaskPool reopened_pool{1};
+        orangutan::automation::AutomationRuntime reopened_runtime(reopened_service, reopened_pool, [&current_time] {
+            return current_time;
+        });
+
+        std::promise<void> executed;
+        auto executed_future = executed.get_future();
+        reopened_service.set_executor([&executed](const orangutan::automation::Automation &) {
+            executed.set_value();
+            return orangutan::automation::ExecutionResult{
+                .success = true,
+                .reply = "ok",
+                .summary = "ok",
+            };
+        });
+
+        reopened_runtime.start();
+        REQUIRE(executed_future.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+        reopened_runtime.stop();
+    };
+
+    TEST_CASE("runtime_start_leaves_idle_systems_parked_without_tick_polling") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-service-runtime", "idle-start.db");
         orangutan::automation::Repository repository(db_path);
 
         std::atomic<int> clock_calls = 0;
@@ -343,20 +380,20 @@ namespace {
 
         runtime.start();
 
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
-        while (clock_calls.load() < 2 && std::chrono::steady_clock::now() < deadline) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+        while (clock_calls.load() == 0 && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
 
-        REQUIRE(clock_calls.load() >= 2);
+        REQUIRE(clock_calls.load() >= 1);
 
-        const auto calls_after_first_tick = clock_calls.load();
+        const auto calls_after_start = clock_calls.load();
         std::this_thread::sleep_for(std::chrono::milliseconds{200});
         const auto calls_after_window = clock_calls.load();
 
         runtime.stop();
 
-        CHECK(calls_after_window == calls_after_first_tick);
+        CHECK(calls_after_window == calls_after_start);
     };
 
     TEST_CASE("runtime_can_restart_the_same_instance_after_stop") {
