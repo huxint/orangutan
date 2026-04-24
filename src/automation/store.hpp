@@ -42,6 +42,9 @@ namespace orangutan::automation {
         virtual auto next_due_at() const -> StoreResult<std::optional<std::int64_t>> = 0;
 
         [[nodiscard]]
+        virtual auto next_wakeup(std::int64_t now) const -> StoreResult<std::optional<std::int64_t>> = 0;
+
+        [[nodiscard]]
         virtual auto list_due(std::int64_t now, std::size_t limit) const -> StoreResult<std::vector<JobId>> = 0;
 
         [[nodiscard]]

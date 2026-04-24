@@ -31,6 +31,9 @@ namespace orangutan::automation {
         auto next_due_at() const -> StoreResult<std::optional<std::int64_t>> override;
 
         [[nodiscard]]
+        auto next_wakeup(std::int64_t now) const -> StoreResult<std::optional<std::int64_t>> override;
+
+        [[nodiscard]]
         auto list_due(std::int64_t now, std::size_t limit) const -> StoreResult<std::vector<JobId>> override;
 
         [[nodiscard]]

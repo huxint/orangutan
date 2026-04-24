@@ -28,6 +28,9 @@ namespace orangutan::automation {
         auto next_wakeup() const -> KernelResult<std::optional<TimePoint>>;
 
         [[nodiscard]]
+        auto next_wakeup(TimePoint now) const -> KernelResult<std::optional<TimePoint>>;
+
+        [[nodiscard]]
         auto reserve_due(TimePoint now, std::size_t limit, std::string_view driver_id) -> KernelResult<std::vector<DispatchRequest>>;
 
         [[nodiscard]]

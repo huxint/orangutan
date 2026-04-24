@@ -193,6 +193,17 @@ namespace orangutan::automation {
         return std::optional<TimePoint>{from_unix_seconds(**next_due_at)};
     }
 
+    auto Kernel::next_wakeup(TimePoint now) const -> KernelResult<std::optional<TimePoint>> {
+        auto next_wakeup = store_.next_wakeup(to_unix_seconds(now));
+        if (!next_wakeup) {
+            return std::unexpected(next_wakeup.error().message);
+        }
+        if (!next_wakeup->has_value()) {
+            return std::optional<TimePoint>{};
+        }
+        return std::optional<TimePoint>{from_unix_seconds(**next_wakeup)};
+    }
+
     auto Kernel::reserve_due(TimePoint now, std::size_t limit, std::string_view driver_id) -> KernelResult<std::vector<DispatchRequest>> {
         const auto now_seconds = to_unix_seconds(now);
         const auto lease_until = now_seconds + lease_duration_.count();

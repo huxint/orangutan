@@ -77,6 +77,19 @@ namespace {
         CHECK(**next_due_at == 1'776'249'600);
     }
 
+    TEST_CASE("sqlite store computes next wakeup after active lease expiry", "[automation][store][lease]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "next-wakeup.db");
+        SqliteJobStore store(db_path);
+
+        REQUIRE(store.save_job(make_definition("job-1", "repo-sync"), make_state(1'776'249'600)).has_value());
+        REQUIRE(store.reserve_due(1'776'249'700, 1, "driver-a", 1'776'249'900).has_value());
+
+        auto next_wakeup = store.next_wakeup(1'776'249'750);
+        REQUIRE(next_wakeup.has_value());
+        REQUIRE(next_wakeup->has_value());
+        CHECK(**next_wakeup == 1'776'249'900);
+    }
+
     TEST_CASE("sqlite store lists due jobs in time order", "[automation][store]") {
         const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "due-jobs.db");
         SqliteJobStore store(db_path);

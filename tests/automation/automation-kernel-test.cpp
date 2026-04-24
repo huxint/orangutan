@@ -69,6 +69,20 @@ namespace {
         CHECK(orangutan::automation::to_unix_seconds(**wakeup) == 1'000);
     }
 
+    TEST_CASE("kernel next_wakeup can advance to lease expiry for active reservations", "[automation][kernel]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-kernel", "lease-wakeup.db");
+        SqliteJobStore store(db_path);
+        Kernel kernel(store);
+
+        REQUIRE(store.save_job(make_interval_definition("job-1", "repo-sync", std::chrono::seconds{30}), make_state(1'000)).has_value());
+        REQUIRE(store.reserve_due(1'000, 1, "driver-a", 1'050).has_value());
+
+        auto wakeup = kernel.next_wakeup(orangutan::automation::from_unix_seconds(1'020));
+        REQUIRE(wakeup.has_value());
+        REQUIRE(wakeup->has_value());
+        CHECK(orangutan::automation::to_unix_seconds(**wakeup) == 1'050);
+    }
+
     TEST_CASE("kernel emits one recovery dispatch for run_once missed policy", "[automation][kernel]") {
         const auto db_path = orangutan::testing::unique_test_db_path("automation-kernel", "run-once.db");
         SqliteJobStore store(db_path);

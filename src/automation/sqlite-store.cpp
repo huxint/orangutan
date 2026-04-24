@@ -417,6 +417,32 @@ namespace orangutan::automation {
         return *next_due;
     }
 
+    auto SqliteJobStore::next_wakeup(std::int64_t now) const -> StoreResult<std::optional<std::int64_t>> {
+        std::scoped_lock lock(mutex_);
+        auto query = db_.query(
+            "SELECT MIN("
+            "    CASE "
+            "        WHEN lease_expires_at IS NOT NULL "
+            "         AND lease_expires_at > ?1 "
+            "         AND next_due_at <= ?1 "
+            "        THEN lease_expires_at "
+            "        ELSE next_due_at "
+            "    END"
+            ") "
+            "FROM automation_job_state "
+            "WHERE enabled = 1 "
+            "AND paused = 0 "
+            "AND next_due_at IS NOT NULL");
+        if (!query) {
+            return std::unexpected(query.error());
+        }
+        auto next_wakeup = query->bind(now).template optional<std::int64_t>();
+        if (!next_wakeup) {
+            return std::unexpected(next_wakeup.error());
+        }
+        return *next_wakeup;
+    }
+
     auto SqliteJobStore::list_due(std::int64_t now, std::size_t limit) const -> StoreResult<std::vector<JobId>> {
         if (limit == 0) {
             return std::vector<JobId>{};
