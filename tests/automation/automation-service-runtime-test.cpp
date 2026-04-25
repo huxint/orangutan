@@ -14,6 +14,7 @@
 #include "automation/repository.hpp"
 #include "automation/runtime.hpp"
 #include "automation/service.hpp"
+#include "automation/sqlite-store.hpp"
 #include "heartbeat/heartbeat-automation.hpp"
 #include "test-helpers.hpp"
 #include "utils/task-pool.hpp"
@@ -80,7 +81,14 @@ namespace {
 
     [[nodiscard]]
     orangutan::automation::Automation make_notify_automation(std::string_view name) {
-        return orangutan::automation::Automation::named(name).for_agent("default").run_prompt("scan repo").cron("0 9 * * *").deliver_to("owner").deliver_to("pager").build().value();
+        return orangutan::automation::Automation::named(name)
+            .for_agent("default")
+            .run_prompt("scan repo")
+            .cron("0 9 * * *")
+            .deliver_to("owner")
+            .deliver_to("pager")
+            .build()
+            .value();
     }
 
     [[nodiscard]]
@@ -112,6 +120,22 @@ namespace {
 
         CHECK(harness.service.remove("default", repo_check_id));
         CHECK_FALSE(harness.service.find("default", repo_check_id).has_value());
+    };
+
+    TEST_CASE("service_scopes_core_job_keys_by_agent") {
+        ServiceHarness harness;
+
+        const auto default_id = harness.service.save(make_notify_automation("repo-check"));
+        auto ops = make_notify_automation("repo-check");
+        ops.agent_key = "ops";
+        const auto ops_id = harness.service.save(ops);
+
+        auto default_job = harness.service.find("default", default_id);
+        auto ops_job = harness.service.find("ops", ops_id);
+        REQUIRE(default_job.has_value());
+        REQUIRE(ops_job.has_value());
+        CHECK(default_job->name == "repo-check");
+        CHECK(ops_job->name == "repo-check");
     };
 
     TEST_CASE("service_normalizes_disabled_state_and_resume_recomputes_next_due") {
@@ -177,6 +201,40 @@ namespace {
         const auto paused = harness.service.find("default", automation_id);
         REQUIRE(paused.has_value());
         CHECK(paused->paused);
+    };
+
+    TEST_CASE("service_save_preserves_runtime_only_core_state") {
+        ServiceHarness harness;
+
+        const auto automation_id = harness.service.save(make_interval_automation("preserve-runtime-state"));
+        orangutan::automation::SqliteJobStore store(harness.db_path);
+        auto loaded = store.load_job(orangutan::automation::JobId{.value = automation_id});
+        REQUIRE(loaded.has_value());
+        REQUIRE(loaded->has_value());
+
+        auto stored = loaded->value();
+        stored.state.in_flight_count = 1;
+        stored.state.lease_owner = "driver-a";
+        stored.state.lease_expires_at = 2'000;
+        stored.state.last_started_at = 1'010;
+        stored.state.revision = 42;
+        REQUIRE(store.save_job(stored.definition, stored.state).has_value());
+
+        auto automation = harness.service.find("default", automation_id);
+        REQUIRE(automation.has_value());
+        automation->notes = "updated";
+        static_cast<void>(harness.service.save(*automation));
+
+        loaded = store.load_job(orangutan::automation::JobId{.value = automation_id});
+        REQUIRE(loaded.has_value());
+        REQUIRE(loaded->has_value());
+        CHECK(loaded->value().state.in_flight_count == 1);
+        CHECK(loaded->value().state.lease_owner == "driver-a");
+        REQUIRE(loaded->value().state.lease_expires_at.has_value());
+        CHECK(*loaded->value().state.lease_expires_at == 2'000);
+        REQUIRE(loaded->value().state.last_started_at.has_value());
+        CHECK(*loaded->value().state.last_started_at == 1'010);
+        CHECK(loaded->value().state.revision == 42);
     };
 
     TEST_CASE("service_run_now_executes_without_changing_disabled_state") {
@@ -387,6 +445,27 @@ namespace {
         reopened_runtime.start();
         REQUIRE(executed_future.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
         reopened_runtime.stop();
+    };
+
+    TEST_CASE("runtime_wakes_when_a_due_job_is_saved_after_start") {
+        ServiceHarness harness;
+
+        std::promise<void> executed;
+        auto executed_future = executed.get_future();
+        harness.service.set_executor([&executed](const orangutan::automation::Automation &) {
+            executed.set_value();
+            return orangutan::automation::ExecutionResult{
+                .success = true,
+                .reply = "ok",
+                .summary = "ok",
+            };
+        });
+
+        harness.runtime.start();
+        static_cast<void>(harness.service.save(make_once_automation("saved-after-start", orangutan::automation::from_unix_seconds(900))));
+
+        REQUIRE(executed_future.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+        harness.runtime.stop();
     };
 
     TEST_CASE("runtime_start_leaves_idle_systems_parked_without_tick_polling") {

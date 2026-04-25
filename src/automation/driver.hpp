@@ -5,14 +5,17 @@
 #include "utils/task-pool.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
-#include <condition_variable>
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
 #include <string>
-#include <thread>
+
+#include <exec/async_scope.hpp>
 
 namespace orangutan::automation {
 
@@ -44,13 +47,20 @@ namespace orangutan::automation {
 
         void record_error(std::string error);
         void clear_last_error();
-        void run_loop(std::stop_token stop_token);
+        void spawn_cycle(std::chrono::steady_clock::duration delay, std::uint64_t generation);
+        void run_cycle(std::uint64_t generation);
 
         [[nodiscard]]
         auto execute_request(const DispatchRequest &request, std::stop_token stop_token) -> KernelResult<void>;
 
         [[nodiscard]]
-        auto wait_until(std::optional<TimePoint> wake_time, std::stop_token stop_token) -> bool;
+        auto execute_with_retries(const DispatchRequest &request, const ExecutionContext &context) -> ExecutionResult;
+
+        [[nodiscard]]
+        static auto retry_delay(const ExecutionPolicy &policy, int failed_attempt) -> std::chrono::milliseconds;
+
+        [[nodiscard]]
+        static auto wait_retry_delay(std::chrono::milliseconds delay, std::stop_token stop_token) -> bool;
 
         Kernel &kernel_;
         ExecutorPort &executor_;
@@ -59,11 +69,13 @@ namespace orangutan::automation {
         std::string driver_id_;
         std::size_t batch_limit_ = 16;
         mutable std::mutex mutex_;
-        std::condition_variable_any cv_;
         std::optional<std::string> last_error_;
-        std::jthread thread_;
+        std::shared_ptr<exec::async_scope> scope_;
+        std::stop_source stop_source_;
         std::atomic<bool> running_{false};
-        bool wake_requested_ = false;
+        std::atomic<bool> cycle_active_{false};
+        std::atomic<bool> recovery_pending_{false};
+        std::atomic<std::uint64_t> generation_{0};
     };
 
 } // namespace orangutan::automation

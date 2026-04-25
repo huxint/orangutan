@@ -1,5 +1,6 @@
 #pragma once
 
+#include "automation/action-registry.hpp"
 #include "automation/service.hpp"
 #include "utils/transparent-lookup.hpp"
 #include "utils/task-pool.hpp"
@@ -74,6 +75,12 @@ namespace orangutan::automation {
         [[nodiscard]]
         const AutomationService &service() const noexcept;
 
+        [[nodiscard]]
+        ActionRegistry &actions() noexcept;
+
+        [[nodiscard]]
+        const ActionRegistry &actions() const noexcept;
+
     private:
         [[nodiscard]]
         TimePoint current_time() const;
@@ -82,11 +89,15 @@ namespace orangutan::automation {
         std::shared_ptr<AgentExecutionGate> get_agent_execution_gate(std::string_view agent_key);
 
         [[nodiscard]]
-        auto execute_dispatch(const DispatchRequest &request) -> std::expected<ExecutionResult, std::string>;
+        auto execute_dispatch(const DispatchRequest &request, const ExecutionContext &context) -> std::expected<ExecutionResult, std::string>;
+
+        [[nodiscard]]
+        auto execute_action(const ActionDescriptor &action, const ExecutionContext &context) -> std::expected<ExecutionResult, std::string>;
 
         AutomationService *service_ = nullptr;
         utils::TaskPool *pool_ = nullptr;
         ClockSource clock_;
+        ActionRegistry action_registry_;
         std::unique_ptr<RuntimeExecutorPort> driver_executor_;
         std::unique_ptr<Driver> driver_;
         std::shared_ptr<exec::async_scope> scope_;

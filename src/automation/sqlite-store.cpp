@@ -157,12 +157,8 @@ namespace orangutan::automation {
         [[nodiscard]]
         auto execution_policy_to_json(const ExecutionPolicy &policy) -> nlohmann::json {
             return {
-                {"missed_runs", utils::enum_name(policy.missed_runs)},
-                {"max_retry_attempts", policy.max_retry_attempts},
-                {"initial_backoff_ms", policy.initial_backoff.count()},
-                {"max_backoff_ms", policy.max_backoff.count()},
-                {"allow_parallel", policy.allow_parallel},
-                {"overlap", utils::enum_name(policy.overlap)},
+                {"missed_runs", utils::enum_name(policy.missed_runs)}, {"max_retry_attempts", policy.max_retry_attempts}, {"initial_backoff_ms", policy.initial_backoff.count()},
+                {"max_backoff_ms", policy.max_backoff.count()},        {"allow_parallel", policy.allow_parallel},         {"overlap", utils::enum_name(policy.overlap)},
             };
         }
 
@@ -199,8 +195,8 @@ namespace orangutan::automation {
         [[nodiscard]]
         auto decode_stored_job(const load_job_row &row) -> StoreResult<StoredJob> {
             const auto &[job_id, job_key, schedule_kind, schedule_json_text, action_key, action_payload_json_text, execution_policy_json_text, result_policy_json_text,
-                          metadata_json_text, version, enabled, paused, next_due_at, last_scheduled_at, last_started_at, last_finished_at, last_status, in_flight_count,
-                          lease_owner, lease_expires_at, revision] = row;
+                         metadata_json_text, version, enabled, paused, next_due_at, last_scheduled_at, last_started_at, last_finished_at, last_status, in_flight_count, lease_owner,
+                         lease_expires_at, revision] = row;
 
             auto schedule_json = parse_json_text(schedule_json_text, "schedule_json");
             if (!schedule_json) {
@@ -275,10 +271,8 @@ namespace orangutan::automation {
     }
 
     auto SqliteJobStore::save_job(const JobDefinition &definition, const ScheduleState &state) -> StoreResult<void> {
-        auto validation = utils::all_ok(
-            require_non_blank(definition.id.value, "job id"),
-            require_non_blank(definition.key, "job key"),
-            require_non_blank(definition.action.action_key, "action key"));
+        auto validation = utils::all_ok(require_non_blank(definition.id.value, "job id"), require_non_blank(definition.key, "job key"),
+                                        require_non_blank(definition.action.action_key, "action key"));
         if (!validation) {
             return std::unexpected(validation.error());
         }
@@ -287,69 +281,49 @@ namespace orangutan::automation {
         const auto now = current_unix_seconds();
 
         return db_.transaction([&](sqlite::Database &tx) -> StoreResult<void> {
-            auto save_definition = run_bound(
-                tx,
-                "INSERT INTO automation_job_definitions ("
-                "job_id, job_key, schedule_kind, schedule_json, action_key, action_payload_json, execution_policy_json, result_policy_json, metadata_json, version, created_at, updated_at"
-                ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
-                "ON CONFLICT(job_id) DO UPDATE SET "
-                "job_key = excluded.job_key, "
-                "schedule_kind = excluded.schedule_kind, "
-                "schedule_json = excluded.schedule_json, "
-                "action_key = excluded.action_key, "
-                "action_payload_json = excluded.action_payload_json, "
-                "execution_policy_json = excluded.execution_policy_json, "
-                "result_policy_json = excluded.result_policy_json, "
-                "metadata_json = excluded.metadata_json, "
-                "version = excluded.version, "
-                "updated_at = excluded.updated_at",
-                definition.id.value,
-                definition.key,
-                schedule_kind_name(definition.schedule),
-                schedule_to_json(definition.schedule).dump(),
-                definition.action.action_key,
-                definition.action.payload.dump(),
-                execution_policy_to_json(definition.execution).dump(),
-                result_policy_to_json(definition.result).dump(),
-                definition.metadata.dump(),
-                definition.version,
-                now,
-                now);
+            auto save_definition = run_bound(tx,
+                                             "INSERT INTO automation_job_definitions ("
+                                             "job_id, job_key, schedule_kind, schedule_json, action_key, action_payload_json, execution_policy_json, result_policy_json, "
+                                             "metadata_json, version, created_at, updated_at"
+                                             ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+                                             "ON CONFLICT(job_id) DO UPDATE SET "
+                                             "job_key = excluded.job_key, "
+                                             "schedule_kind = excluded.schedule_kind, "
+                                             "schedule_json = excluded.schedule_json, "
+                                             "action_key = excluded.action_key, "
+                                             "action_payload_json = excluded.action_payload_json, "
+                                             "execution_policy_json = excluded.execution_policy_json, "
+                                             "result_policy_json = excluded.result_policy_json, "
+                                             "metadata_json = excluded.metadata_json, "
+                                             "version = excluded.version, "
+                                             "updated_at = excluded.updated_at",
+                                             definition.id.value, definition.key, schedule_kind_name(definition.schedule), schedule_to_json(definition.schedule).dump(),
+                                             definition.action.action_key, definition.action.payload.dump(), execution_policy_to_json(definition.execution).dump(),
+                                             result_policy_to_json(definition.result).dump(), definition.metadata.dump(), definition.version, now, now);
             if (!save_definition) {
                 return save_definition;
             }
 
-            return run_bound(
-                tx,
-                "INSERT INTO automation_job_state ("
-                "job_id, enabled, paused, next_due_at, last_scheduled_at, last_started_at, last_finished_at, last_status, in_flight_count, lease_owner, lease_expires_at, revision, updated_at"
-                ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) "
-                "ON CONFLICT(job_id) DO UPDATE SET "
-                "enabled = excluded.enabled, "
-                "paused = excluded.paused, "
-                "next_due_at = excluded.next_due_at, "
-                "last_scheduled_at = excluded.last_scheduled_at, "
-                "last_started_at = excluded.last_started_at, "
-                "last_finished_at = excluded.last_finished_at, "
-                "last_status = excluded.last_status, "
-                "in_flight_count = excluded.in_flight_count, "
-                "lease_owner = excluded.lease_owner, "
-                "lease_expires_at = excluded.lease_expires_at, "
-                "revision = excluded.revision, "
-                "updated_at = excluded.updated_at",
-                definition.id.value,
-                state.enabled ? 1 : 0,
-                state.paused ? 1 : 0,
-                state.next_due_at,
-                state.last_scheduled_at,
-                state.last_started_at,
-                state.last_finished_at,
-                state.last_status,
-                state.in_flight_count,
-                state.lease_owner,
-                state.lease_expires_at,
-                state.revision,
-                now);
+            return run_bound(tx,
+                             "INSERT INTO automation_job_state ("
+                             "job_id, enabled, paused, next_due_at, last_scheduled_at, last_started_at, last_finished_at, last_status, in_flight_count, lease_owner, "
+                             "lease_expires_at, revision, updated_at"
+                             ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) "
+                             "ON CONFLICT(job_id) DO UPDATE SET "
+                             "enabled = excluded.enabled, "
+                             "paused = excluded.paused, "
+                             "next_due_at = excluded.next_due_at, "
+                             "last_scheduled_at = excluded.last_scheduled_at, "
+                             "last_started_at = excluded.last_started_at, "
+                             "last_finished_at = excluded.last_finished_at, "
+                             "last_status = excluded.last_status, "
+                             "in_flight_count = excluded.in_flight_count, "
+                             "lease_owner = excluded.lease_owner, "
+                             "lease_expires_at = excluded.lease_expires_at, "
+                             "revision = excluded.revision, "
+                             "updated_at = excluded.updated_at",
+                             definition.id.value, state.enabled ? 1 : 0, state.paused ? 1 : 0, state.next_due_at, state.last_scheduled_at, state.last_started_at,
+                             state.last_finished_at, state.last_status, state.in_flight_count, state.lease_owner, state.lease_expires_at, state.revision, now);
         });
     }
 
@@ -360,13 +334,14 @@ namespace orangutan::automation {
         }
 
         std::scoped_lock lock(mutex_);
-        auto query = db_.query(
-            "SELECT d.job_id, d.job_key, d.schedule_kind, d.schedule_json, d.action_key, d.action_payload_json, d.execution_policy_json, d.result_policy_json, d.metadata_json, d.version, "
-            "s.enabled, s.paused, s.next_due_at, s.last_scheduled_at, s.last_started_at, s.last_finished_at, s.last_status, s.in_flight_count, s.lease_owner, s.lease_expires_at, s.revision "
-            "FROM automation_job_definitions d "
-            "JOIN automation_job_state s ON s.job_id = d.job_id "
-            "WHERE d.job_id = ?1 "
-            "LIMIT 1");
+        auto query = db_.query("SELECT d.job_id, d.job_key, d.schedule_kind, d.schedule_json, d.action_key, d.action_payload_json, d.execution_policy_json, d.result_policy_json, "
+                               "d.metadata_json, d.version, "
+                               "s.enabled, s.paused, s.next_due_at, s.last_scheduled_at, s.last_started_at, s.last_finished_at, s.last_status, s.in_flight_count, s.lease_owner, "
+                               "s.lease_expires_at, s.revision "
+                               "FROM automation_job_definitions d "
+                               "JOIN automation_job_state s ON s.job_id = d.job_id "
+                               "WHERE d.job_id = ?1 "
+                               "LIMIT 1");
         if (!query) {
             return std::unexpected(query.error());
         }
@@ -401,12 +376,12 @@ namespace orangutan::automation {
 
     auto SqliteJobStore::next_due_at() const -> StoreResult<std::optional<std::int64_t>> {
         std::scoped_lock lock(mutex_);
-        auto query = db_.query(
-            "SELECT MIN(next_due_at) "
-            "FROM automation_job_state "
-            "WHERE enabled = 1 "
-            "AND paused = 0 "
-            "AND next_due_at IS NOT NULL");
+        auto query = db_.query("SELECT MIN(next_due_at) "
+                               "FROM automation_job_state "
+                               "WHERE enabled = 1 "
+                               "AND paused = 0 "
+                               "AND in_flight_count = 0 "
+                               "AND next_due_at IS NOT NULL");
         if (!query) {
             return std::unexpected(query.error());
         }
@@ -419,20 +394,20 @@ namespace orangutan::automation {
 
     auto SqliteJobStore::next_wakeup(std::int64_t now) const -> StoreResult<std::optional<std::int64_t>> {
         std::scoped_lock lock(mutex_);
-        auto query = db_.query(
-            "SELECT MIN("
-            "    CASE "
-            "        WHEN lease_expires_at IS NOT NULL "
-            "         AND lease_expires_at > ?1 "
-            "         AND next_due_at <= ?1 "
-            "        THEN lease_expires_at "
-            "        ELSE next_due_at "
-            "    END"
-            ") "
-            "FROM automation_job_state "
-            "WHERE enabled = 1 "
-            "AND paused = 0 "
-            "AND next_due_at IS NOT NULL");
+        auto query = db_.query("SELECT MIN("
+                               "    CASE "
+                               "        WHEN lease_expires_at IS NOT NULL "
+                               "         AND lease_expires_at > ?1 "
+                               "         AND next_due_at <= ?1 "
+                               "        THEN lease_expires_at "
+                               "        ELSE next_due_at "
+                               "    END"
+                               ") "
+                               "FROM automation_job_state "
+                               "WHERE enabled = 1 "
+                               "AND paused = 0 "
+                               "AND in_flight_count = 0 "
+                               "AND next_due_at IS NOT NULL");
         if (!query) {
             return std::unexpected(query.error());
         }
@@ -449,15 +424,15 @@ namespace orangutan::automation {
         }
 
         std::scoped_lock lock(mutex_);
-        auto query = db_.query(
-            "SELECT job_id "
-            "FROM automation_job_state "
-            "WHERE enabled = 1 "
-            "AND paused = 0 "
-            "AND next_due_at IS NOT NULL "
-            "AND next_due_at <= ?1 "
-            "ORDER BY next_due_at ASC, job_id ASC "
-            "LIMIT ?2");
+        auto query = db_.query("SELECT job_id "
+                               "FROM automation_job_state "
+                               "WHERE enabled = 1 "
+                               "AND paused = 0 "
+                               "AND in_flight_count = 0 "
+                               "AND next_due_at IS NOT NULL "
+                               "AND next_due_at <= ?1 "
+                               "ORDER BY next_due_at ASC, job_id ASC "
+                               "LIMIT ?2");
         if (!query) {
             return std::unexpected(query.error());
         }
@@ -487,18 +462,20 @@ namespace orangutan::automation {
         const auto updated_at = current_unix_seconds();
 
         return db_.transaction([&](sqlite::Database &tx) -> StoreResult<std::vector<StoredJob>> {
-            auto query = tx.query(
-                "SELECT d.job_id, d.job_key, d.schedule_kind, d.schedule_json, d.action_key, d.action_payload_json, d.execution_policy_json, d.result_policy_json, d.metadata_json, d.version, "
-                "s.enabled, s.paused, s.next_due_at, s.last_scheduled_at, s.last_started_at, s.last_finished_at, s.last_status, s.in_flight_count, s.lease_owner, s.lease_expires_at, s.revision "
-                "FROM automation_job_definitions d "
-                "JOIN automation_job_state s ON s.job_id = d.job_id "
-                "WHERE s.enabled = 1 "
-                "AND s.paused = 0 "
-                "AND s.next_due_at IS NOT NULL "
-                "AND s.next_due_at <= ?1 "
-                "AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= ?1) "
-                "ORDER BY s.next_due_at ASC, d.job_id ASC "
-                "LIMIT ?2");
+            auto query = tx.query("SELECT d.job_id, d.job_key, d.schedule_kind, d.schedule_json, d.action_key, d.action_payload_json, d.execution_policy_json, "
+                                  "d.result_policy_json, d.metadata_json, d.version, "
+                                  "s.enabled, s.paused, s.next_due_at, s.last_scheduled_at, s.last_started_at, s.last_finished_at, s.last_status, s.in_flight_count, "
+                                  "s.lease_owner, s.lease_expires_at, s.revision "
+                                  "FROM automation_job_definitions d "
+                                  "JOIN automation_job_state s ON s.job_id = d.job_id "
+                                  "WHERE s.enabled = 1 "
+                                  "AND s.paused = 0 "
+                                  "AND s.in_flight_count = 0 "
+                                  "AND s.next_due_at IS NOT NULL "
+                                  "AND s.next_due_at <= ?1 "
+                                  "AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= ?1) "
+                                  "ORDER BY s.next_due_at ASC, d.job_id ASC "
+                                  "LIMIT ?2");
             if (!query) {
                 return std::unexpected(query.error());
             }
@@ -520,16 +497,11 @@ namespace orangutan::automation {
                 decoded->state.lease_expires_at = lease_until;
                 ++decoded->state.revision;
 
-                auto update = run_bound(
-                    tx,
-                    "UPDATE automation_job_state "
-                    "SET lease_owner = ?2, lease_expires_at = ?3, revision = ?4, updated_at = ?5 "
-                    "WHERE job_id = ?1",
-                    decoded->definition.id.value,
-                    decoded->state.lease_owner,
-                    decoded->state.lease_expires_at,
-                    decoded->state.revision,
-                    updated_at);
+                auto update = run_bound(tx,
+                                        "UPDATE automation_job_state "
+                                        "SET lease_owner = ?2, lease_expires_at = ?3, revision = ?4, updated_at = ?5 "
+                                        "WHERE job_id = ?1",
+                                        decoded->definition.id.value, decoded->state.lease_owner, decoded->state.lease_expires_at, decoded->state.revision, updated_at);
                 if (!update) {
                     return std::unexpected(update.error());
                 }
@@ -541,72 +513,95 @@ namespace orangutan::automation {
         });
     }
 
+    auto SqliteJobStore::recover_expired_leases(std::int64_t now, std::string_view driver_id) -> StoreResult<int> {
+        auto validation = require_non_blank(driver_id, "driver id");
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
+
+        std::scoped_lock lock(mutex_);
+        const auto updated_at = current_unix_seconds();
+        auto recovered = run_bound(db_,
+                                   "UPDATE automation_job_state "
+                                   "SET in_flight_count = 0, "
+                                   "lease_owner = '', "
+                                   "lease_expires_at = NULL, "
+                                   "revision = revision + 1, "
+                                   "updated_at = ?2 "
+                                   "WHERE lease_expires_at IS NOT NULL "
+                                   "AND lease_expires_at <= ?1",
+                                   now, updated_at);
+        if (!recovered) {
+            return std::unexpected(recovered.error());
+        }
+        return db_.changes();
+    }
+
     auto SqliteJobStore::ensure_schema() -> StoreResult<void> {
         auto foreign_keys = db_.exec_script("PRAGMA foreign_keys = ON;", "enable automation foreign keys");
         if (!foreign_keys) {
             return std::unexpected(foreign_keys.error());
         }
 
-        auto schema = db_.exec_script(
-            "CREATE TABLE IF NOT EXISTS automation_job_definitions ("
-            "    job_id TEXT PRIMARY KEY,"
-            "    job_key TEXT NOT NULL UNIQUE,"
-            "    schedule_kind TEXT NOT NULL,"
-            "    schedule_json TEXT NOT NULL,"
-            "    action_key TEXT NOT NULL,"
-            "    action_payload_json TEXT NOT NULL,"
-            "    execution_policy_json TEXT NOT NULL,"
-            "    result_policy_json TEXT NOT NULL,"
-            "    metadata_json TEXT NOT NULL,"
-            "    version INTEGER NOT NULL DEFAULT 0,"
-            "    created_at INTEGER NOT NULL,"
-            "    updated_at INTEGER NOT NULL"
-            ");"
-            "CREATE TABLE IF NOT EXISTS automation_job_state ("
-            "    job_id TEXT PRIMARY KEY,"
-            "    enabled INTEGER NOT NULL DEFAULT 1,"
-            "    paused INTEGER NOT NULL DEFAULT 0,"
-            "    next_due_at INTEGER,"
-            "    last_scheduled_at INTEGER,"
-            "    last_started_at INTEGER,"
-            "    last_finished_at INTEGER,"
-            "    last_status TEXT NOT NULL DEFAULT '',"
-            "    in_flight_count INTEGER NOT NULL DEFAULT 0,"
-            "    lease_owner TEXT NOT NULL DEFAULT '',"
-            "    lease_expires_at INTEGER,"
-            "    revision INTEGER NOT NULL DEFAULT 0,"
-            "    updated_at INTEGER NOT NULL,"
-            "    FOREIGN KEY(job_id) REFERENCES automation_job_definitions(job_id) ON DELETE CASCADE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS automation_executions ("
-            "    execution_id TEXT PRIMARY KEY,"
-            "    job_id TEXT NOT NULL,"
-            "    scheduled_for INTEGER NOT NULL,"
-            "    dispatch_reason TEXT NOT NULL DEFAULT 'scheduled',"
-            "    attempt INTEGER NOT NULL DEFAULT 0,"
-            "    started_at INTEGER NOT NULL,"
-            "    finished_at INTEGER,"
-            "    status TEXT NOT NULL DEFAULT '',"
-            "    summary TEXT NOT NULL DEFAULT '',"
-            "    reply_ref TEXT NOT NULL DEFAULT '',"
-            "    delivery_status TEXT NOT NULL DEFAULT '',"
-            "    driver_id TEXT NOT NULL DEFAULT '',"
-            "    FOREIGN KEY(job_id) REFERENCES automation_job_definitions(job_id) ON DELETE CASCADE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS automation_deliveries ("
-            "    id TEXT PRIMARY KEY,"
-            "    execution_id TEXT NOT NULL,"
-            "    target TEXT NOT NULL,"
-            "    status TEXT NOT NULL DEFAULT '',"
-            "    title TEXT NOT NULL DEFAULT '',"
-            "    body TEXT NOT NULL DEFAULT '',"
-            "    created_at INTEGER NOT NULL,"
-            "    acked_at INTEGER"
-            ");"
-            "CREATE INDEX IF NOT EXISTS idx_automation_job_state_due ON automation_job_state(enabled, paused, next_due_at);"
-            "CREATE INDEX IF NOT EXISTS idx_automation_job_state_lease ON automation_job_state(lease_expires_at);"
-            "CREATE INDEX IF NOT EXISTS idx_automation_executions_job_started ON automation_executions(job_id, started_at DESC);",
-            "create automation core store schema");
+        auto schema = db_.exec_script("CREATE TABLE IF NOT EXISTS automation_job_definitions ("
+                                      "    job_id TEXT PRIMARY KEY,"
+                                      "    job_key TEXT NOT NULL UNIQUE,"
+                                      "    schedule_kind TEXT NOT NULL,"
+                                      "    schedule_json TEXT NOT NULL,"
+                                      "    action_key TEXT NOT NULL,"
+                                      "    action_payload_json TEXT NOT NULL,"
+                                      "    execution_policy_json TEXT NOT NULL,"
+                                      "    result_policy_json TEXT NOT NULL,"
+                                      "    metadata_json TEXT NOT NULL,"
+                                      "    version INTEGER NOT NULL DEFAULT 0,"
+                                      "    created_at INTEGER NOT NULL,"
+                                      "    updated_at INTEGER NOT NULL"
+                                      ");"
+                                      "CREATE TABLE IF NOT EXISTS automation_job_state ("
+                                      "    job_id TEXT PRIMARY KEY,"
+                                      "    enabled INTEGER NOT NULL DEFAULT 1,"
+                                      "    paused INTEGER NOT NULL DEFAULT 0,"
+                                      "    next_due_at INTEGER,"
+                                      "    last_scheduled_at INTEGER,"
+                                      "    last_started_at INTEGER,"
+                                      "    last_finished_at INTEGER,"
+                                      "    last_status TEXT NOT NULL DEFAULT '',"
+                                      "    in_flight_count INTEGER NOT NULL DEFAULT 0,"
+                                      "    lease_owner TEXT NOT NULL DEFAULT '',"
+                                      "    lease_expires_at INTEGER,"
+                                      "    revision INTEGER NOT NULL DEFAULT 0,"
+                                      "    updated_at INTEGER NOT NULL,"
+                                      "    FOREIGN KEY(job_id) REFERENCES automation_job_definitions(job_id) ON DELETE CASCADE"
+                                      ");"
+                                      "CREATE TABLE IF NOT EXISTS automation_executions ("
+                                      "    execution_id TEXT PRIMARY KEY,"
+                                      "    job_id TEXT NOT NULL,"
+                                      "    scheduled_for INTEGER NOT NULL,"
+                                      "    dispatch_reason TEXT NOT NULL DEFAULT 'scheduled',"
+                                      "    attempt INTEGER NOT NULL DEFAULT 0,"
+                                      "    started_at INTEGER NOT NULL,"
+                                      "    finished_at INTEGER,"
+                                      "    status TEXT NOT NULL DEFAULT '',"
+                                      "    summary TEXT NOT NULL DEFAULT '',"
+                                      "    reply_ref TEXT NOT NULL DEFAULT '',"
+                                      "    delivery_status TEXT NOT NULL DEFAULT '',"
+                                      "    driver_id TEXT NOT NULL DEFAULT '',"
+                                      "    FOREIGN KEY(job_id) REFERENCES automation_job_definitions(job_id) ON DELETE CASCADE"
+                                      ");"
+                                      "CREATE TABLE IF NOT EXISTS automation_deliveries ("
+                                      "    id TEXT PRIMARY KEY,"
+                                      "    execution_id TEXT NOT NULL,"
+                                      "    target TEXT NOT NULL,"
+                                      "    status TEXT NOT NULL DEFAULT '',"
+                                      "    title TEXT NOT NULL DEFAULT '',"
+                                      "    body TEXT NOT NULL DEFAULT '',"
+                                      "    created_at INTEGER NOT NULL,"
+                                      "    acked_at INTEGER"
+                                      ");"
+                                      "CREATE INDEX IF NOT EXISTS idx_automation_job_state_due ON automation_job_state(enabled, paused, next_due_at);"
+                                      "CREATE INDEX IF NOT EXISTS idx_automation_job_state_lease ON automation_job_state(lease_expires_at);"
+                                      "CREATE INDEX IF NOT EXISTS idx_automation_executions_job_started ON automation_executions(job_id, started_at DESC);",
+                                      "create automation core store schema");
         if (!schema) {
             return std::unexpected(schema.error());
         }

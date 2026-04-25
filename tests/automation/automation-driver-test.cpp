@@ -20,9 +20,10 @@ namespace {
     using orangutan::automation::ActionDescriptor;
     using orangutan::automation::DispatchReason;
     using orangutan::automation::Driver;
+    using orangutan::automation::ExecutionPolicy;
     using orangutan::automation::ExecutionResult;
-    using orangutan::automation::ExecutorResult;
     using orangutan::automation::ExecutorPort;
+    using orangutan::automation::ExecutorResult;
     using orangutan::automation::IntervalSchedule;
     using orangutan::automation::JobDefinition;
     using orangutan::automation::JobId;
@@ -71,8 +72,37 @@ namespace {
         std::vector<orangutan::automation::DispatchRequest> requests_;
     };
 
+    class FlakyExecutor final : public ExecutorPort {
+    public:
+        explicit FlakyExecutor(int failures_before_success)
+        : failures_before_success_(failures_before_success) {}
+
+        auto dispatch(const orangutan::automation::DispatchRequest &, const orangutan::automation::ExecutionContext &) -> ExecutorResult override {
+            const auto attempt = attempts_.fetch_add(1) + 1;
+            if (attempt <= failures_before_success_) {
+                return ExecutionResult{
+                    .success = false,
+                    .summary = "try again",
+                };
+            }
+            return ExecutionResult{
+                .success = true,
+                .summary = "ok",
+            };
+        }
+
+        [[nodiscard]]
+        auto attempts() const -> int {
+            return attempts_.load();
+        }
+
+    private:
+        int failures_before_success_ = 0;
+        std::atomic<int> attempts_{0};
+    };
+
     [[nodiscard]]
-    JobDefinition make_interval_definition(std::string_view id, std::string_view key, std::chrono::seconds every) {
+    JobDefinition make_interval_definition(std::string_view id, std::string_view key, std::chrono::seconds every, ExecutionPolicy policy = {}) {
         return JobDefinition{
             .id = JobId{.value = std::string(id)},
             .key = std::string(key),
@@ -86,11 +116,13 @@ namespace {
             .action =
                 ActionDescriptor{
                     .action_key = "agent.prompt",
-                    .payload = {
-                        {"agent", "default"},
-                        {"prompt", "scan repo"},
-                    },
+                    .payload =
+                        {
+                            {"agent", "default"},
+                            {"prompt", "scan repo"},
+                        },
                 },
+            .execution = policy,
         };
     }
 
@@ -209,6 +241,41 @@ namespace {
         std::this_thread::sleep_for(std::chrono::milliseconds{75});
 
         CHECK(executor.request_count() == 0);
+    }
+
+    TEST_CASE("driver retries failed executions before recording final state", "[automation][driver]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-driver", "retry.db");
+        SqliteJobStore store(db_path);
+        Kernel kernel(store);
+        orangutan::utils::TaskPool pool{1};
+        FlakyExecutor executor{2};
+
+        const auto base_now = std::chrono::time_point_cast<std::chrono::seconds>(orangutan::automation::Clock::now());
+        const auto now_seconds = orangutan::automation::to_unix_seconds(base_now);
+        REQUIRE(store
+                    .save_job(make_interval_definition("job-1", "repo-sync", std::chrono::seconds{30},
+                                                       ExecutionPolicy{
+                                                           .max_retry_attempts = 2,
+                                                       }),
+                              make_state(now_seconds))
+                    .has_value());
+
+        Driver driver(kernel, executor, pool, "driver-a", [base_now] {
+            return base_now;
+        });
+
+        driver.start();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (executor.attempts() < 3 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+        driver.stop();
+
+        CHECK(executor.attempts() == 3);
+        auto loaded = store.load_job(JobId{.value = "job-1"});
+        REQUIRE(loaded.has_value());
+        REQUIRE(loaded->has_value());
+        CHECK(loaded->value().state.last_status == "completed");
     }
 
 } // namespace

@@ -22,6 +22,7 @@ namespace orangutan::automation {
     class AutomationService {
     public:
         using ClockSource = std::function<TimePoint()>;
+        using ScheduleChangedCallback = std::function<void()>;
 
         explicit AutomationService(Repository &repository, ClockSource clock = {});
         ~AutomationService();
@@ -30,6 +31,7 @@ namespace orangutan::automation {
         void add_delivery_filter(AutomationDeliveryFilter filter);
         void register_category(AutomationCategory category);
         void set_notifier(AutomationNotifier notifier);
+        void set_schedule_changed_callback(ScheduleChangedCallback callback);
 
         [[nodiscard]]
         std::string save(Automation automation);
@@ -82,6 +84,11 @@ namespace orangutan::automation {
         Callbacks callbacks() const;
 
         [[nodiscard]]
+        ScheduleChangedCallback schedule_changed_callback() const;
+
+        void notify_schedule_changed() const;
+
+        [[nodiscard]]
         Automation normalize_public_save(Automation automation, TimePoint now) const;
 
         [[nodiscard]]
@@ -115,6 +122,7 @@ namespace orangutan::automation {
         AutomationExecutor executor_;
         std::vector<AutomationDeliveryFilter> delivery_filters_;
         AutomationNotifier notifier_;
+        ScheduleChangedCallback schedule_changed_callback_;
     };
 
 } // namespace orangutan::automation

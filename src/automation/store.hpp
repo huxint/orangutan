@@ -48,8 +48,10 @@ namespace orangutan::automation {
         virtual auto list_due(std::int64_t now, std::size_t limit) const -> StoreResult<std::vector<JobId>> = 0;
 
         [[nodiscard]]
-        virtual auto reserve_due(std::int64_t now, std::size_t limit, std::string_view driver_id, std::int64_t lease_until)
-            -> StoreResult<std::vector<StoredJob>> = 0;
+        virtual auto reserve_due(std::int64_t now, std::size_t limit, std::string_view driver_id, std::int64_t lease_until) -> StoreResult<std::vector<StoredJob>> = 0;
+
+        [[nodiscard]]
+        virtual auto recover_expired_leases(std::int64_t now, std::string_view driver_id) -> StoreResult<int> = 0;
 
     protected:
         JobStore() = default;

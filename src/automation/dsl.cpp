@@ -137,6 +137,9 @@ namespace orangutan::automation {
         if (definition_.execution.max_backoff < definition_.execution.initial_backoff) {
             return "max retry backoff must be at least the initial retry backoff";
         }
+        if (definition_.execution.overlap != OverlapPolicy::forbid) {
+            return "overlap policies other than forbid are not supported by the built-in driver";
+        }
         if (definition_.result.mode == delivery_mode::notify && definition_.result.targets.empty()) {
             return "notify delivery requires at least one target";
         }

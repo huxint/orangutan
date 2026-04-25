@@ -1,9 +1,16 @@
 #include "automation/driver.hpp"
 
+#include "utils/scope-exit.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <exception>
-#include <tuple>
+#include <limits>
+#include <mutex>
 #include <utility>
 
+#include <exec/timed_scheduler.hpp>
 #include <stdexec/execution.hpp>
 
 namespace orangutan::automation {
@@ -21,46 +28,63 @@ namespace orangutan::automation {
     }
 
     void Driver::start() {
-        std::scoped_lock lock(mutex_);
-        if (thread_.joinable()) {
-            return;
+        std::uint64_t generation = 0;
+        {
+            std::scoped_lock lock(mutex_);
+            if (running_.load()) {
+                return;
+            }
+
+            last_error_.reset();
+            stop_source_ = std::stop_source{};
+            scope_ = std::make_shared<exec::async_scope>();
+            running_.store(true);
+            cycle_active_.store(false);
+            recovery_pending_.store(true);
+            generation = generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
         }
 
-        last_error_.reset();
-        wake_requested_ = false;
-        running_.store(true);
-        thread_ = std::jthread([this](std::stop_token stop_token) {
-            run_loop(stop_token);
-        });
+        spawn_cycle(std::chrono::steady_clock::duration::zero(), generation);
     }
 
     void Driver::stop() {
-        std::jthread thread;
+        std::shared_ptr<exec::async_scope> scope;
         {
             std::scoped_lock lock(mutex_);
-            if (!thread_.joinable()) {
+            if (!running_.load() && scope_ == nullptr) {
                 running_.store(false);
                 return;
             }
 
             running_.store(false);
-            wake_requested_ = true;
-            thread = std::move(thread_);
+            stop_source_.request_stop();
+            generation_.fetch_add(1, std::memory_order_acq_rel);
+            scope = std::move(scope_);
         }
 
-        thread.request_stop();
-        cv_.notify_all();
-        if (thread.joinable()) {
-            thread.join();
+        if (scope != nullptr) {
+            scope->request_stop();
+            try {
+                static_cast<void>(stdexec::sync_wait(scope->on_empty()));
+            } catch (const std::exception &error) {
+                record_error(error.what());
+            } catch (...) {
+                record_error("automation driver stopped with an unknown scope error");
+            }
         }
+        cycle_active_.store(false);
     }
 
     void Driver::wake() {
+        std::uint64_t generation = 0;
         {
             std::scoped_lock lock(mutex_);
-            wake_requested_ = true;
+            if (!running_.load()) {
+                return;
+            }
+            generation = generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
         }
-        cv_.notify_all();
+        spawn_cycle(std::chrono::steady_clock::duration::zero(), generation);
     }
 
     auto Driver::running() const noexcept -> bool {
@@ -89,66 +113,111 @@ namespace orangutan::automation {
         last_error_.reset();
     }
 
-    void Driver::run_loop(std::stop_token stop_token) {
-        while (!stop_token.stop_requested()) {
-            const auto now = current_time();
-            auto next_wakeup = kernel_.next_wakeup(now);
-            if (!next_wakeup) {
-                record_error(next_wakeup.error());
-                if (!wait_until(std::nullopt, stop_token)) {
-                    break;
-                }
-                continue;
+    void Driver::spawn_cycle(std::chrono::steady_clock::duration delay, std::uint64_t generation) {
+        std::shared_ptr<exec::async_scope> scope;
+        {
+            std::scoped_lock lock(mutex_);
+            if (!running_.load() || scope_ == nullptr || generation != generation_.load(std::memory_order_acquire)) {
+                return;
             }
+            scope = scope_;
+        }
 
-            clear_last_error();
+        auto task = exec::schedule_after(pool_.timed_scheduler(), delay) | stdexec::let_value([this, generation] {
+                        return stdexec::schedule(pool_.scheduler()) | stdexec::then([this, generation] {
+                                   run_cycle(generation);
+                               });
+                    });
+        scope->spawn(std::move(task));
+    }
 
-            if (!next_wakeup->has_value()) {
-                if (!wait_until(std::nullopt, stop_token)) {
-                    break;
-                }
-                continue;
+    void Driver::run_cycle(std::uint64_t generation) {
+        if (!running_.load() || stop_source_.stop_requested() || generation != generation_.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        bool expected = false;
+        if (!cycle_active_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            return;
+        }
+        std::optional<std::chrono::steady_clock::duration> next_delay;
+        const auto release_cycle = utils::scope_exit([this, generation, &next_delay] {
+            cycle_active_.store(false, std::memory_order_release);
+            const auto current_generation = generation_.load(std::memory_order_acquire);
+            if (running_.load() && current_generation != generation) {
+                spawn_cycle(std::chrono::steady_clock::duration::zero(), current_generation);
+                return;
             }
-
-            if (**next_wakeup > now) {
-                if (!wait_until(*next_wakeup, stop_token)) {
-                    break;
-                }
-                continue;
+            if (running_.load() && next_delay.has_value()) {
+                spawn_cycle(*next_delay, generation);
             }
+        });
 
-            auto dispatches = kernel_.reserve_due(now, batch_limit_, driver_id_);
-            if (!dispatches) {
-                record_error(dispatches.error());
-                if (!wait_until(std::nullopt, stop_token)) {
-                    break;
-                }
-                continue;
-            }
+        const auto stop_token = stop_source_.get_token();
+        if (stop_token.stop_requested()) {
+            return;
+        }
 
-            bool cycle_failed = false;
-            for (const auto &request : *dispatches) {
-                auto executed = execute_request(request, stop_token);
-                if (!executed) {
-                    record_error(executed.error());
-                    cycle_failed = true;
-                    break;
-                }
-                clear_last_error();
-
-                if (stop_token.stop_requested()) {
-                    break;
-                }
-            }
-
-            if (cycle_failed) {
-                if (!wait_until(std::nullopt, stop_token)) {
-                    break;
-                }
+        const auto now = current_time();
+        if (recovery_pending_.exchange(false)) {
+            auto recovered = kernel_.recover(now, driver_id_);
+            if (!recovered) {
+                recovery_pending_.store(true);
+                record_error(recovered.error());
+                next_delay = std::chrono::seconds{1};
+                return;
             }
         }
 
-        running_.store(false);
+        auto next_wakeup = kernel_.next_wakeup(now);
+        if (!next_wakeup) {
+            record_error(next_wakeup.error());
+            next_delay = std::chrono::seconds{1};
+            return;
+        }
+
+        clear_last_error();
+
+        if (!next_wakeup->has_value()) {
+            return;
+        }
+
+        if (**next_wakeup > now) {
+            auto delay = std::chrono::duration_cast<std::chrono::steady_clock::duration>(**next_wakeup - now);
+            if (delay < std::chrono::steady_clock::duration::zero()) {
+                delay = std::chrono::steady_clock::duration::zero();
+            }
+            next_delay = delay;
+            return;
+        }
+
+        auto dispatches = kernel_.reserve_due(now, batch_limit_, driver_id_);
+        if (!dispatches) {
+            record_error(dispatches.error());
+            next_delay = std::chrono::seconds{1};
+            return;
+        }
+        if (dispatches->empty()) {
+            return;
+        }
+
+        for (const auto &request : *dispatches) {
+            auto executed = execute_request(request, stop_token);
+            if (!executed) {
+                record_error(executed.error());
+                next_delay = std::chrono::seconds{1};
+                return;
+            }
+            clear_last_error();
+
+            if (stop_token.stop_requested()) {
+                break;
+            }
+        }
+
+        if (running_.load() && !stop_token.stop_requested() && generation == generation_.load(std::memory_order_acquire)) {
+            next_delay = std::chrono::steady_clock::duration::zero();
+        }
     }
 
     auto Driver::execute_request(const DispatchRequest &request, std::stop_token stop_token) -> KernelResult<void> {
@@ -164,34 +233,7 @@ namespace orangutan::automation {
             .stop_token = stop_token,
         };
 
-        auto sender = stdexec::schedule(pool_.scheduler()) | stdexec::then([this, request, context]() -> ExecutorResult {
-                          try {
-                              return executor_.dispatch(request, context);
-                          } catch (const std::exception &error) {
-                              return std::unexpected(std::string(error.what()));
-                          } catch (...) {
-                              return std::unexpected(std::string("executor threw unknown exception"));
-                          }
-                      });
-
-        std::optional<std::tuple<ExecutorResult>> execution;
-        try {
-            execution = stdexec::sync_wait(std::move(sender));
-        } catch (const std::exception &error) {
-            return std::unexpected(error.what());
-        }
-
-        if (!execution.has_value()) {
-            return std::unexpected("driver dispatch stopped before completion");
-        }
-
-        auto [result] = std::move(*execution);
-        auto final_result = result.has_value()
-            ? std::move(*result)
-            : ExecutionResult{
-                  .success = false,
-                  .summary = result.error(),
-              };
+        auto final_result = execute_with_retries(request, context);
 
         auto finished = kernel_.mark_finished(request.execution_id, final_result, current_time());
         if (!finished) {
@@ -201,24 +243,73 @@ namespace orangutan::automation {
         return {};
     }
 
-    auto Driver::wait_until(std::optional<TimePoint> wake_time, std::stop_token stop_token) -> bool {
-        std::unique_lock lock(mutex_);
-        if (wake_requested_) {
-            wake_requested_ = false;
+    auto Driver::execute_with_retries(const DispatchRequest &request, const ExecutionContext &context) -> ExecutionResult {
+        const auto max_retries = std::max(0, request.execution.max_retry_attempts);
+        for (int attempt = 0; attempt <= max_retries; ++attempt) {
+            if (context.stop_token.stop_requested()) {
+                return ExecutionResult{
+                    .success = false,
+                    .summary = "automation dispatch stopped",
+                };
+            }
+
+            ExecutorResult dispatched;
+            try {
+                dispatched = executor_.dispatch(request, context);
+            } catch (const std::exception &error) {
+                dispatched = std::unexpected(std::string(error.what()));
+            } catch (...) {
+                dispatched = std::unexpected(std::string("executor threw unknown exception"));
+            }
+
+            auto result = dispatched.has_value() ? std::move(*dispatched)
+                                                 : ExecutionResult{
+                                                       .success = false,
+                                                       .summary = dispatched.error(),
+                                                   };
+            if (result.success || attempt == max_retries) {
+                return result;
+            }
+
+            const auto delay = retry_delay(request.execution, attempt);
+            if (!wait_retry_delay(delay, context.stop_token)) {
+                return ExecutionResult{
+                    .success = false,
+                    .summary = "automation retry stopped",
+                };
+            }
+        }
+
+        return ExecutionResult{
+            .success = false,
+            .summary = "automation dispatch failed",
+        };
+    }
+
+    auto Driver::retry_delay(const ExecutionPolicy &policy, int failed_attempt) -> std::chrono::milliseconds {
+        if (policy.initial_backoff <= std::chrono::milliseconds{0}) {
+            return std::chrono::milliseconds{0};
+        }
+
+        const auto shift = std::min(failed_attempt, std::numeric_limits<int>::digits - 2);
+        auto delay = policy.initial_backoff * (std::int64_t{1} << shift);
+        if (policy.max_backoff > std::chrono::milliseconds{0}) {
+            delay = std::min(delay, policy.max_backoff);
+        }
+        return delay;
+    }
+
+    auto Driver::wait_retry_delay(std::chrono::milliseconds delay, std::stop_token stop_token) -> bool {
+        if (delay <= std::chrono::milliseconds{0}) {
             return !stop_token.stop_requested();
         }
 
-        if (wake_time.has_value()) {
-            static_cast<void>(cv_.wait_until(lock, stop_token, *wake_time, [this] {
-                return wake_requested_;
-            }));
-        } else {
-            static_cast<void>(cv_.wait(lock, stop_token, [this] {
-                return wake_requested_;
-            }));
-        }
-
-        wake_requested_ = false;
+        std::mutex mutex;
+        std::condition_variable_any cv;
+        std::unique_lock lock(mutex);
+        static_cast<void>(cv.wait_for(lock, stop_token, delay, [] {
+            return false;
+        }));
         return !stop_token.stop_requested();
     }
 

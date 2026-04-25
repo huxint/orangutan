@@ -31,10 +31,11 @@ namespace {
             .action =
                 ActionDescriptor{
                     .action_key = "agent.prompt",
-                    .payload = {
-                        {"agent", "default"},
-                        {"prompt", "scan repo"},
-                    },
+                    .payload =
+                        {
+                            {"agent", "default"},
+                            {"prompt", "scan repo"},
+                        },
                 },
         };
     }
@@ -184,6 +185,30 @@ namespace {
         REQUIRE(reclaimed->at(0).state.lease_expires_at.has_value());
         CHECK(*reclaimed->at(0).state.lease_expires_at == 1'776'250'100);
         CHECK(reclaimed->at(0).state.revision == 2);
+    }
+
+    TEST_CASE("sqlite store does not reserve in-flight jobs until recovery clears them", "[automation][store][lease]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-store", "in-flight-expired-lease.db");
+        SqliteJobStore store(db_path);
+
+        auto state = make_state(1'776'249'600);
+        state.in_flight_count = 1;
+        state.lease_owner = "driver-a";
+        state.lease_expires_at = 1'776'249'900;
+        REQUIRE(store.save_job(make_definition("job-1", "repo-sync"), state).has_value());
+
+        auto reserved = store.reserve_due(1'776'249'950, 1, "driver-b", 1'776'250'100);
+        REQUIRE(reserved.has_value());
+        CHECK(reserved->empty());
+
+        auto recovered = store.recover_expired_leases(1'776'249'950, "driver-b");
+        REQUIRE(recovered.has_value());
+        CHECK(*recovered == 1);
+
+        reserved = store.reserve_due(1'776'249'950, 1, "driver-b", 1'776'250'100);
+        REQUIRE(reserved.has_value());
+        REQUIRE(reserved->size() == 1UL);
+        CHECK(reserved->front().definition.id.value == "job-1");
     }
 
 } // namespace

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,6 +14,9 @@ namespace orangutan::automation {
 
     template <typename T>
     using KernelResult = std::expected<T, std::string>;
+
+    [[nodiscard]]
+    auto plan_next_due(const JobDefinition &definition, TimePoint from) -> std::optional<std::int64_t>;
 
     class Kernel {
     public:
@@ -45,6 +49,7 @@ namespace orangutan::automation {
     private:
         struct Reservation {
             StoredJob job;
+            std::int64_t scheduled_for = 0;
             std::int64_t lease_until = 0;
         };
 

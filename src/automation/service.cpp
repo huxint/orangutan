@@ -24,22 +24,22 @@ namespace orangutan::automation {
         [[nodiscard]]
         auto to_schedule_spec(const TriggerDefinition &trigger) -> ScheduleSpec {
             switch (trigger.type) {
-            case trigger_type::cron:
-                return CronSchedule{
-                    .expr = trigger.cron,
-                    .time_zone = trigger.time_zone,
-                };
-            case trigger_type::interval:
-                return IntervalSchedule{
-                    .every = trigger.every,
-                    .jitter = trigger.jitter,
-                    .active_windows = trigger.active_windows,
-                    .time_zone = trigger.time_zone,
-                };
-            case trigger_type::once:
-                return OneShotSchedule{
-                    .at = trigger.at,
-                };
+                case trigger_type::cron:
+                    return CronSchedule{
+                        .expr = trigger.cron,
+                        .time_zone = trigger.time_zone,
+                    };
+                case trigger_type::interval:
+                    return IntervalSchedule{
+                        .every = trigger.every,
+                        .jitter = trigger.jitter,
+                        .active_windows = trigger.active_windows,
+                        .time_zone = trigger.time_zone,
+                    };
+                case trigger_type::once:
+                    return OneShotSchedule{
+                        .at = trigger.at,
+                    };
             }
 
             std::unreachable();
@@ -49,7 +49,7 @@ namespace orangutan::automation {
         auto to_job_definition(const Automation &automation) -> JobDefinition {
             return JobDefinition{
                 .id = JobId{.value = automation.id},
-                .key = automation.name,
+                .key = automation.agent_key + ":" + automation.name,
                 .schedule = to_schedule_spec(automation.trigger),
                 .action =
                     ActionDescriptor{
@@ -84,6 +84,14 @@ namespace orangutan::automation {
                 .last_finished_at = automation.last_run_at,
                 .last_status = automation.last_status,
             };
+        }
+
+        void apply_public_schedule_state(ScheduleState &state, const Automation &automation) {
+            state.enabled = automation.enabled;
+            state.paused = automation.paused;
+            state.next_due_at = automation.next_due_at;
+            state.last_finished_at = automation.last_run_at;
+            state.last_status = automation.last_status;
         }
 
         void apply_schedule_state(Automation &automation, const ScheduleState &state) {
@@ -155,6 +163,11 @@ namespace orangutan::automation {
         notifier_ = std::move(notifier);
     }
 
+    void AutomationService::set_schedule_changed_callback(ScheduleChangedCallback callback) {
+        std::scoped_lock lock(mutex_);
+        schedule_changed_callback_ = std::move(callback);
+    }
+
     std::string AutomationService::save(Automation automation) {
         if (automation.id.empty()) {
             automation.id = generate_id("auto");
@@ -197,6 +210,7 @@ namespace orangutan::automation {
         }
 
         throw_on_store_error(core_store_->remove_job(JobId{.value = automation->id}), "failed to remove automation core job");
+        notify_schedule_changed();
         return true;
     }
 
@@ -272,6 +286,18 @@ namespace orangutan::automation {
         };
     }
 
+    auto AutomationService::schedule_changed_callback() const -> ScheduleChangedCallback {
+        std::scoped_lock lock(mutex_);
+        return schedule_changed_callback_;
+    }
+
+    void AutomationService::notify_schedule_changed() const {
+        auto callback = schedule_changed_callback();
+        if (callback != nullptr) {
+            callback();
+        }
+    }
+
     Automation AutomationService::normalize_public_save(Automation automation, TimePoint now) const {
         if (!automation.enabled && automation.paused) {
             automation.paused = false;
@@ -297,11 +323,21 @@ namespace orangutan::automation {
     std::string AutomationService::persist(Automation automation) {
         automation.id = repository_->save(automation);
         sync_core_job(automation);
+        notify_schedule_changed();
         return automation.id;
     }
 
     void AutomationService::sync_core_job(const Automation &automation) {
-        throw_on_store_error(core_store_->save_job(to_job_definition(automation), to_schedule_state(automation)), "failed to sync automation core job");
+        auto state = to_schedule_state(automation);
+        auto stored = core_store_->load_job(JobId{.value = automation.id});
+        if (!stored.has_value()) {
+            throw std::runtime_error("failed to load automation core job: " + stored.error().message);
+        }
+        if (stored->has_value()) {
+            state = (*stored)->state;
+            apply_public_schedule_state(state, automation);
+        }
+        throw_on_store_error(core_store_->save_job(to_job_definition(automation), state), "failed to sync automation core job");
     }
 
     void AutomationService::sync_existing_core_jobs() {
@@ -449,6 +485,7 @@ namespace orangutan::automation {
 
         if (sync_core_state) {
             sync_core_job(updated);
+            notify_schedule_changed();
         }
 
         return ExecutionOutcome{

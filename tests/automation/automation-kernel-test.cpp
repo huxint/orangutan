@@ -36,10 +36,11 @@ namespace {
             .action =
                 ActionDescriptor{
                     .action_key = "agent.prompt",
-                    .payload = {
-                        {"agent", "default"},
-                        {"prompt", "scan repo"},
-                    },
+                    .payload =
+                        {
+                            {"agent", "default"},
+                            {"prompt", "scan repo"},
+                        },
                 },
             .execution =
                 ExecutionPolicy{
@@ -133,13 +134,12 @@ namespace {
 
         REQUIRE(kernel.mark_started(dispatches->front().execution_id, orangutan::automation::from_unix_seconds(1'005)).has_value());
         REQUIRE(kernel
-                    .mark_finished(
-                        dispatches->front().execution_id,
-                        ExecutionResult{
-                            .success = true,
-                            .summary = "ok",
-                        },
-                        orangutan::automation::from_unix_seconds(1'015))
+                    .mark_finished(dispatches->front().execution_id,
+                                   ExecutionResult{
+                                       .success = true,
+                                       .summary = "ok",
+                                   },
+                                   orangutan::automation::from_unix_seconds(1'015))
                     .has_value());
 
         auto loaded = store.load_job(JobId{.value = "job-1"});
@@ -177,6 +177,40 @@ namespace {
         REQUIRE(refreshed->size() == 1UL);
         CHECK(refreshed->front().execution_id.value != stale_execution_id.value);
         CHECK(refreshed->front().job_id.value == "job-1");
+    }
+
+    TEST_CASE("kernel catch_up advances from the missed schedule point", "[automation][kernel]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-kernel", "catch-up-series.db");
+        SqliteJobStore store(db_path);
+        Kernel kernel(store);
+
+        REQUIRE(store.save_job(make_interval_definition("job-1", "repo-sync", std::chrono::seconds{30}, MissedRunPolicy::catch_up), make_state(1'000)).has_value());
+
+        auto dispatches = kernel.reserve_due(orangutan::automation::from_unix_seconds(1'105), 1, "driver-a");
+        REQUIRE(dispatches.has_value());
+        REQUIRE(dispatches->size() == 1UL);
+        CHECK(orangutan::automation::to_unix_seconds(dispatches->front().scheduled_for) == 1'000);
+
+        REQUIRE(kernel.mark_started(dispatches->front().execution_id, orangutan::automation::from_unix_seconds(1'106)).has_value());
+        REQUIRE(kernel
+                    .mark_finished(dispatches->front().execution_id,
+                                   ExecutionResult{
+                                       .success = true,
+                                       .summary = "ok",
+                                   },
+                                   orangutan::automation::from_unix_seconds(1'107))
+                    .has_value());
+
+        auto loaded = store.load_job(JobId{.value = "job-1"});
+        REQUIRE(loaded.has_value());
+        REQUIRE(loaded->has_value());
+        REQUIRE(loaded->value().state.next_due_at.has_value());
+        CHECK(*loaded->value().state.next_due_at == 1'030);
+
+        auto next_dispatches = kernel.reserve_due(orangutan::automation::from_unix_seconds(1'107), 1, "driver-a");
+        REQUIRE(next_dispatches.has_value());
+        REQUIRE(next_dispatches->size() == 1UL);
+        CHECK(orangutan::automation::to_unix_seconds(next_dispatches->front().scheduled_for) == 1'030);
     }
 
 } // namespace
