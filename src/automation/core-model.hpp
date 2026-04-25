@@ -49,6 +49,30 @@ namespace orangutan::automation {
 
     using ScheduleSpec = std::variant<CronSchedule, IntervalSchedule, OneShotSchedule>;
 
+    [[nodiscard]]
+    inline auto to_schedule_spec(const TriggerDefinition &trigger) -> ScheduleSpec {
+        switch (trigger.type) {
+            case trigger_type::cron:
+                return CronSchedule{
+                    .expr = trigger.cron,
+                    .time_zone = trigger.time_zone,
+                };
+            case trigger_type::interval:
+                return IntervalSchedule{
+                    .every = trigger.every,
+                    .jitter = trigger.jitter,
+                    .active_windows = trigger.active_windows,
+                    .time_zone = trigger.time_zone,
+                };
+            case trigger_type::once:
+                return OneShotSchedule{
+                    .at = trigger.at,
+                };
+        }
+
+        std::unreachable();
+    }
+
     enum class MissedRunPolicy : std::uint8_t {
         skip,
         run_once,

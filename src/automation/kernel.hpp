@@ -18,6 +18,9 @@ namespace orangutan::automation {
     [[nodiscard]]
     auto plan_next_due(const JobDefinition &definition, TimePoint from) -> std::optional<std::int64_t>;
 
+    // All methods must be called from a single thread or an externally serialized caller
+    // (e.g., the Driver serializes cycles via cycle_active_). The internal reservations_
+    // map is not independently synchronized.
     class Kernel {
     public:
         explicit Kernel(JobStore &store, std::chrono::seconds lease_duration = std::chrono::seconds{30});
@@ -54,7 +57,7 @@ namespace orangutan::automation {
         };
 
         JobStore &store_;
-        std::chrono::seconds lease_duration_{30};
+        std::chrono::seconds lease_duration_{};
         utils::transparent_string_unordered_map<Reservation> reservations_;
     };
 

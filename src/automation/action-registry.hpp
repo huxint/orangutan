@@ -153,6 +153,8 @@ namespace orangutan::automation {
                         return executor(payload.template get<Payload>(), context);
                     } catch (const std::exception &exception) {
                         return std::unexpected(std::string(exception.what()));
+                    } catch (...) {
+                        return std::unexpected("unknown error executing action");
                     }
                 };
             }

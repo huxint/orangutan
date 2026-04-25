@@ -49,6 +49,14 @@ namespace orangutan::automation {
     };
 
     [[nodiscard]]
+    inline auto failed_execution(std::string_view message) -> ExecutionResult {
+        return ExecutionResult{
+            .success = false,
+            .summary = std::string(message),
+        };
+    }
+
+    [[nodiscard]]
     std::string generate_id(std::string_view prefix);
 
     [[nodiscard]]

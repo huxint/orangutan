@@ -235,7 +235,7 @@ namespace orangutan::automation {
             }
 
             reservations_.insert_or_assign(request->execution_id.value, Reservation{
-                                                                            .job = reserved_job,
+                                                                            .job = std::move(reserved_job),
                                                                             .scheduled_for = to_unix_seconds(request->scheduled_for),
                                                                             .lease_until = lease_until,
                                                                         });

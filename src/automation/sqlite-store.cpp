@@ -260,6 +260,29 @@ namespace orangutan::automation {
             };
         }
 
+        [[nodiscard]]
+        auto upsert_definition_tx(sqlite::Database &tx, const JobDefinition &definition, std::int64_t now) -> StoreResult<void> {
+            return run_bound(tx,
+                             "INSERT INTO automation_job_definitions ("
+                             "job_id, job_key, schedule_kind, schedule_json, action_key, action_payload_json, execution_policy_json, result_policy_json, "
+                             "metadata_json, version, created_at, updated_at"
+                             ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+                             "ON CONFLICT(job_id) DO UPDATE SET "
+                             "job_key = excluded.job_key, "
+                             "schedule_kind = excluded.schedule_kind, "
+                             "schedule_json = excluded.schedule_json, "
+                             "action_key = excluded.action_key, "
+                             "action_payload_json = excluded.action_payload_json, "
+                             "execution_policy_json = excluded.execution_policy_json, "
+                             "result_policy_json = excluded.result_policy_json, "
+                             "metadata_json = excluded.metadata_json, "
+                             "version = excluded.version, "
+                             "updated_at = excluded.updated_at",
+                             definition.id.value, definition.key, schedule_kind_name(definition.schedule), schedule_to_json(definition.schedule).dump(),
+                             definition.action.action_key, definition.action.payload.dump(), execution_policy_to_json(definition.execution).dump(),
+                             result_policy_to_json(definition.result).dump(), definition.metadata.dump(), definition.version, now, now);
+        }
+
     } // namespace
 
     SqliteJobStore::SqliteJobStore(const std::filesystem::path &db_path)
@@ -281,27 +304,9 @@ namespace orangutan::automation {
         const auto now = current_unix_seconds();
 
         return db_.transaction([&](sqlite::Database &tx) -> StoreResult<void> {
-            auto save_definition = run_bound(tx,
-                                             "INSERT INTO automation_job_definitions ("
-                                             "job_id, job_key, schedule_kind, schedule_json, action_key, action_payload_json, execution_policy_json, result_policy_json, "
-                                             "metadata_json, version, created_at, updated_at"
-                                             ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
-                                             "ON CONFLICT(job_id) DO UPDATE SET "
-                                             "job_key = excluded.job_key, "
-                                             "schedule_kind = excluded.schedule_kind, "
-                                             "schedule_json = excluded.schedule_json, "
-                                             "action_key = excluded.action_key, "
-                                             "action_payload_json = excluded.action_payload_json, "
-                                             "execution_policy_json = excluded.execution_policy_json, "
-                                             "result_policy_json = excluded.result_policy_json, "
-                                             "metadata_json = excluded.metadata_json, "
-                                             "version = excluded.version, "
-                                             "updated_at = excluded.updated_at",
-                                             definition.id.value, definition.key, schedule_kind_name(definition.schedule), schedule_to_json(definition.schedule).dump(),
-                                             definition.action.action_key, definition.action.payload.dump(), execution_policy_to_json(definition.execution).dump(),
-                                             result_policy_to_json(definition.result).dump(), definition.metadata.dump(), definition.version, now, now);
-            if (!save_definition) {
-                return save_definition;
+            auto saved = upsert_definition_tx(tx, definition, now);
+            if (!saved) {
+                return std::unexpected(saved.error());
             }
 
             return run_bound(tx,
@@ -324,6 +329,39 @@ namespace orangutan::automation {
                              "updated_at = excluded.updated_at",
                              definition.id.value, state.enabled ? 1 : 0, state.paused ? 1 : 0, state.next_due_at, state.last_scheduled_at, state.last_started_at,
                              state.last_finished_at, state.last_status, state.in_flight_count, state.lease_owner, state.lease_expires_at, state.revision, now);
+        });
+    }
+
+    auto SqliteJobStore::save_job_with_optimistic_lock(const JobDefinition &definition, const ScheduleState &state, const std::int64_t expected_revision) -> StoreResult<bool> {
+        auto validation = utils::all_ok(require_non_blank(definition.id.value, "job id"), require_non_blank(definition.key, "job key"),
+                                        require_non_blank(definition.action.action_key, "action key"));
+        if (!validation) {
+            return std::unexpected(validation.error());
+        }
+
+        std::scoped_lock lock(mutex_);
+        const auto now = current_unix_seconds();
+
+        return db_.transaction([&](sqlite::Database &tx) -> StoreResult<bool> {
+            auto saved = upsert_definition_tx(tx, definition, now);
+            if (!saved) {
+                return std::unexpected(saved.error());
+            }
+
+            auto update_state = run_bound(tx,
+                                          "UPDATE automation_job_state "
+                                          "SET enabled = ?2, paused = ?3, next_due_at = ?4, last_scheduled_at = ?5, last_started_at = ?6, "
+                                          "last_finished_at = ?7, last_status = ?8, in_flight_count = ?9, lease_owner = ?10, "
+                                          "lease_expires_at = ?11, revision = ?12, updated_at = ?13 "
+                                          "WHERE job_id = ?1 AND revision = ?14",
+                                          definition.id.value, state.enabled ? 1 : 0, state.paused ? 1 : 0, state.next_due_at, state.last_scheduled_at,
+                                          state.last_started_at, state.last_finished_at, state.last_status, state.in_flight_count, state.lease_owner,
+                                          state.lease_expires_at, state.revision, now, expected_revision);
+            if (!update_state) {
+                return std::unexpected(update_state.error());
+            }
+
+            return tx.changes() > 0;
         });
     }
 

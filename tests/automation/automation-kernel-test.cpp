@@ -179,6 +179,24 @@ namespace {
         CHECK(refreshed->front().job_id.value == "job-1");
     }
 
+    TEST_CASE("kernel skip missed run policy drops overdue jobs", "[automation][kernel]") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-kernel", "skip-missed.db");
+        SqliteJobStore store(db_path);
+        Kernel kernel(store);
+
+        REQUIRE(store.save_job(make_interval_definition("job-1", "repo-sync", std::chrono::seconds{30}, MissedRunPolicy::skip), make_state(1'000)).has_value());
+
+        auto dispatches = kernel.reserve_due(orangutan::automation::from_unix_seconds(1'105), 1, "driver-a");
+        REQUIRE(dispatches.has_value());
+        CHECK(dispatches->empty());
+
+        auto loaded = store.load_job(JobId{.value = "job-1"});
+        REQUIRE(loaded.has_value());
+        REQUIRE(loaded->has_value());
+        REQUIRE(loaded->value().state.next_due_at.has_value());
+        CHECK(*loaded->value().state.next_due_at > 1'105);
+    }
+
     TEST_CASE("kernel catch_up advances from the missed schedule point", "[automation][kernel]") {
         const auto db_path = orangutan::testing::unique_test_db_path("automation-kernel", "catch-up-series.db");
         SqliteJobStore store(db_path);

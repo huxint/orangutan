@@ -67,7 +67,7 @@ namespace orangutan::automation {
         utils::TaskPool &pool_;
         ClockSource clock_;
         std::string driver_id_;
-        std::size_t batch_limit_ = 16;
+        std::size_t batch_limit_{};
         mutable std::mutex mutex_;
         std::optional<std::string> last_error_;
         std::shared_ptr<exec::async_scope> scope_;

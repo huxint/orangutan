@@ -14,38 +14,6 @@ namespace orangutan::automation {
     namespace {
 
         [[nodiscard]]
-        auto failed_execution(std::string_view message) -> ExecutionResult {
-            return ExecutionResult{
-                .success = false,
-                .summary = std::string(message),
-            };
-        }
-
-        [[nodiscard]]
-        auto to_schedule_spec(const TriggerDefinition &trigger) -> ScheduleSpec {
-            switch (trigger.type) {
-                case trigger_type::cron:
-                    return CronSchedule{
-                        .expr = trigger.cron,
-                        .time_zone = trigger.time_zone,
-                    };
-                case trigger_type::interval:
-                    return IntervalSchedule{
-                        .every = trigger.every,
-                        .jitter = trigger.jitter,
-                        .active_windows = trigger.active_windows,
-                        .time_zone = trigger.time_zone,
-                    };
-                case trigger_type::once:
-                    return OneShotSchedule{
-                        .at = trigger.at,
-                    };
-            }
-
-            std::unreachable();
-        }
-
-        [[nodiscard]]
         auto to_job_definition(const Automation &automation) -> JobDefinition {
             return JobDefinition{
                 .id = JobId{.value = automation.id},
@@ -116,14 +84,8 @@ namespace orangutan::automation {
             return true;
         }
 
-        void throw_on_store_error(const StoreResult<void> &result, std::string_view context) {
-            if (result.has_value()) {
-                return;
-            }
-            throw std::runtime_error(std::string(context) + ": " + result.error().message);
-        }
-
-        void throw_on_store_error(const StoreResult<bool> &result, std::string_view context) {
+        template <typename T>
+        void throw_on_store_error(const StoreResult<T> &result, std::string_view context) {
             if (result.has_value()) {
                 return;
             }
@@ -182,10 +144,10 @@ namespace orangutan::automation {
 
         std::vector<Automation> automations;
         automations.reserve(definitions.size());
-        for (auto automation : definitions) {
-            automation = with_core_state(std::move(automation));
-            if (matches_query(automation, query)) {
-                automations.push_back(std::move(automation));
+        for (const auto &automation : definitions) {
+            auto enriched = with_core_state(automation);
+            if (matches_query(enriched, query)) {
+                automations.push_back(std::move(enriched));
             }
         }
         return automations;
@@ -333,8 +295,30 @@ namespace orangutan::automation {
         if (!stored.has_value()) {
             throw std::runtime_error("failed to load automation core job: " + stored.error().message);
         }
-        if (stored->has_value()) {
-            state = (*stored)->state;
+
+        if (!stored->has_value()) {
+            throw_on_store_error(core_store_->save_job(to_job_definition(automation), state), "failed to sync automation core job");
+            return;
+        }
+
+        const auto expected_revision = (*stored)->state.revision;
+        state = (*stored)->state;
+        apply_public_schedule_state(state, automation);
+
+        auto result = core_store_->save_job_with_optimistic_lock(to_job_definition(automation), state, expected_revision);
+        if (!result.has_value()) {
+            throw std::runtime_error("failed to sync automation core job: " + result.error().message);
+        }
+        if (*result) {
+            return;
+        }
+
+        auto reloaded = core_store_->load_job(JobId{.value = automation.id});
+        if (!reloaded.has_value()) {
+            throw std::runtime_error("failed to reload automation core job: " + reloaded.error().message);
+        }
+        if (reloaded->has_value()) {
+            state = (*reloaded)->state;
             apply_public_schedule_state(state, automation);
         }
         throw_on_store_error(core_store_->save_job(to_job_definition(automation), state), "failed to sync automation core job");

@@ -247,10 +247,7 @@ namespace orangutan::automation {
         const auto max_retries = std::max(0, request.execution.max_retry_attempts);
         for (int attempt = 0; attempt <= max_retries; ++attempt) {
             if (context.stop_token.stop_requested()) {
-                return ExecutionResult{
-                    .success = false,
-                    .summary = "automation dispatch stopped",
-                };
+                return failed_execution("automation dispatch stopped");
             }
 
             ExecutorResult dispatched;
@@ -262,28 +259,18 @@ namespace orangutan::automation {
                 dispatched = std::unexpected(std::string("executor threw unknown exception"));
             }
 
-            auto result = dispatched.has_value() ? std::move(*dispatched)
-                                                 : ExecutionResult{
-                                                       .success = false,
-                                                       .summary = dispatched.error(),
-                                                   };
+            auto result = dispatched.has_value() ? std::move(*dispatched) : failed_execution(dispatched.error());
             if (result.success || attempt == max_retries) {
                 return result;
             }
 
             const auto delay = retry_delay(request.execution, attempt);
             if (!wait_retry_delay(delay, context.stop_token)) {
-                return ExecutionResult{
-                    .success = false,
-                    .summary = "automation retry stopped",
-                };
+                return failed_execution("automation retry stopped");
             }
         }
 
-        return ExecutionResult{
-            .success = false,
-            .summary = "automation dispatch failed",
-        };
+        return failed_execution("automation dispatch failed");
     }
 
     auto Driver::retry_delay(const ExecutionPolicy &policy, int failed_attempt) -> std::chrono::milliseconds {

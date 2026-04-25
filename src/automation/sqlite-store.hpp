@@ -42,6 +42,9 @@ namespace orangutan::automation {
         [[nodiscard]]
         auto recover_expired_leases(std::int64_t now, std::string_view driver_id) -> StoreResult<int> override;
 
+        [[nodiscard]]
+        auto save_job_with_optimistic_lock(const JobDefinition &definition, const ScheduleState &state, std::int64_t expected_revision) -> StoreResult<bool>;
+
     private:
         auto ensure_schema() -> StoreResult<void>;
 
