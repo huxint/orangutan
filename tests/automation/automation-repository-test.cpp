@@ -89,6 +89,37 @@ namespace {
         CHECK_NOTHROW(static_cast<void>(repository.save(make_cron_automation("ops", "repo-check"))));
     };
 
+    TEST_CASE("repository_returns_due_automations_in_schedule_order") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-repository", "due.db");
+        orangutan::automation::Repository repository(db_path);
+
+        auto due_later = make_cron_automation("default", "later");
+        due_later.next_due_at = 1'200;
+        due_later.id = repository.save(due_later);
+
+        auto due_first = make_cron_automation("default", "first");
+        due_first.next_due_at = 1'000;
+        due_first.id = repository.save(due_first);
+
+        auto future = make_cron_automation("default", "future");
+        future.next_due_at = 1'500;
+        static_cast<void>(repository.save(future));
+
+        auto paused = make_cron_automation("default", "paused");
+        paused.paused = true;
+        paused.next_due_at = 900;
+        static_cast<void>(repository.save(paused));
+
+        const auto next_due_at = repository.next_due_at();
+        REQUIRE(next_due_at.has_value());
+        CHECK(*next_due_at == 1'000);
+
+        const auto due = repository.list_due(1'200, 10);
+        REQUIRE(due.size() == 2UL);
+        CHECK(due.at(0).id == due_first.id);
+        CHECK(due.at(1).id == due_later.id);
+    };
+
     TEST_CASE("repository_lists_runs_and_deliveries_with_agent_and_status_filters") {
         const auto db_path = orangutan::testing::unique_test_db_path("automation-repository", "history.db");
         orangutan::automation::Repository repository(db_path);

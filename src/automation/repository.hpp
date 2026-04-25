@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -70,10 +72,18 @@ namespace orangutan::automation {
         std::vector<Automation> list(const AutomationQuery &query = {}) const;
 
         [[nodiscard]]
+        std::optional<std::int64_t> next_due_at() const;
+
+        [[nodiscard]]
+        std::vector<Automation> list_due(std::int64_t now, std::size_t limit) const;
+
+        [[nodiscard]]
         bool remove(std::string_view agent_key, std::string_view id_or_name);
 
         [[nodiscard]]
         std::string insert_run(const RunRecord &run);
+
+        void persist_execution(const Automation &automation, const RunRecord &run);
 
         void persist_delivery_results(std::string_view run_id, std::string_view delivery_status, const std::vector<DeliveryRecord> &deliveries);
 

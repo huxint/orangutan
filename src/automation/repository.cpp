@@ -73,6 +73,14 @@ namespace orangutan::automation {
         }
 
         [[nodiscard]]
+        std::optional<int> to_optional_sqlite_bool(const std::optional<bool> &value) {
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            return *value ? 1 : 0;
+        }
+
+        [[nodiscard]]
         std::vector<std::string> parse_tags(std::string_view value) {
             std::vector<std::string> tags;
             const auto parsed = nlohmann::json::parse(value, nullptr, false);
@@ -321,6 +329,8 @@ namespace orangutan::automation {
     std::vector<Automation> Repository::list(const AutomationQuery &query) const {
         std::scoped_lock lock(mutex_);
         std::vector<Automation> automations;
+        const auto enabled_filter = to_optional_sqlite_bool(query.enabled);
+        const auto paused_filter = to_optional_sqlite_bool(query.paused);
 
         const auto rows = sqlite::query_all<automation_row>(
             db_,
@@ -328,12 +338,51 @@ namespace orangutan::automation {
             "last_status "
             "FROM automations "
             "WHERE (?1 = '' OR agent_key = ?1) "
+            "AND (?2 IS NULL OR enabled = ?2) "
+            "AND (?3 IS NULL OR paused = ?3) "
             "ORDER BY agent_key, name",
-            query.agent_key);
+            query.agent_key, enabled_filter, paused_filter);
         for (const auto &row : rows) {
             automations.push_back(read_automation(row));
         }
 
+        return automations;
+    }
+
+    std::optional<std::int64_t> Repository::next_due_at() const {
+        std::scoped_lock lock(mutex_);
+        return sqlite::query_one<std::optional<std::int64_t>>(
+            db_,
+            "SELECT MIN(next_due_at) "
+            "FROM automations "
+            "WHERE enabled = 1 "
+            "AND paused = 0 "
+            "AND next_due_at IS NOT NULL");
+    }
+
+    std::vector<Automation> Repository::list_due(std::int64_t now, std::size_t limit) const {
+        if (limit == 0) {
+            return {};
+        }
+
+        std::scoped_lock lock(mutex_);
+        std::vector<Automation> automations;
+        const auto rows = sqlite::query_all<automation_row>(
+            db_,
+            "SELECT id, agent_key, name, enabled, paused, prompt, notes, tags_json, trigger_json, delivery_json, last_run_at, next_due_at, "
+            "last_status "
+            "FROM automations "
+            "WHERE enabled = 1 "
+            "AND paused = 0 "
+            "AND next_due_at IS NOT NULL "
+            "AND next_due_at <= ?1 "
+            "ORDER BY next_due_at ASC, agent_key ASC, id ASC "
+            "LIMIT ?2",
+            now, static_cast<std::int64_t>(limit));
+        automations.reserve(rows.size());
+        for (const auto &row : rows) {
+            automations.push_back(read_automation(row));
+        }
         return automations;
     }
 
@@ -369,6 +418,17 @@ namespace orangutan::automation {
         sqlite::unwrap(insert_run_record(db_, run));
 
         return run.id;
+    }
+
+    void Repository::persist_execution(const Automation &automation, const RunRecord &run) {
+        std::scoped_lock lock(mutex_);
+        sqlite::unwrap(db_.transaction([&](sqlite::Database &tx) -> sqlite::SqliteResult<void> {
+            auto save_result = save_automation_record(tx, automation);
+            if (!save_result) {
+                return save_result;
+            }
+            return insert_run_record(tx, run);
+        }));
     }
 
     void Repository::persist_delivery_results(std::string_view run_id, std::string_view delivery_status, const std::vector<DeliveryRecord> &deliveries) {
@@ -526,6 +586,7 @@ namespace orangutan::automation {
                             ");",
                             "create automations table");
         sqlite::exec_script(db_, "CREATE UNIQUE INDEX IF NOT EXISTS idx_automations_agent_name ON automations(agent_key, name);", "create automations unique name index");
+        sqlite::exec_script(db_, "CREATE INDEX IF NOT EXISTS idx_automations_due ON automations(enabled, paused, next_due_at);", "create automations due index");
         sqlite::exec_script(db_,
                             "CREATE TABLE IF NOT EXISTS automation_runs ("
                             "  id TEXT PRIMARY KEY,"

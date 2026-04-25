@@ -14,7 +14,6 @@
 #include "automation/repository.hpp"
 #include "automation/runtime.hpp"
 #include "automation/service.hpp"
-#include "automation/sqlite-store.hpp"
 #include "heartbeat/heartbeat-automation.hpp"
 #include "test-helpers.hpp"
 #include "utils/task-pool.hpp"
@@ -122,7 +121,7 @@ namespace {
         CHECK_FALSE(harness.service.find("default", repo_check_id).has_value());
     };
 
-    TEST_CASE("service_scopes_core_job_keys_by_agent") {
+    TEST_CASE("service_scopes_automation_names_by_agent") {
         ServiceHarness harness;
 
         const auto default_id = harness.service.save(make_notify_automation("repo-check"));
@@ -173,68 +172,6 @@ namespace {
         CHECK_FALSE(stored->paused);
         REQUIRE(stored->next_due_at.has_value());
         CHECK(*stored->next_due_at >= 1'230);
-    };
-
-    TEST_CASE("service_reads_schedule_state_from_core_store") {
-        ServiceHarness harness;
-
-        const auto automation_id = harness.service.save(make_interval_automation("state-owner"));
-        auto stale_definition = harness.repository.find("default", automation_id);
-        REQUIRE(stale_definition.has_value());
-        stale_definition->enabled = false;
-        stale_definition->paused = false;
-        stale_definition->last_run_at = 999;
-        stale_definition->next_due_at.reset();
-        stale_definition->last_status = "stale";
-        static_cast<void>(harness.repository.save(*stale_definition));
-
-        const auto loaded = harness.service.find("default", automation_id);
-        REQUIRE(loaded.has_value());
-        CHECK(loaded->enabled);
-        CHECK_FALSE(loaded->paused);
-        CHECK_FALSE(loaded->last_run_at.has_value());
-        REQUIRE(loaded->next_due_at.has_value());
-        CHECK(*loaded->next_due_at == 1'030);
-        CHECK(loaded->last_status.empty());
-
-        CHECK(harness.service.pause("default", automation_id));
-        const auto paused = harness.service.find("default", automation_id);
-        REQUIRE(paused.has_value());
-        CHECK(paused->paused);
-    };
-
-    TEST_CASE("service_save_preserves_runtime_only_core_state") {
-        ServiceHarness harness;
-
-        const auto automation_id = harness.service.save(make_interval_automation("preserve-runtime-state"));
-        orangutan::automation::SqliteJobStore store(harness.db_path);
-        auto loaded = store.load_job(orangutan::automation::JobId{.value = automation_id});
-        REQUIRE(loaded.has_value());
-        REQUIRE(loaded->has_value());
-
-        auto stored = loaded->value();
-        stored.state.in_flight_count = 1;
-        stored.state.lease_owner = "driver-a";
-        stored.state.lease_expires_at = 2'000;
-        stored.state.last_started_at = 1'010;
-        stored.state.revision = 42;
-        REQUIRE(store.save_job(stored.definition, stored.state).has_value());
-
-        auto automation = harness.service.find("default", automation_id);
-        REQUIRE(automation.has_value());
-        automation->notes = "updated";
-        static_cast<void>(harness.service.save(*automation));
-
-        loaded = store.load_job(orangutan::automation::JobId{.value = automation_id});
-        REQUIRE(loaded.has_value());
-        REQUIRE(loaded->has_value());
-        CHECK(loaded->value().state.in_flight_count == 1);
-        CHECK(loaded->value().state.lease_owner == "driver-a");
-        REQUIRE(loaded->value().state.lease_expires_at.has_value());
-        CHECK(*loaded->value().state.lease_expires_at == 2'000);
-        REQUIRE(loaded->value().state.last_started_at.has_value());
-        CHECK(*loaded->value().state.last_started_at == 1'010);
-        CHECK(loaded->value().state.revision == 42);
     };
 
     TEST_CASE("service_run_now_executes_without_changing_disabled_state") {

@@ -2,6 +2,7 @@
 
 #include "automation/category.hpp"
 #include "automation/delivery.hpp"
+#include "automation/planner.hpp"
 #include "automation/repository.hpp"
 
 #include <functional>
@@ -15,9 +16,6 @@
 namespace orangutan::automation {
 
     class AutomationRuntime;
-    class Kernel;
-    class SqliteJobStore;
-
     /// Owns the unified operational API for automation CRUD, execution, and delivery history.
     class AutomationService {
     public:
@@ -95,10 +93,10 @@ namespace orangutan::automation {
         std::string persist(Automation automation);
 
         [[nodiscard]]
-        Automation with_core_state(Automation automation) const;
+        std::optional<TimePoint> next_wakeup(TimePoint now) const;
 
-        void sync_core_job(const Automation &automation);
-        void sync_existing_core_jobs();
+        [[nodiscard]]
+        std::vector<DueAutomation> collect_due(TimePoint now, std::size_t limit) const;
 
         struct ExecutionOutcome {
             std::string run_id;
@@ -106,18 +104,13 @@ namespace orangutan::automation {
         };
 
         [[nodiscard]]
-        auto execute_outcome(const Automation &automation, TimePoint started_at, bool sync_core_state) -> ExecutionOutcome;
+        auto execute_outcome(const Automation &automation, TimePoint started_at, bool notify_schedule) -> ExecutionOutcome;
 
         [[nodiscard]]
-        std::string execute(const Automation &automation, TimePoint started_at);
-
-        [[nodiscard]]
-        Kernel &core_kernel() noexcept;
+        std::string execute(const Automation &automation, TimePoint started_at, bool notify_schedule = true);
 
         Repository *repository_ = nullptr;
         ClockSource clock_;
-        std::unique_ptr<SqliteJobStore> core_store_;
-        std::unique_ptr<Kernel> core_kernel_;
         mutable std::mutex mutex_;
         AutomationExecutor executor_;
         std::vector<AutomationDeliveryFilter> delivery_filters_;

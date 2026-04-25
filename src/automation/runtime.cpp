@@ -1,12 +1,12 @@
 #include "automation/runtime.hpp"
 
-#include "automation/driver.hpp"
 #include "utils/transparent-lookup.hpp"
+#include "utils/scope-exit.hpp"
 
-#include <expected>
-#include <stdexcept>
+#include <chrono>
 #include <utility>
 
+#include <exec/timed_scheduler.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
@@ -14,33 +14,7 @@ namespace orangutan::automation {
 
     namespace {
 
-        struct LegacyAutomationPayload {
-            std::string agent_key;
-            std::string name;
-            std::string prompt;
-        };
-
-        void from_json(const nlohmann::json &json, LegacyAutomationPayload &payload) {
-            payload.agent_key = json.value("agent_key", "");
-            payload.name = json.value("name", "");
-            payload.prompt = json.value("prompt", "");
-        }
-
-        [[nodiscard]]
-        auto decode_pipeline_step(const nlohmann::json &step_json) -> std::expected<ActionDescriptor, std::string> {
-            if (!step_json.is_object()) {
-                return std::unexpected("pipeline step must be an object");
-            }
-            const auto action_key = step_json.value("action_key", "");
-            if (action_key.empty()) {
-                return std::unexpected("pipeline step action key must not be blank");
-            }
-            const auto payload_it = step_json.find("payload");
-            return ActionDescriptor{
-                .action_key = action_key,
-                .payload = payload_it != step_json.end() ? *payload_it : nlohmann::json::object(),
-            };
-        }
+        constexpr std::size_t BATCH_LIMIT = 16;
 
     } // namespace
 
@@ -50,19 +24,6 @@ namespace orangutan::automation {
         std::condition_variable cv;
         std::thread::id owner;
         std::size_t depth = 0;
-    };
-
-    class AutomationRuntime::RuntimeExecutorPort final : public ExecutorPort {
-    public:
-        explicit RuntimeExecutorPort(AutomationRuntime &runtime)
-        : runtime_(runtime) {}
-
-        auto dispatch(const DispatchRequest &request, const ExecutionContext &context) -> ExecutorResult override {
-            return runtime_.execute_dispatch(request, context);
-        }
-
-    private:
-        AutomationRuntime &runtime_;
     };
 
     AutomationRuntime::AgentExecutionLease::AgentExecutionLease(std::shared_ptr<AgentExecutionGate> gate)
@@ -115,22 +76,7 @@ namespace orangutan::automation {
     AutomationRuntime::AutomationRuntime(AutomationService &service, utils::TaskPool &pool, ClockSource clock)
     : service_(&service),
       pool_(&pool),
-      clock_(std::move(clock)) {
-        auto registered = action_registry_.register_action<LegacyAutomationPayload>(
-            "legacy.automation",
-            [this](const LegacyAutomationPayload &payload, const ExecutionContext &) -> ExecutorResult {
-                const auto automation = service_->find(payload.agent_key, payload.name);
-                if (!automation.has_value()) {
-                    return std::unexpected("automation not found for dispatch");
-                }
-
-                auto lease = acquire_agent_execution_lease(automation->agent_key);
-                return service_->execute_outcome(*automation, current_time(), false).result;
-            });
-        if (!registered) {
-            throw std::runtime_error("failed to register legacy automation action: " + registered.error());
-        }
-    }
+      clock_(std::move(clock)) {}
 
     AutomationRuntime::~AutomationRuntime() {
         stop();
@@ -184,7 +130,7 @@ namespace orangutan::automation {
     }
 
     void AutomationRuntime::start() {
-        Driver *driver = nullptr;
+        std::uint64_t generation = 0;
         {
             std::scoped_lock lock(scope_mutex_);
             if (running_.exchange(true)) {
@@ -194,54 +140,43 @@ namespace orangutan::automation {
                 scope_ = std::make_shared<exec::async_scope>();
             }
             background_stop_requested_ = std::make_shared<std::atomic<bool>>(false);
-
-            if (driver_executor_ == nullptr) {
-                driver_executor_ = std::make_unique<RuntimeExecutorPort>(*this);
-            }
-            if (driver_ == nullptr) {
-                driver_ = std::make_unique<Driver>(service_->core_kernel(), *driver_executor_, *pool_, "legacy-runtime", [this] {
-                    return current_time();
-                });
-            }
-            driver = driver_.get();
+            cycle_active_.store(false);
+            generation = generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
         }
 
         service_->set_schedule_changed_callback([this] {
-            Driver *active_driver = nullptr;
+            std::uint64_t generation = 0;
             {
                 std::scoped_lock lock(scope_mutex_);
-                active_driver = driver_.get();
+                if (!running_.load()) {
+                    return;
+                }
+                generation = generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
             }
-            if (active_driver != nullptr) {
-                active_driver->wake();
-            }
+            spawn_cycle(std::chrono::steady_clock::duration::zero(), generation);
         });
-        driver->start();
+        spawn_cycle(std::chrono::steady_clock::duration::zero(), generation);
     }
 
     void AutomationRuntime::stop() {
         std::shared_ptr<exec::async_scope> scope;
         std::shared_ptr<std::atomic<bool>> stop_requested;
-        Driver *driver = nullptr;
         service_->set_schedule_changed_callback({});
         {
             std::scoped_lock lock(scope_mutex_);
             scope = scope_;
             stop_requested = background_stop_requested_;
-            driver = driver_.get();
             if (stop_requested != nullptr) {
                 stop_requested->store(true);
             }
             if (running_.exchange(false)) {
+                generation_.fetch_add(1, std::memory_order_acq_rel);
                 if (scope != nullptr) {
                     scope->request_stop();
                 }
             }
         }
 
-        if (driver != nullptr) {
-            driver->stop();
-        }
         if (scope == nullptr) {
             std::scoped_lock lock(scope_mutex_);
             background_stop_requested_.reset();
@@ -259,6 +194,14 @@ namespace orangutan::automation {
                 background_stop_requested_.reset();
             }
         }
+        cycle_active_.store(false);
+    }
+
+    void AutomationRuntime::run_pending(TimePoint now) {
+        for (const auto &entry : service_->collect_due(now, BATCH_LIMIT)) {
+            auto lease = acquire_agent_execution_lease(entry.automation.agent_key);
+            static_cast<void>(service_->execute(entry.automation, current_time(), false));
+        }
     }
 
     AutomationRuntime::AgentExecutionLease AutomationRuntime::acquire_agent_execution_lease(std::string_view agent_key) {
@@ -271,14 +214,6 @@ namespace orangutan::automation {
 
     const AutomationService &AutomationRuntime::service() const noexcept {
         return *service_;
-    }
-
-    ActionRegistry &AutomationRuntime::actions() noexcept {
-        return action_registry_;
-    }
-
-    const ActionRegistry &AutomationRuntime::actions() const noexcept {
-        return action_registry_;
     }
 
     TimePoint AutomationRuntime::current_time() const {
@@ -309,38 +244,70 @@ namespace orangutan::automation {
         return gate;
     }
 
-    auto AutomationRuntime::execute_action(const ActionDescriptor &action, const ExecutionContext &context) -> std::expected<ExecutionResult, std::string> {
-        if (action.action_key == "pipeline") {
-            const auto steps_it = action.payload.find("steps");
-            if (steps_it == action.payload.end() || !steps_it->is_array() || steps_it->empty()) {
-                return std::unexpected("pipeline steps must be a non-empty array");
+    void AutomationRuntime::spawn_cycle(std::chrono::steady_clock::duration delay, std::uint64_t generation) {
+        std::shared_ptr<exec::async_scope> scope;
+        {
+            std::scoped_lock lock(scope_mutex_);
+            if (!running_.load() || scope_ == nullptr || generation != generation_.load(std::memory_order_acquire)) {
+                return;
             }
-
-            auto combined = ExecutionResult{
-                .success = true,
-            };
-            for (const auto &step_json : *steps_it) {
-                auto step = decode_pipeline_step(step_json);
-                if (!step) {
-                    return std::unexpected(step.error());
-                }
-                auto result = execute_action(*step, context);
-                if (!result) {
-                    return std::unexpected(result.error());
-                }
-                combined = std::move(*result);
-                if (!combined.success) {
-                    return combined;
-                }
-            }
-            return combined;
+            scope = scope_;
         }
 
-        return action_registry_.dispatch(action, context);
+        auto task = exec::schedule_after(pool_->timed_scheduler(), delay) | stdexec::let_value([this, generation] {
+                        return stdexec::schedule(pool_->scheduler()) | stdexec::then([this, generation] {
+                                   run_cycle(generation);
+                               });
+                    });
+        scope->spawn(std::move(task));
     }
 
-    auto AutomationRuntime::execute_dispatch(const DispatchRequest &request, const ExecutionContext &context) -> std::expected<ExecutionResult, std::string> {
-        return execute_action(request.action, context);
+    void AutomationRuntime::run_cycle(std::uint64_t generation) {
+        if (!running_.load() || generation != generation_.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        bool expected = false;
+        if (!cycle_active_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            return;
+        }
+        std::optional<std::chrono::steady_clock::duration> next_delay;
+        const auto release_cycle = utils::scope_exit([this, generation, &next_delay] {
+            cycle_active_.store(false, std::memory_order_release);
+            const auto current_generation = generation_.load(std::memory_order_acquire);
+            if (running_.load() && current_generation != generation) {
+                spawn_cycle(std::chrono::steady_clock::duration::zero(), current_generation);
+                return;
+            }
+            if (running_.load() && next_delay.has_value()) {
+                spawn_cycle(*next_delay, generation);
+            }
+        });
+
+        const auto now = current_time();
+        next_delay = next_cycle_delay(now);
+        if (!next_delay.has_value()) {
+            return;
+        }
+        if (*next_delay > std::chrono::steady_clock::duration::zero()) {
+            return;
+        }
+
+        run_pending(now);
+        next_delay = next_cycle_delay(current_time());
+    }
+
+    std::optional<std::chrono::steady_clock::duration> AutomationRuntime::next_cycle_delay(TimePoint now) const {
+        const auto next_wakeup = service_->next_wakeup(now);
+        if (!next_wakeup.has_value()) {
+            return std::nullopt;
+        }
+
+        auto delay = std::chrono::duration_cast<std::chrono::steady_clock::duration>(*next_wakeup - now);
+        if (delay < std::chrono::steady_clock::duration::zero()) {
+            delay = std::chrono::steady_clock::duration::zero();
+        }
+        return delay;
     }
 
 } // namespace orangutan::automation
