@@ -172,6 +172,11 @@ namespace {
         REQUIRE(loaded->next_due_at.has_value());
         CHECK(*loaded->next_due_at == 1'030);
         CHECK(loaded->last_status.empty());
+
+        CHECK(harness.service.pause("default", automation_id));
+        const auto paused = harness.service.find("default", automation_id);
+        REQUIRE(paused.has_value());
+        CHECK(paused->paused);
     };
 
     TEST_CASE("service_run_now_executes_without_changing_disabled_state") {

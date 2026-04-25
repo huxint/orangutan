@@ -201,7 +201,7 @@ namespace orangutan::automation {
     }
 
     std::string AutomationService::run_now(std::string_view agent_key, std::string_view id_or_name) {
-        const auto automation = repository_->find(agent_key, id_or_name);
+        const auto automation = find(agent_key, id_or_name);
         if (!automation.has_value()) {
             throw std::runtime_error("automation not found");
         }
@@ -210,7 +210,7 @@ namespace orangutan::automation {
     }
 
     bool AutomationService::pause(std::string_view agent_key, std::string_view id_or_name) {
-        auto automation = repository_->find(agent_key, id_or_name);
+        auto automation = find(agent_key, id_or_name);
         if (!automation.has_value() || !automation->enabled) {
             return false;
         }
@@ -221,7 +221,7 @@ namespace orangutan::automation {
     }
 
     bool AutomationService::resume(std::string_view agent_key, std::string_view id_or_name) {
-        auto automation = repository_->find(agent_key, id_or_name);
+        auto automation = find(agent_key, id_or_name);
         if (!automation.has_value() || !automation->enabled) {
             return false;
         }
