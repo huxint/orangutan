@@ -151,6 +151,29 @@ namespace {
         CHECK(*stored->next_due_at >= 1'230);
     };
 
+    TEST_CASE("service_reads_schedule_state_from_core_store") {
+        ServiceHarness harness;
+
+        const auto automation_id = harness.service.save(make_interval_automation("state-owner"));
+        auto stale_definition = harness.repository.find("default", automation_id);
+        REQUIRE(stale_definition.has_value());
+        stale_definition->enabled = false;
+        stale_definition->paused = false;
+        stale_definition->last_run_at = 999;
+        stale_definition->next_due_at.reset();
+        stale_definition->last_status = "stale";
+        static_cast<void>(harness.repository.save(*stale_definition));
+
+        const auto loaded = harness.service.find("default", automation_id);
+        REQUIRE(loaded.has_value());
+        CHECK(loaded->enabled);
+        CHECK_FALSE(loaded->paused);
+        CHECK_FALSE(loaded->last_run_at.has_value());
+        REQUIRE(loaded->next_due_at.has_value());
+        CHECK(*loaded->next_due_at == 1'030);
+        CHECK(loaded->last_status.empty());
+    };
+
     TEST_CASE("service_run_now_executes_without_changing_disabled_state") {
         ServiceHarness harness;
         auto automation = make_once_automation("release-check", orangutan::automation::from_unix_seconds(900));

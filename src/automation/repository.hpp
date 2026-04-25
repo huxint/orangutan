@@ -75,8 +75,6 @@ namespace orangutan::automation {
         [[nodiscard]]
         std::string insert_run(const RunRecord &run);
 
-        void persist_execution(const Automation &automation, const RunRecord &run);
-
         void persist_delivery_results(std::string_view run_id, std::string_view delivery_status, const std::vector<DeliveryRecord> &deliveries);
 
         [[nodiscard]]

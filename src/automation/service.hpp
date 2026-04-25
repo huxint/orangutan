@@ -87,6 +87,9 @@ namespace orangutan::automation {
         [[nodiscard]]
         std::string persist(Automation automation);
 
+        [[nodiscard]]
+        Automation with_core_state(Automation automation) const;
+
         void sync_core_job(const Automation &automation);
         void sync_existing_core_jobs();
 

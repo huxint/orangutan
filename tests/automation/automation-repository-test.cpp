@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -12,8 +11,6 @@
 
 namespace {
 
-    using namespace std::chrono_literals;
-
     [[nodiscard]]
     orangutan::automation::Automation make_cron_automation(std::string_view agent_key, std::string_view name) {
         return orangutan::automation::Automation::named(name)
@@ -22,16 +19,6 @@ namespace {
             .cron("0 9 * * *")
             .deliver_to("owner")
             .tag("daily")
-            .build()
-            .value();
-    }
-
-    [[nodiscard]]
-    orangutan::automation::Automation make_once_automation(std::string_view agent_key, std::string_view name) {
-        return orangutan::automation::Automation::named(name)
-            .for_agent(agent_key)
-            .run_prompt("ship it")
-            .once_at(orangutan::automation::from_unix_seconds(1'776'249'600))
             .build()
             .value();
     }
@@ -163,31 +150,6 @@ namespace {
         REQUIRE(deliveries.size() == 2UL);
         CHECK(deliveries.at(0).acked_at.has_value());
         CHECK(deliveries.at(1).acked_at.has_value());
-    };
-
-    TEST_CASE("repository_persists_once_spent_markers") {
-        const auto db_path = orangutan::testing::unique_test_db_path("automation-repository", "once.db");
-        orangutan::automation::Repository repository(db_path);
-
-        auto automation = make_once_automation("default", "release-check");
-        automation.next_due_at = 1'776'249'600;
-        automation.id = repository.save(automation);
-
-        auto loaded = repository.find("default", automation.id);
-        REQUIRE(loaded.has_value());
-        CHECK_FALSE(loaded->last_run_at.has_value());
-        REQUIRE(loaded->next_due_at.has_value());
-        CHECK(*loaded->next_due_at == 1'776'249'600);
-
-        automation.last_run_at = 1'776'249'900;
-        automation.next_due_at.reset();
-        static_cast<void>(repository.save(automation));
-
-        loaded = repository.find("default", automation.id);
-        REQUIRE(loaded.has_value());
-        REQUIRE(loaded->last_run_at.has_value());
-        CHECK(*loaded->last_run_at == 1'776'249'900);
-        CHECK_FALSE(loaded->next_due_at.has_value());
     };
 
 } // namespace

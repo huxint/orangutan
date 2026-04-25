@@ -86,6 +86,28 @@ namespace orangutan::automation {
             };
         }
 
+        void apply_schedule_state(Automation &automation, const ScheduleState &state) {
+            automation.enabled = state.enabled;
+            automation.paused = state.paused;
+            automation.next_due_at = state.next_due_at;
+            automation.last_run_at = state.last_finished_at;
+            automation.last_status = state.last_status;
+        }
+
+        [[nodiscard]]
+        bool matches_query(const Automation &automation, const AutomationQuery &query) {
+            if (!query.agent_key.empty() && automation.agent_key != query.agent_key) {
+                return false;
+            }
+            if (query.enabled.has_value() && automation.enabled != *query.enabled) {
+                return false;
+            }
+            if (query.paused.has_value() && automation.paused != *query.paused) {
+                return false;
+            }
+            return true;
+        }
+
         void throw_on_store_error(const StoreResult<void> &result, std::string_view context) {
             if (result.has_value()) {
                 return;
@@ -141,15 +163,31 @@ namespace orangutan::automation {
     }
 
     std::vector<Automation> AutomationService::list(const AutomationQuery &query) const {
-        return repository_->list(query);
+        const auto definitions = repository_->list(AutomationQuery{
+            .agent_key = query.agent_key,
+        });
+
+        std::vector<Automation> automations;
+        automations.reserve(definitions.size());
+        for (auto automation : definitions) {
+            automation = with_core_state(std::move(automation));
+            if (matches_query(automation, query)) {
+                automations.push_back(std::move(automation));
+            }
+        }
+        return automations;
     }
 
     std::optional<Automation> AutomationService::find(std::string_view agent_key, std::string_view id_or_name) const {
-        return repository_->find(agent_key, id_or_name);
+        auto automation = repository_->find(agent_key, id_or_name);
+        if (!automation.has_value()) {
+            return std::nullopt;
+        }
+        return with_core_state(std::move(*automation));
     }
 
     bool AutomationService::remove(std::string_view agent_key, std::string_view id_or_name) {
-        const auto automation = repository_->find(agent_key, id_or_name);
+        const auto automation = find(agent_key, id_or_name);
         if (!automation.has_value()) {
             return false;
         }
@@ -268,8 +306,28 @@ namespace orangutan::automation {
 
     void AutomationService::sync_existing_core_jobs() {
         for (const auto &automation : repository_->list()) {
-            sync_core_job(automation);
+            auto stored = core_store_->load_job(JobId{.value = automation.id});
+            if (!stored.has_value()) {
+                throw std::runtime_error("failed to load automation core job: " + stored.error().message);
+            }
+
+            const auto state = stored->has_value() ? (*stored)->state : to_schedule_state(automation);
+            throw_on_store_error(core_store_->save_job(to_job_definition(automation), state), "failed to sync automation core job");
         }
+    }
+
+    Automation AutomationService::with_core_state(Automation automation) const {
+        auto stored = core_store_->load_job(JobId{.value = automation.id});
+        if (!stored.has_value()) {
+            throw std::runtime_error("failed to load automation core job: " + stored.error().message);
+        }
+        if (!stored->has_value()) {
+            return automation;
+        }
+
+        const auto &state = (*stored)->state;
+        apply_schedule_state(automation, state);
+        return automation;
     }
 
     auto AutomationService::execute_outcome(const Automation &automation, TimePoint started_at, bool sync_core_state) -> ExecutionOutcome {
@@ -331,13 +389,13 @@ namespace orangutan::automation {
 
         if (delivery_disposition.has_value() && delivery_disposition->suppress) {
             run.delivery_status = delivery_disposition->status.empty() ? "suppressed" : delivery_disposition->status;
-            repository_->persist_execution(updated, run);
+            static_cast<void>(repository_->insert_run(run));
         } else if (automation.delivery.mode == delivery_mode::silent) {
             run.delivery_status = "silent";
-            repository_->persist_execution(updated, run);
+            static_cast<void>(repository_->insert_run(run));
         } else {
             run.delivery_status = "notify_pending";
-            repository_->persist_execution(updated, run);
+            static_cast<void>(repository_->insert_run(run));
 
             const auto message = make_delivery_message(automation, result);
             auto delivery_status = std::string("notified");
