@@ -20,7 +20,6 @@ namespace orangutan::bootstrap {
         memory::MemoryStore *memory_store = nullptr;
         std::string agent_name;
         std::string *current_session_id = nullptr;
-        std::optional<std::vector<std::string>> team_agents;
         std::string team_id;
         orchestration::OrchestrationManager *orchestration_manager = nullptr;
         orchestration::TeamManager *team_manager = nullptr;

@@ -93,13 +93,12 @@ namespace {
         return last_snapshot;
     }
 
-    ToolRuntimeContext make_runtime_tool_context(std::string *current_session_id = nullptr, std::vector<std::string> team_agents = {"reviewer"}) {
+    ToolRuntimeContext make_runtime_tool_context(std::string *current_session_id = nullptr) {
         return ToolRuntimeContext{
             .runtime_key = "runtime:cli:default",
             .agent_key = "default",
             .scope_key = "scope:parent",
             .current_session_id = current_session_id,
-            .team_agents = std::move(team_agents),
             .runtime_origin = base::origin::cli,
             .raw_caller_id = "cli:local",
         };

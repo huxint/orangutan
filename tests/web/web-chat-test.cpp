@@ -476,7 +476,6 @@ namespace orangutan {
                 .command = "echo hello",
             });
             config.agents["default"].workspace = workspace.string();
-            config.agents["default"].team_agents = {"coder"};
             config.agents["default"].permissions_config = {};
             config.agents["coder"].workspace = workspace.string();
 
@@ -494,7 +493,6 @@ namespace orangutan {
             CHECK(runtime.tool_context().runtime_origin == base::origin::web);
             CHECK(runtime.tool_context().raw_caller_id == "web:local");
             CHECK(runtime.tool_context().current_session_id == &session_id);
-            CHECK(runtime.tool_context().team_agents == std::vector<std::string>{"coder"});
             CHECK(static_cast<bool>(runtime.tool_context().approval_callback));
             REQUIRE(runtime.agent != nullptr);
 

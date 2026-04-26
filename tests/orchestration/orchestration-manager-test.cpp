@@ -35,12 +35,12 @@ TEST_CASE("OrchestrationManager basic lifecycle", "[orchestration]") {
     }
 }
 
-TEST_CASE("OrchestrationManager stop requests the worker stop token", "[orchestration]") {
+TEST_CASE("OrchestrationManager stop requests the teammate stop token", "[orchestration]") {
     orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> saw_stop{false};
 
-    manager.set_worker_runtime_factory([&saw_stop](const orangutan::orchestration::AgentSpawnRequest &) {
-        struct SlowWorker final : orangutan::orchestration::WorkerRuntime {
+    manager.set_teammate_runtime_factory([&saw_stop](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct SlowTeammate final : orangutan::orchestration::TeammateRuntime {
             std::atomic<bool> *saw_stop = nullptr;
 
             std::string run(const std::string &, std::stop_token stop_token) override {
@@ -55,14 +55,14 @@ TEST_CASE("OrchestrationManager stop requests the worker stop token", "[orchestr
             }
         };
 
-        auto worker = std::make_unique<SlowWorker>();
-        worker->saw_stop = &saw_stop;
-        return worker;
+        auto teammate = std::make_unique<SlowTeammate>();
+        teammate->saw_stop = &saw_stop;
+        return teammate;
     });
 
     const auto result = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "slow task",
+        .name = "teammate",
+        .task = "slow task",
         .parent_runtime_key = "test-runtime",
     });
     REQUIRE(result.accepted);
@@ -86,8 +86,8 @@ TEST_CASE("OrchestrationManager stop requests the worker stop token", "[orchestr
 
 TEST_CASE("OrchestrationManager escapes xml-sensitive notification content", "[orchestration]") {
     struct EscapeCase {
-        std::string task_prompt;
-        std::string worker_output;
+        std::string task;
+        std::string teammate_output;
         std::string expected_escaped_prompt;
         std::string expected_escaped_result;
         std::string unescaped_prompt;
@@ -96,16 +96,16 @@ TEST_CASE("OrchestrationManager escapes xml-sensitive notification content", "[o
 
     const std::array<EscapeCase, 2> cases{{
         {
-            .task_prompt = "notify parent <phase>",
-            .worker_output = "done <ok> & more",
+            .task = "notify parent <phase>",
+            .teammate_output = "done <ok> & more",
             .expected_escaped_prompt = "notify parent &lt;phase&gt;",
             .expected_escaped_result = "done &lt;ok&gt; &amp; more",
             .unescaped_prompt = "notify parent <phase>",
             .unescaped_result = "done <ok> & more",
         },
         {
-            .task_prompt = "notify \"quotes\" and 'apostrophes'",
-            .worker_output = "done \"quoted\" & 'single'",
+            .task = "notify \"quotes\" and 'apostrophes'",
+            .teammate_output = "done \"quoted\" & 'single'",
             .expected_escaped_prompt = "notify &quot;quotes&quot; and &apos;apostrophes&apos;",
             .expected_escaped_result = "done &quot;quoted&quot; &amp; &apos;single&apos;",
             .unescaped_prompt = "notify \"quotes\" and 'apostrophes'",
@@ -122,8 +122,8 @@ TEST_CASE("OrchestrationManager escapes xml-sensitive notification content", "[o
             return std::nullopt;
         });
 
-        manager.set_worker_runtime_factory([worker_output = test_case.worker_output](const orangutan::orchestration::AgentSpawnRequest &) {
-            struct ImmediateWorker final : orangutan::orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([teammate_output = test_case.teammate_output](const orangutan::orchestration::AgentSpawnRequest &) {
+            struct ImmediateTeammate final : orangutan::orchestration::TeammateRuntime {
                 std::string result;
 
                 std::string run(const std::string &, std::stop_token) override {
@@ -131,17 +131,17 @@ TEST_CASE("OrchestrationManager escapes xml-sensitive notification content", "[o
                 }
             };
 
-            auto worker = std::make_unique<ImmediateWorker>();
-            worker->result = worker_output;
-            return worker;
+            auto teammate = std::make_unique<ImmediateTeammate>();
+            teammate->result = teammate_output;
+            return teammate;
         });
 
         const auto result = manager.spawn({
-            .agent_key = "general-purpose",
-            .task_prompt = test_case.task_prompt,
+            .name = "teammate",
+            .task = test_case.task,
             .parent_runtime_key = "parent-runtime",
         });
-        INFO("task_prompt=" << test_case.task_prompt);
+        INFO("task=" << test_case.task);
         REQUIRE(result.accepted);
 
         CHECK(wait_for_condition(
@@ -166,33 +166,33 @@ TEST_CASE("OrchestrationManager queues runs beyond max concurrency and starts th
     std::atomic<bool> release_first{false};
     std::atomic<int> started{0};
 
-    manager.set_worker_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
-        struct QueuedWorker final : orangutan::orchestration::WorkerRuntime {
+    manager.set_teammate_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
+        struct QueuedTeammate final : orangutan::orchestration::TeammateRuntime {
             std::atomic<bool> *release_first = nullptr;
             std::atomic<int> *started = nullptr;
-            std::string task_prompt;
+            std::string task;
 
             std::string run(const std::string &, std::stop_token) override {
                 started->fetch_add(1);
-                if (task_prompt == "first task") {
+                if (task == "first task") {
                     for (int i = 0; i < 100 && !release_first->load(); ++i) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     }
                 }
-                return task_prompt + " done";
+                return task + " done";
             }
         };
 
-        auto worker = std::make_unique<QueuedWorker>();
-        worker->release_first = &release_first;
-        worker->started = &started;
-        worker->task_prompt = request.task_prompt;
-        return worker;
+        auto teammate = std::make_unique<QueuedTeammate>();
+        teammate->release_first = &release_first;
+        teammate->started = &started;
+        teammate->task = request.task;
+        return teammate;
     });
 
     const auto first = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "first task",
+        .name = "teammate",
+        .task = "first task",
         .parent_runtime_key = "test-runtime",
     });
     REQUIRE(first.accepted);
@@ -205,8 +205,8 @@ TEST_CASE("OrchestrationManager queues runs beyond max concurrency and starts th
     REQUIRE(started.load() == 1);
 
     const auto second = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "second task",
+        .name = "teammate",
+        .task = "second task",
         .parent_runtime_key = "test-runtime",
     });
     REQUIRE(second.accepted);
@@ -240,8 +240,8 @@ TEST_CASE("OrchestrationManager shutdown does not block on queued runs", "[orche
     orangutan::orchestration::OrchestrationManager manager(1);
     std::atomic<bool> first_started{false};
 
-    manager.set_worker_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
-        struct BlockingWorker final : orangutan::orchestration::WorkerRuntime {
+    manager.set_teammate_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &request) {
+        struct BlockingTeammate final : orangutan::orchestration::TeammateRuntime {
             std::atomic<bool> *first_started = nullptr;
             std::string prompt;
 
@@ -256,15 +256,15 @@ TEST_CASE("OrchestrationManager shutdown does not block on queued runs", "[orche
             }
         };
 
-        auto worker = std::make_unique<BlockingWorker>();
-        worker->first_started = &first_started;
-        worker->prompt = request.task_prompt;
-        return worker;
+        auto teammate = std::make_unique<BlockingTeammate>();
+        teammate->first_started = &first_started;
+        teammate->prompt = request.task;
+        return teammate;
     });
 
     const auto first = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "first",
+        .name = "teammate",
+        .task = "first",
     });
     REQUIRE(first.accepted);
 
@@ -276,8 +276,8 @@ TEST_CASE("OrchestrationManager shutdown does not block on queued runs", "[orche
     REQUIRE(first_started.load());
 
     const auto second = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "second",
+        .name = "teammate",
+        .task = "second",
     });
     REQUIRE(second.accepted);
 
@@ -304,19 +304,19 @@ TEST_CASE("OrchestrationManager shutdown is safe while completion callback is st
         return std::nullopt;
     });
 
-    manager.set_worker_runtime_factory([](const orangutan::orchestration::AgentSpawnRequest &) {
-        struct ImmediateWorker final : orangutan::orchestration::WorkerRuntime {
+    manager.set_teammate_runtime_factory([](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct ImmediateTeammate final : orangutan::orchestration::TeammateRuntime {
             std::string run(const std::string &, std::stop_token) override {
                 return "done";
             }
         };
 
-        return std::make_unique<ImmediateWorker>();
+        return std::make_unique<ImmediateTeammate>();
     });
 
     const auto run = manager.spawn({
-        .agent_key = "general-purpose",
-        .task_prompt = "trigger notification callback",
+        .name = "teammate",
+        .task = "trigger notification callback",
         .parent_runtime_key = "parent-runtime",
     });
     REQUIRE(run.accepted);

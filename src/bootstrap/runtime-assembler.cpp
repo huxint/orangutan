@@ -6,13 +6,6 @@ namespace orangutan::bootstrap {
 
     namespace {
 
-        std::vector<std::string> resolve_team_agents(const RuntimeAssemblyRequest &request) {
-            if (request.team_agents.has_value()) {
-                return *request.team_agents;
-            }
-            return request.runtime_config->team_agents;
-        }
-
         auto resolve_agent_role(const RuntimeAssemblyRequest &request) -> orchestration::agent_role {
             if (request.agent_role != orchestration::agent_role::standalone) {
                 return request.agent_role;
@@ -32,7 +25,6 @@ namespace orangutan::bootstrap {
             .thinking_budget = request.runtime_config->thinking_budget,
             .memory = request.runtime_config->memory,
             .permission_context = request.runtime_config->permission_context,
-            .team_agents = resolve_team_agents(request),
             .team_id = request.team_id,
             .identity = *request.identity,
             .memory_store = request.memory_store,

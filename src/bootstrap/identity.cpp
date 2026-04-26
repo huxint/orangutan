@@ -210,7 +210,7 @@ namespace orangutan::bootstrap {
         return derive_channel_identity(workspace_root, raw_caller_id, agent_key);
     }
 
-    std::string append_agent_prompt_guidance(const std::string &system_prompt, const std::vector<std::string> &team_agents, orchestration::agent_role role) {
+    std::string append_agent_prompt_guidance(const std::string &system_prompt, orchestration::agent_role role) {
         std::string prompt = system_prompt;
 
         const auto append_separator = [&prompt] {
@@ -219,36 +219,24 @@ namespace orangutan::bootstrap {
             }
         };
 
-        if (orchestration::is_delegated(role)) {
+        if (orchestration::is_teammate(role)) {
             append_separator();
-            prompt += "# Worker agent mode\n";
-            prompt += "You are a worker agent handling a delegated task.\n";
+            prompt += "# Teammate mode\n";
+            prompt += "You are a teammate handling a delegated task.\n";
             prompt += "- Complete the assigned task fully — don't gold-plate, but don't leave it half-done.\n";
             prompt += "- When complete, respond with a concise report covering what was done and key findings.\n";
-            prompt += "- You cannot spawn additional agents.\n";
+            prompt += "- Use `agent_send_message` when you need to communicate with teammates in your team.\n";
             prompt += "- Use absolute file paths in your final response so the leader can navigate to them.";
-            return prompt;
-        }
-
-        if (team_agents.empty()) {
             return prompt;
         }
 
         append_separator();
         prompt += "# Agent coordination\n";
-        prompt += "The following agents are available for delegation: ";
-        for (std::size_t index = 0; index < team_agents.size(); ++index) {
-            if (index > 0) {
-                prompt += ", ";
-            }
-            prompt += team_agents[index];
-        }
-        prompt += ".\n\n";
-        prompt += "Use agent delegation for self-contained, parallelizable tasks:\n";
-        prompt += "- `agent_spawn`: Start a worker agent. Returns immediately with a run_id.\n";
-        prompt += "- `agent_send_message`: Send a message to a running agent.\n";
+        prompt += "Use agent delegation for self-contained, parallelizable tasks or persistent collaboration:\n";
+        prompt += "- `agent_spawn`: Create a named teammate from your current runtime configuration. There are no preset teammate types; choose the name, task, instructions, and relationship yourself. Returns immediately with a run_id.\n";
+        prompt += "- `agent_send_message`: Send a message by run_id, by teammate name inside a team, or with `to:\"*\"` for a team broadcast.\n";
         prompt += "- `agent_stop`: Stop a running agent.\n\n";
-        prompt += "Workers report results via <task-notification> messages. "
+        prompt += "Teammates report results via <task-notification> messages. "
                   "Avoid spawning agents for trivial tasks you can do faster yourself.";
         return prompt;
     }

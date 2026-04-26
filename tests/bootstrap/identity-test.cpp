@@ -118,9 +118,10 @@ namespace {
     };
 
     TEST_CASE("parent_prompt_guidance_mentions_agent_spawn_tool") {
-        const auto prompt = bootstrap::append_agent_prompt_guidance("Parent base prompt.", {"coder"}, orchestration::agent_role::standalone);
+        const auto prompt = bootstrap::append_agent_prompt_guidance("Parent base prompt.", orchestration::agent_role::standalone);
 
         CHECK(prompt.contains("`agent_spawn`"));
+        CHECK(prompt.contains("There are no preset teammate types"));
         CHECK(prompt.contains("Avoid spawning agents for trivial tasks"));
     };
 

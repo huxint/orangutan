@@ -10,16 +10,19 @@
 
 namespace orangutan::orchestration {
 
-    /// Unified agent role within the orchestration hierarchy.
+    /// Unified internal agent role within the orchestration hierarchy.
     enum class agent_role : std::uint8_t {
         /// Standalone agent — no orchestration context.
         standalone,
-        /// Orchestrator that spawns and manages workers.
+        /// Orchestrator that plans, delegates, and synthesizes work.
         leader,
-        /// Fire-and-forget worker: runs one task, reports, exits.
-        worker,
-        /// Persistent worker: runs tasks, then idles waiting for follow-up messages.
+        /// Persistent teammate: runs tasks, then idles waiting for follow-up messages.
         teammate,
+    };
+
+    enum class teammate_relationship : std::uint8_t {
+        managed,
+        peer,
     };
 
     [[nodiscard]]
@@ -28,18 +31,8 @@ namespace orangutan::orchestration {
     }
 
     [[nodiscard]]
-    constexpr auto is_worker(agent_role role) -> bool {
-        return role == agent_role::worker;
-    }
-
-    [[nodiscard]]
     constexpr auto is_teammate(agent_role role) -> bool {
         return role == agent_role::teammate;
-    }
-
-    [[nodiscard]]
-    constexpr auto is_delegated(agent_role role) -> bool {
-        return is_worker(role) || is_teammate(role);
     }
 
     /// Status of an agent run within the orchestration system.
@@ -56,11 +49,11 @@ namespace orangutan::orchestration {
     /// Record tracking the lifecycle of a single agent run.
     struct AgentRunRecord {
         std::string run_id;
-        std::string agent_key;
         std::string agent_name;
         std::string team_id;
         std::string parent_runtime_key;
         agent_role role = agent_role::standalone;
+        teammate_relationship relationship = teammate_relationship::managed;
         run_status status = run_status::queued;
         std::string task_summary;
         std::string final_output;
@@ -71,16 +64,16 @@ namespace orangutan::orchestration {
 
     /// Request to spawn a new agent within the orchestration system.
     struct AgentSpawnRequest {
-        std::string agent_key;
-        std::string agent_name;
-        std::string task_prompt;
+        std::string name;
+        std::string instructions;
+        std::string task;
         std::string team_id;
         std::string parent_runtime_key;
-        std::string workspace_root;
-        /// Determines the spawned agent's lifecycle:
-        /// - agent_role::worker: run once, report, exit
-        /// - agent_role::teammate: run, idle, wait for follow-up messages
-        agent_role role = agent_role::worker;
+        std::string config_agent_key;
+        std::string profile_override;
+        std::string model_override;
+        int thinking_budget_override = 0;
+        teammate_relationship relationship = teammate_relationship::managed;
     };
 
     /// Result of a spawn attempt.
@@ -104,6 +97,7 @@ namespace orangutan {
     using orchestration::AgentRunRecord;
     using orchestration::AgentSpawnRequest;
     using orchestration::AgentSpawnResult;
+    using orchestration::teammate_relationship;
     using orchestration::run_status;
     using orchestration::RuntimeNotificationHandler;
     using orchestration::TaskNotificationCallback;

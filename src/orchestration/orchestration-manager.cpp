@@ -1,6 +1,5 @@
 #include "orchestration/orchestration-manager.hpp"
 
-#include "orchestration/agent-definition-registry.hpp"
 #include "orchestration/mailbox.hpp"
 #include "orchestration/team-manager.hpp"
 #include "utils/escape.hpp"
@@ -52,22 +51,30 @@ namespace orangutan::orchestration {
             return fmt::format(
                 "<task-notification>\n"
                 "  <task-id>{}</task-id>\n"
-                "  <agent-key>{}</agent-key>\n"
                 "  <agent-name>{}</agent-name>\n"
                 "  <role>{}</role>\n"
+                "  <relationship>{}</relationship>\n"
                 "  <status>{}</status>\n"
                 "  <summary>{}</summary>\n"
                 "  <result>{}</result>\n"
                 "  <error>{}</error>\n"
                 "</task-notification>",
                 utils::escape_xml(record.run_id),
-                utils::escape_xml(record.agent_key),
                 utils::escape_xml(record.agent_name),
                 magic_enum::enum_name(record.role),
+                magic_enum::enum_name(record.relationship),
                 magic_enum::enum_name(record.status),
                 utils::escape_xml(record.task_summary),
                 utils::escape_xml(record.final_output),
                 utils::escape_xml(record.error));
+        }
+
+        [[nodiscard]]
+        auto format_initial_prompt(const AgentSpawnRequest &request) -> std::string {
+            if (request.instructions.empty()) {
+                return request.task;
+            }
+            return fmt::format("# Instructions\n{}\n\n# Task\n{}", request.instructions, request.task);
         }
 
     } // namespace
@@ -90,7 +97,7 @@ namespace orangutan::orchestration {
         AgentExecutionEnvironment env;
         TaskNotificationCallback notification_callback;
         std::unordered_map<std::string, RuntimeNotificationHandler> runtime_notification_handlers;
-        WorkerRuntimeFactory worker_runtime_factory;
+        TeammateRuntimeFactory teammate_runtime_factory;
         std::unordered_map<std::string, std::shared_ptr<ActiveRun>> active_runs;
         std::deque<std::string> pending_run_ids;
         int running_count = 0;
@@ -170,49 +177,48 @@ namespace orangutan::orchestration {
             }
         }
 
-        /// Core worker lifecycle: run → (optional idle loop) → terminal status → notify.
+        /// Core teammate lifecycle: run → (optional idle loop) → terminal status → notify.
         void run_lifecycle(ActiveRun &run) {
             const auto &run_id = run.record.run_id;
-            const auto role = run.record.role;
             const auto stop_token = run.stop_source.get_token();
-            spdlog::info("agent worker started: id={} key={} role={}", run_id, run.record.agent_key, magic_enum::enum_name(role));
+            spdlog::info("teammate started: id={} name={} relationship={}", run_id, run.record.agent_name, magic_enum::enum_name(run.record.relationship));
 
             if (stop_token.stop_requested()) {
                 finalize_run(run, run_status::terminated);
-                spdlog::info("agent worker terminated before execution: id={}", run_id);
+                spdlog::info("teammate terminated before execution: id={}", run_id);
                 deliver_notification(run);
                 return;
             }
 
-            WorkerRuntimeFactory factory;
+            TeammateRuntimeFactory factory;
             {
                 std::scoped_lock lock(mutex);
-                factory = worker_runtime_factory;
+                factory = teammate_runtime_factory;
             }
 
             if (factory == nullptr) {
-                finalize_run(run, run_status::failed, "No worker runtime factory configured");
-                spdlog::warn("agent worker failed (no factory): id={}", run_id);
+                finalize_run(run, run_status::failed, "No teammate runtime factory configured");
+                spdlog::warn("teammate failed (no factory): id={}", run_id);
                 deliver_notification(run);
                 return;
             }
 
-            std::unique_ptr<WorkerRuntime> worker;
+            std::unique_ptr<TeammateRuntime> teammate;
             try {
-                worker = factory(run.request);
+                teammate = factory(run.request);
             } catch (const std::exception &e) {
                 finalize_run(run, run_status::failed, e.what());
                 deliver_notification(run);
                 return;
             }
 
-            if (!run_first_task(run, *worker, stop_token)) {
+            if (!run_first_task(run, *teammate, stop_token)) {
                 deliver_notification(run);
                 return;
             }
 
-            if (is_teammate(role) && worker->is_persistent() && !stop_token.stop_requested()) {
-                run_idle_loop(run, *worker, stop_token);
+            if (teammate->can_receive_followups() && !stop_token.stop_requested()) {
+                run_idle_loop(run, *teammate, stop_token);
             }
 
             {
@@ -224,15 +230,15 @@ namespace orangutan::orchestration {
                     run.cv.notify_all();
                 }
             }
-            spdlog::info("agent worker completed: id={}", run_id);
+            spdlog::info("teammate completed: id={}", run_id);
             deliver_notification(run);
         }
 
         /// Executes the initial task. Returns false if execution threw (run already finalized).
         [[nodiscard]]
-        bool run_first_task(ActiveRun &run, WorkerRuntime &worker, const std::stop_token &stop_token) {
+        bool run_first_task(ActiveRun &run, TeammateRuntime &teammate, const std::stop_token &stop_token) {
             try {
-                auto output = worker.run(run.request.task_prompt, stop_token);
+                auto output = teammate.run(format_initial_prompt(run.request), stop_token);
                 std::scoped_lock lock(run.mutex);
                 run.record.final_output = std::move(output);
                 return true;
@@ -243,7 +249,7 @@ namespace orangutan::orchestration {
         }
 
         /// Teammate idle loop: mark idle, notify leader, wait for next prompt, repeat.
-        void run_idle_loop(ActiveRun &run, WorkerRuntime &worker, const std::stop_token &stop_token) {
+        void run_idle_loop(ActiveRun &run, TeammateRuntime &teammate, const std::stop_token &stop_token) {
             {
                 std::scoped_lock lock(run.mutex);
                 run.record.status = run_status::idle;
@@ -252,7 +258,7 @@ namespace orangutan::orchestration {
             deliver_notification(run);
 
             while (!stop_token.stop_requested()) {
-                auto next_prompt = worker.wait_for_next_prompt(stop_token);
+                auto next_prompt = teammate.wait_for_next_prompt(stop_token);
                 if (!next_prompt.has_value()) {
                     spdlog::info("teammate exiting idle loop (no more prompts): id={}", run.record.run_id);
                     return;
@@ -266,7 +272,7 @@ namespace orangutan::orchestration {
                 spdlog::info("teammate resuming with new prompt: id={}", run.record.run_id);
 
                 try {
-                    auto output = worker.run(*next_prompt, stop_token);
+                    auto output = teammate.run(*next_prompt, stop_token);
                     std::scoped_lock lock(run.mutex);
                     run.record.final_output = std::move(output);
                     run.record.status = run_status::idle;
@@ -331,9 +337,9 @@ namespace orangutan::orchestration {
         impl_->notification_callback = std::move(callback);
     }
 
-    void OrchestrationManager::set_worker_runtime_factory(WorkerRuntimeFactory factory) {
+    void OrchestrationManager::set_teammate_runtime_factory(TeammateRuntimeFactory factory) {
         std::scoped_lock lock(impl_->mutex);
-        impl_->worker_runtime_factory = std::move(factory);
+        impl_->teammate_runtime_factory = std::move(factory);
     }
 
     void OrchestrationManager::register_runtime_notification_handler(std::string runtime_key, RuntimeNotificationHandler handler) {
@@ -355,25 +361,22 @@ namespace orangutan::orchestration {
         if (impl_->shutting_down) {
             return AgentSpawnResult{.accepted = false, .error = "Orchestration manager is shutting down"};
         }
-        if (impl_->env.definition_registry != nullptr && !impl_->env.definition_registry->has(request.agent_key)) {
-            return AgentSpawnResult{.accepted = false, .error = "Unknown agent key: " + request.agent_key};
-        }
 
         auto run_id = impl_->make_run_id();
-        auto agent_name = request.agent_name.empty() ? request.agent_key + "-" + std::to_string(impl_->next_run_id) : request.agent_name;
+        auto agent_name = request.name.empty() ? "agent-" + std::to_string(impl_->next_run_id) : request.name;
 
         auto active_run = std::make_shared<Impl::ActiveRun>();
         active_run->request = request;
-        active_run->request.agent_name = agent_name;
+        active_run->request.name = agent_name;
         active_run->record = AgentRunRecord{
             .run_id = run_id,
-            .agent_key = request.agent_key,
             .agent_name = agent_name,
             .team_id = request.team_id,
             .parent_runtime_key = request.parent_runtime_key,
-            .role = request.role,
+            .role = agent_role::teammate,
+            .relationship = request.relationship,
             .status = run_status::queued,
-            .task_summary = request.task_prompt,
+            .task_summary = request.task,
             .started_at = utils::epoch_millis(),
         };
 
@@ -384,7 +387,7 @@ namespace orangutan::orchestration {
             impl_->pending_run_ids.push_back(run_id);
         }
 
-        spdlog::info("spawned agent run: id={} key={} name={} role={}", run_id, request.agent_key, agent_name, magic_enum::enum_name(request.role));
+        spdlog::info("spawned teammate run: id={} name={} relationship={}", run_id, agent_name, magic_enum::enum_name(request.relationship));
         return AgentSpawnResult{.accepted = true, .run_id = run_id, .agent_name = agent_name};
     }
 

@@ -40,20 +40,26 @@ namespace orangutan::tools {
             }
 
             // Send by agent name within a team
-            if (tool_context.team_id.empty()) {
+            auto team_id = tool_context.team_id;
+            if (team_id.empty() && tool_context.team_manager != nullptr) {
+                if (auto team = tool_context.team_manager->find_team_for_lead(tool_context.runtime_key); team.has_value()) {
+                    team_id = team->id;
+                }
+            }
+            if (team_id.empty()) {
                 return nlohmann::json{{"sent", false}, {"error", "Team context is required when addressing by name"}}.dump();
             }
 
             // Broadcast to all team members
             if (to == "*") {
-                if (const auto error = tool_context.orchestration_manager->broadcast_message(tool_context.team_id, sender_name, text); error.has_value()) {
+                if (const auto error = tool_context.orchestration_manager->broadcast_message(team_id, sender_name, text); error.has_value()) {
                     return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
                 }
                 return nlohmann::json{{"sent", true}}.dump();
             }
 
             // Directed message to a specific teammate
-            if (const auto error = tool_context.orchestration_manager->send_message_by_name(tool_context.team_id, sender_name, to, text); error.has_value()) {
+            if (const auto error = tool_context.orchestration_manager->send_message_by_name(team_id, sender_name, to, text); error.has_value()) {
                 return nlohmann::json{{"sent", false}, {"error", *error}}.dump();
             }
             return nlohmann::json{{"sent", true}}.dump();

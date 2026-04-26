@@ -54,7 +54,6 @@ namespace orangutan::config {
         std::vector<FallbackModelRef> fallback_models;
         std::string workspace;
         PermissionConfig permissions_config;
-        std::vector<std::string> team_agents;
         bool leader_mode = false;
         int max_concurrent_agents = 4;
         std::string edit_mode = "hashline";

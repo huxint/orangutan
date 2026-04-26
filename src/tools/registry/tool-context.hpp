@@ -82,7 +82,6 @@ namespace orangutan::tools {
         orchestration::OrchestrationManager *orchestration_manager = nullptr;
         orchestration::TeamManager *team_manager = nullptr;
         orchestration::AgentMailbox *mailbox = nullptr;
-        std::vector<std::string> team_agents;
         orchestration::agent_role role = orchestration::agent_role::standalone;
         base::origin runtime_origin = base::origin::cli;
         std::string raw_caller_id;

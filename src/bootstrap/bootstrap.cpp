@@ -1,6 +1,6 @@
 #include "bootstrap/bootstrap.hpp"
 
-#include "bootstrap/agent-loop-worker.hpp"
+#include "bootstrap/agent-loop-teammate.hpp"
 #include "bootstrap/cli-options.hpp"
 #include "bootstrap/cli-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
@@ -22,7 +22,6 @@
 #include "skills/skill-loader.hpp"
 #include "config/config.hpp"
 #include "storage/session-store.hpp"
-#include "orchestration/agent-definition-registry.hpp"
 #include "orchestration/mailbox.hpp"
 #include "orchestration/orchestration-manager.hpp"
 #include "orchestration/team-manager.hpp"
@@ -195,7 +194,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .cli_memory_scope = maybe_primary_identity->memory_scope,
             .memory = cfg.memory,
             .permission_context = initialize_permission_context(maybe_selected_agent->permissions_config, cli_permission_options, *maybe_workspace),
-            .team_agents = maybe_selected_agent->team_agents,
         };
     }
 
@@ -228,12 +226,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     const auto qq_bot_agents = build_qq_bot_agents(cfg);
 
     auto orchestration_state_root = orangutan::bootstrap::workspace_state_root(*maybe_app_workspace_root);
-    auto agent_definition_registry = std::make_unique<orangutan::orchestration::AgentDefinitionRegistry>();
-    agent_definition_registry->load_builtin_definitions();
-    if (maybe_primary_runtime_cfg.has_value()) {
-        agent_definition_registry->load_from_directory(std::filesystem::path{maybe_primary_runtime_cfg->workspace_root} / ".orangutan" / "agents");
-    }
-
     std::unique_ptr<orangutan::orchestration::AgentMailbox> agent_mailbox;
     std::unique_ptr<orangutan::orchestration::TeamManager> team_manager;
     try {
@@ -249,15 +241,14 @@ int orangutan::bootstrap::run(int argc, char **argv) {
     }
     auto orchestration_manager = std::make_unique<orangutan::orchestration::OrchestrationManager>(max_orchestrated_agents);
     orchestration_manager->set_environment(orangutan::orchestration::AgentExecutionEnvironment{
-        .definition_registry = agent_definition_registry.get(),
         .session_store = session_store.get(),
         .memory_store = memory_store.get(),
         .mailbox = agent_mailbox.get(),
         .team_manager = team_manager.get(),
     });
 
-    orchestration_manager->set_worker_runtime_factory(
-        orangutan::bootstrap::make_agent_loop_worker_factory(cfg, *maybe_agent_runtime_configs, memory_store.get(), *orchestration_manager));
+    orchestration_manager->set_teammate_runtime_factory(
+        orangutan::bootstrap::make_agent_loop_teammate_factory(cfg, *maybe_agent_runtime_configs, memory_store.get(), *orchestration_manager, team_manager.get(), agent_mailbox.get()));
 
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
 

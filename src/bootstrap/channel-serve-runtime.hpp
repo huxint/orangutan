@@ -29,6 +29,7 @@ namespace orangutan::bootstrap {
         std::string model;
         std::vector<std::string> fallback_models;
         providers::ProviderRoute provider_route;
+        std::string api_key_override;
         std::string workspace_root;
         std::string edit_mode = "hashline";
         int thinking_budget = 0;
@@ -36,7 +37,6 @@ namespace orangutan::bootstrap {
         std::string cli_memory_scope;
         Config::MemoryConfig memory;
         ToolPermissionContext permission_context;
-        std::vector<std::string> team_agents;
         bool leader_mode = false;
         int max_concurrent_agents = 4;
     };

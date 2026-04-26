@@ -10,6 +10,9 @@
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <condition_variable>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -47,22 +50,25 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_spawn");
-            CHECK(def->description == "Spawn a worker agent to handle a delegated task. Workers run a single task and report results. Teammates stay alive for follow-up messages "
-                                      "after completing their initial task.");
+            CHECK(def->description ==
+                  "Create a named teammate. Teammates join a team, can communicate with each other, and inherit the current runtime unless profile/model overrides are provided.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties",
                                             {
-                                                {"agent_key", {{"type", "string"}, {"description", "The agent type to spawn (e.g. general-purpose, explorer, planner)"}}},
-                                                {"prompt", {{"type", "string"}, {"description", "The task description and instructions for the agent"}}},
-                                                {"name", {{"type", "string"}, {"description", "Optional human-readable name for this agent instance"}}},
-                                                {"team", {{"type", "string"}, {"description", "Optional team ID to assign this agent to"}}},
-                                                {"role",
+                                                {"name", {{"type", "string"}, {"description", "Human-readable name for this agent instance"}}},
+                                                {"task", {{"type", "string"}, {"description", "The initial task or message for the spawned agent"}}},
+                                                {"instructions", {{"type", "string"}, {"description", "Optional behavior, persona, or operating instructions"}}},
+                                                {"team", {{"type", "string"}, {"description", "Optional team ID or team name to assign this agent to"}}},
+                                                {"relationship",
                                                  {{"type", "string"},
-                                                  {"description", "Agent lifecycle: 'worker' (fire-and-forget) or 'teammate' (persistent, waits for follow-up)"},
-                                                  {"enum", nlohmann::json::array({"worker", "teammate"})}}},
+                                                  {"description", "Relationship to the leader: 'managed' for assigned execution, 'peer' for discussion/coordination"},
+                                                  {"enum", nlohmann::json::array({"managed", "peer"})}}},
+                                                {"profile", {{"type", "string"}, {"description", "Optional config profile override for this spawned agent"}}},
+                                                {"model", {{"type", "string"}, {"description", "Optional model override within the selected profile"}}},
+                                                {"thinking_budget", {{"type", "integer"}, {"description", "Optional thinking budget override"}, {"minimum", 0}}},
                                             }},
-                                           {"required", nlohmann::json::array({"agent_key", "prompt"})},
+                                           {"required", nlohmann::json::array({"name", "task"})},
                                        });
         }
 
@@ -89,7 +95,7 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "agent_stop");
-            CHECK(def->description == "Stop a running agent. The agent will be given a chance to clean up before being terminated. Works for both workers and teammates.");
+            CHECK(def->description == "Stop a running teammate. The teammate will be given a chance to clean up before being terminated.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
@@ -124,21 +130,22 @@ namespace {
 
         auto result = registry.execute(ToolUse("spawn-1", "agent_spawn",
                                                {
-                                                   {"agent_key", "general-purpose"},
-                                                   {"prompt", "test task"},
+                                                   {"name", "helper"},
+                                                   {"task", "test task"},
                                                }));
 
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["accepted"] == true);
         CHECK(json["status"] == "running");
+        CHECK(json["relationship"] == "managed");
         REQUIRE(json.contains("run_id"));
         CHECK_FALSE(json["run_id"].get<std::string>().empty());
 
         manager.shutdown();
     }
 
-    TEST_CASE("agent_spawn rejects agent outside team_agents list", "[tools][orchestration]") {
+    TEST_CASE("agent_spawn accepts arbitrary dynamic teammate names", "[tools][orchestration]") {
         ToolRegistry registry;
         orchestration::OrchestrationManager manager(2);
 
@@ -146,7 +153,6 @@ namespace {
             .runtime_key = "test-runtime",
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
-            .team_agents = {"explorer"},
             .role = orchestration::agent_role::leader,
         };
 
@@ -154,19 +160,19 @@ namespace {
 
         auto result = registry.execute(ToolUse("spawn-2", "agent_spawn",
                                                {
-                                                   {"agent_key", "general-purpose"},
-                                                   {"prompt", "test task"},
+                                                   {"name", "freeform-reviewer"},
+                                                   {"task", "test task"},
                                                }));
 
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
-        CHECK(json["accepted"] == false);
-        CHECK(json["error"].get<std::string>().contains("allowed team_agents"));
+        CHECK(json["accepted"] == true);
+        CHECK(json["name"] == "freeform-reviewer");
 
         manager.shutdown();
     }
 
-    TEST_CASE("agent_spawn rejects invalid role values", "[tools][orchestration]") {
+    TEST_CASE("agent_spawn rejects invalid relationship values", "[tools][orchestration]") {
         ToolRegistry registry;
         orchestration::OrchestrationManager manager(2);
 
@@ -179,17 +185,17 @@ namespace {
 
         register_orchestration_tools(registry, &context);
 
-        auto result = registry.execute(ToolUse("spawn-invalid-role", "agent_spawn",
+        auto result = registry.execute(ToolUse("spawn-invalid-relationship", "agent_spawn",
                                                {
-                                                   {"agent_key", "general-purpose"},
-                                                   {"prompt", "test task"},
-                                                   {"role", "persistent"},
+                                                   {"name", "helper"},
+                                                   {"task", "test task"},
+                                                   {"relationship", "assistant"},
                                                }));
 
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["accepted"] == false);
-        CHECK(json["error"].get<std::string>() == "Invalid role: persistent. Expected 'worker' or 'teammate'.");
+        CHECK(json["error"].get<std::string>() == "Invalid relationship: assistant. Expected 'managed' or 'peer'.");
 
         manager.shutdown();
     }
@@ -205,7 +211,6 @@ namespace {
             .agent_key = "test-agent",
             .orchestration_manager = &manager,
             .team_manager = &team_manager,
-            .team_agents = {"general-purpose"},
             .role = orchestration::agent_role::leader,
         };
 
@@ -213,8 +218,8 @@ namespace {
 
         auto result = registry.execute(ToolUse("spawn-3", "agent_spawn",
                                                {
-                                                   {"agent_key", "general-purpose"},
-                                                   {"prompt", "test task"},
+                                                   {"name", "researcher"},
+                                                   {"task", "test task"},
                                                    {"team", team.name},
                                                }));
 
@@ -223,9 +228,88 @@ namespace {
         REQUIRE(json["accepted"] == true);
 
         const auto members = team_manager.list_members(team.id);
-        REQUIRE(members.size() == 1);
-        CHECK(members.front().agent_key == "general-purpose");
-        CHECK(members.front().agent_id == json["run_id"].get<std::string>());
+        REQUIRE(members.size() == 2);
+        CHECK(std::ranges::any_of(members, [&](const orchestration::TeamMemberRecord &member) {
+            return member.name == "researcher" && member.agent_id == json["run_id"].get<std::string>();
+        }));
+
+        manager.shutdown();
+    }
+
+    TEST_CASE("agent_spawn injects and broadcasts team context", "[tools][orchestration]") {
+        ToolRegistry registry;
+        orchestration::OrchestrationManager manager(2);
+        orchestration::TeamManager team_manager(":memory:");
+        orchestration::AgentMailbox mailbox(":memory:");
+        auto team = team_manager.create_team("research", "Research team", "lead-runtime");
+        team_manager.add_member({.agent_id = "writer-run", .name = "writer", .config_agent_key = "default", .team_id = team.id});
+
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::optional<std::string> captured_instructions;
+        manager.set_teammate_runtime_factory([&](const orchestration::AgentSpawnRequest &request) {
+            {
+                std::scoped_lock lock(mutex);
+                captured_instructions = request.instructions;
+            }
+            cv.notify_one();
+
+            struct ImmediateTeammate final : orchestration::TeammateRuntime {
+                std::string run(const std::string &, std::stop_token) override {
+                    return "ok";
+                }
+            };
+            return std::make_unique<ImmediateTeammate>();
+        });
+
+        ToolRuntimeContext context{
+            .runtime_key = "lead-runtime",
+            .agent_key = "default",
+            .agent_name = "lead",
+            .orchestration_manager = &manager,
+            .team_manager = &team_manager,
+            .mailbox = &mailbox,
+            .role = orchestration::agent_role::leader,
+        };
+
+        register_orchestration_tools(registry, &context);
+
+        auto result = registry.execute(ToolUse("spawn-team-context", "agent_spawn",
+                                               {
+                                                   {"name", "researcher"},
+                                                   {"task", "Map the API route ownership."},
+                                                   {"team", team.id},
+                                                   {"relationship", "peer"},
+                                               }));
+
+        CHECK_FALSE(result.is_error);
+        auto json = nlohmann::json::parse(result.content);
+        REQUIRE(json["accepted"] == true);
+
+        {
+            std::unique_lock lock(mutex);
+            cv.wait_for(lock, std::chrono::seconds(2), [&captured_instructions] {
+                return captured_instructions.has_value();
+            });
+        }
+        REQUIRE(captured_instructions.has_value());
+        CHECK(captured_instructions->contains("## Team Context"));
+        CHECK(captured_instructions->contains("Team: research"));
+        CHECK(captured_instructions->contains("`lead` (leader"));
+        CHECK(captured_instructions->contains("`writer`"));
+        CHECK(captured_instructions->contains("`researcher`"));
+        CHECK(captured_instructions->contains("Relationship to leader: peer"));
+        CHECK(captured_instructions->contains("to:\"*\""));
+
+        const auto writer_messages = mailbox.poll(team.id, "writer");
+        REQUIRE(writer_messages.size() == 1);
+        CHECK(writer_messages.front().from == "lead");
+        CHECK(writer_messages.front().text.contains("Team update"));
+        CHECK(writer_messages.front().text.contains("`lead` (leader"));
+        CHECK(writer_messages.front().text.contains("`researcher`"));
+
+        const auto researcher_messages = mailbox.poll(team.id, "researcher");
+        CHECK(researcher_messages.empty());
 
         manager.shutdown();
     }
@@ -317,7 +401,7 @@ namespace {
         orchestration::TeamManager team_manager(":memory:");
         orchestration::AgentMailbox mailbox(":memory:");
         auto team = team_manager.create_team("research", "Research team", "lead");
-        team_manager.add_member({.agent_id = "agent-2", .name = "worker2", .agent_key = "explorer", .team_id = team.id});
+        team_manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "explorer", .team_id = team.id});
         manager.set_environment({
             .mailbox = &mailbox,
             .team_manager = &team_manager,
@@ -326,7 +410,7 @@ namespace {
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
             .agent_key = "general-purpose",
-            .agent_name = "worker1",
+            .agent_name = "teammate1",
             .team_id = team.id,
             .orchestration_manager = &manager,
             .team_manager = &team_manager,
@@ -337,18 +421,18 @@ namespace {
 
         auto result = registry.execute(ToolUse("msg-2", "agent_send_message",
                                                {
-                                                   {"to", "worker2"},
-                                                   {"text", "hello worker2"},
+                                                   {"to", "teammate2"},
+                                                   {"text", "hello teammate2"},
                                                }));
 
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["sent"] == true);
 
-        const auto messages = mailbox.poll(team.id, "worker2");
+        const auto messages = mailbox.poll(team.id, "teammate2");
         REQUIRE(messages.size() == 1);
-        CHECK(messages.front().from == "worker1");
-        CHECK(messages.front().text == "hello worker2");
+        CHECK(messages.front().from == "teammate1");
+        CHECK(messages.front().text == "hello teammate2");
 
         manager.shutdown();
     }
@@ -360,8 +444,8 @@ namespace {
         manager.set_environment({
             .mailbox = &mailbox,
         });
-        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
-            struct WaitingWorker final : orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct WaitingTeammate final : orchestration::TeammateRuntime {
                 std::string run(const std::string &, std::stop_token stop_token) override {
                     for (int i = 0; i < 50; ++i) {
                         if (stop_token.stop_requested()) {
@@ -372,7 +456,7 @@ namespace {
                     return "done";
                 }
             };
-            return std::make_unique<WaitingWorker>();
+            return std::make_unique<WaitingTeammate>();
         });
 
         ToolRuntimeContext context{
@@ -386,9 +470,8 @@ namespace {
         register_orchestration_tools(registry, &context);
 
         const auto spawned = manager.spawn({
-            .agent_key = "general-purpose",
-            .agent_name = "worker-a",
-            .task_prompt = "wait",
+            .name = "teammate-a",
+            .task = "wait",
             .team_id = "team-1",
             .parent_runtime_key = "test-runtime",
         });
@@ -404,7 +487,7 @@ namespace {
         auto json = nlohmann::json::parse(result.content);
         CHECK(json["sent"] == true);
 
-        const auto messages = mailbox.poll("team-1", "worker-a");
+        const auto messages = mailbox.poll("team-1", "teammate-a");
         REQUIRE(messages.size() == 1);
         CHECK(messages.front().from == "lead");
         CHECK(messages.front().text == "hello by run id");
@@ -426,14 +509,14 @@ namespace {
             return std::nullopt;
         });
 
-        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
-            struct ImmediateWorker final : orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct ImmediateTeammate final : orchestration::TeammateRuntime {
                 std::string run(const std::string &, std::stop_token) override {
                     return "ok";
                 }
             };
 
-            return std::make_unique<ImmediateWorker>();
+            return std::make_unique<ImmediateTeammate>();
         });
 
         ToolRuntimeContext context{
@@ -448,8 +531,8 @@ namespace {
 
         auto result = registry.execute(ToolUse("spawn-race", "agent_spawn",
                                                {
-                                                   {"agent_key", "general-purpose"},
-                                                   {"prompt", "trigger callback"},
+                                                   {"name", "callback-teammate"},
+                                                   {"task", "trigger callback"},
                                                }));
         CHECK_FALSE(result.is_error);
 

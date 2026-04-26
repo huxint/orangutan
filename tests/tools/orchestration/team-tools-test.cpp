@@ -38,7 +38,7 @@ namespace {
             REQUIRE(def != nullptr);
 
             CHECK(def->name == "team_create");
-            CHECK(def->description == "Create a new team for organizing agents that collaborate on a shared task.");
+            CHECK(def->description == "Create a team workspace for teammates collaborating on a shared task.");
             CHECK(def->input_schema == nlohmann::json{
                                            {"type", "object"},
                                            {"properties",
@@ -99,6 +99,7 @@ namespace {
         CHECK(json["name"] == "test-team");
         REQUIRE(json.contains("team_id"));
         CHECK(team_manager.find_team(json["team_id"].get<std::string>()).has_value());
+        CHECK(team_manager.list_member_names(json["team_id"].get<std::string>()) == std::vector<std::string>{"test-agent"});
     }
 
     TEST_CASE("team_create tool returns an error when team manager is unavailable", "[tools][orchestration]") {
@@ -151,8 +152,8 @@ namespace {
         orchestration::AgentMailbox mailbox(":memory:");
 
         auto team = team_manager.create_team("test-team", "A test team", "lead");
-        team_manager.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
-        team_manager.add_member({.agent_id = "agent-2", .name = "worker2", .agent_key = "explorer", .team_id = team.id});
+        team_manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id});
+        team_manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "explorer", .team_id = team.id});
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
@@ -175,15 +176,15 @@ namespace {
         CHECK(json["deleted"] == true);
         CHECK(json["shutdown_requests_sent"] == 2);
 
-        auto worker1_messages = mailbox.poll(team.id, "worker1");
-        auto worker2_messages = mailbox.poll(team.id, "worker2");
-        REQUIRE(worker1_messages.size() == 1);
-        REQUIRE(worker2_messages.size() == 1);
-        CHECK(worker1_messages.front().from == "lead");
-        CHECK(worker2_messages.front().from == "lead");
-        CHECK(worker1_messages.front().type == message_type::shutdown_request);
-        CHECK(worker2_messages.front().type == message_type::shutdown_request);
-        CHECK(worker1_messages.front().text == "Team shutdown requested");
+        auto teammate1_messages = mailbox.poll(team.id, "teammate1");
+        auto teammate2_messages = mailbox.poll(team.id, "teammate2");
+        REQUIRE(teammate1_messages.size() == 1);
+        REQUIRE(teammate2_messages.size() == 1);
+        CHECK(teammate1_messages.front().from == "lead");
+        CHECK(teammate2_messages.front().from == "lead");
+        CHECK(teammate1_messages.front().type == message_type::shutdown_request);
+        CHECK(teammate2_messages.front().type == message_type::shutdown_request);
+        CHECK(teammate1_messages.front().text == "Team shutdown requested");
 
         CHECK_FALSE(team_manager.find_team(team.id).has_value());
         CHECK(team_manager.list_members(team.id).empty());
@@ -195,7 +196,7 @@ namespace {
         orchestration::AgentMailbox mailbox(":memory:");
 
         auto team = team_manager.create_team("graceful-team", "A test team", "lead");
-        team_manager.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
+        team_manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id});
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",

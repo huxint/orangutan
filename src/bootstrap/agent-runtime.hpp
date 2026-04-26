@@ -51,7 +51,6 @@ namespace orangutan::bootstrap {
         int thinking_budget = 0;
         Config::MemoryConfig memory;
         ToolPermissionContext permission_context;
-        std::vector<std::string> team_agents;
         std::string team_id;
         RuntimeIdentity identity;
 

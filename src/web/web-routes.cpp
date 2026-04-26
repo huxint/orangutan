@@ -122,7 +122,6 @@ namespace orangutan::web {
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
                 .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
-                .team_agents = agent.team_agents,
                 .leader_mode = agent.leader_mode,
             };
             auto input = bootstrap::make_runtime_build_input(bootstrap::RuntimeAssemblyRequest{

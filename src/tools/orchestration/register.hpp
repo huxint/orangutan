@@ -12,4 +12,7 @@ namespace orangutan::tools {
 
     /// Register all orchestration tools (agent + team management).
     void register_orchestration_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
+
+    /// Register only communication tools safe for delegated teammates.
+    void register_agent_communication_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context);
 } // namespace orangutan::tools

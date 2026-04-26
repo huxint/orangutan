@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "orchestration/types.hpp"
+
 namespace orangutan::orchestration {
 
     struct TeamRecord {
@@ -21,8 +23,9 @@ namespace orangutan::orchestration {
     struct TeamMemberRecord {
         std::string agent_id;
         std::string name;
-        std::string agent_key;
+        std::string config_agent_key;
         std::string team_id;
+        teammate_relationship relationship = teammate_relationship::managed;
         std::int64_t joined_at = 0;
         bool active = true;
     };
@@ -38,13 +41,18 @@ namespace orangutan::orchestration {
         TeamManager &operator=(TeamManager &&) = delete;
 
         [[nodiscard]]
-        TeamRecord create_team(const std::string &name, const std::string &description, const std::string &lead_agent_id);
+        TeamRecord create_team(const std::string &name,
+                               const std::string &description,
+                               const std::string &lead_agent_id);
 
         [[nodiscard]]
         std::optional<TeamRecord> find_team(const std::string &team_id) const;
 
         [[nodiscard]]
         std::optional<TeamRecord> find_team_by_name(const std::string &name) const;
+
+        [[nodiscard]]
+        std::optional<TeamRecord> find_team_for_lead(const std::string &lead_agent_id) const;
 
         void delete_team(const std::string &team_id);
 

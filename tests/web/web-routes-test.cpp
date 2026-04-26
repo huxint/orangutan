@@ -80,7 +80,6 @@ namespace {
                 {
                     .default_mode = orangutan::permission_mode::default_mode,
                 },
-            .team_agents = {"coder"},
         };
         cfg.agents["coder"] = orangutan::AgentConfig{
             .profile = "shared",
@@ -206,7 +205,7 @@ namespace {
         cfg.model = "default-model";
         cfg.profiles.emplace("shared", make_profile({{"default-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
                                                      {"helper-model", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
-        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model", .team_agents = {"helper"}};
+        cfg.agents["default"] = orangutan::AgentConfig{.profile = "shared", .model = "default-model"};
         cfg.agents["helper"] = orangutan::AgentConfig{.profile = "shared", .model = "helper-model"};
         orangutan::WebServer server;
         server.set_config(&cfg);
@@ -224,7 +223,7 @@ namespace {
         for (const auto &agent : agents) {
             if (agent["key"] == "default") {
                 saw_default = true;
-                CHECK(agent["team_agents"][0] == "helper");
+                CHECK_FALSE(agent.contains("team_agents"));
             }
             if (agent["key"] == "helper") {
                 saw_helper = true;
@@ -328,7 +327,6 @@ namespace {
         CHECK(runtime.tool_context().runtime_origin == base::origin::web);
         CHECK(runtime.tool_context().raw_caller_id == "web:local");
         CHECK(runtime.tool_context().current_session_id == &session_id);
-        CHECK(runtime.tool_context().team_agents == std::vector<std::string>({"coder"}));
         CHECK(runtime.tool_context().automation_service == &app_runtime.automation_service());
         CHECK(runtime.tool_context().automation_runtime == &app_runtime.automation_runtime());
         CHECK(runtime.tool_context().approval_callback != nullptr);

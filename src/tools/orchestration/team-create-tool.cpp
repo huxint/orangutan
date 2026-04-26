@@ -23,7 +23,14 @@ namespace orangutan::tools {
 
             spdlog::info("team_create called: name={}", name);
 
-            auto record = tool_context.team_manager->create_team(name, description, tool_context.agent_key);
+            auto record = tool_context.team_manager->create_team(name, description, tool_context.runtime_key);
+            tool_context.team_manager->add_member(orchestration::TeamMemberRecord{
+                .agent_id = tool_context.runtime_key,
+                .name = tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name,
+                .config_agent_key = tool_context.agent_key,
+                .team_id = record.id,
+                .relationship = orchestration::teammate_relationship::managed,
+            });
             return nlohmann::json{
                 {"created", true},
                 {"team_id", record.id},
@@ -36,7 +43,7 @@ namespace orangutan::tools {
 
     void register_team_create_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
         if (auto tool = make_tool_spec_builder("team_create")
-                            .description("Create a new team for organizing agents that collaborate on a shared task.")
+                            .description("Create a team workspace for teammates collaborating on a shared task.")
                             .input_schema({{"type", "object"},
                                            {"properties",
                                             {{"name", {{"type", "string"}, {"description", "A unique name for the team"}}},

@@ -83,7 +83,6 @@ namespace orangutan::web {
                 {"model", agent_cfg.model},
                 {"workspace", agent_cfg.workspace},
                 {"edit_mode", agent_cfg.edit_mode},
-                {"team_agents", agent_cfg.team_agents},
                 {"fallback_models", fallback_models_to_json(agent_cfg.fallback_models)},
                 {"thinking_budget", agent_cfg.thinking_budget},
             };
@@ -193,7 +192,6 @@ namespace orangutan::web {
                 {"model", agent.model},
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},
-                {"team_agents", agent.team_agents},
             });
         }
         send_json(res, {{"items", std::move(arr)}});
@@ -230,16 +228,8 @@ namespace orangutan::web {
                 {"workspace", agent.workspace},
                 {"edit_mode", agent.edit_mode},
                 {"leader_mode", agent.leader_mode},
-                {"team_size", agent.team_agents.size()},
                 {"live_sessions", live_it == live_counts.end() ? 0 : live_it->second},
             });
-            for (const auto &peer : agent.team_agents) {
-                edges.push_back({
-                    {"source", key},
-                    {"target", peer},
-                    {"kind", "team"},
-                });
-            }
         }
 
         send_json(res, {

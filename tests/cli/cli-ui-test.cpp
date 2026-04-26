@@ -8,16 +8,16 @@
 
 namespace {
 
-    TEST_CASE("format_agent_list_marks_current_agent_and_team_agents") {
+    TEST_CASE("format_agent_list_marks_current_agent") {
         orangutan::Config cfg;
-        cfg.agents.insert_or_assign("default", orangutan::AgentConfig{.model = "model-a", .workspace = "/tmp/default", .team_agents = {"coder"}});
-        cfg.agents.insert_or_assign("coder", orangutan::AgentConfig{.model = "model-b", .workspace = "/tmp/coder", .team_agents = {}});
+        cfg.agents.insert_or_assign("default", orangutan::AgentConfig{.model = "model-a", .workspace = "/tmp/default"});
+        cfg.agents.insert_or_assign("coder", orangutan::AgentConfig{.model = "model-b", .workspace = "/tmp/coder"});
 
         const auto text = orangutan::cli::format_agent_list(cfg, "coder");
         CHECK(text.contains("## Agents"));
         CHECK(text.contains("`default`"));
         CHECK(text.contains("`coder` **(current)**"));
-        CHECK(text.contains("team_agents: `coder`"));
+        CHECK_FALSE(text.contains("team_agents"));
     };
 
     TEST_CASE("collect_and_format_runtime_status_reports_model_usage_and_tool_counts") {

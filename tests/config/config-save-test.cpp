@@ -46,7 +46,6 @@ namespace {
                     orangutan::FallbackModelRef{"gateway-b", "claude-sonnet-4-20250514"},
                 },
             .workspace = "~/workspace/default",
-            .team_agents = {"coder"},
         };
 
         const auto path = orangutan::testing::unique_test_path("config-save", "config.json");

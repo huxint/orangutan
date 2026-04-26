@@ -559,31 +559,6 @@ namespace {
         CHECK(std::filesystem::is_directory(expected));
     };
 
-    TEST_CASE("build_agent_runtime_configs_preserves_default_team_agents") {
-        BootstrapHarness harness;
-        Config cfg;
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
-                                                     {"gpt-coder", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
-        cfg.agents.emplace("default", AgentConfig{
-                                          .profile = "shared",
-                                          .model = "gpt-test",
-                                          .workspace = harness.workspace_root().string(),
-                                          .team_agents = {"coder"},
-                                      });
-        cfg.agents.emplace("coder", AgentConfig{
-                                        .profile = "shared",
-                                        .model = "gpt-coder",
-                                        .workspace = harness.workspace_root().string(),
-                                    });
-
-        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
-        REQUIRE(runtime_configs.has_value());
-        auto default_it = runtime_configs->find("default");
-        REQUIRE(default_it != runtime_configs->end());
-        CHECK(default_it->second.team_agents.size() == 1UL);
-        CHECK(default_it->second.team_agents.front() == "coder");
-    };
-
     TEST_CASE("build_agent_runtime_configs_resolves_cross_profile_fallbacks") {
         BootstrapHarness harness;
         Config cfg;
@@ -610,6 +585,25 @@ namespace {
         CHECK(it->second.provider_route.fallbacks[0].model == "claude-test");
         CHECK(it->second.provider_route.fallbacks[0].base_url == "https://anthropic.example.test");
         CHECK(it->second.provider_route.fallbacks[0].api_key == "anthropic-key");
+    };
+
+    TEST_CASE("build_agent_runtime_configs_preserves_cli_api_key_override") {
+        BootstrapHarness harness;
+        Config cfg;
+        cfg.profiles.emplace("openai", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "responses"}}}, "profile-key"));
+        cfg.agents.emplace("default", AgentConfig{
+                                          .profile = "openai",
+                                          .model = "gpt-test",
+                                          .workspace = harness.workspace_root().string(),
+                                      });
+
+        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "cli-key");
+        REQUIRE(runtime_configs.has_value());
+        const auto it = runtime_configs->find("default");
+        REQUIRE(it != runtime_configs->end());
+
+        CHECK(it->second.api_key_override == "cli-key");
+        CHECK(it->second.provider_route.primary.api_key == "cli-key");
     };
 
     TEST_CASE("build_agent_runtime_configs_constructs_permission_contexts") {
@@ -664,7 +658,6 @@ namespace {
             .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,
             .permission_context = runtime_it->second.permission_context,
-            .team_agents = runtime_it->second.team_agents,
             .identity = identity,
             .memory_store = &memory_store,
             .automation_runtime = &app_runtime.automation_runtime(),

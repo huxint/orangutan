@@ -6,8 +6,10 @@
 #include <string>
 #include <utility>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include "utils/enum-string.hpp"
 #include "storage/sqlite-throwing.hpp"
 #include "utils/time-format.hpp"
 
@@ -35,16 +37,17 @@ namespace orangutan::sqlite {
     template <>
     struct RowMapper<orangutan::orchestration::TeamMemberRecord> {
         static auto map(const Row &row) -> SqliteResult<orangutan::orchestration::TeamMemberRecord> {
-            auto columns = read_columns<std::string, std::string, std::string, std::string, std::int64_t, int>(row);
+            auto columns = read_columns<std::string, std::string, std::string, std::string, std::string, std::int64_t, int>(row);
             if (!columns) {
                 return std::unexpected(columns.error());
             }
-            auto &[agent_id, name, agent_key, team_id, joined_at, active] = *columns;
+            auto &[agent_id, name, config_agent_key, team_id, relationship, joined_at, active] = *columns;
             return orangutan::orchestration::TeamMemberRecord{
                 .agent_id = std::move(agent_id),
                 .name = std::move(name),
-                .agent_key = std::move(agent_key),
+                .config_agent_key = std::move(config_agent_key),
                 .team_id = std::move(team_id),
+                .relationship = orangutan::utils::parse_enum_or(relationship, orangutan::orchestration::teammate_relationship::managed),
                 .joined_at = joined_at,
                 .active = active != 0,
             };
@@ -61,6 +64,14 @@ namespace orangutan::orchestration {
             static std::atomic<std::uint64_t> counter{0};
             auto seq = counter.fetch_add(1, std::memory_order_relaxed);
             return "team-" + std::to_string(utils::steady_micros()) + "-" + std::to_string(seq);
+        }
+
+        void ensure_column(sqlite::Database &db, std::string_view table_name, std::string_view column_name, std::string_view add_sql) {
+            const auto existing = sqlite::query_optional<int>(db, fmt::format("SELECT 1 FROM pragma_table_info('{}') WHERE name = ? LIMIT 1", table_name), column_name);
+            if (existing.has_value()) {
+                return;
+            }
+            sqlite::exec_script(db, add_sql, "failed to migrate team manager schema");
         }
 
     } // namespace
@@ -86,11 +97,13 @@ namespace orangutan::orchestration {
                                 "    name TEXT NOT NULL,"
                                 "    agent_key TEXT NOT NULL,"
                                 "    team_id TEXT NOT NULL REFERENCES teams(id),"
+                                "    relationship TEXT NOT NULL DEFAULT 'managed',"
                                 "    joined_at INTEGER NOT NULL,"
                                 "    active INTEGER NOT NULL DEFAULT 1,"
                                 "    PRIMARY KEY (team_id, agent_id)"
                                 ");",
                                 "failed to create team manager tables");
+            ensure_column(db, "team_members", "relationship", "ALTER TABLE team_members ADD COLUMN relationship TEXT NOT NULL DEFAULT 'managed'");
         }
 
         Impl(const Impl &) = delete;
@@ -106,7 +119,9 @@ namespace orangutan::orchestration {
 
     TeamManager::~TeamManager() = default;
 
-    TeamRecord TeamManager::create_team(const std::string &name, const std::string &description, const std::string &lead_agent_id) {
+    TeamRecord TeamManager::create_team(const std::string &name,
+                                        const std::string &description,
+                                        const std::string &lead_agent_id) {
         std::scoped_lock lock(impl_->mutex);
 
         TeamRecord record;
@@ -156,6 +171,21 @@ namespace orangutan::orchestration {
         }
     }
 
+    std::optional<TeamRecord> TeamManager::find_team_for_lead(const std::string &lead_agent_id) const {
+        std::scoped_lock lock(impl_->mutex);
+
+        try {
+            return sqlite::query_optional<TeamRecord>(
+                impl_->db,
+                "SELECT id, name, description, lead_agent_id, created_at, active "
+                "FROM teams WHERE lead_agent_id = ? AND active = 1 ORDER BY created_at DESC LIMIT 1",
+                lead_agent_id);
+        } catch (const std::exception &ex) {
+            spdlog::error("failed to find team for lead {}: {}", lead_agent_id, ex.what());
+            return std::nullopt;
+        }
+    }
+
     void TeamManager::delete_team(const std::string &team_id) {
         std::scoped_lock lock(impl_->mutex);
 
@@ -174,8 +204,9 @@ namespace orangutan::orchestration {
 
         try {
             sqlite::exec_bind(impl_->db,
-                              "INSERT INTO team_members (agent_id, name, agent_key, team_id, joined_at, active) VALUES (?, ?, ?, ?, ?, 1)",
-                              member.agent_id, member.name, member.agent_key, member.team_id, member.joined_at != 0 ? member.joined_at : utils::epoch_millis());
+                              "INSERT OR IGNORE INTO team_members (agent_id, name, agent_key, team_id, relationship, joined_at, active) VALUES (?, ?, ?, ?, ?, ?, 1)",
+                              member.agent_id, member.name, member.config_agent_key, member.team_id, utils::enum_name(member.relationship),
+                              member.joined_at != 0 ? member.joined_at : utils::epoch_millis());
         } catch (const std::exception &ex) {
             spdlog::error("failed to insert team member: {}", ex.what());
         }
@@ -187,7 +218,7 @@ namespace orangutan::orchestration {
         try {
             return sqlite::query_all<TeamMemberRecord>(
                 impl_->db,
-                "SELECT agent_id, name, agent_key, team_id, joined_at, active "
+                "SELECT agent_id, name, agent_key, team_id, relationship, joined_at, active "
                 "FROM team_members WHERE team_id = ? AND active = 1",
                 team_id);
         } catch (const std::exception &ex) {

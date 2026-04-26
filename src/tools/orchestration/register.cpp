@@ -23,4 +23,11 @@ namespace orangutan::tools {
         }
     }
 
+    void register_agent_communication_tools(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        if (tool_context == nullptr) {
+            return;
+        }
+        register_agent_send_message_tool(registry, tool_context);
+    }
+
 } // namespace orangutan::tools

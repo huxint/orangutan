@@ -185,8 +185,9 @@ namespace orangutan::bootstrap::detail {
                                                       labels.push_back(fallback_display_label(fallback));
                                                   }
                                                   return labels;
-                                              }(),
+                                          }(),
                                           .provider_route = maybe_route->route,
+                                          .api_key_override = std::string{cli_api_key_override},
                                           .workspace_root = resolved_workspace_root,
                                           .edit_mode = agent_cfg.edit_mode,
                                           .thinking_budget = agent_cfg.thinking_budget,
@@ -194,7 +195,6 @@ namespace orangutan::bootstrap::detail {
                                           .cli_memory_scope = cli_identity.memory_scope,
                                           .memory = cfg.memory,
                                           .permission_context = build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
-                                          .team_agents = agent_cfg.team_agents,
                                           .leader_mode = agent_cfg.leader_mode,
                                           .max_concurrent_agents = agent_cfg.max_concurrent_agents,
                                       });

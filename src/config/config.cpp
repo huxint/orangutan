@@ -319,9 +319,6 @@ namespace orangutan::config {
                 if (!agent_cfg.workspace.empty()) {
                     agent_json["workspace"] = agent_cfg.workspace;
                 }
-                if (!agent_cfg.team_agents.empty()) {
-                    agent_json["team_agents"] = agent_cfg.team_agents;
-                }
                 if (agent_cfg.leader_mode) {
                     agent_json["leader_mode"] = agent_cfg.leader_mode;
                 }

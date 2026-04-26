@@ -50,17 +50,10 @@
   "agents": {
     "default": {
       "leader_mode": true,
-      "team_agents": [
-        "coder",
-        "research"
-      ],
       "max_concurrent_agents": 4
     },
     "coder": {
       "edit_mode": "search_replace",
-      "team_agents": [
-        "research"
-      ],
       "permissions": {
         "default_mode": "default_mode",
         "allow": ["read", "edit"],

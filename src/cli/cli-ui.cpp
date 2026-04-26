@@ -34,15 +34,6 @@ namespace orangutan::cli {
             if (!agent_cfg.workspace.empty()) {
                 utils::format_to(out, ", workspace: `{}`", agent_cfg.workspace);
             }
-            if (!agent_cfg.team_agents.empty()) {
-                out += ", team_agents: ";
-                for (std::size_t index = 0; index < agent_cfg.team_agents.size(); ++index) {
-                    if (index > 0) {
-                        out.push_back(',');
-                    }
-                    utils::format_to(out, "`{}`", agent_cfg.team_agents[index]);
-                }
-            }
             out.push_back('\n');
         }
         return out;

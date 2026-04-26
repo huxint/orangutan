@@ -1,5 +1,4 @@
 #include "orchestration/orchestration-manager.hpp"
-#include "orchestration/agent-definition-registry.hpp"
 #include "orchestration/mailbox.hpp"
 #include "orchestration/team-manager.hpp"
 #include "test-helpers.hpp"
@@ -14,21 +13,15 @@ using namespace orangutan;
 
 namespace {
 
-    TEST_CASE("orchestration manager spawns worker and receives notification", "[integration][orchestration]") {
-        orchestration::AgentDefinitionRegistry def_registry;
-        def_registry.load_builtin_definitions();
-
+    TEST_CASE("orchestration manager spawns teammate and receives notification", "[integration][orchestration]") {
         orchestration::OrchestrationManager manager(2);
-        manager.set_environment(orchestration::AgentExecutionEnvironment{
-            .definition_registry = &def_registry,
-        });
-        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
-            struct ImmediateWorker final : orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct ImmediateTeammate final : orchestration::TeammateRuntime {
                 std::string run(const std::string &, std::stop_token) override {
                     return "integration done";
                 }
             };
-            return std::make_unique<ImmediateWorker>();
+            return std::make_unique<ImmediateTeammate>();
         });
 
         std::atomic<bool> notification_received{false};
@@ -42,14 +35,14 @@ namespace {
         });
 
         auto result = manager.spawn(orchestration::AgentSpawnRequest{
-            .agent_key = "general-purpose",
-            .task_prompt = "Test task for integration",
+            .name = "integration-teammate",
+            .task = "Test task for integration",
             .parent_runtime_key = "test-runtime",
         });
         REQUIRE(result.accepted);
         REQUIRE(!result.run_id.empty());
 
-        // Wait for the worker to complete
+        // Wait for the teammate to complete
         for (int i = 0; i < 100 && !notification_received.load(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -68,66 +61,61 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("orchestration manager rejects unknown agent key", "[integration][orchestration]") {
-        orchestration::AgentDefinitionRegistry def_registry;
-        def_registry.load_builtin_definitions();
-
+    TEST_CASE("orchestration manager accepts dynamic agent names", "[integration][orchestration]") {
         orchestration::OrchestrationManager manager(2);
-        manager.set_environment(orchestration::AgentExecutionEnvironment{
-            .definition_registry = &def_registry,
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct ImmediateTeammate final : orchestration::TeammateRuntime {
+                std::string run(const std::string &, std::stop_token) override {
+                    return "ok";
+                }
+            };
+            return std::make_unique<ImmediateTeammate>();
         });
 
         auto result = manager.spawn(orchestration::AgentSpawnRequest{
-            .agent_key = "nonexistent-agent",
-            .task_prompt = "This should fail",
+            .name = "whatever-the-leader-needs",
+            .task = "This should run",
             .parent_runtime_key = "test-runtime",
         });
 
-        CHECK_FALSE(result.accepted);
-        CHECK(!result.error.empty());
-        CHECK(result.run_id.empty());
+        CHECK(result.accepted);
+        CHECK(!result.run_id.empty());
 
         manager.shutdown();
     }
 
     TEST_CASE("orchestration manager queues runs beyond max concurrent limit", "[integration][orchestration]") {
-        orchestration::AgentDefinitionRegistry def_registry;
-        def_registry.load_builtin_definitions();
-
         orchestration::OrchestrationManager manager(1);
-        manager.set_environment(orchestration::AgentExecutionEnvironment{
-            .definition_registry = &def_registry,
-        });
 
         std::atomic<bool> release_first{false};
         std::atomic<int> started{0};
-        manager.set_worker_runtime_factory([&](const orchestration::AgentSpawnRequest &request) {
-            struct QueuedWorker final : orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([&](const orchestration::AgentSpawnRequest &request) {
+            struct QueuedTeammate final : orchestration::TeammateRuntime {
                 std::atomic<bool> *release_first = nullptr;
                 std::atomic<int> *started = nullptr;
-                std::string task_prompt;
+                std::string task;
 
                 std::string run(const std::string &, std::stop_token) override {
                     started->fetch_add(1);
-                    if (task_prompt == "first task") {
+                    if (task == "first task") {
                         for (int i = 0; i < 100 && !release_first->load(); ++i) {
                             std::this_thread::sleep_for(std::chrono::milliseconds(10));
                         }
                     }
-                    return task_prompt + " complete";
+                    return task + " complete";
                 }
             };
 
-            auto worker = std::make_unique<QueuedWorker>();
-            worker->release_first = &release_first;
-            worker->started = &started;
-            worker->task_prompt = request.task_prompt;
-            return worker;
+            auto teammate = std::make_unique<QueuedTeammate>();
+            teammate->release_first = &release_first;
+            teammate->started = &started;
+            teammate->task = request.task;
+            return teammate;
         });
 
         auto r1 = manager.spawn(orchestration::AgentSpawnRequest{
-            .agent_key = "general-purpose",
-            .task_prompt = "first task",
+            .name = "first-teammate",
+            .task = "first task",
             .parent_runtime_key = "test-runtime",
         });
         REQUIRE(r1.accepted);
@@ -138,8 +126,8 @@ namespace {
         REQUIRE(started.load() == 1);
 
         auto r2 = manager.spawn(orchestration::AgentSpawnRequest{
-            .agent_key = "explorer",
-            .task_prompt = "second task",
+            .name = "second-teammate",
+            .task = "second task",
             .parent_runtime_key = "test-runtime",
         });
         REQUIRE(r2.accepted);
@@ -168,15 +156,9 @@ namespace {
     }
 
     TEST_CASE("orchestration manager stop terminates a run", "[integration][orchestration]") {
-        orchestration::AgentDefinitionRegistry def_registry;
-        def_registry.load_builtin_definitions();
-
         orchestration::OrchestrationManager manager(2);
-        manager.set_environment(orchestration::AgentExecutionEnvironment{
-            .definition_registry = &def_registry,
-        });
-        manager.set_worker_runtime_factory([](const orchestration::AgentSpawnRequest &) {
-            struct SlowWorker final : orchestration::WorkerRuntime {
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct SlowTeammate final : orchestration::TeammateRuntime {
                 std::string run(const std::string &, std::stop_token stop_token) override {
                     for (int i = 0; i < 100; ++i) {
                         if (stop_token.stop_requested()) {
@@ -187,23 +169,23 @@ namespace {
                     return "completed";
                 }
             };
-            return std::make_unique<SlowWorker>();
+            return std::make_unique<SlowTeammate>();
         });
 
         auto result = manager.spawn(orchestration::AgentSpawnRequest{
-            .agent_key = "general-purpose",
-            .task_prompt = "task to stop",
+            .name = "stoppable-teammate",
+            .task = "task to stop",
             .parent_runtime_key = "test-runtime",
         });
         REQUIRE(result.accepted);
 
-        // Give worker a moment to start, then stop
+        // Give teammate a moment to start, then stop
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         manager.stop(result.run_id);
 
         auto run = manager.get_run(result.run_id);
         REQUIRE(run.has_value());
-        // Status should be either succeeded (if worker completed before stop) or terminated
+        // Status should be either succeeded (if teammate completed before stop) or terminated
         CHECK((run->status == orchestration::run_status::succeeded || run->status == orchestration::run_status::terminated));
 
         manager.shutdown();
@@ -218,28 +200,28 @@ namespace {
         REQUIRE(!team.id.empty());
 
         // Add members
-        team_mgr.add_member({.agent_id = "agent-1", .name = "worker1", .agent_key = "general-purpose", .team_id = team.id});
-        team_mgr.add_member({.agent_id = "agent-2", .name = "worker2", .agent_key = "explorer", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "explorer", .team_id = team.id});
 
-        // Leader sends message to worker1
-        mailbox.send(team.id, "leader", "worker1", "Please analyze the codebase");
+        // Leader sends message to teammate1
+        mailbox.send(team.id, "leader", "teammate1", "Please analyze the codebase");
 
-        // worker1 receives the message
-        auto msgs = mailbox.poll(team.id, "worker1");
+        // teammate1 receives the message
+        auto msgs = mailbox.poll(team.id, "teammate1");
         REQUIRE(msgs.size() == 1);
         CHECK(msgs[0].from == "leader");
         CHECK(msgs[0].text == "Please analyze the codebase");
         mailbox.mark_read({msgs[0].id});
 
-        // worker1 broadcasts a finding to all team members
+        // teammate1 broadcasts a finding to all team members
         auto members = team_mgr.list_member_names(team.id);
         members.emplace_back("leader"); // leader is also a recipient
-        mailbox.send_broadcast(team.id, "worker1", "Found 3 modules to update", members);
+        mailbox.send_broadcast(team.id, "teammate1", "Found 3 modules to update", members);
 
-        // leader and worker2 should receive the broadcast (not worker1 itself)
+        // leader and teammate2 should receive the broadcast (not teammate1 itself)
         auto coord_msgs = mailbox.poll(team.id, "leader");
-        auto w2_msgs = mailbox.poll(team.id, "worker2");
-        auto w1_msgs = mailbox.poll(team.id, "worker1");
+        auto w2_msgs = mailbox.poll(team.id, "teammate2");
+        auto w1_msgs = mailbox.poll(team.id, "teammate1");
 
         CHECK(coord_msgs.size() == 1);
         CHECK(coord_msgs[0].text == "Found 3 modules to update");
@@ -255,7 +237,7 @@ namespace {
         auto team = team_mgr.create_team("ephemeral-team", "Short-lived team", "lead");
         REQUIRE(!team.id.empty());
 
-        team_mgr.add_member({.agent_id = "agent-a", .name = "alpha", .agent_key = "general-purpose", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-a", .name = "alpha", .config_agent_key = "general-purpose", .team_id = team.id});
 
         // Send a message
         mailbox.send(team.id, "lead", "alpha", "do the thing");

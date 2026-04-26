@@ -40,30 +40,17 @@ namespace orangutan::bootstrap {
         }
 
         [[nodiscard]]
-        std::string render_agent_type_allowlist(const std::vector<std::string> &team_agents) {
-            if (team_agents.empty()) {
-                return "No agent-type allowlist is configured for this runtime. Common built-in agent keys include `general-purpose`, `explorer`, and `planner`; "
-                       "if a requested key is rejected by the runtime, report that tool error directly.";
-            }
-
-            std::string out = "Configured agent types for this runtime:\n";
-            for (const auto &agent : team_agents) {
-                utils::format_to(out, "- {}\n", agent);
-            }
-            return out;
-        }
-
-        [[nodiscard]]
-        std::string render_orchestration_capability_section(const AgentRuntimeBuildInput &input, const ToolRuntimeContext &tool_context) {
-            if (tool_context.orchestration_manager == nullptr || orchestration::is_delegated(tool_context.role)) {
+        std::string render_orchestration_capability_section(const ToolRuntimeContext &tool_context) {
+            if (tool_context.orchestration_manager == nullptr || orchestration::is_teammate(tool_context.role)) {
                 return {};
             }
 
             std::string out = "## Agent Orchestration\n";
-            out += "Agent orchestration is loaded in this process. You can create one-shot workers and persistent teammates with `agent_spawn`, "
+            out += "Agent orchestration is loaded in this process. You can create persistent teammates with `agent_spawn`, "
                    "send follow-up messages with `agent_send_message`, stop agents with `agent_stop`, and organize teammates with `team_create`/`team_delete` when useful.\n";
-            out += "Use role `worker` for fire-and-forget delegated tasks and role `teammate` for persistent collaborators that can receive follow-up messages.\n";
-            out += render_agent_type_allowlist(input.team_agents);
+            out += "There is no preset teammate catalog or allowlist: choose each spawned agent's `name`, `task`, and `instructions` for the current work.\n";
+            out += "Use `relationship: \"managed\"` for assigned execution and `relationship: \"peer\"` for discussion or coordination.\n";
+            out += "Spawned agents inherit this runtime by default. You may override `profile`, `model`, or `thinking_budget` per spawn when the configured profile/model exists.";
             return out;
         }
 
@@ -101,7 +88,7 @@ namespace orangutan::bootstrap {
         [[nodiscard]]
         std::string render_runtime_capability_section(const AgentRuntimeBuildInput &input, const AgentRuntimeBundle &runtime) {
             std::string out;
-            append_prompt_section(out, render_orchestration_capability_section(input, runtime.tool_context()));
+            append_prompt_section(out, render_orchestration_capability_section(runtime.tool_context()));
             append_prompt_section(out, render_mcp_capability_section(input, runtime.mcp_manager.get()));
             append_prompt_section(out, render_memory_capability_section(runtime.memory.get()));
             return out;
@@ -178,7 +165,7 @@ namespace orangutan::bootstrap {
     AgentRuntimeBundle build_agent_runtime(const AgentRuntimeBuildInput &input) {
         AgentRuntimeBundle runtime;
         const bool leader_mode = orchestration::is_leader(input.agent_role);
-        const bool delegated_mode = orchestration::is_delegated(input.agent_role);
+        const bool teammate_mode = orchestration::is_teammate(input.agent_role);
 
         runtime.provider = std::make_unique<providers::ProviderSystem>();
 
@@ -196,7 +183,6 @@ namespace orangutan::bootstrap {
             .orchestration_manager = input.orchestration_manager,
             .team_manager = input.team_manager,
             .mailbox = input.mailbox,
-            .team_agents = input.team_agents,
             .role = input.agent_role,
             .runtime_origin = input.runtime_origin,
             .raw_caller_id = input.raw_caller_id,
@@ -225,12 +211,13 @@ namespace orangutan::bootstrap {
         runtime.skill_loader->load_from_directories(resolve_skill_directories(input.skill_paths, std::filesystem::path{input.workspace_root}));
         std::string prompt_guidance;
         if (leader_mode) {
-            prompt_guidance = orchestration::get_leader_system_prompt(input.team_agents);
-        } else if (delegated_mode) {
+            prompt_guidance = orchestration::get_leader_system_prompt();
+        } else if (teammate_mode) {
             const auto task_description = input.delegated_task_prompt.empty() ? std::string("Complete the delegated task and report the result.") : input.delegated_task_prompt;
-            prompt_guidance = orchestration::get_worker_system_prompt_addendum(input.agent_key, task_description);
-        } else if (!input.team_agents.empty()) {
-            prompt_guidance = append_agent_prompt_guidance({}, input.team_agents, input.agent_role);
+            const auto agent_name = input.agent_name.empty() ? input.agent_key : input.agent_name;
+            prompt_guidance = orchestration::get_teammate_system_prompt_addendum(agent_name, task_description);
+        } else if (input.orchestration_manager != nullptr) {
+            prompt_guidance = append_agent_prompt_guidance({}, input.agent_role);
         }
 
         runtime.skills_prompt = std::move(prompt_guidance);

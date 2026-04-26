@@ -34,8 +34,11 @@ namespace orangutan::tools {
         register_automation_tool(registry, tool_context);
         register_message_attachments_tool(registry, workspace_root, tool_context);
 
-        // Non-delegated runtimes with orchestration access can spawn and manage delegated agents.
-        const bool has_orchestration = tool_context != nullptr && tool_context->orchestration_manager != nullptr && !orchestration::is_delegated(tool_context->role);
+        if (tool_context != nullptr && tool_context->orchestration_manager != nullptr && orchestration::is_teammate(tool_context->role)) {
+            register_agent_communication_tools(registry, tool_context);
+        }
+
+        const bool has_orchestration = tool_context != nullptr && tool_context->orchestration_manager != nullptr && !orchestration::is_teammate(tool_context->role);
         if (has_orchestration) {
             register_orchestration_tools(registry, tool_context);
         }

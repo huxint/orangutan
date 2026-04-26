@@ -1,8 +1,10 @@
 #include "bootstrap/agent-runtime.hpp"
+#include "bootstrap/agent-loop-teammate.hpp"
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/identity.hpp"
 #include "hooks/hook-manager.hpp"
 #include "memory/memory-store.hpp"
+#include "orchestration/mailbox.hpp"
 #include "orchestration/orchestration-manager.hpp"
 #include "permissions/permission-state.hpp"
 #include "tools/background/background-completion.hpp"
@@ -80,7 +82,6 @@ namespace {
             input.workspace_root = workspace_root_.string();
             input.memory = {};
             input.permission_context = {};
-            input.team_agents = {"coder"};
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
             input.current_session_id = &current_session_id_;
@@ -160,7 +161,6 @@ namespace {
         orchestration::OrchestrationManager orchestration_manager(2);
 
         auto input = harness.make_input();
-        input.team_agents.clear();
         input.orchestration_manager = &orchestration_manager;
 
         auto runtime = build_agent_runtime(input);
@@ -173,7 +173,7 @@ namespace {
         CHECK(orangutan::testing::has_tool_named(definitions, "team_delete"));
         CHECK(runtime.skills_prompt.contains("## Agent Orchestration"));
         CHECK(runtime.skills_prompt.contains("persistent teammates"));
-        CHECK(runtime.skills_prompt.contains("No agent-type allowlist"));
+        CHECK(runtime.skills_prompt.contains("no preset teammate catalog"));
         CHECK(runtime.skills_prompt.contains("Use `tool_search` when you need specific MCP tools."));
         CHECK(runtime.skills_prompt.contains("Long-term memory is loaded for scope"));
 
@@ -204,7 +204,6 @@ namespace {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
         input.agent_role = orchestration::agent_role::leader;
-        input.team_agents = {"explorer", "planner"};
 
         auto runtime = build_agent_runtime(input);
         const auto definitions = runtime.tools().definitions();
@@ -219,21 +218,40 @@ namespace {
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "file_read"));
         CHECK_FALSE(orangutan::testing::has_tool_named(definitions, "tool_search"));
         CHECK(runtime.skills_prompt.contains("You are a leader agent"));
-        CHECK(runtime.skills_prompt.contains("Research"));
-        CHECK(runtime.skills_prompt.contains("Verification"));
+        CHECK(runtime.skills_prompt.contains("Teammate Relationships"));
+        CHECK(runtime.skills_prompt.contains("Tool Workflow"));
     };
 
-    TEST_CASE("child_runtime_uses_worker_prompt_guidance") {
+    TEST_CASE("child_runtime_uses_teammate_prompt_guidance") {
         RuntimeAgentRuntimeHarness harness;
         auto input = harness.make_input();
-        input.agent_role = orchestration::agent_role::worker;
+        input.agent_role = orchestration::agent_role::teammate;
         input.delegated_task_prompt = "Inspect the logging pipeline and report defects.";
 
         auto runtime = build_agent_runtime(input);
 
-        CHECK(runtime.skills_prompt.contains("You are a worker agent"));
+        CHECK(runtime.skills_prompt.contains("You are a teammate named assistant"));
         CHECK(runtime.skills_prompt.contains("Inspect the logging pipeline and report defects."));
         CHECK(runtime.skills_prompt.contains("Focus exclusively on the task assigned to you."));
+        CHECK(runtime.skills_prompt.contains("agent_send_message"));
+    };
+
+    TEST_CASE("formats_idle_teammate_mailbox_messages_as_one_prompt") {
+        const std::vector<orchestration::MailboxMessage> messages{
+            {
+                .from = "leader<main>",
+                .text = "first & task",
+            },
+            {
+                .from = "peer\"two\"",
+                .text = "second <update>",
+            },
+        };
+
+        const auto prompt = detail::format_teammate_messages_prompt(messages);
+
+        CHECK(prompt == R"(<teammate-message from="leader&lt;main&gt;">first &amp; task</teammate-message>
+<teammate-message from="peer&quot;two&quot;">second &lt;update&gt;</teammate-message>)");
     };
 
     TEST_CASE("runtime_without_explicit_completion_bindings_does_not_enable_completion_routing") {
