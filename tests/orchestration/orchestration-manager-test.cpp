@@ -4,6 +4,8 @@
 #include <atomic>
 #include <array>
 #include <chrono>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -230,6 +232,202 @@ TEST_CASE("OrchestrationManager queues runs beyond max concurrency and starts th
     REQUIRE(completed_run.has_value());
     CHECK(completed_run->status == orangutan::orchestration::run_status::succeeded);
     CHECK(completed_run->final_output == "second task done");
+
+    manager.shutdown();
+}
+
+TEST_CASE("OrchestrationManager idle teammates do not consume execution concurrency", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
+    std::atomic<int> started{0};
+
+    manager.set_teammate_runtime_factory([&started](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct IdleTeammate final : orangutan::orchestration::TeammateRuntime {
+            std::atomic<int> *started = nullptr;
+
+            std::string run(const std::string &, std::stop_token) override {
+                started->fetch_add(1);
+                return "done";
+            }
+
+            [[nodiscard]]
+            auto can_receive_followups() const -> bool override {
+                return true;
+            }
+        };
+
+        auto teammate = std::make_unique<IdleTeammate>();
+        teammate->started = &started;
+        return teammate;
+    });
+
+    const auto first = manager.spawn({
+        .name = "first-teammate",
+        .task = "first",
+        .team_id = "team-1",
+    });
+    REQUIRE(first.accepted);
+
+    REQUIRE(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(first.run_id);
+            return run.has_value() && run->status == orangutan::orchestration::run_status::idle;
+        },
+        100));
+
+    const auto second = manager.spawn({
+        .name = "second-teammate",
+        .task = "second",
+        .team_id = "team-1",
+    });
+    REQUIRE(second.accepted);
+
+    CHECK(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(second.run_id);
+            return run.has_value() && run->status == orangutan::orchestration::run_status::idle;
+        },
+        100));
+    CHECK(started.load() == 2);
+
+    manager.shutdown();
+}
+
+TEST_CASE("OrchestrationManager wakes idle teammate when a mailbox message is sent", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
+    orangutan::orchestration::AgentMailbox mailbox(":memory:");
+    manager.set_environment({.mailbox = &mailbox});
+
+    std::atomic<int> run_count{0};
+    std::atomic<bool> message_ready{false};
+    manager.set_teammate_runtime_factory([&](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct MessageDrivenTeammate final : orangutan::orchestration::TeammateRuntime {
+            std::atomic<int> *run_count = nullptr;
+            std::atomic<bool> *message_ready = nullptr;
+
+            std::string run(const std::string &input, std::stop_token) override {
+                run_count->fetch_add(1);
+                return input;
+            }
+
+            auto poll_next_prompt() -> std::optional<std::string> override {
+                if (!message_ready->exchange(false)) {
+                    return std::nullopt;
+                }
+                return "follow up";
+            }
+
+            [[nodiscard]]
+            auto can_receive_followups() const -> bool override {
+                return true;
+            }
+        };
+
+        auto teammate = std::make_unique<MessageDrivenTeammate>();
+        teammate->run_count = &run_count;
+        teammate->message_ready = &message_ready;
+        return teammate;
+    });
+
+    const auto spawned = manager.spawn({
+        .name = "listener",
+        .task = "initial",
+        .team_id = "team-1",
+    });
+    REQUIRE(spawned.accepted);
+
+    REQUIRE(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(spawned.run_id);
+            return run.has_value() && run->status == orangutan::orchestration::run_status::idle;
+        },
+        100));
+
+    message_ready.store(true);
+    REQUIRE(manager.send_message(spawned.run_id, "lead", "follow up") == std::nullopt);
+    CHECK(wait_for_condition(
+        [&] {
+            return run_count.load() >= 2;
+        },
+        100));
+
+    manager.shutdown();
+}
+
+TEST_CASE("OrchestrationManager rejects messages to completed runs", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
+    orangutan::orchestration::AgentMailbox mailbox(":memory:");
+    manager.set_environment({.mailbox = &mailbox});
+
+    manager.set_teammate_runtime_factory([](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct ImmediateTeammate final : orangutan::orchestration::TeammateRuntime {
+            std::string run(const std::string &, std::stop_token) override {
+                return "done";
+            }
+        };
+
+        return std::make_unique<ImmediateTeammate>();
+    });
+
+    const auto spawned = manager.spawn({
+        .name = "short-lived",
+        .task = "finish",
+        .team_id = "team-1",
+    });
+    REQUIRE(spawned.accepted);
+
+    REQUIRE(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(spawned.run_id);
+            return run.has_value() && run->status == orangutan::orchestration::run_status::succeeded;
+        },
+        100));
+
+    const auto error = manager.send_message(spawned.run_id, "lead", "too late");
+    REQUIRE(error.has_value());
+    CHECK(*error == "Target run is no longer active");
+    CHECK(mailbox.poll("team-1", "short-lived").empty());
+
+    manager.shutdown();
+}
+
+TEST_CASE("OrchestrationManager deactivates team membership when a run terminates", "[orchestration]") {
+    orangutan::orchestration::OrchestrationManager manager(1);
+    orangutan::orchestration::TeamManager team_manager(":memory:");
+    manager.set_environment({.team_manager = &team_manager});
+
+    manager.set_teammate_runtime_factory([](const orangutan::orchestration::AgentSpawnRequest &) {
+        struct IdleTeammate final : orangutan::orchestration::TeammateRuntime {
+            std::string run(const std::string &, std::stop_token) override {
+                return "ready";
+            }
+
+            [[nodiscard]]
+            auto can_receive_followups() const -> bool override {
+                return true;
+            }
+        };
+
+        return std::make_unique<IdleTeammate>();
+    });
+
+    const auto team = team_manager.create_team("runtime-team", "", "lead");
+    const auto spawned = manager.spawn({
+        .name = "teammate",
+        .task = "wait",
+        .team_id = team.id,
+    });
+    REQUIRE(spawned.accepted);
+    team_manager.add_member({.agent_id = spawned.run_id, .name = "teammate", .config_agent_key = "lead-agent", .team_id = team.id});
+
+    REQUIRE(wait_for_condition(
+        [&] {
+            const auto run = manager.get_run(spawned.run_id);
+            return run.has_value() && run->status == orangutan::orchestration::run_status::idle;
+        },
+        100));
+
+    manager.stop(spawned.run_id);
+    CHECK(team_manager.list_members(team.id).empty());
 
     manager.shutdown();
 }

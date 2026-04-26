@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <utility>
@@ -37,13 +38,8 @@ namespace orangutan::orchestration {
         }
 
         [[nodiscard]]
-        constexpr auto counts_toward_concurrency(run_status status) -> bool {
-            return status == run_status::running || status == run_status::idle;
-        }
-
-        [[nodiscard]]
         constexpr auto is_active_run_status(run_status status) -> bool {
-            return status == run_status::queued || counts_toward_concurrency(status);
+            return status == run_status::queued || status == run_status::running || status == run_status::idle;
         }
 
         [[nodiscard]]
@@ -83,9 +79,12 @@ namespace orangutan::orchestration {
         struct ActiveRun {
             AgentSpawnRequest request;
             AgentRunRecord record;
+            std::unique_ptr<TeammateRuntime> teammate;
+            std::optional<std::string> pending_prompt;
             std::stop_source stop_source;
             mutable std::mutex mutex;
             std::condition_variable_any cv;
+            bool initial_task_started = false;
             bool completed = false;
         };
 
@@ -121,24 +120,30 @@ namespace orangutan::orchestration {
             return "run-" + std::to_string(utils::epoch_millis()) + "-" + std::to_string(seq);
         }
 
-        /// Mutate run record and broadcast completion under run->mutex. Returns the
-        /// post-mutation record so the caller can deliver notifications unlocked.
-        template <typename Fn>
-        auto with_run_locked(ActiveRun &run, Fn &&fn) -> AgentRunRecord {
-            std::scoped_lock lock(run.mutex);
-            std::forward<Fn>(fn)(run);
-            return run.record;
+        [[nodiscard]]
+        constexpr auto is_terminal_status(run_status status) -> bool {
+            return status == run_status::succeeded || status == run_status::failed || status == run_status::terminated || status == run_status::abandoned;
         }
 
         /// Mark the run completed (terminated/failed/etc.) and wake any waiters.
-        auto finalize_run(ActiveRun &run, run_status status, std::string error = {}) -> AgentRunRecord {
-            return with_run_locked(run, [&](ActiveRun &r) {
-                r.record.status = status;
-                r.record.completed_at = utils::epoch_millis();
-                r.record.error = std::move(error);
-                r.completed = true;
-                r.cv.notify_all();
-            });
+        [[nodiscard]]
+        bool finalize_run(ActiveRun &run, run_status status, std::string error = {}) {
+            std::scoped_lock lock(run.mutex);
+            if (run.completed && is_terminal_status(run.record.status)) {
+                return false;
+            }
+            run.record.status = status;
+            run.record.completed_at = utils::epoch_millis();
+            run.record.error = std::move(error);
+            run.completed = true;
+            run.cv.notify_all();
+            return true;
+        }
+
+        void finalize_and_notify(ActiveRun &run, run_status status, std::string error = {}) {
+            if (finalize_run(run, status, std::move(error))) {
+                deliver_notification(run);
+            }
         }
 
         void launch_run_locked(const std::shared_ptr<ActiveRun> &run) {
@@ -153,41 +158,94 @@ namespace orangutan::orchestration {
             }));
         }
 
-        void release_slot_and_resume() {
-            std::vector<std::shared_ptr<ActiveRun>> to_launch;
-            {
-                std::scoped_lock lock(mutex);
-                --running_count;
-                while (!pending_run_ids.empty() && running_count + static_cast<int>(to_launch.size()) < max_concurrent) {
-                    auto run_id = pending_run_ids.front();
-                    pending_run_ids.pop_front();
-                    const auto it = active_runs.find(run_id);
-                    if (it == active_runs.end()) {
-                        continue;
-                    }
-                    std::scoped_lock rlock(it->second->mutex);
-                    if (it->second->completed || it->second->record.status != run_status::queued) {
-                        continue;
-                    }
-                    to_launch.push_back(it->second);
+        void launch_queued_runs_locked() {
+            while (!pending_run_ids.empty() && running_count < max_concurrent) {
+                auto run_id = pending_run_ids.front();
+                pending_run_ids.pop_front();
+                const auto it = active_runs.find(run_id);
+                if (it == active_runs.end()) {
+                    continue;
                 }
-                for (const auto &run : to_launch) {
-                    launch_run_locked(run);
+                bool should_launch = false;
+                {
+                    std::scoped_lock rlock(it->second->mutex);
+                    should_launch = !it->second->completed && it->second->record.status == run_status::queued;
+                }
+                if (should_launch) {
+                    launch_run_locked(it->second);
                 }
             }
         }
 
-        /// Core teammate lifecycle: run → (optional idle loop) → terminal status → notify.
+        void release_slot_and_resume() {
+            std::scoped_lock lock(mutex);
+            --running_count;
+            launch_queued_runs_locked();
+        }
+
+        void queue_idle_runs_for_message(std::string_view team_id, std::optional<std::string_view> recipient) {
+            std::scoped_lock lock(mutex);
+            for (const auto &[id, run] : active_runs) {
+                static_cast<void>(id);
+                std::scoped_lock rlock(run->mutex);
+                if (run->completed || run->record.status != run_status::idle || run->record.team_id != team_id) {
+                    continue;
+                }
+                if (recipient.has_value() && run->record.agent_name != *recipient) {
+                    continue;
+                }
+                run->record.status = run_status::queued;
+                pending_run_ids.push_back(run->record.run_id);
+            }
+            launch_queued_runs_locked();
+        }
+
+        /// Run one teammate prompt. Idle teammates release the execution slot until mailbox messages wake them.
         void run_lifecycle(ActiveRun &run) {
             const auto &run_id = run.record.run_id;
             const auto stop_token = run.stop_source.get_token();
             spdlog::info("teammate started: id={} name={} relationship={}", run_id, run.record.agent_name, magic_enum::enum_name(run.record.relationship));
 
-            if (stop_token.stop_requested()) {
-                finalize_run(run, run_status::terminated);
-                spdlog::info("teammate terminated before execution: id={}", run_id);
-                deliver_notification(run);
+            if (is_completed(run)) {
                 return;
+            }
+            if (stop_token.stop_requested()) {
+                finalize_and_notify(run, run_status::terminated);
+                spdlog::info("teammate terminated before execution: id={}", run_id);
+                return;
+            }
+
+            if (!ensure_teammate(run)) {
+                return;
+            }
+
+            auto prompt = take_next_prompt(run);
+            if (!prompt.has_value()) {
+                mark_idle(run);
+                spdlog::info("teammate returned to idle without pending prompt: id={}", run_id);
+                return;
+            }
+
+            if (!run_prompt(run, *prompt, stop_token)) {
+                return;
+            }
+
+            finish_prompt(run, stop_token);
+        }
+
+        [[nodiscard]]
+        bool is_completed(const ActiveRun &run) const {
+            std::scoped_lock lock(run.mutex);
+            return run.completed;
+        }
+
+        [[nodiscard]]
+        bool ensure_teammate(ActiveRun &run) {
+            {
+                std::scoped_lock lock(run.mutex);
+                if (run.teammate != nullptr) {
+                    return true;
+                }
             }
 
             TeammateRuntimeFactory factory;
@@ -197,91 +255,230 @@ namespace orangutan::orchestration {
             }
 
             if (factory == nullptr) {
-                finalize_run(run, run_status::failed, "No teammate runtime factory configured");
-                spdlog::warn("teammate failed (no factory): id={}", run_id);
-                deliver_notification(run);
-                return;
+                finalize_and_notify(run, run_status::failed, "No teammate runtime factory configured");
+                spdlog::warn("teammate failed (no factory): id={}", run.record.run_id);
+                return false;
             }
 
             std::unique_ptr<TeammateRuntime> teammate;
             try {
                 teammate = factory(run.request);
             } catch (const std::exception &e) {
-                finalize_run(run, run_status::failed, e.what());
-                deliver_notification(run);
-                return;
-            }
-
-            if (!run_first_task(run, *teammate, stop_token)) {
-                deliver_notification(run);
-                return;
-            }
-
-            if (teammate->can_receive_followups() && !stop_token.stop_requested()) {
-                run_idle_loop(run, *teammate, stop_token);
+                finalize_and_notify(run, run_status::failed, e.what());
+                return false;
             }
 
             {
                 std::scoped_lock lock(run.mutex);
-                if (!run.completed) {
-                    run.record.status = stop_token.stop_requested() ? run_status::terminated : run_status::succeeded;
-                    run.record.completed_at = utils::epoch_millis();
-                    run.completed = true;
-                    run.cv.notify_all();
+                if (run.completed) {
+                    return false;
                 }
+                run.teammate = std::move(teammate);
             }
-            spdlog::info("teammate completed: id={}", run_id);
-            deliver_notification(run);
+            return true;
         }
 
-        /// Executes the initial task. Returns false if execution threw (run already finalized).
         [[nodiscard]]
-        bool run_first_task(ActiveRun &run, TeammateRuntime &teammate, const std::stop_token &stop_token) {
-            try {
-                auto output = teammate.run(format_initial_prompt(run.request), stop_token);
+        std::optional<std::string> take_next_prompt(ActiveRun &run) {
+            TeammateRuntime *teammate = nullptr;
+            {
                 std::scoped_lock lock(run.mutex);
-                run.record.final_output = std::move(output);
+                if (run.completed) {
+                    return std::nullopt;
+                }
+                if (!run.initial_task_started) {
+                    run.initial_task_started = true;
+                    return format_initial_prompt(run.request);
+                }
+                if (run.pending_prompt.has_value()) {
+                    auto prompt = std::move(run.pending_prompt);
+                    run.pending_prompt.reset();
+                    return prompt;
+                }
+                teammate = run.teammate.get();
+            }
+            if (teammate == nullptr) {
+                return std::nullopt;
+            }
+            return teammate->poll_next_prompt();
+        }
+
+        [[nodiscard]]
+        bool run_prompt(ActiveRun &run, const std::string &prompt, const std::stop_token &stop_token) {
+            TeammateRuntime *teammate = nullptr;
+            {
+                std::scoped_lock lock(run.mutex);
+                if (run.completed) {
+                    return false;
+                }
+                teammate = run.teammate.get();
+                run.record.status = run_status::running;
+                run.record.task_summary = prompt;
+            }
+            if (teammate == nullptr) {
+                finalize_and_notify(run, run_status::failed, "No teammate runtime available");
+                return false;
+            }
+
+            try {
+                auto output = teammate->run(prompt, stop_token);
+                std::scoped_lock lock(run.mutex);
+                if (!run.completed) {
+                    run.record.final_output = std::move(output);
+                }
                 return true;
             } catch (const std::exception &e) {
-                finalize_run(run, run_status::failed, e.what());
+                finalize_and_notify(run, run_status::failed, e.what());
                 return false;
             }
         }
 
-        /// Teammate idle loop: mark idle, notify leader, wait for next prompt, repeat.
-        void run_idle_loop(ActiveRun &run, TeammateRuntime &teammate, const std::stop_token &stop_token) {
+        void mark_idle(ActiveRun &run) {
             {
                 std::scoped_lock lock(run.mutex);
+                if (run.completed) {
+                    return;
+                }
                 run.record.status = run_status::idle;
+                run.cv.notify_all();
             }
-            spdlog::info("teammate entering idle loop: id={}", run.record.run_id);
-            deliver_notification(run);
+        }
 
-            while (!stop_token.stop_requested()) {
-                auto next_prompt = teammate.wait_for_next_prompt(stop_token);
-                if (!next_prompt.has_value()) {
-                    spdlog::info("teammate exiting idle loop (no more prompts): id={}", run.record.run_id);
+        void finish_prompt(ActiveRun &run, const std::stop_token &stop_token) {
+            if (stop_token.stop_requested()) {
+                finalize_and_notify(run, run_status::terminated);
+                return;
+            }
+
+            TeammateRuntime *teammate = nullptr;
+            {
+                std::scoped_lock lock(run.mutex);
+                if (run.completed) {
                     return;
                 }
+                teammate = run.teammate.get();
+            }
 
-                {
-                    std::scoped_lock lock(run.mutex);
-                    run.record.status = run_status::running;
-                    run.record.task_summary = *next_prompt;
+            if (teammate == nullptr || !teammate->can_receive_followups()) {
+                finalize_and_notify(run, run_status::succeeded);
+                spdlog::info("teammate completed: id={}", run.record.run_id);
+                return;
+            }
+
+            auto pending_prompt = teammate->poll_next_prompt();
+            std::string run_id;
+            bool requeued = false;
+            {
+                std::scoped_lock lock(run.mutex);
+                if (run.completed) {
+                    return;
                 }
-                spdlog::info("teammate resuming with new prompt: id={}", run.record.run_id);
-
-                try {
-                    auto output = teammate.run(*next_prompt, stop_token);
-                    std::scoped_lock lock(run.mutex);
-                    run.record.final_output = std::move(output);
+                run_id = run.record.run_id;
+                if (pending_prompt.has_value()) {
+                    run.pending_prompt = std::move(pending_prompt);
+                    run.record.status = run_status::queued;
+                    requeued = true;
+                } else {
                     run.record.status = run_status::idle;
-                } catch (const std::exception &e) {
-                    finalize_run(run, run_status::failed, e.what());
+                }
+                run.cv.notify_all();
+            }
+            if (requeued) {
+                std::scoped_lock lock(mutex);
+                pending_run_ids.push_back(run_id);
+            }
+            spdlog::info("teammate idle: id={}", run_id);
+            deliver_notification(run);
+        }
+
+        void stop_run(const std::shared_ptr<ActiveRun> &run, std::chrono::milliseconds grace_period) {
+            bool should_notify = false;
+            {
+                std::scoped_lock lock(mutex);
+                std::scoped_lock rlock(run->mutex);
+                if (run->completed) {
                     return;
                 }
-                deliver_notification(run);
+                if (run->record.status == run_status::queued || run->record.status == run_status::idle) {
+                    std::erase(pending_run_ids, run->record.run_id);
+                    run->record.status = run_status::terminated;
+                    run->record.completed_at = utils::epoch_millis();
+                    run->completed = true;
+                    run->cv.notify_all();
+                    should_notify = true;
+                }
             }
+
+            if (should_notify) {
+                deliver_notification(*run);
+                return;
+            }
+
+            run->stop_source.request_stop();
+            {
+                std::unique_lock lock(run->mutex);
+                run->cv.wait_for(lock, grace_period, [&run] {
+                    return run->completed;
+                });
+                if (!run->completed) {
+                    run->record.status = run_status::terminated;
+                    run->record.completed_at = utils::epoch_millis();
+                    run->completed = true;
+                    run->cv.notify_all();
+                    should_notify = true;
+                }
+            }
+            if (should_notify) {
+                deliver_notification(*run);
+            }
+        }
+
+        [[nodiscard]]
+        std::vector<std::shared_ptr<ActiveRun>> active_team_runs(const std::string &team_id) const {
+            std::vector<std::shared_ptr<ActiveRun>> result;
+            std::scoped_lock lock(mutex);
+            for (const auto &[id, run] : active_runs) {
+                static_cast<void>(id);
+                std::scoped_lock rlock(run->mutex);
+                if (!run->completed && is_active_run_status(run->record.status) && run->record.team_id == team_id) {
+                    result.push_back(run);
+                }
+            }
+            return result;
+        }
+
+        [[nodiscard]]
+        std::shared_ptr<ActiveRun> find_run(const std::string &run_id) const {
+            std::scoped_lock lock(mutex);
+            const auto it = active_runs.find(run_id);
+            if (it == active_runs.end()) {
+                return nullptr;
+            }
+            return it->second;
+        }
+
+        [[nodiscard]]
+        std::optional<std::string> validate_run_can_receive(const std::shared_ptr<ActiveRun> &run) const {
+            std::scoped_lock lock(run->mutex);
+            if (run->completed || !is_active_run_status(run->record.status)) {
+                return "Target run is no longer active";
+            }
+            if (run->record.team_id.empty()) {
+                return "Target run is not attached to a team mailbox";
+            }
+            return std::nullopt;
+        }
+
+        void deactivate_team_member(const AgentRunRecord &record) {
+            TeamManager *manager = nullptr;
+            {
+                std::scoped_lock lock(mutex);
+                manager = env.team_manager;
+            }
+            if (manager == nullptr || record.team_id.empty() || record.run_id.empty()) {
+                return;
+            }
+            manager->deactivate_member(record.team_id, record.run_id);
         }
 
         /// Deliver task-notification via both runtime handler and global callback.
@@ -306,6 +503,10 @@ namespace orangutan::orchestration {
                 std::scoped_lock rlock(run.mutex);
                 record_snapshot = run.record;
                 notification_xml = format_task_notification(run.record);
+            }
+
+            if (!is_active_run_status(record_snapshot.status)) {
+                deactivate_team_member(record_snapshot);
             }
 
             if (runtime_handler != nullptr) {
@@ -395,28 +596,29 @@ namespace orangutan::orchestration {
         AgentMailbox *mailbox = nullptr;
         std::string team_id;
         std::string recipient;
+        auto run = impl_->find_run(run_id);
+        if (run == nullptr) {
+            spdlog::warn("send_message: unknown run_id={}", run_id);
+            return "Unknown run_id: " + run_id;
+        }
+        if (const auto error = impl_->validate_run_can_receive(run); error.has_value()) {
+            return error;
+        }
         {
             std::scoped_lock lock(impl_->mutex);
-
-            const auto it = impl_->active_runs.find(run_id);
-            if (it == impl_->active_runs.end()) {
-                spdlog::warn("send_message: unknown run_id={}", run_id);
-                return "Unknown run_id: " + run_id;
-            }
             if (impl_->env.mailbox == nullptr) {
                 return "Mailbox is not available";
             }
-
-            std::scoped_lock run_lock(it->second->mutex);
-            const auto &record = it->second->record;
-            if (record.team_id.empty()) {
-                return "Target run is not attached to a team mailbox";
-            }
             mailbox = impl_->env.mailbox;
+        }
+        {
+            std::scoped_lock run_lock(run->mutex);
+            const auto &record = run->record;
             team_id = record.team_id;
             recipient = record.agent_name;
         }
         mailbox->send(team_id, from, recipient, text);
+        impl_->queue_idle_runs_for_message(team_id, recipient);
         spdlog::debug("message sent to run_id={} from={}", run_id, from);
         return std::nullopt;
     }
@@ -435,6 +637,7 @@ namespace orangutan::orchestration {
             return "Agent '" + to + "' not found in team";
         }
         impl_->env.mailbox->send(team_id, from, to, text);
+        impl_->queue_idle_runs_for_message(team_id, to);
         spdlog::debug("message sent to agent={} in team={} from={}", to, team_id, from);
         return std::nullopt;
     }
@@ -448,48 +651,27 @@ namespace orangutan::orchestration {
         }
         auto member_names = impl_->env.team_manager->list_member_names(team_id);
         impl_->env.mailbox->send_broadcast(team_id, from, text, member_names);
+        impl_->queue_idle_runs_for_message(team_id, std::nullopt);
         spdlog::debug("broadcast sent in team={} from={}", team_id, from);
         return std::nullopt;
     }
 
     void OrchestrationManager::stop(const std::string &run_id) {
-        std::shared_ptr<Impl::ActiveRun> run;
-        bool stopped_queued = false;
-        {
-            std::scoped_lock lock(impl_->mutex);
-            const auto it = impl_->active_runs.find(run_id);
-            if (it == impl_->active_runs.end()) {
-                spdlog::warn("stop: unknown run_id={}", run_id);
-                return;
-            }
-            if (it->second->record.status == run_status::queued) {
-                std::erase(impl_->pending_run_ids, run_id);
-                impl_->finalize_run(*it->second, run_status::terminated);
-                stopped_queued = true;
-            } else {
-                run = it->second;
-            }
-        }
-
-        if (stopped_queued) {
-            spdlog::info("stopped queued agent run: id={}", run_id);
+        auto run = impl_->find_run(run_id);
+        if (run == nullptr) {
+            spdlog::warn("stop: unknown run_id={}", run_id);
             return;
         }
-
-        run->stop_source.request_stop();
-        {
-            std::unique_lock lock(run->mutex);
-            run->cv.wait_for(lock, STOP_GRACE, [&run] {
-                return run->completed;
-            });
-            if (!run->completed) {
-                run->record.status = run_status::terminated;
-                run->record.completed_at = utils::epoch_millis();
-                run->completed = true;
-                run->cv.notify_all();
-            }
-        }
+        impl_->stop_run(run, STOP_GRACE);
         spdlog::info("stopped agent run: id={}", run_id);
+    }
+
+    std::size_t OrchestrationManager::stop_team(const std::string &team_id, std::chrono::milliseconds grace_period) {
+        auto runs = impl_->active_team_runs(team_id);
+        for (const auto &run : runs) {
+            impl_->stop_run(run, grace_period);
+        }
+        return runs.size();
     }
 
     auto OrchestrationManager::get_run(const std::string &run_id) const -> std::optional<AgentRunRecord> {
@@ -523,34 +705,14 @@ namespace orangutan::orchestration {
                 return;
             }
             impl_->shutting_down = true;
-            impl_->pending_run_ids.clear();
             for (auto &[id, run] : impl_->active_runs) {
                 static_cast<void>(id);
-                std::scoped_lock rlock(run->mutex);
-                if (!run->completed && run->record.status == run_status::queued) {
-                    run->record.status = run_status::terminated;
-                    run->record.completed_at = utils::epoch_millis();
-                    run->completed = true;
-                    run->cv.notify_all();
-                    continue;
-                }
                 runs_to_stop.push_back(run);
             }
         }
 
-        for (auto &run : runs_to_stop) {
-            run->stop_source.request_stop();
-        }
-        for (auto &run : runs_to_stop) {
-            std::unique_lock lock(run->mutex);
-            run->cv.wait_for(lock, SHUTDOWN_GRACE, [&run] {
-                return run->completed;
-            });
-            if (!run->completed) {
-                run->record.status = run_status::abandoned;
-                run->record.completed_at = utils::epoch_millis();
-                run->completed = true;
-            }
+        for (const auto &run : runs_to_stop) {
+            impl_->stop_run(run, SHUTDOWN_GRACE);
         }
 
         static_cast<void>(stdexec::sync_wait(impl_->scope.on_empty()));

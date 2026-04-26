@@ -10,7 +10,6 @@
 
 #include <fmt/format.h>
 
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <span>
@@ -26,6 +25,15 @@ namespace orangutan::bootstrap {
 
         std::string format_teammate_message_xml(const MailboxMessage &message) {
             return fmt::format(R"(<teammate-message from="{}">{}</teammate-message>)", utils::escape_xml(message.from), utils::escape_xml(message.text));
+        }
+
+        std::vector<std::string> render_teammate_message_xml(const std::vector<MailboxMessage> &messages) {
+            std::vector<std::string> rendered;
+            rendered.reserve(messages.size());
+            for (const auto &message : messages) {
+                rendered.push_back(format_teammate_message_xml(message));
+            }
+            return rendered;
         }
 
     } // namespace
@@ -111,22 +119,16 @@ namespace orangutan::bootstrap {
                 return bundle_.agent->run(prompt);
             }
 
-            auto wait_for_next_prompt(std::stop_token stop_token) -> std::optional<std::string> override {
+            auto poll_next_prompt() -> std::optional<std::string> override {
                 if (!has_mailbox_context()) {
                     return std::nullopt;
                 }
-
                 auto *mailbox = bundle_.tool_context().mailbox;
-                while (!stop_token.stop_requested()) {
-                    auto messages = mailbox->wait_for_messages(team_id_, agent_name_, std::chrono::seconds(30), stop_token);
-                    if (messages.empty()) {
-                        continue;
-                    }
-                    auto prompt = detail::format_teammate_messages_prompt(messages);
-                    mailbox->mark_read(collect_message_ids(messages));
-                    return prompt;
+                auto messages = mailbox->poll(team_id_, agent_name_);
+                if (messages.empty()) {
+                    return std::nullopt;
                 }
-                return std::nullopt;
+                return consume_messages(messages);
             }
 
             [[nodiscard]]
@@ -140,6 +142,12 @@ namespace orangutan::bootstrap {
                 return bundle_.tool_context().mailbox != nullptr && !team_id_.empty() && !agent_name_.empty();
             }
 
+            std::string consume_messages(const std::vector<MailboxMessage> &messages) {
+                auto prompt = detail::format_teammate_messages_prompt(messages);
+                bundle_.tool_context().mailbox->mark_read(collect_message_ids(messages));
+                return prompt;
+            }
+
             void attach_mailbox_fetcher() {
                 if (!has_mailbox_context()) {
                     return;
@@ -151,11 +159,7 @@ namespace orangutan::bootstrap {
                         return std::vector<std::string>{};
                     }
 
-                    std::vector<std::string> injected;
-                    injected.reserve(messages.size());
-                    for (const auto &message : messages) {
-                        injected.push_back(format_teammate_message_xml(message));
-                    }
+                    auto injected = render_teammate_message_xml(messages);
                     mailbox->mark_read(collect_message_ids(messages));
                     return injected;
                 });

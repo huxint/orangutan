@@ -47,22 +47,22 @@ TEST_CASE("TeamManager basic operations", "[orchestration]") {
 
     SECTION("add and list members") {
         auto team = manager.create_team("test-team", "", "lead-1");
-        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id, .joined_at = 42});
-        manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "planner", .team_id = team.id,
+        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "lead-agent", .team_id = team.id, .joined_at = 42});
+        manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "review-agent", .team_id = team.id,
                             .relationship = orangutan::orchestration::teammate_relationship::peer, .joined_at = 84});
 
         auto members = manager.list_members(team.id);
         REQUIRE(members.size() == 2);
         REQUIRE(members[0].agent_id == "agent-1");
         REQUIRE(members[0].name == "teammate1");
-        REQUIRE(members[0].config_agent_key == "general-purpose");
+        REQUIRE(members[0].config_agent_key == "lead-agent");
         REQUIRE(members[0].team_id == team.id);
         REQUIRE(members[0].relationship == orangutan::orchestration::teammate_relationship::managed);
         REQUIRE(members[0].joined_at == 42);
         REQUIRE(members[0].active);
         REQUIRE(members[1].agent_id == "agent-2");
         REQUIRE(members[1].name == "teammate2");
-        REQUIRE(members[1].config_agent_key == "planner");
+        REQUIRE(members[1].config_agent_key == "review-agent");
         REQUIRE(members[1].team_id == team.id);
         REQUIRE(members[1].relationship == orangutan::orchestration::teammate_relationship::peer);
         REQUIRE(members[1].joined_at == 84);
@@ -72,8 +72,8 @@ TEST_CASE("TeamManager basic operations", "[orchestration]") {
 
     SECTION("deactivate and abandon members") {
         auto team = manager.create_team("test-team", "", "lead-1");
-        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id});
-        manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "planner", .team_id = team.id});
+        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "lead-agent", .team_id = team.id});
+        manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "review-agent", .team_id = team.id});
 
         manager.deactivate_member(team.id, "agent-1");
         auto active_members = manager.list_members(team.id);
@@ -88,7 +88,7 @@ TEST_CASE("TeamManager basic operations", "[orchestration]") {
     SECTION("delete team removes members and active listing") {
         auto alpha = manager.create_team("alpha", "", "lead-1");
         auto beta = manager.create_team("beta", "", "lead-2");
-        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = alpha.id});
+        manager.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "lead-agent", .team_id = alpha.id});
 
         const auto active_teams = manager.list_active_teams();
         REQUIRE(active_teams.size() == 2);

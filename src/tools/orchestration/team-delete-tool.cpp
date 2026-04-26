@@ -2,12 +2,12 @@
 
 #include <chrono>
 #include <string>
-#include <thread>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "orchestration/mailbox.hpp"
+#include "orchestration/orchestration-manager.hpp"
 #include "orchestration/team-manager.hpp"
 #include "tools/registry/tool-context.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
@@ -48,14 +48,20 @@ namespace orangutan::tools {
                 }
             }
 
-            if (grace_period_ms > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds{grace_period_ms});
+            std::size_t stopped_runs = 0;
+            if (tool_context.orchestration_manager != nullptr) {
+                stopped_runs = tool_context.orchestration_manager->stop_team(team_id, std::chrono::milliseconds{grace_period_ms});
             }
 
             tool_context.team_manager->abandon_active_members(team_id);
             tool_context.team_manager->delete_team(team_id);
 
-            return nlohmann::json{{"deleted", true}, {"team_id", team_id}, {"grace_period_ms", grace_period_ms}, {"shutdown_requests_sent", active_members.size()}}.dump();
+            return nlohmann::json{{"deleted", true},
+                                  {"team_id", team_id},
+                                  {"grace_period_ms", grace_period_ms},
+                                  {"shutdown_requests_sent", active_members.size()},
+                                  {"stopped_runs", stopped_runs}}
+                .dump();
         }
 
     } // namespace

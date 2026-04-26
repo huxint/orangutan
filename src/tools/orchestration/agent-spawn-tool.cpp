@@ -111,11 +111,10 @@ namespace orangutan::tools {
             }
             for (const auto &member : members) {
                 if (team.has_value() && member.agent_id == team->lead_agent_id) {
-                    orangutan::utils::format_to(out, "- `{}` (leader, runtime `{}`, config `{}`)\n", member.name, member.agent_id, member.config_agent_key);
+                    orangutan::utils::format_to(out, "- `{}` (leader, runtime `{}`)\n", member.name, member.agent_id);
                     continue;
                 }
-                orangutan::utils::format_to(out, "- `{}` ({}, runtime `{}`, config `{}`)\n", member.name, orangutan::utils::enum_name(member.relationship), member.agent_id,
-                                           member.config_agent_key);
+                orangutan::utils::format_to(out, "- `{}` ({}, runtime `{}`)\n", member.name, orangutan::utils::enum_name(member.relationship), member.agent_id);
             }
         }
 

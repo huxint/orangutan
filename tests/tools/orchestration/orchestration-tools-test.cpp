@@ -401,7 +401,7 @@ namespace {
         orchestration::TeamManager team_manager(":memory:");
         orchestration::AgentMailbox mailbox(":memory:");
         auto team = team_manager.create_team("research", "Research team", "lead");
-        team_manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "explorer", .team_id = team.id});
+        team_manager.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "lead-agent", .team_id = team.id});
         manager.set_environment({
             .mailbox = &mailbox,
             .team_manager = &team_manager,
@@ -409,7 +409,7 @@ namespace {
 
         ToolRuntimeContext context{
             .runtime_key = "test-runtime",
-            .agent_key = "general-purpose",
+            .agent_key = "lead-agent",
             .agent_name = "teammate1",
             .team_id = team.id,
             .orchestration_manager = &manager,

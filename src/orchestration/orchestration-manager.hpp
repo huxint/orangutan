@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -66,6 +67,9 @@ namespace orangutan::orchestration {
 
         /// Stop a running teammate.
         void stop(const std::string &run_id);
+
+        /// Stop every active teammate attached to a team. Returns the number of runs requested to stop.
+        std::size_t stop_team(const std::string &team_id, std::chrono::milliseconds grace_period);
 
         /// Get the record for a specific run.
         [[nodiscard]]

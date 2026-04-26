@@ -1,8 +1,10 @@
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
-#include <vector>
 
 #include "orchestration/types.hpp"
 
@@ -25,13 +27,9 @@ namespace orangutan::orchestration {
         /// This may be called multiple times, once per prompt cycle.
         virtual auto run(const std::string &prompt, std::stop_token stop_token) -> std::string = 0;
 
-        /// Wait for the next prompt from the leader or another teammate.
-        /// Returns std::nullopt if the agent should shut down (stop requested
-        /// or team dissolved). Returns the next prompt text otherwise.
-        virtual auto wait_for_next_prompt(std::stop_token stop_token) -> std::optional<std::string> {
-            static_cast<void>(stop_token);
-            return std::nullopt;
-        }
+        /// Poll once for an already-arrived follow-up prompt without blocking.
+        /// Used by the orchestration manager to wake idle teammates after mailbox delivery.
+        virtual auto poll_next_prompt() -> std::optional<std::string> { return std::nullopt; }
 
         /// Query whether this runtime can receive follow-up prompts.
         [[nodiscard]]

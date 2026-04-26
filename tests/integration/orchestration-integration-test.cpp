@@ -200,8 +200,8 @@ namespace {
         REQUIRE(!team.id.empty());
 
         // Add members
-        team_mgr.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "general-purpose", .team_id = team.id});
-        team_mgr.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "explorer", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-1", .name = "teammate1", .config_agent_key = "lead-agent", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-2", .name = "teammate2", .config_agent_key = "review-agent", .team_id = team.id});
 
         // Leader sends message to teammate1
         mailbox.send(team.id, "leader", "teammate1", "Please analyze the codebase");
@@ -237,7 +237,7 @@ namespace {
         auto team = team_mgr.create_team("ephemeral-team", "Short-lived team", "lead");
         REQUIRE(!team.id.empty());
 
-        team_mgr.add_member({.agent_id = "agent-a", .name = "alpha", .config_agent_key = "general-purpose", .team_id = team.id});
+        team_mgr.add_member({.agent_id = "agent-a", .name = "alpha", .config_agent_key = "lead-agent", .team_id = team.id});
 
         // Send a message
         mailbox.send(team.id, "lead", "alpha", "do the thing");
