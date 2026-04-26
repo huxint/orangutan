@@ -11,10 +11,8 @@
 #include "hooks/hook-manager.hpp"
 #include "memory/runtime-memory.hpp"
 #include "skills/skill-loader.hpp"
-#include "tools/file/edit/edit-mode.hpp"
 #include "tools/runtime-loader/runtime-loader.hpp"
 #include "tools/skill/skill-tool.hpp"
-#include "utils/enum-string.hpp"
 #include "utils/format.hpp"
 
 #include <utility>
@@ -201,9 +199,8 @@ namespace orangutan::bootstrap {
             }
             *permission_context = add_rule(*permission_context, std::move(rule));
         };
-        const auto edit_mode = utils::parse_enum_or(input.edit_mode, tools::file::DEFAULT_EDIT_MODE);
         auto tool_bootstrap = register_runtime_tools(runtime.tools(), runtime.memory.get(), std::filesystem::path(input.identity.workspace), runtime.tool_context_storage_.get(),
-                                                     input.custom_tools, input.mcp_servers, runtime.permissions_storage_.get(), edit_mode);
+                                                     input.custom_tools, input.mcp_servers, runtime.permissions_storage_.get());
         runtime.mcp_manager = std::move(tool_bootstrap.mcp_manager);
 
         runtime.skill_loader = std::make_unique<SkillLoader>();

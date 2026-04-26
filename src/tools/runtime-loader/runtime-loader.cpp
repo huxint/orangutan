@@ -84,10 +84,9 @@ namespace orangutan::tools {
 
     RuntimeToolBootstrapResult register_runtime_tools(ToolRegistry &registry, memory::RuntimeMemory *runtime_memory, const std::filesystem::path &workspace_root,
                                                       const ToolRuntimeContext *tool_context, const std::vector<Config::ScriptToolConfig> &custom_tools,
-                                                      const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions,
-                                                      file::edit_mode mode) {
+                                                      const std::vector<Config::McpServerConfig> &mcp_servers, const ToolPermissionContext *permissions) {
         const bool leader_only = orchestration::is_leader_mode(tool_context);
-        register_builtin_tools(registry, runtime_memory, workspace_root, tool_context, permissions, mode);
+        register_builtin_tools(registry, runtime_memory, workspace_root, tool_context, permissions);
         if (!leader_only) {
             register_script_tools(registry, custom_tools, workspace_root, permissions, tool_context);
         }

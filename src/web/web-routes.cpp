@@ -118,7 +118,6 @@ namespace orangutan::web {
                 .fallback_models = fallback_labels(agent.fallback_models),
                 .provider_route = maybe_route->route,
                 .workspace_root = workspace_root,
-                .edit_mode = agent.edit_mode,
                 .thinking_budget = agent.thinking_budget,
                 .memory = config.memory,
                 .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),

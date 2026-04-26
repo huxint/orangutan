@@ -62,9 +62,6 @@ namespace orangutan::bootstrap::detail {
             if (agent_cfg.workspace.empty()) {
                 agent_cfg.workspace = cfg.workspace;
             }
-            if (agent_cfg.edit_mode.empty()) {
-                agent_cfg.edit_mode = cfg.edit_mode;
-            }
             if (agent_cfg.thinking_budget == 0) {
                 agent_cfg.thinking_budget = cfg.thinking_budget;
             }
@@ -189,7 +186,6 @@ namespace orangutan::bootstrap::detail {
                                           .provider_route = maybe_route->route,
                                           .api_key_override = std::string{cli_api_key_override},
                                           .workspace_root = resolved_workspace_root,
-                                          .edit_mode = agent_cfg.edit_mode,
                                           .thinking_budget = agent_cfg.thinking_budget,
                                           .cli_runtime_key = cli_identity.runtime_key,
                                           .cli_memory_scope = cli_identity.memory_scope,

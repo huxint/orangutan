@@ -82,7 +82,6 @@ namespace orangutan::web {
             nlohmann::json json = {
                 {"model", agent_cfg.model},
                 {"workspace", agent_cfg.workspace},
-                {"edit_mode", agent_cfg.edit_mode},
                 {"fallback_models", fallback_models_to_json(agent_cfg.fallback_models)},
                 {"thinking_budget", agent_cfg.thinking_budget},
             };
@@ -100,15 +99,13 @@ namespace orangutan::web {
                      {"profile", cfg.profile},
                      {"model", cfg.model},
                      {"temperature", cfg.temperature},
-                     {"max_iterations", cfg.max_iterations},
-                     {"max_tokens", cfg.max_tokens},
-                     {"workspace", cfg.workspace},
-                     {"edit_mode", cfg.edit_mode},
-                     {"fallback_models", fallback_models_to_json(cfg.fallback_models)},
-                     {"thinking_budget", cfg.thinking_budget},
-                 }},
+                      {"max_iterations", cfg.max_iterations},
+                      {"max_tokens", cfg.max_tokens},
+                      {"workspace", cfg.workspace},
+                      {"fallback_models", fallback_models_to_json(cfg.fallback_models)},
+                      {"thinking_budget", cfg.thinking_budget},
+                  }},
                 {"session", {{"auto_save", cfg.auto_save}}},
-                {"tools", {{"edit_mode", cfg.edit_mode}}},
                 {"permissions", permission_config_to_json(cfg.permissions_config)},
                 {"memory",
                  {
@@ -191,7 +188,6 @@ namespace orangutan::web {
                 {"profile", agent.profile},
                 {"model", agent.model},
                 {"workspace", agent.workspace},
-                {"edit_mode", agent.edit_mode},
             });
         }
         send_json(res, {{"items", std::move(arr)}});
@@ -226,7 +222,6 @@ namespace orangutan::web {
                 {"model", agent.model},
                 {"profile", agent.profile},
                 {"workspace", agent.workspace},
-                {"edit_mode", agent.edit_mode},
                 {"leader_mode", agent.leader_mode},
                 {"live_sessions", live_it == live_counts.end() ? 0 : live_it->second},
             });

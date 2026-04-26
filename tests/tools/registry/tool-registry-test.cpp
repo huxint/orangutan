@@ -33,7 +33,7 @@ using orangutan::testing::test_tmp_root;
 namespace {
 
     static_assert(std::same_as<decltype(&register_builtin_tools), void (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
-                                                                           const ToolPermissionContext *, tools::file::edit_mode)>);
+                                                                           const ToolPermissionContext *)>);
 
     using FindDefinitionSignature = const ToolDef *(ToolRegistry::*)(std::string_view) const;
     using FindToolSignature = const Tool *(ToolRegistry::*)(std::string_view) const;
@@ -43,8 +43,8 @@ namespace {
 
     static_assert(std::same_as<decltype(&register_runtime_tools),
                                RuntimeToolBootstrapResult (*)(ToolRegistry &, memory::RuntimeMemory *, const std::filesystem::path &, const ToolRuntimeContext *,
-                                                              const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
-                                                              const ToolPermissionContext *, tools::file::edit_mode)>);
+                                                               const std::vector<Config::ScriptToolConfig> &, const std::vector<Config::McpServerConfig> &,
+                                                               const ToolPermissionContext *)>);
 
     using RegisterShellToolSignature = void (*)(ToolRegistry &, const std::filesystem::path &, const ToolPermissionContext *,
                                                 const std::shared_ptr<BackgroundCompletionDispatcher> &, const std::shared_ptr<BackgroundProcessManager> &);
@@ -343,7 +343,7 @@ TEST_CASE("ShellReportsNonZeroExitCode") {
     CHECK(result.content.contains("exit code"));
 };
 
-TEST_CASE("ReadFileReturnsLineNumberedContents") {
+TEST_CASE("ReadFileReturnsHashAnchoredContents") {
     BuiltinToolsTest fixture;
     const auto tmp = test_tmp_root() / "orangutan_test.txt";
     {
@@ -355,10 +355,12 @@ TEST_CASE("ReadFileReturnsLineNumberedContents") {
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
-    // cat -n format: right-aligned 6-char field, tab, content
-    CHECK(result.content.contains("1\taaa\n"));
-    CHECK(result.content.contains("2\tbbb\n"));
-    CHECK(result.content.contains("3\tccc\n"));
+    CHECK(result.content.contains("1#"));
+    CHECK(result.content.contains(":aaa\n"));
+    CHECK(result.content.contains("2#"));
+    CHECK(result.content.contains(":bbb\n"));
+    CHECK(result.content.contains("3#"));
+    CHECK(result.content.contains(":ccc\n"));
 
     std::filesystem::remove(tmp);
 };
@@ -423,10 +425,12 @@ TEST_CASE("ReadFileWithOffset") {
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
-    CHECK(result.content.contains("10\tline10"));
-    CHECK(result.content.contains("20\tline20"));
+    CHECK(result.content.contains("10#"));
+    CHECK(result.content.contains(":line10"));
+    CHECK(result.content.contains("20#"));
+    CHECK(result.content.contains(":line20"));
     // Should NOT contain lines before offset
-    CHECK_FALSE(result.content.contains("\tline9\n"));
+    CHECK_FALSE(result.content.contains(":line9\n"));
 
     std::filesystem::remove(tmp);
 };
@@ -445,12 +449,14 @@ TEST_CASE("ReadFileWithLimit") {
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
-    CHECK(result.content.contains("1\tline1"));
-    CHECK(result.content.contains("5\tline5"));
+    CHECK(result.content.contains("1#"));
+    CHECK(result.content.contains(":line1"));
+    CHECK(result.content.contains("5#"));
+    CHECK(result.content.contains(":line5"));
     // Should have truncation summary
     CHECK(result.content.contains("showing 5 of 100 lines"));
     // Should NOT contain line 6
-    CHECK_FALSE(result.content.contains("\tline6\n"));
+    CHECK_FALSE(result.content.contains(":line6\n"));
 
     std::filesystem::remove(tmp);
 };
@@ -469,11 +475,13 @@ TEST_CASE("ReadFileWithOffsetAndLimit") {
     const auto result = fixture.registry().execute(call);
 
     CHECK(not(result.is_error));
-    CHECK(result.content.contains("100\tline100"));
-    CHECK(result.content.contains("149\tline149"));
+    CHECK(result.content.contains("100#"));
+    CHECK(result.content.contains(":line100"));
+    CHECK(result.content.contains("149#"));
+    CHECK(result.content.contains(":line149"));
     CHECK(result.content.contains("showing 50 of 500 lines"));
-    CHECK_FALSE(result.content.contains("\tline99\n"));
-    CHECK_FALSE(result.content.contains("\tline150\n"));
+    CHECK_FALSE(result.content.contains(":line99\n"));
+    CHECK_FALSE(result.content.contains(":line150\n"));
 
     std::filesystem::remove(tmp);
 };
@@ -1297,19 +1305,14 @@ TEST_CASE("ProcessKillStopsBackgroundProcess") {
     CHECK(not(kill_payload.at("signal_number").is_null()));
 };
 
-TEST_CASE("ApplyPatchRejectsPathsOutsideWorkspace") {
+TEST_CASE("EditRejectsPathsOutsideWorkspace") {
     BuiltinToolsWorkspaceTest fixture;
-    const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_patch.cpp";
+    const auto outside_path = fixture.workspace().parent_path() / "orangutan_escape_edit.cpp";
     std::ofstream(outside_path) << "outside\n";
 
-    const std::string patch = "*** ../orangutan_escape_patch.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "outside\n"
-                              "=======\n"
-                              "still outside\n"
-                              ">>>>>>> REPLACE\n";
+    const auto edits = nlohmann::json::array({nlohmann::json{{"op", "insert_after"}, {"content", "still outside"}}});
 
-    const auto result = fixture.registry().execute(ToolUse("ap_escape", "edit", {{"patch", patch}}));
+    const auto result = fixture.registry().execute(ToolUse("edit_escape", "edit", {{"path", "../orangutan_escape_edit.cpp"}, {"edits", edits}}));
     CHECK(result.is_error);
     CHECK(result.content.contains("workspace sandbox"));
 
@@ -1350,14 +1353,10 @@ TEST_CASE("EditAllowsOrangutanConfigOutsideWorkspace") {
     const auto config_path = fixture.home() / ".orangutan" / "config.json";
     std::ofstream(config_path) << "{\n  \"agent\": {\n    \"model\": \"claude\"\n  }\n}\n";
 
-    const std::string patch = "*** ~/.orangutan/config.json\n"
-                              "<<<<<<< SEARCH\n"
-                              "\"model\": \"claude\"\n"
-                              "=======\n"
-                              "\"model\": \"gpt\"\n"
-                              ">>>>>>> REPLACE\n";
+    const auto hash = orangutan::tools::compute_line_hash("    \"model\": \"claude\"", 3);
+    const auto edits = nlohmann::json::array({nlohmann::json{{"op", "replace"}, {"anchor", "3#" + hash}, {"content", "    \"model\": \"gpt\""}}});
 
-    const auto result = fixture.registry().execute(ToolUse("cfg_edit", "edit", {{"patch", patch}}));
+    const auto result = fixture.registry().execute(ToolUse("cfg_edit", "edit", {{"path", "~/.orangutan/config.json"}, {"edits", edits}}));
 
     CHECK(not(result.is_error));
 
@@ -1377,248 +1376,9 @@ TEST_CASE("HomeFilesOutsideOrangutanConfigRemainBlocked") {
     CHECK(result.content.contains("workspace sandbox"));
 };
 
-// ── edit tool (patch-based) ─────────────────────
-
-TEST_CASE("ApplyPatchSingleFileOneHunk") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "target.cpp") << "int main() {\n    return 0;\n}\n";
-
-    const std::string patch = "*** target.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "    return 0;\n"
-                              "=======\n"
-                              "    return 42;\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap1", "edit", {{"patch", patch}}));
-    CHECK(not(result.is_error));
-    CHECK(result.content.contains("1 hunk"));
-
-    std::ifstream ifs(fixture.workspace() / "target.cpp");
-    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "int main() {\n    return 42;\n}\n");
-};
-
-TEST_CASE("ApplyPatchSingleFileMultiHunk") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "multi.cpp") << "AAA\nBBB\nCCC\n";
-
-    const std::string patch = "*** multi.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "AAA\n"
-                              "=======\n"
-                              "XXX\n"
-                              ">>>>>>> REPLACE\n"
-                              "<<<<<<< SEARCH\n"
-                              "CCC\n"
-                              "=======\n"
-                              "ZZZ\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap2", "edit", {{"patch", patch}}));
-    CHECK(not(result.is_error));
-    CHECK(result.content.contains("2 hunks"));
-
-    std::ifstream ifs(fixture.workspace() / "multi.cpp");
-    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "XXX\nBBB\nZZZ\n");
-};
-
-TEST_CASE("ApplyPatchMultiFile") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "a.cpp") << "alpha\n";
-    std::ofstream(fixture.workspace() / "b.cpp") << "beta\n";
-
-    const std::string patch = "*** a.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "alpha\n"
-                              "=======\n"
-                              "ALPHA\n"
-                              ">>>>>>> REPLACE\n"
-                              "*** b.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "beta\n"
-                              "=======\n"
-                              "BETA\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap3", "edit", {{"patch", patch}}));
-    CHECK(not(result.is_error));
-    CHECK(result.content.contains("2 files"));
-
-    {
-        std::ifstream ifs(fixture.workspace() / "a.cpp");
-        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-        CHECK(content == "ALPHA\n");
-    }
-    {
-        std::ifstream ifs(fixture.workspace() / "b.cpp");
-        std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-        CHECK(content == "BETA\n");
-    }
-};
-
-// ── Parse error tests ───────────────────────────
-
-TEST_CASE("ApplyPatchEmptyPatchReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    const auto result = fixture.registry().execute(ToolUse("ap_e1", "edit", {{"patch", ""}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("empty"));
-};
-
-TEST_CASE("ApplyPatchMissingSeparatorReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    const std::string patch = "*** file.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "hello\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_e2", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("separator"));
-};
-
-TEST_CASE("ApplyPatchNoFileHeaderReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    const std::string patch = "<<<<<<< SEARCH\n"
-                              "hello\n"
-                              "=======\n"
-                              "world\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_e3", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("file header"));
-};
-
-TEST_CASE("ApplyPatchUnclosedHunkReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    const std::string patch = "*** file.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "hello\n"
-                              "=======\n"
-                              "world\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_e4", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("unclosed"));
-};
-
-// ── Validation error tests ──────────────────────
-
-TEST_CASE("ApplyPatchSearchNotFoundReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "v1.cpp") << "existing content\n";
-
-    const std::string patch = "*** v1.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "nonexistent\n"
-                              "=======\n"
-                              "replacement\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_v1", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("not found"));
-};
-
-TEST_CASE("ApplyPatchSearchMatchesMultipleReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "v2.cpp") << "dup\ndup\n";
-
-    const std::string patch = "*** v2.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "dup\n"
-                              "=======\n"
-                              "unique\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_v2", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("multiple"));
-};
-
-TEST_CASE("ApplyPatchFileNotFoundReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    const std::string patch = "*** does_not_exist.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "something\n"
-                              "=======\n"
-                              "other\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_v3", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("not found"));
-};
-
-// ── Atomicity test ──────────────────────────────
-
-TEST_CASE("ApplyPatchAtomicRollbackOnFailure") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "good.cpp") << "good content\n";
-    std::ofstream(fixture.workspace() / "bad.cpp") << "bad content\n";
-
-    const std::string patch = "*** good.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "good content\n"
-                              "=======\n"
-                              "modified content\n"
-                              ">>>>>>> REPLACE\n"
-                              "*** bad.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "NONEXISTENT TEXT\n"
-                              "=======\n"
-                              "something\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_atom", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-
-    // Verify good.cpp was NOT modified (atomic: neither file touched)
-    std::ifstream ifs(fixture.workspace() / "good.cpp");
-    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "good content\n");
-};
-
-// ── New file creation tests ─────────────────────
-
-TEST_CASE("ApplyPatchCreatesNewFile") {
-    BuiltinToolsWorkspaceTest fixture;
-    const std::string patch = "*** newdir/newfile.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "=======\n"
-                              "#include <iostream>\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_new", "edit", {{"patch", patch}}));
-    CHECK(not(result.is_error));
-    CHECK(std::filesystem::exists(fixture.workspace() / "newdir" / "newfile.cpp"));
-
-    std::ifstream ifs(fixture.workspace() / "newdir" / "newfile.cpp");
-    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    CHECK(content == "#include <iostream>");
-};
-
-TEST_CASE("ApplyPatchNewFileAlreadyExistsReturnsError") {
-    BuiltinToolsWorkspaceTest fixture;
-    std::ofstream(fixture.workspace() / "exists.cpp") << "already here\n";
-
-    const std::string patch = "*** exists.cpp\n"
-                              "<<<<<<< SEARCH\n"
-                              "=======\n"
-                              "new content\n"
-                              ">>>>>>> REPLACE\n";
-
-    const auto result = fixture.registry().execute(ToolUse("ap_dup", "edit", {{"patch", patch}}));
-    CHECK(result.is_error);
-    CHECK(result.content.contains("already exists"));
-};
-
 // ── Integration: registered in registry ─────────
 
-TEST_CASE("ApplyPatchRegisteredInRegistry") {
+TEST_CASE("EditRegisteredInRegistry") {
     BuiltinToolsWorkspaceTest fixture;
     const auto defs = fixture.registry().definitions();
     bool found = false;
@@ -1641,8 +1401,7 @@ public:
         workspace_ = test_tmp_root() / "orangutan_hashline_test";
         std::filesystem::remove_all(workspace_);
         std::filesystem::create_directories(workspace_);
-        // Explicitly pass hashline — the default is search_replace
-        register_builtin_tools(registry_, nullptr, workspace_.string(), nullptr, nullptr, tools::file::edit_mode::hashline);
+        register_builtin_tools(registry_, nullptr, workspace_.string());
     }
 
     ~HashlineToolsTest() {
@@ -1807,8 +1566,6 @@ TEST_CASE("EditMissingAnchorForReplaceReturnsError") {
     CHECK(result.content.contains("requires"));
 };
 
-// ── Mode switching: schema differs between modes ──
-
 TEST_CASE("EditToolDescriptionMentionsHashAnchors") {
     HashlineToolsTest fixture;
     const auto defs = fixture.registry().definitions();
@@ -1820,26 +1577,6 @@ TEST_CASE("EditToolDescriptionMentionsHashAnchors") {
             return;
         }
     }
-    FAIL("edit tool not found in registry");
-};
-
-TEST_CASE("SearchReplaceEditToolDescriptionMentionsPatch") {
-    ToolRegistry sr_registry;
-    auto sr_workspace = orangutan::testing::test_tmp_root() / "orangutan_sr_mode_test";
-    std::filesystem::create_directories(sr_workspace);
-    register_builtin_tools(sr_registry, nullptr, sr_workspace.string(), nullptr, nullptr, tools::file::edit_mode::search_replace);
-
-    const auto defs = sr_registry.definitions();
-    for (const auto &def : defs) {
-        if (def.name == "edit") {
-            CHECK(def.description.contains("patch"));
-            CHECK(def.input_schema.contains("properties"));
-            CHECK(def.input_schema["properties"].contains("patch"));
-            std::filesystem::remove_all(sr_workspace);
-            return;
-        }
-    }
-    std::filesystem::remove_all(sr_workspace);
     FAIL("edit tool not found in registry");
 };
 

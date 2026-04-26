@@ -105,7 +105,7 @@ namespace orangutan::tools {
             }
         }
 
-        ToolOutput read_single_file(const std::filesystem::path &path, int offset, int limit, file::edit_mode mode) {
+        ToolOutput read_single_file(const std::filesystem::path &path, int offset, int limit) {
             spdlog::info("  [tool] read: {}", path.string());
 
             if (!std::filesystem::exists(path)) {
@@ -137,16 +137,10 @@ namespace orangutan::tools {
             const int start = offset;
             const int end = std::min(offset + limit - 1, total_lines);
             const int output_count = end - start + 1;
-            const int num_width = std::max(6, static_cast<int>(std::to_string(total_lines).size()));
-
             std::string out;
             for (int i = start; i <= end; ++i) {
-                if (mode == file::edit_mode::hashline) {
-                    out += format_hashline(lines[static_cast<std::size_t>(i - 1)], static_cast<std::size_t>(i));
-                    out.push_back('\n');
-                } else {
-                    utils::format_to(out, "{:>{}}\t{}\n", i, num_width, lines[static_cast<std::size_t>(i - 1)]);
-                }
+                out += format_hashline(lines[static_cast<std::size_t>(i - 1)], static_cast<std::size_t>(i));
+                out.push_back('\n');
             }
 
             if (end < total_lines) {
@@ -156,7 +150,7 @@ namespace orangutan::tools {
             return out;
         }
 
-        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, file::edit_mode mode) {
+        ToolOutput read_file(const nlohmann::json &input, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
             const bool has_path = input.contains("path") && !input["path"].is_null();
             const bool has_paths = input.contains("paths") && !input["paths"].is_null() && !(input["paths"].is_array() && input["paths"].empty());
 
@@ -178,7 +172,7 @@ namespace orangutan::tools {
 
             if (has_path) {
                 const auto path = resolve_tool_path(std::filesystem::path(input.at("path").get<std::string>()), workspace_root, permissions);
-                return read_single_file(path, offset, limit, mode);
+                return read_single_file(path, offset, limit);
             }
 
             const auto &paths_json = input.at("paths");
@@ -197,7 +191,7 @@ namespace orangutan::tools {
             };
             auto results = utils::parallel_map(std::span<const std::filesystem::path>{paths}, [&](const std::filesystem::path &path) -> PerFile {
                 try {
-                    return {.output = read_single_file(path, offset, limit, mode), .error = {}};
+                    return {.output = read_single_file(path, offset, limit), .error = {}};
                 } catch (const std::exception &e) {
                     return {.output = {}, .error = e.what()};
                 }
@@ -223,7 +217,7 @@ namespace orangutan::tools {
 
     } // namespace
 
-    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions, file::edit_mode mode) {
+    void register_read_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, const ToolPermissionContext *permissions) {
         registry.register_tool(
             {.definition =
                  {.name = "read",
@@ -231,8 +225,8 @@ namespace orangutan::tools {
                                  "Usage:\n"
                                  " - Paths are workspace-relative or absolute within the workspace / ~/.orangutan area.\n"
                                  " - By default reads up to 2000 lines from the start of the file.\n"
-                                 " - Use offset and limit for pagination on large files.\n"
-                                 " - Results use cat -n format with line numbers starting at 1.\n"
+                                  " - Use offset and limit for pagination on large files.\n"
+                                  " - Results use LINE#HASH anchors so edits can detect stale reads.\n"
                                  " - Can read multiple files in one call using the `paths` array.\n"
                                  " - Binary files are detected automatically.\n"
                                  " - Image files (png, jpg, gif, webp, bmp) are read and displayed visually.\n"
@@ -254,8 +248,8 @@ namespace orangutan::tools {
                  },
              .read_only = true,
              .execute_rich =
-                 [workspace_root, permissions, mode](const nlohmann::json &input) {
-                     return read_file(input, workspace_root, permissions, mode);
+                 [workspace_root, permissions](const nlohmann::json &input) {
+                     return read_file(input, workspace_root, permissions);
                  }});
     }
 

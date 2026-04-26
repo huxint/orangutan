@@ -20,7 +20,6 @@ namespace orangutan::bootstrap {
         bool event_stream = false;
         bool cli_mode = false;
         bool channel_mode = false;
-        std::string edit_mode;
         std::string config_password;
         std::string protect_config_path;
         bool verbose = false;

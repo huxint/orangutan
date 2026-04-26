@@ -116,7 +116,6 @@ namespace orangutan::config {
             Config cfg;
             cfg = parse_agent_section(resolved_root, std::move(cfg));
             cfg = parse_profiles_section(resolved_root, std::move(cfg));
-            cfg = parse_tools_section(resolved_root, std::move(cfg));
             cfg = parse_permissions_section(resolved_root, std::move(cfg));
             cfg = parse_session_section(resolved_root, std::move(cfg));
             cfg = parse_memory_section(resolved_root, std::move(cfg));
@@ -277,11 +276,6 @@ namespace orangutan::config {
             root["profiles"] = std::move(profiles_json);
         }
 
-        nlohmann::json tools = {
-            {"edit_mode", edit_mode},
-        };
-        root["tools"] = std::move(tools);
-
         root["session"] = nlohmann::json{{"auto_save", auto_save}};
         root["memory"] = nlohmann::json{
             {"mirror_enabled", memory.mirror_enabled},
@@ -324,9 +318,6 @@ namespace orangutan::config {
                 }
                 if (agent_cfg.max_concurrent_agents != 4) {
                     agent_json["max_concurrent_agents"] = agent_cfg.max_concurrent_agents;
-                }
-                if (!agent_cfg.edit_mode.empty() && agent_cfg.edit_mode != "hashline") {
-                    agent_json["edit_mode"] = agent_cfg.edit_mode;
                 }
                 if (agent_cfg.thinking_budget != 0) {
                     agent_json["thinking_budget"] = agent_cfg.thinking_budget;

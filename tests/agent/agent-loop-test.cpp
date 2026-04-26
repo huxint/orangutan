@@ -477,18 +477,11 @@ namespace {
         std::filesystem::remove_all(workspace);
     }
 
-    TEST_CASE("touched_paths_for_edit_patch_extracts_update_file_paths") {
+    TEST_CASE("touched_paths_for_edit_uses_path_field") {
         const ToolUse call{
             "tool-edit",
             "edit",
-            nlohmann::json{{"patch", "*** Begin Patch\n"
-                                     "*** Update File: src/main.cpp\n"
-                                     "<<<<<<< SEARCH\n"
-                                     "return 0;\n"
-                                     "=======\n"
-                                     "return 1;\n"
-                                     ">>>>>>> REPLACE\n"
-                                     "*** End Patch\n"}},
+            nlohmann::json{{"path", "src/main.cpp"}, {"edits", nlohmann::json::array({nlohmann::json{{"op", "insert_after"}, {"content", "return 1;"}}})}},
         };
 
         const auto paths = agent::detail::touched_paths_for_tool_call(call);

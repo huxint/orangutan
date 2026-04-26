@@ -45,9 +45,6 @@ namespace orangutan::config::detail {
     Config parse_profiles_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_tools_section(const nlohmann::json &root, Config cfg);
-
-    [[nodiscard]]
     Config parse_permissions_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]

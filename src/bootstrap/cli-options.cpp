@@ -54,7 +54,6 @@ namespace orangutan::bootstrap {
         app.add_option("-r,--resume", options.resume_session, "Resume a saved session (ID, 'latest', or omit to pick)")->expected(0, 1)->default_str("");
         resume_flag = app.get_option("--resume");
         app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
-        app.add_option("--edit-mode", options.edit_mode, "Edit tool mode: hashline or search_replace");
         app.add_option("--config-password", options.config_password, "Password used to unlock or protect encrypted config secrets");
         app.add_option("--protect-config-secrets", options.protect_config_path,
                        "Rewrite supported plaintext config secrets in place and exit. Optional argument: config path; defaults to ~/.orangutan/config.json")

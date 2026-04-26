@@ -56,7 +56,6 @@ namespace orangutan::config {
         PermissionConfig permissions_config;
         bool leader_mode = false;
         int max_concurrent_agents = 4;
-        std::string edit_mode = "hashline";
         int thinking_budget = 0;
     };
 
@@ -77,9 +76,6 @@ namespace orangutan::config {
         int max_tokens = 4096;
         int thinking_budget = 0;
         std::string workspace;
-
-        // tools object
-        std::string edit_mode = "hashline"; // "hashline" | "search_replace"
 
         // permissions object
         PermissionConfig permissions_config;

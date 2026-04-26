@@ -4,9 +4,6 @@
     "model": "claude-sonnet-4-20250514",
     "workspace": "~/workspace"
   },
-  "tools": {
-    "edit_mode": "hashline"
-  },
   "permissions": {
     "default_mode": "default_mode",
     "allow": ["read", "task(list)"],
@@ -53,7 +50,6 @@
       "max_concurrent_agents": 4
     },
     "coder": {
-      "edit_mode": "search_replace",
       "permissions": {
         "default_mode": "default_mode",
         "allow": ["read", "edit"],

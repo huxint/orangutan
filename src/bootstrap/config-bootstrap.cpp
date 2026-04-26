@@ -80,18 +80,6 @@ namespace orangutan::bootstrap {
         }
     }
 
-    void apply_cli_edit_mode_override(config::Config &cfg, std::string_view edit_mode) {
-        if (edit_mode.empty()) {
-            return;
-        }
-
-        cfg.edit_mode = std::string(edit_mode);
-        for (auto &[agent_key, agent_cfg] : cfg.agents) {
-            agent_cfg.edit_mode = cfg.edit_mode;
-            static_cast<void>(agent_key);
-        }
-    }
-
     utils::transparent_string_unordered_map<std::string> build_qq_bot_agents(const config::Config &cfg) {
         utils::transparent_string_unordered_map<std::string> qq_bot_agents;
         for (const auto &bot : cfg.qq_bots) {

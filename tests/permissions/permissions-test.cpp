@@ -275,7 +275,7 @@ TEST_CASE("AcceptEditsStillDeniesWhenFileCheckerRejectsPath") {
     CHECK(decision.message->contains("workspace sandbox"));
 }
 
-TEST_CASE("EditPatchAllowRuleMatchesCanonicalPathInsteadOfPatchBody") {
+TEST_CASE("EditAllowRuleMatchesCanonicalPath") {
     ToolPermissionContext ctx{.mode = permission_mode::default_mode};
     ctx.allow_rules.push_back(parse_permission_rule("edit(src/main.cpp)", permission_behavior::allow, permission_rule_source::session));
 
@@ -283,7 +283,8 @@ TEST_CASE("EditPatchAllowRuleMatchesCanonicalPathInsteadOfPatchBody") {
         "edit-1",
         "edit",
         {
-            {"patch", "*** src/main.cpp\n<<<<<<< SEARCH\nold value\n=======\nnew value\n>>>>>>> REPLACE\n"},
+            {"path", "src/main.cpp"},
+            {"edits", nlohmann::json::array({nlohmann::json{{"op", "insert_after"}, {"content", "new value"}}})},
         },
     };
 

@@ -92,9 +92,7 @@ namespace {
         cfg.save_to(path);
 
         const auto stored = nlohmann::json::parse(read_file(path));
-        CHECK(stored["tools"]["edit_mode"] == "hashline");
-        CHECK_FALSE(stored["tools"].contains("allowed"));
-        CHECK_FALSE(stored["tools"].contains("denied"));
+        CHECK_FALSE(stored.contains("tools"));
         CHECK(stored["permissions"]["default_mode"] == "accept_edits");
         CHECK(stored["permissions"]["allow"] == nlohmann::json::array({"read"}));
         CHECK(stored["permissions"]["deny"] == nlohmann::json::array({"shell(rm:*)"}));

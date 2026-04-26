@@ -21,13 +21,6 @@ namespace orangutan::config::detail {
             {"model", &Config::model},
             {"workspace", &Config::workspace},
         });
-        constexpr auto TOOLS_STRING_FIELDS = std::to_array<config_string_field>({
-            {"edit_mode", &Config::edit_mode},
-        });
-        constexpr auto TOOLS_SECTION_KEYS = std::to_array<std::string_view>({
-            "edit_mode",
-            "custom",
-        });
         constexpr auto QQ_STRING_FIELDS = std::to_array<config_string_field>({
             {"app_id", &Config::qq_app_id},
             {"client_secret", &Config::qq_client_secret},
@@ -62,7 +55,6 @@ namespace orangutan::config::detail {
             {"profile", &AgentConfig::profile},
             {"model", &AgentConfig::model},
             {"workspace", &AgentConfig::workspace},
-            {"edit_mode", &AgentConfig::edit_mode},
         });
 
         using qq_bot_string_field = string_member_field<QqBotConfig>;
@@ -178,7 +170,6 @@ namespace orangutan::config::detail {
             .fallback_models = cfg.fallback_models,
             .workspace = cfg.workspace,
             .permissions_config = cfg.permissions_config,
-            .edit_mode = cfg.edit_mode,
             .thinking_budget = cfg.thinking_budget,
         };
     }
@@ -260,18 +251,6 @@ namespace orangutan::config::detail {
 
             cfg.profiles.insert_or_assign(it.key(), std::move(profile_cfg));
         }
-
-        return cfg;
-    }
-
-    Config parse_tools_section(const nlohmann::json &root, Config cfg) {
-        const auto *tools = find_object_member(root, "tools");
-        if (tools == nullptr) {
-            return cfg;
-        }
-
-        validate_object_keys(*tools, TOOLS_SECTION_KEYS, "tools");
-        assign_string_members(*tools, cfg, TOOLS_STRING_FIELDS);
 
         return cfg;
     }

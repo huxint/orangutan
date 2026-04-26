@@ -1,6 +1,5 @@
 #include "test-helpers.hpp"
 
-#include "tools/file/edit/edit-mode.hpp"
 #include "tools/internal.hpp"
 #include "tools/registry/tool-registry.hpp"
 #include "utils/file-io.hpp"
@@ -16,9 +15,9 @@ using namespace orangutan::tools;
 
 namespace {
 
-    ToolRegistry make_read_registry(const std::filesystem::path &workspace, file::edit_mode mode = file::DEFAULT_EDIT_MODE) {
+    ToolRegistry make_read_registry(const std::filesystem::path &workspace) {
         ToolRegistry registry;
-        register_read_tool(registry, workspace, nullptr, mode);
+        register_read_tool(registry, workspace);
         return registry;
     }
 
@@ -30,7 +29,7 @@ namespace {
 
 } // namespace
 
-TEST_CASE("read returns cat -n formatted lines for a text file") {
+TEST_CASE("read returns hashline formatted lines for a text file") {
     const auto workspace = testing::unique_test_root("read-text");
     auto registry = make_read_registry(workspace);
 
@@ -39,11 +38,10 @@ TEST_CASE("read returns cat -n formatted lines for a text file") {
 
     const auto result = registry.execute(ToolUse("r", "read", {{"path", target.string()}}));
     REQUIRE_FALSE(result.is_error);
-    CHECK(result.content.contains("\tfirst\n"));
-    CHECK(result.content.contains("\tsecond\n"));
-    CHECK(result.content.contains("\tthird\n"));
-    // line numbers are right-aligned to at least width 6
-    CHECK(result.content.contains("     1\tfirst"));
+    CHECK(result.content.contains("1#"));
+    CHECK(result.content.contains(":first"));
+    CHECK(result.content.contains(":second"));
+    CHECK(result.content.contains(":third"));
 }
 
 TEST_CASE("read returns error for missing file") {
@@ -224,9 +222,9 @@ TEST_CASE("read check_permissions denies non-string entries in paths") {
     CHECK(decision.message->contains("entries must be strings"));
 }
 
-TEST_CASE("read in hashline mode prefixes lines with LINE#HASH tags") {
+TEST_CASE("read prefixes lines with LINE#HASH tags") {
     const auto workspace = testing::unique_test_root("read-hashline");
-    auto registry = make_read_registry(workspace, file::edit_mode::hashline);
+    auto registry = make_read_registry(workspace);
 
     const auto target = workspace / "note.txt";
     fileio::write_file(target, "alpha\nbeta\n");

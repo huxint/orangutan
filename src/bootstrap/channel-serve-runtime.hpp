@@ -31,7 +31,6 @@ namespace orangutan::bootstrap {
         providers::ProviderRoute provider_route;
         std::string api_key_override;
         std::string workspace_root;
-        std::string edit_mode = "hashline";
         int thinking_budget = 0;
         std::string cli_runtime_key;
         std::string cli_memory_scope;

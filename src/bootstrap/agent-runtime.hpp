@@ -47,7 +47,6 @@ namespace orangutan::bootstrap {
         std::string agent_key;
         std::string agent_name;
         std::string workspace_root;
-        std::string edit_mode = "hashline";
         int thinking_budget = 0;
         Config::MemoryConfig memory;
         ToolPermissionContext permission_context;

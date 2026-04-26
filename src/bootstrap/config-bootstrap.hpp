@@ -36,8 +36,6 @@ namespace orangutan::bootstrap {
     [[nodiscard]]
     std::optional<std::string> resolve_agent_workspace(const config::AgentConfig &selected_agent);
 
-    void apply_cli_edit_mode_override(config::Config &cfg, std::string_view edit_mode);
-
     [[nodiscard]]
     utils::transparent_string_unordered_map<std::string> build_qq_bot_agents(const config::Config &cfg);
 

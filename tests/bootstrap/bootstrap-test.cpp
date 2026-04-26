@@ -461,35 +461,6 @@ namespace {
         CHECK(result.exit_code == 1);
     };
 
-    TEST_CASE("build_agent_runtime_configs_uses_per_agent_edit_mode") {
-        BootstrapHarness harness;
-        Config cfg;
-        cfg.edit_mode = "hashline";
-        cfg.profiles.emplace("shared", make_profile({{"gpt-test", ModelConfig{.provider = "openai", .protocol = "chat-completions"}},
-                                                     {"gpt-coder", ModelConfig{.provider = "openai", .protocol = "chat-completions"}}}));
-        cfg.agents.emplace("default", AgentConfig{
-                                          .profile = "shared",
-                                          .model = "gpt-test",
-                                          .workspace = harness.workspace_root().string(),
-                                          .edit_mode = "hashline",
-                                      });
-        cfg.agents.emplace("coder", AgentConfig{
-                                        .profile = "shared",
-                                        .model = "gpt-coder",
-                                        .workspace = harness.workspace_root().string(),
-                                        .edit_mode = "search_replace",
-                                    });
-
-        const auto runtime_configs = bootstrap::detail::build_agent_runtime_configs(cfg, "");
-        REQUIRE(runtime_configs.has_value());
-        auto default_it = runtime_configs->find("default");
-        REQUIRE(default_it != runtime_configs->end());
-        CHECK(default_it->second.edit_mode == "hashline");
-        auto coder_it = runtime_configs->find("coder");
-        REQUIRE(coder_it != runtime_configs->end());
-        CHECK(coder_it->second.edit_mode == "search_replace");
-    };
-
     TEST_CASE("build_effective_agents_does_not_synthesize_default_when_missing") {
         BootstrapHarness harness;
         Config cfg;
@@ -655,7 +626,6 @@ namespace {
             .provider_route = runtime_it->second.provider_route,
             .agent_key = runtime_it->second.agent_key,
             .workspace_root = runtime_it->second.workspace_root,
-            .edit_mode = runtime_it->second.edit_mode,
             .memory = runtime_it->second.memory,
             .permission_context = runtime_it->second.permission_context,
             .identity = identity,

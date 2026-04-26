@@ -156,7 +156,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         fmt::println(stderr, "Error: {}", e.what());
         return 1;
     }
-    apply_cli_edit_mode_override(cfg, options.edit_mode);
     const auto cli_permission_options = build_cli_permission_options(options);
 
     std::optional<orangutan::AgentConfig> maybe_selected_agent;
@@ -188,7 +187,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .fallback_models = fallback_labels(maybe_selected_agent->fallback_models),
             .provider_route = maybe_route->route,
             .workspace_root = *maybe_workspace,
-            .edit_mode = maybe_selected_agent->edit_mode,
             .thinking_budget = maybe_selected_agent->thinking_budget,
             .cli_runtime_key = maybe_primary_identity->runtime_key,
             .cli_memory_scope = maybe_primary_identity->memory_scope,

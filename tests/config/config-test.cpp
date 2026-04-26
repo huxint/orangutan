@@ -48,7 +48,6 @@ namespace {
         CHECK(cfg.temperature == 1.0);
         CHECK(cfg.max_iterations == 20);
         CHECK(cfg.max_tokens == 4096);
-        CHECK(cfg.edit_mode == "hashline");
         CHECK(cfg.auto_save);
         CHECK_FALSE(cfg.memory.mirror_enabled);
         CHECK(cfg.memory.mirror_file == ".orangutan/memory/MEMORY.md");
@@ -396,18 +395,6 @@ namespace {
           "permissions": {
             "allow": ["read"],
             "allowed_tools": ["shell"]
-          }
-        })json"));
-
-        CHECK_THROWS_AS(Config::load_from(path), std::runtime_error);
-    };
-
-    TEST_CASE("tools section rejects keys outside the current schema") {
-        ConfigFileHarness harness;
-        const auto path = harness.write_config(nlohmann::json::parse(R"json({
-          "tools": {
-            "edit_mode": "hashline",
-            "allowed": ["read"]
           }
         })json"));
 
