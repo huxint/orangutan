@@ -44,7 +44,7 @@ namespace orangutan::tools {
         [[nodiscard]]
         std::optional<std::string_view> lookup_image_media_type(const std::filesystem::path &path) {
             const auto ext = utils::ascii_to_lower_copy(path.extension().string());
-            const auto it = std::ranges::find(IMAGE_MEDIA_TYPES, ext, &std::pair<std::string_view, std::string_view>::first);
+            const auto *const it = std::ranges::find(IMAGE_MEDIA_TYPES, ext, &std::pair<std::string_view, std::string_view>::first);
             if (it == IMAGE_MEDIA_TYPES.end()) {
                 return std::nullopt;
             }
