@@ -323,11 +323,13 @@ namespace orangutan::bootstrap {
                                 const auto previous_message_count = runtime.agent().history().size();
                                 const auto active_model =
                                     runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
-                                const auto distillation_dispatcher =
-                                    runtime.provider() != nullptr ? cli::make_background_session_distillation_dispatcher(
-                                                                        runtime.completion_resume_state != nullptr ? runtime.completion_resume_state->automation_runtime : nullptr,
-                                                                        *runtime.provider(), runtime.provider_route, runtime.runtime->memory.get())
-                                                                  : cli::SessionDistillationDispatcher{};
+                                const auto distillation_dispatcher = [&]() -> cli::SessionDistillationDispatcher {
+                                    if (runtime.provider() != nullptr && runtime.completion_resume_state != nullptr && runtime.completion_resume_state->automation_runtime != nullptr) {
+                                        return cli::make_background_session_distillation_dispatcher(runtime.completion_resume_state->automation_runtime, *runtime.provider(),
+                                                                                                   runtime.provider_route, runtime.runtime->memory.get());
+                                    }
+                                    return [](std::vector<Message>) {};
+                                }();
                                 const auto result = cli::start_new_session(runtime.agent(), session_store, runtime.current_session_id,
                                                                            make_channel_session_metadata(runtime, message.jid, active_model), distillation_dispatcher);
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
@@ -818,7 +820,14 @@ namespace orangutan::bootstrap {
                         };
                     }
 
-                    const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb);
+                    auto checkpoint_cb = AgentLoop::HistoryCheckpointCallback{};
+                    if (!message.isolated) {
+                        checkpoint_cb = [&](const std::vector<Message> &) {
+                            persist_channel_session(message.jid, runtime, session_store);
+                        };
+                    }
+
+                    const auto reply = runtime.agent().run(build_agent_input(effective_message), stream_cb, tool_cb, checkpoint_cb);
 
                     // Skip session persistence for isolated heartbeat-style inbound runs.
                     if (!message.isolated) {

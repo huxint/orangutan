@@ -1168,6 +1168,67 @@ namespace {
         CHECK(sessions[0].origin_ref == jid);
     };
 
+    TEST_CASE("new_command_does_not_call_provider_when_background_distillation_is_unavailable") {
+        auto sink = std::make_shared<MemorySink>();
+        ScopedDefaultLogger logger("channel-serve-test", sink);
+        ChannelServeHarness harness;
+        ChannelManager manager;
+        auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
+        auto *qq = qq_channel.get();
+        manager.add_channel(std::move(qq_channel));
+
+        MessageQueue queue;
+        std::atomic<bool> stop_requested{false};
+        JidTaskRunner task_runner(1);
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        Config cfg;
+
+        const bootstrap::AgentRuntimeConfig runtime_cfg{
+            .agent_key = "default",
+            .model = "broken-model",
+            .provider_route = make_runtime_route("broken-model", ""),
+            .workspace_root = harness.workspace_root().string(),
+        };
+        const std::unordered_map<std::string, bootstrap::AgentRuntimeConfig> agent_configs{{"default", runtime_cfg}};
+        const orangutan::utils::transparent_string_unordered_map<std::string> qq_bot_agents;
+
+        const std::string jid = "qqbot:c2c:42";
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
+        const auto session_id = session_store.save({Message::user().text("hello"), Message::assistant().text("hi")},
+                                                   SessionMetadata{
+                                                       .model = "broken-model",
+                                                       .scope_key = identity.runtime_key,
+                                                       .agent_key = "default",
+                                                       .origin_kind = "channel",
+                                                       .origin_ref = jid,
+                                                   });
+        session_store.bind_jid(jid, session_id, "default");
+
+        auto loop = std::async(std::launch::async, [&] {
+            bootstrap::run_channel_loop(queue, manager, stop_requested, task_runner, agent_configs, qq_bot_agents, &memory_store, session_store, nullptr, cfg, nullptr, nullptr,
+                                        nullptr);
+        });
+
+        queue.push(InboundMessage{
+            .jid = jid,
+            .content = "/new",
+        });
+
+        for (int attempt = 0; attempt < 50 && qq->sent_messages().empty(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        stop_requested.store(true);
+        queue.shutdown();
+
+        CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        REQUIRE(not qq->sent_messages().empty());
+        CHECK(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
+        CHECK(session_store.bound_session_for_jid(jid, "default") == std::nullopt);
+        CHECK_FALSE(ChannelServeHarness::contains_line(sink->lines(), "session memory distillation failed"));
+    };
+
     TEST_CASE("export_command_writes_transcript_to_workspace_and_replies_with_path") {
         ChannelServeHarness harness;
         ChannelManager manager;
@@ -1487,7 +1548,7 @@ namespace {
         CHECK(resume_state->automation_runtime == &app_runtime.automation_runtime());
     };
 
-    TEST_CASE("run_channel_loop_replies_with_runtime_errors") {
+    TEST_CASE("run_channel_loop_persists_inbound_message_before_runtime_error") {
         ChannelServeHarness harness;
         ChannelManager manager;
         auto qq_channel = std::make_unique<FakeChannel>("qqbot", "qqbot:");
@@ -1534,6 +1595,22 @@ namespace {
         CHECK(sent_messages.back().first == "qqbot:c2c:42");
         CHECK(sent_messages.back().second.contains("Error:"));
         CHECK(sent_messages.back().second.contains("missing api key"));
+
+        const auto sessions = session_store.list_sessions_for_agent("default");
+        REQUIRE(sessions.size() == 1UL);
+        CHECK(sessions.front().origin_kind == "channel");
+        CHECK(sessions.front().origin_ref == "qqbot:c2c:42");
+
+        const auto bound_session = session_store.bound_session_for_jid("qqbot:c2c:42", "default");
+        REQUIRE(bound_session.has_value());
+        CHECK(*bound_session == sessions.front().id);
+
+        const auto history = session_store.load(sessions.front().id);
+        REQUIRE(history.size() == 1UL);
+        CHECK(history.front().role() == base::role::user);
+        const auto *text = history.front().begin() == history.front().end() ? nullptr : std::get_if<Text>(&*history.front().begin());
+        REQUIRE(text != nullptr);
+        CHECK(text->text == "hello");
     };
 
 } // namespace

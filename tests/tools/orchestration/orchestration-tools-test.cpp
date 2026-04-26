@@ -395,7 +395,7 @@ namespace {
         manager.shutdown();
     }
 
-    TEST_CASE("agent_send_message delivers direct team mailbox message", "[tools][orchestration]") {
+    TEST_CASE("agent_send_message rejects orphaned team member by name", "[tools][orchestration]") {
         ToolRegistry registry;
         orchestration::OrchestrationManager manager(2);
         orchestration::TeamManager team_manager(":memory:");
@@ -427,6 +427,69 @@ namespace {
 
         CHECK_FALSE(result.is_error);
         auto json = nlohmann::json::parse(result.content);
+        CHECK(json["sent"] == false);
+        CHECK(json["error"] == "Agent 'teammate2' is not running in team");
+
+        const auto messages = mailbox.poll(team.id, "teammate2");
+        CHECK(messages.empty());
+
+        manager.shutdown();
+    }
+
+    TEST_CASE("agent_send_message delivers direct message to active teammate by name", "[tools][orchestration]") {
+        ToolRegistry registry;
+        orchestration::OrchestrationManager manager(2);
+        orchestration::TeamManager team_manager(":memory:");
+        orchestration::AgentMailbox mailbox(":memory:");
+        auto team = team_manager.create_team("research", "Research team", "lead");
+        manager.set_environment({
+            .mailbox = &mailbox,
+            .team_manager = &team_manager,
+        });
+        manager.set_teammate_runtime_factory([](const orchestration::AgentSpawnRequest &) {
+            struct WaitingTeammate final : orchestration::TeammateRuntime {
+                std::string run(const std::string &, std::stop_token stop_token) override {
+                    for (int i = 0; i < 50; ++i) {
+                        if (stop_token.stop_requested()) {
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
+                    return "done";
+                }
+            };
+
+            return std::make_unique<WaitingTeammate>();
+        });
+        const auto spawned = manager.spawn({
+            .name = "teammate2",
+            .task = "wait",
+            .team_id = team.id,
+            .parent_runtime_key = "test-runtime",
+        });
+        REQUIRE(spawned.accepted);
+        team_manager.add_member({.agent_id = spawned.run_id, .name = "teammate2", .config_agent_key = "lead-agent", .team_id = team.id});
+
+        ToolRuntimeContext context{
+            .runtime_key = "test-runtime",
+            .agent_key = "lead-agent",
+            .agent_name = "teammate1",
+            .team_id = team.id,
+            .orchestration_manager = &manager,
+            .team_manager = &team_manager,
+            .mailbox = &mailbox,
+        };
+
+        register_orchestration_tools(registry, &context);
+
+        auto result = registry.execute(ToolUse("msg-2", "agent_send_message",
+                                               {
+                                                   {"to", "teammate2"},
+                                                   {"text", "hello teammate2"},
+                                               }));
+
+        CHECK_FALSE(result.is_error);
+        auto json = nlohmann::json::parse(result.content);
         CHECK(json["sent"] == true);
 
         const auto messages = mailbox.poll(team.id, "teammate2");
@@ -434,6 +497,7 @@ namespace {
         CHECK(messages.front().from == "teammate1");
         CHECK(messages.front().text == "hello teammate2");
 
+        manager.stop(spawned.run_id);
         manager.shutdown();
     }
 

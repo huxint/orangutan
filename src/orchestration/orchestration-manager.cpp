@@ -469,6 +469,19 @@ namespace orangutan::orchestration {
             return std::nullopt;
         }
 
+        [[nodiscard]]
+        std::shared_ptr<ActiveRun> find_active_team_run_by_name(const std::string &team_id, const std::string &agent_name) const {
+            std::scoped_lock lock(mutex);
+            for (const auto &[id, run] : active_runs) {
+                static_cast<void>(id);
+                std::scoped_lock rlock(run->mutex);
+                if (!run->completed && is_active_run_status(run->record.status) && run->record.team_id == team_id && run->record.agent_name == agent_name) {
+                    return run;
+                }
+            }
+            return nullptr;
+        }
+
         void deactivate_team_member(const AgentRunRecord &record) {
             TeamManager *manager = nullptr;
             {
@@ -635,6 +648,10 @@ namespace orangutan::orchestration {
         auto member_names = impl_->env.team_manager->list_member_names(team_id);
         if (std::ranges::find(member_names, to) == member_names.end()) {
             return "Agent '" + to + "' not found in team";
+        }
+        const auto run = impl_->find_active_team_run_by_name(team_id, to);
+        if (run == nullptr) {
+            return "Agent '" + to + "' is not running in team";
         }
         impl_->env.mailbox->send(team_id, from, to, text);
         impl_->queue_idle_runs_for_message(team_id, to);
