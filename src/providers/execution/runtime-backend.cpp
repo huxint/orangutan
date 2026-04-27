@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <mutex>
-#include <unordered_set>
 #include <utility>
 
 #include <exec/repeat_effect_until.hpp>
@@ -10,6 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
+#include "providers/execution/route-attempt-plan.hpp"
 #include "providers/protocols/provider-registry.hpp"
 #include "providers/transport/http-transport.hpp"
 #include "utils/enum-string.hpp"
@@ -20,36 +20,6 @@ namespace orangutan::providers::execution {
 
         using protocols::ProviderRegistry;
         using transport::HttpTransport;
-
-        [[nodiscard]]
-        std::string target_key(const ModelTarget &target) {
-            return target.profile_name + "|" + std::string(utils::enum_name(target.provider)) + "|" + std::string(utils::enum_name_kebab(target.protocol)) + "|" +
-                   target.model + "|" + target.base_url;
-        }
-
-        [[nodiscard]]
-        std::vector<ModelTarget> flatten_route(const ProviderRoute &route) {
-            std::vector<ModelTarget> targets;
-            targets.reserve(1 + route.fallbacks.size());
-
-            std::unordered_set<std::string> seen;
-            const auto append = [&](const ModelTarget &target) {
-                if (target.model.empty()) {
-                    return;
-                }
-                if (!seen.insert(target_key(target)).second) {
-                    return;
-                }
-                targets.push_back(target);
-            };
-
-            append(route.primary);
-            for (const auto &fallback : route.fallbacks) {
-                append(fallback);
-            }
-
-            return targets;
-        }
 
         class RuntimeBackend final : public ProviderBackend {
         public:
@@ -91,29 +61,16 @@ namespace orangutan::providers::execution {
             std::string preferred_target_key_;
 
             struct AttemptState {
-                std::vector<ModelTarget> targets;
+                RouteAttemptPlan plan;
                 ProviderRequest request;
                 ProviderEventSink sink;
-                std::size_t index = 0;
                 std::vector<std::string> failures;
                 ProviderError last_error{error_category::unknown, "provider execution failed"};
                 std::optional<ProviderResult> result;
+
+                AttemptState(ProviderRoute route, std::string preferred_target_key)
+                : plan(route, preferred_target_key) {}
             };
-
-            [[nodiscard]]
-            static std::size_t starting_index(const std::vector<ModelTarget> &targets, std::string_view preferred_target_key) {
-                if (preferred_target_key.empty()) {
-                    return 0;
-                }
-
-                for (std::size_t index = 0; index < targets.size(); ++index) {
-                    if (target_key(targets[index]) == preferred_target_key) {
-                        return index;
-                    }
-                }
-
-                return 0;
-            }
 
             [[nodiscard]]
             ProviderResult attempt_target(const ModelTarget &target, const ProviderRequest &request, const ProviderEventSink &sink, bool &emitted_stream_event) {
@@ -184,8 +141,7 @@ namespace orangutan::providers::execution {
                 state.failures.push_back(target_label(target) + ": " + error.what());
                 state.last_error = error;
 
-                const bool is_last_target = state.index + 1 >= state.targets.size();
-                if (!error.retryable() || emitted_stream_event || is_last_target) {
+                if (!state.plan.can_advance_after(error, emitted_stream_event)) {
                     return true;
                 }
 
@@ -216,9 +172,14 @@ namespace orangutan::providers::execution {
 
             [[nodiscard]]
             ProviderResult execute(ProviderRoute route, ProviderRequest request, ProviderEventSink sink) {
-                auto state = std::make_shared<AttemptState>();
-                state->targets = flatten_route(route);
-                if (state->targets.empty()) {
+                std::string preferred_target_key;
+                {
+                    std::scoped_lock lock(mutex_);
+                    preferred_target_key = preferred_target_key_;
+                }
+
+                auto state = std::make_shared<AttemptState>(route, std::move(preferred_target_key));
+                if (state->plan.empty()) {
                     throw ProviderError(error_category::configuration, "provider route does not contain any models");
                 }
                 state->request = std::move(request);
@@ -227,32 +188,31 @@ namespace orangutan::providers::execution {
                 {
                     std::scoped_lock lock(mutex_);
                     ++usage_.logical_requests;
-                    state->index = starting_index(state->targets, preferred_target_key_);
                 }
 
                 auto attempt_once = stdexec::just()
-                                  | stdexec::then([this, state]() -> bool {
-                                        const auto &target = state->targets[state->index];
-                                        bool emitted_stream_event = false;
-                                        try {
-                                            state->result.emplace(attempt_target(target, state->request, state->sink, emitted_stream_event));
-                                            return true;
-                                        } catch (const ProviderError &e) {
-                                            if (record_failure(*state, target, e, emitted_stream_event)) {
-                                                return true;
-                                            }
-                                        } catch (const nlohmann::json::exception &e) {
-                                            if (record_failure(*state, target, ProviderError(error_category::parsing, e.what(), target), emitted_stream_event)) {
-                                                return true;
-                                            }
-                                        } catch (const std::exception &e) {
-                                            if (record_failure(*state, target, ProviderError(error_category::unknown, e.what(), target), emitted_stream_event)) {
-                                                return true;
-                                            }
-                                        }
-                                        ++state->index;
-                                        return false;
-                                    });
+                                   | stdexec::then([this, state]() -> bool {
+                                         const auto &target = state->plan.current();
+                                         bool emitted_stream_event = false;
+                                         try {
+                                             state->result.emplace(attempt_target(target, state->request, state->sink, emitted_stream_event));
+                                             return true;
+                                         } catch (const ProviderError &error) {
+                                             if (record_failure(*state, target, error, emitted_stream_event)) {
+                                                 return true;
+                                             }
+                                         } catch (const nlohmann::json::exception &error) {
+                                             if (record_failure(*state, target, ProviderError(error_category::parsing, error.what(), target), emitted_stream_event)) {
+                                                 return true;
+                                             }
+                                         } catch (const std::exception &error) {
+                                             if (record_failure(*state, target, ProviderError(error_category::unknown, error.what(), target), emitted_stream_event)) {
+                                                 return true;
+                                             }
+                                         }
+                                         state->plan.advance();
+                                         return false;
+                                     });
 
                 auto pipeline = std::move(attempt_once)
                               | exec::repeat_effect_until()
