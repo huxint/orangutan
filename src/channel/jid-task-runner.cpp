@@ -145,17 +145,16 @@ namespace orangutan::channel {
     };
 
     struct JidTaskRunner::Impl {
-        utils::TaskPool base_pool;
-        /// Single-thread overflow pools, lazily created when blocking leases push
-        /// the desired drainer count past `base_pool` capacity. Pools are kept
-        /// alive for the runner's lifetime even after their lease releases — we
-        /// trade a bounded-by-high-water-mark thread footprint for stable
-        /// scheduler handles, since utils::TaskPool cannot be resized.
-        std::vector<std::unique_ptr<utils::TaskPool>> overflow_pools;
+        /// One single-thread pool per active drainer slot. Pools are created
+        /// lazily and kept for the runner lifetime, avoiding idle work-stealing
+        /// between multiple workers while preserving per-JID parallelism.
+        std::vector<std::unique_ptr<utils::TaskPool>> drain_pools;
         exec::async_scope scope;
 
         explicit Impl(std::size_t pool_size)
-        : base_pool{pool_size} {}
+        : drain_pools{} {
+            drain_pools.reserve(pool_size);
+        }
     };
 
     namespace {
@@ -313,17 +312,16 @@ namespace orangutan::channel {
     }
 
     void JidTaskRunner::schedule_drain_slot(std::size_t slot_index) {
-        auto scheduler = impl_->base_pool.scheduler();
-        if (slot_index >= base_worker_count_) {
-            const auto overflow_index = slot_index - base_worker_count_;
+        utils::TaskPool *pool = nullptr;
+        {
             std::scoped_lock lock(mutex_);
-            while (impl_->overflow_pools.size() <= overflow_index) {
-                impl_->overflow_pools.push_back(std::make_unique<utils::TaskPool>(1));
+            while (impl_->drain_pools.size() <= slot_index) {
+                impl_->drain_pools.push_back(std::make_unique<utils::TaskPool>(1));
             }
-            scheduler = impl_->overflow_pools[overflow_index]->scheduler();
+            pool = impl_->drain_pools[slot_index].get();
         }
 
-        auto sender = stdexec::schedule(scheduler) | stdexec::then([this] {
+        auto sender = stdexec::schedule(pool->scheduler()) | stdexec::then([this] {
                           drain_ready_tasks();
                       });
         impl_->scope.spawn(std::move(sender));
