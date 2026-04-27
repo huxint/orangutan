@@ -18,7 +18,6 @@
 #include "skills/skill-loader.hpp"
 #include "utils/format.hpp"
 #include "utils/json-dump.hpp"
-#include "utils/sender-utils.hpp"
 #include "utils/string.hpp"
 
 namespace orangutan::agent::detail {
@@ -117,93 +116,106 @@ namespace orangutan::agent::detail {
         return loop_status::ok;
     }
 
+    struct ToolExecutionOutcome {
+        ToolResult result;
+        loop_status status = loop_status::ok;
+    };
+
+    inline void emit_tool_started(const ToolUse &call, bool human_output, const AgentLoop::ToolEventCallback &on_tool_event) {
+        if (human_output) {
+            std::string line;
+            utils::format_to(line, "  -> ");
+            utils::format_to(line, fmt::fg(fmt::terminal_color::cyan), "{}", call.name);
+            utils::format_to(line, "\n");
+            write_tool_stdout(line);
+        }
+        if (on_tool_event != nullptr) {
+            on_tool_event("tool_started", call, nullptr);
+        }
+    }
+
+    [[nodiscard]]
+    inline std::optional<ToolResult> run_before_tool_hook(const ToolUse &call, HookManager *hook_manager) {
+        if (hook_manager == nullptr) {
+            return std::nullopt;
+        }
+
+        auto hook_ctx = build_before_tool_call_context(call.name, call.input);
+        const auto hook_result = hook_manager->dispatch(hook_event::before_tool_call, hook_ctx);
+        if (hook_result.allowed) {
+            return std::nullopt;
+        }
+
+        std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
+        if (!hook_result.block_reason.empty()) {
+            block_msg += ": " + hook_result.block_reason;
+        }
+        return ToolResult{call.id, std::move(block_msg), true};
+    }
+
+    inline void activate_skills_for_tool_result(const ToolUse &call, const ToolResult &result, skills::SkillLoader *skill_loader) {
+        if (skill_loader == nullptr || result.is_error) {
+            return;
+        }
+
+        auto touched_paths = touched_paths_for_tool_call(call);
+        if (!touched_paths.empty()) {
+            skill_loader->activate_for_paths(touched_paths);
+        }
+    }
+
+    inline void run_after_tool_hook(const ToolUse &call, const ToolResult &result, HookManager *hook_manager) {
+        if (hook_manager == nullptr) {
+            return;
+        }
+
+        auto hook_ctx = build_after_tool_call_context(call.name, call.input, result.content, result.is_error);
+        static_cast<void>(hook_manager->dispatch(hook_event::after_tool_call, hook_ctx));
+    }
+
+    [[nodiscard]]
+    inline ToolExecutionOutcome execute_single_tool_call(const ToolUse &call, ToolRegistry &tools, ToolCallCounts &call_counts, HookManager *hook_manager, bool human_output,
+                                                        const AgentLoop::ToolEventCallback &on_tool_event, skills::SkillLoader *skill_loader) {
+        const auto status = check_loop_detection(call_counts, call);
+        if (status == loop_status::abort) {
+            ToolResult result{call.id, "Tool call aborted because the agent repeated the same request too many times.", true};
+            if (on_tool_event != nullptr) {
+                on_tool_event("tool_finished", call, &result);
+            }
+            return ToolExecutionOutcome{
+                .result = std::move(result),
+                .status = status,
+            };
+        }
+
+        emit_tool_started(call, human_output, on_tool_event);
+
+        auto blocked_result = run_before_tool_hook(call, hook_manager);
+        auto result = blocked_result.has_value() ? std::move(*blocked_result) : tools.execute(call);
+        if (!blocked_result.has_value()) {
+            activate_skills_for_tool_result(call, result, skill_loader);
+            run_after_tool_hook(call, result, hook_manager);
+        }
+
+        if (on_tool_event != nullptr) {
+            on_tool_event("tool_finished", call, &result);
+        }
+
+        return ToolExecutionOutcome{
+            .result = std::move(result),
+            .status = status,
+        };
+    }
+
     [[nodiscard]]
     inline std::pair<std::vector<Content>, loop_status> execute_tools(const std::vector<ToolUse> &calls, ToolRegistry &tools, ToolCallCounts &call_counts,
                                                                       HookManager *hook_manager, bool human_output, const AgentLoop::ToolEventCallback &on_tool_event,
                                                                       skills::SkillLoader *skill_loader) {
-        struct ToolExecutionState {
-            ToolUse call;
-            loop_status status = loop_status::ok;
-            std::optional<ToolResult> result;
-        };
-
-        struct ToolExecutionOutcome {
-            ToolResult result;
-            loop_status status = loop_status::ok;
-        };
-
         std::vector<Content> result_blocks;
         loop_status worst_status = loop_status::ok;
 
         for (const auto &call : calls) {
-            auto pipeline = stdexec::just(ToolExecutionState{.call = call}) | stdexec::then([&call_counts, human_output, &on_tool_event](ToolExecutionState state) {
-                                if (const auto status = check_loop_detection(call_counts, state.call); status != loop_status::ok) {
-                                    state.status = status;
-                                    if (status == loop_status::abort) {
-                                        return state;
-                                    }
-                                }
-                                if (human_output) {
-                                    std::string line;
-                                    utils::format_to(line, "  -> ");
-                                    utils::format_to(line, fmt::fg(fmt::terminal_color::cyan), "{}", state.call.name);
-                                    utils::format_to(line, "\n");
-                                    write_tool_stdout(line);
-                                }
-                                if (on_tool_event != nullptr) {
-                                    on_tool_event("tool_started", state.call, nullptr);
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([hook_manager](ToolExecutionState state) {
-                                if (state.status == loop_status::abort) {
-                                    state.result = ToolResult{state.call.id, "Tool call aborted because the agent repeated the same request too many times.", true};
-                                    return state;
-                                }
-                                if (hook_manager == nullptr) {
-                                    return state;
-                                }
-
-                                auto hook_ctx = build_before_tool_call_context(state.call.name, state.call.input);
-                                const auto hook_result = hook_manager->dispatch(hook_event::before_tool_call, hook_ctx);
-                                if (!hook_result.allowed) {
-                                    std::string block_msg = "Tool call blocked by hook '" + hook_result.blocked_by + "'";
-                                    if (!hook_result.block_reason.empty()) {
-                                        block_msg += ": " + hook_result.block_reason;
-                                    }
-                                    state.result = ToolResult{state.call.id, std::move(block_msg), true};
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([&tools, hook_manager, skill_loader](ToolExecutionState state) {
-                                if (state.result.has_value()) {
-                                    return state;
-                                }
-
-                                state.result = tools.execute(state.call);
-                                if (skill_loader != nullptr && !state.result->is_error) {
-                                    auto touched_paths = touched_paths_for_tool_call(state.call);
-                                    if (!touched_paths.empty()) {
-                                        skill_loader->activate_for_paths(touched_paths);
-                                    }
-                                }
-                                if (hook_manager != nullptr) {
-                                    auto hook_ctx = build_after_tool_call_context(state.call.name, state.call.input, state.result->content, state.result->is_error);
-                                    static_cast<void>(hook_manager->dispatch(hook_event::after_tool_call, hook_ctx));
-                                }
-                                return state;
-                            }) |
-                            stdexec::then([&on_tool_event](ToolExecutionState state) {
-                                if (on_tool_event != nullptr) {
-                                    on_tool_event("tool_finished", state.call, &*state.result);
-                                }
-                                return ToolExecutionOutcome{
-                                    .result = std::move(*state.result),
-                                    .status = state.status,
-                                };
-                            });
-
-            auto [outcome] = execution::sync_wait_or_throw(std::move(pipeline), "agent tool execution pipeline");
+            auto outcome = execute_single_tool_call(call, tools, call_counts, hook_manager, human_output, on_tool_event, skill_loader);
             worst_status = std::max(outcome.status, worst_status);
             result_blocks.emplace_back(std::move(outcome.result));
             if (outcome.status == loop_status::abort) {

@@ -414,6 +414,33 @@ namespace {
                              });
     }
 
+    TEST_CASE("tool event callbacks preserve sequential execution order") {
+        ScriptedProvider provider({
+            make_response(response_stop_reason::tool_use, {ToolUse("tool-1", "lookup", nlohmann::json{{"query", "status"}})}),
+            testing::make_text_response("All set."),
+        });
+
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
+            .execute = [](const nlohmann::json &) {
+                return std::string{"tool result"};
+            },
+        });
+
+        std::vector<std::string> events;
+        AgentLoop loop(provider.system, provider.route, tools);
+        const auto reply = loop.run("check status", {}, [&events](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
+            events.push_back(event_type + ":" + call.name + ":" + (result == nullptr ? "pending" : result->content));
+        });
+
+        CHECK(reply == "All set.");
+        CHECK(events == std::vector<std::string>{
+                            "tool_started:lookup:pending",
+                            "tool_finished:lookup:tool result",
+                        });
+    }
+
     TEST_CASE("run_inserts_continuation_prompt_before_continuation_call") {
         ScriptedProvider provider({
             make_response(response_stop_reason::max_tokens, {Text{"Part one. "}}),
@@ -466,12 +493,30 @@ namespace {
         });
 
         AgentLoop loop(provider.system, provider.route, tools);
-        const auto reply = loop.run("check status");
+        std::vector<std::string> events;
+        const auto reply = loop.run("check status", {}, [&events](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
+            std::string result_status = "pending";
+            if (result != nullptr) {
+                result_status = result->is_error ? "error" : "ok";
+            }
+            events.push_back(event_type + ":" + call.name + ":" + result_status);
+        });
 
         CHECK(reply == "I got stuck in a loop repeating the same action. Please try rephrasing your request.");
         CHECK(lookup_calls == 4);
         CHECK(side_effect_calls == 0);
         CHECK(describe_message(loop.history().back()) == "assistant:text=I got stuck in a loop repeating the same action. Please try rephrasing your request.");
+        CHECK(events == std::vector<std::string>{
+                            "tool_started:lookup:pending",
+                            "tool_finished:lookup:ok",
+                            "tool_started:lookup:pending",
+                            "tool_finished:lookup:ok",
+                            "tool_started:lookup:pending",
+                            "tool_finished:lookup:ok",
+                            "tool_started:lookup:pending",
+                            "tool_finished:lookup:ok",
+                            "tool_finished:lookup:error",
+                        });
 
         const auto warning_count = std::ranges::count_if(loop.history(), [](const Message &message) {
             return describe_message(message) == "user:text=You are repeating the same tool call with the same arguments. This is not making progress. Try a different approach or "
