@@ -142,8 +142,7 @@ namespace orangutan::cli {
         }
 
         agent.clear_history();
-        result.new_session_id = store.create_empty(metadata);
-        current_session_id = result.new_session_id;
+        current_session_id = store.create_empty(metadata);
         return result;
     }
 

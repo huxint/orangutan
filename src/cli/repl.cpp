@@ -110,7 +110,7 @@ namespace orangutan::cli {
                                    const auto result = start_new_session(agent, store, current_session_id, make_cli_session_metadata(active_model, scope_key, agent_key),
                                                                          session_distillation_dispatcher);
                                    dispatch_session_end(hook_manager, result.previous_session_id, previous_message_count);
-                                   dispatch_session_start(hook_manager, result.new_session_id, agent.history().size());
+                                   dispatch_session_start(hook_manager, current_session_id, agent.history().size());
                                    return SlashCommandReply{.handled = true, .text = describe_new_session_result(result, false)};
                                },
                            .export_session =

@@ -88,12 +88,11 @@ namespace {
         CHECK(result.distillation.status == "Session distillation skipped.");
         CHECK(loop.history().empty());
         CHECK_FALSE(current_session_id.empty());
-        CHECK(current_session_id == result.new_session_id);
         CHECK(backend->invocations().empty());
 
         const auto sessions = session_store.list_sessions("scope:test");
         REQUIRE(sessions.size() == 2UL);
-        CHECK(sessions.front().id == result.new_session_id);
+        CHECK(sessions.front().id == current_session_id);
         CHECK(sessions.front().message_count == 0);
         const auto previous = std::ranges::find(sessions, result.previous_session_id, &SessionInfo::id);
         REQUIRE(previous != sessions.end());
@@ -214,7 +213,6 @@ namespace {
         CHECK(result.distillation.status == "Session distillation queued.");
         CHECK(loop.history().empty());
         CHECK_FALSE(current_session_id.empty());
-        CHECK(current_session_id == result.new_session_id);
 
         bool distilled = false;
         for (int attempt = 0; attempt < 50; ++attempt) {

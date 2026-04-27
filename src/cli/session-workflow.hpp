@@ -24,7 +24,6 @@ namespace orangutan::cli {
     struct NewSessionResult {
         bool had_history = false;
         std::string previous_session_id;
-        std::string new_session_id;
         AgentLoop::SessionMemoryDistillationResult distillation;
     };
 
