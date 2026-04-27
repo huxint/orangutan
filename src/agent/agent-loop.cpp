@@ -38,7 +38,9 @@ namespace orangutan::agent {
       memory_(memory),
       skills_prompt_(std::move(skills_prompt)),
       hook_manager_(hook_manager),
-      skill_loader_(skill_loader) {}
+      skill_loader_(skill_loader) {
+        refresh_default_system_prompt();
+    }
 
     AgentLoopBuilder AgentLoop::configure(ProviderSystem &provider, ProviderRoute route, ToolRegistry &tools) {
         return AgentLoopBuilder(provider, std::move(route), tools);
@@ -76,7 +78,7 @@ namespace orangutan::agent {
             }
 
             auto tool_defs = tools_->definitions();
-            const auto effective_system_prompt = detail::build_system_prompt(env_info_, effective_skills_prompt, *tools_, memory_section);
+            const auto effective_system_prompt = detail::build_system_prompt(default_system_prompt_, effective_skills_prompt, *tools_, memory_section);
 
             bool first_text = true;
             auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);
@@ -169,6 +171,10 @@ namespace orangutan::agent {
             detail::emit_history_checkpoint(on_history_checkpoint, history_);
         }
         return true;
+    }
+
+    void AgentLoop::refresh_default_system_prompt() {
+        default_system_prompt_ = prompt::build_default_system_prompt(env_info_);
     }
 
     bool AgentLoop::stop_requested() const {

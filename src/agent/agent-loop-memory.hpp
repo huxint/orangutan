@@ -13,7 +13,6 @@
 #include "agent/agent-loop.hpp"
 #include "prompt/prompt-compiler.hpp"
 #include "memory/runtime-memory.hpp"
-#include "prompt/system-prompt-sections.hpp"
 #include "utils/format.hpp"
 #include "utils/string.hpp"
 
@@ -243,14 +242,14 @@ namespace orangutan::agent::detail {
     }
 
     [[nodiscard]]
-    inline std::string build_system_prompt(const prompt::EnvironmentInfo &env_info, std::string_view skills_prompt, const ToolRegistry &tools, std::string_view memory_section) {
+    inline std::string build_system_prompt(std::string_view default_system_prompt, std::string_view skills_prompt, const ToolRegistry &tools, std::string_view memory_section) {
         std::vector<prompt::PromptSection> sections;
         sections.push_back(prompt::PromptSection{
             .id = "system.default",
             .kind = prompt::prompt_section_kind::static_section,
             .classification = prompt::prompt_section_classification::must_keep,
             .priority = 100,
-            .content = prompt::build_default_system_prompt(env_info),
+            .content = std::string(default_system_prompt),
             .cache_key_part = "system.default",
         });
         if (!skills_prompt.empty()) {

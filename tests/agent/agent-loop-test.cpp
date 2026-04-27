@@ -154,6 +154,14 @@ namespace {
         out << '\n';
     }
 
+    void write_workspace_agent_memory(const std::filesystem::path &workspace, std::string_view content) {
+        const auto agent_dir = workspace / ".orangutan" / "agent";
+        std::filesystem::create_directories(agent_dir);
+        std::ofstream out(agent_dir / "memory.md");
+        out << content;
+        out << '\n';
+    }
+
     TEST_CASE("compress_history_summarizes_older_messages_and_keeps_recent_tail") {
         ScriptedProvider provider({testing::make_text_response("Earlier conversation summary")});
         ToolRegistry tools;
@@ -328,6 +336,52 @@ namespace {
         CHECK(provider.prompts().front().contains("orangutan memory enhancements"));
 
         std::filesystem::remove_all(db_path.parent_path());
+    }
+
+    TEST_CASE("default prompt cache uses runtime snapshots refreshed by environment updates") {
+        const auto workspace_a = testing::unique_test_root("agent-loop-default-prompt-cache-a");
+        const auto workspace_b = testing::unique_test_root("agent-loop-default-prompt-cache-b");
+        write_workspace_agent_memory(workspace_a, "original workspace memory snapshot");
+        write_workspace_agent_memory(workspace_b, "second workspace memory snapshot");
+
+        ToolRegistry tools;
+        tools.register_tool({
+            .definition = ToolDef{.name = "noop", .description = "No-op", .input_schema = nlohmann::json::object()},
+            .execute = [](const nlohmann::json &) {
+                return std::string{"ok"};
+            },
+        });
+
+        ScriptedProvider provider(
+            {
+                make_response(response_stop_reason::tool_use, {ToolUse("tool-noop", "noop", nlohmann::json::object())}),
+                testing::make_text_response("first done"),
+                testing::make_text_response("second done"),
+            },
+            [&workspace_a](const providers::ProviderRequest &, const providers::ProviderEventSink &, std::size_t index) {
+                if (index == 0) {
+                    write_workspace_agent_memory(workspace_a, "updated workspace memory should not appear");
+                }
+            });
+
+        AgentLoop loop(provider.system, provider.route, tools);
+        loop.set_environment_info(prompt::EnvironmentInfo{.workspace_root = workspace_a.string()});
+
+        CHECK(loop.run("first") == "first done");
+        REQUIRE(provider.prompts().size() == 2UL);
+        CHECK(provider.prompts()[0].contains("original workspace memory snapshot"));
+        CHECK(provider.prompts()[1].contains("original workspace memory snapshot"));
+        CHECK_FALSE(provider.prompts()[1].contains("updated workspace memory should not appear"));
+
+        loop.set_environment_info(prompt::EnvironmentInfo{.workspace_root = workspace_b.string()});
+
+        CHECK(loop.run("second") == "second done");
+        REQUIRE(provider.prompts().size() == 3UL);
+        CHECK(provider.prompts()[2].contains("second workspace memory snapshot"));
+        CHECK_FALSE(provider.prompts()[2].contains("original workspace memory snapshot"));
+
+        std::filesystem::remove_all(workspace_a);
+        std::filesystem::remove_all(workspace_b);
     }
 
     TEST_CASE("run_checkpoints_tool_flow_and_result_application") {

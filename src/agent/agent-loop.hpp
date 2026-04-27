@@ -68,6 +68,7 @@ namespace orangutan::agent {
 
         void set_environment_info(prompt::EnvironmentInfo info) {
             env_info_ = std::move(info);
+            refresh_default_system_prompt();
         }
 
         void set_incoming_message_fetcher(IncomingMessageFetcher fetcher) {
@@ -103,6 +104,7 @@ namespace orangutan::agent {
         std::vector<Message> history_;
         memory::RuntimeMemory *memory_ = nullptr;
         std::string skills_prompt_;
+        std::string default_system_prompt_;
         hooks::HookManager *hook_manager_ = nullptr;
         skills::SkillLoader *skill_loader_ = nullptr;
         int thinking_budget_ = 0;
@@ -112,6 +114,7 @@ namespace orangutan::agent {
 
         static constexpr int MAX_ITERATIONS = 20;
 
+        void refresh_default_system_prompt();
         bool inject_incoming_messages(const HistoryCheckpointCallback &on_history_checkpoint);
         [[nodiscard]]
         bool stop_requested() const;
