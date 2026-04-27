@@ -125,6 +125,7 @@ namespace orangutan::cli {
                                        const SessionDistillationDispatcher &dispatch_distillation) {
         NewSessionResult result{
             .had_history = !agent.history().empty(),
+            .previous_session_id = current_session_id,
             .distillation = {},
         };
 
@@ -136,12 +137,13 @@ namespace orangutan::cli {
                 dispatch_distillation(std::move(*history_snapshot));
                 result.distillation.status = "Session distillation queued.";
             } else {
-                result.distillation = agent.distill_session_memory();
+                result.distillation.status = "Session distillation skipped.";
             }
         }
 
         agent.clear_history();
-        current_session_id.clear();
+        result.new_session_id = store.create_empty(metadata);
+        current_session_id = result.new_session_id;
         return result;
     }
 

@@ -1160,12 +1160,22 @@ namespace {
         CHECK(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
 
         const auto sessions = session_store.list_sessions_for_agent("default");
-        CHECK(sessions.size() == 1UL);
-        CHECK(sessions[0].id == session_id);
-        CHECK(sessions[0].scope_key == identity.runtime_key);
-        CHECK(sessions[0].agent_key == "default");
-        CHECK(sessions[0].origin_kind == "channel");
-        CHECK(sessions[0].origin_ref == jid);
+        REQUIRE(sessions.size() == 2UL);
+        CHECK(sessions.front().id != session_id);
+        CHECK(sessions.front().scope_key == identity.runtime_key);
+        CHECK(sessions.front().agent_key == "default");
+        CHECK(sessions.front().origin_kind == "channel");
+        CHECK(sessions.front().origin_ref == jid);
+        CHECK(sessions.front().message_count == 0);
+        const auto previous = std::ranges::find(sessions, session_id, &SessionInfo::id);
+        REQUIRE(previous != sessions.end());
+        CHECK(previous->scope_key == identity.runtime_key);
+        CHECK(previous->agent_key == "default");
+        CHECK(previous->origin_kind == "channel");
+        CHECK(previous->origin_ref == jid);
+        const auto bound_session = session_store.bound_session_for_jid(jid, "default");
+        REQUIRE(bound_session.has_value());
+        CHECK(*bound_session == sessions.front().id);
     };
 
     TEST_CASE("new_command_does_not_call_provider_when_background_distillation_is_unavailable") {
@@ -1225,7 +1235,13 @@ namespace {
         CHECK(loop.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
         REQUIRE(not qq->sent_messages().empty());
         CHECK(qq->sent_messages().front().second == "## Session\n- ✨ Started a new session.");
-        CHECK(session_store.bound_session_for_jid(jid, "default") == std::nullopt);
+        const auto bound_session = session_store.bound_session_for_jid(jid, "default");
+        REQUIRE(bound_session.has_value());
+        CHECK(*bound_session != session_id);
+        const auto sessions = session_store.list_sessions_for_agent("default");
+        REQUIRE(sessions.size() == 2UL);
+        CHECK(sessions.front().id == *bound_session);
+        CHECK(sessions.front().message_count == 0);
         CHECK_FALSE(ChannelServeHarness::contains_line(sink->lines(), "session memory distillation failed"));
     };
 

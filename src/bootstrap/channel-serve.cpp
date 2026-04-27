@@ -328,13 +328,13 @@ namespace orangutan::bootstrap {
                                         return cli::make_background_session_distillation_dispatcher(runtime.completion_resume_state->automation_runtime, *runtime.provider(),
                                                                                                    runtime.provider_route, runtime.runtime->memory.get());
                                     }
-                                    return [](std::vector<Message>) {};
+                                    return {};
                                 }();
                                 const auto result = cli::start_new_session(runtime.agent(), session_store, runtime.current_session_id,
                                                                            make_channel_session_metadata(runtime, message.jid, active_model), distillation_dispatcher);
                                 dispatch_session_end(runtime.hook_manager, result.previous_session_id, previous_message_count);
-                                runtime.current_session_id.clear();
-                                session_store.clear_jid(message.jid, runtime.agent_key);
+                                session_store.bind_jid(message.jid, runtime.current_session_id, runtime.agent_key);
+                                dispatch_session_start(runtime.hook_manager, runtime.current_session_id, runtime.agent().history().size());
                                 rehydrate_session_permissions(session_store, runtime.current_session_id, runtime.runtime.get());
                                 runtime.persisted_message_count = 0;
                                 return cli::SlashCommandReply{.handled = true, .text = cli::describe_new_session_result(result, true)};

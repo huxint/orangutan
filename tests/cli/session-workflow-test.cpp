@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <thread>
 #include <catch2/catch_test_macros.hpp>
 
@@ -63,9 +64,10 @@ namespace {
         std::filesystem::path memory_db_path_;
     };
 
-    TEST_CASE("start_new_session_distills_and_persists_previous_history") {
+    TEST_CASE("start_new_session_persists_previous_history_and_creates_empty_next_session") {
         SessionWorkflowHarness harness;
-        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        auto backend = make_distilling_backend();
+        auto provider = orangutan::testing::make_provider_system(backend);
         const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
@@ -82,18 +84,25 @@ namespace {
         const auto result = cli::start_new_session(loop, session_store, current_session_id, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
 
         CHECK(result.had_history);
-        CHECK(result.distillation.distilled);
+        CHECK_FALSE(result.distillation.distilled);
+        CHECK(result.distillation.status == "Session distillation skipped.");
         CHECK(loop.history().empty());
-        CHECK(current_session_id.empty());
+        CHECK_FALSE(current_session_id.empty());
+        CHECK(current_session_id == result.new_session_id);
+        CHECK(backend->invocations().empty());
 
         const auto sessions = session_store.list_sessions("scope:test");
-        CHECK(sessions.size() == 1UL);
-        CHECK(result.previous_session_id == sessions.front().id);
-        CHECK(sessions.front().agent_key == "coder");
-        CHECK(sessions.front().origin_kind == "cli");
-        CHECK(sessions.front().origin_ref == "cli:local");
+        REQUIRE(sessions.size() == 2UL);
+        CHECK(sessions.front().id == result.new_session_id);
+        CHECK(sessions.front().message_count == 0);
+        const auto previous = std::ranges::find(sessions, result.previous_session_id, &SessionInfo::id);
+        REQUIRE(previous != sessions.end());
+        CHECK(previous->message_count == 2);
+        CHECK(previous->agent_key == "coder");
+        CHECK(previous->origin_kind == "cli");
+        CHECK(previous->origin_ref == "cli:local");
         const auto memory = memory_store.recall("project.current", "scope:test");
-        CHECK(memory.contains("orangutan refactor"));
+        CHECK_FALSE(memory.contains("orangutan refactor"));
     };
 
     TEST_CASE("load_session_into_agent_rejects_scope_mismatch") {
@@ -142,9 +151,10 @@ namespace {
         }
     };
 
-    TEST_CASE("start_new_session_writes_mirror_artifacts_when_enabled") {
+    TEST_CASE("start_new_session_does_not_write_mirror_artifacts_without_background_dispatcher") {
         SessionWorkflowHarness harness;
-        auto provider = orangutan::testing::make_provider_system(make_distilling_backend());
+        auto backend = make_distilling_backend();
+        auto provider = orangutan::testing::make_provider_system(backend);
         const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
@@ -164,16 +174,15 @@ namespace {
 
         std::string current_session_id;
         const auto result = cli::start_new_session(loop, session_store, current_session_id, cli::make_cli_session_metadata("test-model", "scope:test", "coder"));
-        CHECK(result.distillation.distilled);
+        CHECK_FALSE(result.distillation.distilled);
+        CHECK(backend->invocations().empty());
+        CHECK_FALSE(current_session_id.empty());
 
         const auto snapshot = workspace / "MEMORY.md";
-        REQUIRE(std::filesystem::exists(snapshot));
-        CHECK(std::ifstream(snapshot).peek() != std::ifstream::traits_type::eof());
+        CHECK_FALSE(std::filesystem::exists(snapshot));
 
         const auto journal_root = workspace / "memory";
-        REQUIRE(std::filesystem::exists(journal_root));
-        auto it = std::filesystem::directory_iterator(journal_root);
-        REQUIRE(it != std::filesystem::directory_iterator{});
+        CHECK_FALSE(std::filesystem::exists(journal_root));
 
         std::filesystem::remove_all(workspace);
     };
@@ -204,7 +213,8 @@ namespace {
         CHECK(result.had_history);
         CHECK(result.distillation.status == "Session distillation queued.");
         CHECK(loop.history().empty());
-        CHECK(current_session_id.empty());
+        CHECK_FALSE(current_session_id.empty());
+        CHECK(current_session_id == result.new_session_id);
 
         bool distilled = false;
         for (int attempt = 0; attempt < 50; ++attempt) {
