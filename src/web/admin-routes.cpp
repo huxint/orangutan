@@ -107,12 +107,6 @@ namespace orangutan::web {
                   }},
                 {"session", {{"auto_save", cfg.auto_save}}},
                 {"permissions", permission_config_to_json(cfg.permissions_config)},
-                {"memory",
-                 {
-                     {"mirror_enabled", cfg.memory.mirror_enabled},
-                     {"mirror_file", cfg.memory.mirror_file},
-                     {"journal_dir", cfg.memory.journal_dir},
-                 }},
             };
 
             nlohmann::json profiles = nlohmann::json::object();

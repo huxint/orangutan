@@ -190,7 +190,6 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             .thinking_budget = maybe_selected_agent->thinking_budget,
             .cli_runtime_key = maybe_primary_identity->runtime_key,
             .cli_memory_scope = maybe_primary_identity->memory_scope,
-            .memory = cfg.memory,
             .permission_context = initialize_permission_context(maybe_selected_agent->permissions_config, cli_permission_options, *maybe_workspace),
         };
     }

@@ -258,10 +258,9 @@ namespace {
     }
 
     TEST_CASE("distill_session_memory_stores_long_term_memories") {
-        ScriptedProvider provider({testing::make_text_response("memory|project|project.current|0.90|orangutan memory refactor\n"
-                                                               "memory|decision|decision.routing|0.80|qq bots stay fixed to one agent\n"
-                                                               "memory|learning|learning.runtime-identity|0.85|channel runtime identity should use jid plus agent key\n"
-                                                               "journal|Reviewed memory ranking and markdown mirror behavior")});
+        ScriptedProvider provider({testing::make_text_response("memory|project|project.current|orangutan memory refactor\n"
+                                                               "memory|project|decision.routing|qq bots stay fixed to one agent\n"
+                                                               "memory|feedback|learning.runtime-identity|channel runtime identity should use jid plus agent key")});
         ToolRegistry tools;
 
         const auto db_path = testing::unique_test_db_path("agent-loop-distill-memory", "memory.db");
@@ -278,28 +277,24 @@ namespace {
 
         CHECK(result.distilled);
         CHECK(result.memories_stored == 3UL);
-        CHECK(result.journal_stored);
         CHECK(provider.invocation_count() == 1UL);
         CHECK(provider.message_counts().front() == 1UL);
         CHECK(provider.tool_counts().front() == 0UL);
-        CHECK(provider.prompts().front().contains("distilling long-term memory"));
+        CHECK(provider.prompts().front().contains("extract long-term memory"));
 
         CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));
         CHECK(store.recall("decision.routing", "agent:default|jid:test").contains("fixed to one agent"));
         CHECK(store.recall("learning.runtime-identity", "agent:default|jid:test").contains("jid plus agent key"));
-        const auto journals = store.list("agent:default|jid:test", "journal", 10);
-        REQUIRE(journals.size() == 1UL);
-        CHECK(journals.front().content.contains("markdown mirror behavior"));
 
         std::filesystem::remove_all(db_path.parent_path());
     }
 
-    TEST_CASE("distill_session_memory_keeps_durable_memories_when_journal_line_is_malformed") {
-        ScriptedProvider provider({testing::make_text_response("memory|project|project.current|0.90|orangutan memory refactor\n"
-                                                               "journal")});
+    TEST_CASE("distill_session_memory_ignores_non_memory_lines") {
+        ScriptedProvider provider({testing::make_text_response("memory|project|project.current|orangutan memory refactor\n"
+                                                               "note|this should be ignored")});
         ToolRegistry tools;
 
-        const auto db_path = testing::unique_test_db_path("agent-loop-distill-partial-journal", "memory.db");
+        const auto db_path = testing::unique_test_db_path("agent-loop-distill-ignore-lines", "memory.db");
         MemoryStore store(db_path);
         RuntimeMemory runtime_memory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
         AgentLoop loop(provider.system, provider.route, tools, &runtime_memory);
@@ -312,33 +307,25 @@ namespace {
 
         CHECK(result.distilled);
         CHECK(result.memories_stored == 1UL);
-        CHECK_FALSE(result.journal_stored);
-        CHECK(result.status.contains("journaling was skipped"));
         CHECK(store.recall("project.current", "agent:default|jid:test").contains("orangutan memory refactor"));
-        CHECK(store.list("agent:default|jid:test", "journal", 10).empty());
 
         std::filesystem::remove_all(db_path.parent_path());
     }
 
-    TEST_CASE("prompt_building_filters_journal_entries_based_on_user_intent") {
-        const auto db_path = testing::unique_test_db_path("agent-loop-prompt-journal-filtering", "memory.db");
+    TEST_CASE("prompt_building_injects_remembered_context_naturally") {
+        const auto db_path = testing::unique_test_db_path("agent-loop-prompt-memory-context", "memory.db");
         MemoryStore store(db_path);
-        store.remember("project.current", "orangutan memory enhancements", "project", memory_type::project, "agent:default|jid:test", "session:distilled", 0.9);
-        store.remember("journal.1", "Yesterday we debugged the failing mirror refresh.", "journal", memory_type::project, "agent:default|jid:test", "session:journal",
-                       0.4);
+        store.remember("project.current", "orangutan memory enhancements", memory_type::project, "agent:default|jid:test");
         RuntimeMemory runtime_memory(store, orangutan::bootstrap::RuntimeMemoryContext{.scope = "agent:default|jid:test"});
         ToolRegistry tools;
 
-        ScriptedProvider ordinary_provider({testing::make_text_response("ok")});
-        AgentLoop ordinary_loop(ordinary_provider.system, ordinary_provider.route, tools, &runtime_memory);
-        static_cast<void>(ordinary_loop.run("what project am I working on?"));
-        CHECK(ordinary_provider.prompts().front().contains("orangutan memory enhancements"));
-        CHECK_FALSE(ordinary_provider.prompts().front().contains("Yesterday we debugged the failing mirror refresh."));
+        ScriptedProvider provider({testing::make_text_response("ok")});
+        AgentLoop loop(provider.system, provider.route, tools, &runtime_memory);
+        static_cast<void>(loop.run("what project am I working on?"));
 
-        ScriptedProvider journal_provider({testing::make_text_response("ok")});
-        AgentLoop journal_loop(journal_provider.system, journal_provider.route, tools, &runtime_memory);
-        static_cast<void>(journal_loop.run("what happened in the previous session journal?"));
-        CHECK(journal_provider.prompts().front().contains("Yesterday we debugged the failing mirror refresh."));
+        CHECK(provider.prompts().front().contains("<remembered-context>"));
+        CHECK(provider.prompts().front().contains("quiet context"));
+        CHECK(provider.prompts().front().contains("orangutan memory enhancements"));
 
         std::filesystem::remove_all(db_path.parent_path());
     }
@@ -493,7 +480,7 @@ namespace {
     TEST_CASE("distill_session_memory_caps_distilled_memories_at_eight") {
         std::string distilled;
         for (int index = 0; index < 9; ++index) {
-            distilled += "memory|project|project.item-" + std::to_string(index) + "|0.9|memory item " + std::to_string(index) + "\n";
+            distilled += "memory|project|project.item-" + std::to_string(index) + "|memory item " + std::to_string(index) + "\n";
         }
 
         ScriptedProvider provider({testing::make_text_response(distilled)});
@@ -508,7 +495,7 @@ namespace {
         });
 
         const auto result = loop.distill_session_memory();
-        const auto records = store.list("agent:default|jid:test", {}, 20);
+        const auto records = store.list("agent:default|jid:test", 20);
 
         CHECK(result.distilled);
         CHECK(result.memories_stored == 8UL);

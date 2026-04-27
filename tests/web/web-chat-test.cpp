@@ -487,7 +487,6 @@ namespace orangutan {
                 return false;
             });
 
-            CHECK(not(orangutan::testing::has_tool_named(runtime.tools().definitions(), "memory_list")));
             CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "custom_echo"));
             CHECK(orangutan::testing::has_tool_named(runtime.tools().definitions(), "tool_search"));
             CHECK(runtime.tool_context().runtime_origin == base::origin::web);

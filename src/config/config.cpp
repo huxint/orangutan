@@ -118,7 +118,6 @@ namespace orangutan::config {
             cfg = parse_profiles_section(resolved_root, std::move(cfg));
             cfg = parse_permissions_section(resolved_root, std::move(cfg));
             cfg = parse_session_section(resolved_root, std::move(cfg));
-            cfg = parse_memory_section(resolved_root, std::move(cfg));
             cfg = parse_qq_section(resolved_root, std::move(cfg));
 
             cfg.profile = expand_env_vars(cfg.profile);
@@ -131,8 +130,6 @@ namespace orangutan::config {
             for (auto &[_, profile_cfg] : cfg.profiles) {
                 expand_profile_config(profile_cfg);
             }
-            cfg.memory.mirror_file = expand_path_value(expand_env_vars(cfg.memory.mirror_file));
-            cfg.memory.journal_dir = expand_path_value(expand_env_vars(cfg.memory.journal_dir));
             cfg.qq_app_id = expand_env_vars(cfg.qq_app_id);
 
             cfg = parse_agents_section(resolved_root, std::move(cfg));
@@ -277,11 +274,6 @@ namespace orangutan::config {
         }
 
         root["session"] = nlohmann::json{{"auto_save", auto_save}};
-        root["memory"] = nlohmann::json{
-            {"mirror_enabled", memory.mirror_enabled},
-            {"mirror_file", memory.mirror_file},
-            {"journal_dir", memory.journal_dir},
-        };
 
         if (!allow.empty() || !deny.empty()) {
             nlohmann::json security = nlohmann::json::object();

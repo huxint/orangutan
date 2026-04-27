@@ -548,7 +548,6 @@ namespace {
 
         const auto inspection = bootstrap::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, nullptr, "qqbot:c2c:alice");
 
-        CHECK(not(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
         CHECK(inspection.runtime_origin == base::origin::channel);
         CHECK(inspection.raw_caller_id == "qqbot:c2c:alice");

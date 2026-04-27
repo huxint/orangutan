@@ -119,7 +119,6 @@ namespace orangutan::web {
                 .provider_route = maybe_route->route,
                 .workspace_root = workspace_root,
                 .thinking_budget = agent.thinking_budget,
-                .memory = config.memory,
                 .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
                 .leader_mode = agent.leader_mode,
             };

@@ -80,7 +80,6 @@ namespace {
             };
             input.agent_key = "assistant";
             input.workspace_root = workspace_root_.string();
-            input.memory = {};
             input.permission_context = {};
             input.identity = derive_cli_identity(workspace_root_.string(), "assistant");
             input.memory_store = memory_store_.get();
@@ -143,7 +142,6 @@ namespace {
         REQUIRE(runtime.agent != nullptr);
         REQUIRE(runtime.provider != nullptr);
         REQUIRE(runtime.memory != nullptr);
-        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(definitions, "tool_search"));
         CHECK(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK(orangutan::testing::has_tool_named(definitions, "process_list"));
@@ -195,7 +193,7 @@ namespace {
         const auto remember = runtime.tools().execute(ToolUse("remember-before-discovery", "remember", {{"key", "runtime.theme"}, {"content", "amber"}}));
         CHECK_FALSE(remember.is_error);
 
-        const auto recall = runtime.tools().execute(ToolUse("recall-before-discovery", "recall", {{"mode", "query"}, {"value", "runtime.theme"}}));
+        const auto recall = runtime.tools().execute(ToolUse("recall-before-discovery", "recall", {{"query", "runtime.theme"}}));
         CHECK_FALSE(recall.is_error);
         CHECK(recall.content.contains("amber"));
     };

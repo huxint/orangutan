@@ -44,7 +44,6 @@ namespace orangutan::agent {
         struct SessionMemoryDistillationResult {
             bool distilled = false;
             std::size_t memories_stored = 0;
-            bool journal_stored = false;
             std::string status;
         };
 

@@ -125,36 +125,13 @@ namespace {
         CHECK(prompt.contains("Avoid spawning agents for trivial tasks"));
     };
 
-    TEST_CASE("make_runtime_memory_context_resolves_workspace_relative_mirror_paths") {
-        orangutan::Config::MemoryConfig memory_cfg;
-        memory_cfg.mirror_enabled = true;
-        memory_cfg.mirror_file = "notes/MEMORY.md";
-        memory_cfg.journal_dir = "journals";
-
+    TEST_CASE("make_runtime_memory_context_carries_scope_and_workspace") {
         const auto workspace_root = orangutan::testing::unique_test_root("identity-memory-context");
         const auto identity = bootstrap::derive_channel_identity(workspace_root.string(), "qqbot:c2c:alice", "coder");
-        const auto context = bootstrap::make_runtime_memory_context(identity, memory_cfg);
+        const auto context = bootstrap::make_runtime_memory_context(identity);
 
         CHECK(context.scope == identity.memory_scope);
         CHECK(context.workspace == identity.workspace);
-        CHECK(context.mirror.enabled);
-        CHECK(context.snapshot_path() == std::filesystem::path(identity.workspace) / "notes" / "MEMORY.md");
-        CHECK(context.journal_dir() == std::filesystem::path(identity.workspace) / "journals");
-    };
-
-    TEST_CASE("make_runtime_memory_context_leaves_paths_empty_without_workspace") {
-        bootstrap::RuntimeIdentity identity{
-            .workspace = {},
-            .runtime_key = "agent:coder|cli:local",
-            .memory_scope = "agent:coder",
-        };
-        orangutan::Config::MemoryConfig memory_cfg;
-        memory_cfg.mirror_enabled = true;
-
-        const auto context = bootstrap::make_runtime_memory_context(identity, memory_cfg);
-        CHECK(context.mirror.enabled);
-        CHECK(context.snapshot_path().empty());
-        CHECK(context.journal_dir().empty());
     };
 
 } // namespace

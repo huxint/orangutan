@@ -320,9 +320,6 @@ TEST_CASE("DoesNotRegisterMemoryToolsWithoutMemoryStore") {
     CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "recall")));
     CHECK(not(orangutan::testing::has_tool_named(defs, "forget")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_update")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_list")));
-    CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
 };
 
 TEST_CASE("ShellRunsSimpleCommand") {
@@ -728,14 +725,13 @@ TEST_CASE("RegistersUsableMemoryToolsWithRuntimeContext") {
             // Memory tools are deferred — not in definitions() but still executable
             CHECK(not(orangutan::testing::has_tool_named(defs, "remember")));
             CHECK(not(orangutan::testing::has_tool_named(defs, "recall")));
-            CHECK(not(orangutan::testing::has_tool_named(defs, "memory_stats")));
             CHECK(orangutan::testing::has_tool_named(defs, "tool_search"));
             CHECK(registry.has_deferred_tools());
 
-            const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"category", "prefs"}}));
+            const auto remember = registry.execute(ToolUse("remember-runtime", "remember", {{"key", "theme"}, {"content", "blue"}, {"kind", "user"}}));
             CHECK(not(remember.is_error));
 
-            const auto recall = registry.execute(ToolUse("recall-runtime", "recall", {{"mode", "query"}, {"value", "theme"}}));
+            const auto recall = registry.execute(ToolUse("recall-runtime", "recall", {{"query", "theme"}}));
             CHECK(not(recall.is_error));
             CHECK(recall.content.contains("blue"));
         }

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <algorithm>
-#include <charconv>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -13,7 +11,6 @@
 #include <spdlog/spdlog.h>
 
 #include "agent/agent-loop.hpp"
-#include "memory/memory-age.hpp"
 #include "prompt/prompt-compiler.hpp"
 #include "memory/runtime-memory.hpp"
 #include "prompt/system-prompt-sections.hpp"
@@ -25,17 +22,13 @@ namespace orangutan::agent::detail {
     inline constexpr std::size_t MAX_MEMORY_PROMPT_BYTES = 4096;
 
     struct DistilledMemoryEntry {
-        std::string category;
-        memory_type type = memory_type::user;
+        memory_type kind = memory_type::user;
         std::string key;
-        double importance = 0.5;
         std::string content;
     };
 
     struct ParsedDistilledSession {
         std::vector<DistilledMemoryEntry> memories;
-        std::optional<std::string> journal_summary;
-        bool journal_parse_failed = false;
     };
 
     [[nodiscard]]
@@ -61,56 +54,24 @@ namespace orangutan::agent::detail {
             remaining = remaining.substr(separator + 1);
         }
 
-        if (fields.size() < 4) {
+        if (fields.size() < 3) {
             return std::nullopt;
         }
 
-        std::string_view type_text;
-        std::string_view category_text;
-        std::string_view key_text;
-        std::string_view importance_text;
-        std::string content;
-
-        if (fields.size() == 4) {
-            category_text = fields[0];
-            key_text = fields[1];
-            importance_text = fields[2];
-            content = std::string(utils::trim_copy(fields[3]));
-        } else {
-            type_text = fields[0];
-            category_text = fields[1];
-            key_text = fields[2];
-            importance_text = fields[3];
-            const auto content_offset = static_cast<std::size_t>(fields[4].data() - line.data());
-            content = std::string(utils::trim_copy(line.substr(content_offset)));
-        }
-
-        auto category = std::string(utils::trim_copy(category_text));
-        auto key = std::string(utils::trim_copy(key_text));
-        const auto trimmed_importance = utils::trim_copy(importance_text);
-
+        const auto kind_text = utils::trim_copy(fields[0]);
+        auto key = std::string(utils::trim_copy(fields[1]));
+        const auto content_offset = static_cast<std::size_t>(fields[2].data() - line.data());
+        auto content = std::string(utils::trim_copy(line.substr(content_offset)));
         if (content.empty()) {
             return std::nullopt;
         }
-        if (category.empty()) {
-            category = "general";
-        }
-
-        double importance = 0.5;
-        std::from_chars(trimmed_importance.begin(), trimmed_importance.end(), importance);
-        importance = std::clamp(importance, 0.0, 1.0);
-
         if (key.empty()) {
-            key = hash_key("distilled.", content);
+            key = hash_key("memory.", content);
         }
-
-        const auto type = type_text.empty() ? infer_memory_type(category) : magic_enum::enum_cast<memory_type>(type_text, magic_enum::case_insensitive).value_or(memory_type::user);
 
         return DistilledMemoryEntry{
-            .category = std::move(category),
-            .type = type,
+            .kind = magic_enum::enum_cast<memory_type>(kind_text, magic_enum::case_insensitive).value_or(memory_type::user),
             .key = std::move(key),
-            .importance = importance,
             .content = std::move(content),
         };
     }
@@ -123,30 +84,12 @@ namespace orangutan::agent::detail {
                 raw_line.pop_back();
             }
             auto line = std::string(utils::trim_copy(raw_line));
-            if (line.empty()) {
-                continue;
-            }
             if (line.starts_with("- ")) {
                 line = std::string(utils::trim_copy(std::string_view{line}.substr(2)));
-            }
-
-            if (line.starts_with("journal|")) {
-                const auto summary = utils::trim_copy(line.substr(std::string{"journal|"}.size()));
-                if (summary.empty()) {
-                    parsed.journal_parse_failed = true;
-                } else {
-                    parsed.journal_summary = summary;
-                }
-                continue;
-            }
-            if (line == "journal") {
-                parsed.journal_parse_failed = true;
-                continue;
             }
             if (!line.starts_with("memory|")) {
                 continue;
             }
-
             if (auto memory = parse_memory_line(std::move(line)); memory.has_value()) {
                 parsed.memories.push_back(std::move(*memory));
             }
@@ -162,7 +105,6 @@ namespace orangutan::agent::detail {
     [[nodiscard]]
     inline std::string build_session_memory_transcript(const std::vector<Message> &history) {
         std::string transcript;
-
         for (const auto &message : history) {
             utils::format_to(transcript, "{}:\n", magic_enum::enum_name(message.role()));
             for (const auto &block : message) {
@@ -173,12 +115,10 @@ namespace orangutan::agent::detail {
                     }
                     continue;
                 }
-
                 if (const auto *tool = std::get_if<ToolUse>(&block)) {
                     utils::format_to(transcript, "[tool_use] {}\n", tool->name);
                     continue;
                 }
-
                 const auto *result = std::get_if<ToolResult>(&block);
                 if (result != nullptr && !result->content.empty()) {
                     transcript.append("[tool_result] ");
@@ -204,7 +144,6 @@ namespace orangutan::agent::detail {
         AgentLoop::SessionMemoryDistillationResult result{
             .distilled = false,
             .memories_stored = 0,
-            .journal_stored = false,
             .status = "No session memory distilled.",
         };
 
@@ -212,7 +151,6 @@ namespace orangutan::agent::detail {
             result.status = "Long-term memory is disabled.";
             return result;
         }
-
         if (history.size() < 2) {
             result.status = "Not enough session history to distill.";
             return result;
@@ -224,21 +162,16 @@ namespace orangutan::agent::detail {
             return result;
         }
 
-        constexpr std::string_view DISTILLATION_PROMPT = "You are distilling long-term memory from a completed conversation. "
-                                                         "Extract only durable, reusable information that should help future sessions. "
-                                                         "Prefer stable facts, preferences, project context, decisions, and lessons learned. "
-                                                         "Ignore greetings, temporary chatter, and one-off execution details. "
-                                                         "Return at most 9 lines. Each line must use exactly one of these formats:\n"
-                                                         "memory|type|category|key|importance|content\n"
-                                                         "journal|summary\n"
-                                                         "- type: one of user (role/preferences/knowledge), feedback (corrections/approaches), "
-                                                         "project (work/decisions/deadlines), reference (external pointers/docs)\n"
-                                                         "- category: one of profile, preference, project, decision, learning, fact, task, general\n"
-                                                         "- key: lowercase stable identifier like project.current or decision.agent-routing\n"
-                                                         "- importance: decimal between 0 and 1\n"
-                                                         "- content: concise memory text\n"
-                                                         "- summary: one short session summary line, optional, at most once\n"
-                                                         "Return only lines in those formats, with no extra commentary.";
+        constexpr std::string_view DISTILLATION_PROMPT =
+            "You extract long-term memory from a completed conversation. Keep only details that will make future help feel more personal, accurate, and less repetitive. "
+            "Remember stable user preferences, durable project context, explicit corrections, validated decisions, and useful references. "
+            "Do not remember greetings, temporary command output, one-off file paths, speculation, or routine progress chatter. "
+            "Write at most 8 lines. Each line must be exactly:\n"
+            "memory|kind|key|content\n"
+            "kind is one of user, feedback, project, reference. "
+            "key is a short lowercase identifier such as preference.reply-style, project.current, feedback.testing, or reference.docs. "
+            "content is one concise sentence, phrased as quiet background context for a future assistant. "
+            "Return only memory lines. If there is nothing durable, return nothing.";
 
         try {
             std::vector<Message> messages;
@@ -254,25 +187,13 @@ namespace orangutan::agent::detail {
             }
 
             const auto parsed = parse_distilled_session(distilled_text);
-            for (const auto &memory_entry : parsed.memories) {
-                memory->update(memory_entry.key, memory_entry.content, memory_entry.category, memory_entry.type, true, "session:distilled", memory_entry.importance);
+            for (const auto &entry : parsed.memories) {
+                memory->remember(entry.key, entry.content, entry.kind);
             }
 
             result.distilled = !parsed.memories.empty();
             result.memories_stored = parsed.memories.size();
-            if (parsed.journal_summary.has_value()) {
-                const auto journal_result = memory->store_journal_summary(*parsed.journal_summary);
-                result.journal_stored = journal_result.stored;
-            }
-
-            if (result.distilled || result.journal_stored) {
-                result.status = "Session distilled into long-term memory.";
-            } else {
-                result.status = "Session distillation produced no durable memories.";
-            }
-            if (parsed.journal_parse_failed && !result.journal_stored) {
-                result.status += " journaling was skipped.";
-            }
+            result.status = result.distilled ? "Session distilled into long-term memory." : "Session distillation produced no durable memories.";
         } catch (const std::exception &e) {
             spdlog::warn("session memory distillation failed: {}", e.what());
             result.status = std::string("Session distillation failed: ") + e.what();
@@ -287,34 +208,27 @@ namespace orangutan::agent::detail {
             return {};
         }
 
-        const auto records = memory->prompt_memories(user_input, 8);
+        const auto records = memory->recall_records(user_input, 8);
         if (records.empty()) {
             return {};
         }
 
-        std::string memory_block = "\n\n<relevant-memories>\n";
-        memory_block.append("Historical notes for context. Memories older than 1 day should be verified before acting on them.\n");
+        std::string memory_block = "\n\n<remembered-context>\n";
+        memory_block.append("Use these remembered facts as quiet context. Do not recite them mechanically; let the current user request lead. "
+                            "If a remembered fact may be stale or conflicts with the current request, ask or verify naturally.\n");
 
-        std::size_t used = std::string{"<relevant-memories>\n</relevant-memories>"}.size();
+        std::size_t used = std::string{"<remembered-context>\n</remembered-context>"}.size();
         bool wrote_any = false;
-
         for (const auto &record : records) {
             std::string candidate;
-            utils::format_to(candidate, "- [{}:{}] {}", magic_enum::enum_name(record.type), record.key, record.content);
-            const auto caveat = memory_freshness_caveat(record.updated_at);
-            if (!caveat.empty()) {
-                candidate.push_back(' ');
-                candidate.append(caveat);
-            }
+            utils::format_to(candidate, "- [{}:{}] {}", magic_enum::enum_name(record.kind), record.key, record.content);
             if (used + candidate.size() + 1 > MAX_MEMORY_PROMPT_BYTES) {
                 if (wrote_any) {
                     break;
                 }
-
                 const auto remaining = MAX_MEMORY_PROMPT_BYTES > used + 4 ? MAX_MEMORY_PROMPT_BYTES - used - 4 : 0;
                 candidate = remaining == 0 ? "..." : candidate.substr(0, remaining) + "...";
             }
-
             memory_block.append(candidate);
             memory_block.push_back('\n');
             used += candidate.size() + 1;
@@ -324,8 +238,7 @@ namespace orangutan::agent::detail {
         if (!wrote_any) {
             return {};
         }
-
-        memory_block.append("</relevant-memories>");
+        memory_block.append("</remembered-context>");
         return memory_block;
     }
 

@@ -22,7 +22,6 @@ namespace orangutan::bootstrap {
             .agent_name = request.agent_name.empty() ? request.runtime_config->agent_key : request.agent_name,
             .workspace_root = request.runtime_config->workspace_root,
             .thinking_budget = request.runtime_config->thinking_budget,
-            .memory = request.runtime_config->memory,
             .permission_context = request.runtime_config->permission_context,
             .team_id = request.team_id,
             .identity = *request.identity,

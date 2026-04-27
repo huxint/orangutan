@@ -189,7 +189,6 @@ namespace orangutan::bootstrap::detail {
                                           .thinking_budget = agent_cfg.thinking_budget,
                                           .cli_runtime_key = cli_identity.runtime_key,
                                           .cli_memory_scope = cli_identity.memory_scope,
-                                          .memory = cfg.memory,
                                           .permission_context = build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
                                           .leader_mode = agent_cfg.leader_mode,
                                           .max_concurrent_agents = agent_cfg.max_concurrent_agents,

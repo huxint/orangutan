@@ -1,9 +1,30 @@
 #include "memory/memory-schema.hpp"
-#include "storage/sqlite-throwing.hpp"
+
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
 
 namespace orangutan::memory::detail {
+    namespace {
+
+        constexpr int MEMORY_SCHEMA_VERSION = 1;
+
+        [[nodiscard]]
+        sqlite::SqliteResult<int> current_schema_version(sqlite::Database &db) {
+            auto query = db.query("PRAGMA user_version");
+            if (!query) {
+                return std::unexpected(query.error());
+            }
+            return query->one<int>();
+        }
+
+        void throw_if_failed(sqlite::SqliteResult<void> result) {
+            if (!result) {
+                throw std::runtime_error(result.error().to_string());
+            }
+        }
+
+    } // namespace
 
     std::filesystem::path default_db_path() {
         const char *home = std::getenv("HOME");
@@ -17,71 +38,36 @@ namespace orangutan::memory::detail {
     }
 
     void create_current_schema(sqlite::Database &db) {
-        sqlite::exec_script(db,
+        const auto version = current_schema_version(db);
+        if (!version) {
+            throw std::runtime_error(version.error().to_string());
+        }
+        if (*version == MEMORY_SCHEMA_VERSION) {
+            return;
+        }
+
+        throw_if_failed(db.exec_script(
             R"(
-        CREATE TABLE IF NOT EXISTS memories (
+        DROP TRIGGER IF EXISTS memories_ai;
+        DROP TRIGGER IF EXISTS memories_ad;
+        DROP TRIGGER IF EXISTS memories_au;
+        DROP TABLE IF EXISTS memories_fts;
+        DROP TABLE IF EXISTS memory_meta;
+        DROP TABLE IF EXISTS memories;
+
+        CREATE TABLE memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scope TEXT NOT NULL DEFAULT '',
+            scope TEXT NOT NULL,
             memory_key TEXT NOT NULL,
             content TEXT NOT NULL,
-            category TEXT NOT NULL DEFAULT 'general',
-            type TEXT NOT NULL DEFAULT 'user',
-            source TEXT NOT NULL DEFAULT 'manual',
-            importance REAL NOT NULL DEFAULT 0.5,
-            access_count INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            kind TEXT NOT NULL DEFAULT 'user',
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            last_accessed_at TEXT,
             UNIQUE(scope, memory_key)
         );
+        CREATE INDEX idx_memories_scope_updated ON memories(scope, updated_at DESC, id DESC);
+        PRAGMA user_version = 1;
         )",
-            "Failed to create memory schema");
-
-        sqlite::exec_script(db,
-            R"(
-        CREATE INDEX IF NOT EXISTS idx_memories_scope_updated ON memories(scope, updated_at DESC, id DESC);
-        CREATE INDEX IF NOT EXISTS idx_memories_scope_category ON memories(scope, category, updated_at DESC, id DESC);
-        CREATE INDEX IF NOT EXISTS idx_memories_scope_access ON memories(scope, access_count DESC, updated_at DESC, id DESC);
-        CREATE INDEX IF NOT EXISTS idx_memories_scope_type ON memories(scope, type, updated_at DESC, id DESC);
-        )",
-            "Failed to create memory indexes");
-    }
-
-    bool enable_fts_if_available(sqlite::Database &db) {
-        if (!db.try_exec_script("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_key, content, category, type, scope UNINDEXED, tokenize='unicode61');")) {
-            return false;
-        }
-
-        if (!db.try_exec_script(
-                "CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN "
-                "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
-                "END;")) {
-            return false;
-        }
-
-        if (!db.try_exec_script("CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN "
-                                "DELETE FROM memories_fts WHERE rowid = old.id; "
-                                "END;")) {
-            return false;
-        }
-
-        if (!db.try_exec_script(
-                "CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN "
-                "DELETE FROM memories_fts WHERE rowid = old.id; "
-                "INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) VALUES (new.id, new.memory_key, new.content, new.category, new.type, new.scope); "
-                "END;")) {
-            return false;
-        }
-
-        if (!db.try_exec_script("DELETE FROM memories_fts;")) {
-            return false;
-        }
-        if (!db.try_exec_script("INSERT INTO memories_fts(rowid, memory_key, content, category, type, scope) "
-                                "SELECT id, memory_key, content, category, type, scope FROM memories;")) {
-            return false;
-        }
-
-        return true;
+            "Failed to create memory schema"));
     }
 
 } // namespace orangutan::memory::detail

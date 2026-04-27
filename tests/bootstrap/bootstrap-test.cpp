@@ -626,7 +626,6 @@ namespace {
             .provider_route = runtime_it->second.provider_route,
             .agent_key = runtime_it->second.agent_key,
             .workspace_root = runtime_it->second.workspace_root,
-            .memory = runtime_it->second.memory,
             .permission_context = runtime_it->second.permission_context,
             .identity = identity,
             .memory_store = &memory_store,
@@ -638,7 +637,6 @@ namespace {
         });
 
         const auto definitions = runtime.tools().definitions();
-        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "task")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "heartbeat")));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "inbox")));
@@ -669,7 +667,6 @@ namespace {
         CHECK(inspection.attached_tool_registry);
         CHECK(inspection.attached_skill_loader);
         CHECK(inspection.attached_config_save_path);
-        CHECK(not(orangutan::testing::has_tool_named(inspection.tool_definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
         CHECK(std::ranges::find(inspection.active_skill_names, std::string{"workspace-skill"}) != inspection.active_skill_names.end());
     };

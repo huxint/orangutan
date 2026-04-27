@@ -317,7 +317,6 @@ namespace {
                                                                         });
 
         const auto definitions = runtime.tools().definitions();
-        CHECK(not(orangutan::testing::has_tool_named(definitions, "memory_list")));
         CHECK(orangutan::testing::has_tool_named(definitions, "shell"));
         CHECK(orangutan::testing::has_tool_named(definitions, "custom_echo"));
         CHECK(not(orangutan::testing::has_tool_named(definitions, "task")));

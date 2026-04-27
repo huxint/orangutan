@@ -34,7 +34,6 @@ namespace orangutan::bootstrap {
         int thinking_budget = 0;
         std::string cli_runtime_key;
         std::string cli_memory_scope;
-        Config::MemoryConfig memory;
         ToolPermissionContext permission_context;
         bool leader_mode = false;
         int max_concurrent_agents = 4;

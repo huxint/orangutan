@@ -49,9 +49,6 @@ namespace {
         CHECK(cfg.max_iterations == 20);
         CHECK(cfg.max_tokens == 4096);
         CHECK(cfg.auto_save);
-        CHECK_FALSE(cfg.memory.mirror_enabled);
-        CHECK(cfg.memory.mirror_file == ".orangutan/memory/MEMORY.md");
-        CHECK(cfg.memory.journal_dir == ".orangutan/memory/journal");
     };
 
     TEST_CASE("parses_profiles_and_agent_references") {

@@ -83,13 +83,6 @@ namespace orangutan::config {
         // session object
         bool auto_save = true;
 
-        struct MemoryConfig {
-            bool mirror_enabled = false;
-            std::string mirror_file = ".orangutan/memory/MEMORY.md";
-            std::string journal_dir = ".orangutan/memory/journal";
-        };
-        MemoryConfig memory;
-
         // qq object
         std::string qq_app_id;
         std::string qq_client_secret;

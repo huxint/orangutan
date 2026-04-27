@@ -44,12 +44,6 @@ namespace orangutan::config::detail {
             {"api_key", &ProfileConfig::api_key},
         });
 
-        using memory_string_field = string_member_field<Config::MemoryConfig>;
-        constexpr auto MEMORY_STRING_FIELDS = std::to_array<memory_string_field>({
-            {"mirror_file", &Config::MemoryConfig::mirror_file},
-            {"journal_dir", &Config::MemoryConfig::journal_dir},
-        });
-
         using agent_string_field = string_member_field<AgentConfig>;
         constexpr auto AGENT_STRING_FIELDS = std::to_array<agent_string_field>({
             {"profile", &AgentConfig::profile},
@@ -296,18 +290,6 @@ namespace orangutan::config::detail {
         }
 
         static_cast<void>(assign_bool_member(*session, "auto_save", cfg, &Config::auto_save));
-
-        return cfg;
-    }
-
-    Config parse_memory_section(const nlohmann::json &root, Config cfg) {
-        const auto *memory = find_object_member(root, "memory");
-        if (memory == nullptr) {
-            return cfg;
-        }
-
-        static_cast<void>(assign_bool_member(*memory, "mirror_enabled", cfg.memory, &Config::MemoryConfig::mirror_enabled));
-        assign_string_members(*memory, cfg.memory, MEMORY_STRING_FIELDS);
 
         return cfg;
     }

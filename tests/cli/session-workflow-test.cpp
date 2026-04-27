@@ -22,9 +22,7 @@ namespace {
         auto backend = orangutan::testing::make_fake_provider_backend(
             [](const providers::ProviderRoute &route, const providers::ProviderRequest &, const providers::ProviderEventSink &) {
                 return providers::ProviderResult{
-                    .response =
-                        orangutan::testing::make_text_response("memory|project|project.current|0.8|orangutan refactor\n"
-                                                               "journal|Reviewed session decisions"),
+                    .response = orangutan::testing::make_text_response("memory|project|project.current|orangutan refactor"),
                     .usage_snapshot = {},
                     .active_target = route.primary,
                 };
@@ -150,18 +148,15 @@ namespace {
         }
     };
 
-    TEST_CASE("start_new_session_does_not_write_mirror_artifacts_without_background_dispatcher") {
+    TEST_CASE("start_new_session_without_background_dispatcher_does_not_distill_memory") {
         SessionWorkflowHarness harness;
         auto backend = make_distilling_backend();
         auto provider = orangutan::testing::make_provider_system(backend);
         const auto route = orangutan::testing::make_test_route("test-model");
         ToolRegistry tools;
         MemoryStore memory_store(harness.memory_db_path());
-        const auto workspace = orangutan::testing::unique_test_root("session-workflow-mirror");
         RuntimeMemory runtime_memory(memory_store, orangutan::bootstrap::RuntimeMemoryContext{
                                                        .scope = "scope:test",
-                                                       .workspace = workspace.string(),
-                                                       .mirror = {.enabled = true, .mirror_file = "MEMORY.md", .journal_dir = "memory"},
                                                    });
         SessionStore session_store(harness.session_db_path());
         AgentLoop loop(provider, route, tools, &runtime_memory);
@@ -176,14 +171,6 @@ namespace {
         CHECK_FALSE(result.distillation.distilled);
         CHECK(backend->invocations().empty());
         CHECK_FALSE(current_session_id.empty());
-
-        const auto snapshot = workspace / "MEMORY.md";
-        CHECK_FALSE(std::filesystem::exists(snapshot));
-
-        const auto journal_root = workspace / "memory";
-        CHECK_FALSE(std::filesystem::exists(journal_root));
-
-        std::filesystem::remove_all(workspace);
     };
 
     TEST_CASE("start_new_session_can_queue_distillation_in_background") {

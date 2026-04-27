@@ -168,7 +168,7 @@ namespace orangutan::bootstrap {
         runtime.provider = std::make_unique<providers::ProviderSystem>();
 
         if (input.memory_store != nullptr) {
-            runtime.memory = std::make_unique<RuntimeMemory>(*input.memory_store, make_runtime_memory_context(input.identity, input.memory));
+            runtime.memory = std::make_unique<RuntimeMemory>(*input.memory_store, make_runtime_memory_context(input.identity));
         }
 
         runtime.tool_context() = ToolRuntimeContext{

@@ -13,11 +13,6 @@
   "session": {
     "auto_save": true
   },
-  "memory": {
-    "mirror_enabled": false,
-    "mirror_file": ".orangutan/memory/MEMORY.md",
-    "journal_dir": ".orangutan/memory/journal"
-  },
   "security": {
     "allow": [
       "cli:*",

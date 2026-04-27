@@ -48,7 +48,6 @@ namespace orangutan::bootstrap {
         std::string agent_name;
         std::string workspace_root;
         int thinking_budget = 0;
-        Config::MemoryConfig memory;
         ToolPermissionContext permission_context;
         std::string team_id;
         RuntimeIdentity identity;

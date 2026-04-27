@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
-#include "types/base.hpp"
 #include <magic_enum/magic_enum.hpp>
 
 namespace orangutan::memory {
@@ -19,15 +17,10 @@ namespace orangutan::memory {
         reference,
     };
 
-    /// Infer a memory_type from a legacy category string.
-    [[nodiscard]]
-    memory_type infer_memory_type(std::string_view category);
-
 } // namespace orangutan::memory
 
 namespace orangutan {
 
-    using memory::infer_memory_type;
     using memory::memory_type;
 
 } // namespace orangutan

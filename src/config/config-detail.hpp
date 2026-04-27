@@ -51,9 +51,6 @@ namespace orangutan::config::detail {
     Config parse_session_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
-    Config parse_memory_section(const nlohmann::json &root, Config cfg);
-
-    [[nodiscard]]
     Config parse_qq_section(const nlohmann::json &root, Config cfg);
 
     [[nodiscard]]
