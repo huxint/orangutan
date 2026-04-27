@@ -17,6 +17,13 @@ namespace orangutan::agent {
 
     namespace {
 
+        struct TurnContext {
+            std::string memory_section;
+            std::string final_text;
+            detail::ToolCallCounts call_counts;
+            bool human_output = false;
+        };
+
         [[nodiscard]]
         std::string merge_refreshed_skill_prompt(std::string_view base_prompt, std::string_view refreshed_skill_section) {
             constexpr std::string_view SKILL_SECTION_MARKER = "\n\n## Available Skills\n";
@@ -26,6 +33,15 @@ namespace orangutan::agent {
             std::string merged(prefix);
             merged.append(refreshed_skill_section);
             return merged;
+        }
+
+        [[nodiscard]]
+        std::string effective_skills_prompt(std::string_view base_prompt, skills::SkillLoader *skill_loader) {
+            if (skill_loader == nullptr) {
+                return std::string(base_prompt);
+            }
+            const auto refreshed_skill_section = skills::render_skill_prompt_section_or_fallback(skill_loader->list(skills::skill_list_query{.include_inactive = false}));
+            return merge_refreshed_skill_prompt(base_prompt, refreshed_skill_section);
         }
 
     } // namespace
@@ -48,8 +64,6 @@ namespace orangutan::agent {
 
     std::string AgentLoop::run(const std::string &user_input, const ProviderEventCallback &on_stream_event, const ToolEventCallback &on_tool_event,
                                const AgentLoop::HistoryCheckpointCallback &on_history_checkpoint) {
-        detail::ToolCallCounts call_counts;
-
         if (hook_manager_ != nullptr) {
             const auto context = build_message_context(hook_event::message_received, "user", user_input);
             static_cast<void>(hook_manager_->dispatch(hook_event::message_received, context));
@@ -58,30 +72,27 @@ namespace orangutan::agent {
         history_.push_back(Message::user().text(user_input));
         detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
-        std::string final_text;
-        const bool human_output = !on_stream_event && !on_tool_event;
-
-        const auto memory_section = detail::render_prompt_memory_section(memory_, user_input);
+        TurnContext turn{
+            .memory_section = detail::render_prompt_memory_section(memory_, user_input),
+            .human_output = on_stream_event == nullptr && on_tool_event == nullptr,
+        };
 
         for (int iteration = 0; iteration < MAX_ITERATIONS; ++iteration) {
             spdlog::debug("agent loop iteration {}", iteration + 1);
 
-            const auto refreshed_skill_section = skill_loader_ == nullptr
-                                                     ? std::string{}
-                                                     : skills::render_skill_prompt_section_or_fallback(skill_loader_->list(skills::skill_list_query{.include_inactive = false}));
-            const auto effective_skills_prompt = skill_loader_ == nullptr ? skills_prompt_ : merge_refreshed_skill_prompt(skills_prompt_, refreshed_skill_section);
+            const auto skills_prompt = effective_skills_prompt(skills_prompt_, skill_loader_);
 
             static_cast<void>(inject_incoming_messages(on_history_checkpoint));
             if (stop_requested()) {
-                final_text = "Task terminated.";
+                turn.final_text = "Task terminated.";
                 break;
             }
 
             auto tool_defs = tools_->definitions();
-            const auto effective_system_prompt = detail::build_system_prompt(default_system_prompt_, effective_skills_prompt, *tools_, memory_section);
+            const auto effective_system_prompt = detail::build_system_prompt(default_system_prompt_, skills_prompt, *tools_, turn.memory_section);
 
             bool first_text = true;
-            auto callback = detail::make_stream_callback(first_text, human_output, on_stream_event);
+            auto callback = detail::make_stream_callback(first_text, turn.human_output, on_stream_event);
             auto response = provider_->route(provider_route_)
                                 .system(effective_system_prompt)
                                 .messages(history_)
@@ -94,23 +105,23 @@ namespace orangutan::agent {
                                 .response;
 
             auto parts = detail::split_response(response);
-            final_text += parts.text;
+            turn.final_text += parts.text;
             history_.emplace_back(base::role::assistant, std::move(parts.all_blocks));
             detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (parts.tool_calls.empty() || response.stop_reason == response_stop_reason::end_turn) {
                 bool continuation_produced_tool_calls = false;
                 if (response.stop_reason == response_stop_reason::max_tokens && parts.tool_calls.empty()) {
-                    auto continuation = detail::handle_continuation(*provider_, provider_route_, *tools_, history_, effective_system_prompt, first_text, human_output,
+                    auto continuation = detail::handle_continuation(*provider_, provider_route_, *tools_, history_, effective_system_prompt, first_text, turn.human_output,
                                                                     on_stream_event, thinking_budget_, on_history_checkpoint);
-                    final_text += continuation.appended_text;
+                    turn.final_text += continuation.appended_text;
                     if (!continuation.tool_calls.empty()) {
                         parts.tool_calls = std::move(continuation.tool_calls);
                         continuation_produced_tool_calls = true;
                     }
                 }
                 if (!continuation_produced_tool_calls) {
-                    if (human_output && !first_text) {
+                    if (turn.human_output && !first_text) {
                         static_cast<void>(std::fputs("\n\n", stdout));
                         std::fflush(stdout);
                     }
@@ -118,23 +129,23 @@ namespace orangutan::agent {
                 }
             }
 
-            if (human_output && !first_text) {
+            if (turn.human_output && !first_text) {
                 static_cast<void>(std::fputc('\n', stdout));
                 std::fflush(stdout);
             }
 
             if (stop_requested()) {
-                final_text = "Task terminated.";
+                turn.final_text = "Task terminated.";
                 break;
             }
 
-            auto [result_blocks, status] = detail::execute_tools(parts.tool_calls, *tools_, call_counts, hook_manager_, human_output, on_tool_event, skill_loader_);
+            auto [result_blocks, status] = detail::execute_tools(parts.tool_calls, *tools_, turn.call_counts, hook_manager_, turn.human_output, on_tool_event, skill_loader_);
             history_.emplace_back(base::role::user, std::move(result_blocks));
             detail::emit_history_checkpoint(on_history_checkpoint, history_);
 
             if (status == detail::loop_status::abort) {
-                final_text = "I got stuck in a loop repeating the same action. Please try rephrasing your request.";
-                history_.push_back(Message::assistant().text(final_text));
+                turn.final_text = "I got stuck in a loop repeating the same action. Please try rephrasing your request.";
+                history_.push_back(Message::assistant().text(turn.final_text));
                 detail::emit_history_checkpoint(on_history_checkpoint, history_);
                 break;
             }
@@ -145,15 +156,15 @@ namespace orangutan::agent {
                 detail::emit_history_checkpoint(on_history_checkpoint, history_);
             }
 
-            final_text.clear();
+            turn.final_text.clear();
         }
 
-        if (hook_manager_ != nullptr && !final_text.empty()) {
-            const auto context = build_message_context(hook_event::message_sending, "assistant", final_text);
+        if (hook_manager_ != nullptr && !turn.final_text.empty()) {
+            const auto context = build_message_context(hook_event::message_sending, "assistant", turn.final_text);
             static_cast<void>(hook_manager_->dispatch(hook_event::message_sending, context));
         }
 
-        return final_text;
+        return turn.final_text;
     }
 
     bool AgentLoop::inject_incoming_messages(const HistoryCheckpointCallback &on_history_checkpoint) {
