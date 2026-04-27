@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "providers/protocols/openai-common.hpp"
+#include "providers/protocols/protocol-json.hpp"
 #include "utils/json-dump.hpp"
 
 namespace orangutan::providers::protocols {
@@ -21,17 +22,7 @@ namespace orangutan::providers::protocols {
 
         [[nodiscard]]
         nlohmann::json parse_openai_chat_payload(std::string_view payload, std::string_view context) {
-            try {
-                const auto event_data = nlohmann::json::parse(payload);
-                if (!event_data.is_object()) {
-                    throw make_openai_chat_protocol_error(context, "expected a json object");
-                }
-                return event_data;
-            } catch (const ProviderError &) {
-                throw;
-            } catch (const nlohmann::json::exception &error) {
-                throw make_openai_chat_protocol_error(context, error.what());
-            }
+            return parse_protocol_json_object(payload, "openai chat completions", context);
         }
 
         class OpenAiChatStreamDecoder final : public StreamDecoder {

@@ -1,6 +1,7 @@
 #include "providers/protocols/anthropic-messages.hpp"
 #include "providers/protocols/openai-chat-completions.hpp"
 #include "providers/protocols/openai-responses.hpp"
+#include "providers/protocols/protocol-json.hpp"
 #include "providers/protocols/provider-registry.hpp"
 #include "test-provider-support.hpp"
 
@@ -8,9 +9,83 @@
 
 #include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
+
+    void check_provider_parse_error(const orangutan::ProviderError &error, std::string_view expected_label) {
+        CHECK(error.category() == orangutan::error_category::parsing);
+        CHECK(std::string_view(error.what()).contains(expected_label) == true);
+    }
+
+    template <typename Action>
+    void expect_provider_parse_error(Action action, std::string_view expected_label) {
+        bool caught = false;
+        try {
+            action();
+        } catch (const orangutan::ProviderError &error) {
+            caught = true;
+            check_provider_parse_error(error, expected_label);
+        }
+
+        CHECK(caught == true);
+    }
+
+    TEST_CASE("protocol_json_parser_rejects_malformed_or_non_object_payloads") {
+        expect_provider_parse_error(
+            [] {
+                static_cast<void>(orangutan::providers::protocols::parse_protocol_json_object("{bad-json", "test protocol", "response"));
+            },
+            "test protocol response:");
+
+        expect_provider_parse_error(
+            [] {
+                static_cast<void>(orangutan::providers::protocols::parse_protocol_json_object("[]", "test protocol", "response"));
+            },
+            "test protocol response: expected a json object");
+    }
+
+    TEST_CASE("protocol_adapters_report_labeled_parse_errors_for_malformed_payloads") {
+        const auto chat_adapter = orangutan::providers::protocols::make_openai_chat_completions_adapter();
+        expect_provider_parse_error(
+            [&chat_adapter] {
+                static_cast<void>(chat_adapter->parse_response(orangutan::providers::transport::HttpResponse{.status_code = 200, .body = "{bad-json"}));
+            },
+            "openai chat completions response:");
+        auto chat_decoder = chat_adapter->make_stream_decoder({});
+        expect_provider_parse_error(
+            [&chat_decoder] {
+                chat_decoder->on_event("", "{bad-json");
+            },
+            "openai chat completions stream event:");
+
+        const auto responses_adapter = orangutan::providers::protocols::make_openai_responses_adapter();
+        expect_provider_parse_error(
+            [&responses_adapter] {
+                static_cast<void>(responses_adapter->parse_response(orangutan::providers::transport::HttpResponse{.status_code = 200, .body = "{bad-json"}));
+            },
+            "openai responses response:");
+        auto responses_decoder = responses_adapter->make_stream_decoder({});
+        expect_provider_parse_error(
+            [&responses_decoder] {
+                responses_decoder->on_event("response.output_text.delta", "{bad-json");
+            },
+            "openai responses stream event:");
+
+        const auto anthropic_adapter = orangutan::providers::protocols::make_anthropic_messages_adapter();
+        expect_provider_parse_error(
+            [&anthropic_adapter] {
+                static_cast<void>(anthropic_adapter->parse_response(orangutan::providers::transport::HttpResponse{.status_code = 200, .body = "{bad-json"}));
+            },
+            "anthropic messages response:");
+        auto anthropic_decoder = anthropic_adapter->make_stream_decoder({});
+        expect_provider_parse_error(
+            [&anthropic_decoder] {
+                anthropic_decoder->on_event("", "{bad-json");
+            },
+            "anthropic messages stream event:");
+    }
 
     TEST_CASE("provider_registry_resolves_auth_and_rejects_invalid_combinations") {
         orangutan::providers::protocols::ProviderRegistry registry;
