@@ -1,6 +1,6 @@
 #include "bootstrap/config-builder.hpp"
 
-#include "bootstrap/identity.hpp"
+#include "bootstrap/runtime-factory.hpp"
 
 #include <filesystem>
 #include <fmt/format.h>
@@ -15,13 +15,6 @@ namespace {
             return {};
         }
         return (std::filesystem::path(home) / "workspace").lexically_normal().string();
-    }
-
-    std::string fallback_display_label(const orangutan::config::FallbackModelRef &fallback) {
-        if (fallback.profile.empty()) {
-            return fallback.model;
-        }
-        return fallback.profile + ":" + fallback.model;
     }
 
     orangutan::ToolPermissionContext build_agent_permission_context(const orangutan::config::AgentConfig &agent_cfg, const orangutan::CLIPermissionOptions &cli_permission_options,
@@ -168,31 +161,10 @@ namespace orangutan::bootstrap::detail {
                 fmt::println(stderr, "Error: failed to resolve workspace for agent '{}': {}", agent_key, e.what());
                 return std::nullopt;
             }
-
-            const auto cli_identity = derive_cli_identity(resolved_workspace_root, agent_key);
-
-            result.emplace(agent_key, AgentRuntimeConfig{
-                                          .agent_key = agent_key,
-                                          .model = agent_cfg.model,
-                                          .fallback_models =
-                                              [&] {
-                                                  std::vector<std::string> labels;
-                                                  labels.reserve(agent_cfg.fallback_models.size());
-                                                  for (const auto &fallback : agent_cfg.fallback_models) {
-                                                      labels.push_back(fallback_display_label(fallback));
-                                                  }
-                                                  return labels;
-                                          }(),
-                                          .provider_route = maybe_route->route,
-                                          .api_key_override = std::string{cli_api_key_override},
-                                          .workspace_root = resolved_workspace_root,
-                                          .thinking_budget = agent_cfg.thinking_budget,
-                                          .cli_runtime_key = cli_identity.runtime_key,
-                                          .cli_memory_scope = cli_identity.memory_scope,
-                                          .permission_context = build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
-                                          .leader_mode = agent_cfg.leader_mode,
-                                          .max_concurrent_agents = agent_cfg.max_concurrent_agents,
-                                      });
+            auto runtime_config = make_agent_runtime_config(agent_key, agent_cfg, maybe_route->route, resolved_workspace_root,
+                                                            build_agent_permission_context(agent_cfg, cli_permission_options, resolved_workspace_root),
+                                                            std::string{cli_api_key_override});
+            result.emplace(agent_key, std::move(runtime_config));
         }
         return result;
     }

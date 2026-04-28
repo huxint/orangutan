@@ -1,7 +1,6 @@
 #pragma once
 
-#include "bootstrap/agent-runtime.hpp"
-#include "bootstrap/channel-serve-runtime.hpp"
+#include "bootstrap/runtime-config.hpp"
 #include "config/config.hpp"
 #include "orchestration/orchestration-manager.hpp"
 #include "orchestration/teammate-runtime.hpp"

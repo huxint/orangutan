@@ -1,7 +1,8 @@
 #pragma once
 
-#include "bootstrap/channel-serve.hpp"
+#include "bootstrap/runtime-config.hpp"
 #include "config/config.hpp"
+#include "permissions/permission-state.hpp"
 #include "providers/provider.hpp"
 
 #include <optional>

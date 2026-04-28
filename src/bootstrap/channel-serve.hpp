@@ -3,6 +3,7 @@
 #include "types/types.hpp"
 #include "bootstrap/channel-serve-delivery.hpp"
 #include "bootstrap/channel-serve-runtime.hpp"
+#include "bootstrap/runtime-config.hpp"
 #include "channel/channel.hpp"
 #include "config/config.hpp"
 #include "permissions/permission-types.hpp"

@@ -3,17 +3,40 @@
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
 #include "bootstrap/runtime-config.hpp"
+#include "config/config.hpp"
 #include "orchestration/types.hpp"
+#include "providers/provider.hpp"
 
 #include <memory>
+#include <span>
 #include <string>
+#include <vector>
+
+namespace orangutan::automation {
+    class AutomationRuntime;
+    class AutomationService;
+} // namespace orangutan::automation
+
+namespace orangutan::hooks {
+    class HookManager;
+}
+
+namespace orangutan::memory {
+    class MemoryStore;
+}
+
+namespace orangutan::orchestration {
+    class OrchestrationManager;
+    class AgentMailbox;
+    class TeamManager;
+} // namespace orangutan::orchestration
 
 namespace orangutan::bootstrap {
 
-    struct RuntimeAssemblyRequest {
+    struct RuntimeFactoryRequest {
         const AgentRuntimeConfig *runtime_config = nullptr;
         const RuntimeIdentity *identity = nullptr;
-        const Config *app_config = nullptr;
+        const config::Config *app_config = nullptr;
 
         memory::MemoryStore *memory_store = nullptr;
         std::string agent_name;
@@ -35,6 +58,13 @@ namespace orangutan::bootstrap {
     };
 
     [[nodiscard]]
-    AgentRuntimeBuildInput make_runtime_build_input(const RuntimeAssemblyRequest &request);
+    std::vector<std::string> make_fallback_model_labels(std::span<const config::FallbackModelRef> fallback_models);
+
+    [[nodiscard]]
+    AgentRuntimeConfig make_agent_runtime_config(std::string agent_key, const config::AgentConfig &agent_cfg, providers::ProviderRoute provider_route,
+                                                 std::string workspace_root, ToolPermissionContext permission_context, std::string api_key_override = {});
+
+    [[nodiscard]]
+    AgentRuntimeBundle build_runtime_bundle(const RuntimeFactoryRequest &request);
 
 } // namespace orangutan::bootstrap

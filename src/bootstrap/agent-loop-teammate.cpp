@@ -2,7 +2,7 @@
 
 #include "agent/agent-loop.hpp"
 #include "bootstrap/config-builder.hpp"
-#include "bootstrap/runtime-assembler.hpp"
+#include "bootstrap/runtime-factory.hpp"
 #include "orchestration/mailbox.hpp"
 #include "orchestration/team-manager.hpp"
 #include "tools/registry/tool-context.hpp"
@@ -195,7 +195,7 @@ namespace orangutan::bootstrap {
                 .memory_scope = "agent:" + config_key + "|teammate",
             };
 
-            auto bundle = build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
+            auto bundle = build_runtime_bundle(RuntimeFactoryRequest{
                 .runtime_config = &runtime_cfg,
                 .identity = &identity,
                 .app_config = &cfg,
@@ -207,7 +207,7 @@ namespace orangutan::bootstrap {
                 .mailbox = mailbox,
                 .agent_role = orchestration::agent_role::teammate,
                 .delegated_task_prompt = request.task,
-            }));
+            });
 
             return std::make_unique<AgentLoopTeammate>(std::move(bundle), request.team_id, request.name);
         };

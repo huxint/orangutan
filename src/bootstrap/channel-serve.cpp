@@ -4,7 +4,6 @@
 #include "cli/single-shot.hpp"
 #include "cli/slash-commands.hpp"
 #include "bootstrap/agent-runtime.hpp"
-#include "bootstrap/runtime-assembler.hpp"
 #include "permissions/approval-signature.hpp"
 #include "permissions/permission-display.hpp"
 #include "permissions/permission-state.hpp"
@@ -52,6 +51,7 @@ namespace orangutan::bootstrap {
     using detail::is_qq_custom_keyboard_blocked_error;
     using detail::make_channel_session_metadata;
     using detail::make_conversation_runtime;
+    using detail::make_reattached_conversation_runtime_with_bound_session;
     using detail::parse_channel_approval_reply;
     using detail::pending_request_ids_for_jid;
     using detail::persist_channel_session;
@@ -291,9 +291,13 @@ namespace orangutan::bootstrap {
                     parked_state = std::move(parked_it->second);
                     parked_resume_states.erase(parked_it);
                 }
-                auto runtime = make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime, team_manager,
-                                                         mailbox, parked_state);
-                if (!message.isolated) {
+                const bool reattaching_parked_state = parked_state != nullptr;
+                auto runtime = reattaching_parked_state && !message.isolated
+                                   ? make_reattached_conversation_runtime_with_bound_session(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager,
+                                                                                             automation_runtime, team_manager, mailbox, parked_state, session_store)
+                                   : make_conversation_runtime(cfg, cfg_it->second, memory_store, identity, orchestration_manager, jid, hook_manager, automation_runtime,
+                                                               team_manager, mailbox, parked_state);
+                if (!message.isolated && !reattaching_parked_state) {
                     restore_bound_channel_session(session_store, jid, *runtime);
                 }
 
@@ -324,9 +328,10 @@ namespace orangutan::bootstrap {
                                 const auto active_model =
                                     runtime.provider() != nullptr && !runtime.provider()->current_model().empty() ? runtime.provider()->current_model() : runtime.configured_model;
                                 const auto distillation_dispatcher = [&]() -> cli::SessionDistillationDispatcher {
-                                    if (runtime.provider() != nullptr && runtime.completion_resume_state != nullptr && runtime.completion_resume_state->automation_runtime != nullptr) {
+                                    if (runtime.provider() != nullptr && runtime.completion_resume_state != nullptr &&
+                                        runtime.completion_resume_state->automation_runtime != nullptr) {
                                         return cli::make_background_session_distillation_dispatcher(runtime.completion_resume_state->automation_runtime, *runtime.provider(),
-                                                                                                   runtime.provider_route, runtime.runtime->memory.get());
+                                                                                                    runtime.provider_route, runtime.runtime->memory.get());
                                     }
                                     return {};
                                 }();

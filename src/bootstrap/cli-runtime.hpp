@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bootstrap/cli-options.hpp"
-#include "bootstrap/config-builder.hpp"
+#include "bootstrap/runtime-config.hpp"
 
 #include <string>
 

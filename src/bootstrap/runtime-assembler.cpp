@@ -1,7 +1,5 @@
 #include "bootstrap/runtime-assembler.hpp"
 
-#include "bootstrap/channel-serve.hpp"
-
 namespace orangutan::bootstrap {
 
     namespace {

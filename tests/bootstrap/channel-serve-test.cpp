@@ -290,6 +290,18 @@ namespace {
             out << body << "\n";
         }
 
+        static void write_capture_hook(const std::filesystem::path &hooks_root, const std::string &event_name, const std::filesystem::path &capture_path) {
+            const auto event_dir = hooks_root / event_name;
+            std::filesystem::create_directories(event_dir);
+            const auto hook_path = event_dir / "capture";
+            std::ofstream out(hook_path);
+            out << "#!/bin/sh\n";
+            out << "cat > '" << capture_path.string() << "'\n";
+            out.close();
+            std::filesystem::permissions(hook_path, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec,
+                                         std::filesystem::perm_options::replace);
+        }
+
         [[nodiscard]]
         static bool contains_line(const std::vector<std::string> &lines, const std::string &needle) {
             return std::ranges::any_of(lines, [&needle](const std::string &line) {
@@ -536,6 +548,10 @@ namespace {
     TEST_CASE("conversation_runtime_preserves_channel_context_and_shared_capabilities") {
         ChannelServeHarness harness;
         MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        bootstrap::AppRuntime app_runtime(harness.temp_root() / "automation-runtime.db");
+        OrchestrationManager orchestration_manager(2);
+        HookManager shared_hooks;
+        auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
 
         Config cfg;
         const bootstrap::AgentRuntimeConfig runtime_cfg{
@@ -546,17 +562,156 @@ namespace {
             .workspace_root = harness.workspace_root().string(),
         };
 
-        const auto inspection = bootstrap::detail::inspect_conversation_runtime(cfg, runtime_cfg, &memory_store, nullptr, "qqbot:c2c:alice");
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), "qqbot:c2c:alice", "default");
+        std::unique_ptr<bootstrap::detail::ConversationRuntime> runtime;
+        {
+            runtime = bootstrap::detail::make_conversation_runtime(cfg, runtime_cfg, &memory_store, identity, &orchestration_manager, "qqbot:c2c:alice", &shared_hooks,
+                                                                   &app_runtime.automation_runtime(), nullptr, nullptr, resume_state);
+        }
 
-        CHECK(orangutan::testing::has_tool_named(inspection.tool_definitions, "tool_search"));
-        CHECK(inspection.runtime_origin == base::origin::channel);
-        CHECK(inspection.raw_caller_id == "qqbot:c2c:alice");
-        CHECK(inspection.has_agent);
-        CHECK(inspection.has_hook_manager);
-        CHECK(inspection.session_scope_key == bootstrap::derive_channel_runtime_key("qqbot:c2c:alice", "default"));
-        CHECK(inspection.configured_model == "gpt-test");
-        CHECK(inspection.fallback_models.size() == 1UL);
-        CHECK(inspection.fallback_models.front() == "gpt-fallback");
+        REQUIRE(runtime != nullptr);
+        CHECK(orangutan::testing::has_tool_named(runtime->tools().definitions(), "tool_search"));
+        CHECK(runtime->tool_context().runtime_origin == base::origin::channel);
+        CHECK(runtime->tool_context().raw_caller_id == "qqbot:c2c:alice");
+        CHECK(runtime->runtime != nullptr);
+        CHECK(runtime->runtime->agent != nullptr);
+        CHECK(runtime->owns_runtime_notification_handler);
+        CHECK(runtime->runtime->hook_manager == nullptr);
+        CHECK(runtime->hook_manager == &shared_hooks);
+        CHECK(runtime->runtime->active_hook_manager() == &shared_hooks);
+        CHECK(runtime->session_scope_key == bootstrap::derive_channel_runtime_key("qqbot:c2c:alice", "default"));
+        CHECK(runtime->configured_model == "gpt-test");
+        CHECK(runtime->fallback_models.size() == 1UL);
+        CHECK(runtime->fallback_models.front() == "gpt-fallback");
+        CHECK(runtime->tool_context().automation_service == &app_runtime.automation_service());
+        CHECK(runtime->tool_context().automation_runtime == &app_runtime.automation_runtime());
+        REQUIRE(runtime->tool_context().background_completion_runtime != nullptr);
+        CHECK(runtime->tool_context().background_completion_runtime->supports_resume_callback());
+        CHECK(resume_state->agent == runtime->runtime->agent.get());
+        CHECK(resume_state->runtime == runtime->runtime.get());
+        CHECK(resume_state->provider == runtime->runtime->provider.get());
+        CHECK(resume_state->hook_manager == &shared_hooks);
+        CHECK(resume_state->current_session_id == &runtime->current_session_id);
+        CHECK(resume_state->persisted_message_count == &runtime->persisted_message_count);
+
+        runtime.reset();
+
+        orchestration_manager.shutdown();
+    };
+
+    TEST_CASE("restore_bound_channel_session_rehydrates_permissions_and_dispatches_start_hook") {
+        ChannelServeHarness harness;
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        HookManager hooks;
+        const auto hooks_root = harness.temp_root() / "hooks";
+        const auto capture_path = harness.temp_root() / "session-start.json";
+        ChannelServeHarness::write_capture_hook(hooks_root, "session_start", capture_path);
+        hooks.load_from_directories({hooks_root.string()});
+
+        const std::string jid = "qqbot:c2c:alice";
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
+        auto base_permissions = initialize_permission_context(PermissionConfig{.allow = {"read"}});
+        base_permissions.allow_rules.push_back(PermissionRule{
+            .source = permission_rule_source::session,
+            .behavior = permission_behavior::allow,
+            .tool_name = "edit",
+            .content = RuleContent{.match_type = rule_match_type::exact, .pattern = "stale.txt"},
+        });
+        const bootstrap::AgentRuntimeConfig runtime_cfg{
+            .agent_key = "default",
+            .model = "gpt-test",
+            .provider_route = make_runtime_route("gpt-test"),
+            .workspace_root = harness.workspace_root().string(),
+            .permission_context = base_permissions,
+        };
+        Config cfg;
+        auto runtime = bootstrap::detail::make_conversation_runtime(cfg, runtime_cfg, &memory_store, identity, nullptr, jid, &hooks, nullptr);
+        const auto history = std::vector<Message>{Message::user().text("hello"), Message::assistant().text("hi")};
+        const auto session_id = session_store.save(history, bootstrap::detail::make_channel_session_metadata(*runtime, jid, "gpt-test"));
+        session_store.bind_jid(jid, session_id, "default");
+        session_store.save_session_permission_rule(session_id, PermissionRule{
+                                                                   .source = permission_rule_source::session,
+                                                                   .behavior = permission_behavior::allow,
+                                                                   .tool_name = "shell",
+                                                                   .content = RuleContent{.match_type = rule_match_type::prefix, .pattern = "git status"},
+                                                               });
+
+        bootstrap::detail::restore_bound_channel_session(session_store, jid, *runtime);
+
+        CHECK(runtime->current_session_id == session_id);
+        CHECK(runtime->persisted_message_count == history.size());
+        CHECK(runtime->agent().history().size() == history.size());
+        CHECK(std::ranges::any_of(runtime->runtime->permissions().allow_rules, [](const PermissionRule &rule) {
+            return rule.source == permission_rule_source::user_settings && rule.tool_name == "read";
+        }));
+        CHECK(std::ranges::any_of(runtime->runtime->permissions().allow_rules, [](const PermissionRule &rule) {
+            return rule.source == permission_rule_source::session && rule.tool_name == "shell" && rule.content.has_value() && rule.content->pattern == "git status";
+        }));
+        CHECK_FALSE(std::ranges::any_of(runtime->runtime->permissions().allow_rules, [](const PermissionRule &rule) {
+            return rule.source == permission_rule_source::session && rule.tool_name == "edit";
+        }));
+        REQUIRE(std::filesystem::exists(capture_path));
+        std::ifstream capture(capture_path);
+        nlohmann::json hook_context;
+        capture >> hook_context;
+        CHECK(hook_context.at("event") == "session_start");
+        CHECK(hook_context.at("session_id") == session_id);
+    };
+
+    TEST_CASE("persist_channel_session_saves_session_permissions_binds_jid_and_dispatches_start_hook") {
+        ChannelServeHarness harness;
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
+        SessionStore session_store((harness.temp_root() / "sessions.db"));
+        HookManager hooks;
+        const auto hooks_root = harness.temp_root() / "hooks";
+        const auto capture_path = harness.temp_root() / "persist-session-start.json";
+        ChannelServeHarness::write_capture_hook(hooks_root, "session_start", capture_path);
+        hooks.load_from_directories({hooks_root.string()});
+
+        const std::string jid = "qqbot:c2c:bob";
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
+        const bootstrap::AgentRuntimeConfig runtime_cfg{
+            .agent_key = "default",
+            .model = "gpt-test",
+            .provider_route = make_runtime_route("gpt-test"),
+            .workspace_root = harness.workspace_root().string(),
+        };
+        Config cfg;
+        auto runtime = bootstrap::detail::make_conversation_runtime(cfg, runtime_cfg, &memory_store, identity, nullptr, jid, &hooks, nullptr);
+        runtime->agent().set_history({Message::user().text("hello"), Message::assistant().text("hi")});
+        auto permissions = runtime->runtime->permissions();
+        permissions.allow_rules.push_back(PermissionRule{
+            .source = permission_rule_source::session,
+            .behavior = permission_behavior::allow,
+            .tool_name = "shell",
+            .content = RuleContent{.match_type = rule_match_type::exact, .pattern = "echo ok"},
+        });
+        permissions.deny_rules.push_back(PermissionRule{
+            .source = permission_rule_source::project_settings,
+            .behavior = permission_behavior::deny,
+            .tool_name = "edit",
+            .content = RuleContent{.match_type = rule_match_type::exact, .pattern = "locked.txt"},
+        });
+        runtime->runtime->replace_permissions(std::move(permissions));
+
+        bootstrap::detail::persist_channel_session(jid, *runtime, session_store);
+
+        REQUIRE_FALSE(runtime->current_session_id.empty());
+        CHECK(runtime->persisted_message_count == runtime->agent().history().size());
+        const auto bound_session = session_store.bound_session_for_jid(jid, "default");
+        REQUIRE(bound_session.has_value());
+        CHECK(*bound_session == runtime->current_session_id);
+        const auto stored_rules = session_store.load_session_permission_rules(runtime->current_session_id);
+        REQUIRE(stored_rules.size() == 1UL);
+        CHECK(stored_rules.front().source == permission_rule_source::session);
+        CHECK(stored_rules.front().tool_name == "shell");
+        REQUIRE(std::filesystem::exists(capture_path));
+        std::ifstream capture(capture_path);
+        nlohmann::json hook_context;
+        capture >> hook_context;
+        CHECK(hook_context.at("event") == "session_start");
+        CHECK(hook_context.at("session_id") == runtime->current_session_id);
     };
 
     TEST_CASE("run_channel_loop_replies_when_runtime_creation_fails") {
@@ -1204,14 +1359,13 @@ namespace {
 
         const std::string jid = "qqbot:c2c:42";
         const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
-        const auto session_id = session_store.save({Message::user().text("hello"), Message::assistant().text("hi")},
-                                                   SessionMetadata{
-                                                       .model = "broken-model",
-                                                       .scope_key = identity.runtime_key,
-                                                       .agent_key = "default",
-                                                       .origin_kind = "channel",
-                                                       .origin_ref = jid,
-                                                   });
+        const auto session_id = session_store.save({Message::user().text("hello"), Message::assistant().text("hi")}, SessionMetadata{
+                                                                                                                         .model = "broken-model",
+                                                                                                                         .scope_key = identity.runtime_key,
+                                                                                                                         .agent_key = "default",
+                                                                                                                         .origin_kind = "channel",
+                                                                                                                         .origin_ref = jid,
+                                                                                                                     });
         session_store.bind_jid(jid, session_id, "default");
 
         auto loop = std::async(std::launch::async, [&] {
@@ -1545,22 +1699,39 @@ namespace {
     TEST_CASE("conversation_runtime_destruction_keeps_shared_resume_services_available") {
         ChannelServeHarness harness;
         ChannelManager manager;
+        MemoryStore memory_store((harness.temp_root() / "memory.db"));
         SessionStore session_store((harness.temp_root() / "sessions.db"));
         bootstrap::AppRuntime app_runtime(harness.temp_root() / "automation.db");
+        HookManager shared_hook_manager;
+
+        Config cfg;
+        const std::string jid = "qqbot:c2c:42";
+        const auto identity = bootstrap::derive_channel_identity(harness.workspace_root().string(), jid, "default");
+        const bootstrap::AgentRuntimeConfig runtime_cfg{
+            .agent_key = "default",
+            .model = "gpt-test",
+            .provider_route = make_runtime_route("gpt-test"),
+            .workspace_root = harness.workspace_root().string(),
+        };
 
         auto resume_state = std::make_shared<bootstrap::detail::ChannelCompletionResumeState>();
         resume_state->session_store = &session_store;
         resume_state->channel_manager = &manager;
         resume_state->automation_runtime = &app_runtime.automation_runtime();
 
-        {
-            bootstrap::detail::ConversationRuntime runtime;
-            runtime.completion_resume_state = resume_state;
-        }
+        auto old_runtime = bootstrap::detail::make_conversation_runtime(cfg, runtime_cfg, &memory_store, identity, nullptr, jid, &shared_hook_manager,
+                                                                        &app_runtime.automation_runtime(), nullptr, nullptr, resume_state);
+        auto newer_runtime = bootstrap::detail::make_conversation_runtime(cfg, runtime_cfg, &memory_store, identity, nullptr, jid, &shared_hook_manager,
+                                                                          &app_runtime.automation_runtime(), nullptr, nullptr, resume_state);
+        old_runtime.reset();
 
         CHECK(resume_state->session_store == &session_store);
         CHECK(resume_state->channel_manager == &manager);
         CHECK(resume_state->automation_runtime == &app_runtime.automation_runtime());
+        CHECK(resume_state->hook_manager == &shared_hook_manager);
+        CHECK(resume_state->runtime == newer_runtime->runtime.get());
+        CHECK(resume_state->current_session_id == &newer_runtime->current_session_id);
+        CHECK(resume_state->persisted_message_count == &newer_runtime->persisted_message_count);
     };
 
     TEST_CASE("run_channel_loop_persists_inbound_message_before_runtime_error") {

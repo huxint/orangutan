@@ -1,25 +1,15 @@
+#include "web/chat-session-controller.hpp"
 #include "web/errors.hpp"
 #include "web/event-bus.hpp"
 #include "web/sse.hpp"
 #include "web/web-route-internal.hpp"
 
-#include "agent/agent-loop.hpp"
-#include "automation/runtime.hpp"
 #include "providers/provider.hpp"
-#include "tools/registry/tool-context.hpp"
-#include "tools/registry/tool-registry.hpp"
-#include "utils/scope-exit.hpp"
-
-#include <spdlog/spdlog.h>
 
 namespace orangutan::web {
 
-    namespace bootstrap = orangutan::bootstrap;
-
     namespace {
 
-        /// Publish a chat lifecycle event if an event bus is wired up. Keeps the observatory
-        /// in sync with per-session activity without the chat client having to do anything.
         void maybe_publish(const WebContext &ctx, std::string_view kind, const std::string &session_id, const std::string &agent_key,
                            nlohmann::json payload = nlohmann::json::object()) {
             if (ctx.event_bus == nullptr) {
@@ -28,6 +18,73 @@ namespace orangutan::web {
             payload["session_id"] = session_id;
             payload["agent_key"] = agent_key;
             ctx.event_bus->publish(kind, session_id, std::move(payload));
+        }
+
+        ChatSessionStreamCallbacks make_stream_callbacks(const WebContext &ctx, httplib::DataSink &sink, const std::string &session_id, const std::string &agent_key) {
+            return ChatSessionStreamCallbacks{
+                .session =
+                    [&sink](const std::string &active_session_id) {
+                        return write_sse(sink, "session", {{"session_id", active_session_id}});
+                    },
+                .text =
+                    [&ctx, &sink, session_id, agent_key](const std::string &text) {
+                        const bool wrote = write_sse(sink, "text", {{"text", text}});
+                        if (ctx.event_bus != nullptr) {
+                            ctx.event_bus->publish("chat.text", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"text", text}});
+                        }
+                        return wrote;
+                    },
+                .thinking =
+                    [&sink](const std::string &thinking) {
+                        return write_sse(sink, "thinking", {{"thinking", thinking}});
+                    },
+                .tool_start =
+                    [&ctx, &sink, session_id, agent_key](const ToolUse &call) {
+                        const bool wrote = write_sse(sink, "tool_start", {{"id", call.id}, {"name", call.name}, {"input", call.input}});
+                        if (ctx.event_bus != nullptr) {
+                            ctx.event_bus->publish("chat.tool_start", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}});
+                        }
+                        return wrote;
+                    },
+                .tool_end =
+                    [&ctx, &sink, session_id, agent_key](const ToolUse &call, const ToolResult &result) {
+                        const bool wrote = write_sse(sink, "tool_end", {{"id", call.id}, {"name", call.name}, {"content", result.content}, {"is_error", result.is_error}});
+                        if (ctx.event_bus != nullptr) {
+                            ctx.event_bus->publish("chat.tool_end", session_id,
+                                                   {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}, {"is_error", result.is_error}});
+                        }
+                        return wrote;
+                    },
+                .done =
+                    [&ctx, &sink, session_id, agent_key] {
+                        const bool wrote = write_sse(sink, "done", nlohmann::json::object());
+                        if (ctx.event_bus != nullptr) {
+                            ctx.event_bus->publish("chat.done", session_id, {{"session_id", session_id}, {"agent_key", agent_key}});
+                        }
+                        return wrote;
+                    },
+                .error =
+                    [&ctx, &sink, session_id, agent_key](std::string_view error) {
+                        const auto error_text = std::string(error);
+                        const bool wrote = write_sse(sink, "error", {{"error", error_text}});
+                        if (ctx.event_bus != nullptr) {
+                            ctx.event_bus->publish("chat.error", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"error", error_text}});
+                        }
+                        return wrote;
+                    },
+                .complete =
+                    [&sink] {
+                        sink.done();
+                    },
+                .approval_event_emitter =
+                    [&sink](std::string_view event_name, const nlohmann::json &payload) {
+                        return write_sse(sink, event_name, payload);
+                    },
+                .stream_open =
+                    [&sink] {
+                        return sink.is_writable == nullptr || sink.is_writable();
+                    },
+            };
         }
 
     } // namespace
@@ -87,8 +144,7 @@ namespace orangutan::web {
         }
 
         if (message.starts_with('/')) {
-            if (const auto command_response = internal::handle_web_static_slash_command(message, agent_key, *ctx.config, ctx.session_store,
-                                                                                        existing_session, metadata, session_id);
+            if (const auto command_response = internal::handle_web_static_slash_command(message, agent_key, *ctx.config, ctx.session_store, existing_session, metadata, session_id);
                 command_response.handled) {
                 internal::send_web_command_stream(res, command_response);
                 return;
@@ -109,194 +165,32 @@ namespace orangutan::web {
         }
 
         try {
-            auto session = std::make_unique<WebSessionState>();
-            session->session_id = session_id;
-            session->completion_resume_state = std::make_shared<WebCompletionResumeState>();
-            session->completion_resume_state->agent_key = agent_key;
-            session->completion_resume_state->automation_runtime = ctx.automation_runtime;
-            auto *session_ptr = session.get();
-            auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
-            auto approval_stream_open = std::make_shared<std::function<bool()>>();
-            auto *automation_service = ctx.automation_runtime != nullptr ? &ctx.automation_runtime->service() : nullptr;
-            std::mutex *sessions_mutex = ctx.sessions_mutex;
-            session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
-                *ctx.config, agent_key, ctx.memory_store, &session->session_id, automation_service, ctx.automation_runtime,
-                [session_ptr, sessions_mutex, approval_event_emitter, approval_stream_open](const ToolUse &call, const PermissionDecision &decision) {
-                    return detail::await_web_approval(*session_ptr, *sessions_mutex, call, decision,
-                                                      approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
-                                                      approval_stream_open != nullptr ? *approval_stream_open : std::function<bool()>{});
-                },
-                session->completion_resume_state));
-            if (session->agent() == nullptr) {
-                throw std::runtime_error("failed to initialize web runtime agent");
+            ChatSessionController controller(ctx);
+            auto start_result = controller.start(ChatSessionStartRequest{
+                .message = message,
+                .agent_key = agent_key,
+                .agent = *maybe_agent,
+                .metadata = metadata,
+                .session_id = session_id,
+            });
+            if (start_result.status == ChatSessionStartStatus::command_handled) {
+                internal::send_web_command_stream(res, start_result.command_response);
+                return;
+            }
+            if (start_result.status == ChatSessionStartStatus::session_active) {
+                send_error(res, 409, "session_active", "session already active");
+                return;
             }
 
-            if (!session->session_id.empty() && ctx.session_store != nullptr) {
-                session->agent()->set_history(ctx.session_store->load(session->session_id));
-                session->persisted_message_count = session->agent()->history().size();
-            }
-
-            if (message.starts_with('/')) {
-                if (const auto command_response =
-                        internal::handle_web_runtime_slash_command(message, agent_key, *maybe_agent, ctx.session_store, metadata, *session->runtime, session->session_id);
-                    command_response.handled) {
-                    internal::send_web_command_stream(res, command_response);
-                    return;
-                }
-            }
-
-            if (session->session_id.empty() && ctx.session_store != nullptr) {
-                session->session_id = ctx.session_store->create_empty(metadata);
-            }
-            if (session->session_id.empty()) {
-                session->session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            }
-
-            auto *abort_flag = &session->abort_requested;
-            auto *tool_context = &session->runtime->tool_context();
-            if (tool_context != nullptr) {
-                tool_context->abort_checker = [abort_flag] {
-                    return abort_flag->load();
-                };
-            }
-
-            auto *agent_ptr = session->agent();
-            if (session->completion_resume_state != nullptr) {
-                std::scoped_lock lock(session->completion_resume_state->mutex);
-                session->completion_resume_state->agent = agent_ptr;
-            }
-            const auto active_session_id = session->session_id;
-
-            {
-                std::scoped_lock lock(*ctx.sessions_mutex);
-                const auto [inserted_it, inserted] = ctx.sessions->try_emplace(active_session_id, std::move(session));
-                if (!inserted) {
-                    send_error(res, 409, "session_active", "session already active");
-                    return;
-                }
-                session_ptr = inserted_it->second.get();
-            }
-
+            const auto active_session = std::move(start_result.active_session);
+            const auto active_session_id = active_session->session_id();
             maybe_publish(ctx, "chat.session_started", active_session_id, agent_key, {{"preview", message.substr(0, 140)}});
 
-            auto *store_ptr = ctx.session_store;
-            auto *event_bus = ctx.event_bus;
-            auto *automation_runtime = ctx.automation_runtime;
-            auto *sessions_map = ctx.sessions;
-            std::mutex *stream_sessions_mutex = ctx.sessions_mutex;
-
             prepare_sse_response(res);
-            res.set_chunked_content_provider(
-                "text/event-stream",
-                [agent_ptr, session_ptr, store_ptr, event_bus, captured_session_id = active_session_id, captured_metadata = metadata, message, approval_event_emitter,
-                 approval_stream_open, agent_key, automation_runtime, stream_sessions_mutex, sessions_map](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
-                    if (approval_event_emitter != nullptr) {
-                        *approval_event_emitter = [&sink](std::string_view event_name, const nlohmann::json &payload) {
-                            return write_sse(sink, event_name, payload);
-                        };
-                    }
-                    if (approval_stream_open != nullptr) {
-                        *approval_stream_open = [&sink]() {
-                            return sink.is_writable == nullptr || sink.is_writable();
-                        };
-                    }
-
-                    const auto restore_approval_stream_state = utils::scope_exit([session_ptr, approval_event_emitter, approval_stream_open] {
-                        session_ptr->running = false;
-                        detail::cancel_pending_approval(*session_ptr);
-                        if (approval_event_emitter != nullptr) {
-                            *approval_event_emitter = {};
-                        }
-                        if (approval_stream_open != nullptr) {
-                            *approval_stream_open = {};
-                        }
-                    });
-
-                    write_sse(sink, "session", {{"session_id", captured_session_id}});
-
-                    session_ptr->running = true;
-                    try {
-                        automation::with_agent_execution_lease(automation_runtime, agent_key, [&] {
-                            agent_ptr->run(
-                                message,
-                                [&sink, session_ptr, event_bus, captured_session_id, agent_key](const ProviderEvent &event) {
-                                    if (session_ptr->abort_requested) {
-                                        return;
-                                    }
-                                    if (const auto *text = std::get_if<TextDelta>(&event)) {
-                                        write_sse(sink, "text", {{"text", text->text}});
-                                        if (event_bus != nullptr) {
-                                            event_bus->publish("chat.text", captured_session_id,
-                                                               {{"session_id", captured_session_id}, {"agent_key", agent_key}, {"text", text->text}});
-                                        }
-                                    } else if (const auto *thinking = std::get_if<ThinkingDelta>(&event)) {
-                                        write_sse(sink, "thinking", {{"thinking", thinking->thinking}});
-                                    }
-                                },
-                                [&sink, session_ptr, event_bus, captured_session_id, agent_key](const std::string &event_type, const ToolUse &call, const ToolResult *result) {
-                                    if (session_ptr->abort_requested) {
-                                        return;
-                                    }
-                                    if (event_type == "tool_started" || event_type == "tool_start") {
-                                        write_sse(sink, "tool_start", {{"id", call.id}, {"name", call.name}, {"input", call.input}});
-                                        if (event_bus != nullptr) {
-                                            event_bus->publish("chat.tool_start", captured_session_id,
-                                                               {{"session_id", captured_session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}});
-                                        }
-                                    } else if ((event_type == "tool_finished" || event_type == "tool_end") && result != nullptr) {
-                                        write_sse(sink, "tool_end",
-                                                  {{"id", call.id}, {"name", call.name}, {"content", result->content}, {"is_error", result->is_error}});
-                                        if (event_bus != nullptr) {
-                                            event_bus->publish("chat.tool_end", captured_session_id,
-                                                               {{"session_id", captured_session_id},
-                                                                {"agent_key", agent_key},
-                                                                {"tool", call.name},
-                                                                {"id", call.id},
-                                                                {"is_error", result->is_error}});
-                                        }
-                                    }
-                                });
-                        });
-
-                        write_sse(sink, "done", nlohmann::json::object());
-                        if (event_bus != nullptr) {
-                            event_bus->publish("chat.done", captured_session_id, {{"session_id", captured_session_id}, {"agent_key", agent_key}});
-                        }
-                    } catch (const std::exception &e) {
-                        write_sse(sink, "error", {{"error", e.what()}});
-                        if (event_bus != nullptr) {
-                            event_bus->publish("chat.error", captured_session_id,
-                                               {{"session_id", captured_session_id}, {"agent_key", agent_key}, {"error", e.what()}});
-                        }
-                    }
-
-                    if (store_ptr != nullptr) {
-                        try {
-                            const auto &history = agent_ptr->history();
-                            if (history.size() > session_ptr->persisted_message_count) {
-                                store_ptr->append(captured_session_id, history, session_ptr->persisted_message_count, captured_metadata);
-                            } else {
-                                store_ptr->update(captured_session_id, history, captured_metadata);
-                            }
-                            session_ptr->persisted_message_count = history.size();
-                        } catch (const std::exception &e) {
-                            spdlog::warn("failed to save session {}: {}", captured_session_id, e.what());
-                        }
-                    }
-
-                    if (session_ptr->completion_resume_state != nullptr) {
-                        std::scoped_lock lock(session_ptr->completion_resume_state->mutex);
-                        session_ptr->completion_resume_state->agent = nullptr;
-                    }
-
-                    {
-                        std::scoped_lock lock(*stream_sessions_mutex);
-                        sessions_map->erase(captured_session_id);
-                    }
-
-                    sink.done();
-                    return false;
-                });
+            res.set_chunked_content_provider("text/event-stream", [controller, active_session, &ctx, agent_key](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                controller.stream(active_session, make_stream_callbacks(ctx, sink, active_session->session_id(), agent_key));
+                return false;
+            });
         } catch (const providers::ProviderError &e) {
             if (e.category() != providers::error_category::configuration && e.category() != providers::error_category::authentication) {
                 throw;

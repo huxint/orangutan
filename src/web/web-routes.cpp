@@ -10,7 +10,7 @@
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
 #include "bootstrap/identity.hpp"
-#include "bootstrap/runtime-assembler.hpp"
+#include "bootstrap/runtime-factory.hpp"
 #include "permissions/permission-display.hpp"
 #include "providers/provider.hpp"
 #include "agent/agent-loop.hpp"
@@ -79,24 +79,10 @@ namespace orangutan::web {
             };
         }
 
-        std::vector<std::string> fallback_labels(const std::vector<config::FallbackModelRef> &fallback_models) {
-            std::vector<std::string> labels;
-            labels.reserve(fallback_models.size());
-            for (const auto &fallback : fallback_models) {
-                if (fallback.profile.empty()) {
-                    labels.push_back(fallback.model);
-                } else {
-                    labels.push_back(fallback.profile + ":" + fallback.model);
-                }
-            }
-            return labels;
-        }
-
         bootstrap::AgentRuntimeBundle build_web_runtime_bundle_impl(const config::Config &config, const config::AgentConfig &agent, const std::string &agent_key,
                                                                     memory::MemoryStore *memory_store, std::string *current_session_id,
-                                                                    automation::AutomationService *automation_service,
-                                                                    automation::AutomationRuntime *automation_runtime, ApprovalCallback approval_callback,
-                                                                    const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
+                                                                    automation::AutomationService *automation_service, automation::AutomationRuntime *automation_runtime,
+                                                                    ApprovalCallback approval_callback, const std::shared_ptr<WebCompletionResumeState> &completion_resume_state) {
             const auto maybe_route = bootstrap::detail::resolve_agent_route(config, agent, agent_key, "");
             if (!maybe_route.has_value()) {
                 throw std::runtime_error("failed to resolve runtime endpoints for agent '" + agent_key + "'");
@@ -108,21 +94,13 @@ namespace orangutan::web {
             }
 
             auto effective_approval_callback = std::move(approval_callback);
-            if (!effective_approval_callback) {
+            if (effective_approval_callback == nullptr) {
                 effective_approval_callback = default_web_approval_callback();
             }
 
-            const auto runtime_config = bootstrap::AgentRuntimeConfig{
-                .agent_key = agent_key,
-                .model = agent.model,
-                .fallback_models = fallback_labels(agent.fallback_models),
-                .provider_route = maybe_route->route,
-                .workspace_root = workspace_root,
-                .thinking_budget = agent.thinking_budget,
-                .permission_context = initialize_permission_context(agent.permissions_config, {}, workspace_root),
-                .leader_mode = agent.leader_mode,
-            };
-            auto input = bootstrap::make_runtime_build_input(bootstrap::RuntimeAssemblyRequest{
+            const auto runtime_config = bootstrap::make_agent_runtime_config(agent_key, agent, maybe_route->route, workspace_root,
+                                                                             initialize_permission_context(agent.permissions_config, {}, workspace_root));
+            return bootstrap::build_runtime_bundle(bootstrap::RuntimeFactoryRequest{
                 .runtime_config = &runtime_config,
                 .identity = &identity,
                 .app_config = &config,
@@ -141,7 +119,6 @@ namespace orangutan::web {
                                                            detail::make_web_completion_resume_callback(completion_resume_state))
                                                      : nullptr,
             });
-            return bootstrap::build_agent_runtime(input);
         }
 
         nlohmann::json session_to_json(const storage::SessionInfo &session) {
@@ -307,7 +284,7 @@ namespace orangutan::web {
         cli::SlashCommandReply handle_web_runtime_slash_command(const std::string &message, const std::string &agent_key, const config::AgentConfig &agent,
                                                                 storage::SessionStore *store, const storage::SessionMetadata &metadata, bootstrap::AgentRuntimeBundle &runtime,
                                                                 std::string &current_session_id) {
-            const auto fallback_model_labels = fallback_labels(agent.fallback_models);
+            const auto fallback_model_labels = bootstrap::make_fallback_model_labels(agent.fallback_models);
             return cli::dispatch_shared_slash_command(
                 message, {
                              .surface = cli::slash_command_surface::web,
@@ -321,7 +298,8 @@ namespace orangutan::web {
                                  },
                              .status =
                                  [&] {
-                const auto active_model = runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
+                                     const auto active_model =
+                                         runtime.provider != nullptr && !runtime.provider->current_model().empty() ? runtime.provider->current_model() : metadata.model;
                                      return cli::SlashCommandReply{
                                          .handled = true,
                                          .text = cli::format_runtime_status(cli::collect_runtime_status(*runtime.agent, *runtime.provider, &runtime.tools(), current_session_id,
@@ -349,16 +327,25 @@ namespace orangutan::web {
     BackgroundCompletionResumeCallback detail::make_web_completion_resume_callback(const std::weak_ptr<WebCompletionResumeState> &weak_state) {
         return [weak_state](const std::string &message) -> std::optional<std::string> {
             const auto state = weak_state.lock();
-            if (!state) {
+            if (state == nullptr) {
                 return "web session is no longer live";
             }
 
-            std::scoped_lock lock(state->mutex);
-            if (state->agent == nullptr) {
-                return "web session is no longer live";
-            }
+            return automation::with_agent_execution_lease(state->automation_runtime, state->agent_key, [&]() -> std::optional<std::string> {
+                try {
+                    std::scoped_lock lock(state->mutex);
+                    if (state->agent == nullptr) {
+                        return "web session is no longer live";
+                    }
 
-            return orangutan::cli::run_completion_resume_message(*state->agent, message, state->agent_key, state->automation_runtime, {}, true);
+                    static_cast<void>(state->agent->run(message, [](const ProviderEvent &) {}, [](const std::string &, const ToolUse &, const ToolResult *) {}));
+                    return std::nullopt;
+                } catch (const std::exception &e) {
+                    return e.what();
+                } catch (...) {
+                    return "background completion resume failed";
+                }
+            });
         };
     }
 

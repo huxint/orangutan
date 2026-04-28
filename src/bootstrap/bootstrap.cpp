@@ -1,6 +1,7 @@
 #include "bootstrap/bootstrap.hpp"
 
 #include "bootstrap/agent-loop-teammate.hpp"
+#include "bootstrap/automation-executor.hpp"
 #include "bootstrap/cli-options.hpp"
 #include "bootstrap/cli-runtime.hpp"
 #include "bootstrap/channel-serve.hpp"
@@ -9,8 +10,8 @@
 #include "bootstrap/app-runtime.hpp"
 #include "bootstrap/agent-runtime.hpp"
 #include "bootstrap/identity.hpp"
-#include "bootstrap/runtime-assembler.hpp"
 #include "bootstrap/runtime-control.hpp"
+#include "bootstrap/runtime-factory.hpp"
 #include "cli/repl.hpp"
 #include "cli/single-shot.hpp"
 #include "web/web-server.hpp"
@@ -49,19 +50,6 @@
 namespace {
 
     using orangutan::bootstrap::CliOptions;
-
-    std::vector<std::string> fallback_labels(const std::vector<orangutan::config::FallbackModelRef> &fallback_models) {
-        std::vector<std::string> labels;
-        labels.reserve(fallback_models.size());
-        for (const auto &fallback : fallback_models) {
-            if (fallback.profile.empty()) {
-                labels.push_back(fallback.model);
-            } else {
-                labels.push_back(fallback.profile + ":" + fallback.model);
-            }
-        }
-        return labels;
-    }
 
     std::optional<std::string> resolve_app_workspace_root(const std::optional<orangutan::bootstrap::AgentRuntimeConfig> &maybe_primary_runtime_cfg,
                                                           const std::unordered_map<std::string, orangutan::bootstrap::AgentRuntimeConfig> &agent_runtime_configs) {
@@ -181,17 +169,9 @@ int orangutan::bootstrap::run(int argc, char **argv) {
         }
         primary_api_key = maybe_route->route.primary.api_key;
         maybe_primary_identity = orangutan::bootstrap::derive_cli_identity(*maybe_workspace, options.cli_agent_key);
-        maybe_primary_runtime_cfg = orangutan::bootstrap::AgentRuntimeConfig{
-            .agent_key = options.cli_agent_key,
-            .model = maybe_selected_agent->model,
-            .fallback_models = fallback_labels(maybe_selected_agent->fallback_models),
-            .provider_route = maybe_route->route,
-            .workspace_root = *maybe_workspace,
-            .thinking_budget = maybe_selected_agent->thinking_budget,
-            .cli_runtime_key = maybe_primary_identity->runtime_key,
-            .cli_memory_scope = maybe_primary_identity->memory_scope,
-            .permission_context = initialize_permission_context(maybe_selected_agent->permissions_config, cli_permission_options, *maybe_workspace),
-        };
+        maybe_primary_runtime_cfg = orangutan::bootstrap::make_agent_runtime_config(options.cli_agent_key, *maybe_selected_agent, maybe_route->route, *maybe_workspace,
+                                                                                    initialize_permission_context(maybe_selected_agent->permissions_config,
+                                                                                                                  cli_permission_options, *maybe_workspace));
     }
 
     if (options.cli_mode && primary_api_key.empty()) {
@@ -249,62 +229,15 @@ int orangutan::bootstrap::run(int argc, char **argv) {
 
     orangutan::bootstrap::AppRuntime app_runtime(orangutan::bootstrap::workspace_automation_store_path(*maybe_app_workspace_root));
 
-    app_runtime.automation_runtime().set_executor([&cfg, &app_runtime, &maybe_agent_runtime_configs, memory_store = memory_store.get(), &orchestration_manager,
-                                                   &team_manager, &agent_mailbox](const orangutan::automation::Automation &automation) {
-        orangutan::automation::ExecutionResult result;
-        auto config_it = maybe_agent_runtime_configs->find(automation.agent_key);
-        if (config_it == maybe_agent_runtime_configs->end()) {
-            result.summary = "No runtime configuration for agent '" + automation.agent_key + "'.";
-            return result;
-        }
-
-        const auto &runtime_cfg = config_it->second;
-        std::string current_session_id;
-        auto completion_resume_state = std::make_shared<RuntimeCompletionResumeState>();
-        completion_resume_state->agent_key = runtime_cfg.agent_key;
-        completion_resume_state->configured_model = runtime_cfg.model;
-        completion_resume_state->scope_key = "agent:" + runtime_cfg.agent_key + "|automation";
-        completion_resume_state->automation_runtime = &app_runtime.automation_runtime();
-        completion_resume_state->suppress_human_output = true;
-        orangutan::bootstrap::RuntimeIdentity identity{
-            .workspace = runtime_cfg.workspace_root,
-            .runtime_key = "agent:" + runtime_cfg.agent_key + "|automation:" + automation.id,
-            .memory_scope = "agent:" + runtime_cfg.agent_key + "|automation",
-        };
-
-        try {
-            auto runtime = orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
-                .runtime_config = &runtime_cfg,
-                .identity = &identity,
-                .app_config = &cfg,
-                .memory_store = memory_store,
-                .current_session_id = &current_session_id,
-                .orchestration_manager = orchestration_manager.get(),
-                .team_manager = team_manager.get(),
-                .mailbox = agent_mailbox.get(),
-                .runtime_origin = base::origin::cli,
-                .raw_caller_id = identity.runtime_key,
-                .automation_service = &app_runtime.automation_service(),
-                .automation_runtime = &app_runtime.automation_runtime(),
-                .background_completion_runtime =
-                    make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(completion_resume_state)),
-            }));
-            const auto completion_resume_guard = orangutan::utils::scope_exit([completion_resume_state] {
-                deactivate_runtime_completion_resume_state(completion_resume_state);
-            });
-            completion_resume_state->agent = runtime.agent.get();
-            completion_resume_state->provider = runtime.provider.get();
-            result.reply = runtime.agent->run(automation.prompt);
-            result.summary = result.reply;
-            result.workspace_root = runtime_cfg.workspace_root;
-            result.success = true;
-            return result;
-        } catch (const std::exception &e) {
-            result.summary = e.what();
-            result.workspace_root = runtime_cfg.workspace_root;
-            return result;
-        }
-    });
+    app_runtime.automation_runtime().set_executor(orangutan::bootstrap::make_bootstrap_automation_executor(orangutan::bootstrap::AutomationExecutorDependencies{
+        .config = &cfg,
+        .agent_runtime_configs = &*maybe_agent_runtime_configs,
+        .memory_store = memory_store.get(),
+        .orchestration_manager = orchestration_manager.get(),
+        .team_manager = team_manager.get(),
+        .mailbox = agent_mailbox.get(),
+        .automation_runtime = &app_runtime.automation_runtime(),
+    }));
     app_runtime.automation_runtime().register_category(orangutan::heartbeat::make_heartbeat_category(orangutan::heartbeat::DEFAULT_ACK_MAX_CHARS));
 
     orangutan::ChannelManager channel_manager(orangutan::Allowlist(cfg.allow, cfg.deny));
@@ -353,7 +286,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
             primary_completion_resume_state->persist_session = cfg.auto_save;
             orangutan::bootstrap::detail::maybe_inject_web_runtime_build_failure_for_tests();
             const auto approval_callback = make_cli_approval_callback(!options.event_stream);
-            primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_agent_runtime(make_runtime_build_input(RuntimeAssemblyRequest{
+            primary_runtime = std::make_unique<orangutan::bootstrap::AgentRuntimeBundle>(orangutan::bootstrap::build_runtime_bundle(RuntimeFactoryRequest{
                 .runtime_config = &*maybe_primary_runtime_cfg,
                 .identity = &*maybe_primary_identity,
                 .app_config = &cfg,
@@ -369,7 +302,7 @@ int orangutan::bootstrap::run(int argc, char **argv) {
                 .approval_callback = approval_callback,
                 .background_completion_runtime =
                     make_runtime_background_completion_bindings(&app_runtime.automation_runtime(), make_runtime_completion_resume_callback(primary_completion_resume_state)),
-            })));
+            }));
             primary_completion_resume_state->agent = primary_runtime->agent.get();
             primary_completion_resume_state->provider = primary_runtime->provider.get();
             primary_completion_resume_state->hook_manager = primary_runtime->active_hook_manager();
