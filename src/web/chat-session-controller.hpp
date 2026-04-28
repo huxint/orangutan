@@ -64,7 +64,8 @@ namespace orangutan::web {
     private:
         friend class ChatSessionController;
 
-        ActiveChatSession(const WebContext &ctx, std::string session_id, std::string agent_key, std::string message, storage::SessionMetadata metadata, WebSessionState *session,
+        ActiveChatSession(std::mutex *sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> *sessions, std::string session_id, std::string agent_key,
+                          std::string message, storage::SessionMetadata metadata, WebSessionState *session,
                           std::shared_ptr<detail::web_approval_event_emitter> approval_event_emitter, std::shared_ptr<std::function<bool()>> approval_stream_open);
 
         std::mutex *sessions_mutex_ = nullptr;
@@ -109,7 +110,12 @@ namespace orangutan::web {
         void stream(const std::shared_ptr<ActiveChatSession> &active_session, ChatSessionStreamCallbacks callbacks) const;
 
     private:
-        const WebContext *ctx_ = nullptr;
+        config::Config *config_ = nullptr;
+        storage::SessionStore *session_store_ = nullptr;
+        memory::MemoryStore *memory_store_ = nullptr;
+        automation::AutomationRuntime *automation_runtime_ = nullptr;
+        std::mutex *sessions_mutex_ = nullptr;
+        std::unordered_map<std::string, std::unique_ptr<WebSessionState>> *sessions_ = nullptr;
     };
 
 } // namespace orangutan::web

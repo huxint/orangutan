@@ -3,6 +3,7 @@
 #include "automation/repository.hpp"
 #include "automation/service.hpp"
 #include "test-helpers.hpp"
+#include "tools/register.hpp"
 #include "tools/registry/tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -91,6 +92,26 @@ namespace {
         const auto result = harness.invoke({{"op", "list"}});
 
         CHECK(result.content == "Error: automation tool is not available in this context.");
+    };
+
+    TEST_CASE("builtin_automation_registration_reads_context_at_execute_time") {
+        const auto db_path = orangutan::testing::unique_test_db_path("automation-tool", "builtin-live-context.db");
+        orangutan::automation::Repository repository(db_path);
+        orangutan::automation::AutomationService service(repository, [] {
+            return orangutan::automation::from_unix_seconds(1'000);
+        });
+        orangutan::ToolRuntimeContext context{.agent_key = "default", .automation_service = &service};
+        orangutan::ToolRegistry registry;
+
+        orangutan::tools::register_builtin_tools(registry, nullptr, orangutan::testing::test_tmp_root(), &context, nullptr);
+        REQUIRE(registry.find_definition("automation") != nullptr);
+
+        context.automation_service = nullptr;
+        const auto result = registry.execute(orangutan::ToolUse("automation-tool", "automation", {{"op", "list"}}));
+
+        CHECK(result.content == "Error: automation tool is not available in this context.");
+
+        std::filesystem::remove_all(db_path.parent_path());
     };
 
     TEST_CASE("automation_is_not_registered_without_automation_service") {

@@ -238,6 +238,19 @@ namespace {
         CHECK(registry.find_definition("message_attachments") == nullptr);
     }
 
+    TEST_CASE("message_attachments_not_registered_for_null_attachment_capability") {
+        ToolRegistry registry;
+
+        tools::register_message_attachments_tool(registry,
+                                                 testing::test_tmp_root(),
+                                                 tools::AttachmentCapability{
+                                                     .runtime_origin = base::origin::channel,
+                                                     .current_message_attachments = nullptr,
+                                                 });
+
+        CHECK(registry.find_definition("message_attachments") == nullptr);
+    }
+
     TEST_CASE("message_attachments_not_registered_when_context_is_null") {
         ToolRegistry registry;
 

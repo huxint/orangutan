@@ -20,17 +20,17 @@ namespace orangutan::web {
             ctx.event_bus->publish(kind, session_id, std::move(payload));
         }
 
-        ChatSessionStreamCallbacks make_stream_callbacks(const WebContext &ctx, httplib::DataSink &sink, const std::string &session_id, const std::string &agent_key) {
+        ChatSessionStreamCallbacks make_stream_callbacks(EventBus *event_bus, httplib::DataSink &sink, const std::string &session_id, const std::string &agent_key) {
             return ChatSessionStreamCallbacks{
                 .session =
                     [&sink](const std::string &active_session_id) {
                         return write_sse(sink, "session", {{"session_id", active_session_id}});
                     },
                 .text =
-                    [&ctx, &sink, session_id, agent_key](const std::string &text) {
+                    [event_bus, &sink, session_id, agent_key](const std::string &text) {
                         const bool wrote = write_sse(sink, "text", {{"text", text}});
-                        if (ctx.event_bus != nullptr) {
-                            ctx.event_bus->publish("chat.text", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"text", text}});
+                        if (event_bus != nullptr) {
+                            event_bus->publish("chat.text", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"text", text}});
                         }
                         return wrote;
                     },
@@ -39,36 +39,36 @@ namespace orangutan::web {
                         return write_sse(sink, "thinking", {{"thinking", thinking}});
                     },
                 .tool_start =
-                    [&ctx, &sink, session_id, agent_key](const ToolUse &call) {
+                    [event_bus, &sink, session_id, agent_key](const ToolUse &call) {
                         const bool wrote = write_sse(sink, "tool_start", {{"id", call.id}, {"name", call.name}, {"input", call.input}});
-                        if (ctx.event_bus != nullptr) {
-                            ctx.event_bus->publish("chat.tool_start", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}});
+                        if (event_bus != nullptr) {
+                            event_bus->publish("chat.tool_start", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}});
                         }
                         return wrote;
                     },
                 .tool_end =
-                    [&ctx, &sink, session_id, agent_key](const ToolUse &call, const ToolResult &result) {
+                    [event_bus, &sink, session_id, agent_key](const ToolUse &call, const ToolResult &result) {
                         const bool wrote = write_sse(sink, "tool_end", {{"id", call.id}, {"name", call.name}, {"content", result.content}, {"is_error", result.is_error}});
-                        if (ctx.event_bus != nullptr) {
-                            ctx.event_bus->publish("chat.tool_end", session_id,
+                        if (event_bus != nullptr) {
+                            event_bus->publish("chat.tool_end", session_id,
                                                    {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}, {"is_error", result.is_error}});
                         }
                         return wrote;
                     },
                 .done =
-                    [&ctx, &sink, session_id, agent_key] {
+                    [event_bus, &sink, session_id, agent_key] {
                         const bool wrote = write_sse(sink, "done", nlohmann::json::object());
-                        if (ctx.event_bus != nullptr) {
-                            ctx.event_bus->publish("chat.done", session_id, {{"session_id", session_id}, {"agent_key", agent_key}});
+                        if (event_bus != nullptr) {
+                            event_bus->publish("chat.done", session_id, {{"session_id", session_id}, {"agent_key", agent_key}});
                         }
                         return wrote;
                     },
                 .error =
-                    [&ctx, &sink, session_id, agent_key](std::string_view error) {
+                    [event_bus, &sink, session_id, agent_key](std::string_view error) {
                         const auto error_text = std::string(error);
                         const bool wrote = write_sse(sink, "error", {{"error", error_text}});
-                        if (ctx.event_bus != nullptr) {
-                            ctx.event_bus->publish("chat.error", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"error", error_text}});
+                        if (event_bus != nullptr) {
+                            event_bus->publish("chat.error", session_id, {{"session_id", session_id}, {"agent_key", agent_key}, {"error", error_text}});
                         }
                         return wrote;
                     },
@@ -187,8 +187,8 @@ namespace orangutan::web {
             maybe_publish(ctx, "chat.session_started", active_session_id, agent_key, {{"preview", message.substr(0, 140)}});
 
             prepare_sse_response(res);
-            res.set_chunked_content_provider("text/event-stream", [controller, active_session, &ctx, agent_key](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
-                controller.stream(active_session, make_stream_callbacks(ctx, sink, active_session->session_id(), agent_key));
+            res.set_chunked_content_provider("text/event-stream", [controller, active_session, event_bus = ctx.event_bus, agent_key](std::size_t /*offset*/, httplib::DataSink &sink) -> bool {
+                controller.stream(active_session, make_stream_callbacks(event_bus, sink, active_session->session_id(), agent_key));
                 return false;
             });
         } catch (const providers::ProviderError &e) {

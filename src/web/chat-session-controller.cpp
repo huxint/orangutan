@@ -54,11 +54,12 @@ namespace orangutan::web {
 
     } // namespace
 
-    ActiveChatSession::ActiveChatSession(const WebContext &ctx, std::string session_id, std::string agent_key, std::string message, storage::SessionMetadata metadata,
-                                         WebSessionState *session, std::shared_ptr<detail::web_approval_event_emitter> approval_event_emitter,
+    ActiveChatSession::ActiveChatSession(std::mutex *sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> *sessions, std::string session_id,
+                                         std::string agent_key, std::string message, storage::SessionMetadata metadata, WebSessionState *session,
+                                         std::shared_ptr<detail::web_approval_event_emitter> approval_event_emitter,
                                          std::shared_ptr<std::function<bool()>> approval_stream_open)
-    : sessions_mutex_(ctx.sessions_mutex),
-      sessions_(ctx.sessions),
+    : sessions_mutex_(sessions_mutex),
+      sessions_(sessions),
       session_id_(std::move(session_id)),
       agent_key_(std::move(agent_key)),
       message_(std::move(message)),
@@ -138,25 +139,34 @@ namespace orangutan::web {
     }
 
     ChatSessionController::ChatSessionController(const WebContext &ctx)
-    : ctx_(&ctx) {}
+    : config_(ctx.config),
+      session_store_(ctx.session_store),
+      memory_store_(ctx.memory_store),
+      automation_runtime_(ctx.automation_runtime),
+      sessions_mutex_(ctx.sessions_mutex),
+      sessions_(ctx.sessions) {}
 
     ChatSessionStartResult ChatSessionController::start(const ChatSessionStartRequest &request) const {
+        if (config_ == nullptr) {
+            throw std::runtime_error("config not available");
+        }
+        if (sessions_mutex_ == nullptr || sessions_ == nullptr) {
+            throw std::runtime_error("session registry not wired");
+        }
+
         auto session = std::make_unique<WebSessionState>();
         session->session_id = request.session_id;
         session->completion_resume_state = std::make_shared<WebCompletionResumeState>();
         session->completion_resume_state->agent_key = request.agent_key;
-        session->completion_resume_state->automation_runtime = ctx_->automation_runtime;
+        session->completion_resume_state->automation_runtime = automation_runtime_;
 
         auto *session_ptr = session.get();
         auto approval_event_emitter = std::make_shared<detail::web_approval_event_emitter>();
         auto approval_stream_open = std::make_shared<std::function<bool()>>();
-        auto *automation_service = ctx_->automation_runtime != nullptr ? &ctx_->automation_runtime->service() : nullptr;
-        std::mutex *sessions_mutex = ctx_->sessions_mutex;
-        if (sessions_mutex == nullptr) {
-            throw std::runtime_error("session registry not wired");
-        }
+        auto *automation_service = automation_runtime_ != nullptr ? &automation_runtime_->service() : nullptr;
+        std::mutex *sessions_mutex = sessions_mutex_;
         session->runtime = std::make_unique<bootstrap::AgentRuntimeBundle>(detail::build_web_runtime_bundle(
-            *ctx_->config, request.agent_key, ctx_->memory_store, &session->session_id, automation_service, ctx_->automation_runtime,
+            *config_, request.agent_key, memory_store_, &session->session_id, automation_service, automation_runtime_,
             [session_ptr, sessions_mutex, approval_event_emitter, approval_stream_open](const ToolUse &call, const PermissionDecision &decision) {
                 return detail::await_web_approval(*session_ptr, *sessions_mutex, call, decision,
                                                   approval_event_emitter != nullptr ? *approval_event_emitter : detail::web_approval_event_emitter{},
@@ -167,21 +177,21 @@ namespace orangutan::web {
             throw std::runtime_error("failed to initialize web runtime agent");
         }
 
-        if (!session->session_id.empty() && ctx_->session_store != nullptr) {
-            session->agent()->set_history(ctx_->session_store->load(session->session_id));
+        if (!session->session_id.empty() && session_store_ != nullptr) {
+            session->agent()->set_history(session_store_->load(session->session_id));
             session->persisted_message_count = session->agent()->history().size();
         }
 
         if (request.message.starts_with('/')) {
-            auto command_response = internal::handle_web_runtime_slash_command(request.message, request.agent_key, request.agent, ctx_->session_store, request.metadata,
-                                                                               *session->runtime, session->session_id);
+            auto command_response = internal::handle_web_runtime_slash_command(request.message, request.agent_key, request.agent, session_store_, request.metadata,
+                                                                                *session->runtime, session->session_id);
             if (command_response.handled) {
                 return ChatSessionStartResult{.status = ChatSessionStartStatus::command_handled, .command_response = std::move(command_response)};
             }
         }
 
-        if (session->session_id.empty() && ctx_->session_store != nullptr) {
-            session->session_id = ctx_->session_store->create_empty(request.metadata);
+        if (session->session_id.empty() && session_store_ != nullptr) {
+            session->session_id = session_store_->create_empty(request.metadata);
         }
         if (session->session_id.empty()) {
             session->session_id = "web-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -196,8 +206,8 @@ namespace orangutan::web {
 
         const auto active_session_id = session->session_id;
         {
-            std::scoped_lock lock(*ctx_->sessions_mutex);
-            const auto [inserted_it, inserted] = ctx_->sessions->try_emplace(active_session_id, std::move(session));
+            std::scoped_lock lock(*sessions_mutex_);
+            const auto [inserted_it, inserted] = sessions_->try_emplace(active_session_id, std::move(session));
             if (!inserted) {
                 return ChatSessionStartResult{.status = ChatSessionStartStatus::session_active};
             }
@@ -205,11 +215,12 @@ namespace orangutan::web {
         }
 
         auto inserted_session_cleanup = utils::scope_exit([&] {
-            std::scoped_lock lock(*ctx_->sessions_mutex);
-            ctx_->sessions->erase(active_session_id);
+            std::scoped_lock lock(*sessions_mutex_);
+            sessions_->erase(active_session_id);
         });
         auto active_session = std::shared_ptr<ActiveChatSession>(
-            new ActiveChatSession(*ctx_, active_session_id, request.agent_key, request.message, request.metadata, session_ptr, approval_event_emitter, approval_stream_open));
+            new ActiveChatSession(sessions_mutex_, sessions_, active_session_id, request.agent_key, request.message, request.metadata, session_ptr, approval_event_emitter,
+                                  approval_stream_open));
         inserted_session_cleanup.release();
 
         return ChatSessionStartResult{.status = ChatSessionStartStatus::stream_ready, .active_session = std::move(active_session)};
@@ -242,9 +253,9 @@ namespace orangutan::web {
         auto detached_session_cleanup = utils::scope_exit([&active_session] {
             active_session->detached_session_.reset();
         });
-        automation::with_agent_execution_lease(ctx_->automation_runtime, active_session->agent_key(), [&] {
+        automation::with_agent_execution_lease(automation_runtime_, active_session->agent_key(), [&] {
             auto leased_cleanup = utils::scope_exit([&] {
-                persist_session(ctx_->session_store, *session, active_session->session_id(), active_session->metadata());
+                persist_session(session_store_, *session, active_session->session_id(), active_session->metadata());
                 active_session->cleanup();
                 cleanup_guard.release();
             });

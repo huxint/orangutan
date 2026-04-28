@@ -127,7 +127,7 @@ namespace orangutan::tools {
     }
 
     void register_message_attachments_tool(ToolRegistry &registry, const std::filesystem::path &workspace_root, AttachmentCapability capability) {
-        if (capability.runtime_origin != base::origin::channel) {
+        if (capability.runtime_origin != base::origin::channel || capability.current_message_attachments == nullptr) {
             return;
         }
 

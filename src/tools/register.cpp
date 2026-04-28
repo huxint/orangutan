@@ -32,7 +32,7 @@ namespace orangutan::tools {
 
         register_builtin_core_tools(registry, workspace_root, tool_context, permissions);
         if (tool_context != nullptr) {
-            register_automation_tool(registry, automation_capability(*tool_context));
+            register_automation_tool(registry, tool_context);
             register_message_attachments_tool(registry, workspace_root, tool_context);
         }
 

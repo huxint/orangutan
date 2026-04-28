@@ -14,9 +14,12 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <memory>
+#include <new>
 #include <catch2/catch_test_macros.hpp>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -421,6 +424,42 @@ namespace orangutan {
             const auto text_event = find_sse_event_payload(body, "text");
             REQUIRE(text_event.has_value());
             CHECK(text_event->at("text") == "streamed reply");
+            CHECK(bus_events == std::vector<std::string>{"chat.session_started", "chat.text", "chat.done"});
+
+            std::filesystem::remove_all(workspace);
+        };
+
+        TEST_CASE("chat_handler_stream_callbacks_do_not_depend_on_web_context_object_lifetime") {
+            StreamingOpenAiServer provider({ProviderHttpResponse{.body = openai_text_stream("streamed reply")}});
+            Config config = make_config();
+            const auto workspace = orangutan::testing::unique_test_root("web-chat-context-lifetime");
+            config.profiles.at("shared").base_url = provider.base_url();
+            config.agents["default"].workspace = workspace.string();
+            WebChatStoreHarness store_harness;
+            std::mutex sessions_mutex;
+            std::unordered_map<std::string, std::unique_ptr<web::WebSessionState>> sessions;
+            web::EventBus event_bus;
+            std::vector<std::string> bus_events;
+            auto subscription = event_bus.subscribe([&bus_events](const web::BusEvent &event) {
+                bus_events.push_back(event.kind);
+            });
+
+            httplib::Request req;
+            req.body = R"({"message":"hello","agent_key":"default"})";
+            httplib::Response res;
+
+            alignas(web::WebContext) std::byte context_storage[sizeof(web::WebContext)];
+            auto *ctx = std::construct_at(reinterpret_cast<web::WebContext *>(context_storage), make_web_context(&config, &store_harness.store(), nullptr, sessions_mutex, sessions));
+            ctx->event_bus = &event_bus;
+            web::handle_chat(*ctx, req, res);
+            std::destroy_at(ctx);
+            ctx = std::construct_at(reinterpret_cast<web::WebContext *>(context_storage), web::WebContext{});
+
+            const auto body = drain_response_stream(res);
+
+            std::destroy_at(ctx);
+            CHECK(sessions.empty());
+            CHECK(sse_event_names(body) == std::vector<std::string>{"session", "text", "done"});
             CHECK(bus_events == std::vector<std::string>{"chat.session_started", "chat.text", "chat.done"});
 
             std::filesystem::remove_all(workspace);
