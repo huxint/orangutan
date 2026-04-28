@@ -14,12 +14,10 @@
 
 #include <algorithm>
 #include <condition_variable>
-#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <memory>
-#include <new>
 #include <catch2/catch_test_macros.hpp>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -448,16 +446,14 @@ namespace orangutan {
             req.body = R"({"message":"hello","agent_key":"default"})";
             httplib::Response res;
 
-            alignas(web::WebContext) std::byte context_storage[sizeof(web::WebContext)];
-            auto *ctx = std::construct_at(reinterpret_cast<web::WebContext *>(context_storage), make_web_context(&config, &store_harness.store(), nullptr, sessions_mutex, sessions));
+            std::optional<web::WebContext> ctx = make_web_context(&config, &store_harness.store(), nullptr, sessions_mutex, sessions);
             ctx->event_bus = &event_bus;
             web::handle_chat(*ctx, req, res);
-            std::destroy_at(ctx);
-            ctx = std::construct_at(reinterpret_cast<web::WebContext *>(context_storage), web::WebContext{});
+            ctx.reset();
+            ctx.emplace();
 
             const auto body = drain_response_stream(res);
 
-            std::destroy_at(ctx);
             CHECK(sessions.empty());
             CHECK(sse_event_names(body) == std::vector<std::string>{"session", "text", "done"});
             CHECK(bus_events == std::vector<std::string>{"chat.session_started", "chat.text", "chat.done"});

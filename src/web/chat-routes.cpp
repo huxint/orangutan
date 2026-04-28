@@ -51,7 +51,7 @@ namespace orangutan::web {
                         const bool wrote = write_sse(sink, "tool_end", {{"id", call.id}, {"name", call.name}, {"content", result.content}, {"is_error", result.is_error}});
                         if (event_bus != nullptr) {
                             event_bus->publish("chat.tool_end", session_id,
-                                                   {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}, {"is_error", result.is_error}});
+                                               {{"session_id", session_id}, {"agent_key", agent_key}, {"tool", call.name}, {"id", call.id}, {"is_error", result.is_error}});
                         }
                         return wrote;
                     },

@@ -44,14 +44,6 @@ namespace orangutan::web {
             }
         }
 
-        template <typename Fn>
-        bool emit_if_present(const Fn &fn) {
-            if (fn == nullptr) {
-                return true;
-            }
-            return fn();
-        }
-
     } // namespace
 
     ActiveChatSession::ActiveChatSession(std::mutex *sessions_mutex, std::unordered_map<std::string, std::unique_ptr<WebSessionState>> *sessions, std::string session_id,
@@ -286,7 +278,9 @@ namespace orangutan::web {
                         }
                     });
 
-                static_cast<void>(emit_if_present(callbacks.done));
+                if (callbacks.done != nullptr) {
+                    static_cast<void>(callbacks.done());
+                }
             } catch (const std::exception &e) {
                 static_cast<void>(callbacks.error != nullptr ? callbacks.error(e.what()) : true);
             }

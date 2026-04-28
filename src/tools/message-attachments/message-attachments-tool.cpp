@@ -66,12 +66,12 @@ namespace orangutan::tools {
                                                 }
                                                 return tool_dispatch::response{.message = payload.dump(2)};
                                             })
-                                         .on("download",
-                                             [&attachments, &workspace_root, &download_callback](const nlohmann::json &request) {
-                                                 if (download_callback == nullptr) {
-                                                     return tool_dispatch::response{.message = R"({"error":"attachment downloads are not available in this context."})",
-                                                                                    .is_error = true};
-                                                 }
+                                        .on("download",
+                                            [&attachments, &workspace_root, &download_callback](const nlohmann::json &request) {
+                                                if (download_callback == nullptr) {
+                                                    return tool_dispatch::response{.message = R"({"error":"attachment downloads are not available in this context."})",
+                                                                                   .is_error = true};
+                                                }
 
                                                 const auto requested_index = request.value("index", -1);
                                                 if (requested_index < 0 || static_cast<std::size_t>(requested_index) >= attachments.size()) {
@@ -81,21 +81,21 @@ namespace orangutan::tools {
 
                                                 const auto attachment_index = static_cast<std::size_t>(requested_index);
                                                 const auto &attachment = attachments.at(attachment_index);
-                                                 const auto requested_target = request.value("target_path", default_attachment_name(attachment, attachment_index));
-                                                 const auto resolved_target = resolve_tool_path(std::filesystem::path(requested_target), workspace_root);
-                                                 const auto downloaded = download_callback(attachment, resolved_target.string());
+                                                const auto requested_target = request.value("target_path", default_attachment_name(attachment, attachment_index));
+                                                const auto resolved_target = resolve_tool_path(std::filesystem::path(requested_target), workspace_root);
+                                                const auto downloaded = download_callback(attachment, resolved_target.string());
 
                                                 return tool_dispatch::response{.message = nlohmann::json{{"saved_to", downloaded.local_path},
                                                                                                          {"download_error", downloaded.download_error},
                                                                                                          {"attachment", describe_attachment(downloaded, attachment_index)}}
                                                                                               .dump(2)};
                                             }),
-                                     routed_input_with_default_op(input, "list"));
+                                    routed_input_with_default_op(input, "list"));
         }
 
         using MessageAttachmentsExecutor = std::function<std::string(const nlohmann::json &input)>;
 
-        void register_message_attachments_tool_with_executor(ToolRegistry &registry, const std::filesystem::path &workspace_root, MessageAttachmentsExecutor executor) {
+        void register_message_attachments_tool_with_executor(ToolRegistry &registry, MessageAttachmentsExecutor executor) {
             if (auto tool = make_tool_spec_builder("message_attachments")
                                 .description("Inspect attachment metadata from the current inbound channel message and download one into the workspace only on explicit demand.")
                                 .input_schema(schema_fragments::object_with_required(
@@ -121,7 +121,7 @@ namespace orangutan::tools {
         if (tool_context == nullptr || tool_context->runtime_origin != base::origin::channel) {
             return;
         }
-        register_message_attachments_tool_with_executor(registry, workspace_root, [workspace_root, tool_context](const nlohmann::json &input) {
+        register_message_attachments_tool_with_executor(registry, [workspace_root, tool_context](const nlohmann::json &input) {
             return execute_message_attachments_tool(input, workspace_root, &tool_context->current_message_attachments, tool_context->attachment_download_callback);
         });
     }
@@ -133,7 +133,7 @@ namespace orangutan::tools {
 
         const auto *current_message_attachments = capability.current_message_attachments;
         auto download_callback = std::move(capability.attachment_download_callback);
-        register_message_attachments_tool_with_executor(registry, workspace_root,
+        register_message_attachments_tool_with_executor(registry,
                                                         [workspace_root, current_message_attachments, download_callback = std::move(download_callback)](const nlohmann::json &input) {
                                                             return execute_message_attachments_tool(input, workspace_root, current_message_attachments, download_callback);
                                                         });
