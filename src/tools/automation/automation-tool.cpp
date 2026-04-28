@@ -2,13 +2,16 @@
 
 #include "automation/service.hpp"
 #include "tools/automation/automation-tool-support.hpp"
-#include "tools/registry/contextual-tool-group.hpp"
 #include "tools/registry/op-tool-support.hpp"
 #include "tools/registry/schema-fragments.hpp"
 #include "tools/registry/tool-dispatch.hpp"
 #include "tools/registry/tool-spec-builder.hpp"
 
+#include <functional>
+#include <utility>
+
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 namespace orangutan::tools {
     namespace {
@@ -74,9 +77,24 @@ namespace orangutan::tools {
         }
 
         [[nodiscard]]
-        std::expected<automation::RunQuery, std::string> parse_run_query(const nlohmann::json &request, const ToolRuntimeContext *ctx, const automation::AutomationService &service) {
+        std::string default_agent_key_for(std::string_view agent_key) {
+            return agent_key.empty() ? std::string{"default"} : std::string(agent_key);
+        }
+
+        [[nodiscard]]
+        std::string resolve_query_agent_key(std::string_view agent_key, const nlohmann::json &request) {
+            if (const auto it = request.find("agent_key"); it != request.end() && it->is_string()) {
+                return it->get<std::string>();
+            }
+            return std::string(agent_key);
+        }
+
+        [[nodiscard]]
+        std::expected<automation::RunQuery, std::string> parse_run_query(const nlohmann::json &request,
+                                                                         std::string_view query_agent_key,
+                                                                         const automation::AutomationService &service) {
             automation::RunQuery query;
-            query.agent_key = builtin::detail::resolve_query_agent_key(ctx, request);
+            query.agent_key = resolve_query_agent_key(query_agent_key, request);
             if (const auto it = request.find("automation_id"); it != request.end() && it->is_string()) {
                 query.automation_id = it->get<std::string>();
                 return query;
@@ -100,10 +118,11 @@ namespace orangutan::tools {
         }
 
         [[nodiscard]]
-        std::expected<automation::DeliveryQuery, std::string> parse_delivery_query(const nlohmann::json &request, const ToolRuntimeContext *ctx,
+        std::expected<automation::DeliveryQuery, std::string> parse_delivery_query(const nlohmann::json &request,
+                                                                                   std::string_view query_agent_key,
                                                                                    const automation::AutomationService &service) {
             automation::DeliveryQuery query;
-            query.agent_key = builtin::detail::resolve_query_agent_key(ctx, request);
+            query.agent_key = resolve_query_agent_key(query_agent_key, request);
             query.run_id = request.value("run_id", "");
             query.target = request.value("target", "");
             query.only_unacked = request.value("only_unacked", false);
@@ -130,13 +149,15 @@ namespace orangutan::tools {
             return query;
         }
 
-        std::string execute_automation_tool(const nlohmann::json &input, const ToolRuntimeContext *ctx) {
-            if (ctx == nullptr || ctx->automation_service == nullptr) {
+        std::string execute_automation_tool(const nlohmann::json &input,
+                                            automation::AutomationService *automation_service,
+                                            std::string_view default_agent_key,
+                                            std::string_view query_agent_key) {
+            if (automation_service == nullptr) {
                 return "Error: automation tool is not available in this context.";
             }
 
-            auto &service = *ctx->automation_service;
-            const auto default_agent_key = builtin::detail::resolve_agent_key(*ctx);
+            auto &service = *automation_service;
 
             const auto run_create_or_update = [&service, &default_agent_key](const nlohmann::json &request, std::string_view op) {
                 try {
@@ -192,10 +213,10 @@ namespace orangutan::tools {
                                 return tool_dispatch::response{.message = automation_to_json(*automation).dump()};
                             });
                         })
-                    .on("list",
-                        [&service, ctx](const nlohmann::json &request) {
+                     .on("list",
+                        [&service, query_agent_key](const nlohmann::json &request) {
                             automation::AutomationQuery query;
-                            query.agent_key = builtin::detail::resolve_query_agent_key(ctx, request);
+                            query.agent_key = resolve_query_agent_key(query_agent_key, request);
                             if (const auto it = request.find("enabled"); it != request.end() && it->is_boolean()) {
                                 query.enabled = it->get<bool>();
                             }
@@ -241,9 +262,9 @@ namespace orangutan::tools {
                                 return tool_dispatch::response{.message = resumed ? "Resumed automation." : "Error: automation not found.", .is_error = !resumed};
                             });
                         })
-                    .on("list_runs",
-                        [&service, ctx](const nlohmann::json &request) {
-                            const auto query = parse_run_query(request, ctx, service);
+                     .on("list_runs",
+                        [&service, query_agent_key](const nlohmann::json &request) {
+                            const auto query = parse_run_query(request, query_agent_key, service);
                             if (!query.has_value()) {
                                 return tool_dispatch::response{.message = "Error: " + query.error() + ".", .is_error = true};
                             }
@@ -254,9 +275,9 @@ namespace orangutan::tools {
                             }
                             return tool_dispatch::response{.message = runs.dump()};
                         })
-                    .on("list_deliveries",
-                        [&service, ctx](const nlohmann::json &request) {
-                            const auto query = parse_delivery_query(request, ctx, service);
+                     .on("list_deliveries",
+                        [&service, query_agent_key](const nlohmann::json &request) {
+                            const auto query = parse_delivery_query(request, query_agent_key, service);
                             if (!query.has_value()) {
                                 return tool_dispatch::response{.message = "Error: " + query.error() + ".", .is_error = true};
                             }
@@ -267,14 +288,14 @@ namespace orangutan::tools {
                             }
                             return tool_dispatch::response{.message = deliveries.dump()};
                         })
-                    .on("ack_delivery",
-                        [&service, ctx](const nlohmann::json &request) {
+                     .on("ack_delivery",
+                        [&service, query_agent_key](const nlohmann::json &request) {
                             const auto delivery_id = request.value("delivery_id", request.value("id", ""));
                             if (delivery_id.empty()) {
                                 return tool_dispatch::response{.message = "Error: delivery_id is required.", .is_error = true};
                             }
 
-                            const auto agent_key = builtin::detail::resolve_query_agent_key(ctx, request);
+                            const auto agent_key = resolve_query_agent_key(query_agent_key, request);
                             if (agent_key.empty()) {
                                 return tool_dispatch::response{.message = "Error: agent_key is required.", .is_error = true};
                             }
@@ -282,9 +303,9 @@ namespace orangutan::tools {
                             const bool acked = service.ack_delivery(agent_key, delivery_id);
                             return tool_dispatch::response{.message = acked ? "Acknowledged delivery." : "Error: delivery not found.", .is_error = !acked};
                         })
-                    .on("clear_deliveries",
-                        [&service, ctx](const nlohmann::json &request) {
-                            const auto query = parse_delivery_query(request, ctx, service);
+                     .on("clear_deliveries",
+                        [&service, query_agent_key](const nlohmann::json &request) {
+                            const auto query = parse_delivery_query(request, query_agent_key, service);
                             if (!query.has_value()) {
                                 return tool_dispatch::response{.message = "Error: " + query.error() + ".", .is_error = true};
                             }
@@ -302,56 +323,99 @@ namespace orangutan::tools {
                 builtin::detail::normalize_automation_op_input(input));
         }
 
+        struct AutomationToolExecutionContext {
+            automation::AutomationService *automation_service = nullptr;
+            std::string default_agent_key;
+            std::string query_agent_key;
+        };
+
+        using AutomationToolExecutionContextProvider = std::function<AutomationToolExecutionContext()>;
+
+        void register_automation_tool_with_provider(ToolRegistry &registry, AutomationToolExecutionContextProvider context_provider) {
+            if (auto tool = make_tool_spec_builder("automation")
+                                .description("Manage unified automations for the current agent.")
+                                .input_schema(schema_fragments::object_with_required(
+                                    {
+                                        {"op", schema_fragments::op_enum({"create", "update", "get", "list", "remove", "run", "pause", "resume", "list_runs",
+                                                                          "list_deliveries", "ack_delivery", "clear_deliveries"})},
+                                        {"id", schema_fragments::id_field()},
+                                        {"name", {{"type", "string"}}},
+                                        {"delivery_id", {{"type", "string"}}},
+                                        {"automation_id", {{"type", "string"}}},
+                                        {"agent_key", {{"type", "string"}}},
+                                        {"prompt", {{"type", "string"}}},
+                                        {"notes", {{"type", "string"}}},
+                                        {"enabled", {{"type", "boolean"}}},
+                                        {"paused", {{"type", "boolean"}}},
+                                        {"only_unacked", {{"type", "boolean"}}},
+                                        {"run_id", {{"type", "string"}}},
+                                        {"target", {{"type", "string"}}},
+                                        {"tags", {{"type", "array"}, {"items", {{"type", "string"}}}}},
+                                        {"trigger",
+                                         schema_fragments::object_with_required(
+                                             {
+                                                 {"type", schema_fragments::op_enum({"cron", "interval", "once"})},
+                                                 {"cron", {{"type", "string"}}},
+                                                 {"at", {{"type", "string"}}},
+                                                 {"every", {{"type", "string"}}},
+                                                 {"jitter", {{"type", "string"}}},
+                                                 {"time_zone", {{"type", "string"}}},
+                                                 {"active_windows", {{"type", "array"}, {"items", {{"type", "object"}}}}},
+                                             },
+                                             {"type"})},
+                                        {"delivery",
+                                         schema_fragments::object_with_required(
+                                             {
+                                                 {"mode", schema_fragments::delivery_mode_field()},
+                                                 {"targets", schema_fragments::delivery_targets_field()},
+                                             },
+                                             {})},
+                                    },
+                                    {"op"}))
+                                .execute([context_provider = std::move(context_provider)](const nlohmann::json &input) {
+                                    const auto context = context_provider();
+                                    return execute_automation_tool(input, context.automation_service, context.default_agent_key, context.query_agent_key);
+                                })
+                                .deferred()
+                                .build();
+                tool.has_value()) {
+                registry.register_tool(std::move(*tool));
+            } else {
+                spdlog::warn("failed to register tool: {}", tool.error());
+            }
+        }
+
     } // namespace
 
     void register_automation_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
-        contextual_tool_group()
-            .require_automation_service()
-            .add(make_tool_spec_builder("automation")
-                     .description("Manage unified automations for the current agent.")
-                     .input_schema(schema_fragments::object_with_required(
-                         {
-                             {"op", schema_fragments::op_enum({"create", "update", "get", "list", "remove", "run", "pause", "resume", "list_runs",
-                                                              "list_deliveries", "ack_delivery", "clear_deliveries"})},
-                             {"id", schema_fragments::id_field()},
-                             {"name", {{"type", "string"}}},
-                             {"delivery_id", {{"type", "string"}}},
-                             {"automation_id", {{"type", "string"}}},
-                             {"agent_key", {{"type", "string"}}},
-                             {"prompt", {{"type", "string"}}},
-                             {"notes", {{"type", "string"}}},
-                             {"enabled", {{"type", "boolean"}}},
-                             {"paused", {{"type", "boolean"}}},
-                             {"only_unacked", {{"type", "boolean"}}},
-                             {"run_id", {{"type", "string"}}},
-                             {"target", {{"type", "string"}}},
-                             {"tags", {{"type", "array"}, {"items", {{"type", "string"}}}}},
-                             {"trigger",
-                              schema_fragments::object_with_required(
-                                  {
-                                      {"type", schema_fragments::op_enum({"cron", "interval", "once"})},
-                                      {"cron", {{"type", "string"}}},
-                                      {"at", {{"type", "string"}}},
-                                      {"every", {{"type", "string"}}},
-                                      {"jitter", {{"type", "string"}}},
-                                      {"time_zone", {{"type", "string"}}},
-                                      {"active_windows", {{"type", "array"}, {"items", {{"type", "object"}}}}},
-                                  },
-                                  {"type"})},
-                             {"delivery",
-                              schema_fragments::object_with_required(
-                                  {
-                                      {"mode", schema_fragments::delivery_mode_field()},
-                                      {"targets", schema_fragments::delivery_targets_field()},
-                                  },
-                                  {})},
-                         },
-                         {"op"}))
-                     .execute([tool_context](const nlohmann::json &input) {
-                         return execute_automation_tool(input, tool_context);
-                     })
-                     .deferred())
-            .register_into(registry, tool_context);
+        if (tool_context == nullptr || tool_context->automation_service == nullptr) {
+            return;
+        }
+        register_automation_tool_with_provider(registry, [tool_context] {
+            return AutomationToolExecutionContext{
+                .automation_service = tool_context->automation_service,
+                .default_agent_key = default_agent_key_for(tool_context->agent_key),
+                .query_agent_key = tool_context->agent_key,
+            };
+        });
+    }
+
+    void register_automation_tool(ToolRegistry &registry, AutomationCapability capability) {
+        if (capability.automation_service == nullptr) {
+            return;
+        }
+
+        auto *automation_service = capability.automation_service;
+        auto default_agent_key = default_agent_key_for(capability.agent_key);
+        auto query_agent_key = std::string(capability.agent_key);
+
+        register_automation_tool_with_provider(registry, [automation_service, default_agent_key = std::move(default_agent_key), query_agent_key = std::move(query_agent_key)] {
+            return AutomationToolExecutionContext{
+                .automation_service = automation_service,
+                .default_agent_key = default_agent_key,
+                .query_agent_key = query_agent_key,
+            };
+        });
     }
 
 } // namespace orangutan::tools

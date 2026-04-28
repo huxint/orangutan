@@ -151,19 +151,18 @@ namespace orangutan::tools {
 
     } // namespace
 
-    BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntimeContext *tool_context) {
-        if (tool_context == nullptr) {
-            return;
-        }
-
-        runtime_key_ = tool_context->runtime_key;
-        agent_key_ = tool_context->agent_key.empty() ? std::string(DEFAULT_AGENT_KEY) : tool_context->agent_key;
-        background_completion_runtime_ = tool_context->background_completion_runtime;
+    BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(BackgroundCompletionCapability capability)
+    : runtime_key_(capability.runtime_key),
+      agent_key_(capability.agent_key.empty() ? std::string(DEFAULT_AGENT_KEY) : std::string(capability.agent_key)),
+      background_completion_runtime_(std::move(capability.background_completion_runtime)) {
         if (background_completion_runtime_ != nullptr) {
             supports_completion_routing_ = background_completion_runtime_->supports_completion_routing();
             supports_resume_callback_ = background_completion_runtime_->supports_resume_callback();
         }
     }
+
+    BackgroundCompletionDispatcher::BackgroundCompletionDispatcher(const ToolRuntimeContext *tool_context)
+    : BackgroundCompletionDispatcher(background_completion_capability(tool_context)) {}
 
     bool BackgroundCompletionDispatcher::supports_completion_routing() const {
         return supports_completion_routing_;

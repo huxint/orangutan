@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -16,7 +17,28 @@ namespace orangutan::tools {
 
     namespace {
 
-        auto agent_send_message_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
+        struct AgentSendMessageToolContext {
+            std::string runtime_key;
+            std::string agent_key;
+            std::string agent_name;
+            std::string team_id;
+            orchestration::OrchestrationManager *orchestration_manager = nullptr;
+            orchestration::TeamManager *team_manager = nullptr;
+        };
+
+        [[nodiscard]]
+        auto make_agent_send_message_tool_context(RuntimeIdentityContext identity, OrchestrationCapability capability) -> AgentSendMessageToolContext {
+            return AgentSendMessageToolContext{
+                .runtime_key = std::string(identity.runtime_key),
+                .agent_key = std::string(identity.agent_key),
+                .agent_name = std::string(identity.agent_name),
+                .team_id = std::string(identity.team_id),
+                .orchestration_manager = capability.orchestration_manager,
+                .team_manager = capability.team_manager,
+            };
+        }
+
+        auto agent_send_message_handler(const nlohmann::json &input, const AgentSendMessageToolContext &tool_context) -> std::string {
             auto run_id = input.value("run_id", std::string{});
             auto to = input.value("to", std::string{});
             auto text = input.at("text").get<std::string>();
@@ -68,16 +90,24 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_send_message_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        if (tool_context == nullptr) {
+            return;
+        }
+        register_agent_send_message_tool(registry, runtime_identity_context(*tool_context), orchestration_capability(*tool_context));
+    }
+
+    void register_agent_send_message_tool(ToolRegistry &registry, RuntimeIdentityContext identity, OrchestrationCapability capability) {
+        auto tool_context = make_agent_send_message_tool_context(identity, capability);
         if (auto tool = make_tool_spec_builder("agent_send_message")
                             .description("Send a message to a running agent. Can address by run_id, by agent name within a team, or broadcast to all team members with to='*'.")
                             .input_schema({{"type", "object"},
                                            {"properties",
                                             {{"run_id", {{"type", "string"}, {"description", "The run ID of the target agent"}}},
                                              {"to", {{"type", "string"}, {"description", "The agent name to send to (alternative to run_id). Use '*' for broadcast."}}},
-                                             {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
+                                              {"text", {{"type", "string"}, {"description", "The message text to send"}}}}},
                                            {"required", nlohmann::json::array({"text"})}})
-                            .execute([tool_context](const nlohmann::json &input) {
-                                return agent_send_message_handler(input, *tool_context);
+                            .execute([tool_context = std::move(tool_context)](const nlohmann::json &input) {
+                                return agent_send_message_handler(input, tool_context);
                             })
                             .build();
             tool.has_value()) {

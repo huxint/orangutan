@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <concepts>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <condition_variable>
@@ -20,6 +21,10 @@ using namespace orangutan;
 using namespace orangutan::tools;
 
 namespace {
+
+    using RegisterOrchestrationWithCapability = void (*)(ToolRegistry &, RuntimeIdentityContext, OrchestrationCapability);
+
+    static_assert(std::same_as<decltype(static_cast<RegisterOrchestrationWithCapability>(&register_orchestration_tools)), RegisterOrchestrationWithCapability>);
 
     TEST_CASE("orchestration tools are not registered without context", "[tools][orchestration]") {
         ToolRegistry registry;
@@ -111,6 +116,31 @@ namespace {
             CHECK(orangutan::testing::has_tool_named(defs, "team_create"));
             CHECK(orangutan::testing::has_tool_named(defs, "team_delete"));
         }
+
+        manager.shutdown();
+    }
+
+    TEST_CASE("orchestration tools register with orchestration capability", "[tools][orchestration]") {
+        ToolRegistry registry;
+        orchestration::OrchestrationManager manager(2);
+
+        register_orchestration_tools(registry,
+                                     RuntimeIdentityContext{
+                                         .runtime_key = "test-runtime",
+                                         .agent_key = "test-agent",
+                                         .role = orchestration::agent_role::leader,
+                                     },
+                                     OrchestrationCapability{
+                                         .orchestration_manager = &manager,
+                                     });
+
+        const auto defs = registry.definitions();
+        CHECK(defs.size() == 5);
+        CHECK(orangutan::testing::has_tool_named(defs, "agent_spawn"));
+        CHECK(orangutan::testing::has_tool_named(defs, "agent_send_message"));
+        CHECK(orangutan::testing::has_tool_named(defs, "agent_stop"));
+        CHECK(orangutan::testing::has_tool_named(defs, "team_create"));
+        CHECK(orangutan::testing::has_tool_named(defs, "team_delete"));
 
         manager.shutdown();
     }

@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <concepts>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -15,6 +16,12 @@
 #include <vector>
 
 namespace {
+
+    using RegisterAutomationWithContext = void (*)(orangutan::ToolRegistry &, const orangutan::ToolRuntimeContext *);
+    using RegisterAutomationWithCapability = void (*)(orangutan::ToolRegistry &, orangutan::tools::AutomationCapability);
+
+    static_assert(std::same_as<decltype(static_cast<RegisterAutomationWithContext>(&orangutan::tools::register_automation_tool)), RegisterAutomationWithContext>);
+    static_assert(std::same_as<decltype(static_cast<RegisterAutomationWithCapability>(&orangutan::tools::register_automation_tool)), RegisterAutomationWithCapability>);
 
     struct NotificationCall {
         std::string target;
@@ -94,6 +101,17 @@ namespace {
         orangutan::ToolRegistry registry;
 
         orangutan::tools::register_automation_tool(registry, &context);
+
+        CHECK(registry.find_definition("automation") == nullptr);
+    };
+
+    TEST_CASE("automation_is_not_registered_without_automation_service_capability") {
+        orangutan::ToolRegistry registry;
+
+        orangutan::tools::register_automation_tool(registry,
+                                                   orangutan::tools::AutomationCapability{
+                                                       .agent_key = "default",
+                                                   });
 
         CHECK(registry.find_definition("automation") == nullptr);
     };

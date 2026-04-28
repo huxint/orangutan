@@ -1,6 +1,7 @@
 #include "tools/orchestration/register.hpp"
 
 #include <string>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -13,7 +14,18 @@ namespace orangutan::tools {
 
     namespace {
 
-        auto agent_stop_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
+        struct AgentStopToolContext {
+            orchestration::OrchestrationManager *orchestration_manager = nullptr;
+        };
+
+        [[nodiscard]]
+        auto make_agent_stop_tool_context(OrchestrationCapability capability) -> AgentStopToolContext {
+            return AgentStopToolContext{
+                .orchestration_manager = capability.orchestration_manager,
+            };
+        }
+
+        auto agent_stop_handler(const nlohmann::json &input, const AgentStopToolContext &tool_context) -> std::string {
             auto run_id = input.at("run_id").get<std::string>();
 
             if (tool_context.orchestration_manager == nullptr) {
@@ -34,13 +46,21 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_stop_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        if (tool_context == nullptr) {
+            return;
+        }
+        register_agent_stop_tool(registry, runtime_identity_context(*tool_context), orchestration_capability(*tool_context));
+    }
+
+    void register_agent_stop_tool(ToolRegistry &registry, RuntimeIdentityContext, OrchestrationCapability capability) {
+        auto tool_context = make_agent_stop_tool_context(capability);
         if (auto tool = make_tool_spec_builder("agent_stop")
                             .description("Stop a running teammate. The teammate will be given a chance to clean up before being terminated.")
                             .input_schema({{"type", "object"},
                                            {"properties", {{"run_id", {{"type", "string"}, {"description", "The run ID of the agent to stop"}}}}},
                                            {"required", nlohmann::json::array({"run_id"})}})
-                            .execute([tool_context](const nlohmann::json &input) {
-                                return agent_stop_handler(input, *tool_context);
+                            .execute([tool_context = std::move(tool_context)](const nlohmann::json &input) {
+                                return agent_stop_handler(input, tool_context);
                             })
                             .build();
             tool.has_value()) {

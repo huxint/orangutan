@@ -31,6 +31,7 @@ namespace {
 
     static_assert(std::same_as<decltype(&prepare_sandboxed_command),
                                SandboxedCommand (*)(std::string_view, const std::filesystem::path &, const std::filesystem::path &, tool_sandbox_mode)>);
+    static_assert(std::constructible_from<BackgroundCompletionDispatcher, BackgroundCompletionCapability>);
 
     using ScopedEnvVar = orangutan::testing::ScopedEnvVar;
 
@@ -248,6 +249,23 @@ namespace {
         CHECK(on_complete["properties"].contains("mode"));
         CHECK(on_complete["properties"].contains("prompt"));
         CHECK(on_complete["properties"]["mode"]["enum"] == nlohmann::json::array({"inbox", "resume"}));
+    };
+
+    TEST_CASE("background_completion_dispatcher_supports_resume_from_capability") {
+        auto bindings = make_background_completion_runtime_bindings(
+            [](const orangutan::automation::DeliveryRecord &) {},
+            [](const std::string &) -> std::optional<std::string> {
+                return std::nullopt;
+            });
+
+        BackgroundCompletionDispatcher dispatcher(BackgroundCompletionCapability{
+            .runtime_key = "runtime:test:capability",
+            .agent_key = "assistant",
+            .background_completion_runtime = bindings,
+        });
+
+        CHECK(dispatcher.supports_completion_routing());
+        CHECK(dispatcher.supports_resume_callback());
     };
 
     TEST_CASE("inbox_only_completion_routing_exposes_on_complete_but_rejects_resume") {

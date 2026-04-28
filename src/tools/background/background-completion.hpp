@@ -15,6 +15,7 @@ namespace orangutan::tools {
 
     class BackgroundCompletionDispatcher {
     public:
+        explicit BackgroundCompletionDispatcher(BackgroundCompletionCapability capability);
         explicit BackgroundCompletionDispatcher(const ToolRuntimeContext *tool_context);
 
         [[nodiscard]]

@@ -29,12 +29,35 @@ namespace orangutan::tools {
             return orangutan::utils::parse_enum<orangutan::orchestration::teammate_relationship>(relationship);
         }
 
+        struct AgentSpawnToolContext {
+            std::string runtime_key;
+            std::string agent_key;
+            std::string agent_name;
+            std::string team_id;
+            orangutan::orchestration::OrchestrationManager *orchestration_manager = nullptr;
+            orangutan::orchestration::TeamManager *team_manager = nullptr;
+            orangutan::orchestration::AgentMailbox *mailbox = nullptr;
+        };
+
         [[nodiscard]]
-        auto sender_name(const ToolRuntimeContext &tool_context) -> std::string {
+        auto make_agent_spawn_tool_context(RuntimeIdentityContext identity, OrchestrationCapability capability) -> AgentSpawnToolContext {
+            return AgentSpawnToolContext{
+                .runtime_key = std::string(identity.runtime_key),
+                .agent_key = std::string(identity.agent_key),
+                .agent_name = std::string(identity.agent_name),
+                .team_id = std::string(identity.team_id),
+                .orchestration_manager = capability.orchestration_manager,
+                .team_manager = capability.team_manager,
+                .mailbox = capability.mailbox,
+            };
+        }
+
+        [[nodiscard]]
+        auto sender_name(const AgentSpawnToolContext &tool_context) -> std::string {
             return tool_context.agent_name.empty() ? tool_context.agent_key : tool_context.agent_name;
         }
 
-        void add_leader_member(const ToolRuntimeContext &tool_context, const orangutan::orchestration::TeamRecord &team) {
+        void add_leader_member(const AgentSpawnToolContext &tool_context, const orangutan::orchestration::TeamRecord &team) {
             if (tool_context.team_manager == nullptr || tool_context.runtime_key.empty()) {
                 return;
             }
@@ -157,14 +180,14 @@ namespace orangutan::tools {
         }
 
         [[nodiscard]]
-        auto find_team_record(const ToolRuntimeContext &tool_context, const std::string &team_id) -> std::optional<orangutan::orchestration::TeamRecord> {
+        auto find_team_record(const AgentSpawnToolContext &tool_context, const std::string &team_id) -> std::optional<orangutan::orchestration::TeamRecord> {
             if (tool_context.team_manager == nullptr || team_id.empty()) {
                 return std::nullopt;
             }
             return tool_context.team_manager->find_team(team_id);
         }
 
-        void broadcast_spawn_update(const ToolRuntimeContext &tool_context,
+        void broadcast_spawn_update(const AgentSpawnToolContext &tool_context,
                                     std::string_view team_id,
                                     const std::vector<std::string> &recipients,
                                     const orangutan::orchestration::AgentSpawnResult &result,
@@ -182,7 +205,7 @@ namespace orangutan::tools {
         }
 
         [[nodiscard]]
-        auto resolve_team_id(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::optional<std::string> {
+        auto resolve_team_id(const nlohmann::json &input, const AgentSpawnToolContext &tool_context) -> std::optional<std::string> {
             const auto team = input.value("team", std::string{});
             if (tool_context.team_manager == nullptr) {
                 return std::nullopt;
@@ -214,7 +237,7 @@ namespace orangutan::tools {
             return team_record.id;
         }
 
-        auto agent_spawn_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
+        auto agent_spawn_handler(const nlohmann::json &input, const AgentSpawnToolContext &tool_context) -> std::string {
             auto name = input.at("name").get<std::string>();
             auto task = input.at("task").get<std::string>();
             auto instructions = input.value("instructions", std::string{});
@@ -290,6 +313,14 @@ namespace orangutan::tools {
     } // namespace
 
     void register_agent_spawn_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        if (tool_context == nullptr) {
+            return;
+        }
+        register_agent_spawn_tool(registry, runtime_identity_context(*tool_context), orchestration_capability(*tool_context));
+    }
+
+    void register_agent_spawn_tool(ToolRegistry &registry, RuntimeIdentityContext identity, OrchestrationCapability capability) {
+        auto tool_context = make_agent_spawn_tool_context(identity, capability);
         if (auto tool = make_tool_spec_builder("agent_spawn")
                             .description("Create a named teammate. Teammates join a team, can communicate with each other, and inherit the current runtime unless profile/model overrides are provided.")
                             .input_schema({{"type", "object"},
@@ -304,10 +335,10 @@ namespace orangutan::tools {
                                                {"enum", nlohmann::json::array({"managed", "peer"})}}},
                                              {"profile", {{"type", "string"}, {"description", "Optional config profile override for this spawned agent"}}},
                                              {"model", {{"type", "string"}, {"description", "Optional model override within the selected profile"}}},
-                                             {"thinking_budget", {{"type", "integer"}, {"description", "Optional thinking budget override"}, {"minimum", 0}}}}},
+                                              {"thinking_budget", {{"type", "integer"}, {"description", "Optional thinking budget override"}, {"minimum", 0}}}}},
                                            {"required", nlohmann::json::array({"name", "task"})}})
-                            .execute([tool_context](const nlohmann::json &input) {
-                                return agent_spawn_handler(input, *tool_context);
+                            .execute([tool_context = std::move(tool_context)](const nlohmann::json &input) {
+                                return agent_spawn_handler(input, tool_context);
                             })
                             .build();
             tool.has_value()) {

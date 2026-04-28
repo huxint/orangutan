@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <string>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -18,7 +19,26 @@ namespace orangutan::tools {
 
         constexpr int K_DEFAULT_GRACE_PERIOD_MS = 5000;
 
-        auto team_delete_handler(const nlohmann::json &input, const ToolRuntimeContext &tool_context) -> std::string {
+        struct TeamDeleteToolContext {
+            std::string agent_key;
+            std::string agent_name;
+            orchestration::OrchestrationManager *orchestration_manager = nullptr;
+            orchestration::TeamManager *team_manager = nullptr;
+            orchestration::AgentMailbox *mailbox = nullptr;
+        };
+
+        [[nodiscard]]
+        auto make_team_delete_tool_context(RuntimeIdentityContext identity, OrchestrationCapability capability) -> TeamDeleteToolContext {
+            return TeamDeleteToolContext{
+                .agent_key = std::string(identity.agent_key),
+                .agent_name = std::string(identity.agent_name),
+                .orchestration_manager = capability.orchestration_manager,
+                .team_manager = capability.team_manager,
+                .mailbox = capability.mailbox,
+            };
+        }
+
+        auto team_delete_handler(const nlohmann::json &input, const TeamDeleteToolContext &tool_context) -> std::string {
             if (tool_context.team_manager == nullptr) {
                 return nlohmann::json{{"deleted", false}, {"error", "Team manager is not available"}}.dump();
             }
@@ -67,16 +87,24 @@ namespace orangutan::tools {
     } // namespace
 
     void register_team_delete_tool(ToolRegistry &registry, const ToolRuntimeContext *tool_context) {
+        if (tool_context == nullptr) {
+            return;
+        }
+        register_team_delete_tool(registry, runtime_identity_context(*tool_context), orchestration_capability(*tool_context));
+    }
+
+    void register_team_delete_tool(ToolRegistry &registry, RuntimeIdentityContext identity, OrchestrationCapability capability) {
+        auto tool_context = make_team_delete_tool_context(identity, capability);
         if (auto tool = make_tool_spec_builder("team_delete")
                             .description("Delete a team and deactivate all its members.")
                             .input_schema(
                                 {{"type", "object"},
                                  {"properties",
                                   {{"team_id", {{"type", "string"}, {"description", "The ID of the team to delete"}}},
-                                   {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
+                                    {"grace_period_ms", {{"type", "integer"}, {"description", "Optional grace period in milliseconds before deleting the team"}, {"minimum", 0}}}}},
                                  {"required", nlohmann::json::array({"team_id"})}})
-                            .execute([tool_context](const nlohmann::json &input) {
-                                return team_delete_handler(input, *tool_context);
+                            .execute([tool_context = std::move(tool_context)](const nlohmann::json &input) {
+                                return team_delete_handler(input, tool_context);
                             })
                             .build();
             tool.has_value()) {

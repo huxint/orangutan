@@ -16,7 +16,11 @@ using namespace orangutan;
 
 namespace {
 
-    static_assert(std::same_as<decltype(&tools::register_message_attachments_tool), void (*)(ToolRegistry &, const std::filesystem::path &, const ToolRuntimeContext *)>);
+    using RegisterAttachmentsWithContext = void (*)(ToolRegistry &, const std::filesystem::path &, const ToolRuntimeContext *);
+    using RegisterAttachmentsWithCapability = void (*)(ToolRegistry &, const std::filesystem::path &, tools::AttachmentCapability);
+
+    static_assert(std::same_as<decltype(static_cast<RegisterAttachmentsWithContext>(&tools::register_message_attachments_tool)), RegisterAttachmentsWithContext>);
+    static_assert(std::same_as<decltype(static_cast<RegisterAttachmentsWithCapability>(&tools::register_message_attachments_tool)), RegisterAttachmentsWithCapability>);
 
     TEST_CASE("message_attachments_list_returns_current_message_metadata_without_downloading") {
         ToolRegistry registry;
@@ -124,6 +128,41 @@ namespace {
         CHECK(payload.at("attachment").at("download_pending").get<bool>() == false);
     }
 
+    TEST_CASE("message_attachments_context_overload_reads_download_callback_at_execute_time") {
+        const auto workspace = testing::unique_test_root("message-attachments-tool-live-callback");
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+        std::string captured_destination;
+        ToolRuntimeContext context{
+            .runtime_origin = base::origin::channel,
+            .current_message_attachments = attachments,
+        };
+
+        tools::register_message_attachments_tool(registry, workspace, &context);
+        context.attachment_download_callback = [&captured_destination](const Attachment &attachment, const std::string &destination_path) {
+            captured_destination = destination_path;
+            auto downloaded = attachment;
+            downloaded.download_pending = false;
+            downloaded.local_path = destination_path;
+            return downloaded;
+        };
+        const auto result = registry.execute(ToolUse("download-live-callback", "message_attachments", { {"op", "download"}, {"index", 0} }));
+
+        REQUIRE_FALSE(result.is_error);
+        const auto payload = nlohmann::json::parse(result.content);
+        CHECK(captured_destination == (workspace / "image.png").string());
+        CHECK(payload.at("saved_to").get<std::string>() == captured_destination);
+
+        std::filesystem::remove_all(workspace);
+    }
+
     TEST_CASE("message_attachments_download_rejects_target_path_outside_workspace") {
         const auto root = testing::unique_test_root("message-attachments-tool-outside");
         const auto workspace = root / "workspace";
@@ -174,6 +213,27 @@ namespace {
         };
 
         tools::register_message_attachments_tool(registry, testing::test_tmp_root(), &context);
+
+        CHECK(registry.find_definition("message_attachments") == nullptr);
+    }
+
+    TEST_CASE("message_attachments_not_registered_for_non_channel_capability") {
+        ToolRegistry registry;
+        std::vector<Attachment> attachments = {
+            Attachment{
+                .content_type = "image/png",
+                .url = "https://example.test/image.png",
+                .filename = "image.png",
+                .download_pending = true,
+            },
+        };
+
+        tools::register_message_attachments_tool(registry,
+                                                 testing::test_tmp_root(),
+                                                 tools::AttachmentCapability{
+                                                     .runtime_origin = base::origin::cli,
+                                                     .current_message_attachments = &attachments,
+                                                 });
 
         CHECK(registry.find_definition("message_attachments") == nullptr);
     }
