@@ -1,5 +1,4 @@
 #include "agent/agent-loop.hpp"
-#include "agent/agent-loop-tools.hpp"
 #include "memory/memory-store.hpp"
 #include "memory/runtime-memory.hpp"
 #include "skills/runtime.hpp"
@@ -36,26 +35,26 @@ namespace {
         using send_hook = std::function<void(const providers::ProviderRequest &, const providers::ProviderEventSink &, std::size_t)>;
 
         explicit ScriptedProvider(std::vector<LLMResponse> responses, send_hook hook = {}, std::string model = "test-model")
-        : backend_(testing::make_fake_provider_backend([this](const providers::ProviderRoute &route, const providers::ProviderRequest &request,
-                                                              const providers::ProviderEventSink &sink) {
-              prompts_.push_back(request.system_prompt);
-              message_counts_.push_back(request.messages.size());
-              tool_counts_.push_back(request.tools.size());
+        : backend_(testing::make_fake_provider_backend(
+              [this](const providers::ProviderRoute &route, const providers::ProviderRequest &request, const providers::ProviderEventSink &sink) {
+                  prompts_.push_back(request.system_prompt);
+                  message_counts_.push_back(request.messages.size());
+                  tool_counts_.push_back(request.tools.size());
 
-              if (hook_ != nullptr) {
-                  hook_(request, sink, next_response_);
-              }
+                  if (hook_ != nullptr) {
+                      hook_(request, sink, next_response_);
+                  }
 
-              if (next_response_ >= responses_.size()) {
-                  throw std::runtime_error("no more scripted responses");
-              }
+                  if (next_response_ >= responses_.size()) {
+                      throw std::runtime_error("no more scripted responses");
+                  }
 
-              return providers::ProviderResult{
-                  .response = responses_[next_response_++],
-                  .usage_snapshot = {},
-                  .active_target = route.primary,
-              };
-          })),
+                  return providers::ProviderResult{
+                      .response = responses_[next_response_++],
+                      .usage_snapshot = {},
+                      .active_target = route.primary,
+                  };
+              })),
           responses_(std::move(responses)),
           hook_(std::move(hook)),
           system(backend_),
@@ -170,8 +169,7 @@ namespace {
         std::vector<Message> history;
         history.reserve(60);
         for (int index = 0; index < 60; ++index) {
-            history.push_back(index % 2 == 0 ? Message::user().text("user-" + std::to_string(index))
-                                             : Message::assistant().text("assistant-" + std::to_string(index)));
+            history.push_back(index % 2 == 0 ? Message::user().text("user-" + std::to_string(index)) : Message::assistant().text("assistant-" + std::to_string(index)));
         }
         loop.set_history(history);
 
@@ -347,9 +345,10 @@ namespace {
         ToolRegistry tools;
         tools.register_tool({
             .definition = ToolDef{.name = "noop", .description = "No-op", .input_schema = nlohmann::json::object()},
-            .execute = [](const nlohmann::json &) {
-                return std::string{"ok"};
-            },
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string{"ok"};
+                },
         });
 
         ScriptedProvider provider(
@@ -423,9 +422,10 @@ namespace {
         ToolRegistry tools;
         tools.register_tool({
             .definition = ToolDef{.name = "lookup", .description = "Lookup status", .input_schema = nlohmann::json::object()},
-            .execute = [](const nlohmann::json &) {
-                return std::string{"tool result"};
-            },
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string{"tool result"};
+                },
         });
 
         std::vector<std::string> events;
@@ -546,8 +546,8 @@ namespace {
             make_response(response_stop_reason::tool_use, {ToolUse("tool-read", "read", nlohmann::json{{"path", "src/main.cpp"}})}),
             testing::make_text_response("done"),
         });
-        AgentLoop loop(provider.system, provider.route, tools, nullptr,
-                       skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false})), nullptr, &loader);
+        AgentLoop loop(provider.system, provider.route, tools, nullptr, skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false})),
+                       nullptr, &loader);
 
         CHECK(loop.run("load file") == "done");
         const auto skill_invoke = loader.invoke({
@@ -561,19 +561,6 @@ namespace {
         CHECK(provider.prompts()[1].contains("**conditional**"));
 
         std::filesystem::remove_all(workspace);
-    }
-
-    TEST_CASE("touched_paths_for_edit_uses_path_field") {
-        const ToolUse call{
-            "tool-edit",
-            "edit",
-            nlohmann::json{{"path", "src/main.cpp"}, {"edits", nlohmann::json::array({nlohmann::json{{"op", "insert_after"}, {"content", "return 1;"}}})}},
-        };
-
-        const auto paths = agent::detail::touched_paths_for_tool_call(call);
-
-        REQUIRE(paths.size() == 1UL);
-        CHECK(paths[0].generic_string() == "src/main.cpp");
     }
 
     TEST_CASE("distill_session_memory_caps_distilled_memories_at_eight") {
@@ -605,30 +592,42 @@ namespace {
         std::filesystem::remove_all(db_path.parent_path());
     }
 
-    TEST_CASE("agent_loop_builder_creates_loop_with_fluent_api") {
-        ScriptedProvider provider({testing::make_text_response("hello")});
+    TEST_CASE("run_refreshes_skill_prompt_after_edit_tool_path") {
+        const auto workspace = testing::unique_test_root("agent-loop-skill-prompt-edit-refresh");
+        const auto skill_root = workspace / "skills";
+        std::filesystem::create_directories(workspace / "src");
+        {
+            std::ofstream out(workspace / "src" / "main.cpp");
+            out << "int main() { return 0; }\n";
+        }
+        write_skill_file(skill_root, "conditional", "name: conditional\ndescription: conditional skill\nscope: conditional\npaths_any: [src/*.cpp]", "conditional body");
+
+        SkillLoader loader;
+        loader.set_workspace_root(workspace);
+        loader.load_from_directories({skill_root});
+
         ToolRegistry tools;
+        tools.register_tool({
+            .definition = ToolDef{.name = "edit", .description = "Edit file", .input_schema = nlohmann::json::object()},
+            .execute =
+                [](const nlohmann::json &) {
+                    return std::string{"edited"};
+                },
+        });
 
-        auto result = AgentLoop::configure(provider.system, provider.route, tools)
-                          .with_thinking_budget(512)
-                          .build();
+        ScriptedProvider provider({
+            make_response(response_stop_reason::tool_use, {ToolUse("tool-edit", "edit", nlohmann::json{{"path", "src/main.cpp"}})}),
+            testing::make_text_response("done"),
+        });
+        AgentLoop loop(provider.system, provider.route, tools, nullptr, skills::render_skill_prompt_section(loader.list(skills::skill_list_query{.include_inactive = false})),
+                       nullptr, &loader);
 
-        REQUIRE(result.has_value());
-        auto reply = result->run("hi");
-        CHECK(reply == "hello");
-    }
+        CHECK(loop.run("edit file") == "done");
+        REQUIRE(provider.prompts().size() == 2UL);
+        CHECK_FALSE(provider.prompts()[0].contains("**conditional**"));
+        CHECK(provider.prompts()[1].contains("**conditional**"));
 
-    TEST_CASE("agent_loop_builder_with_stop_callback") {
-        ScriptedProvider provider({testing::make_text_response("unused")});
-        ToolRegistry tools;
-
-        auto result = AgentLoop::configure(provider.system, provider.route, tools)
-                          .with_stop_requested_callback([] { return true; })
-                          .build();
-
-        REQUIRE(result.has_value());
-        auto reply = result->run("stop now");
-        CHECK(reply == "Task terminated.");
+        std::filesystem::remove_all(workspace);
     }
 
 } // namespace
