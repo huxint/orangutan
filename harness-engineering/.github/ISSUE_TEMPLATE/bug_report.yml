@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a defect in Orangutan v2.
+title: "bug: <one-line summary>"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-paragraph description of the defect.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps to reproduce. Include commands, config snippets (redact secrets).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: orangutan version / commit
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment (OS, compiler, asio version)
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / audit entries (redact secrets)
+    validations:
+      required: false

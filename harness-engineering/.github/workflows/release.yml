@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.0.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Package repository metadata (placeholder)
+        run: |
+          ./scripts/check-docs.sh
+          ./scripts/check-repo-hygiene.sh
+          mkdir -p out
+          tar -czf out/repo-metadata.tgz \
+              AGENTS.md README.md CONTRIBUTING.md SECURITY.md \
+              docs/
+          jq -n --arg version "${{ inputs.version }}" \
+                --arg sha "${{ github.sha }}" \
+                '{version:$version, sha:$sha, generated_at: now | todate}' \
+              > out/release-manifest.json
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@be7252f8b3f5b3854681aaba1a4d3c0e69bca8f1 # v0.20.7
+        with:
+          artifact-name: sbom.spdx.json
+          format: spdx-json
+          output-file: out/sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v3.0.0
+        with:
+          subject-path: out/repo-metadata.tgz
+
+      - name: Create release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ inputs.version }}
+          files: |
+            out/release-manifest.json
+            out/repo-metadata.tgz
+            out/sbom.spdx.json

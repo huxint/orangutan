@@ -1,0 +1,34 @@
+name: Supply Chain Security
+
+on:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@c74b580d73376b7750d3d2a50bfb8adc2c937507 # v4.7.0
+        with:
+          config-file: .github/dependency-review-config.yml
+
+  osv-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action/osv-scanner-action@e08b1bfeac8e72ad7f4ce95c5e1ddf8d28b91414 # v2.0.0
+        with:
+          scan-args: |-
+            --recursive
+            ./

@@ -1,0 +1,60 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs and temp files
+*.log
+*.out
+*.err
+tmp/
+temp/
+.tmp/
+
+# Environment and local overrides
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+build/
+.xmake/
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Generated baselines under docs/generated/ may be committed; per-developer
+# bench output is not.
+docs/generated/bench-output-*.json
+docs/generated/compile-output-*.json
+
+# Node / frontend
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.turbo/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Coverage reports
+coverage/
+*.gcda
+*.gcno
+*.gcov
+
+# IDE
+.cache/
+*.swp
+*.swo

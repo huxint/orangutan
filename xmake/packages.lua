@@ -1,3 +1,9 @@
+package("stdexec-gtc")
+    set_base("stdexec")
+    add_urls("https://github.com/NVIDIA/stdexec.git")
+    add_versions("gtc-2026", "e9a9e8347e0a6322e68000b956d72dc4dfd90cf8")
+package_end()
+
 add_requires("cli11 2.6.1", {system = false})
 add_requires("nlohmann_json 3.12.0", {system = false})
 add_requires("fmt 12.1.0", {system = false, configs = {header_only = true}})
@@ -6,7 +12,7 @@ add_requireconfs("spdlog.fmt", {override = true, version = "12.1.0", system = fa
 add_requires("libcurl 8.11.0", {alias = "libcurl", system = false, configs = {mbedtls = true}})
 add_requires("sqlite3 3.52.0", {system = false, configs = {cflags = "-DSQLITE_ENABLE_FTS5"}})
 add_requires("cpp-httplib 0.37.2", {system = false})
-add_requires("stdexec 2024.12.08", {system = false})
+add_requires("stdexec-gtc gtc-2026", {alias = "stdexec", system = false})
 add_requires("rapidhash 1.0", {system = false})
 add_requires("replxx 2021.11.25", {system = false})
 add_requires("mbedtls 3.6.1", {system = false})

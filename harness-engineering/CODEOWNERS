@@ -1,0 +1,14 @@
+# Source code authorship.
+# Fill these in once real owners exist. Until then, every directory defaults to
+# the project lead.
+
+*       @maintainers
+
+/docs/             @maintainers @docs-team
+/scripts/          @maintainers @build-team
+/.github/          @maintainers @build-team
+/src/              @maintainers @runtime-team
+/include/          @maintainers @runtime-team
+/tests/            @maintainers @runtime-team
+/bench/            @maintainers @runtime-team @perf-team
+/skeleton/         @maintainers @build-team
