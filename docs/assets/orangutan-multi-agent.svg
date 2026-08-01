@@ -1,0 +1,469 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 752" width="1280" height="752" role="img" aria-labelledby="om-title om-desc">
+  <title id="om-title">Orangutan 的多 Agent 编排：一个信箱，两种关系</title>
+  <desc id="om-desc">位置就是关系：主 Agent 在上，两个平级队友（peer）在同一水平线上并肩，两个下级队友（managed）在下方。中心是团队信箱，所有对话都在这里交汇——点对点、按名字、或 to:"*" 广播；平级之间横着说话，不必绕回主 Agent。左右两条外臂是编排通道，由主 Agent 直连每个队友：派活、叫停、以及队友回传的 task-notification，都不经过信箱。只有主 Agent 拿得到 agent_spawn / agent_stop / team_*，队友手里只有 agent_send_message，所以层级只有两层。队友完成任务后转入待命而非销毁，不占并发槽位，下一条消息即可原地唤醒；run、信箱、团队关系全部落在 SQLite。</desc>
+
+  <defs>
+    <style>
+      text { font-family: "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC","Segoe UI",system-ui,sans-serif; }
+      .mono { font-family: "SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace; }
+      .h1  { font-size: 23px;   font-weight: 700; fill: #12283e; letter-spacing: .3px; }
+      .h2  { font-size: 12.5px; fill: #6b7d92; }
+      .sec { font-size: 10.5px; font-weight: 700; fill: #93a4b6; letter-spacing: 1.4px; }
+      .t   { font-size: 14px;   font-weight: 700; fill: #16283c; }
+      .st  { font-size: 13px;   font-weight: 700; fill: #16283c; }
+      .d   { font-size: 11px;   fill: #67788c; }
+      .p   { font-size: 9.5px;  fill: #92a1b2; }
+      .pill{ font-size: 9.5px;  font-weight: 700; }
+      .lbl { font-size: 10.5px; font-weight: 700; }
+      .chip-t { font-size: 12.5px; font-weight: 700; fill: #0e7f72; }
+      .chip-d { font-size: 11px;   fill: #6b7d92; }
+      .hub-t  { font-size: 16px;   font-weight: 700; fill: #6d4fd4; }
+      .cap    { font-size: 11.5px; fill: #5d7086; }
+      .foot   { font-size: 11.5px; fill: #5d7086; }
+    </style>
+
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdfcfa"/>
+      <stop offset="1" stop-color="#f1f6f6"/>
+    </linearGradient>
+
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f2740" flood-opacity="0.10"/>
+    </filter>
+    <filter id="glow" x="-160%" y="-160%" width="420%" height="420%">
+      <feGaussianBlur stdDeviation="3" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <g id="om-leader" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M2.2 11.4 1.2 3.9l4 2.6L8 2.2l2.8 4.3 4-2.6-1 7.5Z"/><path d="M2.6 13.8h10.8"/>
+    </g>
+    <g id="om-bot" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <rect x="2.4" y="5.2" width="11.2" height="8.4" rx="2.4"/><path d="M8 2.2v3"/><circle cx="8" cy="1.6" r="1"/>
+      <path d="M5.8 8.8h.01M10.2 8.8h.01"/>
+    </g>
+    <g id="om-mail" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <rect x="1.8" y="3.6" width="12.4" height="8.8" rx="1.8"/><path d="m2.4 4.8 5.6 4 5.6-4"/>
+    </g>
+    <g id="om-updown" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M5.2 2.8v10.4"/><path d="M2.7 10.7 5.2 13.2 7.7 10.7"/>
+      <path d="M10.8 13.2V2.8"/><path d="M8.3 5.3 10.8 2.8 13.3 5.3"/>
+    </g>
+    <g id="om-sideways" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M2.6 5.6h10.8"/><path d="M11 3.2 13.4 5.6 11 8"/>
+      <path d="M13.4 10.4H2.6"/><path d="M5 8 2.6 10.4 5 12.8"/>
+    </g>
+    <g id="om-db" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="8" cy="4" rx="5" ry="2.1"/><path d="M3 4v8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V4"/><path d="M3 8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1"/>
+    </g>
+  </defs>
+
+  <rect width="1280" height="752" fill="url(#bg)"/>
+
+  <text class="h1" x="640" y="46" text-anchor="middle">Orangutan · 一个信箱，两种关系</text>
+  <text class="h2" x="640" y="72" text-anchor="middle">上下级沿外圈的编排通道直连，平级在中心的信箱里横着对话 —— 位置，就是关系</text>
+
+  <!-- ═══ legend · two channels ══════════════════════════════════════════ -->
+  <text class="sec" x="32" y="118">两条通道</text>
+  <g stroke-linecap="round">
+    <path d="M32 138h28" fill="none" stroke="#12a594" stroke-width="2" stroke-dasharray="7 5"/>
+    <path d="M32 168h28" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+  </g>
+  <text class="lbl" x="68"  y="142" fill="#0e8a7c">编排通道</text>
+  <text class="p"   x="122" y="142">派活 · 叫停 · 任务通知，直连不经信箱</text>
+  <text class="lbl" x="68"  y="172" fill="#7c5ce0">信箱通道</text>
+  <text class="p"   x="122" y="172">点对点 · 按名字 · 广播，一律经过中心</text>
+
+  <!-- ═══ legend · teammate states ═══════════════════════════════════════ -->
+  <text class="sec" x="526" y="118">队友状态</text>
+  <g>
+    <rect x="526" y="130" width="62" height="20" rx="10" fill="#12a594" fill-opacity="0.12"/>
+    <circle cx="539" cy="140" r="3" fill="#12a594"><animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"/></circle>
+    <text class="pill" x="563" y="144" text-anchor="middle" fill="#0e8a7c">运行中</text>
+    <rect x="598" y="130" width="56" height="20" rx="10" fill="#94a3b8" fill-opacity="0.14"/>
+    <circle cx="610" cy="140" r="3" fill="#94a3b8"><animate attributeName="opacity" values="1;0.3;1" dur="3.2s" repeatCount="indefinite"/></circle>
+    <text class="pill" x="631" y="144" text-anchor="middle" fill="#64748b">待命</text>
+  </g>
+  <text class="d" x="526" y="170">完成不销毁 —— 转入待命，会话与记忆作用域原地保留</text>
+  <text class="p" x="526" y="188">下一条消息把它唤醒，接着上次说</text>
+
+  <!-- ═══ orchestration arms (leader ↔ every teammate, bypassing the mailbox) ═══ -->
+  <g fill="none" stroke="#12a594" stroke-opacity="0.42" stroke-width="1.8" stroke-linecap="round">
+    <path d="M520 202 C 648 202, 756 272, 756 386 C 756 494, 702 560, 634 592" stroke-dasharray="7 9">
+      <animate attributeName="stroke-dashoffset" values="0;-32" dur="2.6s" repeatCount="indefinite"/>
+    </path>
+    <path d="M328 202 C 200 202, 92 272, 92 386 C 92 494, 146 560, 214 592" stroke-dasharray="7 9">
+      <animate attributeName="stroke-dashoffset" values="0;-32" dur="2.6s" repeatCount="indefinite"/>
+    </path>
+    <path d="M755 408 H726"/>
+    <path d="M93 408 H122"/>
+  </g>
+  <text class="lbl" x="700" y="294" text-anchor="end" fill="#0e8a7c">编排通道 · 直连</text>
+  <text class="p"   x="700" y="310" text-anchor="end">agent_spawn ↓　task-notification ↑</text>
+  <text class="lbl" x="148" y="294" fill="#0e8a7c">不经信箱</text>
+  <text class="p"   x="148" y="310">只有主 Agent 拿得到这条线</text>
+
+  <!-- ═══ mailbox spokes (everyone talks through the centre) ═════════════ -->
+  <g fill="none" stroke="#8b5cf6" stroke-opacity="0.34" stroke-width="1.7" stroke-linecap="round">
+    <path d="M424 320 V233"/>
+    <path d="M512 408 H554"/>
+    <path d="M336 408 H298"/>
+    <path d="M474.5 480.1 L523.6 550.3"/>
+    <path d="M373.5 480.1 L324.4 550.3"/>
+  </g>
+
+  <!-- ═══ the mailbox at the centre ══════════════════════════════════════ -->
+  <g>
+    <circle cx="424" cy="408" r="88" fill="#8b5cf6" fill-opacity="0.045"/>
+    <!-- broadcast pulse -->
+    <circle cx="424" cy="408" r="78" fill="none" stroke="#8b5cf6" stroke-width="2" opacity="0">
+      <animate attributeName="r"       values="78;78;170;170"   keyTimes="0;0.415;0.49;1" dur="16s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0;0.45;0;0"    keyTimes="0;0.415;0.425;0.49;1" dur="16s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="424" cy="408" r="78" fill="#ffffff" stroke="#c9bdf5" stroke-width="1.6" filter="url(#soft)"/>
+    <circle cx="424" cy="408" r="67" fill="none" stroke="#8b5cf6" stroke-opacity="0.3" stroke-width="1.2" stroke-dasharray="4 8">
+      <animateTransform attributeName="transform" type="rotate" from="0 424 408" to="360 424 408" dur="24s" repeatCount="indefinite"/>
+    </circle>
+    <g transform="translate(424 372) scale(1.7)"><use href="#om-mail" x="-8" y="-8" color="#8b5cf6"/></g>
+    <text class="hub-t" x="424" y="408" text-anchor="middle">信箱</text>
+    <text class="mono p" x="424" y="426" text-anchor="middle" fill="#a99ada">AgentMailbox</text>
+    <text class="p" x="424" y="446" text-anchor="middle" fill="#9a8ccf">SQLite 落库</text>
+  </g>
+
+  <!-- ═══ 上 · the leader ════════════════════════════════════════════════ -->
+  <g>
+    <rect x="328" y="155" width="192" height="78" rx="15" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="344" y="169" width="30" height="30" rx="9" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-leader" x="351" y="176" color="#12a594"/>
+    <text class="t" x="384" y="190">主 Agent</text>
+    <rect x="452" y="172" width="54" height="20" rx="10" fill="#12a594" fill-opacity="0.12"/>
+    <text class="pill" x="479" y="186" text-anchor="middle" fill="#0e8a7c">leader</text>
+    <text class="p" x="344" y="220">只有它能派活、叫停、组队</text>
+  </g>
+
+  <!-- ═══ 平 · peer teammate (left) ══════════════════════════════════════ -->
+  <g>
+    <rect x="122" y="375" width="176" height="66" rx="14" fill="#ffffff" stroke="#ddd6fe" filter="url(#soft)"/>
+    <rect x="122" y="375" width="176" height="66" rx="14" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7 6" opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.295;0.30;0.465;0.47;0.615;0.62;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="122" y="375" width="176" height="66" rx="14" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.295;0.30;0.465;0.47;0.615;0.62;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="118" y="371" width="184" height="74" rx="17" fill="none" stroke="#e9932a" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.445;0.465;0.50;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+
+    <rect x="135" y="386" width="26" height="26" rx="8" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-bot" x="140" y="391" color="#12a594"/>
+    <text class="st" x="169" y="404">planner</text>
+
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.295;0.30;0.465;0.47;0.615;0.62;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="229" y="387" width="56" height="19" rx="9.5" fill="#12a594" fill-opacity="0.12"/>
+      <circle cx="241" cy="396.5" r="3" fill="#12a594"><animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="261" y="400.5" text-anchor="middle" fill="#0e8a7c">运行中</text>
+    </g>
+    <g opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.295;0.30;0.465;0.47;0.615;0.62;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="229" y="387" width="56" height="19" rx="9.5" fill="#94a3b8" fill-opacity="0.14"/>
+      <circle cx="241" cy="396.5" r="3" fill="#94a3b8"><animate attributeName="opacity" values="1;0.3;1" dur="3.2s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="261" y="400.5" text-anchor="middle" fill="#64748b">待命</text>
+    </g>
+
+    <rect x="135" y="418" width="36" height="18" rx="9" fill="#8b5cf6" fill-opacity="0.13"/>
+    <text class="pill" x="153" y="430.5" text-anchor="middle" fill="#7c5ce0">平级</text>
+    <text class="mono p" x="177" y="431">peer</text>
+    <text class="p" x="208" y="431">讨论 · 质疑 · 对齐</text>
+  </g>
+
+  <!-- ═══ 平 · peer teammate (right) ═════════════════════════════════════ -->
+  <g>
+    <rect x="554" y="375" width="176" height="66" rx="14" fill="#ffffff" stroke="#ddd6fe" filter="url(#soft)"/>
+    <rect x="554" y="375" width="176" height="66" rx="14" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7 6" opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.215;0.22;0.465;0.47;0.655;0.66;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="554" y="375" width="176" height="66" rx="14" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.215;0.22;0.465;0.47;0.655;0.66;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="550" y="371" width="184" height="74" rx="17" fill="none" stroke="#e9932a" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.445;0.465;0.50;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+
+    <rect x="567" y="386" width="26" height="26" rx="8" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-bot" x="572" y="391" color="#12a594"/>
+    <text class="st" x="601" y="404">critic</text>
+
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.215;0.22;0.465;0.47;0.655;0.66;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="661" y="387" width="56" height="19" rx="9.5" fill="#12a594" fill-opacity="0.12"/>
+      <circle cx="673" cy="396.5" r="3" fill="#12a594"><animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="693" y="400.5" text-anchor="middle" fill="#0e8a7c">运行中</text>
+    </g>
+    <g opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.215;0.22;0.465;0.47;0.655;0.66;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="661" y="387" width="56" height="19" rx="9.5" fill="#94a3b8" fill-opacity="0.14"/>
+      <circle cx="673" cy="396.5" r="3" fill="#94a3b8"><animate attributeName="opacity" values="1;0.3;1" dur="3.2s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="693" y="400.5" text-anchor="middle" fill="#64748b">待命</text>
+    </g>
+
+    <rect x="567" y="418" width="36" height="18" rx="9" fill="#8b5cf6" fill-opacity="0.13"/>
+    <text class="pill" x="585" y="430.5" text-anchor="middle" fill="#7c5ce0">平级</text>
+    <text class="mono p" x="609" y="431">peer</text>
+    <text class="p" x="640" y="431">讨论 · 质疑 · 对齐</text>
+  </g>
+
+  <!-- ═══ 下 · managed teammate (left) ═══════════════════════════════════ -->
+  <g>
+    <rect x="213.3" y="550.3" width="176" height="66" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="213.3" y="550.3" width="176" height="66" rx="14" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7 6" opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.535;0.54;0.795;0.80;0.895;0.90;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="213.3" y="550.3" width="176" height="66" rx="14" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.535;0.54;0.795;0.80;0.895;0.90;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="209.3" y="546.3" width="184" height="74" rx="17" fill="none" stroke="#e9932a" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.775;0.795;0.83;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+
+    <rect x="226.3" y="561.3" width="26" height="26" rx="8" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-bot" x="231.3" y="566.3" color="#12a594"/>
+    <text class="st" x="260.3" y="579.3">tester</text>
+
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.535;0.54;0.795;0.80;0.895;0.90;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="320.3" y="562.3" width="56" height="19" rx="9.5" fill="#12a594" fill-opacity="0.12"/>
+      <circle cx="332.3" cy="571.8" r="3" fill="#12a594"><animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="352.3" y="575.8" text-anchor="middle" fill="#0e8a7c">运行中</text>
+    </g>
+    <g opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.535;0.54;0.795;0.80;0.895;0.90;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="320.3" y="562.3" width="56" height="19" rx="9.5" fill="#94a3b8" fill-opacity="0.14"/>
+      <circle cx="332.3" cy="571.8" r="3" fill="#94a3b8"><animate attributeName="opacity" values="1;0.3;1" dur="3.2s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="352.3" y="575.8" text-anchor="middle" fill="#64748b">待命</text>
+    </g>
+
+    <rect x="226.3" y="593.3" width="46" height="18" rx="9" fill="#12a594" fill-opacity="0.13"/>
+    <text class="pill" x="249.3" y="605.8" text-anchor="middle" fill="#0e8a7c">上下级</text>
+    <text class="mono p" x="278.3" y="606">managed</text>
+    <text class="p" x="323.3" y="606">执行 · 汇报</text>
+  </g>
+
+  <!-- ═══ 下 · managed teammate (right) ══════════════════════════════════ -->
+  <g>
+    <rect x="458.7" y="550.3" width="176" height="66" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="458.7" y="550.3" width="176" height="66" rx="14" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7 6" opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.255;0.26;0.465;0.47;0.855;0.86;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="458.7" y="550.3" width="176" height="66" rx="14" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.255;0.26;0.465;0.47;0.855;0.86;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="454.7" y="546.3" width="184" height="74" rx="17" fill="none" stroke="#e9932a" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.445;0.465;0.50;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+
+    <rect x="471.7" y="561.3" width="26" height="26" rx="8" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-bot" x="476.7" y="566.3" color="#12a594"/>
+    <text class="st" x="505.7" y="579.3">coder</text>
+
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.065;0.07;0.255;0.26;0.465;0.47;0.855;0.86;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="565.7" y="562.3" width="56" height="19" rx="9.5" fill="#12a594" fill-opacity="0.12"/>
+      <circle cx="577.7" cy="571.8" r="3" fill="#12a594"><animate attributeName="opacity" values="1;0.25;1" dur="1s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="597.7" y="575.8" text-anchor="middle" fill="#0e8a7c">运行中</text>
+    </g>
+    <g opacity="1">
+      <animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1;1" keyTimes="0;0.065;0.07;0.255;0.26;0.465;0.47;0.855;0.86;1" dur="16s" repeatCount="indefinite"/>
+      <rect x="565.7" y="562.3" width="56" height="19" rx="9.5" fill="#94a3b8" fill-opacity="0.14"/>
+      <circle cx="577.7" cy="571.8" r="3" fill="#94a3b8"><animate attributeName="opacity" values="1;0.3;1" dur="3.2s" repeatCount="indefinite"/></circle>
+      <text class="pill" x="597.7" y="575.8" text-anchor="middle" fill="#64748b">待命</text>
+    </g>
+
+    <rect x="471.7" y="593.3" width="46" height="18" rx="9" fill="#12a594" fill-opacity="0.13"/>
+    <text class="pill" x="494.7" y="605.8" text-anchor="middle" fill="#0e8a7c">上下级</text>
+    <text class="mono p" x="523.7" y="606">managed</text>
+    <text class="p" x="568.7" y="606">执行 · 汇报</text>
+  </g>
+
+  <!-- ═══ travelling packets ═════════════════════════════════════════════ -->
+
+  <!-- 派活 · agent_spawn 沿编排通道下去 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.008;0.014;0.042;0.048;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.008;0.048;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 L 755 408 L 726 408"/>
+    <circle r="4.5" fill="#12a594"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.012;0.018;0.046;0.052;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.012;0.052;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 L 93 408 L 122 408"/>
+    <circle r="4.5" fill="#12a594"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.016;0.022;0.056;0.062;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.016;0.062;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 C 756 494, 702 560, 634 592"/>
+    <circle r="4.5" fill="#12a594"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.020;0.026;0.060;0.066;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.020;0.066;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 C 92 494, 146 560, 214 592"/>
+    <circle r="4.5" fill="#12a594"/>
+  </g>
+
+  <!-- 平级横向 · 一条消息穿过信箱直达对面 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.100;0.106;0.144;0.150;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.100;0.150;1" path="M298 408 H554"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.18"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.160;0.166;0.204;0.210;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.160;0.210;1" path="M554 408 H298"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.18"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+
+  <!-- 汇报 · task-notification 沿编排通道回到主 Agent -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.220;0.226;0.274;0.280;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.220;0.280;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 L 755 408 L 726 408"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.260;0.266;0.314;0.320;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.260;0.320;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 C 756 494, 702 560, 634 592"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.300;0.306;0.354;0.360;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.300;0.360;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 L 93 408 L 122 408"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+
+  <!-- 广播 · to:"*" 一条消息进信箱，再发给除发件人外的全队 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.380;0.386;0.408;0.415;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.380;0.415;1" path="M424 233 V396"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.18"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.420;0.428;0.450;0.456;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.420;0.456;1" path="M474 408 H554"/>
+    <circle r="4.5" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.420;0.428;0.450;0.456;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.420;0.456;1" path="M374 408 H298"/>
+    <circle r="4.5" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.420;0.428;0.454;0.460;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.420;0.460;1" path="M452.7 449 L523.6 550.3"/>
+    <circle r="4.5" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.420;0.428;0.454;0.460;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.420;0.460;1" path="M395.3 449 L324.4 550.3"/>
+    <circle r="4.5" fill="#8b5cf6"/>
+  </g>
+
+  <!-- 平级直接找下级要东西 —— 不绕回主 Agent -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.520;0.526;0.594;0.600;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.520;0.600;1"
+                   path="M298 408 L424 408 L523.6 550.3"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.18"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+
+  <!-- 陆续汇报，陆续转入待命 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.540;0.546;0.594;0.600;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.540;0.600;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 C 92 494, 146 560, 214 592"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.620;0.626;0.674;0.680;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.620;0.680;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 L 93 408 L 122 408"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.660;0.666;0.714;0.720;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.660;0.720;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 L 755 408 L 726 408"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+
+  <!-- 主 Agent 一条追问，把待命的下级原地唤醒 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.740;0.746;0.794;0.800;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.740;0.800;1"
+                   path="M424 233 V408 L324.4 550.3"/>
+    <circle r="9" fill="#e9932a" opacity="0.18"/><circle r="4.5" fill="#e9932a"/>
+  </g>
+
+  <!-- 收尾：最后两份汇报 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.860;0.866;0.914;0.920;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.860;0.920;1"
+                   path="M520 202 C 648 202, 756 272, 756 386 C 756 494, 702 560, 634 592"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.900;0.906;0.954;0.960;1" dur="16s" repeatCount="indefinite"/>
+    <animateMotion dur="16s" repeatCount="indefinite" calcMode="linear" keyPoints="1;1;0;0" keyTimes="0;0.900;0.960;1"
+                   path="M328 202 C 200 202, 92 272, 92 386 C 92 494, 146 560, 214 592"/>
+    <circle r="4" fill="#22a06b"/>
+  </g>
+
+  <text class="cap" x="424" y="650" text-anchor="middle">待命的队友不占并发槽位；下一条消息把它原地唤醒，上下文接着用。</text>
+
+  <!-- ═══ what the two relationships mean ════════════════════════════════ -->
+  <text class="sec" x="824" y="128">关系 · 通道 · 生命周期</text>
+
+  <g>
+    <rect x="824" y="142" width="432" height="116" rx="14" fill="#ffffff" stroke="#d7ebe7" filter="url(#soft)"/>
+    <rect x="844" y="160" width="28" height="28" rx="9" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-updown" x="850" y="166" color="#12a594"/>
+    <text class="chip-t" x="882" y="179">上下级 · managed</text>
+    <text class="chip-d" x="844" y="212">主 Agent 派活、叫停；队友执行、汇报、等下一步。</text>
+    <text class="chip-d" x="844" y="234">完成状态以 &lt;task-notification&gt; 直接落进主 Agent 的对话。</text>
+  </g>
+  <g>
+    <rect x="824" y="272" width="432" height="116" rx="14" fill="#ffffff" stroke="#ddd6fe" filter="url(#soft)"/>
+    <rect x="844" y="290" width="28" height="28" rx="9" fill="#8b5cf6" fill-opacity="0.1"/>
+    <use href="#om-sideways" x="850" y="296" color="#8b5cf6"/>
+    <text class="chip-t" x="882" y="309" fill="#6d4fd4">平级 · peer</text>
+    <text class="chip-d" x="844" y="342">一起讨论、质疑假设、帮着对齐节奏；</text>
+    <text class="chip-d" x="844" y="364">除非任务明确要求，否则不动文件。</text>
+  </g>
+  <g>
+    <rect x="824" y="402" width="432" height="116" rx="14" fill="#ffffff" stroke="#d7ebe7" filter="url(#soft)"/>
+    <rect x="844" y="420" width="28" height="28" rx="9" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-leader" x="850" y="426" color="#12a594"/>
+    <text class="chip-t" x="882" y="439">只有主 Agent 能编排</text>
+    <text class="chip-d" x="844" y="472">agent_spawn / agent_stop / team_* 只发给它；</text>
+    <text class="chip-d" x="844" y="494">队友手里只有 agent_send_message —— 层级到此为止。</text>
+  </g>
+  <g>
+    <rect x="824" y="532" width="432" height="116" rx="14" fill="#ffffff" stroke="#d7ebe7" filter="url(#soft)"/>
+    <rect x="844" y="550" width="28" height="28" rx="9" fill="#12a594" fill-opacity="0.1"/>
+    <use href="#om-db" x="850" y="556" color="#12a594"/>
+    <text class="chip-t" x="882" y="569">完成 ≠ 消失</text>
+    <text class="chip-d" x="844" y="602">干完转入待命，会话与记忆作用域原地留着；</text>
+    <text class="chip-d" x="844" y="624">run、信箱、团队关系都在 SQLite，重启后队还是那支队。</text>
+  </g>
+
+  <!-- ═══ footer ═════════════════════════════════════════════════════════ -->
+  <g>
+    <rect x="24" y="676" width="1232" height="48" rx="12" fill="#ffffff" stroke="#dbe9e6"/>
+    <circle cx="48" cy="700" r="4" fill="#12a594"/>
+    <text class="foot" x="64" y="705">上下级沿编排通道直连主 Agent，平级在信箱里横向对话 —— 主 Agent 是指挥官，不是中转站。</text>
+  </g>
+</svg>

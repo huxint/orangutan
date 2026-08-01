@@ -1,0 +1,361 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 740" width="1220" height="740" role="img" aria-labelledby="ms-title ms-desc">
+  <title id="ms-title">Orangutan 的会话与记忆系统</title>
+  <desc id="ms-desc">状态分三层：进程内的工作记忆、落库可恢复的会话记忆、跨会话常驻的长期记忆。两条通道连接它们：召回在进入循环之前检索一次，把结果封顶后拼进系统提示；蒸馏在会话落幕时把整段对话压成最多八条长期记忆，按 key 覆盖写回。</desc>
+
+  <defs>
+    <style>
+      text { font-family: "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC","Segoe UI",system-ui,sans-serif; }
+      .mono { font-family: "SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace; }
+      .h1  { font-size: 23px;   font-weight: 700; fill: #12283e; letter-spacing: .3px; }
+      .h2  { font-size: 12.5px; fill: #6b7d92; }
+      .sec { font-size: 10.5px; font-weight: 700; fill: #93a4b6; letter-spacing: 1.4px; }
+      .t   { font-size: 14.5px; font-weight: 700; fill: #16283c; }
+      .st  { font-size: 12px;   font-weight: 700; fill: #16283c; }
+      .d   { font-size: 11px;   fill: #67788c; }
+      .p   { font-size: 9.5px;  fill: #92a1b2; }
+      .sd  { font-size: 10px;   fill: #7b8b9d; }
+      .badge { font-size: 9.5px; font-weight: 700; }
+      .note  { font-size: 11px; fill: #5d7086; }
+      .chip-t{ font-size: 12.5px; font-weight: 700; fill: #23374d; }
+      .chip-d{ font-size: 10.5px; fill: #6b7d92; }
+    </style>
+
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdfcfa"/>
+      <stop offset="1" stop-color="#f3f4f8"/>
+    </linearGradient>
+
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f2740" flood-opacity="0.10"/>
+    </filter>
+    <filter id="glow" x="-160%" y="-160%" width="420%" height="420%">
+      <feGaussianBlur stdDeviation="3" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <marker id="ms-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#12a594"/>
+    </marker>
+    <marker id="ms-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#8b5cf6"/>
+    </marker>
+
+    <g id="ms-flash" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M9.2 1.6 3.2 9.2h4.2l-.6 5.2 6-7.6H8.6Z"/>
+    </g>
+    <g id="ms-doc" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M4 1.9h5.1L12.6 5.4v8.7H4Z"/><path d="M9.1 1.9v3.5h3.5"/><path d="M6.1 8.4h4.4M6.1 11h3"/>
+    </g>
+    <g id="ms-db" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="8" cy="4" rx="5" ry="2.1"/><path d="M3 4v8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V4"/><path d="M3 8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1"/>
+    </g>
+    <g id="ms-search" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="7" cy="7" r="4.8"/><path d="m10.6 10.6 3.2 3.2"/>
+    </g>
+    <g id="ms-filter" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M1.8 2.6h12.4L9.4 8.4v5l-2.8-1.6V8.4Z"/>
+    </g>
+  </defs>
+
+  <rect width="1220" height="740" fill="url(#bg)"/>
+
+  <text class="h1" x="610" y="44" text-anchor="middle">Orangutan · 会话与记忆</text>
+  <text class="h2" x="610" y="70" text-anchor="middle">三层状态，两条通道 —— 进循环前召回一次，会话落幕时蒸馏一次</text>
+
+  <!-- ═══ left: three tiers of state ══════════════════════════════════════ -->
+  <text class="sec" x="24" y="104">状态住在哪里</text>
+
+  <!-- 工作记忆 -->
+  <g>
+    <rect x="24" y="118" width="336" height="150" rx="16" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="44" y="134" width="30" height="30" rx="9" fill="#e9932a" fill-opacity="0.1"/>
+    <use href="#ms-flash" x="51" y="141" color="#e9932a"/>
+    <text class="t" x="84" y="154">工作记忆</text>
+    <g>
+      <rect x="286" y="138" width="54" height="20" rx="10" fill="#e9932a" fill-opacity="0.1"/>
+      <text class="badge" x="313" y="152" text-anchor="middle" fill="#c9800f">易失</text>
+    </g>
+    <text class="d" x="44" y="186">这一轮对话的全部内容，只活在进程里</text>
+    <text class="d" x="44" y="208">攒得太长就先压缩成摘要，再接着跑</text>
+
+    <!-- history bars: grow, then compact -->
+    <g>
+      <g fill="#e9932a" fill-opacity="0.28">
+        <rect x="44" y="230" width="11" height="16" rx="2"/>
+        <rect x="60" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;1;1;1;0;0" keyTimes="0;0.08;0.62;0.66;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="76" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.14;0.18;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="92" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.22;0.26;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="108" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3;0.34;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="124" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.38;0.42;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="140" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.46;0.5;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+        <rect x="156" y="230" width="11" height="16" rx="2" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.54;0.58;0.62;0.7;1" dur="9s" repeatCount="indefinite"/></rect>
+      </g>
+      <!-- compacted summary block -->
+      <g opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.7;0.74;0.96;1" dur="9s" repeatCount="indefinite"/>
+        <rect x="60" y="230" width="40" height="16" rx="3" fill="#e9932a" fill-opacity="0.5"/>
+        <text class="p" x="108" y="242" fill="#c9800f">压缩成摘要</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- 会话记忆 -->
+  <g>
+    <rect x="24" y="288" width="336" height="150" rx="16" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="44" y="304" width="30" height="30" rx="9" fill="#3b82f6" fill-opacity="0.1"/>
+    <use href="#ms-doc" x="51" y="311" color="#3b82f6"/>
+    <text class="t" x="84" y="324">会话记忆</text>
+    <g>
+      <rect x="272" y="308" width="68" height="20" rx="10" fill="#3b82f6" fill-opacity="0.1"/>
+      <text class="badge" x="306" y="322" text-anchor="middle" fill="#2f6fd0">可恢复</text>
+      <circle cx="288" cy="318" r="0" fill="#3b82f6" opacity="0">
+        <animate attributeName="r"       values="3;14;14" keyTimes="0;0.5;1" dur="3.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.35;0;0" keyTimes="0;0.5;1" dur="3.6s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <text class="d" x="44" y="356">一次会话的完整历史，逐条写进数据库</text>
+    <text class="d" x="44" y="378">按运行时身份归属 —— 谁的会话，谁能读</text>
+    <text class="d" x="44" y="400">关掉再打开，也能从上次那句接着说</text>
+  </g>
+
+  <!-- 长期记忆 -->
+  <g>
+    <rect x="24" y="458" width="336" height="164" rx="16" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="24" y="458" width="336" height="164" rx="16" fill="none" stroke="#8b5cf6" stroke-width="2" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.85;0;0" keyTimes="0;0.93;0.955;0.99;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="44" y="474" width="30" height="30" rx="9" fill="#8b5cf6" fill-opacity="0.1"/>
+    <use href="#ms-db" x="51" y="481" color="#8b5cf6"/>
+    <text class="t" x="84" y="494">长期记忆</text>
+    <g>
+      <rect x="286" y="478" width="54" height="20" rx="10" fill="#8b5cf6" fill-opacity="0.1"/>
+      <text class="badge" x="313" y="492" text-anchor="middle" fill="#7048d8">常驻</text>
+    </g>
+    <text class="d" x="44" y="524">跨会话留下来的事实，按 key 覆盖写入</text>
+
+    <g>
+      <rect x="44"  y="540" width="54" height="22" rx="11" fill="#12a594" fill-opacity="0.1"/>
+      <text class="mono badge" x="71"  y="555" text-anchor="middle" fill="#0e8a7c">user</text>
+      <rect x="106" y="540" width="72" height="22" rx="11" fill="#e9932a" fill-opacity="0.1"/>
+      <text class="mono badge" x="142" y="555" text-anchor="middle" fill="#c9800f">feedback</text>
+      <rect x="186" y="540" width="64" height="22" rx="11" fill="#3b82f6" fill-opacity="0.1"/>
+      <text class="mono badge" x="218" y="555" text-anchor="middle" fill="#2f6fd0">project</text>
+      <rect x="258" y="540" width="76" height="22" rx="11" fill="#8b5cf6" fill-opacity="0.1"/>
+      <text class="mono badge" x="296" y="555" text-anchor="middle" fill="#7048d8">reference</text>
+    </g>
+    <text class="p" x="44" y="580">你是谁 · 怎么配合你 · 在做什么 · 去哪儿找</text>
+    <text class="d" x="44" y="602">每个运行时身份一套作用域，彼此不串味</text>
+  </g>
+
+  <!-- ═══ channel 1: recall ═══════════════════════════════════════════════ -->
+  <rect x="390" y="118" width="806" height="240" rx="18" fill="#12a594" fill-opacity="0.035" stroke="#cfe6e2"/>
+  <circle cx="416" cy="146" r="5" fill="#12a594"/>
+  <text class="t" x="430" y="151" fill="#0e8a7c">召回</text>
+  <text class="d" x="478" y="151">把记得的事，放进这一轮的提示词</text>
+  <text class="p" x="1176" y="151" text-anchor="end">读</text>
+
+  <g fill="none" stroke="#12a594" stroke-opacity="0.5" stroke-width="1.7" marker-end="url(#ms-teal)">
+    <path d="M586 225 H600"/><path d="M780 225 H794"/><path d="M974 225 H988"/>
+  </g>
+
+  <!-- recall step 1 -->
+  <g>
+    <rect x="410" y="170" width="176" height="110" rx="13" fill="#ffffff" stroke="#dde6ee"/>
+    <rect x="410" y="170" width="176" height="110" rx="13" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.02;0.11;0.13;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="428" cy="188" r="10" fill="#12a594"/>
+    <text class="badge" x="428" y="192" text-anchor="middle" fill="#ffffff">1</text>
+    <text class="st" x="446" y="192">拿到这句话</text>
+    <text class="sd" x="428" y="228">只用用户这一次输入</text>
+    <text class="sd" x="428" y="250">去问长期记忆要线索</text>
+  </g>
+  <!-- recall step 2 -->
+  <g>
+    <rect x="604" y="170" width="176" height="110" rx="13" fill="#ffffff" stroke="#dde6ee"/>
+    <rect x="604" y="170" width="176" height="110" rx="13" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.12;0.14;0.21;0.23;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="622" cy="188" r="10" fill="#12a594"/>
+    <text class="badge" x="622" y="192" text-anchor="middle" fill="#ffffff">2</text>
+    <text class="st" x="640" y="192">取最相关的 8 条</text>
+    <use href="#ms-search" x="748" y="180" color="#12a594"/>
+    <text class="sd" x="622" y="228">命中就取，没命中</text>
+    <text class="sd" x="622" y="250">就一个字都不加</text>
+  </g>
+  <!-- recall step 3 -->
+  <g>
+    <rect x="798" y="170" width="176" height="110" rx="13" fill="#ffffff" stroke="#dde6ee"/>
+    <rect x="798" y="170" width="176" height="110" rx="13" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.22;0.24;0.31;0.33;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="816" cy="188" r="10" fill="#12a594"/>
+    <text class="badge" x="816" y="192" text-anchor="middle" fill="#ffffff">3</text>
+    <text class="st" x="834" y="192">装成上下文块</text>
+    <text class="sd" x="816" y="228">整块封顶 4 KB</text>
+    <text class="sd" x="816" y="250">超出的部分直接截断</text>
+  </g>
+  <!-- recall step 4 -->
+  <g>
+    <rect x="992" y="170" width="176" height="110" rx="13" fill="#ffffff" stroke="#dde6ee"/>
+    <rect x="992" y="170" width="176" height="110" rx="13" fill="#12a594" fill-opacity="0.07" stroke="#12a594" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.32;0.34;0.42;0.44;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="1010" cy="188" r="10" fill="#12a594"/>
+    <text class="badge" x="1010" y="192" text-anchor="middle" fill="#ffffff">4</text>
+    <text class="st" x="1028" y="192">拼进系统提示</text>
+    <text class="sd" x="1010" y="228">进循环之前就算好</text>
+    <text class="sd" x="1010" y="250">整整 20 轮都复用它</text>
+  </g>
+
+  <!-- lookup line: long-term memory → step 2 -->
+  <path d="M360 500 H374 V304 H692 V284" fill="none" stroke="#12a594" stroke-opacity="0.4" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ms-teal)">
+    <animate attributeName="stroke-dashoffset" values="0;-22" dur="1.4s" repeatCount="indefinite"/>
+  </path>
+  <text class="p" x="702" y="308" fill="#0e8a7c">从长期记忆里查</text>
+
+  <text class="note" x="410" y="336">关键的一步：检索只在进循环之前做一次。循环最多跑 20 轮，若每轮都查一遍，就是为同一份检索付 20 次钱。</text>
+
+  <!-- ═══ channel 2: distill ══════════════════════════════════════════════ -->
+  <rect x="390" y="382" width="806" height="240" rx="18" fill="#8b5cf6" fill-opacity="0.035" stroke="#e2daf8"/>
+  <circle cx="416" cy="410" r="5" fill="#8b5cf6"/>
+  <text class="t" x="430" y="415" fill="#7048d8">蒸馏</text>
+  <text class="d" x="478" y="415">会话落幕时，把值得留下的写下来</text>
+  <text class="p" x="1176" y="415" text-anchor="end">写</text>
+
+  <g fill="none" stroke="#8b5cf6" stroke-opacity="0.5" stroke-width="1.7" marker-end="url(#ms-purple)">
+    <path d="M586 489 H600"/><path d="M780 489 H794"/><path d="M974 489 H988"/>
+  </g>
+
+  <!-- distill step 1 -->
+  <g>
+    <rect x="410" y="434" width="176" height="110" rx="13" fill="#ffffff" stroke="#e5e0f4"/>
+    <rect x="410" y="434" width="176" height="110" rx="13" fill="#8b5cf6" fill-opacity="0.07" stroke="#8b5cf6" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.5;0.52;0.59;0.61;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="428" cy="452" r="10" fill="#8b5cf6"/>
+    <text class="badge" x="428" y="456" text-anchor="middle" fill="#ffffff">1</text>
+    <text class="st" x="446" y="456">取整段会话</text>
+    <text class="sd" x="428" y="492">说过的话、用过的工具</text>
+    <text class="sd" x="428" y="514">拿到的结果，都算数</text>
+  </g>
+  <!-- distill step 2 -->
+  <g>
+    <rect x="604" y="434" width="176" height="110" rx="13" fill="#ffffff" stroke="#e5e0f4"/>
+    <rect x="604" y="434" width="176" height="110" rx="13" fill="#8b5cf6" fill-opacity="0.07" stroke="#8b5cf6" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.6;0.62;0.69;0.71;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="622" cy="452" r="10" fill="#8b5cf6"/>
+    <text class="badge" x="622" y="456" text-anchor="middle" fill="#ffffff">2</text>
+    <text class="st" x="640" y="456">太长就掐头留尾</text>
+    <text class="sd" x="622" y="492">开头和结尾原样保留</text>
+    <text class="sd" x="622" y="514">中间那段省略掉</text>
+  </g>
+  <!-- distill step 3 -->
+  <g>
+    <rect x="798" y="434" width="176" height="110" rx="13" fill="#ffffff" stroke="#e5e0f4"/>
+    <rect x="798" y="434" width="176" height="110" rx="13" fill="#8b5cf6" fill-opacity="0.07" stroke="#8b5cf6" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.72;0.79;0.81;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="816" cy="452" r="10" fill="#8b5cf6"/>
+    <text class="badge" x="816" y="456" text-anchor="middle" fill="#ffffff">3</text>
+    <text class="st" x="834" y="456">挑出值得记的</text>
+    <use href="#ms-filter" x="942" y="444" color="#8b5cf6"/>
+    <text class="sd" x="816" y="492">分成四种语义类型</text>
+    <text class="sd" x="816" y="514">一次最多留 8 条</text>
+  </g>
+  <!-- distill step 4 -->
+  <g>
+    <rect x="992" y="434" width="176" height="110" rx="13" fill="#ffffff" stroke="#e5e0f4"/>
+    <rect x="992" y="434" width="176" height="110" rx="13" fill="#8b5cf6" fill-opacity="0.07" stroke="#8b5cf6" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.8;0.82;0.89;0.91;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="1010" cy="452" r="10" fill="#8b5cf6"/>
+    <text class="badge" x="1010" y="456" text-anchor="middle" fill="#ffffff">4</text>
+    <text class="mono st" x="1028" y="456" font-size="11.5">按 key 写回</text>
+    <text class="sd" x="1010" y="492">同名的直接覆盖</text>
+    <text class="sd" x="1010" y="514">同一件事不会越攒越多</text>
+  </g>
+
+  <!-- write-back line: step 4 → long-term memory -->
+  <path d="M1080 544 V568 H364" fill="none" stroke="#8b5cf6" stroke-opacity="0.45" stroke-width="1.7" marker-end="url(#ms-purple)"/>
+  <text class="note" x="410" y="600">只留结论，不留过程 —— 下一次对话开场，它已经安静地待在提示词里了。</text>
+
+  <!-- ═══ travelling packets ══════════════════════════════════════════════ -->
+  <!-- recall: lookup -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.05;0.058;0.128;0.136;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.05;0.136;1"
+                   path="M360 500 H374 V304 H692 V284"/>
+    <circle r="4.2" fill="#12a594"/>
+  </g>
+  <!-- recall: between steps -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.108;0.113;0.125;0.13;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.108;0.13;1" path="M586 225 H602"/>
+    <circle r="4.2" fill="#12a594"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.208;0.213;0.225;0.23;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.208;0.23;1" path="M780 225 H796"/>
+    <circle r="4.2" fill="#12a594"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.308;0.313;0.325;0.33;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.308;0.33;1" path="M974 225 H990"/>
+    <circle r="4.2" fill="#12a594"/>
+  </g>
+
+  <!-- distill: between steps -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.588;0.593;0.605;0.61;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.588;0.61;1" path="M586 489 H602"/>
+    <circle r="4.2" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.688;0.693;0.705;0.71;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.688;0.71;1" path="M780 489 H796"/>
+    <circle r="4.2" fill="#8b5cf6"/>
+  </g>
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.788;0.793;0.805;0.81;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.788;0.81;1" path="M974 489 H990"/>
+    <circle r="4.2" fill="#8b5cf6"/>
+  </g>
+  <!-- distill: write back -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.885;0.892;0.945;0.952;1" dur="10s" repeatCount="indefinite"/>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.885;0.952;1" path="M1080 544 V568 H364"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.18"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+
+  <!-- ═══ the four rules that hold it together ════════════════════════════ -->
+  <g>
+    <rect x="24" y="646" width="284" height="80" rx="13" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="44" cy="666" r="4" fill="#12a594"/>
+    <text class="chip-t" x="58" y="670">检索一次，用满一轮</text>
+    <text class="chip-d" x="44" y="694">记忆在进循环之前取好，</text>
+    <text class="chip-d" x="44" y="713">循环里只重算真正会变的东西。</text>
+  </g>
+  <g>
+    <rect x="320" y="646" width="284" height="80" rx="13" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="340" cy="666" r="4" fill="#3b82f6"/>
+    <text class="chip-t" x="354" y="670">记忆是背景，不是台词</text>
+    <text class="chip-d" x="340" y="694">提示模型安静地用、不要复述；</text>
+    <text class="chip-d" x="340" y="713">可能过时的，先核实再说。</text>
+  </g>
+  <g>
+    <rect x="616" y="646" width="284" height="80" rx="13" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="636" cy="666" r="4" fill="#8b5cf6"/>
+    <text class="chip-t" x="650" y="670">作用域即隔离</text>
+    <text class="chip-d" x="636" y="694">每个运行时身份一套命名空间，</text>
+    <text class="chip-d" x="636" y="713">主 Agent 与队友互不串味。</text>
+  </g>
+  <g>
+    <rect x="912" y="646" width="284" height="80" rx="13" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="932" cy="666" r="4" fill="#e9932a"/>
+    <text class="chip-t" x="946" y="670">处处有预算</text>
+    <text class="chip-d" x="932" y="694">上下文块封顶、转写稿掐头留尾、</text>
+    <text class="chip-d" x="932" y="713">条数封顶 —— 记忆不挤占正事。</text>
+  </g>
+</svg>

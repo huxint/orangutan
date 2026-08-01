@@ -1,0 +1,336 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 620" width="1220" height="620" role="img" aria-labelledby="mf-title mf-desc">
+  <title id="mf-title">Orangutan 单条消息执行流程</title>
+  <desc id="mf-desc">一次提问的完整循环：构建上下文 → 调用模型 → 解析响应 → 权限校验 → 执行工具 → 回到构建上下文；当模型不再请求工具时退出循环，返回最终回答并持久化会话与记忆。</desc>
+
+  <defs>
+    <style>
+      text { font-family: "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC","Segoe UI",system-ui,sans-serif; }
+      .mono { font-family: "SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace; }
+      .h1 { font-size: 23px; font-weight: 700; fill: #12283e; letter-spacing: .3px; }
+      .h2 { font-size: 12.5px; fill: #6b7d92; }
+      .t  { font-size: 14px;   font-weight: 700; fill: #16283c; }
+      .d  { font-size: 11px;   fill: #67788c; }
+      .b  { font-size: 11px;   font-weight: 700; fill: #ffffff; }
+      .lbl{ font-size: 10.5px; fill: #6b7d92; }
+      .pill { font-size: 8.5px; font-weight: 600; }
+      .chip-t { font-size: 11.5px; font-weight: 700; fill: #23374d; }
+      .chip-d { font-size: 10.5px; fill: #6b7d92; }
+    </style>
+
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdfcfa"/>
+      <stop offset="1" stop-color="#f2f5f8"/>
+    </linearGradient>
+
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f2740" flood-opacity="0.10"/>
+    </filter>
+    <filter id="glow" x="-160%" y="-160%" width="420%" height="420%">
+      <feGaussianBlur stdDeviation="3.2" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <marker id="ar-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#9fb0c2"/>
+    </marker>
+    <marker id="ar-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#e9932a"/>
+    </marker>
+    <marker id="ar-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#22a06b"/>
+    </marker>
+    <marker id="ar-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1 L9 5 L0 9 Z" fill="#8b5cf6"/>
+    </marker>
+
+    <g id="ico-chat" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M3 3h10a1.6 1.6 0 0 1 1.6 1.6v4.8A1.6 1.6 0 0 1 13 11H7.2L4 13.4V11H3a1.6 1.6 0 0 1-1.6-1.6V4.6A1.6 1.6 0 0 1 3 3Z"/>
+    </g>
+    <g id="ico-doc" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M4 1.9h5.1L12.6 5.4v8.7H4Z"/><path d="M9.1 1.9v3.5h3.5"/><path d="M6.1 8.4h4.4M6.1 11h3"/>
+    </g>
+    <g id="ico-cloud" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M5 12.4h6.3a2.9 2.9 0 0 0 .3-5.8A3.9 3.9 0 0 0 4.3 7 2.7 2.7 0 0 0 5 12.4Z"/>
+    </g>
+    <g id="ico-parse" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M5.6 3.2 2.4 6.4l3.2 3.2M10.4 6.4l3.2 3.2-3.2 3.2"/><path d="M2.6 12.6h4.6"/>
+    </g>
+    <g id="ico-shield" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M8 1.9 13 3.7v4.1c0 3.2-2.1 5.3-5 6.3-2.9-1-5-3.1-5-6.3V3.7Z"/><path d="m5.8 7.9 1.6 1.6 3-3.2"/>
+    </g>
+    <g id="ico-tool" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M10.7 2.4a3.7 3.7 0 0 0-4.5 4.7L2.5 10.8a1.45 1.45 0 0 0 2 2l3.7-3.7a3.7 3.7 0 0 0 4.7-4.5l-2.1 2.1-1.9-.5-.5-1.9Z"/>
+    </g>
+    <g id="ico-check" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <circle cx="8" cy="8" r="6.2"/><path d="m5.2 8.2 2 2 3.7-4.2"/>
+    </g>
+    <g id="ico-db" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="8" cy="4" rx="5" ry="2.1"/><path d="M3 4v8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V4"/><path d="M3 8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1"/>
+    </g>
+  </defs>
+
+  <rect width="1220" height="620" fill="url(#bg)"/>
+
+  <!-- ── title ─────────────────────────────────────────────────────────── -->
+  <text class="h1" x="610" y="42" text-anchor="middle">Orangutan · 一条消息是怎么跑完的</text>
+  <text class="h2" x="610" y="68" text-anchor="middle">一次提问最多 20 轮「想一步 → 用工具 → 再想一步」，每一轮都会重新组装上下文</text>
+
+  <!-- ── ReAct loop container ──────────────────────────────────────────── -->
+  <rect x="176" y="100" width="856" height="380" rx="20" fill="#12a594" fill-opacity="0.035"/>
+  <rect x="176" y="100" width="856" height="380" rx="20" fill="none" stroke="#12a594" stroke-opacity="0.4" stroke-width="1.6" stroke-dasharray="10 8">
+    <animate attributeName="stroke-dashoffset" values="0;-36" dur="1.6s" repeatCount="indefinite"/>
+  </rect>
+  <text class="t" x="200" y="127" fill="#0e8a7c" font-size="12.5">推理循环</text>
+  <text class="lbl" x="262" y="127">· 只要模型还在要工具，就继续转</text>
+  <text class="lbl" x="1008" y="127" text-anchor="end" font-weight="700" fill="#0e8a7c">
+    第
+  </text>
+  <text class="mono lbl" x="1010" y="127" text-anchor="start" font-weight="700" fill="#0e8a7c" opacity="0">
+    <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.495;0.5;1" dur="14s" repeatCount="indefinite"/>
+    1 轮
+  </text>
+  <text class="mono lbl" x="1010" y="127" text-anchor="start" font-weight="700" fill="#0e8a7c" opacity="0">
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.5;0.505;1" dur="14s" repeatCount="indefinite"/>
+    2 轮
+  </text>
+
+  <!-- ── static connectors ─────────────────────────────────────────────── -->
+  <g fill="none" stroke="#9fb0c2" stroke-width="1.8" marker-end="url(#ar-gray)">
+    <path d="M150 292 H196"/>
+    <path d="M334 292 H364"/>
+    <path d="M502 292 H532"/>
+    <path d="M670 292 H700"/>
+    <path d="M838 292 H868"/>
+  </g>
+
+  <!-- loop-back edge -->
+  <path d="M939 352 V418 Q939 426 931 426 H275 Q267 426 267 418 V356" fill="none" stroke="#e9932a" stroke-width="2" stroke-opacity="0.3" marker-end="url(#ar-amber)">
+    <animate attributeName="stroke-opacity" values="0.3;0.3;1;1;0.3;0.3" keyTimes="0;0.4429;0.4509;0.492;0.5;1" dur="14s" repeatCount="indefinite"/>
+  </path>
+  <text class="lbl" x="603" y="416" text-anchor="middle">模型还想再用工具 → 工具结果写回对话历史，进入下一轮</text>
+
+  <!-- exit edge -->
+  <path d="M603 232 V186 Q603 178 611 178 H1054" fill="none" stroke="#22a06b" stroke-width="2" stroke-opacity="0.28" marker-end="url(#ar-green)">
+    <animate attributeName="stroke-opacity" values="0.28;0.28;1;1;0.28;0.28" keyTimes="0;0.7286;0.7366;0.7777;0.7857;1" dur="14s" repeatCount="indefinite"/>
+  </path>
+  <text class="lbl" x="832" y="169" text-anchor="middle">模型不再要工具，只给了文字 → 退出循环</text>
+
+  <!-- final → session -->
+  <path d="M1128 226 V254" fill="none" stroke="#8b5cf6" stroke-width="1.8" stroke-opacity="0.55" marker-end="url(#ar-purple)"/>
+
+  <!-- ── 0. user input ─────────────────────────────────────────────────── -->
+  <g>
+    <rect x="24" y="232" width="126" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="24" y="232" width="126" height="120" rx="14" fill="#12a594" fill-opacity="0.09" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.004;0.014;0.063;0.0714;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="41" cy="249" r="11" fill="#12a594"/>
+    <text class="b" x="41" y="253" text-anchor="middle">0</text>
+    <use href="#ico-chat" x="109" y="241" color="#12a594"/>
+    <text class="t" x="87" y="288" text-anchor="middle">用户提问</text>
+    <text class="d" x="87" y="316" text-anchor="middle">命令行 / Web / 聊天</text>
+    <text class="d" x="87" y="338" text-anchor="middle">或定时任务自己触发</text>
+  </g>
+
+  <!-- ── 1. build context ──────────────────────────────────────────────── -->
+  <g>
+    <rect x="200" y="232" width="134" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="200" y="232" width="134" height="120" rx="14" fill="#12a594" fill-opacity="0.09" stroke="#12a594" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.0714;0.0794;0.1063;0.1143;0.5;0.508;0.5349;0.5429;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="217" cy="249" r="11" fill="#12a594"/>
+    <text class="b" x="217" y="253" text-anchor="middle">1</text>
+    <use href="#ico-doc" x="301" y="241" color="#12a594"/>
+    <text class="t" x="267" y="288" text-anchor="middle">组装上下文</text>
+    <text class="d" x="267" y="316" text-anchor="middle">系统提示 + 技能 + 工具</text>
+    <text class="d" x="267" y="338" text-anchor="middle">加上召回到的记忆</text>
+  </g>
+
+  <!-- ── 2. provider send ──────────────────────────────────────────────── -->
+  <g>
+    <rect x="368" y="232" width="134" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="368" y="232" width="134" height="120" rx="14" fill="#3b82f6" fill-opacity="0.09" stroke="#3b82f6" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.15;0.158;0.1991;0.2071;0.5786;0.5866;0.6277;0.6357;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="385" cy="249" r="11" fill="#3b82f6"/>
+    <text class="b" x="385" y="253" text-anchor="middle">2</text>
+    <use href="#ico-cloud" x="469" y="241" color="#3b82f6"/>
+    <text class="t" x="435" y="288" text-anchor="middle">调用模型</text>
+    <text class="d" x="435" y="316" text-anchor="middle">协议适配 + 流式响应</text>
+    <text class="d" x="435" y="338" text-anchor="middle">失败重试、换模型兜底</text>
+  </g>
+
+  <!-- ── 3. parse response ─────────────────────────────────────────────── -->
+  <g>
+    <rect x="536" y="232" width="134" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="536" y="232" width="134" height="120" rx="14" fill="#6366f1" fill-opacity="0.09" stroke="#6366f1" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.2429;0.2509;0.2849;0.2929;0.6714;0.6794;0.7206;0.7286;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="553" cy="249" r="11" fill="#6366f1"/>
+    <text class="b" x="553" y="253" text-anchor="middle">3</text>
+    <use href="#ico-parse" x="637" y="241" color="#6366f1"/>
+    <text class="t" x="603" y="286" text-anchor="middle">拆解回复</text>
+
+    <!-- content-block pills: which branch the model actually took -->
+    <g>
+      <rect x="539" y="300" width="46" height="16" rx="8" fill="#eef2f6"/>
+      <rect x="539" y="300" width="46" height="16" rx="8" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-opacity="0.7" opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0;0" keyTimes="0;0.2429;0.2509;0.2849;0.2929;0.6714;0.6794;0.7206;0.7286;1" dur="14s" repeatCount="indefinite"/>
+      </rect>
+      <text class="mono pill" x="562" y="311.5" text-anchor="middle" fill="#5a6c80">thinking</text>
+
+      <rect x="591" y="300" width="28" height="16" rx="8" fill="#eef2f6"/>
+      <rect x="591" y="300" width="28" height="16" rx="8" fill="#22a06b" fill-opacity="0.18" stroke="#22a06b" stroke-opacity="0.75" opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.6714;0.6794;0.7206;0.7286;1" dur="14s" repeatCount="indefinite"/>
+      </rect>
+      <text class="mono pill" x="605" y="311.5" text-anchor="middle" fill="#5a6c80">text</text>
+
+      <rect x="625" y="300" width="44" height="16" rx="8" fill="#eef2f6"/>
+      <rect x="625" y="300" width="44" height="16" rx="8" fill="#e9932a" fill-opacity="0.2" stroke="#e9932a" stroke-opacity="0.8" opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2429;0.2509;0.2849;0.2929;1" dur="14s" repeatCount="indefinite"/>
+      </rect>
+      <text class="mono pill" x="647" y="311.5" text-anchor="middle" fill="#5a6c80">tool_use</text>
+    </g>
+
+    <text class="d" x="603" y="338" text-anchor="middle">按块追加进对话历史</text>
+  </g>
+
+  <!-- ── 4. permission check ───────────────────────────────────────────── -->
+  <g>
+    <rect x="704" y="232" width="134" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="704" y="232" width="134" height="120" rx="14" fill="#e9932a" fill-opacity="0.1" stroke="#e9932a" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3214;0.3294;0.3563;0.3643;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="721" cy="249" r="11" fill="#e9932a"/>
+    <text class="b" x="721" y="253" text-anchor="middle">4</text>
+    <use href="#ico-shield" x="805" y="241" color="#e9932a"/>
+    <text class="t" x="771" y="288" text-anchor="middle">权限把关</text>
+    <text class="d" x="771" y="316" text-anchor="middle">放行 · 询问 · 拒绝</text>
+    <text class="d" x="771" y="338" text-anchor="middle">危险命令先过安全检查</text>
+  </g>
+
+  <!-- ── 5. tool dispatch ──────────────────────────────────────────────── -->
+  <g>
+    <rect x="872" y="232" width="134" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="872" y="232" width="134" height="120" rx="14" fill="#e9932a" fill-opacity="0.1" stroke="#e9932a" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3929;0.4009;0.4349;0.4429;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="889" cy="249" r="11" fill="#e9932a"/>
+    <text class="b" x="889" y="253" text-anchor="middle">5</text>
+    <use href="#ico-tool" x="973" y="241" color="#e9932a"/>
+    <text class="t" x="939" y="288" text-anchor="middle">执行工具</text>
+    <text class="d" x="939" y="316" text-anchor="middle">文件 / 命令行 / MCP</text>
+    <text class="d" x="939" y="338" text-anchor="middle">前后各挂一次钩子</text>
+  </g>
+
+  <!-- ── 6. final response ─────────────────────────────────────────────── -->
+  <g>
+    <rect x="1060" y="130" width="136" height="96" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="1060" y="130" width="136" height="96" rx="14" fill="#22a06b" fill-opacity="0.1" stroke="#22a06b" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7857;0.7937;0.8349;0.8429;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="1077" cy="147" r="11" fill="#22a06b"/>
+    <text class="b" x="1077" y="151" text-anchor="middle">6</text>
+    <use href="#ico-check" x="1163" y="139" color="#22a06b"/>
+    <text class="t" x="1128" y="186" text-anchor="middle">给出答案</text>
+    <text class="d" x="1128" y="209" text-anchor="middle">原路交回提问的入口</text>
+  </g>
+
+  <!-- ── 7. session & memory ───────────────────────────────────────────── -->
+  <g>
+    <rect x="1060" y="260" width="136" height="120" rx="14" fill="#ffffff" stroke="#dbe3ec" filter="url(#soft)"/>
+    <rect x="1060" y="260" width="136" height="120" rx="14" fill="#8b5cf6" fill-opacity="0.1" stroke="#8b5cf6" stroke-width="1.8" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.8857;0.8937;0.9349;0.9429;1" dur="14s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="1077" cy="277" r="11" fill="#8b5cf6"/>
+    <text class="b" x="1077" y="281" text-anchor="middle">7</text>
+    <use href="#ico-db" x="1163" y="269" color="#8b5cf6"/>
+    <text class="t" x="1128" y="316" text-anchor="middle">留下痕迹</text>
+    <text class="d" x="1128" y="344" text-anchor="middle">对话历史写进数据库</text>
+    <text class="d" x="1128" y="366" text-anchor="middle">可选：蒸馏成长期记忆</text>
+  </g>
+
+  <!-- ── travelling packets ────────────────────────────────────────────── -->
+  <!-- 0 → 1 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.0357;0.0377;0.0694;0.0714;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M150 292 H200" keyPoints="0;0;1;1" keyTimes="0;0.0357;0.0714;1"/>
+    <circle r="9" fill="#12a594" opacity="0.2"/><circle r="4.5" fill="#12a594"/>
+  </g>
+  <!-- 1 → 2 (pass A) -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.1143;0.1163;0.148;0.15;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M334 292 H368" keyPoints="0;0;1;1" keyTimes="0;0.1143;0.15;1"/>
+    <circle r="9" fill="#3b82f6" opacity="0.2"/><circle r="4.5" fill="#3b82f6"/>
+  </g>
+  <!-- 2 → 3 (pass A) -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2071;0.2091;0.2409;0.2429;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M502 292 H536" keyPoints="0;0;1;1" keyTimes="0;0.2071;0.2429;1"/>
+    <circle r="9" fill="#6366f1" opacity="0.2"/><circle r="4.5" fill="#6366f1"/>
+  </g>
+  <!-- 3 → 4 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.2929;0.2949;0.3194;0.3214;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M670 292 H704" keyPoints="0;0;1;1" keyTimes="0;0.2929;0.3214;1"/>
+    <circle r="9" fill="#e9932a" opacity="0.2"/><circle r="4.5" fill="#e9932a"/>
+  </g>
+  <!-- 4 → 5 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.3643;0.3663;0.3909;0.3929;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M838 292 H872" keyPoints="0;0;1;1" keyTimes="0;0.3643;0.3929;1"/>
+    <circle r="9" fill="#e9932a" opacity="0.2"/><circle r="4.5" fill="#e9932a"/>
+  </g>
+  <!-- 5 → loop back → 1 -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.4429;0.4449;0.498;0.5;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.4429;0.5;1"
+                   path="M939 352 V418 Q939 426 931 426 H275 Q267 426 267 418 V352"/>
+    <circle r="9" fill="#e9932a" opacity="0.2"/><circle r="4.5" fill="#e9932a"/>
+  </g>
+  <!-- 1 → 2 (pass B) -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.5429;0.5449;0.5766;0.5786;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M334 292 H368" keyPoints="0;0;1;1" keyTimes="0;0.5429;0.5786;1"/>
+    <circle r="9" fill="#3b82f6" opacity="0.2"/><circle r="4.5" fill="#3b82f6"/>
+  </g>
+  <!-- 2 → 3 (pass B) -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.6357;0.6377;0.6694;0.6714;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M502 292 H536" keyPoints="0;0;1;1" keyTimes="0;0.6357;0.6714;1"/>
+    <circle r="9" fill="#6366f1" opacity="0.2"/><circle r="4.5" fill="#6366f1"/>
+  </g>
+  <!-- 3 → final response -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7286;0.7306;0.7837;0.7857;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.7286;0.7857;1"
+                   path="M603 232 V186 Q603 178 611 178 H1060"/>
+    <circle r="9" fill="#22a06b" opacity="0.2"/><circle r="4.5" fill="#22a06b"/>
+  </g>
+  <!-- final → session -->
+  <g opacity="0" filter="url(#glow)">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.8429;0.8449;0.8837;0.8857;1" dur="14s" repeatCount="indefinite"/>
+    <animateMotion dur="14s" repeatCount="indefinite" calcMode="linear" path="M1128 226 V260" keyPoints="0;0;1;1" keyTimes="0;0.8429;0.8857;1"/>
+    <circle r="9" fill="#8b5cf6" opacity="0.2"/><circle r="4.5" fill="#8b5cf6"/>
+  </g>
+
+  <!-- ── footnotes: the loop's guard rails ─────────────────────────────── -->
+  <g>
+    <rect x="24" y="522" width="380" height="58" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="42" cy="551" r="4" fill="#12a594"/>
+    <text class="chip-t" x="56" y="545">每轮开头</text>
+    <text class="chip-d" x="56" y="564">先收队友消息 → 看是否被叫停 → 刷新可用技能</text>
+  </g>
+  <g>
+    <rect x="420" y="522" width="380" height="58" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="438" cy="551" r="4" fill="#3b82f6"/>
+    <text class="chip-t" x="452" y="545">被截断了</text>
+    <text class="chip-d" x="452" y="564">回答撞到长度上限时，自动接着上一句续写</text>
+  </g>
+  <g>
+    <rect x="816" y="522" width="380" height="58" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+    <circle cx="834" cy="551" r="4" fill="#e9932a"/>
+    <text class="chip-t" x="848" y="545">别原地打转</text>
+    <text class="chip-d" x="848" y="564">同一个工具重复调用，先警告，再重复就中止</text>
+  </g>
+</svg>
