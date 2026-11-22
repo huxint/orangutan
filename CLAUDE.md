@@ -1,132 +1,49 @@
-# CLAUDE.md
+# Orangutan
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+C++26 agent runtime. Build the smallest complete provider/tool/memory loop, then
+extend it through the same contracts. Prefer value transformations and explicit
+effect boundaries. Preserve user data; delete replaced code and stale documents.
 
-**Orangutan** is a C++23 agent assistant: a single binary that runs an LLM ReAct loop with a tool registry, pluggable providers, persistent memory/sessions, an HTTP web UI, external chat channels (QQ), an orchestration runtime that spawns and coordinates worker agents, and a cron-like automation runtime. Act as an expert C++23 developer producing **correct, maintainable, and performant** code that matches the conventions below.
+## Workflow
 
-## Build, Test, Lint
+1. Read [STATUS](docs/STATUS.md), [ROADMAP](docs/ROADMAP.md) and the
+   [architecture](docs/ARCHITECTURE.md), then the relevant contract below.
+2. Scope a complete slice. Large changes need a checked-in
+   [plan](docs/PLANS_GUIDE.md) before implementation.
+3. Follow [critical rules](docs/rules/critical-rules.md) and the
+   [compile budget](docs/rules/compile-budget.md).
+4. Verify affected behavior, run its build/tests and `make ci`, then commit.
+5. Update the document that owns any changed contract. Git owns history;
+   [docs-in-sync](docs/rules/docs-in-sync.md) defines the rule.
 
-The project uses **xmake** (not CMake). Packages are pinned in `xmake-requires.lock`.
+## Contract Routing
 
-```bash
-# Configure (first time or when switching modes)
-xmake f -m release         # or -m debug
+| Work | Read |
+| --- | --- |
+| Desktop UI and host integration | [desktop-ui](docs/design-docs/desktop-ui.md), [desktop product](docs/product-specs/desktop-prototype.md) |
+| Agent execution and context | [agent-platform](docs/design-docs/agent-platform.md) |
+| Runtime composition and session hosting | [bootstrap-runtime](docs/design-docs/bootstrap-runtime.md) |
+| Tool dispatch and filesystem policy | [tool-runtime](docs/design-docs/tool-runtime.md) |
+| Permission decisions and approvals | [permissions-and-hooks](docs/design-docs/permissions-and-hooks.md) |
+| Session and long-term memory | [memory-system](docs/design-docs/memory-system.md) |
+| Providers and prompt caching | [api-portability](docs/design-docs/api-portability.md), [prompt-design](docs/rules/prompt-design.md) |
+| Async ownership and cancellation | [async-model](docs/design-docs/async-model.md), [async rules](docs/rules/async-and-concurrency.md) |
+| Filesystem and SQLite | [io-runtime](docs/design-docs/io-runtime.md), [storage-runtime](docs/design-docs/storage-runtime.md) |
+| Configuration and state | [secrets-and-state](docs/design-docs/secrets-and-state.md) |
+| Build and dependencies | [BUILD_SYSTEM](docs/BUILD_SYSTEM.md), [libraries](docs/rules/libraries.md) |
+| Tests and benchmarks | [testing-and-bench](docs/rules/testing-and-bench.md) |
+| Commits and reviews | [REPO_COLLAB_GUIDE](docs/REPO_COLLAB_GUIDE.md), [workflow](docs/rules/workflow.md) |
 
-# Build
-xmake                      # build all targets (slow — minutes)
-xmake build orangutan      # binary only
-xmake build orangutan-lib  # static lib only (the shared link target for tests)
-xmake build test-agent     # one test bucket only (much faster iteration)
+Runtime prompt bytes follow `prompt-design.md`; this file routes development work.
 
-# Run the binary
-xmake run orangutan -- --help      # preferred
-./orangutan --help                  # symlink → build/linux/x86_64/release/orangutan
+## Commands
 
-# Tests (Catch2)
-xmake test                                # run every test-* target
-xmake run test-agent                      # run one bucket
-xmake run test-agent "[tag]"              # Catch2 tag filter
-xmake run test-agent "test case name"     # by test case name
-xmake run test-agent -s                   # show successful assertions
-
-# Options
-xmake f --qq_channel=n     # disable the QQ channel (compiled in by default)
-
-# Formatting / lint
-# A pre-commit hook (.githooks/pre-commit) auto-runs clang-format on staged C/C++ files.
-# If not installed: git config core.hooksPath .githooks
-# clang-tidy is governed by .clang-tidy; treat its warnings and LSP diagnostics as errors.
-# compile_commands.json auto-regenerates on build (configured for clangd).
+```sh
+xmake f -y -m release
+xmake build -j4
+xmake test -j4
+make ci
 ```
 
-**Test target map.** Each directory under `tests/` is compiled as its own `test-<name>` target — see `xmake/tests.lua`. When iterating on module X, run only `test-<x>` rather than the whole suite. Test helpers live at `tests/test-helpers.hpp` (unique tmp paths, `ScopedEnvVar`) and `tests/test-provider-support.hpp` (`FakeProviderBackend`, `make_test_route`).
-
-**Builds are slow (~70s+).** Batch edits, rely on clangd diagnostics, and build only at the end of a change series. Do not rebuild after every trivial edit.
-
-## Architecture — The Big Picture
-
-`main.cpp` does nothing except call `orangutan::bootstrap::run(argc, argv)`. Everything interesting is in `src/bootstrap/`, which is the **runtime assembler**: it parses CLI flags, loads/decrypts config, constructs per-agent runtimes, wires them into channel/web/automation services, and drives the main loop. Read `src/bootstrap/bootstrap.cpp` first — it names every collaborator.
-
-### Core primitive: the agent loop
-
-`agent::AgentLoop` (src/agent/agent-loop.hpp) is the ReAct loop. Given a user prompt, it iterates up to `MAX_ITERATIONS`: build request → `ProviderSystem::send` → parse tool calls → dispatch via `ToolRegistry` → append results to history → repeat until a final text response or stop. It composes with **providers**, a **tool registry**, optional **runtime memory**, **hooks**, and a **skills** prompt. Configure via the fluent `AgentLoopBuilder` (uses C++23 deducing-`this`). One `AgentLoop` per running agent instance; multiple instances coexist (primary CLI + orchestrated workers + automation-triggered runs).
-
-**Iteration cost trap.** The loop body runs up to `MAX_ITERATIONS` times per user turn. Any input that does not change across iterations (e.g. the user prompt, and therefore the memory records retrieved for it) must be computed **once before the loop** and passed into `build_system_prompt` as a pre-rendered section (`render_prompt_memory_section` is the template). Per-iteration work currently includes the skills section (intentionally, so newly activated skills surface mid-turn) and deferred-tool summaries; keep that list small.
-
-### Providers: HTTP → protocol → execution
-
-`src/providers/` is layered:
-
-- **transport/** — libcurl primitives + SSE parser (`http-transport`, `sse-parser`). `curl-primitives.hpp` (`CurlHandle`, `CurlHeaders`) is shared with `channel/qq/qq-api-client.cpp` — use it (and its two-arg `append(key, value)`) for any new curl call sites rather than re-initializing curl handles.
-- **protocols/** — per-API adapters (`anthropic-messages`, `openai-chat-completions`, `openai-responses`). `protocol-adapter.hpp` is the common interface; `provider-registry` maps `provider_kind × protocol_kind` to an adapter.
-- **execution/** — `runtime-backend` applies retry, fallback-model switching, and aggregates `ProviderUsageStats`.
-- `provider.hpp` defines `ProviderSystem`, `ProviderRoute` (primary + fallbacks), `ModelTarget`, and `stdexec`-based sender types (`provider_sender`). Every async edge is a sender/receiver — **do not introduce `std::thread` or custom pools**.
-
-### Tools: registry + dispatch + permissions + hooks
-
-`src/tools/`:
-
-- **registry/** — `ToolRegistry` holds tool definitions and dispatches calls through a `ToolRuntimeContext` (workspace root, permissions, memory, orchestration runtime, mailbox, automation, skill loader, etc.).
-- Per-category subdirs register themselves via `tools::register_builtin_*` (see `tools/register.hpp` and each subdir's `register.cpp`): `file/` (read/write/edit/search via fd+rg), `shell/` (sandboxed shell exec), `mcp/` (external MCP clients), `memory/`, `orchestration/` (spawn/stop/send-message plus team management), `automation/`, `skill/`, `message-attachments/`, `tool-search/`, `script/`, `runtime-loader/`, `background/`.
-- `permissions/` evaluates allow/deny/ask rules (`permission-evaluator`, `rule-parser`, `safety-checks`) and produces approval prompts signed for replay.
-- `hooks/HookManager` runs external shell hooks at tool lifecycle events.
-
-Shell already covers `ls/glob/mkdir/delete/move`; new file tools should only exist when they provide structured output, patch semantics, or wrap a real binary — don't duplicate shell.
-
-### Orchestration, automation
-
-- **orchestration/** — `OrchestrationManager` owns worker/teammate lifecycles, notifications, mailbox-backed messaging, and team membership. It spawns `AgentLoop` runtimes on demand via a factory supplied by `bootstrap`. Max-concurrent orchestration is per-agent (`max_concurrent_agents`). Agent definitions load from builtins + `<workspace>/.orangutan/agents/`.
-- **automation/** — cron/periodic/triggered jobs persisted in SQLite. `AutomationRuntime` has an executor callback that builds a fresh agent runtime for each firing; categories (e.g. `heartbeat`) register custom runners. Notifier callback routes output to cli/channel/web.
-
-### Channels, web, CLI
-
-- **channel/** — `ChannelManager` dispatches inbound messages into `MessageQueue`, `JidTaskRunner` fans out to per-JID task pools. `channel/qq/` is the QQ platform adapter (gated by `qq_channel` option at compile time).
-- **web/** — cpp-httplib server. Routes split across `chat-routes`, `session-routes`, `admin-routes*`, `event-stream` (SSE), shared `WebContext`/`EventBus`. `web-route-internal.hpp` collects internals.
-- **cli/** — replxx-backed REPL (`repl.cpp`), single-shot mode (`single-shot.cpp`), slash commands (`slash-commands.cpp`), session restore/save workflow.
-
-### State layer
-
-- **storage/** — `SessionStore` (SQLite) persists conversation history per session. `sqlite.hpp` / `sqlite-throwing.hpp` / `sqlite-error.hpp` — the canonical API is **`std::expected`**-based (`SqliteResult<T> = std::expected<T, SqliteError>`); throwing wrappers exist for tight callsites but the migration goal is explicit expected. New SQLite code must use the expected API. For row reads, prefer `sqlite::read_columns<Ts...>(row)` inside `RowMapper::map` bodies — it short-circuits on the first column failure and returns a `std::tuple` you can unpack via structured bindings (`auto &[id, agent_key, …] = *columns;`). Do not reach for `std::get<N>(row)` or the private `detail::map_tuple`.
-- **memory/** — `MemoryStore` (SQLite) + `RuntimeMemory` scope wrapper + `memory-search` + `memory-mirror` (optional `.orangutan/memory/MEMORY.md` mirror for human inspection) + `memory-age` (decay/retention).
-- **config/** — JSON (`config.example.json` is the shape). Secrets (`api_key`, `client_secret`, etc.) are encrypted at rest under a password (`secret-protection-*`, `secret-fields`). `Config::load` accepts `ConfigSecretOptions` for password override. Do not log or echo decrypted secrets.
-- **bootstrap/identity.cpp** — derives per-runtime identity keys (`runtime_key`, `memory_scope`) used to namespace memory and notifications.
-
-### Request flow (CLI mode, one message)
-
-```
-user input → cli/repl or cli/single-shot
-  → AgentLoop::run(prompt)
-     → hook_manager (pre-iteration)
-     → ProviderSystem::send (transport → protocol adapter → runtime backend)
-     → response parsed into Message + ToolUse list
-     → for each ToolUse: permissions check → tool dispatch → ToolResult
-     → append to history; loop until stop_reason = end_turn or MAX_ITERATIONS
-  → session_store persists history (if auto_save) → memory distillation (optional)
-```
-
-Channel mode replaces the input source with `MessageQueue`; web mode exposes the same loop via HTTP/SSE.
-
-### Where things are assembled
-
-`bootstrap/runtime-assembler.cpp` builds an `AgentRuntimeBundle` (agent + provider + tools + hook_manager) from a `RuntimeAssemblyRequest`. Three assembly sites: primary CLI runtime, delegated worker runtimes, automation-triggered runtimes. When adding a runtime-wide capability, thread it through `RuntimeAssemblyRequest` — don't reach into globals.
-
-### Shared utilities worth knowing
-
-Before inventing a helper, check `src/utils/`. A few that cut recurring boilerplate:
-
-- `utils::all_ok(expected...)` (`expected-combine.hpp`) — combines any number of `std::expected<T, E>` values sharing the same error type into one `std::expected<tuple<T...>, E>`, short-circuiting on the first error. Use it for parser/validator call sites that would otherwise produce a staircase of early returns. `void`-typed slots are kept as `std::monostate` placeholders so structured bindings line up with call order.
-- `utils::Overloaded` (`overloaded.hpp`) — variant visitor helper for `std::visit` lambdas.
-- `utils::enum_name` / `enum_name_kebab` (`enum-string.hpp`) — the preferred way to stringify enums at boundaries (wraps `magic_enum`; do not add per-enum `to_string` helpers).
-- `utils::TaskPool` (`task-pool.hpp`) and `sender-utils.hpp` — use these for async work instead of `std::thread`.
-
-## Code Constraints & Conventions
-
-Rules, idioms, and style guidance live in [`.claude/rules/`](.claude/rules/README.md). Read the file that matches the task:
-
-- [`.claude/rules/critical-rules.md`](.claude/rules/critical-rules.md) — non-negotiable constraints (no macros, no implicit bool, explicit single-arg ctors, treat clang-tidy warnings as errors, no custom thread pools, new SQLite code uses `std::expected`, do not log decrypted secrets, etc.). **Read before any C++ edit.**
-- [`.claude/rules/design-principles.md`](.claude/rules/design-principles.md) — integration, composability, sender/receiver, error handling, wrapper APIs, testing expectations, `src/utils/` reuse.
-- [`.claude/rules/code-style.md`](.claude/rules/code-style.md) — modern C++ idioms, type/memory choices, naming conventions, include order, performance rules, spdlog conventions.
-- [`.claude/rules/workflow.md`](.claude/rules/workflow.md) — branch/commit workflow, pre-commit hook, preferred CLI tools (`rg`, `fd`, etc.).
-- [`.claude/rules/libraries.md`](.claude/rules/libraries.md) — reference for integrated third-party libraries.
-
-When rules or architecture shift, update the corresponding `.claude/rules/*.md` file and this document.
+`make ci` checks repository contracts and hygiene; it does not build C++.
+Use `xmake build test-<lib>` and `xmake run test-<lib>` while iterating.

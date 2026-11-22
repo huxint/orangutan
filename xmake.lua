@@ -1,14 +1,28 @@
-set_project("orangutan")
-set_version("0.1.0")
-set_languages("c++23")
-set_warnings("all")
-add_rules("mode.debug", "mode.release")
-add_rules("plugin.compile_commands.autoupdate", {outputdir = ".", lsp = "clangd"})
-set_policy("package.requires_lock", true)
+-- Orangutan build root. docs/BUILD_SYSTEM.md owns the build contract.
 
-add_cxxflags("-Wno-system-headers", {tools = {"gcc", "gxx"}})
+set_project("orangutan-v2")
+set_version("2.0.0")
+set_languages("c++26")
+set_warnings("all", "extra")
+
+add_rules("mode.debug", "mode.release", "mode.releasedbg")
+add_rules("plugin.compile_commands.autoupdate", { outputdir = ".", lsp = "clangd" })
+
+set_policy("package.requires_lock", true)
+set_policy("build.warning", true)
 
 includes("xmake/options.lua")
+includes("xmake/toolchain.lua")
+includes("xmake/build-policy.lua")
+
+-- Root selection and policy apply to every included project target.
+set_toolchains("oran-gcc")
+add_rules("oran.build")
+
 includes("xmake/packages.lua")
 includes("xmake/targets.lua")
 includes("xmake/tests.lua")
+includes("xmake/bench.lua")
+
+includes("xmake/evals.lua")
+includes("xmake/apps.lua")

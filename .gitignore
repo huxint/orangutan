@@ -1,22 +1,80 @@
-.cache/
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
 .vscode/
-.worktrees/
-.codex/
-.opencode/
-.claude/
+
+# Logs and temp files
+*.log
+*.out
+*.err
 tmp/
+temp/
+.tmp/
+
+# Environment and local overrides
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
 build/
-compile_commands.json
-orangutan
-.worktrees/
-web/node_modules/
-web/dist/
-.superpowers/
-docs/superpowers/
 .xmake/
-.planning/
+compile_commands.json
 xmake-requires.lock
-.omx/
-.snow
-.agent/
-.qoder/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Generated baselines under docs/generated/ may be committed; per-developer
+# bench output is not.
+docs/generated/bench-output-*.json
+docs/generated/compile-output-*.json
+
+# Node / frontend
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.turbo/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Coverage reports
+coverage/
+*.gcda
+*.gcno
+*.gcov
+
+# IDE
+.cache/
+*.swp
+*.swo
+
+# Per-developer agent tool scaffolds (Claude Code teammates, Codex CLI, snow, etc.)
+.agents/
+.codex/
+.snow/
+
+# Claude Code: per-developer overrides only; committed .claude/settings.json +
+# .claude/hooks/ stay tracked.
+.claude/settings.local.json
+
+# Workspace runtime state. `RuntimeAssembly::build` defaults `audit_enabled=true`
+# (slice 15) and writes the audit db to `<workspace>/.orangutan/audit.db`, so
+# running the binary from a checkout otherwise litters the tree with per-machine
+# state.
+.orangutan/
+
+.codegraph/
+.mcp.json
+.worktrees/

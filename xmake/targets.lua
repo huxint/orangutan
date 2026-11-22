@@ -1,44 +1,44 @@
+-- Production library targets follow docs/ARCHITECTURE.md.
+
 local root = os.projectdir()
 
-local function add_orangutan_common()
-    add_includedirs(path.join(root, "src"), {public = true})
-    add_packages("cli11", "nlohmann_json", "fmt", "spdlog", "libcurl", "sqlite3", "cpp-httplib", "stdexec", "rapidhash", "replxx", "mbedtls", "simdutf", "uni_algo", "ctre", "magic_enum", {public = true})
-    add_defines("SPDLOG_FMT_EXTERNAL=1", {public = true})
-    add_syslinks("pthread", {public = true})
-    if has_config("qq_channel") then
-        add_defines("ORANGUTAN_ENABLE_QQ_CHANNEL=1", {public = true})
-    end
+local function oran_lib(name, deps, private_packages, public_packages)
+    target("oran-" .. name)
+        set_kind("static")
+        set_group("oran-libs")
+        add_includedirs(path.join(root, "include"), { public = true })
+        add_files(path.join(root, "src", "oran-" .. name, "**.cpp"))
+        if deps then
+            add_deps(table.unpack(deps))
+        end
+        if private_packages then
+            for _, pkg in ipairs(private_packages) do
+                add_packages(pkg, { public = false })
+            end
+        end
+        if public_packages then
+            for _, pkg in ipairs(public_packages) do
+                add_packages(pkg, { public = true })
+            end
+        end
+        set_pcxxheader(path.join(root, "include/oran/_pch.hpp"))
+    target_end()
 end
 
-target("orangutan-lib")
-    set_kind("static")
-    add_orangutan_common()
-    add_files(
-        path.join(root, "src/agent/*.cpp"),
-        path.join(root, "src/memory/*.cpp"),
-        path.join(root, "src/automation/*.cpp"),
-        path.join(root, "src/orchestration/*.cpp"),
-        path.join(root, "src/hooks/*.cpp"),
-        path.join(root, "src/skills/*.cpp"),
-        path.join(root, "src/heartbeat/*.cpp"),
-        path.join(root, "src/channel/*.cpp"),
-        path.join(root, "src/channel/qq/*.cpp"),
-        path.join(root, "src/web/*.cpp"),
-        path.join(root, "src/providers/*.cpp"),
-        path.join(root, "src/providers/**/*.cpp"),
-        path.join(root, "src/tools/*.cpp"),
-        path.join(root, "src/tools/**/*.cpp"),
-        path.join(root, "src/config/*.cpp"),
-        path.join(root, "src/storage/*.cpp"),
-        path.join(root, "src/process/*.cpp"),
-        path.join(root, "src/utils/*.cpp"),
-        path.join(root, "src/cli/*.cpp"),
-        path.join(root, "src/prompt/*.cpp"),
-        path.join(root, "src/bootstrap/*.cpp"),
-        path.join(root, "src/permissions/*.cpp")
-    )
+oran_lib("core", {}, {})
+oran_lib("async", { "oran-core" }, {}, { "asio" })
+oran_lib("http", { "oran-core", "oran-async" }, { "libcurl" }, { "asio" })
+oran_lib("io", { "oran-core", "oran-async" }, {}, { "asio" })
+oran_lib("storage", { "oran-core", "oran-async" }, { "sqlite3" })
+oran_lib("config", { "oran-core" }, { "nlohmann_json", "re2" })
+oran_lib("permission", { "oran-core", "oran-storage", "oran-async" }, { "re2", "libsodium" })
+oran_lib("hook", { "oran-core", "oran-async" }, {})
+oran_lib("memory", { "oran-core", "oran-async", "oran-storage" }, { "nlohmann_json" })
+oran_lib("tool", { "oran-core", "oran-async", "oran-io", "oran-permission", "oran-hook" }, { "nlohmann_json" })
+oran_lib("prompt", { "oran-core" }, {})
+oran_lib("provider", { "oran-core", "oran-async" }, { "nlohmann_json" })
+oran_lib("agent", { "oran-core", "oran-async", "oran-storage", "oran-prompt", "oran-tool", "oran-provider", "oran-hook" }, {})
 
-target("orangutan")
-    set_kind("binary")
-    add_deps("orangutan-lib")
-    add_files(path.join(root, "src/main.cpp"))
+oran_lib("channel", { "oran-core", "oran-async", "oran-permission", "oran-hook" }, { "nlohmann_json" })
+
+oran_lib("bootstrap", { "oran-core", "oran-async", "oran-http", "oran-io", "oran-storage", "oran-config", "oran-permission", "oran-hook", "oran-memory", "oran-tool", "oran-provider", "oran-agent", "oran-channel" }, { "nlohmann_json", "libsodium" })

@@ -1,0 +1,37 @@
+{
+  "strict_config": true,
+  "runtime": {
+    "workers": 4,
+    "request_timeout_ms": 60000,
+    "prompt": {
+      "active_tools": [
+        "FileRead",
+        "MemoryRecall",
+        "MemoryRemember"
+      ]
+    }
+  },
+  "profiles": {
+    "deepseek": {
+      "protocol": "anthropic_messages",
+      "provider": "anthropic",
+      "model": "deepseek-flash",
+      "base_url": "https://api.deepseek.com/anthropic",
+      "api_key_env": "ORAN_QQ_MODEL_KEY"
+    }
+  },
+  "routes": {
+    "default": {
+      "primary": "deepseek",
+      "fallbacks": []
+    }
+  },
+  "permissions": {
+    "allow": [
+      {
+        "tool_pattern": "*",
+        "capability": "egress_http"
+      }
+    ]
+  }
+}

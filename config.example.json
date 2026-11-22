@@ -1,79 +1,102 @@
 {
-  "agent": {
-    "profile": "anthropic-main",
-    "model": "claude-sonnet-4-20250514",
-    "workspace": "~/workspace"
+  "strict_config": false,
+  "runtime": {
+    "workers": 4,
+    "request_timeout_ms": 600000,
+    "tool_output": {
+      "max_text_bytes": 262144,
+      "max_data_bytes": 1048576
+    },
+    "tool_scheduler": {
+      "max_parallel_tools": 4,
+      "per_call_timeout_ms": 60000
+    },
+    "stream": {
+      "max_bytes": 16777216
+    },
+    "prompt": {
+      "active_tools": "defaults"
+    }
   },
-  "permissions": {
-    "default_mode": "default_mode",
-    "allow": ["read", "task(list)"],
-    "deny": ["shell(rm:*)"],
-    "ask": ["edit", "write", "shell"]
-  },
-  "session": {
-    "auto_save": true
-  },
-  "security": {
-    "allow": [
-      "cli:*",
-      "qqbot:primary:*",
-      "qqbot:coder-bot:*",
-      "qqbot:research-bot:*"
-    ],
-    "deny": []
+  "trace": {
+    "enabled": true
   },
   "profiles": {
-    "anthropic-main": {
-      "base_url": "https://api.anthropic.com",
-      "api_key": "${ANTHROPIC_API_KEY}",
-      "headers": {
-        "anthropic-version": "2023-06-01"
-      },
-      "models": {
-        "claude-sonnet-4-20250514": {
-          "provider": "anthropic",
-          "protocol": "messages",
-          "thinking": "medium",
-          "context_window": 200000
-        }
-      }
-    }
-  },
-  "agents": {
     "default": {
-      "leader_mode": true,
-      "max_concurrent_agents": 4
-    },
-    "coder": {
-      "permissions": {
-        "default_mode": "default_mode",
-        "allow": ["read", "edit"],
-        "deny": ["shell(git push *)"],
-        "ask": ["shell"]
+      "provider": "anthropic",
+      "protocol": "anthropic_messages",
+      "model": "${ORAN_DEFAULT_MODEL:-claude-3-5-sonnet-latest}",
+      "base_url": "https://api.anthropic.com",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "pricing": {
+        "input_per_million_usd": 3.0,
+        "output_per_million_usd": 15.0,
+        "cache_creation_per_million_usd": 3.75,
+        "cache_read_per_million_usd": 0.3
+      },
+      "thinking_budget": 1024,
+      "cache": {
+        "enabled": true,
+        "min_prefix_bytes": 512
       }
-    },
-    "research": {
-      "thinking_budget": 2048
     }
   },
-  "qq_bots": [
-    {
-      "name": "primary",
-      "app_id": "${QQ_APP_ID_PRIMARY}",
-      "client_secret": "${QQ_CLIENT_SECRET_PRIMARY}",
-      "agent": "default"
-    },
-    {
-      "name": "coder-bot",
-      "app_id": "${QQ_APP_ID_CODER}",
-      "client_secret": "${QQ_CLIENT_SECRET_CODER}",
-      "agent": "coder"
-    },
-    {
-      "name": "research-bot",
-      "app_id": "${QQ_APP_ID_RESEARCH}",
-      "client_secret": "${QQ_CLIENT_SECRET_RESEARCH}",
-      "agent": "research"
+  "routes": {
+    "default": {
+      "primary": "default",
+      "fallbacks": []
     }
-  ]
+  },
+  "permissions": {
+    "workspace": {
+      "extra_read_roots": [],
+      "extra_write_roots": []
+    },
+    "allow": [
+      {
+        "tool_pattern": "FileRead"
+      }
+    ],
+    "deny": [
+      {
+        "tool_pattern": "*",
+        "capability": "runtime_loader"
+      },
+      {
+        "tool_pattern": "ShellExec",
+        "input_pattern": "^rm -rf"
+      },
+      {
+        "tool_pattern": "ShellExec",
+        "input_pattern": "^git push"
+      }
+    ],
+    "ask": [
+      {
+        "tool_pattern": "FileWrite"
+      },
+      {
+        "tool_pattern": "*",
+        "capability": "spawn_subprocess"
+      }
+    ]
+  },
+  "hooks": {
+    "timeout_ms": 2000
+  },
+  "memory": {
+    "longterm": {
+      "recall": {
+        "enabled": true,
+        "limit": 20,
+        "kinds": [
+          "user",
+          "feedback",
+          "project",
+          "reference",
+          "team"
+        ]
+      }
+    }
+  }
 }
