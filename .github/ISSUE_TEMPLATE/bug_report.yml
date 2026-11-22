@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a defect in Orangutan v2.
+description: Report a defect in Orangutan.
 title: "bug: <one-line summary>"
 labels: ["bug"]
 body:
