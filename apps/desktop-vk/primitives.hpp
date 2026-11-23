@@ -89,11 +89,12 @@ public:
   void glyph(Rect r, float u0, float v0, float u1, float v1, Color color, float gamma = 0.88F);
 
   void icon(IconKind kind, float cx, float cy, float size, Color color);
-  void set_textured_companions(bool enabled) noexcept {
-    textured_companions_ = enabled;
-  }
   void set_dark_surface(bool dark) noexcept {
     dark_surface_ = dark;
+  }
+  void set_cursor(float x, float y) noexcept {
+    cursor_x_ = x;
+    cursor_y_ = y;
   }
   void companion(CompanionId id, float cx, float cy, float radius, CompanionMood mood, float time_sec,
                  bool animate = true, float pet_bounce = 0.0F, float hover_amount = 0.0F);
@@ -110,8 +111,9 @@ private:
   void emit(UiInstance inst);
 
   float dpr_{1.0F};
-  bool textured_companions_{false};
   bool dark_surface_{false};
+  float cursor_x_{-1.0F};
+  float cursor_y_{-1.0F};
   Rect root_clip_{0.0F, 0.0F, 16384.0F, 16384.0F};
   std::vector<Rect> clip_stack_;
   std::vector<UiInstance> instances_;

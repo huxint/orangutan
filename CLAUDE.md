@@ -1,21 +1,21 @@
 # Orangutan
 
-C++26 Personal Agent runtime and local workbench. Prefer pure value transformations,
-explicit Asio effect boundaries, RAII ownership, and verified tests. Preserve user
-data; delete replaced code and stale documents.
+C++26 Personal Agent runtime and pure-Vulkan native desktop application. Prefer
+pure value transformations, explicit Asio effect boundaries, RAII ownership, and
+verified tests. Preserve user data; delete replaced code and stale documents.
 
 ## Workflow
 
 1. Read [STATUS](docs/STATUS.md), [ROADMAP](docs/ROADMAP.md), and [ARCHITECTURE](docs/ARCHITECTURE.md).
 2. Follow [critical rules](docs/rules/critical-rules.md) and [code style](docs/rules/code-style.md).
-3. Verify affected behavior with `xmake build`, `xmake test`, `apps/desktop` checks, and `make ci`.
+3. Verify affected behavior with `xmake build`, `xmake test`, `orangutan-desktop --validate`, and `make ci`.
 4. Keep owning contracts in sync ([docs-in-sync](docs/rules/docs-in-sync.md)).
 
 ## Contract Routing
 
 | Work | Read |
 | --- | --- |
-| Desktop UI, local bridge & pets | [desktop-ui](docs/design-docs/desktop-ui.md) |
+| Pure-Vulkan desktop & 3D pets | [desktop-ui](docs/design-docs/desktop-ui.md) |
 | Agent loop & context | [agent-platform](docs/design-docs/agent-platform.md), [agent-teams](docs/design-docs/agent-teams.md) |
 | Runtime assembly & sessions | [bootstrap-runtime](docs/design-docs/bootstrap-runtime.md) |
 | Tools, workspace & shell | [tool-runtime](docs/design-docs/tool-runtime.md) |
@@ -36,5 +36,5 @@ xmake test -j4
 make ci
 ```
 
-Default build produces all 15 runtime libraries plus the `orangutan` Personal Agent CLI/server binary.
-Use `xmake build test-<lib>` and `xmake run test-<lib>` while iterating.
+Default build produces all 15 runtime libraries plus the `orangutan` Personal Agent CLI binary.
+Use `xmake build -j4 orangutan-desktop` for the pure-Vulkan native desktop, and `xmake build test-<lib>` / `xmake run test-<lib>` while iterating.

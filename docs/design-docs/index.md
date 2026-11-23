@@ -7,7 +7,7 @@
 | [`api-portability.md`](api-portability.md) | Provider protocols, retry, fallback and caching |
 | [`async-model.md`](async-model.md) | Executors, cancellation and RAII lifetime joins |
 | [`bootstrap-runtime.md`](bootstrap-runtime.md) | Application composition, sessions and background tasks |
-| [`desktop-ui.md`](desktop-ui.md) | Desktop Personal Agent workbench, local host bridge and Forest Companions |
+| [`desktop-ui.md`](desktop-ui.md) | Pure-Vulkan native desktop UI, real-time 3D PBR Forest Companions and in-process runtime bridge |
 | [`io-runtime.md`](io-runtime.md) | Pinned directory authority, blocking IO and bounded subprocesses |
 | [`memory-system.md`](memory-system.md) | Session persistence, scoped notes and lexical/CJK recall |
 | [`messaging-channels.md`](messaging-channels.md) | Telegram, QQ and Feishu adapters, delivery and activity lifecycle |

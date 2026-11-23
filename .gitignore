@@ -35,14 +35,6 @@ xmake-requires.lock
 docs/generated/bench-output-*.json
 docs/generated/compile-output-*.json
 
-# Node / frontend
-node_modules/
-.pnpm-store/
-.npm/
-.yarn/
-.turbo/
-dist/
-
 # Python
 __pycache__/
 *.pyc

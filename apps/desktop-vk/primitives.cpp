@@ -392,100 +392,95 @@ void DrawList::icon(IconKind kind, float cx, float cy, float size, Color color) 
 
 namespace {
 
-struct FigurinePose {
-  float lift_norm{0.0F};  // vertical hop offset as fraction of radius
-  float tilt_rad{0.0F};   // playful organic head/body tilt
-  float squash_x{1.0F};   // horizontal squash/stretch around feet
-  float stretch_y{1.0F};  // vertical breathing/hop stretch around feet
-  float sway_x{0.0F};     // subtle curious upper-body sway
+struct Pose3D {
+  float yaw{0.0F};     // true 3D horizontal head turn (radians)
+  float tilt{0.0F};    // true 3D playful head tilt (radians)
+  float hop_y{0.0F};   // true 3D vertical hop height in world units
+  float blink{0.0F};   // 0=open, 1=closed 3D eyelids
+  float breath{0.0F};  // gentle chest breathing wave [-1, 1]
+  float wag{0.0F};     // extra secondary tail/wing energy
 };
 
-// Computes natural, occasional autonomous movement ("有时会动") per companion:
-// calm slow breathing most of the time, punctuated every ~4.5-6.5s by an organic
-// head tilt, curious sway, or light joyful hop (staggered uniquely per companion).
-[[nodiscard]] FigurinePose compute_figurine_pose(CompanionId id, CompanionMood mood, float time_sec, bool animate,
-                                                 float pet_bounce, float hover_amount) noexcept {
-  FigurinePose pose{};
-  if (!animate && pet_bounce <= 0.0F && hover_amount <= 0.0F) {
-    return pose;
-  }
-
+// Pure-code autonomous 3D companion life engine ("有时可以会动"):
+// calm breathing + periodic realistic 3D blinking + staggered occasional
+// 3D head-turns, playful head-tilts, and joyful hops + subtle cursor look-at!
+[[nodiscard]] Pose3D compute_pose_3d(CompanionId id, CompanionMood mood, float time_sec, bool animate,
+                                     float pet_bounce, float hover_amount, float look_dx) noexcept {
+  Pose3D pose{};
   const float idx_f = static_cast<float>(id);
   const float phase = animate ? time_sec : 0.0F;
 
-  // 1. Calm organic breathing (barely perceptible chest rise, feet stay planted)
-  if (animate) {
-    const float breath = std::sin(phase * 1.85F + idx_f * 1.17F);
-    pose.stretch_y += breath * 0.018F;
-    pose.squash_x -= breath * 0.010F;
-  }
+  // Natural subtle 3/4 sculptural hero stance so every 3D figure shows rich depth immediately
+  pose.yaw = ((static_cast<int>(id) % 2 == 0) ? 0.14F : -0.14F);
 
-  // 2. Occasional autonomous micro-behaviors every ~4.8-6.4 seconds per companion
   if (animate) {
-    const float period = 5.2F + std::fmod(idx_f * 0.73F, 1.9F);
-    const float t_mod = std::fmod(phase + idx_f * 2.13F, period);
-    const int cycle_id = static_cast<int>((phase + idx_f * 2.13F) / period) + static_cast<int>(id) * 7;
-    const int action = cycle_id % 3;  // 0: head tilt, 1: playful hop, 2: curious sway
+    // 1. Calm continuous breathing
+    pose.breath = std::sin(phase * 1.9F + idx_f * 1.17F);
 
-    if (action == 0 && t_mod < 1.35F) {
-      // Smooth playful head tilt & return
-      const float env = std::sin((t_mod / 1.35F) * kPi);
-      const float dir = ((cycle_id / 3) % 2 == 0) ? 1.0F : -1.0F;
-      pose.tilt_rad += dir * 0.12F * env * env;
-      pose.sway_x += dir * 0.022F * env;
-    } else if (action == 1 && t_mod < 0.85F) {
-      // Light joyful hop with anticipation squash & bouncy landing
+    // 2. Realistic periodic 3D eyelid blink (~every 4.1-4.9s, 180ms smooth close-open)
+    const float blink_period = 4.1F + std::fmod(idx_f * 0.41F, 1.1F);
+    const float bt = std::fmod(phase + idx_f * 1.37F, blink_period);
+    if (bt > blink_period - 0.18F) {
+      const float u = (bt - (blink_period - 0.18F)) / 0.18F;
+      pose.blink = std::sin(u * kPi);
+    }
+
+    // 3. Occasional autonomous 3D micro-actions every ~4.6-6.2 seconds per companion
+    const float period = 4.8F + std::fmod(idx_f * 0.67F, 1.5F);
+    const float t_mod = std::fmod(phase + idx_f * 1.95F, period);
+    const int cycle = static_cast<int>((phase + idx_f * 1.95F) / period) + static_cast<int>(id) * 5;
+    const int action = cycle % 3;  // 0: 3D curious look around, 1: playful 3D tilt, 2: joyful 3D hop
+
+    if (action == 0 && t_mod < 1.55F) {
+      const float u = t_mod / 1.55F;
+      const float env = std::sin(u * kPi);
+      const float dir = ((cycle / 3) % 2 == 0) ? 1.0F : -1.0F;
+      pose.yaw += dir * 0.34F * env;
+      pose.tilt += dir * 0.08F * env;
+    } else if (action == 1 && t_mod < 1.30F) {
+      const float u = t_mod / 1.30F;
+      const float env = std::sin(u * kPi);
+      const float dir = ((cycle / 3) % 2 == 0) ? 1.0F : -1.0F;
+      pose.tilt += dir * 0.17F * env * env;
+      pose.yaw -= dir * 0.12F * env;
+    } else if (action == 2 && t_mod < 0.85F) {
       const float u = t_mod / 0.85F;
       if (u < 0.18F) {
-        const float sq = std::sin((u / 0.18F) * kPi);
-        pose.squash_x += 0.06F * sq;
-        pose.stretch_y -= 0.06F * sq;
-      } else if (u < 0.76F) {
-        const float air = (u - 0.18F) / 0.58F;
-        const float arc_h = std::sin(air * kPi);
-        pose.lift_norm += 0.20F * arc_h;
-        pose.stretch_y += 0.055F * arc_h;
-        pose.squash_x -= 0.035F * arc_h;
-        pose.tilt_rad += 0.055F * std::sin(air * kPi * 2.0F);
+        pose.breath -= 2.2F * std::sin((u / 0.18F) * kPi);  // anticipation squash
+      } else if (u < 0.78F) {
+        const float air = (u - 0.18F) / 0.60F;
+        pose.hop_y += 0.22F * std::sin(air * kPi);
+        pose.tilt += 0.08F * std::sin(air * kPi * 2.0F);
+        pose.wag += 2.0F * std::sin(air * kPi);
       } else {
-        const float land = (u - 0.76F) / 0.24F;
-        const float sq = std::sin(land * kPi);
-        pose.squash_x += 0.055F * sq;
-        pose.stretch_y -= 0.050F * sq;
+        const float land = (u - 0.78F) / 0.22F;
+        pose.breath -= 1.8F * std::sin(land * kPi);  // bouncy landing squash
       }
-    } else if (action == 2 && t_mod < 1.50F) {
-      // Curious double look/sway
-      const float u = t_mod / 1.50F;
-      const float env = std::sin(u * kPi);
-      const float wave = std::sin(u * kPi * 2.0F);
-      pose.sway_x += 0.042F * wave * env;
-      pose.tilt_rad += 0.075F * wave * env;
+    }
+
+    // 4. Mood-driven liveliness
+    if (mood == CompanionMood::working || mood == CompanionMood::thinking) {
+      pose.yaw += 0.18F * std::sin(phase * 3.1F + idx_f);
+      pose.tilt += 0.09F * std::sin(phase * 4.4F);
+      pose.wag += 1.2F;
+    } else if (mood == CompanionMood::celebrating) {
+      pose.hop_y += 0.14F * std::abs(std::sin(phase * 5.0F));
+      pose.tilt += 0.12F * std::sin(phase * 6.0F);
     }
   }
 
-  // 3. Mood-driven expression (active collaboration / guarding / celebrating)
-  if (animate && (mood == CompanionMood::working || mood == CompanionMood::thinking)) {
-    const float w = std::sin(phase * 4.8F + idx_f);
-    pose.tilt_rad += 0.07F * w;
-    pose.lift_norm += std::max(0.0F, std::sin(phase * 5.6F)) * 0.07F;
-  } else if (animate && mood == CompanionMood::celebrating) {
-    const float hop = std::abs(std::sin(phase * 5.2F));
-    pose.lift_norm += 0.14F * hop;
-    pose.tilt_rad += 0.09F * std::sin(phase * 6.5F);
-  }
-
-  // 4. Hover attentive perk-up & click-to-pet joyful spring bounce
+  // 5. Real-time 3D cursor gaze tracking + click-to-pet happy jump!
+  pose.yaw += std::clamp(look_dx, -1.0F, 1.0F) * 0.22F;
   if (hover_amount > 0.0F) {
-    pose.tilt_rad += 0.065F * hover_amount;
-    pose.stretch_y += 0.030F * hover_amount;
-    pose.squash_x += 0.020F * hover_amount;
+    pose.tilt += 0.09F * hover_amount;
+    pose.wag += 1.5F * hover_amount;
   }
   if (pet_bounce > 0.0F) {
     const float s = std::sin(pet_bounce * kPi);
-    pose.lift_norm += 0.26F * s;
-    pose.tilt_rad += 0.16F * std::sin(pet_bounce * kPi * 2.0F);
-    pose.stretch_y += 0.08F * s;
-    pose.squash_x -= 0.04F * s;
+    pose.hop_y += 0.28F * s;
+    pose.tilt += 0.19F * std::sin(pet_bounce * kPi * 2.0F);
+    pose.blink = std::max(pose.blink, s * 0.85F);  // happy squint!
+    pose.wag += 3.0F * s;
   }
 
   return pose;
@@ -495,283 +490,41 @@ struct FigurinePose {
 
 void DrawList::companion(CompanionId id, float cx, float cy, float r, CompanionMood mood, float time_sec,
                          bool animate, float pet_bounce, float hover_amount) {
-  const auto& prof = companion_profile(id);
-  const auto pose = compute_figurine_pose(id, mood, time_sec, animate, pet_bounce, hover_amount);
-  const float phase = animate ? time_sec : 0.0F;
-  const float lift_px = pose.lift_norm * r;
-  const float y = cy - lift_px;
+  const auto idx = static_cast<std::size_t>(id);
+  const float look_dx = (cursor_x_ >= 0.0F) ? std::clamp((cursor_x_ - cx) / 280.0F, -1.0F, 1.0F) : 0.0F;
+  const auto pose = compute_pose_3d(id, mood, time_sec, animate, pet_bounce, hover_amount, look_dx);
 
-  if (textured_companions_) {
-    const auto idx = static_cast<std::size_t>(id);
-    if (idx < 6U) {
-      // Pure backgroundless freestanding 3D figurine — NO circle or box backdrop!
-      // Size generous (2.25 * r) so the transparent cutout silhouette matches optical visual weight.
-      const float scale = 1.0F + hover_amount * 0.055F;
-      const float half = r * 1.16F * scale;
+  // Pure-code backgroundless 3D raymarched PBR figurine (kind == 7):
+  // zero PNG textures, zero circular stickers, real raymarched 3D shadows & rim light!
+  const float scale = 1.0F + hover_amount * 0.05F;
+  const float half = r * 1.28F * scale;
 
-      // Grounded 3D floor contact shadow directly under the figurine's base;
-      // physically shrinks and fades as the figurine hops upward!
-      if (r >= 15.0F) {
-        const float air_factor = std::clamp(1.0F - pose.lift_norm * 1.8F, 0.35F, 1.0F);
-        const float sw = half * 1.24F * air_factor;
-        const float sh = std::max(4.0F, half * 0.22F * air_factor);
-        const float sy = cy + half * 0.78F - sh * 0.5F;
-        const float shadow_alpha = (dark_surface_ ? 0.42F : 0.22F) * air_factor;
-        shadow(Rect{cx - sw * 0.5F, sy, sw, sh}, sh * 0.5F, std::max(5.0F, r * 0.22F), 0.0F,
-               hex(0x1A130D, shadow_alpha));
-      }
+  UiInstance inst{};
+  inst.rect[0] = (cx - half) * dpr_;
+  inst.rect[1] = (cy - half) * dpr_;
+  inst.rect[2] = (half * 2.0F) * dpr_;
+  inst.rect[3] = (half * 2.0F) * dpr_;
 
-      // Subtle glowing halo ONLY beneath the floor when actively working/guarding (never a solid backdrop!)
-      if (mood == CompanionMood::working || mood == CompanionMood::thinking) {
-        const float pulse = 0.55F + 0.45F * std::sin(phase * 3.5F);
-        const float sw = half * 1.45F;
-        const float sh = std::max(4.0F, half * 0.22F);
-        shadow(Rect{cx - sw * 0.5F, cy + half * 0.76F - sh * 0.5F, sw, sh}, sh * 0.5F, std::max(6.0F, r * 0.28F),
-               0.0F, prof.accent.with_alpha(0.28F * pulse));
-      } else if (mood == CompanionMood::guarding) {
-        const float sw = half * 1.50F;
-        const float sh = std::max(4.0F, half * 0.24F);
-        shadow(Rect{cx - sw * 0.5F, cy + half * 0.76F - sh * 0.5F, sw, sh}, sh * 0.5F, std::max(7.0F, r * 0.30F),
-               0.0F, hex(0xD48B22, 0.34F));
-      }
+  inst.radii[0] = pose.yaw;
+  inst.radii[1] = pose.tilt;
+  inst.radii[2] = pose.hop_y;
+  inst.radii[3] = pose.blink;
 
-      const float col = static_cast<float>(idx % 3U);
-      const float row = static_cast<float>(idx / 3U);
-      const float tile_w = 1.0F / 3.0F;
-      const float tile_h = 1.0F / 2.0F;
-      constexpr float kBleed = 0.004F;
+  inst.color[0] = static_cast<float>(idx < 6U ? idx : 0U);
+  inst.color[1] = animate ? time_sec : 0.0F;
+  inst.color[2] = static_cast<float>(mood);
+  inst.color[3] = 1.0F;
 
-      UiInstance inst{};
-      inst.rect[0] = (cx - half) * dpr_;
-      inst.rect[1] = (y - half) * dpr_;
-      inst.rect[2] = (half * 2.0F) * dpr_;
-      inst.rect[3] = (half * 2.0F) * dpr_;
-      inst.radii[0] = pose.tilt_rad;
-      inst.radii[1] = pose.squash_x;
-      inst.radii[2] = pose.stretch_y;
-      inst.radii[3] = pose.sway_x;
-      fill_rgba(inst.color, Color{1, 1, 1, 1});
-      inst.uv[0] = (col + kBleed) * tile_w;
-      inst.uv[1] = (row + kBleed) * tile_h;
-      inst.uv[2] = (col + (1.0F - kBleed)) * tile_w;
-      inst.uv[3] = (row + (1.0F - kBleed)) * tile_h;
-      inst.params[0] = 7.0F;
-      inst.params[1] = hover_amount + (pet_bounce > 0.0F ? 0.65F : 0.0F);
-      inst.params[2] = dark_surface_ ? 0.90F : 0.25F;
-      inst.params[3] = 1.0F;
-      emit(inst);
-      return;
-    }
-  }
+  inst.color2[0] = pose.breath;
+  inst.color2[1] = pose.wag;
+  inst.color2[2] = 0.0F;
+  inst.color2[3] = 0.0F;
 
-  // Periodic natural blink (~every 4.2s)
-  const float blink_cycle = std::fmod(phase + static_cast<float>(id) * 0.9F, 4.4F);
-  const bool blinking = animate && blink_cycle > 4.24F;
-  const bool happy_eyes = mood == CompanionMood::celebrating || pet_bounce > 0.05F;
-
-  // Soft warm ambient medallion halo behind each companion
-  circle(cx, cy + r * 0.04F, r * 1.02F, prof.soft.with_alpha(0.92F), prof.accent.with_alpha(0.24F),
-         std::max(1.0F, r * 0.045F));
-
-  // Subtle thinking/working orbiting accent ring
-  if (mood == CompanionMood::thinking || mood == CompanionMood::working) {
-    const float spin = phase * 2.6F;
-    arc(cx, cy + r * 0.04F, r * 1.07F, spin, kPi * 0.65F, std::max(1.8F, r * 0.065F), prof.accent);
-  } else if (mood == CompanionMood::guarding) {
-    circle(cx, cy + r * 0.04F, r * 1.08F, Color{0, 0, 0, 0}, hex(0xB37620, 0.72F), std::max(1.6F, r * 0.055F));
-  }
-
-  const Color ink = hex(0x2B2118);
-  const Color white = hex(0xFFFDF8);
-  const Color cheek = hex(0xEE8E72, 0.52F);
-
-  auto draw_eye = [&](float ex, float ey, float er) {
-    if (happy_eyes) {
-      arc(ex, ey + er * 0.25F, er * 1.15F, kPi * 1.12F, kPi * 0.76F, std::max(1.6F, r * 0.065F), ink);
-    } else if (blinking) {
-      line(ex - er, ey, ex + er, ey, std::max(1.5F, r * 0.06F), ink);
-    } else {
-      circle(ex, ey, er, ink);
-      circle(ex - er * 0.30F, ey - er * 0.32F, er * 0.34F, white);
-    }
-  };
-
-  switch (id) {
-    case CompanionId::oran: {
-      // Cute terracotta orangutan with cream muzzle & lively green sprout leaf on head!
-      const Color fur = hex(0xC65A2B);
-      const Color fur_hi = hex(0xD87242);
-      const Color muzzle = hex(0xF8E3C6);
-      const Color leaf = hex(0x4F8B5B);
-      const Color leaf_hi = hex(0x6BA975);
-      const float sway = animate ? std::sin(phase * 3.1F) * (r * 0.06F) : 0.0F;
-
-      // Sprout stem + twin playful leaves
-      line(cx, y - r * 0.62F, cx + sway * 0.6F, y - r * 0.94F, std::max(1.6F, r * 0.065F), leaf);
-      ellipse(cx - r * 0.17F + sway, y - r * 0.92F, r * 0.19F, r * 0.11F, leaf);
-      ellipse(cx + r * 0.18F + sway, y - r * 0.96F, r * 0.17F, r * 0.10F, leaf_hi);
-
-      // Round ears
-      circle(cx - r * 0.62F, y - r * 0.04F, r * 0.22F, fur);
-      circle(cx - r * 0.62F, y - r * 0.04F, r * 0.12F, muzzle);
-      circle(cx + r * 0.62F, y - r * 0.04F, r * 0.22F, fur);
-      circle(cx + r * 0.62F, y - r * 0.04F, r * 0.12F, muzzle);
-
-      // Head & warm forehead highlight
-      ellipse(cx, y + r * 0.03F, r * 0.64F, r * 0.60F, fur);
-      ellipse(cx, y - r * 0.24F, r * 0.42F, r * 0.22F, fur_hi.with_alpha(0.55F));
-
-      // Warm cream facial mask & snout
-      ellipse(cx - r * 0.18F, y - r * 0.04F, r * 0.25F, r * 0.23F, muzzle);
-      ellipse(cx + r * 0.18F, y - r * 0.04F, r * 0.25F, r * 0.23F, muzzle);
-      ellipse(cx, y + r * 0.22F, r * 0.46F, r * 0.34F, muzzle);
-
-      // Rosy cheeks
-      ellipse(cx - r * 0.34F, y + r * 0.16F, r * 0.12F, r * 0.075F, cheek);
-      ellipse(cx + r * 0.34F, y + r * 0.16F, r * 0.12F, r * 0.075F, cheek);
-
-      // Expressive eyes + gentle smile
-      draw_eye(cx - r * 0.20F, y - r * 0.04F, r * 0.095F);
-      draw_eye(cx + r * 0.20F, y - r * 0.04F, r * 0.095F);
-      ellipse(cx, y + r * 0.13F, r * 0.075F, r * 0.050F, hex(0x6E3B23));
-      arc(cx, y + r * 0.18F, r * 0.17F, kPi * 0.18F, kPi * 0.64F, std::max(1.5F, r * 0.055F), ink);
-      break;
-    }
-
-    case CompanionId::scout: {
-      // Curious golden-amber forest fox
-      const Color fur = hex(0xD97732);
-      const Color tip = hex(0x422B1E);
-      const Color cream = hex(0xFAF0E1);
-
-      // Pointy fox ears
-      triangle(cx - r * 0.54F, y - r * 0.16F, cx - r * 0.44F, y - r * 0.78F, cx - r * 0.08F, y - r * 0.44F, fur, 2.0F);
-      triangle(cx - r * 0.48F, y - r * 0.56F, cx - r * 0.44F, y - r * 0.78F, cx - r * 0.30F, y - r * 0.62F, tip, 1.0F);
-      triangle(cx + r * 0.54F, y - r * 0.16F, cx + r * 0.44F, y - r * 0.78F, cx + r * 0.08F, y - r * 0.44F, fur, 2.0F);
-      triangle(cx + r * 0.48F, y - r * 0.56F, cx + r * 0.44F, y - r * 0.78F, cx + r * 0.30F, y - r * 0.62F, tip, 1.0F);
-
-      // Head & fluffy cheeks
-      ellipse(cx, y + r * 0.08F, r * 0.62F, r * 0.52F, fur);
-      ellipse(cx - r * 0.28F, y + r * 0.28F, r * 0.32F, r * 0.22F, cream);
-      ellipse(cx + r * 0.28F, y + r * 0.28F, r * 0.32F, r * 0.22F, cream);
-      ellipse(cx, y + r * 0.34F, r * 0.24F, r * 0.19F, cream);
-
-      draw_eye(cx - r * 0.22F, y + r * 0.02F, r * 0.090F);
-      draw_eye(cx + r * 0.22F, y + r * 0.02F, r * 0.090F);
-      ellipse(cx - r * 0.36F, y + r * 0.18F, r * 0.09F, r * 0.055F, cheek);
-      ellipse(cx + r * 0.36F, y + r * 0.18F, r * 0.09F, r * 0.055F, cheek);
-      triangle(cx - r * 0.09F, y + r * 0.22F, cx + r * 0.09F, y + r * 0.22F, cx, y + r * 0.32F, tip, 1.2F);
-      break;
-    }
-
-    case CompanionId::moss: {
-      // Calm sage-green forest owl
-      const Color feather = hex(0x477654);
-      const Color disc = hex(0xE1ECE0);
-      const Color gold = hex(0xE4B24B);
-
-      // Little ear tufts
-      triangle(cx - r * 0.46F, y - r * 0.34F, cx - r * 0.56F, y - r * 0.70F, cx - r * 0.18F, y - r * 0.50F, feather, 1.5F);
-      triangle(cx + r * 0.46F, y - r * 0.34F, cx + r * 0.56F, y - r * 0.70F, cx + r * 0.18F, y - r * 0.50F, feather, 1.5F);
-
-      // Plump body/head
-      ellipse(cx, y + r * 0.06F, r * 0.62F, r * 0.60F, feather);
-      ellipse(cx, y + r * 0.34F, r * 0.40F, r * 0.26F, disc.with_alpha(0.75F));
-
-      // Twin facial discs (cute owl glasses feel)
-      circle(cx - r * 0.23F, y - r * 0.02F, r * 0.24F, disc, hex(0x365B40), std::max(1.2F, r * 0.04F));
-      circle(cx + r * 0.23F, y - r * 0.02F, r * 0.24F, disc, hex(0x365B40), std::max(1.2F, r * 0.04F));
-      draw_eye(cx - r * 0.23F, y - r * 0.02F, r * 0.105F);
-      draw_eye(cx + r * 0.23F, y - r * 0.02F, r * 0.105F);
-
-      // Golden diamond beak
-      triangle(cx - r * 0.10F, y + r * 0.11F, cx + r * 0.10F, y + r * 0.11F, cx, y + r * 0.26F, gold, 1.0F);
-      break;
-    }
-
-    case CompanionId::fern: {
-      // Sleek slate-blue cat
-      const Color coat = hex(0x4F738B);
-      const Color inner = hex(0xDFC7B8);
-      const Color snout = hex(0xEEF3F5);
-
-      triangle(cx - r * 0.52F, y - r * 0.18F, cx - r * 0.46F, y - r * 0.72F, cx - r * 0.10F, y - r * 0.42F, coat, 2.0F);
-      triangle(cx - r * 0.42F, y - r * 0.30F, cx - r * 0.40F, y - r * 0.58F, cx - r * 0.20F, y - r * 0.40F, inner, 1.0F);
-      triangle(cx + r * 0.52F, y - r * 0.18F, cx + r * 0.46F, y - r * 0.72F, cx + r * 0.10F, y - r * 0.42F, coat, 2.0F);
-      triangle(cx + r * 0.42F, y - r * 0.30F, cx + r * 0.40F, y - r * 0.58F, cx + r * 0.20F, y - r * 0.40F, inner, 1.0F);
-
-      ellipse(cx, y + r * 0.08F, r * 0.60F, r * 0.54F, coat);
-      ellipse(cx, y + r * 0.24F, r * 0.32F, r * 0.22F, snout);
-      draw_eye(cx - r * 0.22F, y - r * 0.02F, r * 0.095F);
-      draw_eye(cx + r * 0.22F, y - r * 0.02F, r * 0.095F);
-      triangle(cx - r * 0.07F, y + r * 0.14F, cx + r * 0.07F, y + r * 0.14F, cx, y + r * 0.22F, hex(0xD58A7E), 1.0F);
-
-      // Delicate whiskers
-      const float ws = std::max(1.1F, r * 0.038F);
-      line(cx - r * 0.36F, y + r * 0.18F, cx - r * 0.66F, y + r * 0.14F, ws, white.with_alpha(0.85F));
-      line(cx - r * 0.36F, y + r * 0.26F, cx - r * 0.64F, y + r * 0.30F, ws, white.with_alpha(0.85F));
-      line(cx + r * 0.36F, y + r * 0.18F, cx + r * 0.66F, y + r * 0.14F, ws, white.with_alpha(0.85F));
-      line(cx + r * 0.36F, y + r * 0.26F, cx + r * 0.64F, y + r * 0.30F, ws, white.with_alpha(0.85F));
-      break;
-    }
-
-    case CompanionId::pebble: {
-      // Sturdy warm chestnut hedgehog guardian
-      const Color quills = hex(0x7B5332);
-      const Color face = hex(0xF5E5CE);
-      const Color ear = hex(0xA4754B);
-
-      // Cute quill crown behind head
-      for (int i = 0; i < 7; ++i) {
-        const float a = kPi * (0.95F + static_cast<float>(i) * 0.183F);
-        const float bx = cx + std::cos(a) * r * 0.42F;
-        const float by = y + std::sin(a) * r * 0.38F;
-        const float tx = cx + std::cos(a) * r * 0.78F;
-        const float ty = y + std::sin(a) * r * 0.74F;
-        const float px = -std::sin(a) * r * 0.16F;
-        const float py = std::cos(a) * r * 0.16F;
-        triangle(bx + px, by + py, bx - px, by - py, tx, ty, quills, 1.4F);
-      }
-
-      circle(cx - r * 0.44F, y - r * 0.16F, r * 0.15F, ear);
-      circle(cx + r * 0.44F, y - r * 0.16F, r * 0.15F, ear);
-      ellipse(cx, y + r * 0.12F, r * 0.56F, r * 0.48F, face);
-
-      draw_eye(cx - r * 0.20F, y + r * 0.04F, r * 0.090F);
-      draw_eye(cx + r * 0.20F, y + r * 0.04F, r * 0.090F);
-      ellipse(cx - r * 0.34F, y + r * 0.20F, r * 0.10F, r * 0.06F, cheek);
-      ellipse(cx + r * 0.34F, y + r * 0.20F, r * 0.10F, r * 0.06F, cheek);
-      circle(cx, y + r * 0.20F, r * 0.075F, hex(0x4A3120));
-      arc(cx, y + r * 0.26F, r * 0.13F, kPi * 0.20F, kPi * 0.60F, std::max(1.4F, r * 0.05F), ink);
-      break;
-    }
-
-    case CompanionId::pip: {
-      // Cheerful golden-amber songbird
-      const Color body = hex(0xDDA03A);
-      const Color belly = hex(0xFBF0D9);
-      const Color wing = hex(0xC28224);
-      const Color beak = hex(0xDF6D2D);
-      const float crest_wag = animate ? std::sin(phase * 4.5F) * (r * 0.05F) : 0.0F;
-
-      // Top feather crest
-      ellipse(cx - r * 0.08F + crest_wag, y - r * 0.64F, r * 0.10F, r * 0.18F, wing);
-      ellipse(cx + r * 0.08F + crest_wag, y - r * 0.68F, r * 0.09F, r * 0.16F, body);
-
-      // Plump bird body + cream belly + wing
-      ellipse(cx, y + r * 0.06F, r * 0.58F, r * 0.56F, body);
-      ellipse(cx, y + r * 0.26F, r * 0.40F, r * 0.32F, belly);
-      ellipse(cx - r * 0.48F, y + r * 0.14F, r * 0.16F, r * 0.26F, wing);
-      ellipse(cx + r * 0.48F, y + r * 0.14F, r * 0.16F, r * 0.26F, wing);
-
-      draw_eye(cx - r * 0.20F, y - r * 0.06F, r * 0.090F);
-      draw_eye(cx + r * 0.20F, y - r * 0.06F, r * 0.090F);
-      ellipse(cx - r * 0.32F, y + r * 0.08F, r * 0.09F, r * 0.055F, cheek);
-      ellipse(cx + r * 0.32F, y + r * 0.08F, r * 0.09F, r * 0.055F, cheek);
-      triangle(cx - r * 0.11F, y + r * 0.04F, cx + r * 0.11F, y + r * 0.04F, cx, y + r * 0.20F, beak, 1.0F);
-      break;
-    }
-  }
+  inst.params[0] = 7.0F;
+  inst.params[1] = hover_amount + (pet_bounce > 0.0F ? 0.65F : 0.0F);
+  inst.params[2] = dark_surface_ ? 1.0F : 0.0F;
+  inst.params[3] = 1.0F;
+  emit(inst);
 }
 
 }  // namespace orangutan::vkui

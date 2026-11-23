@@ -23,32 +23,11 @@ review as an initial dependency. `make ci` checks manifest/document agreement.
 
 ## Opt-In Pure-Vulkan Native Desktop (`orangutan-desktop`)
 
-`apps/desktop-vk/` links directly to system desktop libraries (not pulled into default builds or `oran-*` libraries):
+`apps/desktop-vk/` links directly to system desktop libraries (not pulled into default builds or `oran-*` libraries) and embeds compiled SPIR-V shaders with zero external image assets:
 
 | System Library | Purpose | License |
 | --- | --- | --- |
-| `libvulkan` (dynamically loaded) | Pure Vulkan 1.0 SDF GPU rendering & swapchain presentation | Apache-2.0 |
+| `libvulkan` (dynamically loaded) | Pure Vulkan 1.0 UI SDF & real-time 3D PBR raymarched companion rendering | Apache-2.0 |
 | `SDL3` | Native Wayland/X11 windowing, Vulkan surface creation, HiDPI, clipboard & CJK IME | Zlib |
 | `FreeType2` & `Fontconfig` | CJK/Latin/Mono glyph rasterization & system font discovery | FTL / MIT |
 | `libpng16` | Headless `--screenshot` PNG export for visual verification | libpng |
-
-## Optional Desktop Prototype
-
-`apps/desktop/package.json` and its npm lockfile own frontend versions. These
-packages are private to the browser prototype, add no C++ includes or compile
-cost, and are not installed or built by xmake. Expected frontend checks/build
-take seconds; browser installation is a separate development-only download.
-
-| Package | Version | Purpose | License |
-| --- | --- | --- | --- |
-| `react`, `react-dom` | 19.3.0 | UI and browser rendering | MIT |
-| `lucide-react` | 1.49.0 | Consistent SVG interface icons | ISC |
-| `react-markdown` | 10.1.0 | Safe Markdown rendering without raw HTML execution | MIT |
-| `remark-gfm` | 4.0.1 | Markdown tables and task lists in artifacts | MIT |
-| `zod` | 4.6.5 | Validate persisted demo state before use | MIT |
-| `vite` | 8.3.1 | Development server and production bundle | MIT |
-| `@vitejs/plugin-react` | 6.1.1 | React JSX and development refresh | MIT |
-| `typescript` | 7.0.2 | Static type checking, development only | Apache-2.0 |
-| `@types/react`, `@types/react-dom` | 19.3.0 | React type declarations, development only | MIT |
-| `@playwright/test` | 1.63.0 | Browser interaction tests and screenshots, development only | Apache-2.0 |
-| `prettier` | 3.9.9 | Consistent frontend source formatting, development only | MIT |

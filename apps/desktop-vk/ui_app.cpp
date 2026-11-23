@@ -252,6 +252,7 @@ void DesktopApp::render(DrawList& dl, FontAtlas& atlas, float logical_w, float l
   hits_.clear();
   dl.clear(logical_w, logical_h, dpr);
   dl.set_dark_surface(dark_mode_);
+  dl.set_cursor(mouse_x_, mouse_y_);
 
   const auto snap = bridge_.snapshot();
   render_sidebar(dl, atlas, snap, logical_h);

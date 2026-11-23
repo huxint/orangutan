@@ -43,9 +43,6 @@ public:
   [[nodiscard]] bool validation_enabled() const noexcept {
     return validation_active_;
   }
-  [[nodiscard]] bool has_companion_atlas() const noexcept {
-    return companion_loaded_;
-  }
 
 private:
   static constexpr std::uint32_t kFramesInFlight = 2U;
@@ -69,7 +66,6 @@ private:
   bool pick_device_and_create(bool require_present, std::string& err);
   bool create_core_resources(VkFormat target_format, VkImageLayout final_layout, std::string& err);
   bool create_atlas_resources(std::string& err);
-  bool create_companion_atlas_resources(std::string& err);
   bool create_swapchain(std::uint32_t w, std::uint32_t h, std::string& err);
   void destroy_swapchain();
   bool create_offscreen_target(std::uint32_t w, std::uint32_t h, std::string& err);
@@ -127,16 +123,6 @@ private:
   VkDeviceMemory atlas_staging_mem_{VK_NULL_HANDLE};
   void* atlas_staging_mapped_{nullptr};
   bool atlas_initialized_{false};
-
-  // Photorealistic tactile companion texture atlas (1536x1024 RGBA, 3x2 grid of 512x512 tiles)
-  VkImage companion_image_{VK_NULL_HANDLE};
-  VkDeviceMemory companion_mem_{VK_NULL_HANDLE};
-  VkImageView companion_view_{VK_NULL_HANDLE};
-  VkSampler companion_sampler_{VK_NULL_HANDLE};
-  VkBuffer companion_staging_buf_{VK_NULL_HANDLE};
-  VkDeviceMemory companion_staging_mem_{VK_NULL_HANDLE};
-  bool companion_loaded_{false};
-  bool companion_uploaded_{false};
 
   FrameSync frames_[kFramesInFlight]{};
   std::uint32_t frame_index_{0U};

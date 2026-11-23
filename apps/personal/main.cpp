@@ -1,5 +1,4 @@
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -8,11 +7,9 @@
 #include <print>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
-#include <asio/signal_set.hpp>
 #include <asio/use_awaitable.hpp>
 
 #include <oran/async.hpp>
@@ -21,13 +18,11 @@
 #include <oran/core/time.hpp>
 #include <oran/core/turn_id.hpp>
 #include <oran/hook.hpp>
-#include <oran/io/private_directory.hpp>
 #include <oran/memory.hpp>
 #include <oran/storage/pool.hpp>
 
 #include "local_provider.hpp"
 #include "reminders.hpp"
-#include "server.hpp"
 
 namespace {
 
@@ -39,16 +34,14 @@ struct CliOptions {
   std::string config_path;
   std::string workspace_path{"."};
   std::string state_dir;
-  std::uint16_t port{18790};
   bool demo{false};
 };
 
 void print_usage() {
   std::println(
-      "Orangutan Personal Agent (C++26)\n"
+      "Orangutan Personal Agent CLI (C++26)\n"
       "\n"
       "Usage:\n"
-      "  orangutan serve [options]       Start local loopback HTTP/SSE Personal Agent server for apps/desktop\n"
       "  orangutan chat  [options]       Interactive terminal Personal Agent session\n"
       "  orangutan ask   <prompt> [opts] Run a single Personal Agent turn and exit\n"
       "\n"
@@ -56,7 +49,6 @@ void print_usage() {
       "  --config <file>     Provider/permission JSON config (see config.example.json)\n"
       "  --workspace <dir>   Workspace root directory (default: current directory)\n"
       "  --state <dir>       Private state directory for SQLite stores (default: <workspace>/.orangutan)\n"
-      "  --port <num>        Loopback port for `serve` (default: 18790)\n"
       "  --demo              Use built-in zero-credential local demo provider (real tools & SQLite)\n"
       "  --help, -h          Show this help");
 }
@@ -86,16 +78,6 @@ void print_usage() {
       opts.workspace_path = argv[++i];
     } else if (arg == "--state" && i + 1 < argc) {
       opts.state_dir = argv[++i];
-    } else if (arg == "--port" && i + 1 < argc) {
-      try {
-        const auto parsed = std::stoul(argv[++i]);
-        if (parsed == 0 || parsed > 65535) {
-          return std::unexpected(core::Error::invalid_argument("--port must be between 1 and 65535"));
-        }
-        opts.port = static_cast<std::uint16_t>(parsed);
-      } catch (...) {
-        return std::unexpected(core::Error::invalid_argument("invalid --port value"));
-      }
     } else if (opts.command == "ask" && !arg.starts_with("--") && opts.prompt.empty()) {
       opts.prompt = std::string{arg};
     } else {
@@ -144,7 +126,7 @@ int main(int argc, char** argv) {
     print_usage();
     return 0;
   }
-  if (opts.command != "serve" && opts.command != "chat" && opts.command != "ask") {
+  if (opts.command != "chat" && opts.command != "ask") {
     std::println(stderr, "Unknown command '{}'. Run `orangutan --help`.", opts.command);
     return 1;
   }
@@ -238,65 +220,6 @@ int main(int argc, char** argv) {
   }
 
   int exit_code = 0;
-
-  if (opts.command == "serve") {
-    asio::co_spawn(
-        strand,
-        [&]() -> async::Awaitable<void> {
-          auto migrated = co_await asio::co_spawn(runtime.cpu_executor(), reminders.migrate(), asio::use_awaitable);
-          if (!migrated) {
-            std::println(stderr, "Error migrating personal.db: {}", migrated.error().message());
-            exit_code = 1;
-            runtime.stop();
-            co_return;
-          }
-
-          auto server = personal::PersonalServer::create(personal::PersonalServerOptions{
-              .strand = strand,
-              .blocking_executor = runtime.cpu_executor(),
-              .assembly = &*assembly,
-              .config = &cfg,
-              .provider = provider_ptr,
-              .route = route,
-              .reminders = &reminders,
-              .workspace_path = workspace_abs.string(),
-              .state_dir = state_dir.string(),
-              .bind_host = "127.0.0.1",
-              .port = opts.port,
-              .demo_mode = opts.demo,
-          });
-          if (!server) {
-            std::println(stderr, "Error starting personal server: {}", server.error().message());
-            exit_code = 1;
-            runtime.stop();
-            co_return;
-          }
-
-          asio::signal_set signals{strand, SIGINT, SIGTERM};
-          signals.async_wait([&](std::error_code, int) { (*server)->stop(); });
-
-          std::println("Orangutan Personal Agent listening on http://127.0.0.1:{} ({} mode)",
-                       (*server)->bound_port(),
-                       opts.demo ? "demo" : "live");
-          std::println("Workspace: {}", workspace_abs.string());
-          std::println("State:     {}", state_dir.string());
-          std::fflush(stdout);
-
-          auto ran = co_await (*server)->run();
-          if (!ran) {
-            std::println(stderr, "Server error: {}", ran.error().message());
-            exit_code = 1;
-          }
-          runtime.stop();
-        },
-        asio::detached);
-
-    if (auto r = runtime.run(); !r) {
-      std::println(stderr, "Runtime error: {}", r.error().message());
-      return 1;
-    }
-    return exit_code;
-  }
 
   // Interactive terminal approval consumer for `chat` and `ask`.
   assembly->hook_bus().subscribe(

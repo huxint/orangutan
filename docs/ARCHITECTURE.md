@@ -59,14 +59,15 @@ flowchart TD
 
 Applications link the runtime libraries and supply configuration, executors and
 session identities through `oran-bootstrap`. The default `orangutan` executable
-under `apps/personal/` provides the unified Personal Agent CLI (`chat`, `ask`) and
-a loopback-only (`127.0.0.1`) HTTP/SSE bridge (`serve`) with durable SQLite
-reminders (`personal.db`) and live `permission_ask_rendered` approvals.
+under `apps/personal/` provides the native Personal Agent CLI (`chat`, `ask`)
+with durable SQLite reminders (`personal.db`) and interactive terminal
+`permission_ask_rendered` approvals.
 
-The desktop workbench under [apps/desktop](../apps/desktop/README.md) connects
-automatically to `orangutan serve` over `/api` and falls back cleanly to an
-offline browser demo when no local host is running. [Desktop UI](design-docs/desktop-ui.md)
-owns its module map, live/offline boundaries and Forest Companions state projection.
+The opt-in pure-Vulkan native desktop application (`orangutan-desktop`) under
+`apps/desktop-vk/` hosts `oran-bootstrap` directly in-process with zero web or
+browser runtime, rendering the UI and all six real-time 3D PBR Forest Companions
+through a single GLSL 450 Vulkan shader. [Desktop UI](design-docs/desktop-ui.md)
+owns its renderer layout, in-process bridge and companion squad contract.
 
 The opt-in `oran-telegram` application in `apps/telegram/` composes authenticated
 polling, one allowed private user's persistent session and a private delivery

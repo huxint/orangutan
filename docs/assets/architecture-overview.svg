@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="title desc">
   <title id="title">Orangutan 系统架构</title>
-  <desc id="desc">本地 Personal Agent 宿主、桌面工作台与 Telegram/QQ/飞书渠道经运行时装配，组合模型接入、Agent 循环、工作区工具与权限。会话与长期记忆、子 Agent 团队和显式 IO 服务构成运行基础。</desc>
+  <desc id="desc">纯 Vulkan 原生桌面端、本地 CLI 与 Telegram/QQ/飞书渠道经运行时装配，组合模型接入、Agent 循环、工作区工具与权限。会话与长期记忆、子 Agent 团队和显式 IO 服务构成运行基础。</desc>
   <defs>
     <style>
       text{font-family:"Noto Sans CJK SC","Sarasa UI SC","Microsoft YaHei",system-ui,sans-serif}
@@ -41,8 +41,8 @@
   <g class="card">
     <rect x="48" y="130" width="336" height="88" rx="14" fill="#f7e8dc" stroke="#ddbca6"/>
     <circle cx="74" cy="158" r="5" fill="#b24a1d"/>
-    <text x="90" y="165" class="label">桌面工作台 &amp; 本地宿主</text>
-    <text x="72" y="194" class="body">orangutan serve / chat / React UI</text>
+    <text x="90" y="165" class="label">纯 Vulkan 桌面端 &amp; CLI</text>
+    <text x="72" y="194" class="body">orangutan-desktop / orangutan chat</text>
   </g>
   <g class="card">
     <rect x="432" y="130" width="336" height="88" rx="14" fill="#e9f0e7" stroke="#c4d9c6"/>
@@ -110,5 +110,5 @@
   <circle r="4" fill="#476b83" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="3.2s" repeatCount="indefinite"/><animateMotion dur="5s" begin="3.2s" repeatCount="indefinite" path="M984 218 V248 H600 V276"/></circle>
   <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M384 492 H432 M768 492 H816"/></circle>
   <circle r="4" fill="#3d6b4a" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" begin="2s" repeatCount="indefinite"/><animateMotion dur="4s" begin="2s" repeatCount="indefinite" path="M600 558 V622"/></circle>
-  <text x="48" y="749" class="small">启动 `orangutan serve` 后，桌面工作台自动经由本地回环 HTTP/SSE 接入真实 C++26 运行时与交互审批。</text>
+  <text x="48" y="749" class="small">orangutan-desktop 进程内直连 oran-bootstrap 与本地 SQLite，通过纯 Vulkan SDF 与 3D PBR 光线步进渲染界面与伙伴。</text>
 </svg>
