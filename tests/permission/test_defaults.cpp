@@ -36,10 +36,11 @@ TEST_CASE("default_rules(strict) returns an empty baseline", "[unit][permission]
 
 TEST_CASE("default_rules(default_) classifies common capabilities", "[unit][permission][defaults]") {
   const auto rs = default_rules(Mode::default_);
-  REQUIRE(rs.size() == 7);
+  REQUIRE(rs.size() == 8);
 
   // Allow set.
   REQUIRE(evaluate_with(rs, Capability::read_file, Mode::default_) == Verdict::allow);
+  REQUIRE(evaluate_with(rs, Capability::list_directory, Mode::default_) == Verdict::allow);
 
   // Ask set.
   REQUIRE(evaluate_with(rs, Capability::write_file, Mode::default_) == Verdict::ask);
@@ -70,9 +71,10 @@ TEST_CASE("default_rules(permissive) only denies the most dangerous capabilities
 
 TEST_CASE("default_rules(sandboxed) allows file reads", "[unit][permission][defaults]") {
   const auto rs = default_rules(Mode::sandboxed);
-  REQUIRE(rs.size() == 1);
+  REQUIRE(rs.size() == 2);
 
   REQUIRE(evaluate_with(rs, Capability::read_file, Mode::sandboxed) == Verdict::allow);
+  REQUIRE(evaluate_with(rs, Capability::list_directory, Mode::sandboxed) == Verdict::allow);
 
   // Everything else falls back to the sandboxed default (deny).
   REQUIRE(evaluate_with(rs, Capability::write_file, Mode::sandboxed) == Verdict::deny);

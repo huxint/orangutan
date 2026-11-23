@@ -23,6 +23,7 @@ import {
   useMemberState,
 } from './components.tsx';
 import { Inspector } from './layout.tsx';
+import { PetAvatar, petForMemberName } from './pets.tsx';
 
 export function TaskPanel({ id, close }: { id: string; close: () => void }) {
   const { state, dispatch, selectConversation, t } = useApp();
@@ -268,6 +269,19 @@ export function TaskPanel({ id, close }: { id: string; close: () => void }) {
                 return (
                   <details className="team-member" key={member.id} open={member.state === 'failed'}>
                     <summary>
+                      {state.settings.companions !== false && (
+                        <PetAvatar
+                          pet={petForMemberName(member.name)}
+                          mood={
+                            member.state === 'working'
+                              ? 'working'
+                              : member.state === 'failed'
+                                ? 'attention'
+                                : 'idle'
+                          }
+                          size={26}
+                        />
+                      )}
                       <span className="team-member-name">
                         <strong>{member.role}</strong>
                         <span>{member.name}</span>

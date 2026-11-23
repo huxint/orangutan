@@ -2678,6 +2678,173 @@ kbd {
     margin-inline: 16px;
   }
 }
+/* Forest Companions & Personal Reminders */
+@keyframes petBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+.pet-avatar {
+  flex: none;
+  display: inline-block;
+  border-radius: 50%;
+}
+.pet-avatar.is-animated {
+  animation: petBob 3s var(--ease) infinite;
+}
+.start-pet {
+  display: inline-grid;
+  place-items: center;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition:
+    transform 180ms var(--ease-spring),
+    border-color 150ms var(--ease);
+}
+.start-pet:hover {
+  transform: translateY(-2px) scale(1.03);
+  border-color: var(--accent-line);
+}
+.companion-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.companion-pill-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.companion-pill-text strong {
+  font-size: var(--text-xs);
+  color: var(--text);
+  line-height: 1.2;
+}
+.companion-pill-text small {
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.demo-state.is-live > span {
+  background: var(--green);
+}
+.companion-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.companion-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+.reminder-composer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  max-width: var(--measure-form);
+}
+.reminder-composer input {
+  flex: 1 1 260px;
+  height: var(--control);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.reminder-composer select {
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: var(--measure-form);
+  margin-bottom: 16px;
+}
+.reminder-list.is-done {
+  opacity: 0.7;
+}
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.reminder-check {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.reminder-check.checked {
+  border-color: var(--green);
+  background: var(--green);
+}
+.reminder-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reminder-main strong {
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text);
+}
+.reminder-row.done .reminder-main strong {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.reminder-main small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

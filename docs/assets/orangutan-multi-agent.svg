@@ -1,28 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750" viewBox="0 0 1200 750" role="img" aria-labelledby="title desc">
   <title id="title">Orangutan 动态 Agent 团队</title>
-  <desc id="desc">主 Agent 按当前目标定义角色、安排任务和审查报告。调研、实现、验证是示例角色，并非预设流水线。任务依赖在前置结果被审查通过后解锁，队友有独立会话、受限工具和定向消息，修正复用原会话。团队、消息和执行状态属于当前进程，完成的子会话持久化。</desc>
+  <desc id="desc">主 Agent 按当前目标定义角色、安排任务和审查报告。任务依赖在前置结果被审查通过后解锁，队友有独立会话、受限工具和定向消息，修正复用原会话。</desc>
   <defs>
     <style>
-      text{font-family:"Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif}
-      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#526779}
-      .heading{font-size:29px;font-weight:700;fill:#183149}
-      .subtitle{font-size:15px;fill:#526779}
-      .label{font-size:20px;font-weight:700;fill:#20364c}
-      .body{font-size:15px;fill:#526779}
-      .small{font-size:13px;fill:#526779}
-      .tag{font-size:12px;font-weight:700;fill:#6c4ebe}
-      .mono{font-family:"Cascadia Code",Consolas,monospace;font-size:13px;fill:#526779}
-      .wire{fill:none;stroke:#c4d2e0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-      .flow{fill:none;stroke:#8060cc;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
+      text{font-family:"Noto Sans CJK SC","Sarasa UI SC","Microsoft YaHei",system-ui,sans-serif}
+      .serif{font-family:Georgia,"Noto Serif SC","Source Han Serif SC","Songti SC",serif}
+      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#8f3e14}
+      .heading{font-size:29px;font-weight:700;fill:#292118}
+      .subtitle{font-size:15px;fill:#5b4e3f}
+      .label{font-size:20px;font-weight:700;fill:#292118}
+      .body{font-size:15px;fill:#5b4e3f}
+      .small{font-size:13px;fill:#695a47}
+      .tag{font-size:12px;font-weight:700;fill:#3d6b4a}
+      .wire{fill:none;stroke:#c4b7a4;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .flow{fill:none;stroke:#476b83;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
       @keyframes travel{to{stroke-dashoffset:-52}}
       @media(prefers-reduced-motion:reduce){.motion{display:none}.flow{animation:none}}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9db2c6" stroke-width="1.5"/></marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9e8e79" stroke-width="1.5"/></marker>
   </defs>
-  <rect width="1200" height="750" rx="24" fill="#f7fafd"/>
-  <rect x="1" y="1" width="1198" height="748" rx="23" fill="none" stroke="#dfe8f0"/>
-  <text x="48" y="36" class="eyebrow">ORANGUTAN / AGENT TEAMS</text>
-  <text x="48" y="78" class="heading">按任务组队，带着原有上下文继续协作</text>
+  <rect width="1200" height="750" rx="24" fill="#f6f2ea"/>
+  <rect x="1" y="1" width="1198" height="748" rx="23" fill="none" stroke="#dcd3c4"/>
+  <text x="48" y="38" class="eyebrow">ORANGUTAN / AGENT TEAMS</text>
+  <text x="48" y="78" class="serif heading">按任务组队，带着原有上下文继续协作</text>
   <text x="48" y="107" class="subtitle">角色由主 Agent 动态定义；任务报告经过审查，依赖才进入下一步。</text>
   <g class="wire" marker-end="url(#arrow)">
     <path d="M600 246 V286"/>
@@ -41,51 +41,51 @@
   <text x="404" y="490" text-anchor="middle" class="small">消息</text>
   <text x="796" y="490" text-anchor="middle" class="small">消息</text>
   <g class="card">
-    <rect x="440" y="142" width="320" height="104" rx="16" fill="#edf4ff" stroke="#b9d1f4"/>
-    <circle cx="470" cy="173" r="5" fill="#397be8"/>
-    <text x="486" y="180" class="label">主 Agent</text>
+    <rect x="440" y="142" width="320" height="104" rx="16" fill="#f7e8dc" stroke="#ddbca6"/>
+    <circle cx="470" cy="173" r="5" fill="#b24a1d"/>
+    <text x="486" y="180" class="label">主 Agent · Oran</text>
     <text x="464" y="210" class="body">定义角色、拆分任务、审查报告</text>
     <text x="464" y="232" class="small">整合结果，并决定后续修正</text>
   </g>
   <g class="card">
-    <rect x="240" y="286" width="720" height="72" rx="14" fill="#f2edff" stroke="#ded1f6"/>
+    <rect x="240" y="286" width="720" height="72" rx="14" fill="#e8f0f4" stroke="#c1d3df"/>
     <text x="264" y="316" class="label">任务图与结果审查</text>
     <text x="264" y="343" class="body">分配 → 执行 → 报告 → 审查通过 → 解锁依赖</text>
   </g>
   <text x="48" y="407" class="small">示例角色 · 按需创建</text>
   <g class="card">
-    <rect x="48" y="424" width="320" height="176" rx="16" fill="#fff" stroke="#cfddec"/>
-    <text x="72" y="455" class="tag">RESEARCHER</text>
+    <rect x="48" y="424" width="320" height="176" rx="16" fill="#fbf8f2" stroke="#e2cda6"/>
+    <text x="72" y="455" class="tag" style="fill:#a8681f">RESEARCHER · SCOUT</text>
     <text x="72" y="491" class="label">调研与分析</text>
     <text x="72" y="523" class="body">寻找证据，说明约束与选择</text>
     <text x="72" y="551" class="body">独立会话 / 按角色选择工具</text>
     <text x="72" y="578" class="small">补充材料时复用已有上下文</text>
   </g>
   <g class="card">
-    <rect x="440" y="424" width="320" height="176" rx="16" fill="#fff" stroke="#cfddec"/>
-    <text x="464" y="455" class="tag">BUILDER</text>
+    <rect x="440" y="424" width="320" height="176" rx="16" fill="#fbf8f2" stroke="#c4d9c6"/>
+    <text x="464" y="455" class="tag">BUILDER · FERN</text>
     <text x="464" y="491" class="label">实现与交付</text>
     <text x="464" y="523" class="body">使用已审查的前置结果开展工作</text>
     <text x="464" y="551" class="body">继承工作区与外部权限限制</text>
     <text x="464" y="578" class="small">修正继续使用同一个队友会话</text>
   </g>
   <g class="card">
-    <rect x="832" y="424" width="320" height="176" rx="16" fill="#fff" stroke="#cfddec"/>
-    <text x="856" y="455" class="tag">REVIEWER</text>
+    <rect x="832" y="424" width="320" height="176" rx="16" fill="#fbf8f2" stroke="#c1d3df"/>
+    <text x="856" y="455" class="tag" style="fill:#476b83">REVIEWER · PEBBLE</text>
     <text x="856" y="491" class="label">验证与反馈</text>
     <text x="856" y="523" class="body">检查结果，提供可追踪的反馈</text>
     <text x="856" y="551" class="body">通过报告或定向消息交流</text>
     <text x="856" y="578" class="small">消息在模型边界进入对话</text>
   </g>
   <path class="flow" d="M600 246 V286 M600 358 V392 H208 V424 M600 392 H992 V424"/>
-  <circle r="4" fill="#8060cc" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V392 H208 V424"/></circle>
-  <circle r="4" fill="#397be8" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V424"/></circle>
-  <circle r="4" fill="#169882" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V392 H992 V424"/></circle>
-  <circle r="4" fill="#8060cc" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M368 502 H440 M760 502 H832"/></circle>
-  <circle r="4" fill="#169882" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M832 538 H760 M440 538 H368"/></circle>
-  <circle r="4" fill="#e7a158" class="motion"><animateMotion dur="10s" repeatCount="indefinite" path="M1152 512 H1170 V200 H760"/></circle>
+  <circle r="4" fill="#c98638" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V392 H208 V424"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V424"/></circle>
+  <circle r="4" fill="#476b83" class="motion"><animateMotion dur="6s" repeatCount="indefinite" path="M600 358 V392 H992 V424"/></circle>
+  <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M368 502 H440 M760 502 H832"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M832 538 H760 M440 538 H368"/></circle>
+  <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="10s" repeatCount="indefinite" path="M1152 512 H1170 V200 H760"/></circle>
   <g class="card">
-    <rect x="48" y="638" width="1104" height="46" rx="12" fill="#edf2f7" stroke="#dce5ef"/>
+    <rect x="48" y="638" width="1104" height="46" rx="12" fill="#ede7db" stroke="#dcd3c4"/>
     <text x="72" y="667" class="body">上下文复用</text>
     <text x="314" y="667" class="body">审查后解锁依赖</text>
     <text x="622" y="667" class="body">有界队列与并发</text>

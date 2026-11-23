@@ -587,6 +587,42 @@ TEST_CASE("longterm::Fts5Backend touches last_read_at without rebuilding indexed
   });
 }
 
+TEST_CASE("longterm::Fts5Backend matches Chinese substring queries within scope", "[unit][memory][longterm][cjk]") {
+  TempDb db{"oran-memory-longterm-cjk"};
+  test::run_async([&db](asio::io_context& io) -> async::Awaitable<void> {
+    auto pool = open_pool(io, db);
+    memory::longterm::Fts5Backend backend{pool};
+    REQUIRE((co_await backend.migrate()).has_value());
+
+    auto pref = make_record("zh-pref",
+                            "personal:owner",
+                            memory::longterm::RecordKind::feedback,
+                            "中文回复偏好",
+                            "以后先给结论，理由放到必要时再展开。");
+    auto other_scope = make_record("other-pref",
+                                   "personal:guest",
+                                   memory::longterm::RecordKind::feedback,
+                                   "中文回复偏好",
+                                   "另一个作用域的结论记录。");
+    auto shadow = make_record("shadow-pref",
+                              "personal:owner",
+                              memory::longterm::RecordKind::feedback,
+                              "隐藏结论",
+                              "不应对普通检索可见的结论。");
+    shadow.shadow = true;
+
+    REQUIRE((co_await backend.upsert(pref)).has_value());
+    REQUIRE((co_await backend.upsert(other_scope)).has_value());
+    REQUIRE((co_await backend.upsert(shadow)).has_value());
+
+    auto hits = co_await backend.search(
+        memory::longterm::Query{.scope_key = "personal:owner", .text = "结论", .kinds = {}}, 5);
+    REQUIRE(hits.has_value());
+    REQUIRE(hits->size() == 1);
+    REQUIRE((*hits)[0].record.key.id == "zh-pref");
+  });
+}
+
 TEST_CASE("longterm recall returns indexed records and prompt framing", "[unit][memory][longterm][recall][fts5]") {
   TempDb db{"oran-memory-recall-fts5"};
   test::run_async([&db](asio::io_context& io) -> async::Awaitable<void> {

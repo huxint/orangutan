@@ -226,4 +226,4 @@ Run cold and warm cache cases and preserve failures. Measure verified completion
 wall time, provider calls, uncached input, cache writes/reads, output, estimated
 cost, repair rounds and leader wakeups. Unknown prices/usage stay unknown. Report
 success per total spend and cost per successful delivery, not cache percentage
-alone. [Live debt](../exec-plans/tech-debt-tracker.md) tracks evaluation and recovery.
+alone. See [ROADMAP](../ROADMAP.md) for follow-up evaluation and recovery work.

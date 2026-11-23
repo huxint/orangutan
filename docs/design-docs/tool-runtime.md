@@ -57,7 +57,7 @@ its own argument shape.
 `DispatchContext` carries identity, rules, audit, workspace, approval and injected
 memory services. A tool receives these dependencies explicitly. Application
 code supplies bindings once instead of registering alternate dispatch paths.
-`register_builtins` installs the three filesystem tools;
+`register_builtins` installs the minimal workspace filesystem and shell tools (`FileRead`, `FileWrite`, `FileEdit`, `ShellExec`); directory listing, text search, git and build checks compose directly through `ShellExec` instead of adding narrow wrapper tools.
 `register_memory_tools` adds the three memory tools when the host supplies their
 services. `register_agent_run` adds a dynamic child runner supplied by the host. A session advertises tools available through its bindings.
 
@@ -122,12 +122,9 @@ orientation or completion preview reads, use their bound runtime ports without
 a model selection. Selection never grants an external capability.
 [Prompt design](../rules/prompt-design.md) owns cache identity.
 
-## File And Memory Tools
+## File, Shell And Memory Tools
 
-FileRead, FileWrite and FileEdit are the built-in filesystem tools. Reads use read
-authority; writes and edits use mutation authority and conflict checks. Write and
-edit must not act on a target replaced after authorization. Exact filesystem
-semantics live in [io-runtime](io-runtime.md).
+`FileRead`, `FileWrite`, `FileEdit` and `ShellExec` are the built-in workspace tools. Reads use read-side workspace resolution (`read_file`); writes and edits use mutation authority and conflict checks; `ShellExec` requires `spawn_subprocess`, runs inside a process-group-isolated `io::run_subprocess` with bounded output and cancel-aware timeout, and defaults to `ask` in default permission mode. Listing, searching and external utilities compose directly through `ShellExec` to keep the model's tool surface lean. Write and edit must not act on a target replaced after authorization. Exact filesystem and subprocess semantics live in [io-runtime](io-runtime.md).
 
 Their preparers validate required fields, field types, known options and positive
 integer bounds. Paths must be non-empty and contain

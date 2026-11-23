@@ -2,14 +2,18 @@
 
 #include <oran/memory/longterm.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -372,6 +376,95 @@ delete_fts_row(storage::Connection& connection, storage::StatementCache& cache, 
   return sql;
 }
 
+[[nodiscard]] bool has_non_ascii(std::string_view text) noexcept {
+  return std::ranges::any_of(text, [](char ch) { return static_cast<unsigned char>(ch) >= 0x80U; });
+}
+
+[[nodiscard]] std::string ascii_lower_copy(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  for (const unsigned char ch : text) {
+    out.push_back(ch < 0x80U ? static_cast<char>(std::tolower(ch)) : static_cast<char>(ch));
+  }
+  return out;
+}
+
+[[nodiscard]] std::vector<std::string> extract_cjk_terms(std::string_view text) {
+  const auto word_byte = [](char ch) {
+    const auto byte = static_cast<unsigned char>(ch);
+    return byte >= 0x80U || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
+  };
+  std::vector<std::string> terms;
+  std::size_t pos = 0;
+  while (pos < text.size() && terms.size() < 32U) {
+    while (pos < text.size() && !word_byte(text[pos])) {
+      ++pos;
+    }
+    const auto start = pos;
+    while (pos < text.size() && word_byte(text[pos])) {
+      ++pos;
+    }
+    if (pos > start) {
+      auto token = ascii_lower_copy(text.substr(start, pos - start));
+      if (!std::ranges::contains(terms, token)) {
+        terms.push_back(std::move(token));
+      }
+    }
+  }
+  return terms;
+}
+
+[[nodiscard]] double score_cjk_record(const Record& record, std::span<const std::string> terms) {
+  const auto title = ascii_lower_copy(record.title);
+  const auto body = ascii_lower_copy(record.body);
+  const auto tags = ascii_lower_copy(joined_tags(record.tags));
+  double score = 0.0;
+  for (const auto& term : terms) {
+    if (title.contains(term)) {
+      score += 4.0;
+    }
+    if (tags.contains(term)) {
+      score += 2.0;
+    }
+    if (body.contains(term)) {
+      score += 1.0;
+    }
+  }
+  return score;
+}
+
+[[nodiscard]] std::string fallback_scan_sql_for(const Query& query) {
+  std::string sql = R"sql(
+SELECT scope_key,
+       id,
+       kind,
+       title,
+       body,
+       created_at,
+       updated_at,
+       last_read_at,
+       importance,
+       tags_json,
+       linked_record_ids_json,
+       shadow
+FROM longterm_records
+WHERE scope_key = ?
+  AND shadow = 0
+)sql";
+  if (!query.kinds.empty()) {
+    sql += "  AND kind IN (";
+    for (std::size_t i = 0; i < query.kinds.size(); ++i) {
+      if (i != 0) {
+        sql += ", ";
+      }
+      sql.push_back('?');
+    }
+    sql += ")\n";
+  }
+  sql += "ORDER BY updated_at DESC, id ASC\nLIMIT 500\n";
+  return sql;
+}
+
 }  // namespace
 
 Fts5Backend::Fts5Backend(storage::Pool& pool, Fts5BackendOptions options) noexcept
@@ -494,6 +587,72 @@ async::Awaitable<core::Result<std::vector<SearchHit>>> Fts5Backend::search(Query
         .record = std::move(*record),
         .score = *lexical,
     });
+  }
+
+  // FTS5 unicode61 treats contiguous CJK runs as single tokens; fall back to
+  // scope-bounded substring scoring for non-ASCII queries without altering schema v1.
+  if (hits.size() < limit && has_non_ascii(query.text)) {
+    const auto terms = extract_cjk_terms(query.text);
+    if (!terms.empty()) {
+      std::unordered_set<std::string> seen_ids;
+      seen_ids.reserve(hits.size());
+      for (const auto& hit : hits) {
+        seen_ids.insert(hit.record.key.id);
+      }
+
+      const auto scan_sql = fallback_scan_sql_for(query);
+      auto scan_cached = reader->statement_cache().acquire(reader->connection(), scan_sql);
+      if (!scan_cached) {
+        co_return std::unexpected(std::move(scan_cached).error());
+      }
+      auto& scan_stmt = scan_cached->statement();
+      int scan_bind = 1;
+      if (auto bound = scan_stmt.bind_text(scan_bind++, query.scope_key); !bound) {
+        co_return std::unexpected(std::move(bound).error());
+      }
+      for (const auto kind : query.kinds) {
+        if (auto bound = scan_stmt.bind_text(scan_bind++, core::enum_name(kind)); !bound) {
+          co_return std::unexpected(std::move(bound).error());
+        }
+      }
+
+      std::vector<SearchHit> fallback_hits;
+      while (true) {
+        auto step = scan_stmt.step();
+        if (!step) {
+          co_return std::unexpected(std::move(step).error());
+        }
+        if (*step == storage::StepResult::done) {
+          break;
+        }
+        auto record = read_record_row(scan_stmt, 0);
+        if (!record) {
+          co_return std::unexpected(std::move(record).error());
+        }
+        if (seen_ids.contains(record->key.id)) {
+          continue;
+        }
+        const double score = score_cjk_record(*record, terms);
+        if (score > 0.0) {
+          fallback_hits.push_back(SearchHit{.record = std::move(*record), .score = score});
+        }
+      }
+      std::ranges::sort(fallback_hits, [](const SearchHit& a, const SearchHit& b) {
+        if (a.score != b.score) {
+          return a.score > b.score;
+        }
+        if (a.record.updated_at != b.record.updated_at) {
+          return a.record.updated_at > b.record.updated_at;
+        }
+        return a.record.key.id < b.record.key.id;
+      });
+      for (auto& hit : fallback_hits) {
+        if (hits.size() >= limit) {
+          break;
+        }
+        hits.push_back(std::move(hit));
+      }
+    }
   }
   co_return hits;
 }

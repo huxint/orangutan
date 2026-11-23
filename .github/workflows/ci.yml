@@ -25,7 +25,6 @@ jobs:
         with:
           globs: |
             **/*.md
-            !docs/generated/**
 
   cpp:
     runs-on: ubuntu-latest

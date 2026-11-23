@@ -84,4 +84,4 @@ Long-term recall uses the supplied scope; workspace-to-scope mapping is host pol
 
 No automatic import or unrelated-history merging occurs. Preserve database
 files and migration records through refactors. Backup/import tooling remains
-explicit work in [live debt](../exec-plans/tech-debt-tracker.md).
+explicit work on the [ROADMAP](../ROADMAP.md).

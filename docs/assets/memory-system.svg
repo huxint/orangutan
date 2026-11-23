@@ -1,29 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
   <title id="title">Orangutan 会话与长期记忆</title>
-  <desc id="desc">工作上下文是模型当前使用的有界视图，原始会话和检查点存入 SQLite，长期笔记按宿主作用域保存。会话可以重新载入；长期记忆通过索引发现、词法检索和精确读取来使用，通过 MemoryRemember 保存或更正，通过 MemoryForget 显式删除。压缩模型上下文不替换原始记录，更正笔记保留修订历史。</desc>
+  <desc id="desc">工作上下文是模型当前使用的有界视图，原始会话和检查点存入 SQLite，长期笔记按宿主作用域保存并支持中英文检索与修订历史。</desc>
   <defs>
     <style>
-      text{font-family:"Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif}
-      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#526779}
-      .heading{font-size:29px;font-weight:700;fill:#183149}
-      .subtitle{font-size:15px;fill:#526779}
-      .label{font-size:20px;font-weight:700;fill:#20364c}
-      .body{font-size:15px;fill:#526779}
-      .small{font-size:13px;fill:#526779}
-      .mono{font-family:"Cascadia Code",Consolas,monospace;font-size:16px;fill:#20364c;font-weight:700}
-      .tag{font-size:12px;font-weight:700;fill:#245ac0}
-      .wire{fill:none;stroke:#c4d2e0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-      .flow{fill:none;stroke:#169882;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
+      text{font-family:"Noto Sans CJK SC","Sarasa UI SC","Microsoft YaHei",system-ui,sans-serif}
+      .serif{font-family:Georgia,"Noto Serif SC","Source Han Serif SC","Songti SC",serif}
+      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#8f3e14}
+      .heading{font-size:29px;font-weight:700;fill:#292118}
+      .subtitle{font-size:15px;fill:#5b4e3f}
+      .label{font-size:20px;font-weight:700;fill:#292118}
+      .body{font-size:15px;fill:#5b4e3f}
+      .small{font-size:13px;fill:#695a47}
+      .mono{font-family:"Cascadia Code",Consolas,monospace;font-size:16px;fill:#292118;font-weight:700}
+      .tag{font-size:12px;font-weight:700;fill:#b24a1d}
+      .wire{fill:none;stroke:#c4b7a4;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .flow{fill:none;stroke:#3d6b4a;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
       @keyframes travel{to{stroke-dashoffset:-52}}
       @media(prefers-reduced-motion:reduce){.motion{display:none}.flow{animation:none}}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9db2c6" stroke-width="1.5"/></marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9e8e79" stroke-width="1.5"/></marker>
   </defs>
-  <rect width="1200" height="690" rx="24" fill="#f7fafd"/>
-  <rect x="1" y="1" width="1198" height="688" rx="23" fill="none" stroke="#dfe8f0"/>
-  <text x="48" y="36" class="eyebrow">ORANGUTAN / MEMORY</text>
-  <text x="48" y="78" class="heading">当前任务能继续，有价值的知识能留下</text>
-  <text x="48" y="107" class="subtitle">模型上下文按预算调整，原始会话完整保存，长期知识按作用域查询。</text>
+  <rect width="1200" height="690" rx="24" fill="#f6f2ea"/>
+  <rect x="1" y="1" width="1198" height="688" rx="23" fill="none" stroke="#dcd3c4"/>
+  <text x="48" y="38" class="eyebrow">ORANGUTAN / MEMORY</text>
+  <text x="48" y="78" class="serif heading">当前任务能继续，有价值的知识能留下</text>
+  <text x="48" y="107" class="subtitle">模型上下文按预算调整，原始会话完整保存，长期知识按作用域中英检索。</text>
   <g class="wire" marker-end="url(#arrow)">
     <path d="M440 249 H370"/>
     <path d="M368 315 H438"/>
@@ -36,58 +37,58 @@
   <text x="404" y="304" text-anchor="middle" class="small">保存</text>
   <text x="565" y="428" text-anchor="middle" class="small">索引发现与按需读取</text>
   <g class="card">
-    <rect x="48" y="162" width="320" height="240" rx="16" fill="#edf4ff" stroke="#b9d1f4"/>
+    <rect x="48" y="162" width="320" height="240" rx="16" fill="#f7e8dc" stroke="#ddbca6"/>
     <text x="72" y="193" class="tag">模型当前使用</text>
     <text x="72" y="232" class="label">工作上下文</text>
     <text x="72" y="266" class="body">系统前缀 / 近期交换 / 摘要</text>
     <text x="72" y="294" class="body">保存当前目标、约束与进度</text>
-    <text x="72" y="322" class="body">较旧的完整交换按预算压缩</text>
-    <rect x="72" y="346" width="264" height="32" rx="8" fill="#dfeaff"/>
+    <text x="72" y="322" class="body">较旧完整交换按预算压缩</text>
+    <rect x="72" y="346" width="264" height="32" rx="8" fill="#efe0d0"/>
     <text x="88" y="367" class="small">压缩视图，保留原始会话</text>
   </g>
   <g class="card">
-    <rect x="440" y="162" width="320" height="240" rx="16" fill="#fff" stroke="#cfddec"/>
-    <text x="464" y="193" class="tag" style="fill:#087b72">可持久恢复</text>
+    <rect x="440" y="162" width="320" height="240" rx="16" fill="#fbf8f2" stroke="#dcd3c4"/>
+    <text x="464" y="193" class="tag" style="fill:#476b83">可持久恢复</text>
     <text x="464" y="232" class="label">原始会话</text>
     <text x="464" y="266" class="body">类型化消息 / 历史分页 / 检查点</text>
     <text x="464" y="294" class="body">重新打开同一会话继续工作</text>
     <text x="464" y="322" class="body">原始后缀与检查点原子提交</text>
-    <rect x="464" y="346" width="264" height="32" rx="8" fill="#eaf8f4"/>
+    <rect x="464" y="346" width="264" height="32" rx="8" fill="#ede7db"/>
     <text x="480" y="367" class="small">SQLite · 明确的会话身份</text>
   </g>
   <g class="card">
-    <rect x="832" y="162" width="320" height="240" rx="16" fill="#f2edff" stroke="#ded1f6"/>
-    <text x="856" y="193" class="tag" style="fill:#6c4ebe">跨会话复用</text>
+    <rect x="832" y="162" width="320" height="240" rx="16" fill="#e9f0e7" stroke="#c4d9c6"/>
+    <text x="856" y="193" class="tag" style="fill:#3d6b4a">跨会话复用</text>
     <text x="856" y="232" class="label">长期笔记</text>
     <text x="856" y="266" class="body">事实 / 偏好 / 经验 / 决策 / 引用</text>
     <text x="856" y="294" class="body">按宿主绑定的作用域隔离</text>
     <text x="856" y="322" class="body">相关时读详情，更正保留历史</text>
-    <rect x="856" y="346" width="264" height="32" rx="8" fill="#e8dffd"/>
-    <text x="872" y="367" class="small">有界索引 · 精确读取 · 词法检索</text>
+    <rect x="856" y="346" width="264" height="32" rx="8" fill="#dbe6d9"/>
+    <text x="872" y="367" class="small">FTS5 + 中文字串检索 · 精确读取</text>
   </g>
   <g class="card">
-    <rect x="48" y="470" width="320" height="120" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="48" y="470" width="320" height="120" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="72" y="507" class="mono">MemoryRecall</text>
-    <text x="72" y="537" class="body">浏览索引，查询并读取相关笔记</text>
+    <text x="72" y="537" class="body">浏览索引，中英查询并读取笔记</text>
     <text x="72" y="564" class="small">先发现线索，再按需获取详细内容</text>
   </g>
   <g class="card">
-    <rect x="440" y="470" width="320" height="120" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="440" y="470" width="320" height="120" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="464" y="507" class="mono">MemoryRemember</text>
-    <text x="464" y="537" class="body">保存可复用的事实与偏好</text>
+    <text x="464" y="537" class="body">保存可复用的事实与个人偏好</text>
     <text x="464" y="564" class="small">更正已有笔记时延续同一记录</text>
   </g>
   <g class="card">
-    <rect x="832" y="470" width="320" height="120" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="832" y="470" width="320" height="120" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="856" y="507" class="mono">MemoryForget</text>
     <text x="856" y="537" class="body">处理显式的笔记删除请求</text>
     <text x="856" y="564" class="small">沿用宿主绑定的身份与作用域</text>
   </g>
   <path class="flow" d="M992 402 V437 H208 V402"/>
-  <circle r="4" fill="#397be8" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M440 249 H368"/></circle>
-  <circle r="4" fill="#169882" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M368 315 H440"/></circle>
-  <circle r="4" fill="#8060cc" class="motion"><animateMotion dur="9s" repeatCount="indefinite" path="M992 402 V437 H208 V402"/></circle>
-  <circle r="4" fill="#e7a158" class="motion"><animateMotion dur="9s" repeatCount="indefinite" path="M600 470 V458 H1164 V376 H1152"/></circle>
+  <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M440 249 H368"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M368 315 H440"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion"><animateMotion dur="9s" repeatCount="indefinite" path="M992 402 V437 H208 V402"/></circle>
+  <circle r="4" fill="#c98638" class="motion"><animateMotion dur="9s" repeatCount="indefinite" path="M600 470 V458 H1164 V376 H1152"/></circle>
   <text x="48" y="633" class="body">会话有归属，记忆有作用域，读取与写入都有验证、钩子和审计。</text>
   <text x="48" y="659" class="small">同一获准作用域内，主 Agent 与子 Agent 可以共享相关笔记；不同作用域保持隔离。</text>
 </svg>

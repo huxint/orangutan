@@ -41,6 +41,7 @@ namespace {
   rs.push_back(deny(core::Capability::runtime_loader));
   rs.push_back(deny(core::Capability::delete_path));
   rs.push_back(allow(core::Capability::read_file));
+  rs.push_back(allow(core::Capability::list_directory));
   rs.push_back(ask(core::Capability::write_file));
   rs.push_back(ask(core::Capability::edit_file));
   rs.push_back(ask(core::Capability::spawn_subprocess));
@@ -58,6 +59,7 @@ namespace {
 [[nodiscard]] RuleSet sandboxed_baseline() {
   RuleSet rs;
   rs.push_back(allow(core::Capability::read_file));
+  rs.push_back(allow(core::Capability::list_directory));
   return rs;
 }
 

@@ -13,6 +13,7 @@ import {
 import { useApp } from './context.ts';
 import { active } from './model.ts';
 import { Approval, Logo, Markdown, TaskCard, Time } from './components.tsx';
+import { deriveCompanion, PetAvatar } from './pets.tsx';
 
 function Composer({ inputRef }: { inputRef: RefObject<HTMLTextAreaElement | null> }) {
   const { state, dispatch, t, toast } = useApp();
@@ -105,7 +106,9 @@ function Composer({ inputRef }: { inputRef: RefObject<HTMLTextAreaElement | null
 const dayOf = (time: number) => new Date(time).toDateString();
 
 export function Assistant() {
-  const { state, dispatch, t, navigate } = useApp();
+  const { state, runtime, dispatch, t, navigate, toast } = useApp();
+  const companions = state.settings.companions !== false;
+  const companion = deriveCompanion(state, runtime.activeCompanion);
   const conversation = state.conversations.find((c) => c.id === state.selectedId)!;
   const local = conversation.origin === 'desktop';
   const messages = state.messages.filter((m) => m.conversationId === conversation.id);
@@ -188,6 +191,16 @@ export function Assistant() {
               className="start-session"
               aria-label={t('开始本地会话', 'Start a local session')}
             >
+              {companions && (
+                <button
+                  type="button"
+                  className="start-pet"
+                  aria-label={t('向奥兰打招呼', 'Say hello to Oran')}
+                  onClick={() => toast(t(companion.captionZh, companion.captionEn))}
+                >
+                  <PetAvatar pet="oran" mood="happy" size={64} />
+                </button>
+              )}
               <h1>{t('今天想完成什么？', 'What should we get done?')}</h1>
               <Composer inputRef={textarea} />
               <div className="request-shortcuts">
@@ -278,6 +291,7 @@ export function Assistant() {
                 .map(threadTask)}
               {running && running.status !== 'awaiting_approval' && (
                 <div className="thinking">
+                  {companions && <PetAvatar pet={companion.pet} mood={companion.mood} size={24} />}
                   {running.status === 'running' && (
                     <span className="thinking-dots" aria-hidden="true">
                       <i />
@@ -287,7 +301,9 @@ export function Assistant() {
                   )}
                   {running.status === 'cancelling'
                     ? t('正在取消执行', 'Cancelling execution')
-                    : t('正在执行', 'Executing')}
+                    : runtime.activeTool
+                      ? t(`正在使用 ${runtime.activeTool}`, `Running ${runtime.activeTool}`)
+                      : t('正在执行', 'Executing')}
                 </div>
               )}
             </div>

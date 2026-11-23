@@ -1,29 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="title desc">
   <title id="title">Orangutan 系统架构</title>
-  <desc id="desc">应用、Telegram 和 QQ／飞书宿主经运行时装配，组合模型接入、Agent 循环与工具权限。会话记忆、子 Agent 团队和显式 IO 服务构成运行基础。移动标记表示消息和服务连接；桌面浏览器原型独立于 C++ 运行时。</desc>
+  <desc id="desc">本地 Personal Agent 宿主、桌面工作台与 Telegram/QQ/飞书渠道经运行时装配，组合模型接入、Agent 循环、工作区工具与权限。会话与长期记忆、子 Agent 团队和显式 IO 服务构成运行基础。</desc>
   <defs>
     <style>
-      text{font-family:"Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif}
-      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#526779}
-      .heading{font-size:29px;font-weight:700;fill:#183149}
-      .subtitle{font-size:15px;fill:#526779}
-      .label{font-size:18px;font-weight:700;fill:#20364c}
-      .body{font-size:15px;fill:#526779}
-      .small{font-size:13px;fill:#526779}
-      .mono{font-family:"Cascadia Code",Consolas,monospace;font-size:14px;fill:#526779}
-      .section{font-size:12px;font-weight:700;letter-spacing:1px;fill:#526779}
-      .wire{fill:none;stroke:#c4d2e0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-      .flow{fill:none;stroke:#4c87df;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
+      text{font-family:"Noto Sans CJK SC","Sarasa UI SC","Microsoft YaHei",system-ui,sans-serif}
+      .serif{font-family:Georgia,"Noto Serif SC","Source Han Serif SC","Songti SC",serif}
+      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#8f3e14}
+      .heading{font-size:29px;font-weight:700;fill:#292118}
+      .subtitle{font-size:15px;fill:#5b4e3f}
+      .label{font-size:18px;font-weight:700;fill:#292118}
+      .body{font-size:15px;fill:#5b4e3f}
+      .small{font-size:13px;fill:#695a47}
+      .mono{font-family:"Cascadia Code",Consolas,monospace;font-size:14px;fill:#5b4e3f}
+      .section{font-size:12px;font-weight:700;letter-spacing:1.2px;fill:#8f3e14}
+      .wire{fill:none;stroke:#c4b7a4;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .flow{fill:none;stroke:#b24a1d;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
       @keyframes travel{to{stroke-dashoffset:-52}}
       @media(prefers-reduced-motion:reduce){.motion{display:none}.flow{animation:none}}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9db2c6" stroke-width="1.5"/></marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9e8e79" stroke-width="1.5"/></marker>
   </defs>
-  <rect width="1200" height="780" rx="24" fill="#f7fafd"/>
-  <rect x="1" y="1" width="1198" height="778" rx="23" fill="none" stroke="#dfE8f0"/>
-  <text x="48" y="36" class="eyebrow">ORANGUTAN / SYSTEM</text>
-  <text x="48" y="78" class="heading">一套运行时，多种接入</text>
-  <text x="48" y="104" class="subtitle">宿主负责入口与生命周期，运行时负责完成一次 Agent 工作。</text>
+  <rect width="1200" height="780" rx="24" fill="#f6f2ea"/>
+  <rect x="1" y="1" width="1198" height="778" rx="23" fill="none" stroke="#dcd3c4"/>
+  <text x="48" y="38" class="eyebrow">ORANGUTAN / SYSTEM</text>
+  <text x="48" y="78" class="serif heading">一套 C++26 运行时，多种个人入口</text>
+  <text x="48" y="106" class="subtitle">宿主负责入口、交互审批与生命周期，运行时负责完成每一次可控的 Agent 工作。</text>
   <g class="wire" marker-end="url(#arrow)">
     <path d="M216 218 V248 H600 V276"/>
     <path d="M600 218 V276"/>
@@ -38,76 +39,76 @@
     <path d="M600 590 H984 V622"/>
   </g>
   <g class="card">
-    <rect x="48" y="130" width="336" height="88" rx="14" fill="#edf3ff" stroke="#cfdef6"/>
-    <circle cx="74" cy="158" r="5" fill="#397be8"/>
-    <text x="90" y="165" class="label">自己的应用</text>
-    <text x="72" y="194" class="body">C++ 嵌入 / 自定义宿主</text>
+    <rect x="48" y="130" width="336" height="88" rx="14" fill="#f7e8dc" stroke="#ddbca6"/>
+    <circle cx="74" cy="158" r="5" fill="#b24a1d"/>
+    <text x="90" y="165" class="label">桌面工作台 &amp; 本地宿主</text>
+    <text x="72" y="194" class="body">orangutan serve / chat / React UI</text>
   </g>
   <g class="card">
-    <rect x="432" y="130" width="336" height="88" rx="14" fill="#eaf8f4" stroke="#c5e8dc"/>
-    <circle cx="458" cy="158" r="5" fill="#169882"/>
-    <text x="474" y="165" class="label">Telegram 私聊</text>
-    <text x="456" y="194" class="body">文字 / 图片 / 流式回复 / 后台任务</text>
+    <rect x="432" y="130" width="336" height="88" rx="14" fill="#e9f0e7" stroke="#c4d9c6"/>
+    <circle cx="458" cy="158" r="5" fill="#3d6b4a"/>
+    <text x="474" y="165" class="label">Telegram 私聊宿主</text>
+    <text x="456" y="194" class="body">文字 / 图片 / 流式预览 / 后台任务</text>
   </g>
   <g class="card">
-    <rect x="816" y="130" width="336" height="88" rx="14" fill="#f2edff" stroke="#ded1f6"/>
-    <circle cx="842" cy="158" r="5" fill="#8060cc"/>
-    <text x="858" y="165" class="label">QQ / 飞书宿主</text>
-    <text x="840" y="194" class="body">协议适配，宿主提供接收与投递</text>
+    <rect x="816" y="130" width="336" height="88" rx="14" fill="#e8f0f4" stroke="#c1d3df"/>
+    <circle cx="842" cy="158" r="5" fill="#476b83"/>
+    <text x="858" y="165" class="label">QQ / 飞书 &amp; C++ 嵌入</text>
+    <text x="840" y="194" class="body">协议适配、官方扫码绑定与自定义宿主</text>
   </g>
   <g class="card">
-    <rect x="48" y="276" width="1104" height="84" rx="14" fill="#fff" stroke="#c9d8e6"/>
-    <rect x="48" y="276" width="6" height="84" rx="3" fill="#e7a158"/>
+    <rect x="48" y="276" width="1104" height="84" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
+    <rect x="48" y="276" width="6" height="84" rx="3" fill="#b24a1d"/>
     <text x="74" y="310" class="label">oran-bootstrap · 运行时装配</text>
     <text x="74" y="338" class="body">显式配置</text>
-    <text x="260" y="338" class="body">模型路由</text>
-    <text x="440" y="338" class="body">工作区与权限</text>
-    <text x="662" y="338" class="body">会话与存储</text>
-    <text x="872" y="338" class="body">执行器与资源所有权</text>
+    <text x="250" y="338" class="body">模型路由</text>
+    <text x="430" y="338" class="body">工作区与权限</text>
+    <text x="652" y="338" class="body">会话与 SQLite 存储</text>
+    <text x="892" y="338" class="body">Asio 执行器与资源所有权</text>
   </g>
   <text x="48" y="402" class="section">核心循环</text>
   <g class="card">
-    <rect x="48" y="418" width="336" height="140" rx="14" fill="#fff" stroke="#cfdef0"/>
+    <rect x="48" y="418" width="336" height="140" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="72" y="454" class="label">模型接入</text>
     <text x="72" y="484" class="mono">Anthropic Messages</text>
     <text x="72" y="508" class="mono">OpenAI Responses</text>
     <text x="72" y="536" class="body">流式响应 / 重试回退 / 费用估算</text>
   </g>
   <g class="card">
-    <rect x="432" y="418" width="336" height="140" rx="14" fill="#edf4ff" stroke="#b9d1f4"/>
+    <rect x="432" y="418" width="336" height="140" rx="14" fill="#f7e8dc" stroke="#ddbca6"/>
     <text x="456" y="454" class="label">Agent 循环</text>
     <text x="456" y="484" class="body">上下文 → 模型 → 工具 → 下一轮</text>
     <text x="456" y="510" class="body">类型化消息与稳定的工具目录</text>
     <text x="456" y="536" class="body">有界调度 / 取消与清理</text>
   </g>
   <g class="card">
-    <rect x="816" y="418" width="336" height="140" rx="14" fill="#fff" stroke="#cfdef0"/>
+    <rect x="816" y="418" width="336" height="140" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="840" y="454" class="label">工具与权限</text>
-    <text x="840" y="484" class="mono">FileRead / FileWrite / FileEdit</text>
-    <text x="840" y="510" class="body">准备输入，固定文件访问范围</text>
-    <text x="840" y="536" class="body">权限决策 / 钩子 / 审计</text>
+    <text x="840" y="484" class="mono">File* / ShellExec</text>
+    <text x="840" y="510" class="body">路径权威、受控子进程与路径锁</text>
+    <text x="840" y="536" class="body">allow / ask / deny · 钩子与审计</text>
   </g>
   <text x="48" y="606" class="section">能力与状态</text>
   <g class="card">
-    <rect x="48" y="622" width="336" height="84" rx="14" fill="#eaf8f4" stroke="#c5e8dc"/>
-    <text x="72" y="658" class="label">会话与长期记忆</text>
-    <text x="72" y="684" class="body">检查点 / 原始历史 / 作用域笔记</text>
+    <rect x="48" y="622" width="336" height="84" rx="14" fill="#e9f0e7" stroke="#c4d9c6"/>
+    <text x="72" y="658" class="label">会话、长期记忆与提醒</text>
+    <text x="72" y="684" class="body">检查点 / 原始历史 / 中英作用域笔记</text>
   </g>
   <g class="card">
-    <rect x="432" y="622" width="336" height="84" rx="14" fill="#f2edff" stroke="#ded1f6"/>
-    <text x="456" y="658" class="label">子 Agent 与团队</text>
+    <rect x="432" y="622" width="336" height="84" rx="14" fill="#e8f0f4" stroke="#c1d3df"/>
+    <text x="456" y="658" class="label">子 Agent 与动态团队</text>
     <text x="456" y="684" class="body">独立会话 / 后台任务 / 结果审查</text>
   </g>
   <g class="card">
-    <rect x="816" y="622" width="336" height="84" rx="14" fill="#fff4e8" stroke="#efdbc2"/>
+    <rect x="816" y="622" width="336" height="84" rx="14" fill="#f5ecd8" stroke="#e2cda6"/>
     <text x="840" y="658" class="label">显式 IO 服务</text>
-    <text x="840" y="684" class="body">HTTP / 文件 / SQLite</text>
+    <text x="840" y="684" class="body">HTTP / 文件权威 / 子进程 / SQLite</text>
   </g>
   <path class="flow motion" d="M600 218 V276"/>
-  <circle r="4" fill="#397be8" class="motion"><animateMotion dur="5s" repeatCount="indefinite" path="M216 218 V248 H600 V276"/></circle>
-  <circle r="4" fill="#169882" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="1.6s" repeatCount="indefinite"/><animateMotion dur="5s" begin="1.6s" repeatCount="indefinite" path="M600 218 V276"/></circle>
-  <circle r="4" fill="#8060cc" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="3.2s" repeatCount="indefinite"/><animateMotion dur="5s" begin="3.2s" repeatCount="indefinite" path="M984 218 V248 H600 V276"/></circle>
-  <circle r="4" fill="#397be8" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M384 492 H432 M768 492 H816"/></circle>
-  <circle r="4" fill="#8060cc" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" begin="2s" repeatCount="indefinite"/><animateMotion dur="4s" begin="2s" repeatCount="indefinite" path="M600 558 V622"/></circle>
-  <text x="48" y="749" class="small">桌面浏览器原型提供模拟工作空间，当前独立于 C++ 运行时。</text>
+  <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="5s" repeatCount="indefinite" path="M216 218 V248 H600 V276"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="1.6s" repeatCount="indefinite"/><animateMotion dur="5s" begin="1.6s" repeatCount="indefinite" path="M600 218 V276"/></circle>
+  <circle r="4" fill="#476b83" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="3.2s" repeatCount="indefinite"/><animateMotion dur="5s" begin="3.2s" repeatCount="indefinite" path="M984 218 V248 H600 V276"/></circle>
+  <circle r="4" fill="#b24a1d" class="motion"><animateMotion dur="4s" repeatCount="indefinite" path="M384 492 H432 M768 492 H816"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" begin="2s" repeatCount="indefinite"/><animateMotion dur="4s" begin="2s" repeatCount="indefinite" path="M600 558 V622"/></circle>
+  <text x="48" y="749" class="small">启动 `orangutan serve` 后，桌面工作台自动经由本地回环 HTTP/SSE 接入真实 C++26 运行时与交互审批。</text>
 </svg>

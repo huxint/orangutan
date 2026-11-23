@@ -21,6 +21,17 @@ Use one library per infrastructure responsibility. Keep optional packages out of
 default builds. Version changes update this table and receive the same boundary
 review as an initial dependency. `make ci` checks manifest/document agreement.
 
+## Opt-In Pure-Vulkan Native Desktop (`orangutan-desktop`)
+
+`apps/desktop-vk/` links directly to system desktop libraries (not pulled into default builds or `oran-*` libraries):
+
+| System Library | Purpose | License |
+| --- | --- | --- |
+| `libvulkan` (dynamically loaded) | Pure Vulkan 1.0 SDF GPU rendering & swapchain presentation | Apache-2.0 |
+| `SDL3` | Native Wayland/X11 windowing, Vulkan surface creation, HiDPI, clipboard & CJK IME | Zlib |
+| `FreeType2` & `Fontconfig` | CJK/Latin/Mono glyph rasterization & system font discovery | FTL / MIT |
+| `libpng16` | Headless `--screenshot` PNG export for visual verification | libpng |
+
 ## Optional Desktop Prototype
 
 `apps/desktop/package.json` and its npm lockfile own frontend versions. These

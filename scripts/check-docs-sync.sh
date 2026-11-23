@@ -70,7 +70,7 @@ if [[ -f "${design_index}" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Check 3: product-specs/index.md references every numbered spec
+# Check 3: product-specs/index.md (optional when present)
 # -----------------------------------------------------------------------------
 spec_index="${repo_root}/docs/product-specs/index.md"
 if [[ -f "${spec_index}" ]]; then

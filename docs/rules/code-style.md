@@ -293,7 +293,7 @@ extends [`critical-rules.md#C17`](critical-rules.md) with concrete pairs.
 | `char*` / `strlen` in interfaces     | `std::string` (owning) / `std::string_view` (view) | Public APIs never expose raw `char*` — see "Strings" above. |
 | `printf` / `sprintf` / `fprintf`     | `std::print` / `std::println` / `std::format`   | See "Console And Formatted Output" above. |
 | `<cstring>` `memcpy` / `memcmp` / `memset` on objects | `std::copy_n` / `std::ranges::equal` / `std::ranges::fill` | The byte-level functions are fine *inside* a typed helper (e.g. a serializer); they must not be the surface a caller sees. |
-| `errno` / negative-int error codes   | `core::Result<T>` = `std::expected<T, Error>`    | See [`error-handling.md`](error-handling.md). |
+| `errno` / negative-int error codes   | `core::Result<T>` = `std::expected<T, Error>`    | See [`critical-rules.md#C3`](critical-rules.md). |
 | `assert(cond)`                       | `[[assume(cond)]]` (intent) / `core::Error` (recoverable) | Naked `assert` evaporates in release builds; if the condition is load-bearing, return an error. |
 
 ```cpp
@@ -314,8 +314,8 @@ The pairs above are the most common offenders. The general principle:
 
 ## Logging
 
-Hosts own diagnostic presentation. Follow [error handling](error-handling.md)
-for structured error context and reporting; runtime libraries have no logging
+Hosts own diagnostic presentation. Follow [`critical-rules.md`](critical-rules.md) (`C3`/`C5`)
+for structured `core::Error` context and reporting; runtime libraries have no logging
 facade. Never include secret values in diagnostics.
 
 ## Comments
@@ -363,6 +363,4 @@ always go through the builders.
 ## See Also
 
 - `docs/rules/critical-rules.md`
-- `docs/rules/compile-budget.md`
-- `docs/rules/error-handling.md`
 - `.clang-format`, `.clang-tidy` (project root)

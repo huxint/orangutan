@@ -1,23 +1,67 @@
+<p align="center">
+  <img src="docs/assets/hero-orangutan.svg" alt="Orangutan — 运行在自己机器上的个人 AI Agent 运行时、纯 Vulkan 原生桌面端与森林伙伴小队" width="100%">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/C%2B%2B-26%20(GCC%2016.1%2B)-b24a1d?style=flat-square" alt="C++26">
+  <img src="https://img.shields.io/badge/Desktop-Pure%20Vulkan%20SDF-8f3e14?style=flat-square" alt="Pure Vulkan Desktop">
+  <img src="https://img.shields.io/badge/Build-xmake%203.1.1%2B-3d6b4a?style=flat-square" alt="xmake">
+  <img src="https://img.shields.io/badge/Platform-Linux-476b83?style=flat-square" alt="Linux">
+</p>
+
+<p align="center">
+  <a href="#核心能力">核心能力</a> ·
+  <a href="#认识森林伙伴小队">伙伴小队</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#接入自己的应用">嵌入运行时</a> ·
+  <a href="#系统架构与工作循环">系统架构</a> ·
+  <a href="#测试与开发">测试与开发</a>
+</p>
+
 # Orangutan
 
-Orangutan 是一个用 **C++26** 编写的 AI Agent 运行时。它把模型调用、工具执行、权限控制、会话与长期记忆、多 Agent 协作连成一个完整循环，让 Agent 带着上下文、工具和队友持续工作。
+**Orangutan** 是一个用 **C++26** 编写的本地 **Personal Agent** 运行时与 **纯 Vulkan 原生桌面端**。
 
-你可以把它嵌入自己的 C++ 应用，通过 Telegram 私聊使用它，也可以运行桌面浏览器原型，体验对话、任务、连接、记忆和设置组成的工作空间。
+它坚持三项极简而锋利的设计原则：
 
-## 它能做什么
+1. **精简工具面，Shell 自主组合**：不堆砌几十个碎片化工具包装，内置只保留核心文件读写编辑（`FileRead` / `FileWrite` / `FileEdit`）与受控进程组隔离的 `ShellExec`，让 Agent 通过真实 Shell 自主组合 `ls`、`rg`、`git`、构建与脚本能力，所有外部副作用经权限规则、交互审批与持久化审计把关。
+2. **拆分任务，而非割裂工具**：六只可爱的**森林伙伴小队（Forest Companions）**是陪伴你的个人形象与协作团队——面对复杂目标时把**任务**拆解给队员并行推进，而不是把工具切成孤岛。
+3. **纯 C++26 + Vulkan 原生桌面端**：无 Electron、无浏览器壳，单 Pass GLSL 450 SDF 管线 + FreeType2 中英文字形图集直连进程内 `oran-bootstrap` 运行时，暖纸张/松木双主题、流畅微动效、本地 SQLite 会话/记忆/提醒零延迟交互。
 
-- **调用模型**：支持 Anthropic Messages 和 OpenAI Responses，提供流式响应、原生工具调用、重试与模型回退，以及用量统计和费用估算。
-- **操作工作区**：通过 `FileRead`、`FileWrite`、`FileEdit` 读写文件；外部操作经过 allow / ask / deny 权限决策，并留下钩子与审计记录。
-- **继续对话**：保存原始会话和工作上下文检查点，重新打开后继续；历史较长时压缩模型看到的上下文，保留原始记录供后续查询。
-- **使用长期记忆**：按作用域发现、检索和读取事实与偏好，通过记忆工具保存、更正或显式删除记录；笔记更正保留修订历史。
-- **分工协作**：按任务创建子 Agent 和专业角色，安排后台任务、审查依赖结果，并复用队友会话进行后续修正；队友之间可以发送定向消息。
-- **接入聊天与界面**：提供 Telegram 私聊宿主、QQ / Telegram / 飞书协议适配，以及带中英文和浅色 / 深色主题的桌面浏览器原型。
+## 核心能力
+
+| 能力域 | 已实现能力 | 契约文档 |
+| --- | --- | --- |
+| **纯 Vulkan 原生桌面端 (`orangutan-desktop`)** | `apps/desktop-vk/`：C++26 + Vulkan 1.0 SDF 渲染器 + SDL3（Wayland/X11 + 中文 IME）+ FreeType2 中英文字形图集，内置对话协作、任务拆解板、伙伴小队切换与互动、SQLite 记忆与提醒、暖浅/松木深双主题，支持 `--screenshot` 无头离屏导出。 | [桌面端架构](docs/design-docs/desktop-ui.md) |
+| **本地宿主 CLI & 回环桥接 (`orangutan`)** | 默认构建 `orangutan` 二进制：支持 `orangutan chat / ask` 终端交互与 `orangutan serve`（本地回环 HTTP/SSE 桥接、交互审批、SQLite 提醒）；内置 `--demo` 零密钥本地体验。 | [运行状态](docs/STATUS.md) |
+| **精简工作区与 Shell 工具** | 内置 `FileRead`、`FileWrite`、`FileEdit` 与进程组隔离、可取消、限流限时的 `ShellExec`（`io::run_subprocess`）；目录浏览、全文搜索、Git 与构建由 Agent 直接通过 Shell 组合。 | [工具运行时](docs/design-docs/tool-runtime.md) · [权限与钩子](docs/design-docs/permissions-and-hooks.md) |
+| **模型接入与提示缓存** | 支持 Anthropic Messages 与 OpenAI Responses；流式响应、原生工具调用、重试与回退、用量统计与费用估算。 | [API 可移植性](docs/design-docs/api-portability.md) |
+| **会话、长期记忆与提醒** | SQLite 原子提交会话后缀与工作检查点；长对话按预算压缩模型视图而保留原始记录；支持 FTS5 + 中文子串检索的作用域长期记忆，以及持久化个人提醒。 | [记忆系统](docs/design-docs/memory-system.md) · [存储运行时](docs/design-docs/storage-runtime.md) |
+| **动态子任务与 Agent 团队** | `AgentRun` 按需创建有界子会话；启用后台服务后支持动态角色团队、依赖审查、队友会话复用与定向消息。 | [Agent 执行](docs/design-docs/agent-platform.md) · [Agent 团队](docs/design-docs/agent-teams.md) |
+| **多端渠道与可选 Web 面板** | 可直接部署的 Telegram 私聊宿主（`oran-telegram`）、QQ 扫码绑定（`oran-qq-login`）、飞书协议适配，以及可选浏览器工作台（`apps/desktop`）。 | [消息渠道](docs/design-docs/messaging-channels.md) |
+
+## 认识森林伙伴小队
+
+你可以像挑选桌宠伙伴一样选择任意角色常驻在桌面陪伴你（支持点击抚摸互动、实时呼吸与眨眼微动效）；遇到多步骤目标时，由小队按**子任务**自然分工协同完成：
+
+<p align="center">
+  <img src="docs/assets/pet-companions.svg" alt="Orangutan 森林伙伴小队：Oran、Scout、Moss、Fern、Pebble、Pip" width="100%">
+</p>
+
+| 伙伴 | 团队定位 | 擅长的协作子任务 |
+| --- | --- | --- |
+| **Oran · 小橙** | 主伙伴 · 领队 | 理解你的意图、把复杂目标拆解成清晰子任务并统筹汇总结论 |
+| **Scout · 阿探** | 调研队员 | 接手探索现状、对比方案、摸清上下文与关键线索的子任务 |
+| **Moss · 小苔** | 沉淀队员 | 接手整理纪要、提炼个人偏好与沉淀长期知识的子任务 |
+| **Fern · 小蕨** | 执行队员 | 接手起草方案、编写改动与推动交付落地的子任务 |
+| **Pebble · 石墩** | 把关队员 | 接手复核细节、检查边界风险与关键操作前人工确认的子任务 |
+| **Pip · 啾啾** | 节奏队员 | 接手里程碑跟进、轻量时间提醒与跨端收尾闭环的子任务 |
 
 ## 快速开始
 
-### 构建运行时
+### 1. 构建 C++26 核心运行时与测试
 
-需要 Linux、GCC 16.1 或更新版本、xmake 3.1.1，以及系统 libcurl 开发文件和 pkg-config。其余依赖由 xmake 解析，版本与说明见 [依赖清单](docs/rules/libraries.md)。
+需要 **Linux**、**GCC 16.1+**、**xmake 3.1.1+**，以及系统 `libcurl` 开发文件与 `pkg-config`（依赖见 [依赖清单](docs/rules/libraries.md)）：
 
 ```sh
 git clone https://github.com/huxint/orangutan.git
@@ -29,30 +73,39 @@ xmake test -j4
 make ci
 ```
 
-默认构建生成运行时库。Telegram、QQ 登录和评估程序是按需构建的独立目标；完整命令见 [构建说明](docs/BUILD_SYSTEM.md)。
+### 2. 启动纯 Vulkan 原生桌面端 (`orangutan-desktop`)
 
-### 体验桌面原型
-
-需要 Node.js 24 或更新版本和 npm：
+需要系统已安装 `SDL3`、`FreeType2`、`Fontconfig`、`libpng16` 与 Vulkan 驱动（`libvulkan.so.1`）：
 
 ```sh
-npm --prefix apps/desktop ci
-npm --prefix apps/desktop run dev
+xmake build -j4 orangutan-desktop
+
+# 零密钥本地体验（真实运行 C++26 引擎、ShellExec 与 SQLite 存储）
+build/linux/x86_64/release/orangutan-desktop --demo
+
+# 接入真实模型配置 + 暗色松木主题
+build/linux/x86_64/release/orangutan-desktop --config config.example.json --theme dark
+
+# 无头离屏 Vulkan 渲染校验与截图
+build/linux/x86_64/release/orangutan-desktop --validate --showcase --screenshot /tmp/orangutan-vk.png
 ```
 
-打开 <http://127.0.0.1:5173>。原型包含对话、任务、连接、记忆、设置五个页面，支持审批演示、团队任务、会话命名、主题切换和页面关闭后的恢复。
+### 3. 终端交互或启动可选 Web 面板
 
-桌面原型使用模拟执行与模拟频道数据，当前独立于 C++ 运行时。使用方式和浏览器验证命令见 [桌面原型 README](apps/desktop/README.md)。
+```sh
+# 终端直接对话或单轮提问
+build/linux/x86_64/release/orangutan chat --demo
+build/linux/x86_64/release/orangutan ask "列出工作区文件" --demo
 
-### 通过 Telegram 对话
+# 或启动回环桥接服务 + 可选 React/Vite 面板
+build/linux/x86_64/release/orangutan serve --demo
+npm --prefix apps/desktop ci && npm --prefix apps/desktop run dev
+```
 
-`oran-telegram` 为一个明确指定的用户提供私聊入口，支持持久会话、流式预览、Markdown、回复引用和图片输入；图片理解需要支持视觉的模型。
-
-先在环境中设置 `ORAN_TELEGRAM_TOKEN` 和 `ORAN_TELEGRAM_MODEL_KEY`，并指定允许的用户、工作区与状态目录：
+### 4. 通过 Telegram 私聊使用
 
 ```sh
 xmake build -j4 oran-telegram
-
 build/linux/x86_64/release/oran-telegram \
   --config apps/telegram/deepseek.example.json \
   --allow-user "$TELEGRAM_USER_ID" \
@@ -60,84 +113,68 @@ build/linux/x86_64/release/oran-telegram \
   --state "$STATE_DIR"
 ```
 
-`/new` 创建新会话，`/status` 查看当前状态，`/tasks` 查看后台任务，`/stop` 请求停止后台任务，`/help` 查看完整命令。
-
-常驻宿主支持后台子任务和 Agent 团队：提交任务后可以继续对话，完成结果会作为后续消息送达。部署、凭据、权限和投递恢复见 [Telegram 宿主说明](docs/design-docs/messaging-channels.md#telegram-deployment-host)。
-
 ## 接入自己的应用
 
-链接 `oran-bootstrap`，包含 `<oran/bootstrap.hpp>`，由宿主提供执行器、工作区、会话身份和资源生命周期：
+链接 `oran-bootstrap` 并包含 `<oran/bootstrap.hpp>`，即可在自己的 C++26 应用中组合完整会话：
 
-| 接口 | 负责什么 |
+| 核心接口 | 职责 |
 | --- | --- |
-| `HttpProviderBackend` | 从显式配置构造模型路由和 HTTP 传输。 |
-| `RuntimeAssembly` | 装配并持有工作区、权限、钩子和存储服务。 |
-| `AgentSession` | 运行提问、读取记忆、执行工具，并保存完成的会话。 |
+| `HttpProviderBackend` | 从显式配置构造模型路由、凭据解析与 HTTP/SSE 传输。 |
+| `RuntimeAssembly` | 装配并持有工作区权威、权限审批、钩子总线、审计与 SQLite 存储服务。 |
+| `AgentSession` | 载入检查点与记忆索引、驱动模型与工具循环并原子持久化会话。 |
+| `BackgroundTasks` | 可选宿主级后台子任务与动态 Agent 团队服务（设置 `enable_teams` 开启）。 |
 
-从 [config.example.json](config.example.json) 开始配置模型和权限。`api_key_env` 指向保存 API key 的环境变量，密钥由宿主在装配时解析。调用 `AgentSession::run_prompt` 后，等待执行与清理完成再释放服务。
+从 [config.example.json](config.example.json) 开始配置模型路由与权限规则；密钥通过 `api_key_env` 等环境变量引用注入。完整说明见 [运行时装配](docs/design-docs/bootstrap-runtime.md)。
 
-[运行时装配](docs/design-docs/bootstrap-runtime.md) 说明接口和资源所有权；[HTTP 会话续接测试](tests/bootstrap/test_provider_backend.cpp) 展示从模型传输到持久会话的完整组合。
+## 系统架构与工作循环
 
-聊天接入使用注入式传输和会话接口，各入口的当前边界如下：
+<p align="center">
+  <img src="docs/assets/architecture-overview.svg" alt="Orangutan 系统架构" width="100%">
+</p>
 
-| 入口 | 当前提供的能力 |
-| --- | --- |
-| Telegram | 可直接部署的私聊宿主，包含接收、执行、持久化和投递恢复。 |
-| QQ | 官方扫码绑定、凭据探测、认证接口与协议适配；消息入口和投递部署由宿主提供。 |
-| 飞书 | 协议适配、消息分发和活动状态；认证入口和持久投递由宿主提供。 |
-| 桌面原型 | 浏览器中的模拟工作空间，展示本地操作和频道只读视图。 |
+15 个静态库的分层依赖图由 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 维护并经 CI 自动检查。
 
-QQ 扫码绑定使用 `oran-qq-login`，构建时需要系统 libqrencode 开发文件。具体操作见 [QQ 授权说明](docs/design-docs/messaging-channels.md#qr-authorization)；所有聊天入口的接口与恢复要求见 [消息频道设计](docs/design-docs/messaging-channels.md)。
-
-## 设计概览
-
-应用入口通过 `oran-bootstrap` 装配模型、工具、权限、会话与存储。运行时的值转换与策略判断接收显式输入，HTTP、文件和 SQLite 操作通过独立的效果边界执行。
-
-![Orangutan 系统架构：应用与聊天入口、运行时装配、模型和工具循环、记忆与协作](docs/assets/architecture-overview.svg)
-
-模块依赖与公共接口见 [架构说明](docs/ARCHITECTURE.md)。
+<details>
+<summary><strong>展开查看：单条消息循环、记忆系统与动态 Agent 团队动图</strong></summary>
 
 ### 一次提问如何完成
 
-会话载入检查点和记忆索引，组织模型上下文并发起请求。模型提出工具调用时，运行时解析输入、检查对应权限或作用域、执行工具，再把类型化结果放回对话，继续下一轮。模型给出最终回答后，完成的原始会话后缀与检查点原子提交。
+<p align="center">
+  <img src="docs/assets/message-flow.svg" alt="Orangutan 消息循环" width="100%">
+</p>
 
-![Orangutan 消息循环：载入上下文、调用模型、授权并执行工具、继续推理、返回和保存](docs/assets/message-flow.svg)
+### 会话历史与长期记忆
 
-同一轮提问沿用选定的工具目录和系统前缀。工具调度有并发与时间预算，取消请求会等待相关工作完成清理；外部授权被拒绝时不会执行对应操作。细节见 [Agent 执行](docs/design-docs/agent-platform.md) 和 [工具运行时](docs/design-docs/tool-runtime.md)。
+<p align="center">
+  <img src="docs/assets/memory-system.svg" alt="Orangutan 记忆系统" width="100%">
+</p>
 
-### 会话与长期记忆
+### 动态 Agent 团队
 
-模型当前看到的上下文、持久会话历史和跨会话笔记各有自己的用途。上下文压缩保留当前任务，原始会话单独保存；长期记忆通过索引发现相关笔记，再按需读取详细内容。
+<p align="center">
+  <img src="docs/assets/orangutan-multi-agent.svg" alt="Orangutan Agent 团队" width="100%">
+</p>
 
-![Orangutan 记忆系统：工作上下文、原始会话、长期笔记，以及发现、读取、写入与更正](docs/assets/memory-system.svg)
-
-`MemoryRecall` 支持索引浏览、词法检索和精确读取，`MemoryRemember` 保存完整笔记或更正已有记录，`MemoryForget` 处理显式删除。宿主绑定记忆作用域，主 Agent 和子 Agent 共享获准的作用域；查询与写入沿用相同的验证、钩子和审计边界。见 [记忆系统](docs/design-docs/memory-system.md)。
-
-### 子任务与 Agent 团队
-
-`AgentRun` 从具体任务创建独立子会话。默认每轮最多接纳四个子任务，委派深度为一代；子 Agent 继承工作区、模型路由和权限限制。绑定后台任务服务后，任务可以在前台提问结束后继续，并通过状态查询、取消和完成通知与宿主协作。
-
-团队由主 Agent 按需要定义角色、选择工具和安排任务。依赖任务在前置结果被审查通过后进入执行，修正继续使用原队友会话，定向消息在模型边界送达。
-
-![Orangutan Agent 团队：动态角色、任务依赖、结果审查、队友通信与会话复用](docs/assets/orangutan-multi-agent.svg)
-
-常驻 Telegram 宿主已启用团队能力。库宿主可设置 `BackgroundTaskOptions::enable_teams`。任务、团队和待投递的队友消息属于进程内状态，完成的子会话会持久化；生命周期和准入限制见 [Agent 团队](docs/design-docs/agent-teams.md)。
+</details>
 
 ## 测试与开发
 
 ```sh
-# 完整运行时测试与仓库检查
+# C++26 核心运行时、15 个测试套件与契约检查
+xmake build -j4
 xmake test -j4
 make ci
 
-# 单个模块
-xmake build test-agent
-xmake run test-agent
+# 纯 Vulkan 原生桌面端构建
+xmake build -j4 orangutan-desktop
+
+# 可选浏览器工作台验证
+npm --prefix apps/desktop run build
+npm --prefix apps/desktop test
+npm --prefix apps/desktop run format:check
 ```
 
-桌面原型有独立的状态测试、构建、格式检查和浏览器测试，命令见 [桌面验证](apps/desktop/README.md#verify)。`eval-context` 提供可选的上下文保留评估，`eval-qq` 提供有界的 QQ 对话验证，使用与结果解释见 [测试说明](docs/rules/testing-and-bench.md)。
-
-开发前阅读 [AGENTS.md](AGENTS.md)、[当前状态](docs/STATUS.md) 和 [架构](docs/ARCHITECTURE.md)。当前约束由各设计文档维护，未完成的可靠性与验证工作集中在 [技术债务](docs/exec-plans/tech-debt-tracker.md)。
+开发约定与演进方向见 [AGENTS.md](AGENTS.md)、[STATUS.md](docs/STATUS.md)、[ROADMAP.md](docs/ROADMAP.md) 与 [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md)。
 
 ## License
 

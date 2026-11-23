@@ -1,29 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
   <title id="title">Orangutan 单条消息执行流程</title>
-  <desc id="desc">载入会话和上下文后调用模型。模型请求工具时，准备输入、检查外部权限或内部作用域、执行工具，再把结果追加到类型化会话中继续调用模型。最终回答交给宿主，完成的原始会话后缀与检查点原子提交。移动标记展示工具循环。</desc>
+  <desc id="desc">载入会话和上下文后调用模型。模型请求工具时，准备输入、检查外部权限或内部作用域、执行工具，再把结果追加到类型化会话中继续调用模型。最终回答交给宿主，完成的原始会话后缀与检查点原子提交。</desc>
   <defs>
     <style>
-      text{font-family:"Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif}
-      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#526779}
-      .heading{font-size:29px;font-weight:700;fill:#183149}
-      .subtitle{font-size:15px;fill:#526779}
-      .label{font-size:18px;font-weight:700;fill:#20364c}
-      .body{font-size:15px;fill:#526779}
-      .small{font-size:13px;fill:#526779}
-      .number{font-size:13px;font-weight:700;fill:#245ac0}
-      .wire{fill:none;stroke:#c4d2e0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-      .loop{fill:none;stroke:#4c87df;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
+      text{font-family:"Noto Sans CJK SC","Sarasa UI SC","Microsoft YaHei",system-ui,sans-serif}
+      .serif{font-family:Georgia,"Noto Serif SC","Source Han Serif SC","Songti SC",serif}
+      .eyebrow{font-size:12px;font-weight:700;letter-spacing:2px;fill:#8f3e14}
+      .heading{font-size:29px;font-weight:700;fill:#292118}
+      .subtitle{font-size:15px;fill:#5b4e3f}
+      .label{font-size:18px;font-weight:700;fill:#292118}
+      .body{font-size:15px;fill:#5b4e3f}
+      .small{font-size:13px;fill:#695a47}
+      .number{font-size:13px;font-weight:700;fill:#b24a1d}
+      .wire{fill:none;stroke:#c4b7a4;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .loop{fill:none;stroke:#b24a1d;stroke-width:2;stroke-dasharray:5 8;animation:travel 3s linear infinite}
       @keyframes travel{to{stroke-dashoffset:-52}}
       @media(prefers-reduced-motion:reduce){.motion{display:none}.loop{animation:none}}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9db2c6" stroke-width="1.5"/></marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#9e8e79" stroke-width="1.5"/></marker>
   </defs>
-  <rect width="1200" height="700" rx="24" fill="#f7fafd"/>
-  <rect x="1" y="1" width="1198" height="698" rx="23" fill="none" stroke="#dfe8f0"/>
-  <text x="48" y="36" class="eyebrow">ORANGUTAN / AGENT TURN</text>
-  <text x="48" y="78" class="heading">一条消息，经过一个完整循环</text>
-  <text x="48" y="106" class="subtitle">工具结果回到同一段对话，最终回答和检查点一起保存。</text>
-  <rect x="48" y="131" width="246" height="30" rx="15" fill="#e8f0ff"/>
+  <rect width="1200" height="700" rx="24" fill="#f6f2ea"/>
+  <rect x="1" y="1" width="1198" height="698" rx="23" fill="none" stroke="#dcd3c4"/>
+  <text x="48" y="38" class="eyebrow">ORANGUTAN / AGENT TURN</text>
+  <text x="48" y="78" class="serif heading">一条消息，经过一个完整闭环</text>
+  <text x="48" y="106" class="subtitle">工具结果回到同一段对话，最终回答与工作检查点原子落盘。</text>
+  <rect x="48" y="131" width="246" height="30" rx="15" fill="#f2e3d7" stroke="#ddbca6"/>
   <text x="64" y="151" class="small">用户消息 / 后台完成事件</text>
   <g class="wire" marker-end="url(#arrow)">
     <path d="M272 249 H330"/>
@@ -38,7 +39,7 @@
   <text x="748" y="389" class="small">工具调用</text>
   <text x="178" y="389" class="small">继续下一轮</text>
   <g class="card">
-    <rect x="48" y="182" width="224" height="154" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="48" y="182" width="224" height="154" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="70" y="210" class="number">01 / CONTEXT</text>
     <text x="70" y="242" class="label">载入会话与上下文</text>
     <text x="70" y="272" class="body">检查点 / 近期交换</text>
@@ -46,7 +47,7 @@
     <text x="70" y="322" class="small">按预算组织模型视图</text>
   </g>
   <g class="card">
-    <rect x="332" y="182" width="224" height="154" rx="14" fill="#edf4ff" stroke="#b9d1f4"/>
+    <rect x="332" y="182" width="224" height="154" rx="14" fill="#f7e8dc" stroke="#ddbca6"/>
     <text x="354" y="210" class="number">02 / PROVIDER</text>
     <text x="354" y="242" class="label">调用模型</text>
     <text x="354" y="272" class="body">协议适配 / 流式响应</text>
@@ -54,47 +55,47 @@
     <text x="354" y="322" class="small">记录用量与执行归属</text>
   </g>
   <g class="card">
-    <rect x="616" y="182" width="224" height="154" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="616" y="182" width="224" height="154" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="638" y="210" class="number">03 / RESPONSE</text>
     <text x="638" y="242" class="label">解析模型输出</text>
     <text x="638" y="272" class="body">文字 / 工具调用</text>
-    <text x="638" y="298" class="body">保持消息与结果的类型</text>
+    <text x="638" y="298" class="body">保持消息与结果类型</text>
     <text x="638" y="322" class="small">选择完成或进入工具分支</text>
   </g>
   <g class="card">
-    <rect x="928" y="182" width="224" height="154" rx="14" fill="#eaf8f4" stroke="#c5e8dc"/>
-    <text x="950" y="210" class="number" style="fill:#087b72">04 / COMPLETE</text>
+    <rect x="928" y="182" width="224" height="154" rx="14" fill="#e9f0e7" stroke="#c4d9c6"/>
+    <text x="950" y="210" class="number" style="fill:#3d6b4a">04 / COMPLETE</text>
     <text x="950" y="242" class="label">返回并保存</text>
     <text x="950" y="272" class="body">把回答交给宿主</text>
     <text x="950" y="298" class="body">原始会话后缀 + 检查点</text>
     <text x="950" y="322" class="small">一次事务，原子提交</text>
   </g>
   <g class="card">
-    <rect x="616" y="436" width="224" height="124" rx="14" fill="#fff4e8" stroke="#efdbc2"/>
+    <rect x="616" y="436" width="224" height="124" rx="14" fill="#f5ecd8" stroke="#e2cda6"/>
     <text x="638" y="472" class="label">准备与授权</text>
     <text x="638" y="502" class="body">验证输入与访问范围</text>
-    <text x="638" y="528" class="body">外部权限 / 内部作用域</text>
+    <text x="638" y="528" class="body">外部权限 / 交互审批</text>
     <text x="638" y="548" class="small">授权拒绝时不执行操作</text>
   </g>
   <g class="card">
-    <rect x="332" y="436" width="224" height="124" rx="14" fill="#f2edff" stroke="#ded1f6"/>
+    <rect x="332" y="436" width="224" height="124" rx="14" fill="#e8f0f4" stroke="#c1d3df"/>
     <text x="354" y="472" class="label">有界执行工具</text>
-    <text x="354" y="502" class="body">文件 / 记忆 / 子任务</text>
+    <text x="354" y="502" class="body">文件 / 检索 / 命令 / 记忆</text>
     <text x="354" y="528" class="body">并发预算 / 超时 / 钩子</text>
     <text x="354" y="548" class="small">取消等待相关工作清理</text>
   </g>
   <g class="card">
-    <rect x="48" y="436" width="224" height="124" rx="14" fill="#fff" stroke="#cfddec"/>
+    <rect x="48" y="436" width="224" height="124" rx="14" fill="#fbf8f2" stroke="#dcd3c4"/>
     <text x="70" y="472" class="label">追加工具结果</text>
     <text x="70" y="502" class="body">结果写回类型化会话</text>
-    <text x="70" y="528" class="body">保留调用与结果的关联</text>
-    <text x="70" y="548" class="small">沿用本轮选定的工具目录</text>
+    <text x="70" y="528" class="body">保留调用与结果关联</text>
+    <text x="70" y="548" class="small">沿用本轮选定工具目录</text>
   </g>
   <path class="loop" d="M728 336 V436 M616 492 H556 M332 492 H272 M160 436 V336"/>
-  <circle r="5" fill="#397be8" class="motion"><animateMotion dur="10s" repeatCount="indefinite" path="M272 249 H332 M556 249 H616 M728 336 V436 M616 492 H556 M332 492 H272 M160 436 V336"/></circle>
-  <circle r="4" fill="#169882" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="2s" repeatCount="indefinite"/><animateMotion dur="5s" begin="2s" repeatCount="indefinite" path="M840 249 H928"/></circle>
+  <circle r="5" fill="#b24a1d" class="motion"><animateMotion dur="10s" repeatCount="indefinite" path="M272 249 H332 M556 249 H616 M728 336 V436 M616 492 H556 M332 492 H272 M160 436 V336"/></circle>
+  <circle r="4" fill="#3d6b4a" class="motion" opacity="0"><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="5s" begin="2s" repeatCount="indefinite"/><animateMotion dur="5s" begin="2s" repeatCount="indefinite" path="M840 249 H928"/></circle>
   <g class="card">
-    <rect x="48" y="612" width="1104" height="48" rx="12" fill="#edf2f7" stroke="#dce5ef"/>
+    <rect x="48" y="612" width="1104" height="48" rx="12" fill="#ede7db" stroke="#dcd3c4"/>
     <text x="72" y="642" class="body">稳定的系统前缀与工具声明</text>
     <text x="430" y="642" class="body">有界的模型上下文与工具调度</text>
     <text x="808" y="642" class="body">完整的原始记录与清理边界</text>

@@ -58,16 +58,15 @@ flowchart TD
 | `oran-bootstrap` | Construct resources and drive one session from the application. |
 
 Applications link the runtime libraries and supply configuration, executors and
-session identities through `oran-bootstrap`. The host owns process lifetime and
-presentation. Tests and benchmarks exercise these interfaces through their own
-runners. See [BUILD_SYSTEM.md](BUILD_SYSTEM.md).
+session identities through `oran-bootstrap`. The default `orangutan` executable
+under `apps/personal/` provides the unified Personal Agent CLI (`chat`, `ask`) and
+a loopback-only (`127.0.0.1`) HTTP/SSE bridge (`serve`) with durable SQLite
+reminders (`personal.db`) and live `permission_ask_rendered` approvals.
 
-The optional [desktop prototype](../apps/desktop/README.md) under `apps/desktop`
-is a browser UI with a pure state model, source-restricted commands and injected
-demo/storage effects. [Desktop implementation](design-docs/desktop-ui.md) owns
-its module map, state/effect boundaries and development handoff. It does not link or call the runtime. Its
-[product contract](product-specs/desktop-prototype.md) owns local actions,
-read-only channel observation and the future integration boundary.
+The desktop workbench under [apps/desktop](../apps/desktop/README.md) connects
+automatically to `orangutan serve` over `/api` and falls back cleanly to an
+offline browser demo when no local host is running. [Desktop UI](design-docs/desktop-ui.md)
+owns its module map, live/offline boundaries and Forest Companions state projection.
 
 The opt-in `oran-telegram` application in `apps/telegram/` composes authenticated
 polling, one allowed private user's persistent session and a private delivery

@@ -1,10 +1,22 @@
 import { createContext, useContext } from 'react';
 import type { AppState } from './schema.ts';
 import type { Command } from './model.ts';
+import type { PetId } from './pets.tsx';
 
-export type View = 'assistant' | 'tasks' | 'connections' | 'memory' | 'settings';
+export type View = 'assistant' | 'tasks' | 'reminders' | 'connections' | 'memory' | 'settings';
+export type RuntimeMode = 'offline' | 'live-demo' | 'live';
+
+export interface RuntimeInfo {
+  mode: RuntimeMode;
+  workspace?: string;
+  model?: string;
+  activeCompanion?: PetId;
+  activeTool?: string;
+}
+
 export interface AppContextValue {
   state: AppState;
+  runtime: RuntimeInfo;
   dispatch: (action: Command) => void;
   t: (zh: string, en: string) => string;
   view: View;

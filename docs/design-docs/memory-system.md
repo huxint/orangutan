@@ -218,11 +218,11 @@ stored at millisecond precision. Ordinary search and exact recall exclude shadow
 records, and the model cannot create them; raw backend `get` still inspects
 existing rows. Search accepts at most 4096 bytes and 100 backend results.
 Up to 32 literal terms are OR-combined, so useful topic terms need not match
-every word of a question. ASCII punctuation separates terms; non-ASCII runs use
-SQLite's existing unicode61 tokenizer. BM25 weights title/body/tags as 4/1/2.
-Ties use update time and ID. This is lexical search: paraphrase, translation and
-general Chinese word segmentation are not supplied by this index. Browsing and
-exact IDs remain available when wording does not match.
+every word of a question. ASCII punctuation separates terms; non-ASCII/CJK
+queries that return fewer than `limit` FTS5 matches fall back to a scope-bounded
+substring scan over visible rows (weighted title 4 / tags 2 / body 1) without
+modifying schema version 1. BM25 weights title/body/tags as 4/1/2. Ties use
+update time and ID. Browsing and exact IDs remain available when wording does not match.
 
 Rendering is a pure function of selected content. Timestamps, request IDs and
 scores stay out of prompt text. An existing row's update preserves its
@@ -277,5 +277,5 @@ Record consultation success, durable-write success, stale-note use, unwanted
 writes, unsolicited memory disclosures and token cost across repeated runs of
 the deployment model. Semantic retrieval and background reflection need evidence from these failures before
 extending the runtime. Session compaction separately needs deployment-model
-measurements of goal retention, constraint loss and summary drift. Pending gates live in
-[live debt](../exec-plans/tech-debt-tracker.md).
+measurements of goal retention, constraint loss and summary drift. Pending work is tracked in
+[ROADMAP](../ROADMAP.md).

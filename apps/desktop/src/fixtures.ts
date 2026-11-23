@@ -116,6 +116,7 @@ export function createInitialState(now = Date.now()): AppState {
       theme: 'system',
       notifications: true,
       memory: true,
+      companions: true,
       model: 'Claude Sonnet',
       permission: 'ask',
     },
@@ -253,6 +254,16 @@ export function createInitialState(now = Date.now()): AppState {
         body: '周然希望会议汇总包含明确的行动项、负责人和待确认的问题。',
         source: '周然 · QQ',
         updatedAt: now - 500_000,
+      },
+    ],
+    reminders: [
+      {
+        id: 'seed-reading-reminder',
+        title: '周日花十分钟回看本周阅读摘录',
+        dueAt: now + 3_600_000,
+        completed: false,
+        notified: false,
+        createdAt: now - 400_000,
       },
     ],
     notifications: [

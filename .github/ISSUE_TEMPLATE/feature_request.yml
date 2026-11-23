@@ -23,12 +23,6 @@ body:
       label: Related design doc (`docs/design-docs/...md`) if any
     validations:
       required: false
-  - type: input
-    id: product_spec
-    attributes:
-      label: Related product spec (`docs/product-specs/....md`) if any
-    validations:
-      required: false
   - type: textarea
     id: alternatives
     attributes:

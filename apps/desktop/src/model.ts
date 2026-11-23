@@ -23,7 +23,11 @@ export type Command =
       simulateFailure?: boolean;
     }
   | { type: 'note-save'; note: Note }
+  | { type: 'note-add'; note: Note }
   | { type: 'note-delete'; id: string }
+  | { type: 'reminder-add'; id: string; title: string; dueAt: number; now: number }
+  | { type: 'reminder-toggle'; id: string }
+  | { type: 'reminder-delete'; id: string }
   | { type: 'read-notification'; id: string };
 
 function notify(state: AppState, notification: Notification): AppState {
@@ -288,8 +292,50 @@ export function command(state: AppState, action: Command): AppState {
         return state;
       return { ...state, notes: state.notes.map((n) => (n.id === old.id ? action.note : n)) };
     }
+    case 'note-add': {
+      if (
+        !action.note.id.trim() ||
+        !action.note.title.trim() ||
+        !action.note.body.trim() ||
+        (action.note.scope === 'shared') !== (action.note.ownerId === null) ||
+        state.notes.some((n) => n.id === action.note.id)
+      )
+        return state;
+      return { ...state, notes: [action.note, ...state.notes] };
+    }
     case 'note-delete':
       return { ...state, notes: state.notes.filter((n) => n.id !== action.id) };
+    case 'reminder-add': {
+      const title = action.title.trim();
+      const existing = state.reminders ?? [];
+      if (!title || title.length > 240 || existing.some((r) => r.id === action.id)) return state;
+      return {
+        ...state,
+        reminders: [
+          {
+            id: action.id,
+            title,
+            dueAt: action.dueAt,
+            completed: false,
+            notified: false,
+            createdAt: action.now,
+          },
+          ...existing,
+        ],
+      };
+    }
+    case 'reminder-toggle':
+      return {
+        ...state,
+        reminders: (state.reminders ?? []).map((r) =>
+          r.id === action.id ? { ...r, completed: !r.completed } : r,
+        ),
+      };
+    case 'reminder-delete':
+      return {
+        ...state,
+        reminders: (state.reminders ?? []).filter((r) => r.id !== action.id),
+      };
     case 'read-notification':
       return {
         ...state,

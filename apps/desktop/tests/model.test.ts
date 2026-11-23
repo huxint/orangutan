@@ -264,3 +264,27 @@ test('custom conversation names survive first send and recovery without changing
   assert.equal(sent.conversations.find((c) => c.id === HOME)!.name, '产品设计');
   assert.equal(stateSchema.safeParse(original).success, true);
 });
+
+test('reminders add, toggle, delete and keep legacy snapshots without reminders valid', () => {
+  const legacy = structuredClone(createInitialState(1000));
+  delete legacy.reminders;
+  delete legacy.settings.companions;
+  assert.equal(stateSchema.safeParse(legacy).success, true);
+
+  let state = command(legacy, {
+    type: 'reminder-add',
+    id: 'rem-1',
+    title: '  给奥兰泡一杯热茶  ',
+    dueAt: 5000,
+    now: 1000,
+  });
+  assert.equal(state.reminders?.length, 1);
+  assert.equal(state.reminders![0].title, '给奥兰泡一杯热茶');
+  assert.equal(state.reminders![0].completed, false);
+
+  state = command(state, { type: 'reminder-toggle', id: 'rem-1' });
+  assert.equal(state.reminders![0].completed, true);
+
+  state = command(state, { type: 'reminder-delete', id: 'rem-1' });
+  assert.equal(state.reminders?.length, 0);
+});

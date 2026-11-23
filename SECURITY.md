@@ -17,12 +17,10 @@ assessment within 7 days.
 
 ## Scope
 
-This repository is a scaffold for the upcoming Orangutan v2 binary. The binary's
-own security posture is documented in [`docs/SECURITY.md`](docs/SECURITY.md) and
-[`docs/SUPPLY_CHAIN_SECURITY.md`](docs/SUPPLY_CHAIN_SECURITY.md).
+Orangutan is a local-first Personal Agent runtime and desktop workbench. Its security boundaries are documented in:
 
-Once the project ships real artifacts, this file should be updated with:
+- [Permissions and Hooks](docs/design-docs/permissions-and-hooks.md) — capability evaluation, rule precedence, and audit hooks.
+- [Tool Runtime](docs/design-docs/tool-runtime.md) — workspace path containment, symlink policy, and bounded subprocess execution.
+- [Secrets and State](docs/design-docs/secrets-and-state.md) — credential reference handling (`api_key_env`), loopback-only local HTTP serving, and private SQLite state.
 
-- Supported version policy.
-- Disclosure timeline expectations.
-- A real security contact.
+Sensitive areas include workspace boundary escapes, unauthorized subprocess or file writes, credential leakage in logs/traces/errors, and local HTTP bridge access control.

@@ -87,6 +87,14 @@ export const noteSchema = z.object({
   source: z.string(),
   updatedAt: z.number(),
 });
+export const reminderSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  dueAt: z.number(),
+  completed: z.boolean(),
+  notified: z.boolean().optional(),
+  createdAt: z.number(),
+});
 export const notificationSchema = z.object({
   id: z.string(),
   eventKey: z.string(),
@@ -105,6 +113,7 @@ export const stateSchema = z
       theme: z.enum(['system', 'light', 'dark']),
       notifications: z.boolean(),
       memory: z.boolean(),
+      companions: z.boolean().optional(),
       model: z.enum(['Claude Sonnet', 'GPT-5']),
       permission: z.enum(['ask', 'allow', 'deny']),
     }),
@@ -114,6 +123,7 @@ export const stateSchema = z
     messages: z.array(messageSchema),
     tasks: z.array(taskSchema),
     notes: z.array(noteSchema),
+    reminders: z.array(reminderSchema).optional(),
     notifications: z.array(notificationSchema),
     drafts: z.record(z.string(), z.string()),
   })
@@ -127,6 +137,7 @@ export const stateSchema = z
       state.messages,
       state.tasks,
       state.notes,
+      state.reminders ?? [],
       state.notifications,
     ]) {
       if (new Set(records.map((r) => r.id)).size !== records.length)
@@ -158,6 +169,7 @@ export type AppState = z.infer<typeof stateSchema>;
 export type Conversation = z.infer<typeof conversationSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type Note = z.infer<typeof noteSchema>;
+export type Reminder = z.infer<typeof reminderSchema>;
 export type Connection = z.infer<typeof connectionSchema>;
 export type Notification = z.infer<typeof notificationSchema>;
 export type Artifact = z.infer<typeof artifactSchema>;

@@ -79,7 +79,7 @@ heavy include adds its own `<oran/<lib>/<name>_fwd.hpp>` header,
 `<oran/async/awaitable_fwd.hpp>` being the current exemplar; a new public
 header that cannot avoid a listed include must not be added.
 
-**Why:** see `docs/FAST_COMPILATION.md`.
+**Why:** heavy third-party headers in public APIs multiply compile time across every downstream TU (see [`docs/BUILD_SYSTEM.md`](../BUILD_SYSTEM.md)).
 
 **Enforcement:** `scripts/check-includes.sh`.
 
@@ -109,8 +109,7 @@ in RAII wrappers.
 ## C9. clang-tidy / clangd warnings are errors when checked
 
 The project requires clang-tidy findings to be treated as errors. Hosted CI does
-not run that gate yet; the missing job/config is tracked in
-[live debt](../exec-plans/tech-debt-tracker.md). When clang-tidy is run locally or
+not run that gate yet; see [ROADMAP](../ROADMAP.md). When clang-tidy is run locally or
 in the future hosted job, any warning fails the check. Disabling a check at-site
 requires a comment with a justification.
 
@@ -271,11 +270,9 @@ restriction.
 ## C18. Static analysis is on the menu, not the autopilot
 
 GCC 16.1's `-fanalyzer` is wired into the build via `xmake f --analyze=y`. The
-analyzer is **opt-in** because it triples compile time on heavy TUs (see
-[`compile-budget.md`](compile-budget.md)). The intended nightly gate is mandatory
-for covered memory/descriptor TUs, but hosted analyzer coverage is not active yet;
-the gap is tracked in [live debt](../exec-plans/tech-debt-tracker.md). Suppression
-policy and the required warning set live in [`static-analysis.md`](static-analysis.md).
+analyzer is **opt-in** because it triples compile time on heavy TUs. Hosted
+analyzer coverage is not active yet; see [ROADMAP](../ROADMAP.md). Any inline
+suppression requires an explaining comment.
 
 **Why:** legacy `orangutan/` accumulated null-deref / use-after-free shapes the
 analyzer would have caught; the build wiring exists so the missing hosted gate

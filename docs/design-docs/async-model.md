@@ -1,8 +1,8 @@
 # Async Ownership
 
 Asio awaitables are the runtime's async vocabulary. Operations carry `Result<T>`
-directly or with terminal metadata, following the
-[error contract](../rules/error-handling.md). `async::Runtime` owns an IO executor
+directly or with terminal metadata, following
+[critical rules](../rules/critical-rules.md) (`C2`, `C3`, `C11`). `async::Runtime` owns an IO executor
 and a bounded worker pool. Libraries receive executor handles from their host.
 
 ## Execution
@@ -49,7 +49,7 @@ sessions, avoiding parent/child permit deadlocks.
 Timers replace blocking sleeps. Tests use real executors and synchronization
 points, with a hard timeout to expose missing completion.
 
-See [async rules](../rules/async-and-concurrency.md) for implementation constraints.
+See [critical rules](../rules/critical-rules.md) (`C2`, `C11`) for executor and cancellation constraints.
 
 ## Work Beyond A Foreground Turn
 

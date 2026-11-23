@@ -16,6 +16,9 @@ inline constexpr std::string_view kFileWriteName{"FileWrite"};
 /// Stable wire name for the file-edit built-in.
 inline constexpr std::string_view kFileEditName{"FileEdit"};
 
+/// Stable wire name for the bounded shell execution built-in.
+inline constexpr std::string_view kShellExecName{"ShellExec"};
+
 /// Stable wire name for the long-term memory recall built-in.
 inline constexpr std::string_view kMemoryRecallName{"MemoryRecall"};
 
@@ -70,6 +73,11 @@ inline constexpr std::string_view TASK_CANCEL_NAME{"TaskCancel"};
 /// `match_count`.
 [[nodiscard]] core::Result<void> register_file_edit(Registry& registry);
 
+/// Register the bounded workspace subprocess execution tool (`ShellExec`).
+/// Listing, searching, git, and build tasks compose through `/bin/sh -c`
+/// rather than adding separate narrow wrapper tools.
+[[nodiscard]] core::Result<void> register_shell_exec(Registry& registry);
+
 /// Register the `MemoryRecall` tool. Searches long-term memory through the
 /// runtime supplied on `DispatchContext::memory_recall`. Input shape: `{"query": <string>,
 /// "limit"?: positive integer <= 20 (default 5), "kinds"?: [<RecordKind wire
@@ -102,7 +110,7 @@ inline constexpr std::string_view TASK_CANCEL_NAME{"TaskCancel"};
 /// structured `data_json` with the scoped removed key.
 [[nodiscard]] core::Result<void> register_memory_forget(Registry& registry);
 
-/// Register the three filesystem tools.
+/// Register the built-in workspace filesystem and shell tools.
 [[nodiscard]] core::Result<void> register_builtins(Registry& registry);
 
 /// Register the memory tools after the host has supplied memory services.

@@ -19,6 +19,7 @@ import {
 import { useApp } from './context.ts';
 import type { Connection, Status, Task } from './schema.ts';
 import { canControl } from './model.ts';
+import { PetAvatar } from './pets.tsx';
 
 export function Logo() {
   return (
@@ -322,7 +323,9 @@ export function Approval({ task }: { task: Task }) {
   return (
     <div className={`approval-card ${pending ? '' : 'settled'}`} data-testid="approval-card">
       <div className="approval-heading">
-        {pending ? (
+        {pending && state.settings.companions !== false ? (
+          <PetAvatar pet="pebble" mood="awaiting_approval" size={24} />
+        ) : pending ? (
           <LockKeyhole size={15} />
         ) : task.approval.status === 'approved' ? (
           <Check size={15} />

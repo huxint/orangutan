@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
   Bell,
+  BellRing,
   Check,
-  CheckCheck,
   CircleAlert,
-  CircleCheck,
   CircleHelp,
-  Clock3,
   Leaf,
   ListChecks,
   Menu,
@@ -17,37 +14,36 @@ import {
   Search,
   Settings2,
   SquarePen,
-  Unplug,
 } from 'lucide-react';
 import { AppContext, type View } from './context.ts';
 import { useAgent } from './useAgent.ts';
 import { Assistant } from './Assistant.tsx';
-import { ConnectionsPage, MemoryPage, SettingsPage, TasksPage } from './Pages.tsx';
+import { TasksPage } from './pages/TasksPage.tsx';
+import { RemindersPage } from './pages/RemindersPage.tsx';
+import { ConnectionsPage } from './pages/ConnectionsPage.tsx';
+import { MemoryPage } from './pages/MemoryPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
 import { TaskPanel } from './TaskPanel.tsx';
-import { Empty, Logo, Modal, PlatformIcon, Source, StatusBadge } from './components.tsx';
+import { AppDialogs, type ActiveDialog } from './components/Dialogs.tsx';
+import { Logo, PlatformIcon } from './components.tsx';
 import { AppShell, Sidebar, SidebarSection, Topbar } from './layout.tsx';
-
-const notificationIcons = {
-  completed: CircleCheck,
-  failed: CircleAlert,
-  approval: Clock3,
-  connection: Unplug,
-};
+import { deriveCompanion, PetAvatar } from './pets.tsx';
 
 export default function App() {
-  const { state, dispatch, storageError, reset, exportSnapshot } = useAgent();
+  const { state, runtime, dispatch, storageError, reset, exportSnapshot } = useAgent();
   const [view, setView] = useState<View>('assistant');
   const [taskId, setTaskId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
   const menu = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<
-    'search' | 'notifications' | 'about' | 'reset' | 'rename' | null
-  >(null);
+  const [dialog, setDialog] = useState<ActiveDialog>(null);
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [toast, setToast] = useState('');
   const t = (zh: string, en: string) => (state.settings.language === 'zh' ? zh : en);
+  const companions = state.settings.companions !== false;
+  const companion = deriveCompanion(state, runtime.activeCompanion);
+
   const navigate = (next: View) => {
     setView(next);
     setTaskId(null);
@@ -63,21 +59,24 @@ export default function App() {
     dispatch({ type: 'new', id: crypto.randomUUID(), now: Date.now() });
     navigate('assistant');
   };
+
   const selected = state.conversations.find((c) => c.id === state.selectedId)!;
   const selectedConnection = state.connections.find((c) => c.id === selected.connectionId);
   const unread = state.notifications.filter((n) => !n.read).length;
   const activeTasks = state.tasks.filter((task) =>
     ['queued', 'running', 'awaiting_approval'].includes(task.status),
   ).length;
+  const openReminders = (state.reminders ?? []).filter((r) => !r.completed).length;
+
   const navItems = [
     { id: 'assistant' as const, icon: MessageCircle, label: t('助手', 'Assistant') },
     { id: 'tasks' as const, icon: ListChecks, label: t('任务', 'Tasks') },
+    { id: 'reminders' as const, icon: BellRing, label: t('提醒', 'Reminders') },
     { id: 'connections' as const, icon: Radio, label: t('连接', 'Connections') },
     { id: 'memory' as const, icon: Leaf, label: t('记忆', 'Memory') },
     { id: 'settings' as const, icon: Settings2, label: t('设置', 'Settings') },
   ];
-  const connectionName = (connectionId: string) =>
-    state.connections.find((c) => c.id === connectionId)?.name ?? t('桌面', 'Desktop');
+
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const update = () => {
@@ -92,10 +91,12 @@ export default function App() {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, [state.settings.theme]);
+
   useEffect(() => {
     document.documentElement.lang = state.settings.language === 'zh' ? 'zh-CN' : 'en';
-    document.title = t('Orangutan · 你的本地助手', 'Orangutan · Your local assistant');
+    document.title = t('Orangutan · 你的个人助手', 'Orangutan · Your personal agent');
   }, [state.settings.language]);
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -109,11 +110,13 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
   useEffect(() => {
     const media = window.matchMedia('(min-width: 781px)');
     const closeWide = () => {
@@ -122,6 +125,7 @@ export default function App() {
     media.addEventListener('change', closeWide);
     return () => media.removeEventListener('change', closeWide);
   }, []);
+
   useEffect(() => {
     if (!sidebarOpen) return;
     const buttons = () =>
@@ -157,23 +161,7 @@ export default function App() {
         menu.current.focus();
     };
   }, [sidebarOpen]);
-  const needle = query.trim().toLocaleLowerCase();
-  const matchingConversations = state.conversations.filter((c) =>
-    `${c.name} ${connectionName(c.connectionId)}`.toLocaleLowerCase().includes(needle),
-  );
-  const matchingTasks = state.tasks.filter((task) =>
-    task.title.toLocaleLowerCase().includes(needle),
-  );
-  const movePaletteFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const items = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>('input, .palette-results button'),
-    );
-    const index = items.indexOf(document.activeElement as HTMLElement);
-    const step = event.key === 'ArrowDown' ? 1 : -1;
-    event.preventDefault();
-    items[(index + step + items.length) % items.length]?.focus();
-  };
+
   const conversationLink = (id: string) =>
     view === 'assistant' && state.selectedId === id ? 'true' : undefined;
 
@@ -181,6 +169,7 @@ export default function App() {
     <AppContext.Provider
       value={{
         state,
+        runtime,
         dispatch,
         t,
         view,
@@ -212,7 +201,7 @@ export default function App() {
               <span>{t('新对话', 'New conversation')}</span>
             </button>
             <nav className="nav-list">
-              {navItems.slice(0, 2).map(({ id, icon: Icon, label }) => (
+              {navItems.slice(0, 3).map(({ id, icon: Icon, label }) => (
                 <button
                   key={id}
                   data-testid={`nav-${id}`}
@@ -229,6 +218,9 @@ export default function App() {
                         {t(`${activeTasks} 项进行中`, `${activeTasks} active`)}
                       </span>
                     </>
+                  )}
+                  {id === 'reminders' && openReminders > 0 && (
+                    <span className="nav-dot" aria-hidden="true" />
                   )}
                 </button>
               ))}
@@ -273,7 +265,7 @@ export default function App() {
             </div>
             <div className="sidebar-bottom">
               <nav className="nav-list" aria-label={t('工作区管理', 'Workspace management')}>
-                {navItems.slice(2).map(({ id, icon: Icon, label }) => (
+                {navItems.slice(3).map(({ id, icon: Icon, label }) => (
                   <button
                     key={id}
                     data-testid={`nav-${id}`}
@@ -286,14 +278,25 @@ export default function App() {
                   </button>
                 ))}
               </nav>
+              {companions && (
+                <div className="companion-pill" title={t(companion.captionZh, companion.captionEn)}>
+                  <PetAvatar pet={companion.pet} mood={companion.mood} size={28} />
+                  <span className="companion-pill-text">
+                    <strong>{t(companion.nameZh, companion.nameEn)}</strong>
+                    <small>{t(companion.captionZh, companion.captionEn)}</small>
+                  </span>
+                </div>
+              )}
               <div className="sidebar-meta">
-                <span className="demo-state">
+                <span className={`demo-state${runtime.mode !== 'offline' ? ' is-live' : ''}`}>
                   <span aria-hidden="true" />
-                  {t('演示模式', 'Demo mode')}
+                  {runtime.mode === 'offline'
+                    ? t('演示模式', 'Demo mode')
+                    : t('已连本地运行时', 'Local runtime')}
                 </span>
                 <button
                   className="icon-button small"
-                  aria-label={t('关于演示', 'About this demo')}
+                  aria-label={t('关于 Orangutan', 'About Orangutan')}
                   onClick={() => setDialog('about')}
                 >
                   <CircleHelp size={15} />
@@ -383,6 +386,8 @@ export default function App() {
               <Assistant />
             ) : view === 'tasks' ? (
               <TasksPage />
+            ) : view === 'reminders' ? (
+              <RemindersPage />
             ) : view === 'connections' ? (
               <ConnectionsPage />
             ) : view === 'memory' ? (
@@ -400,239 +405,17 @@ export default function App() {
           {toast}
         </div>
       )}
-      {dialog === 'search' && (
-        <Modal
-          title={t('搜索对话和任务', 'Search conversations and tasks')}
-          close={() => setDialog(null)}
-          variant="palette"
-        >
-          <div className="palette" onKeyDown={movePaletteFocus}>
-            <label className="palette-input">
-              <Search size={18} />
-              <input
-                aria-label={t('搜索关键词', 'Search query')}
-                value={query}
-                placeholder={t('搜索对话、渠道或任务…', 'Search conversations, channels or tasks…')}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
-                  e.preventDefault();
-                  e.currentTarget
-                    .closest('.palette')
-                    ?.querySelector<HTMLButtonElement>('.palette-results button')
-                    ?.click();
-                }}
-              />
-              <kbd>Esc</kbd>
-            </label>
-            <div className="palette-results">
-              {matchingConversations.length > 0 && <h3>{t('对话', 'Conversations')}</h3>}
-              {matchingConversations.map((c) => {
-                const connection = state.connections.find((v) => v.id === c.connectionId);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => {
-                      selectConversation(c.id);
-                      setDialog(null);
-                    }}
-                  >
-                    <span className="palette-icon">
-                      {connection ? (
-                        <PlatformIcon platform={connection.platform} size={15} />
-                      ) : (
-                        <MessageCircle size={15} />
-                      )}
-                    </span>
-                    <span className="palette-text">
-                      {c.name}
-                      <small>{connectionName(c.connectionId)}</small>
-                    </span>
-                    <ArrowRight size={14} className="palette-arrow" />
-                  </button>
-                );
-              })}
-              {matchingTasks.length > 0 && <h3>{t('任务', 'Tasks')}</h3>}
-              {matchingTasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => {
-                    selectConversation(task.conversationId);
-                    setTaskId(task.id);
-                    setDialog(null);
-                  }}
-                >
-                  <span className="palette-icon">
-                    <ListChecks size={15} />
-                  </span>
-                  <span className="palette-text">
-                    {task.title}
-                    <Source conversationId={task.conversationId} />
-                  </span>
-                  <StatusBadge status={task.status} />
-                </button>
-              ))}
-              {!matchingConversations.length && !matchingTasks.length && (
-                <Empty
-                  icon={<Search size={22} />}
-                  title={t('没有找到', 'No matches yet')}
-                  detail={t('换个关键词再试试。', 'Try another word.')}
-                />
-              )}
-            </div>
-            <div className="palette-footer" aria-hidden="true">
-              <span>
-                <kbd>↑</kbd>
-                <kbd>↓</kbd>
-                {t('选择', 'Move')}
-              </span>
-              <span>
-                <kbd>Enter</kbd>
-                {t('打开', 'Open')}
-              </span>
-              <span>
-                <kbd>Esc</kbd>
-                {t('关闭', 'Close')}
-              </span>
-            </div>
-          </div>
-        </Modal>
-      )}
-      {dialog === 'notifications' && (
-        <Modal title={t('通知', 'Notifications')} close={() => setDialog(null)}>
-          <div className="notification-list">
-            {state.notifications.map((n) => {
-              const Icon = notificationIcons[n.kind];
-              return (
-                <div className={`notification-item ${n.read ? 'read' : ''}`} key={n.id}>
-                  <span className={`notification-icon ${n.kind}`}>
-                    <Icon size={15} />
-                  </span>
-                  <button
-                    className="notification-content"
-                    onClick={() => {
-                      dispatch({ type: 'read-notification', id: n.id });
-                      if (n.conversationId) selectConversation(n.conversationId);
-                      else navigate('connections');
-                      if (n.taskId) setTaskId(n.taskId);
-                      setDialog(null);
-                    }}
-                  >
-                    <strong>{n.title}</strong>
-                    <span className="notification-detail">{n.detail}</span>
-                    {n.conversationId && <Source conversationId={n.conversationId} />}
-                  </button>
-                  {!n.read && (
-                    <button
-                      className="icon-button small"
-                      aria-label={t('标记已读', 'Mark as read')}
-                      title={t('标记已读', 'Mark as read')}
-                      onClick={() => dispatch({ type: 'read-notification', id: n.id })}
-                    >
-                      <CheckCheck size={15} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {!state.notifications.length && (
-              <Empty
-                icon={<Bell size={22} />}
-                title={t('暂时没有新消息', 'All caught up')}
-                detail={t('有新的进展时，会出现在这里。', 'New updates will find their way here.')}
-              />
-            )}
-          </div>
-        </Modal>
-      )}
-      {dialog === 'rename' && renaming && (
-        <Modal title={t('重命名对话', 'Rename conversation')} close={() => setDialog(null)}>
-          <form
-            className="modal-body"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!renaming.name.trim() || renaming.name.trim().length > 80) return;
-              dispatch({ type: 'rename', conversationId: renaming.id, name: renaming.name });
-              setDialog(null);
-            }}
-          >
-            <label className="form-field">
-              {t('对话名称', 'Conversation name')}
-              <input
-                value={renaming.name}
-                maxLength={80}
-                onFocus={(event) => event.currentTarget.select()}
-                onChange={(event) => setRenaming({ ...renaming, name: event.target.value })}
-              />
-            </label>
-            <div className="modal-actions">
-              <button type="button" className="button secondary" onClick={() => setDialog(null)}>
-                {t('取消', 'Cancel')}
-              </button>
-              <button className="button primary" disabled={!renaming.name.trim()}>
-                {t('保存名称', 'Save name')}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-      {dialog === 'about' && (
-        <Modal title={t('关于 Orangutan', 'About Orangutan')} close={() => setDialog(null)}>
-          <div className="modal-body">
-            <div className="about-brand">
-              <Logo />
-              <span>
-                <strong>Orangutan</strong>
-                <small>{t('桌面原型 · 演示模式', 'Desktop prototype · Demo mode')}</small>
-              </span>
-            </div>
-            <p>
-              {t(
-                '这是一个可交互的桌面界面原型。回复、小队工作和渠道连接均使用演示数据；不会发送真实消息、调用模型或修改本机文件。',
-                'This is an interactive desktop interface prototype. Replies, teamwork and channel connections use demo data. It sends no real messages, calls no model and changes no local files.',
-              )}
-            </p>
-            <p>
-              {t(
-                '历史保存在当前浏览器中。关闭或刷新页面后，未完成工作会标为中断。',
-                'History is saved in this browser. Unfinished work is marked interrupted after closing or refreshing the page.',
-              )}
-            </p>
-            <div className="modal-actions">
-              <button className="button primary" onClick={() => setDialog(null)}>
-                {t('知道了', 'Got it')}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-      {dialog === 'reset' && (
-        <Modal title={t('恢复演示数据', 'Recover demo data')} close={() => setDialog(null)}>
-          <div className="modal-body">
-            <p>
-              {t(
-                '已有快照会先保留为本地备份，再加载初始示例。存储不可用时不会强行覆盖。',
-                'The existing snapshot is backed up before initial examples are loaded. Unavailable storage will not be overwritten.',
-              )}
-            </p>
-            <div className="modal-actions">
-              <button className="button secondary" onClick={exportSnapshot}>
-                {t('导出快照', 'Export snapshot')}
-              </button>
-              <button
-                className="button primary"
-                onClick={() => {
-                  reset();
-                  setDialog(null);
-                  setTaskId(null);
-                }}
-              >
-                {t('确认恢复', 'Confirm recovery')}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <AppDialogs
+        dialog={dialog}
+        setDialog={setDialog}
+        query={query}
+        setQuery={setQuery}
+        renaming={renaming}
+        setRenaming={setRenaming}
+        setTaskId={setTaskId}
+        reset={reset}
+        exportSnapshot={exportSnapshot}
+      />
     </AppContext.Provider>
   );
 }

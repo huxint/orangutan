@@ -527,14 +527,15 @@ TEST_CASE("register_memory_forget advertises a scoped runtime write schema", "[u
   REQUIRE(def->input_schema_json.contains("\"id\""));
 }
 
-TEST_CASE("register_builtins seeds the file tool catalog", "[unit][tool][builtins]") {
+TEST_CASE("register_builtins seeds the minimal workspace + shell tool catalog", "[unit][tool][builtins]") {
   tool::Registry registry;
   REQUIRE(tool::register_builtins(registry).has_value());
   const auto catalog = registry.catalog();
-  REQUIRE(catalog.size() == 3);
+  REQUIRE(catalog.size() == 4);
   REQUIRE(catalog[0].name == tool::kFileReadName);
   REQUIRE(catalog[1].name == tool::kFileWriteName);
   REQUIRE(catalog[2].name == tool::kFileEditName);
+  REQUIRE(catalog[3].name == tool::kShellExecName);
 }
 
 TEST_CASE("MemoryRecall delegates parsed query through DispatchContext", "[unit][tool][memory_recall]") {
