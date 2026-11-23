@@ -159,6 +159,7 @@ int main(int argc, char** argv) {
                                .gpu_name = renderer.device_name(),
                            }};
     DrawList dl;
+    dl.set_textured_companions(renderer.has_companion_atlas());
     app.render(dl, atlas, static_cast<float>(opts.width), static_cast<float>(opts.height), 1.0F);
     if (!renderer.render_offscreen_png(dl, atlas, app.theme().bg, opts.screenshot_path, err)) {
       std::println(stderr, "Offscreen PNG render failed: {}", err);
@@ -167,8 +168,9 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    std::println("Rendered Vulkan frame ({}x{}, device={}, validation={}) -> {}", opts.width, opts.height,
-                 renderer.device_name(), renderer.validation_enabled() ? "on" : "off", opts.screenshot_path);
+    std::println("Rendered Vulkan frame ({}x{}, device={}, companions={}, validation={}) -> {}", opts.width, opts.height,
+                 renderer.device_name(), renderer.has_companion_atlas() ? "photorealistic-atlas" : "procedural-sdf",
+                 renderer.validation_enabled() ? "on" : "off", opts.screenshot_path);
     renderer.shutdown();
     bridge.stop();
     return 0;
@@ -221,6 +223,7 @@ int main(int argc, char** argv) {
                          }};
 
   DrawList dl;
+  dl.set_textured_companions(renderer.has_companion_atlas());
   auto last_tick = std::chrono::steady_clock::now();
   bool running = true;
 

@@ -390,16 +390,124 @@ void DrawList::icon(IconKind kind, float cx, float cy, float size, Color color) 
   }
 }
 
+void DrawList::companion_portrait_rect(CompanionId id, Rect r, float radius, Color border, float border_w,
+                                       float time_sec, bool animate, float pet_bounce, float hover_amount) {
+  const auto idx = static_cast<std::size_t>(id);
+  const auto& prof = companion_profile(id);
+  if (!textured_companions_ || idx >= 6U) {
+    rect(r, radius, prof.soft, border, border_w);
+    companion(id, r.x + r.w * 0.5F, r.y + r.h * 0.5F, std::min(r.w, r.h) * 0.36F, CompanionMood::idle, time_sec,
+              animate, pet_bounce, hover_amount);
+    return;
+  }
+
+  const float phase = animate ? time_sec : 0.0F;
+  const float hop = pet_bounce > 0.0F ? -std::sin(pet_bounce * kPi) * 6.0F : 0.0F;
+  const float col = static_cast<float>(idx % 3U);
+  const float row = static_cast<float>(idx / 3U);
+  const float tile_w = 1.0F / 3.0F;
+  const float tile_h = 1.0F / 2.0F;
+
+  // Aspect-preserving center crop inside the 1:1 studio tile, slightly zoomed on hover/bounce
+  const float zoom = 1.0F + hover_amount * 0.045F + (pet_bounce > 0.0F ? std::sin(pet_bounce * kPi) * 0.05F : 0.0F) +
+                     (animate ? std::sin(phase * 2.0F) * 0.008F : 0.0F);
+  const float aspect = r.w / std::max(r.h, 1.0F);
+  float uv_span_x = (1.0F / zoom);
+  float uv_span_y = (1.0F / zoom);
+  if (aspect > 1.0F) {
+    uv_span_y /= aspect;
+  } else {
+    uv_span_x *= aspect;
+  }
+  const float u_margin = (1.0F - uv_span_x) * 0.5F;
+  // Slightly top-biased vertical crop (0.36) so heads, sprout leaves, and ears frame cleanly
+  const float v_margin = (1.0F - uv_span_y) * 0.36F;
+
+  UiInstance inst{};
+  inst.rect[0] = r.x * dpr_;
+  inst.rect[1] = (r.y + hop) * dpr_;
+  inst.rect[2] = r.w * dpr_;
+  inst.rect[3] = r.h * dpr_;
+  const float rad = radius * dpr_;
+  inst.radii[0] = rad;
+  inst.radii[1] = rad;
+  inst.radii[2] = rad;
+  inst.radii[3] = rad;
+  fill_rgba(inst.color, Color{1, 1, 1, 1});
+  fill_rgba(inst.color2, border);
+  inst.uv[0] = (col + std::clamp(u_margin, 0.01F, 0.45F)) * tile_w;
+  inst.uv[1] = (row + std::clamp(v_margin, 0.01F, 0.45F)) * tile_h;
+  inst.uv[2] = (col + std::clamp(1.0F - u_margin, 0.55F, 0.99F)) * tile_w;
+  inst.uv[3] = (row + std::clamp(v_margin + uv_span_y, 0.55F, 0.99F)) * tile_h;
+  inst.params[0] = 7.0F;
+  inst.params[1] = border_w * dpr_;
+  inst.params[2] = hover_amount;
+  inst.params[3] = 1.0F;
+  emit(inst);
+}
+
 void DrawList::companion(CompanionId id, float cx, float cy, float r, CompanionMood mood, float time_sec,
-                         bool animate, float pet_bounce) {
+                         bool animate, float pet_bounce, float hover_amount) {
   const auto& prof = companion_profile(id);
   const float phase = animate ? time_sec : 0.0F;
-  const float breathe = animate ? std::sin(phase * 2.4F) * (r * 0.035F) : 0.0F;
+  const float breathe = animate ? std::sin(phase * 2.4F) * (r * 0.032F) : 0.0F;
   const float hop = pet_bounce > 0.0F ? -std::sin(pet_bounce * kPi) * (r * 0.22F) : 0.0F;
   const float work_bob = (animate && (mood == CompanionMood::working || mood == CompanionMood::thinking))
-                             ? std::sin(phase * 5.2F) * (r * 0.045F)
+                             ? std::sin(phase * 5.2F) * (r * 0.042F)
                              : 0.0F;
   const float y = cy + breathe + hop + work_bob;
+
+  if (textured_companions_) {
+    const auto idx = static_cast<std::size_t>(id);
+    if (idx < 6U) {
+      const float scale = 1.0F + hover_amount * 0.04F + (pet_bounce > 0.0F ? std::sin(pet_bounce * kPi) * 0.06F : 0.0F);
+      const float rr = r * scale;
+      const Rect box{cx - rr, y - rr, rr * 2.0F, rr * 2.0F};
+
+      // Grounding studio contact shadow underneath the circular figurine medallion
+      if (rr >= 16.0F) {
+        shadow(box, rr, std::max(6.0F, rr * 0.26F), std::max(2.0F, rr * 0.08F), hex(0x292118, 0.16F));
+      }
+
+      const float col = static_cast<float>(idx % 3U);
+      const float row = static_cast<float>(idx / 3U);
+      const float tile_w = 1.0F / 3.0F;
+      const float tile_h = 1.0F / 2.0F;
+      constexpr float kPad = 0.045F;
+
+      UiInstance inst{};
+      inst.rect[0] = box.x * dpr_;
+      inst.rect[1] = box.y * dpr_;
+      inst.rect[2] = box.w * dpr_;
+      inst.rect[3] = box.h * dpr_;
+      const float rad = rr * dpr_;
+      inst.radii[0] = rad;
+      inst.radii[1] = rad;
+      inst.radii[2] = rad;
+      inst.radii[3] = rad;
+      fill_rgba(inst.color, Color{1, 1, 1, 1});
+      fill_rgba(inst.color2, prof.accent.with_alpha(0.32F));
+      inst.uv[0] = (col + kPad) * tile_w;
+      inst.uv[1] = (row + kPad * 0.75F) * tile_h;
+      inst.uv[2] = (col + (1.0F - kPad)) * tile_w;
+      inst.uv[3] = (row + (1.0F - kPad * 1.25F)) * tile_h;
+      inst.params[0] = 7.0F;
+      inst.params[1] = std::max(1.2F, rr * 0.045F) * dpr_;
+      inst.params[2] = hover_amount + (pet_bounce > 0.0F ? 0.5F : 0.0F);
+      inst.params[3] = 1.0F;
+      emit(inst);
+
+      if (mood == CompanionMood::thinking || mood == CompanionMood::working) {
+        const float spin = phase * 2.6F;
+        arc(cx, y, rr * 1.08F, spin, kPi * 0.65F, std::max(1.8F, rr * 0.065F), prof.accent);
+      } else if (mood == CompanionMood::guarding) {
+        circle(cx, y, rr * 1.09F, Color{0, 0, 0, 0}, hex(0xB37620, 0.78F), std::max(1.8F, rr * 0.055F));
+      } else if (mood == CompanionMood::celebrating) {
+        circle(cx, y, rr * 1.08F, Color{0, 0, 0, 0}, hex(0x3D6B4A, 0.65F), std::max(1.6F, rr * 0.05F));
+      }
+      return;
+    }
+  }
 
   // Periodic natural blink (~every 4.2s)
   const float blink_cycle = std::fmod(phase + static_cast<float>(id) * 0.9F, 4.4F);

@@ -159,6 +159,7 @@ struct AgentBridge::Impl {
   };
   std::unordered_map<std::string, ApprovalGate> approval_gates;
   bool started{false};
+  bool showcase_pinned{false};
 
   void wire_hooks() {
     auto& bus = assembly->hook_bus();
@@ -294,8 +295,10 @@ struct AgentBridge::Impl {
     }
 
     std::lock_guard lock{mu};
-    state.notes = std::move(notes);
-    state.reminders = std::move(rems);
+    if (!showcase_pinned) {
+      state.notes = std::move(notes);
+      state.reminders = std::move(rems);
+    }
   }
 };
 
@@ -778,6 +781,7 @@ void AgentBridge::delete_reminder(std::string id) {
 
 void AgentBridge::seed_showcase_state() {
   std::lock_guard lock{impl_->mu};
+  impl_->showcase_pinned = true;
   const std::string cid = impl_->state.active_conversation_id;
   impl_->state.conversations = {
       ConversationSummary{.id = cid, .title = "梳理本周项目发布计划"},

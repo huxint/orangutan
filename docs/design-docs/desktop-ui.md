@@ -7,7 +7,7 @@ Orangutan ships two complementary desktop experiences sharing the same warm parc
 
 ## Native Pure-Vulkan Desktop (`apps/desktop-vk/`)
 
-`orangutan-desktop` renders directly on the GPU through a single instanced GLSL 450 SDF graphics pipeline (rounded cards, soft analytical shadows, hairline borders, crisp icons, FreeType2 CJK/Latin/Mono glyph atlas, and procedural animated Forest Companions) with native Wayland/X11 windowing and CJK IME via SDL3.
+`orangutan-desktop` renders directly on the GPU through a single instanced GLSL 450 SDF graphics pipeline (rounded cards, soft analytical shadows, hairline borders, crisp icons, FreeType2 CJK/Latin/Mono glyph atlas, and a 1536×1024 RGBA Vulkan texture atlas of photorealistic tactile Forest Companions with live studio dome specular & Fresnel rim lighting, plus procedural SDF fallback) with native Wayland/X11 windowing and CJK IME via SDL3.
 
 | File | Responsibility |
 | --- | --- |

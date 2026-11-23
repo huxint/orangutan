@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero-orangutan.svg" alt="Orangutan — 运行在自己机器上的个人 AI Agent 运行时、纯 Vulkan 原生桌面端与森林伙伴小队" width="100%">
+  <img src="docs/assets/hero-orangutan.jpg" alt="Orangutan — 运行在自己机器上的个人 AI Agent 运行时、纯 Vulkan 原生桌面端与森林伙伴小队" width="100%">
 </p>
 
 <p align="center">
@@ -40,12 +40,24 @@
 | **动态子任务与 Agent 团队** | `AgentRun` 按需创建有界子会话；启用后台服务后支持动态角色团队、依赖审查、队友会话复用与定向消息。 | [Agent 执行](docs/design-docs/agent-platform.md) · [Agent 团队](docs/design-docs/agent-teams.md) |
 | **多端渠道与可选 Web 面板** | 可直接部署的 Telegram 私聊宿主（`oran-telegram`）、QQ 扫码绑定（`oran-qq-login`）、飞书协议适配，以及可选浏览器工作台（`apps/desktop`）。 | [消息渠道](docs/design-docs/messaging-channels.md) |
 
-## 认识森林伙伴小队
+## 纯 Vulkan 原生桌面端实机预览
 
-你可以像挑选桌宠伙伴一样选择任意角色常驻在桌面陪伴你（支持点击抚摸互动、实时呼吸与眨眼微动效）；遇到多步骤目标时，由小队按**子任务**自然分工协同完成：
+`orangutan-desktop` 直接使用 **C++26 + Pure Vulkan 1.0 SDF 渲染管线 + FreeType2 中英文字形图集 + 高逼真实物感伙伴纹理图集** 渲染，零浏览器壳、进程内直连 `oran-bootstrap` 与本地 SQLite：
 
 <p align="center">
-  <img src="docs/assets/pet-companions.svg" alt="Orangutan 森林伙伴小队：Oran、Scout、Moss、Fern、Pebble、Pip" width="100%">
+  <img src="docs/assets/desktop-vulkan-chat.png" alt="Orangutan 纯 Vulkan 桌面端：对话协作、伙伴小队任务分工与石墩操作确认" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/desktop-vulkan-squad.png" alt="Orangutan 纯 Vulkan 桌面端：高逼真羊毛毡手作质感森林伙伴小队" width="100%">
+</p>
+
+## 认识森林伙伴小队
+
+六只采用**羊毛毡手作 × 陶瓷木饰 × 玻璃瞳孔高光**实物感设计的桌面伙伴：你可以切换任意伙伴常驻桌边互动陪伴（呼吸微动效、点击抚摸弹跳），遇到复杂目标时由小队按**子任务**自然分工协同完成：
+
+<p align="center">
+  <img src="docs/assets/pet-companions.jpg" alt="Orangutan 森林伙伴小队：Oran、Scout、Moss、Fern、Pebble、Pip" width="100%">
 </p>
 
 | 伙伴 | 团队定位 | 擅长的协作子任务 |

@@ -459,19 +459,20 @@ void DesktopApp::render_chat_view(DrawList& dl, FontAtlas& atlas, const AgentSna
     const float hero_top = scroll_area.y + std::max(28.0F, (scroll_area.h - 400.0F) * 0.42F);
     const float center_x = col_x + col_w * 0.5F;
 
-    // Large welcoming animated companion portrait
-    dl.companion(snap.lead_companion, center_x, hero_top + 48.0F, 44.0F, snap.active_mood, time_sec_,
-                 animate_companions_, bounce);
-    register_hit(Rect{center_x - 52.0F, hero_top, 104.0F, 96.0F},
-                 [this, id = snap.lead_companion]() { trigger_pet_bounce(id); });
+    // Large welcoming animated photorealistic companion portrait
+    const Rect hero_hit{center_x - 58.0F, hero_top - 4.0F, 116.0F, 116.0F};
+    const float hero_hov = hero_hit.contains(mouse_x_, mouse_y_) ? 1.0F : 0.0F;
+    dl.companion(snap.lead_companion, center_x, hero_top + 52.0F, 52.0F, snap.active_mood, time_sec_,
+                 animate_companions_, bounce, hero_hov);
+    register_hit(hero_hit, [this, id = snap.lead_companion]() { trigger_pet_bounce(id); });
 
     const std::string greeting = std::format("你好，我是 {}（{}）", lead.name, lead.nickname);
     const float gw = atlas.measure_line(greeting, FontRole::display, 30.0F);
-    atlas.draw_line(dl, center_x - gw * 0.5F, hero_top + 108.0F, greeting, FontRole::display, 30.0F, th.text);
+    atlas.draw_line(dl, center_x - gw * 0.5F, hero_top + 116.0F, greeting, FontRole::display, 30.0F, th.text);
 
     const std::string_view sub = "你的本地 Personal Agent —— 陪你自然对话，把复杂目标拆给伙伴小队并行推进";
     const float sw = atlas.measure_line(sub, FontRole::ui, 14.0F);
-    atlas.draw_line(dl, center_x - sw * 0.5F, hero_top + 154.0F, sub, FontRole::ui, 14.0F, th.subtext);
+    atlas.draw_line(dl, center_x - sw * 0.5F, hero_top + 160.0F, sub, FontRole::ui, 14.0F, th.subtext);
 
     // 2x2 Quick-start task cards
     struct Starter {
@@ -688,7 +689,7 @@ void DesktopApp::render_companions_view(DrawList& dl, FontAtlas& atlas, const Ag
 
   const float gap = 18.0F;
   const float card_w = (col_w - gap * 2.0F) / 3.0F;
-  const float card_h = 266.0F;
+  const float card_h = 304.0F;
 
   for (std::size_t i = 0; i < 6U; ++i) {
     const auto id = static_cast<CompanionId>(i);
@@ -699,39 +700,35 @@ void DesktopApp::render_companions_view(DrawList& dl, FontAtlas& atlas, const Ag
     const Rect card{cx, cy, card_w, card_h};
     const bool hov = card.contains(mouse_x_, mouse_y_);
 
-    dl.shadow(card, 16.0F, hov ? 16.0F : 10.0F, hov ? 4.0F : 2.0F, th.shadow);
-    dl.rect(card, 16.0F, th.raised, is_lead ? th.accent : (hov ? th.line_strong : th.line), is_lead ? 1.8F : 1.0F);
+    dl.shadow(card, 18.0F, hov ? 18.0F : 10.0F, hov ? 5.0F : 2.0F, th.shadow);
+    dl.rect(card, 18.0F, th.raised, is_lead ? th.accent : (hov ? th.line_strong : th.line), is_lead ? 1.8F : 1.0F);
 
-    // Subtle soft header tint band
-    dl.rect_radii(Rect{card.x + 1.0F, card.y + 1.0F, card.w - 2.0F, 92.0F}, 15.0F, 15.0F, 0.0F, 0.0F,
-                  dark_mode_ ? p.accent.with_alpha(0.14F) : p.soft.with_alpha(0.55F));
+    // Tactile studio-macro figurine showcase frame at top of card
+    const Rect stage{card.x + 10.0F, card.y + 10.0F, card.w - 20.0F, 134.0F};
+    dl.rect(stage, 13.0F, dark_mode_ ? p.accent.with_alpha(0.14F) : p.soft.with_alpha(0.85F));
+    const float avatar_cx = stage.x + stage.w * 0.5F;
+    const float avatar_cy = stage.y + stage.h * 0.5F;
+    dl.companion(id, avatar_cx, avatar_cy, 54.0F, is_lead ? snap.active_mood : CompanionMood::idle, time_sec_,
+                 animate_companions_, pet_bounces_[i], hov ? 1.0F : 0.0F);
+    register_hit(stage, [this, id]() { trigger_pet_bounce(id); });
 
     if (is_lead) {
-      const Rect tag{card.x + card.w - 86.0F, card.y + 12.0F, 74.0F, 22.0F};
+      const Rect tag{card.x + card.w - 86.0F, card.y + 18.0F, 70.0F, 22.0F};
       dl.rect(tag, 11.0F, th.accent);
       atlas.draw_line(dl, tag.x + 10.0F, tag.y + 4.0F, "当前伙伴", FontRole::ui_bold, 10.5F, th.on_accent);
     }
 
-    // Live interactive companion portrait
-    const float avatar_cx = card.x + card.w * 0.5F;
-    const float avatar_cy = card.y + 54.0F;
-    dl.companion(id, avatar_cx, avatar_cy, 33.0F, is_lead ? snap.active_mood : CompanionMood::idle, time_sec_,
-                 animate_companions_, pet_bounces_[i]);
-    register_hit(Rect{avatar_cx - 42.0F, avatar_cy - 40.0F, 84.0F, 80.0F},
-                 [this, id]() { trigger_pet_bounce(id); });
-
     const auto title = std::format("{} · {}", p.name, p.nickname);
-    const float tw = atlas.measure_line(title, FontRole::ui_bold, 15.5F);
-    atlas.draw_line(dl, card.x + (card.w - tw) * 0.5F, card.y + 102.0F, title, FontRole::ui_bold, 15.5F, th.text);
+    atlas.draw_line(dl, card.x + 18.0F, card.y + 156.0F, title, FontRole::ui_bold, 15.5F, th.text);
 
-    // Role pill
-    const float rw = atlas.measure_line(p.role_title, FontRole::ui_bold, 11.0F) + 18.0F;
-    const Rect rpill{card.x + (card.w - rw) * 0.5F, card.y + 128.0F, rw, 22.0F};
-    dl.rect(rpill, 11.0F, dark_mode_ ? p.accent.with_alpha(0.22F) : p.soft);
-    atlas.draw_line(dl, rpill.x + 9.0F, rpill.y + 4.0F, p.role_title, FontRole::ui_bold, 11.0F,
+    // Role pill next to title
+    const float rw = atlas.measure_line(p.role_title, FontRole::ui_bold, 10.5F) + 16.0F;
+    const Rect rpill{card.x + card.w - rw - 16.0F, card.y + 157.0F, rw, 21.0F};
+    dl.rect(rpill, 10.5F, dark_mode_ ? p.accent.with_alpha(0.22F) : p.soft);
+    atlas.draw_line(dl, rpill.x + 8.0F, rpill.y + 3.5F, p.role_title, FontRole::ui_bold, 10.5F,
                     dark_mode_ ? th.text : p.accent);
 
-    atlas.draw_wrapped(dl, card.x + 18.0F, card.y + 160.0F, p.task_focus, FontRole::ui, 12.2F, th.subtext,
+    atlas.draw_wrapped(dl, card.x + 18.0F, card.y + 188.0F, p.task_focus, FontRole::ui, 12.4F, th.subtext,
                        card.w - 36.0F);
 
     // Action footer buttons

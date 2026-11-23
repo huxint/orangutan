@@ -6,9 +6,11 @@
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
+#include <filesystem>
 #include <format>
 #include <limits>
 #include <string_view>
+#include <unistd.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -67,6 +69,92 @@ struct PushConstants {
   png_destroy_write_struct(&png, &info);
   std::fclose(fp);
   return true;
+}
+
+[[nodiscard]] bool read_rgba_png_512(const std::filesystem::path& path, std::vector<std::uint8_t>& out_rgba) {
+  std::FILE* fp = std::fopen(path.c_str(), "rb");
+  if (fp == nullptr) {
+    return false;
+  }
+  png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (png == nullptr) {
+    std::fclose(fp);
+    return false;
+  }
+  png_infop info = png_create_info_struct(png);
+  if (info == nullptr) {
+    png_destroy_read_struct(&png, nullptr, nullptr);
+    std::fclose(fp);
+    return false;
+  }
+  if (setjmp(png_jmpbuf(png)) != 0) {
+    png_destroy_read_struct(&png, &info, nullptr);
+    std::fclose(fp);
+    return false;
+  }
+
+  png_init_io(png, fp);
+  png_read_info(png, info);
+  const std::uint32_t w = png_get_image_width(png, info);
+  const std::uint32_t h = png_get_image_height(png, info);
+  const int color_type = png_get_color_type(png, info);
+  const int bit_depth = png_get_bit_depth(png, info);
+  if (w != 512U || h != 512U) {
+    png_destroy_read_struct(&png, &info, nullptr);
+    std::fclose(fp);
+    return false;
+  }
+  if (bit_depth == 16) {
+    png_set_strip_16(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_PALETTE) {
+    png_set_palette_to_rgb(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
+    png_set_expand_gray_1_2_4_to_8(png);
+  }
+  if (png_get_valid(png, info, PNG_INFO_tRNS) != 0) {
+    png_set_tRNS_to_alpha(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_RGB || color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_PALETTE) {
+    png_set_filler(png, 0xFF, PNG_FILLER_AFTER);
+  }
+  if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+    png_set_gray_to_rgb(png);
+  }
+  png_read_update_info(png, info);
+
+  out_rgba.resize(512ULL * 512ULL * 4ULL);
+  std::vector<png_bytep> rows(512U);
+  for (std::uint32_t y = 0; y < 512U; ++y) {
+    rows[y] = out_rgba.data() + static_cast<std::size_t>(y) * 512ULL * 4ULL;
+  }
+  png_read_image(png, rows.data());
+  png_destroy_read_struct(&png, &info, nullptr);
+  std::fclose(fp);
+  return true;
+}
+
+[[nodiscard]] std::filesystem::path find_companion_asset_dir() {
+  std::vector<std::filesystem::path> candidates;
+  candidates.emplace_back("docs/assets/companions");
+  candidates.emplace_back("assets/companions");
+  std::array<char, 4096> exe_buf{};
+  const auto n = ::readlink("/proc/self/exe", exe_buf.data(), exe_buf.size() - 1);
+  if (n > 0) {
+    const auto exe_dir = std::filesystem::path{std::string_view{exe_buf.data(), static_cast<std::size_t>(n)}}.parent_path();
+    candidates.push_back(exe_dir / "companions");
+    candidates.push_back(exe_dir / "docs/assets/companions");
+    candidates.push_back(exe_dir / "../../../../docs/assets/companions");
+    candidates.push_back(exe_dir / "../../../docs/assets/companions");
+  }
+  for (const auto& dir : candidates) {
+    std::error_code ec;
+    if (std::filesystem::exists(dir / "oran.png", ec)) {
+      return dir;
+    }
+  }
+  return {};
 }
 
 [[nodiscard]] float srgb_to_linear_channel(float c) noexcept {
@@ -453,6 +541,109 @@ bool VkRenderer::create_atlas_resources(std::string& err) {
   return true;
 }
 
+bool VkRenderer::create_companion_atlas_resources(std::string& err) {
+  constexpr std::uint32_t kTile = 512U;
+  constexpr std::uint32_t kAtlasW = kTile * 3U;  // 1536
+  constexpr std::uint32_t kAtlasH = kTile * 2U;  // 1024
+
+  VkImageCreateInfo ici{};
+  ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  ici.imageType = VK_IMAGE_TYPE_2D;
+  ici.format = VK_FORMAT_R8G8B8A8_UNORM;
+  ici.extent = VkExtent3D{kAtlasW, kAtlasH, 1U};
+  ici.mipLevels = 1U;
+  ici.arrayLayers = 1U;
+  ici.samples = VK_SAMPLE_COUNT_1_BIT;
+  ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+  ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  if (vk_.create_image(device_, &ici, nullptr, &companion_image_) != VK_SUCCESS) {
+    err = "failed to create companion atlas VkImage";
+    return false;
+  }
+
+  VkMemoryRequirements req{};
+  vk_.get_image_memory_requirements(device_, companion_image_, &req);
+  const auto mt = find_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  if (mt == std::numeric_limits<std::uint32_t>::max()) {
+    err = "no device-local memory type for companion atlas";
+    return false;
+  }
+  VkMemoryAllocateInfo mai{};
+  mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  mai.allocationSize = req.size;
+  mai.memoryTypeIndex = mt;
+  if (vk_.allocate_memory(device_, &mai, nullptr, &companion_mem_) != VK_SUCCESS ||
+      vk_.bind_image_memory(device_, companion_image_, companion_mem_, 0) != VK_SUCCESS) {
+    err = "failed to bind companion atlas memory";
+    return false;
+  }
+
+  VkImageViewCreateInfo ivci{};
+  ivci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  ivci.image = companion_image_;
+  ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  ivci.format = VK_FORMAT_R8G8B8A8_UNORM;
+  ivci.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  if (vk_.create_image_view(device_, &ivci, nullptr, &companion_view_) != VK_SUCCESS) {
+    err = "failed to create companion atlas image view";
+    return false;
+  }
+
+  VkSamplerCreateInfo sci{};
+  sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  sci.magFilter = VK_FILTER_LINEAR;
+  sci.minFilter = VK_FILTER_LINEAR;
+  sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sci.maxAnisotropy = 1.0F;
+  if (vk_.create_sampler(device_, &sci, nullptr, &companion_sampler_) != VK_SUCCESS) {
+    err = "failed to create companion atlas sampler";
+    return false;
+  }
+
+  const VkDeviceSize bytes = static_cast<VkDeviceSize>(kAtlasW) * kAtlasH * 4ULL;
+  if (!create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, companion_staging_buf_,
+                     companion_staging_mem_)) {
+    err = "failed to create companion staging buffer";
+    return false;
+  }
+
+  void* mapped = nullptr;
+  if (vk_.map_memory(device_, companion_staging_mem_, 0, bytes, 0, &mapped) != VK_SUCCESS) {
+    err = "failed to map companion staging buffer";
+    return false;
+  }
+  auto* dst_base = static_cast<std::uint8_t*>(mapped);
+  std::memset(dst_base, 0xF6, static_cast<std::size_t>(bytes));
+
+  const auto asset_dir = find_companion_asset_dir();
+  if (!asset_dir.empty()) {
+    constexpr std::array<const char*, 6> kFiles{"oran.png", "scout.png", "moss.png", "fern.png", "pebble.png", "pip.png"};
+    std::vector<std::uint8_t> tile_rgba;
+    int loaded_count = 0;
+    for (std::size_t i = 0; i < kFiles.size(); ++i) {
+      if (read_rgba_png_512(asset_dir / kFiles[i], tile_rgba)) {
+        const std::size_t col = i % 3U;
+        const std::size_t row = i / 3U;
+        for (std::size_t y = 0; y < kTile; ++y) {
+          const std::size_t dst_off = ((row * kTile + y) * kAtlasW + col * kTile) * 4ULL;
+          const std::size_t src_off = y * kTile * 4ULL;
+          std::memcpy(dst_base + dst_off, tile_rgba.data() + src_off, kTile * 4ULL);
+        }
+        ++loaded_count;
+      }
+    }
+    companion_loaded_ = (loaded_count == 6);
+  }
+  vk_.unmap_memory(device_, companion_staging_mem_);
+  return true;
+}
+
 bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout final_layout, std::string& err) {
   color_format_ = target_format;
   target_is_srgb_ = (target_format == VK_FORMAT_B8G8R8A8_SRGB || target_format == VK_FORMAT_R8G8B8A8_SRGB);
@@ -497,7 +688,7 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
     return false;
   }
 
-  std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+  std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
   bindings[0].binding = 0;
   bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   bindings[0].descriptorCount = 1;
@@ -507,6 +698,11 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
   bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   bindings[1].descriptorCount = 1;
   bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  bindings[2].binding = 2;
+  bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  bindings[2].descriptorCount = 1;
+  bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkDescriptorSetLayoutCreateInfo dslci{};
   dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -628,7 +824,7 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
     return false;
   }
 
-  if (!create_atlas_resources(err)) {
+  if (!create_atlas_resources(err) || !create_companion_atlas_resources(err)) {
     return false;
   }
 
@@ -643,7 +839,7 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
 
   std::array<VkDescriptorPoolSize, 2> pool_sizes{{
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
-      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight * 2U},
   }};
   VkDescriptorPoolCreateInfo dpci{};
   dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -708,7 +904,12 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
     dii.imageView = atlas_view_;
     dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    std::array<VkWriteDescriptorSet, 2> writes{};
+    VkDescriptorImageInfo cii{};
+    cii.sampler = companion_sampler_;
+    cii.imageView = companion_view_;
+    cii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkWriteDescriptorSet, 3> writes{};
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = f.desc_set;
     writes[0].dstBinding = 0;
@@ -722,6 +923,13 @@ bool VkRenderer::create_core_resources(VkFormat target_format, VkImageLayout fin
     writes[1].descriptorCount = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].pImageInfo = &dii;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = f.desc_set;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorCount = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].pImageInfo = &cii;
 
     vk_.update_descriptor_sets(device_, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
   }
@@ -996,6 +1204,41 @@ bool VkRenderer::init_offscreen(std::uint32_t width, std::uint32_t height, bool 
 }
 
 bool VkRenderer::upload_atlas_if_dirty(VkCommandBuffer cmd, FontAtlas& atlas) {
+  if (!companion_uploaded_ && companion_image_ != VK_NULL_HANDLE) {
+    VkImageMemoryBarrier to_dst{};
+    to_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    to_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    to_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_dst.image = companion_image_;
+    to_dst.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    to_dst.srcAccessMask = 0;
+    to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vk_.cmd_pipeline_barrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &to_dst);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = VkExtent3D{1536U, 1024U, 1U};
+    vk_.cmd_copy_buffer_to_image(cmd, companion_staging_buf_, companion_image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                                 &region);
+
+    VkImageMemoryBarrier to_read{};
+    to_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    to_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    to_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    to_read.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_read.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    to_read.image = companion_image_;
+    to_read.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    to_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    to_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vk_.cmd_pipeline_barrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &to_read);
+    companion_uploaded_ = true;
+  }
+
   if (!atlas.dirty() && atlas_initialized_) {
     return true;
   }
@@ -1310,6 +1553,31 @@ void VkRenderer::shutdown() {
     if (atlas_mem_ != VK_NULL_HANDLE) {
       vk_.free_memory(device_, atlas_mem_, nullptr);
       atlas_mem_ = VK_NULL_HANDLE;
+    }
+
+    if (companion_staging_buf_ != VK_NULL_HANDLE) {
+      vk_.destroy_buffer(device_, companion_staging_buf_, nullptr);
+      companion_staging_buf_ = VK_NULL_HANDLE;
+    }
+    if (companion_staging_mem_ != VK_NULL_HANDLE) {
+      vk_.free_memory(device_, companion_staging_mem_, nullptr);
+      companion_staging_mem_ = VK_NULL_HANDLE;
+    }
+    if (companion_sampler_ != VK_NULL_HANDLE) {
+      vk_.destroy_sampler(device_, companion_sampler_, nullptr);
+      companion_sampler_ = VK_NULL_HANDLE;
+    }
+    if (companion_view_ != VK_NULL_HANDLE) {
+      vk_.destroy_image_view(device_, companion_view_, nullptr);
+      companion_view_ = VK_NULL_HANDLE;
+    }
+    if (companion_image_ != VK_NULL_HANDLE) {
+      vk_.destroy_image(device_, companion_image_, nullptr);
+      companion_image_ = VK_NULL_HANDLE;
+    }
+    if (companion_mem_ != VK_NULL_HANDLE) {
+      vk_.free_memory(device_, companion_mem_, nullptr);
+      companion_mem_ = VK_NULL_HANDLE;
     }
 
     if (offscreen_fb_ != VK_NULL_HANDLE) {

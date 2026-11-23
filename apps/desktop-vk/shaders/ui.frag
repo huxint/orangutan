@@ -1,6 +1,7 @@
 #version 450
 
 layout(set = 0, binding = 1) uniform sampler2D uGlyphAtlas;
+layout(set = 0, binding = 2) uniform sampler2D uCompanionAtlas;
 
 layout(push_constant) uniform PushConstants {
   vec4 viewport;  // xy = width, height; z = target_is_srgb; w = dpr
@@ -167,6 +168,37 @@ void main() {
       discard;
     }
     col = vec4(vColor.rgb, vColor.a * a);
+  } else if (kind == 7) {
+    // Photorealistic tactile companion texture masked by analytical SDF rounded box / circle,
+    // enhanced with subtle live studio dome specular sheen & warm Fresnel rim lighting.
+    vec2 halfSize = vSize * 0.5;
+    vec2 p = vLocalPos - halfSize;
+    float d = sdRoundedBox(p, halfSize, vRadii);
+    float outerAlpha = 1.0 - smoothstep(-0.65, 0.65, d);
+    if (outerAlpha <= 0.001) {
+      discard;
+    }
+
+    vec2 uv = mix(vUv.xy, vUv.zw, vLocalUv);
+    vec4 tex = texture(uCompanionAtlas, uv);
+
+    // Subtle spherical dome specular reflection + gentle edge rim lighting
+    vec2 np = (vLocalUv - 0.5) * 2.0;
+    float r2 = dot(np, np);
+    float fresnel = pow(clamp(1.0 - sqrt(max(1.0 - min(r2, 1.0), 0.0)), 0.0, 1.0), 2.4);
+    float keySpec = smoothstep(0.55, 0.0, length(vLocalUv - vec2(0.28, 0.22))) * (0.045 + 0.06 * vParams.z);
+    vec3 litRgb = tex.rgb + vec3(1.0, 0.96, 0.90) * (keySpec + fresnel * 0.065);
+
+    // Subtle edge vignette to ground portrait inside frame
+    litRgb *= (1.0 - 0.055 * clamp(r2, 0.0, 1.0));
+
+    float borderW = vParams.y;
+    if (borderW > 0.001 && vColor2.a > 0.001) {
+      float innerD = d + borderW;
+      float borderFactor = smoothstep(-0.65, 0.65, innerD);
+      litRgb = mix(litRgb, vColor2.rgb, borderFactor * vColor2.a);
+    }
+    col = vec4(clamp(litRgb, 0.0, 1.0), tex.a * outerAlpha);
   } else {
     discard;
   }
