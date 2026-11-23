@@ -251,6 +251,7 @@ void DesktopApp::draw_text_input(DrawList& dl, FontAtlas& atlas, Rect r, InputFi
 void DesktopApp::render(DrawList& dl, FontAtlas& atlas, float logical_w, float logical_h, float dpr) {
   hits_.clear();
   dl.clear(logical_w, logical_h, dpr);
+  dl.set_dark_surface(dark_mode_);
 
   const auto snap = bridge_.snapshot();
   render_sidebar(dl, atlas, snap, logical_h);
@@ -459,10 +460,10 @@ void DesktopApp::render_chat_view(DrawList& dl, FontAtlas& atlas, const AgentSna
     const float hero_top = scroll_area.y + std::max(28.0F, (scroll_area.h - 400.0F) * 0.42F);
     const float center_x = col_x + col_w * 0.5F;
 
-    // Large welcoming animated photorealistic companion portrait
-    const Rect hero_hit{center_x - 58.0F, hero_top - 4.0F, 116.0F, 116.0F};
+    // Large welcoming freestanding 3D figurine standing cleanly directly on canvas (zero background!)
+    const Rect hero_hit{center_x - 66.0F, hero_top - 14.0F, 132.0F, 132.0F};
     const float hero_hov = hero_hit.contains(mouse_x_, mouse_y_) ? 1.0F : 0.0F;
-    dl.companion(snap.lead_companion, center_x, hero_top + 52.0F, 52.0F, snap.active_mood, time_sec_,
+    dl.companion(snap.lead_companion, center_x, hero_top + 48.0F, 58.0F, snap.active_mood, time_sec_,
                  animate_companions_, bounce, hero_hov);
     register_hit(hero_hit, [this, id = snap.lead_companion]() { trigger_pet_bounce(id); });
 
@@ -703,12 +704,11 @@ void DesktopApp::render_companions_view(DrawList& dl, FontAtlas& atlas, const Ag
     dl.shadow(card, 18.0F, hov ? 18.0F : 10.0F, hov ? 5.0F : 2.0F, th.shadow);
     dl.rect(card, 18.0F, th.raised, is_lead ? th.accent : (hov ? th.line_strong : th.line), is_lead ? 1.8F : 1.0F);
 
-    // Tactile studio-macro figurine showcase frame at top of card
-    const Rect stage{card.x + 10.0F, card.y + 10.0F, card.w - 20.0F, 134.0F};
-    dl.rect(stage, 13.0F, dark_mode_ ? p.accent.with_alpha(0.14F) : p.soft.with_alpha(0.85F));
+    // Backgroundless freestanding 3D figurine standing cleanly on open card surface (no box/circle backdrop!)
+    const Rect stage{card.x + 12.0F, card.y + 8.0F, card.w - 24.0F, 144.0F};
     const float avatar_cx = stage.x + stage.w * 0.5F;
-    const float avatar_cy = stage.y + stage.h * 0.5F;
-    dl.companion(id, avatar_cx, avatar_cy, 54.0F, is_lead ? snap.active_mood : CompanionMood::idle, time_sec_,
+    const float avatar_cy = stage.y + stage.h * 0.52F;
+    dl.companion(id, avatar_cx, avatar_cy, 58.0F, is_lead ? snap.active_mood : CompanionMood::idle, time_sec_,
                  animate_companions_, pet_bounces_[i], hov ? 1.0F : 0.0F);
     register_hit(stage, [this, id]() { trigger_pet_bounce(id); });
 

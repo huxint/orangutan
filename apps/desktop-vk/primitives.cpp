@@ -390,121 +390,176 @@ void DrawList::icon(IconKind kind, float cx, float cy, float size, Color color) 
   }
 }
 
-void DrawList::companion_portrait_rect(CompanionId id, Rect r, float radius, Color border, float border_w,
-                                       float time_sec, bool animate, float pet_bounce, float hover_amount) {
-  const auto idx = static_cast<std::size_t>(id);
-  const auto& prof = companion_profile(id);
-  if (!textured_companions_ || idx >= 6U) {
-    rect(r, radius, prof.soft, border, border_w);
-    companion(id, r.x + r.w * 0.5F, r.y + r.h * 0.5F, std::min(r.w, r.h) * 0.36F, CompanionMood::idle, time_sec,
-              animate, pet_bounce, hover_amount);
-    return;
+namespace {
+
+struct FigurinePose {
+  float lift_norm{0.0F};  // vertical hop offset as fraction of radius
+  float tilt_rad{0.0F};   // playful organic head/body tilt
+  float squash_x{1.0F};   // horizontal squash/stretch around feet
+  float stretch_y{1.0F};  // vertical breathing/hop stretch around feet
+  float sway_x{0.0F};     // subtle curious upper-body sway
+};
+
+// Computes natural, occasional autonomous movement ("有时会动") per companion:
+// calm slow breathing most of the time, punctuated every ~4.5-6.5s by an organic
+// head tilt, curious sway, or light joyful hop (staggered uniquely per companion).
+[[nodiscard]] FigurinePose compute_figurine_pose(CompanionId id, CompanionMood mood, float time_sec, bool animate,
+                                                 float pet_bounce, float hover_amount) noexcept {
+  FigurinePose pose{};
+  if (!animate && pet_bounce <= 0.0F && hover_amount <= 0.0F) {
+    return pose;
   }
 
+  const float idx_f = static_cast<float>(id);
   const float phase = animate ? time_sec : 0.0F;
-  const float hop = pet_bounce > 0.0F ? -std::sin(pet_bounce * kPi) * 6.0F : 0.0F;
-  const float col = static_cast<float>(idx % 3U);
-  const float row = static_cast<float>(idx / 3U);
-  const float tile_w = 1.0F / 3.0F;
-  const float tile_h = 1.0F / 2.0F;
 
-  // Aspect-preserving center crop inside the 1:1 studio tile, slightly zoomed on hover/bounce
-  const float zoom = 1.0F + hover_amount * 0.045F + (pet_bounce > 0.0F ? std::sin(pet_bounce * kPi) * 0.05F : 0.0F) +
-                     (animate ? std::sin(phase * 2.0F) * 0.008F : 0.0F);
-  const float aspect = r.w / std::max(r.h, 1.0F);
-  float uv_span_x = (1.0F / zoom);
-  float uv_span_y = (1.0F / zoom);
-  if (aspect > 1.0F) {
-    uv_span_y /= aspect;
-  } else {
-    uv_span_x *= aspect;
+  // 1. Calm organic breathing (barely perceptible chest rise, feet stay planted)
+  if (animate) {
+    const float breath = std::sin(phase * 1.85F + idx_f * 1.17F);
+    pose.stretch_y += breath * 0.018F;
+    pose.squash_x -= breath * 0.010F;
   }
-  const float u_margin = (1.0F - uv_span_x) * 0.5F;
-  // Slightly top-biased vertical crop (0.36) so heads, sprout leaves, and ears frame cleanly
-  const float v_margin = (1.0F - uv_span_y) * 0.36F;
 
-  UiInstance inst{};
-  inst.rect[0] = r.x * dpr_;
-  inst.rect[1] = (r.y + hop) * dpr_;
-  inst.rect[2] = r.w * dpr_;
-  inst.rect[3] = r.h * dpr_;
-  const float rad = radius * dpr_;
-  inst.radii[0] = rad;
-  inst.radii[1] = rad;
-  inst.radii[2] = rad;
-  inst.radii[3] = rad;
-  fill_rgba(inst.color, Color{1, 1, 1, 1});
-  fill_rgba(inst.color2, border);
-  inst.uv[0] = (col + std::clamp(u_margin, 0.01F, 0.45F)) * tile_w;
-  inst.uv[1] = (row + std::clamp(v_margin, 0.01F, 0.45F)) * tile_h;
-  inst.uv[2] = (col + std::clamp(1.0F - u_margin, 0.55F, 0.99F)) * tile_w;
-  inst.uv[3] = (row + std::clamp(v_margin + uv_span_y, 0.55F, 0.99F)) * tile_h;
-  inst.params[0] = 7.0F;
-  inst.params[1] = border_w * dpr_;
-  inst.params[2] = hover_amount;
-  inst.params[3] = 1.0F;
-  emit(inst);
+  // 2. Occasional autonomous micro-behaviors every ~4.8-6.4 seconds per companion
+  if (animate) {
+    const float period = 5.2F + std::fmod(idx_f * 0.73F, 1.9F);
+    const float t_mod = std::fmod(phase + idx_f * 2.13F, period);
+    const int cycle_id = static_cast<int>((phase + idx_f * 2.13F) / period) + static_cast<int>(id) * 7;
+    const int action = cycle_id % 3;  // 0: head tilt, 1: playful hop, 2: curious sway
+
+    if (action == 0 && t_mod < 1.35F) {
+      // Smooth playful head tilt & return
+      const float env = std::sin((t_mod / 1.35F) * kPi);
+      const float dir = ((cycle_id / 3) % 2 == 0) ? 1.0F : -1.0F;
+      pose.tilt_rad += dir * 0.12F * env * env;
+      pose.sway_x += dir * 0.022F * env;
+    } else if (action == 1 && t_mod < 0.85F) {
+      // Light joyful hop with anticipation squash & bouncy landing
+      const float u = t_mod / 0.85F;
+      if (u < 0.18F) {
+        const float sq = std::sin((u / 0.18F) * kPi);
+        pose.squash_x += 0.06F * sq;
+        pose.stretch_y -= 0.06F * sq;
+      } else if (u < 0.76F) {
+        const float air = (u - 0.18F) / 0.58F;
+        const float arc_h = std::sin(air * kPi);
+        pose.lift_norm += 0.20F * arc_h;
+        pose.stretch_y += 0.055F * arc_h;
+        pose.squash_x -= 0.035F * arc_h;
+        pose.tilt_rad += 0.055F * std::sin(air * kPi * 2.0F);
+      } else {
+        const float land = (u - 0.76F) / 0.24F;
+        const float sq = std::sin(land * kPi);
+        pose.squash_x += 0.055F * sq;
+        pose.stretch_y -= 0.050F * sq;
+      }
+    } else if (action == 2 && t_mod < 1.50F) {
+      // Curious double look/sway
+      const float u = t_mod / 1.50F;
+      const float env = std::sin(u * kPi);
+      const float wave = std::sin(u * kPi * 2.0F);
+      pose.sway_x += 0.042F * wave * env;
+      pose.tilt_rad += 0.075F * wave * env;
+    }
+  }
+
+  // 3. Mood-driven expression (active collaboration / guarding / celebrating)
+  if (animate && (mood == CompanionMood::working || mood == CompanionMood::thinking)) {
+    const float w = std::sin(phase * 4.8F + idx_f);
+    pose.tilt_rad += 0.07F * w;
+    pose.lift_norm += std::max(0.0F, std::sin(phase * 5.6F)) * 0.07F;
+  } else if (animate && mood == CompanionMood::celebrating) {
+    const float hop = std::abs(std::sin(phase * 5.2F));
+    pose.lift_norm += 0.14F * hop;
+    pose.tilt_rad += 0.09F * std::sin(phase * 6.5F);
+  }
+
+  // 4. Hover attentive perk-up & click-to-pet joyful spring bounce
+  if (hover_amount > 0.0F) {
+    pose.tilt_rad += 0.065F * hover_amount;
+    pose.stretch_y += 0.030F * hover_amount;
+    pose.squash_x += 0.020F * hover_amount;
+  }
+  if (pet_bounce > 0.0F) {
+    const float s = std::sin(pet_bounce * kPi);
+    pose.lift_norm += 0.26F * s;
+    pose.tilt_rad += 0.16F * std::sin(pet_bounce * kPi * 2.0F);
+    pose.stretch_y += 0.08F * s;
+    pose.squash_x -= 0.04F * s;
+  }
+
+  return pose;
 }
+
+}  // namespace
 
 void DrawList::companion(CompanionId id, float cx, float cy, float r, CompanionMood mood, float time_sec,
                          bool animate, float pet_bounce, float hover_amount) {
   const auto& prof = companion_profile(id);
+  const auto pose = compute_figurine_pose(id, mood, time_sec, animate, pet_bounce, hover_amount);
   const float phase = animate ? time_sec : 0.0F;
-  const float breathe = animate ? std::sin(phase * 2.4F) * (r * 0.032F) : 0.0F;
-  const float hop = pet_bounce > 0.0F ? -std::sin(pet_bounce * kPi) * (r * 0.22F) : 0.0F;
-  const float work_bob = (animate && (mood == CompanionMood::working || mood == CompanionMood::thinking))
-                             ? std::sin(phase * 5.2F) * (r * 0.042F)
-                             : 0.0F;
-  const float y = cy + breathe + hop + work_bob;
+  const float lift_px = pose.lift_norm * r;
+  const float y = cy - lift_px;
 
   if (textured_companions_) {
     const auto idx = static_cast<std::size_t>(id);
     if (idx < 6U) {
-      const float scale = 1.0F + hover_amount * 0.04F + (pet_bounce > 0.0F ? std::sin(pet_bounce * kPi) * 0.06F : 0.0F);
-      const float rr = r * scale;
-      const Rect box{cx - rr, y - rr, rr * 2.0F, rr * 2.0F};
+      // Pure backgroundless freestanding 3D figurine — NO circle or box backdrop!
+      // Size generous (2.25 * r) so the transparent cutout silhouette matches optical visual weight.
+      const float scale = 1.0F + hover_amount * 0.055F;
+      const float half = r * 1.16F * scale;
 
-      // Grounding studio contact shadow underneath the circular figurine medallion
-      if (rr >= 16.0F) {
-        shadow(box, rr, std::max(6.0F, rr * 0.26F), std::max(2.0F, rr * 0.08F), hex(0x292118, 0.16F));
+      // Grounded 3D floor contact shadow directly under the figurine's base;
+      // physically shrinks and fades as the figurine hops upward!
+      if (r >= 15.0F) {
+        const float air_factor = std::clamp(1.0F - pose.lift_norm * 1.8F, 0.35F, 1.0F);
+        const float sw = half * 1.24F * air_factor;
+        const float sh = std::max(4.0F, half * 0.22F * air_factor);
+        const float sy = cy + half * 0.78F - sh * 0.5F;
+        const float shadow_alpha = (dark_surface_ ? 0.42F : 0.22F) * air_factor;
+        shadow(Rect{cx - sw * 0.5F, sy, sw, sh}, sh * 0.5F, std::max(5.0F, r * 0.22F), 0.0F,
+               hex(0x1A130D, shadow_alpha));
+      }
+
+      // Subtle glowing halo ONLY beneath the floor when actively working/guarding (never a solid backdrop!)
+      if (mood == CompanionMood::working || mood == CompanionMood::thinking) {
+        const float pulse = 0.55F + 0.45F * std::sin(phase * 3.5F);
+        const float sw = half * 1.45F;
+        const float sh = std::max(4.0F, half * 0.22F);
+        shadow(Rect{cx - sw * 0.5F, cy + half * 0.76F - sh * 0.5F, sw, sh}, sh * 0.5F, std::max(6.0F, r * 0.28F),
+               0.0F, prof.accent.with_alpha(0.28F * pulse));
+      } else if (mood == CompanionMood::guarding) {
+        const float sw = half * 1.50F;
+        const float sh = std::max(4.0F, half * 0.24F);
+        shadow(Rect{cx - sw * 0.5F, cy + half * 0.76F - sh * 0.5F, sw, sh}, sh * 0.5F, std::max(7.0F, r * 0.30F),
+               0.0F, hex(0xD48B22, 0.34F));
       }
 
       const float col = static_cast<float>(idx % 3U);
       const float row = static_cast<float>(idx / 3U);
       const float tile_w = 1.0F / 3.0F;
       const float tile_h = 1.0F / 2.0F;
-      constexpr float kPad = 0.045F;
+      constexpr float kBleed = 0.004F;
 
       UiInstance inst{};
-      inst.rect[0] = box.x * dpr_;
-      inst.rect[1] = box.y * dpr_;
-      inst.rect[2] = box.w * dpr_;
-      inst.rect[3] = box.h * dpr_;
-      const float rad = rr * dpr_;
-      inst.radii[0] = rad;
-      inst.radii[1] = rad;
-      inst.radii[2] = rad;
-      inst.radii[3] = rad;
+      inst.rect[0] = (cx - half) * dpr_;
+      inst.rect[1] = (y - half) * dpr_;
+      inst.rect[2] = (half * 2.0F) * dpr_;
+      inst.rect[3] = (half * 2.0F) * dpr_;
+      inst.radii[0] = pose.tilt_rad;
+      inst.radii[1] = pose.squash_x;
+      inst.radii[2] = pose.stretch_y;
+      inst.radii[3] = pose.sway_x;
       fill_rgba(inst.color, Color{1, 1, 1, 1});
-      fill_rgba(inst.color2, prof.accent.with_alpha(0.32F));
-      inst.uv[0] = (col + kPad) * tile_w;
-      inst.uv[1] = (row + kPad * 0.75F) * tile_h;
-      inst.uv[2] = (col + (1.0F - kPad)) * tile_w;
-      inst.uv[3] = (row + (1.0F - kPad * 1.25F)) * tile_h;
+      inst.uv[0] = (col + kBleed) * tile_w;
+      inst.uv[1] = (row + kBleed) * tile_h;
+      inst.uv[2] = (col + (1.0F - kBleed)) * tile_w;
+      inst.uv[3] = (row + (1.0F - kBleed)) * tile_h;
       inst.params[0] = 7.0F;
-      inst.params[1] = std::max(1.2F, rr * 0.045F) * dpr_;
-      inst.params[2] = hover_amount + (pet_bounce > 0.0F ? 0.5F : 0.0F);
+      inst.params[1] = hover_amount + (pet_bounce > 0.0F ? 0.65F : 0.0F);
+      inst.params[2] = dark_surface_ ? 0.90F : 0.25F;
       inst.params[3] = 1.0F;
       emit(inst);
-
-      if (mood == CompanionMood::thinking || mood == CompanionMood::working) {
-        const float spin = phase * 2.6F;
-        arc(cx, y, rr * 1.08F, spin, kPi * 0.65F, std::max(1.8F, rr * 0.065F), prof.accent);
-      } else if (mood == CompanionMood::guarding) {
-        circle(cx, y, rr * 1.09F, Color{0, 0, 0, 0}, hex(0xB37620, 0.78F), std::max(1.8F, rr * 0.055F));
-      } else if (mood == CompanionMood::celebrating) {
-        circle(cx, y, rr * 1.08F, Color{0, 0, 0, 0}, hex(0x3D6B4A, 0.65F), std::max(1.6F, rr * 0.05F));
-      }
       return;
     }
   }

@@ -2845,6 +2845,32 @@ kbd {
   font-size: var(--text-xs);
   color: var(--muted);
 }
+.pet-avatar.is-alive {
+  animation: pet-alive 6.4s ease-in-out infinite;
+  transition: transform 220ms var(--ease-spring);
+}
+.pet-avatar.is-alive:hover {
+  transform: translateY(-2px) rotate(4deg) scale(1.06);
+}
+@keyframes pet-alive {
+  0%,
+  72%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+  36% {
+    transform: translateY(0) rotate(0deg) scale(0.99, 1.018);
+  }
+  78% {
+    transform: translateY(1px) rotate(-1.5deg) scale(1.03, 0.96);
+  }
+  84% {
+    transform: translateY(-4px) rotate(4.5deg) scale(0.98, 1.04);
+  }
+  91% {
+    transform: translateY(0.5px) rotate(-2deg) scale(1.02, 0.98);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

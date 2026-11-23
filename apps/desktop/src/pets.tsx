@@ -22,13 +22,13 @@ const PET_NAMES: Record<PetId, [string, string]> = {
   pip: ['啾啾', 'Pip'],
 };
 
-const PET_ACCENTS: Record<PetId, string> = {
-  oran: '#b24a1d',
-  scout: '#c46a24',
-  moss: '#3d6b4a',
-  fern: '#476b83',
-  pebble: '#8c5e36',
-  pip: '#b87d1c',
+const PET_DELAYS: Record<PetId, string> = {
+  oran: '0s',
+  scout: '-1.3s',
+  moss: '-2.6s',
+  fern: '-3.9s',
+  pebble: '-5.1s',
+  pip: '-0.7s',
 };
 
 export function petForMemberName(name: string): PetId {
@@ -137,19 +137,15 @@ export function PetAvatar({
   size?: number;
   className?: string;
 }) {
-  const animated = mood === 'working' || mood === 'thinking' || mood === 'happy';
-  const classes = `pet-avatar pet-${pet} mood-${mood}${animated ? ' is-animated' : ''}${className ? ` ${className}` : ''}`;
-  const accent = PET_ACCENTS[pet];
-  const ring =
+  const classes = `pet-avatar pet-${pet} mood-${mood} is-alive${className ? ` ${className}` : ''}`;
+  const shadow =
     mood === 'awaiting_approval'
-      ? '0 0 0 2px #b37620, 0 3px 10px rgba(41,33,24,0.16)'
-      : mood === 'working' || mood === 'thinking'
-        ? `0 0 0 2px ${accent}, 0 3px 10px rgba(41,33,24,0.16)`
-        : `0 0 0 1.5px ${accent}44, 0 2px 8px rgba(41,33,24,0.14)`;
+      ? 'drop-shadow(0 4px 8px rgba(179,118,32,0.36))'
+      : 'drop-shadow(0 4px 6px rgba(41,33,24,0.22))';
 
   return (
     <img
-      src={`/companions/${pet}.jpg`}
+      src={`/companions/${pet}.png`}
       alt={PET_NAMES[pet][1]}
       width={size}
       height={size}
@@ -157,9 +153,10 @@ export function PetAvatar({
       style={{
         width: size,
         height: size,
-        borderRadius: '50%',
-        objectFit: 'cover',
-        boxShadow: ring,
+        objectFit: 'contain',
+        filter: shadow,
+        transformOrigin: '50% 88%',
+        animationDelay: PET_DELAYS[pet],
         flexShrink: 0,
         display: 'block',
       }}

@@ -30,6 +30,7 @@ struct LaunchOptions {
   bool showcase{false};
   bool validate{false};
   bool help{false};
+  float screenshot_time{0.0F};
 };
 
 void print_help() {
@@ -95,6 +96,8 @@ bool parse_args(int argc, char** argv, LaunchOptions& opts) {
       opts.initial_view = parse_view(argv[++i]);
     } else if (a == "--screenshot" && i + 1 < argc) {
       opts.screenshot_path = argv[++i];
+    } else if (a == "--time" && i + 1 < argc) {
+      opts.screenshot_time = std::stof(argv[++i]);
     } else if (a == "--width" && i + 1 < argc) {
       opts.width = static_cast<std::uint32_t>(std::max(640, std::stoi(argv[++i])));
     } else if (a == "--height" && i + 1 < argc) {
@@ -154,10 +157,13 @@ int main(int argc, char** argv) {
 
     DesktopApp app{bridge, UiConfig{
                                .dark_mode = opts.dark_mode,
-                               .animate_companions = false,
+                               .animate_companions = opts.screenshot_time > 0.0F,
                                .initial_view = opts.initial_view,
                                .gpu_name = renderer.device_name(),
                            }};
+    if (opts.screenshot_time > 0.0F) {
+      app.tick(opts.screenshot_time);
+    }
     DrawList dl;
     dl.set_textured_companions(renderer.has_companion_atlas());
     app.render(dl, atlas, static_cast<float>(opts.width), static_cast<float>(opts.height), 1.0F);

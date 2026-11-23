@@ -54,10 +54,10 @@
 
 ## 认识森林伙伴小队
 
-六只采用**羊毛毡手作 × 陶瓷木饰 × 玻璃瞳孔高光**实物感设计的桌面伙伴：你可以切换任意伙伴常驻桌边互动陪伴（呼吸微动效、点击抚摸弹跳），遇到复杂目标时由小队按**子任务**自然分工协同完成：
+六只**无背景立体手作质感**的森林伙伴（羊毛毡 × 陶瓷木饰 × 玻璃瞳孔高光）：平日里会安静呼吸，偶尔自己歪歪头、张望或轻盈跳起；点击即可抚摸互动或切换常驻桌面，遇到复杂目标时由小队按**子任务**自然分工协同完成：
 
 <p align="center">
-  <img src="docs/assets/pet-companions.jpg" alt="Orangutan 森林伙伴小队：Oran、Scout、Moss、Fern、Pebble、Pip" width="100%">
+  <img src="docs/assets/pet-companions.webp" alt="Orangutan 森林伙伴小队动态展示：Oran、Scout、Moss、Fern、Pebble、Pip" width="100%">
 </p>
 
 | 伙伴 | 团队定位 | 擅长的协作子任务 |

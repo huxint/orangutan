@@ -169,36 +169,53 @@ void main() {
     }
     col = vec4(vColor.rgb, vColor.a * a);
   } else if (kind == 7) {
-    // Photorealistic tactile companion texture masked by analytical SDF rounded box / circle,
-    // enhanced with subtle live studio dome specular sheen & warm Fresnel rim lighting.
-    vec2 halfSize = vSize * 0.5;
-    vec2 p = vLocalPos - halfSize;
-    float d = sdRoundedBox(p, halfSize, vRadii);
-    float outerAlpha = 1.0 - smoothstep(-0.65, 0.65, d);
-    if (outerAlpha <= 0.001) {
+    // Backgroundless 3D tactile figurine with real-time organic pivot deformation
+    // (breathing squash-stretch, occasional head tilt, playful sway) + subtle studio rim light.
+    // vRadii = (tilt_rad, squash_x, stretch_y, sway_x)
+    // vParams = (7.0, hover_glow, rim_boost, opacity_mul)
+    vec2 pivot = vec2(0.5, 0.88);
+    vec2 p = vLocalUv - pivot;
+
+    // Gentle upper-body sway anchored at the base
+    float heightFactor = pow(clamp((pivot.y - vLocalUv.y) / max(pivot.y, 0.01), 0.0, 1.0), 1.35);
+    p.x -= vRadii.w * heightFactor;
+
+    // Breathing & bounce squash-and-stretch around feet
+    p.x /= max(vRadii.y, 0.5);
+    p.y /= max(vRadii.z, 0.5);
+
+    // Organic tilt weighted smoothly toward the head/upper body
+    float ang = -vRadii.x * (0.35 + 0.65 * heightFactor);
+    float cs = cos(ang);
+    float sn = sin(ang);
+    p = vec2(p.x * cs - p.y * sn, p.x * sn + p.y * cs);
+
+    vec2 warpedUv = p + pivot;
+    if (warpedUv.x < 0.002 || warpedUv.x > 0.998 || warpedUv.y < 0.002 || warpedUv.y > 0.998) {
       discard;
     }
 
-    vec2 uv = mix(vUv.xy, vUv.zw, vLocalUv);
-    vec4 tex = texture(uCompanionAtlas, uv);
-
-    // Subtle spherical dome specular reflection + gentle edge rim lighting
-    vec2 np = (vLocalUv - 0.5) * 2.0;
-    float r2 = dot(np, np);
-    float fresnel = pow(clamp(1.0 - sqrt(max(1.0 - min(r2, 1.0), 0.0)), 0.0, 1.0), 2.4);
-    float keySpec = smoothstep(0.55, 0.0, length(vLocalUv - vec2(0.28, 0.22))) * (0.045 + 0.06 * vParams.z);
-    vec3 litRgb = tex.rgb + vec3(1.0, 0.96, 0.90) * (keySpec + fresnel * 0.065);
-
-    // Subtle edge vignette to ground portrait inside frame
-    litRgb *= (1.0 - 0.055 * clamp(r2, 0.0, 1.0));
-
-    float borderW = vParams.y;
-    if (borderW > 0.001 && vColor2.a > 0.001) {
-      float innerD = d + borderW;
-      float borderFactor = smoothstep(-0.65, 0.65, innerD);
-      litRgb = mix(litRgb, vColor2.rgb, borderFactor * vColor2.a);
+    vec2 atlasUv = mix(vUv.xy, vUv.zw, warpedUv);
+    vec4 tex = texture(uCompanionAtlas, atlasUv);
+    if (tex.a <= 0.015) {
+      discard;
     }
-    col = vec4(clamp(litRgb, 0.0, 1.0), tex.a * outerAlpha);
+
+    // Estimate 3D silhouette edge gradient for subtle top-left warm studio rim lighting
+    vec2 stepUv = (vUv.zw - vUv.xy) * 0.006;
+    float aL = texture(uCompanionAtlas, atlasUv - vec2(stepUv.x, 0.0)).a;
+    float aR = texture(uCompanionAtlas, atlasUv + vec2(stepUv.x, 0.0)).a;
+    float aT = texture(uCompanionAtlas, atlasUv - vec2(0.0, stepUv.y)).a;
+    float aB = texture(uCompanionAtlas, atlasUv + vec2(0.0, stepUv.y)).a;
+    vec2 grad = vec2(aR - aL, aB - aT);
+    float rim = clamp(dot(grad, normalize(vec2(0.72, 0.68))), 0.0, 1.0);
+
+    vec3 rgb = tex.rgb;
+    // Soft warm studio rim along silhouette + subtle interactive hover warmth
+    float rimStrength = 0.14 + 0.14 * vParams.z + 0.10 * vParams.y;
+    rgb += vec3(1.0, 0.94, 0.85) * (rim * rimStrength);
+    rgb += vec3(1.0, 0.97, 0.92) * (0.045 * vParams.y);
+    col = vec4(clamp(rgb, 0.0, 1.0), tex.a);
   } else {
     discard;
   }

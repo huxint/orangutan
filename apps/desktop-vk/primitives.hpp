@@ -92,10 +92,11 @@ public:
   void set_textured_companions(bool enabled) noexcept {
     textured_companions_ = enabled;
   }
+  void set_dark_surface(bool dark) noexcept {
+    dark_surface_ = dark;
+  }
   void companion(CompanionId id, float cx, float cy, float radius, CompanionMood mood, float time_sec,
                  bool animate = true, float pet_bounce = 0.0F, float hover_amount = 0.0F);
-  void companion_portrait_rect(CompanionId id, Rect r, float radius, Color border, float border_w, float time_sec,
-                               bool animate = true, float pet_bounce = 0.0F, float hover_amount = 0.0F);
 
   [[nodiscard]] const std::vector<UiInstance>& instances() const noexcept {
     return instances_;
@@ -110,6 +111,7 @@ private:
 
   float dpr_{1.0F};
   bool textured_companions_{false};
+  bool dark_surface_{false};
   Rect root_clip_{0.0F, 0.0F, 16384.0F, 16384.0F};
   std::vector<Rect> clip_stack_;
   std::vector<UiInstance> instances_;
